@@ -1,0 +1,2055 @@
+{
+	"name": "dg-skills",
+	"commands": [
+		{
+			"name": "inbox",
+			"description": "Review Proton Mail, Gmail, and Outlook with redacted inbox workflows and DB profiles."
+		},
+		{
+			"name": "channel-review",
+			"description": "Run /thrash on pull requests posted in a Teams chat through a local daemon.",
+			"commands": [
+				{
+					"name": "emojis",
+					"description": "discover and configure custom reaction emojis",
+					"commands": [
+						{
+							"name": "capture",
+							"description": "capture a custom emoji from a reaction to a prompt from the bot",
+							"options": [
+								{
+									"flags": [
+										"--slot"
+									],
+									"description": "reaction slot",
+									"value": [
+										"progress",
+										"approved"
+									]
+								},
+								{
+									"flags": [
+										"--env"
+									],
+									"description": "environment (default: the saved env)",
+									"value": [
+										"dev",
+										"prod"
+									]
+								},
+								{
+									"flags": [
+										"--chat-id"
+									],
+									"description": "chat id to use instead of the topic lookup",
+									"value": "any"
+								},
+								{
+									"flags": [
+										"--timeout"
+									],
+									"description": "capture timeout in seconds",
+									"value": "any"
+								}
+							]
+						},
+						{
+							"name": "set",
+							"description": "save a custom emoji id for a reaction slot",
+							"values": [
+								"progress",
+								"approved"
+							]
+						},
+						{
+							"name": "show",
+							"description": "show reaction slots and their built-in fallbacks"
+						}
+					]
+				},
+				{
+					"name": "setup",
+					"description": "create the config file by answering a few questions",
+					"options": [
+						{
+							"flags": [
+								"--force"
+							],
+							"description": "replace an existing config file"
+						}
+					]
+				},
+				{
+					"name": "start",
+					"description": "start the review daemon in the background",
+					"options": [
+						{
+							"flags": [
+								"--env"
+							],
+							"description": "environment (default: the saved env)",
+							"value": [
+								"dev",
+								"prod"
+							]
+						},
+						{
+							"flags": [
+								"--runner"
+							],
+							"description": "agent CLI that runs the review",
+							"value": [
+								"claude",
+								"codex",
+								"copilot",
+								"grok"
+							]
+						},
+						{
+							"flags": [
+								"--chat-id"
+							],
+							"description": "chat id to watch instead of the topic lookup",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "stop",
+					"description": "stop the review daemon",
+					"options": [
+						{
+							"flags": [
+								"--env"
+							],
+							"description": "environment (default: the saved env)",
+							"value": [
+								"dev",
+								"prod"
+							]
+						}
+					]
+				},
+				{
+					"name": "status",
+					"description": "print the daemon state, runner probes, and a preflight check as JSON",
+					"options": [
+						{
+							"flags": [
+								"--env"
+							],
+							"description": "environment (default: the saved env)",
+							"value": [
+								"dev",
+								"prod"
+							]
+						}
+					]
+				},
+				{
+					"name": "logs",
+					"description": "print the last lines of the daemon log",
+					"options": [
+						{
+							"flags": [
+								"--env"
+							],
+							"description": "environment (default: the saved env)",
+							"value": [
+								"dev",
+								"prod"
+							]
+						},
+						{
+							"flags": [
+								"--lines",
+								"-n"
+							],
+							"description": "number of lines to print",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--follow",
+								"-f"
+							],
+							"description": "keep printing new lines until Ctrl+C"
+						}
+					]
+				},
+				{
+					"name": "run",
+					"description": "run the review daemon in the foreground",
+					"options": [
+						{
+							"flags": [
+								"--env"
+							],
+							"description": "environment (default: the saved env)",
+							"value": [
+								"dev",
+								"prod"
+							]
+						},
+						{
+							"flags": [
+								"--runner"
+							],
+							"description": "agent CLI that runs the review",
+							"value": [
+								"claude",
+								"codex",
+								"copilot",
+								"grok"
+							]
+						},
+						{
+							"flags": [
+								"--chat-id"
+							],
+							"description": "chat id to watch instead of the topic lookup",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "connect",
+					"description": "store a Datadog token, Sentry token or relay secret in the dg credential store; values are never printed",
+					"options": [
+						{
+							"flags": [
+								"--env"
+							],
+							"description": "environment (default: the saved env)",
+							"value": [
+								"dev",
+								"prod"
+							]
+						},
+						{
+							"flags": [
+								"--site"
+							],
+							"description": "Datadog site such as us5.datadoghq.com, or the Sentry base URL",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--org"
+							],
+							"description": "Sentry organization slug",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--paste"
+							],
+							"description": "open the token page in the default browser and paste the token"
+						},
+						{
+							"flags": [
+								"--session"
+							],
+							"description": "dg session to authenticate with",
+							"value": "any"
+						}
+					],
+					"values": [
+						"datadog",
+						"sentry",
+						"relay"
+					]
+				},
+				{
+					"name": "migrate-env",
+					"description": "move channel-review secrets from a .env file into the dg credential store",
+					"options": [
+						{
+							"flags": [
+								"--file"
+							],
+							"description": "env file (default: .env next to the mise config in the current folder)",
+							"value": "path"
+						},
+						{
+							"flags": [
+								"--dry-run"
+							],
+							"description": "list the variables that would move"
+						},
+						{
+							"flags": [
+								"--keep-backup"
+							],
+							"description": "write a plain-text 0600 .env.bak-<timestamp> copy with the original values"
+						},
+						{
+							"flags": [
+								"--session"
+							],
+							"description": "dg session to authenticate with",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "env",
+					"description": "print the default environment, or save dev or prod as the default",
+					"values": [
+						"dev",
+						"prod"
+					]
+				}
+			]
+		},
+		{
+			"name": "credentials",
+			"description": "Manage secrets in dg-daemon's encrypted credential store; values are never printed.",
+			"commands": [
+				{
+					"name": "list",
+					"description": "List names and metadata; flags entries expiring within 14 days",
+					"options": [
+						{
+							"flags": [
+								"--meta"
+							],
+							"description": "print every stored metadata field instead of the summary projection; still never prints a value"
+						}
+					]
+				},
+				{
+					"name": "set",
+					"description": "Store a value read from stdin, or a hidden prompt on a TTY",
+					"options": [
+						{
+							"flags": [
+								"--meta"
+							],
+							"description": "non-secret metadata such as provider, site, scopes, expiresAt, createdBy or note",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "delete",
+					"description": "Remove a stored credential"
+				},
+				{
+					"name": "grant",
+					"description": "Create or rotate a read-only service token for names under <prefix>/"
+				},
+				{
+					"name": "revoke",
+					"description": "Delete a service grant and its token file"
+				}
+			],
+			"options": [
+				{
+					"flags": [
+						"--session"
+					],
+					"description": "dg session to authenticate with",
+					"value": "any"
+				}
+			]
+		},
+		{
+			"name": "db",
+			"description": "Query PostgreSQL and Snowflake databases with read-safe defaults. Flags: --write, --limit N, --format tsv|json|markdown, --max-cell N, --schema S, -f file.sql",
+			"commands": [
+				{
+					"name": "query",
+					"description": "Run a query; use -f file.sql to read SQL from a file."
+				},
+				{
+					"name": "tables",
+					"description": "List tables in a schema."
+				},
+				{
+					"name": "describe",
+					"description": "Describe a table's columns."
+				},
+				{
+					"name": "explain",
+					"description": "Show a query plan."
+				},
+				{
+					"name": "schema",
+					"description": "Emit whole-schema tables, columns and foreign keys as JSON."
+				},
+				{
+					"name": "connections",
+					"description": "List db/* credential-backed connections."
+				},
+				{
+					"name": "test",
+					"description": "Test connectivity."
+				}
+			],
+			"options": [
+				{
+					"flags": [
+						"--json"
+					],
+					"description": "print JSON"
+				}
+			]
+		},
+		{
+			"name": "erd",
+			"description": "Generate architecture maps and render structured Mermaid diagrams."
+		},
+		{
+			"name": "test-live",
+			"description": "Temporarily deploy the current branch, wait for it to go live, then drop the temp commits. GitHub only. Hard stops: on main/master, or no .github/workflows in the current directory.",
+			"commands": [
+				{
+					"name": "setup",
+					"description": "Patch workflow_dispatch if needed, trigger the deploy, and watch until it is live."
+				},
+				{
+					"name": "cleanup",
+					"description": "Drop the temp workflow_dispatch commit, preserving any later commits."
+				}
+			],
+			"options": [
+				{
+					"flags": [
+						"--json"
+					],
+					"description": "print JSON"
+				}
+			]
+		},
+		{
+			"name": "install",
+			"description": "stage the dg-ai-extension for loading + install the pinned Bun runtime, the dg bundle and the dg-skills, dg-agent and dg-daemon launchers, or copy skill instruction files with --skills-only",
+			"options": [
+				{
+					"flags": [
+						"--local"
+					],
+					"description": "build from pkg/extension instead of the GitHub release"
+				},
+				{
+					"flags": [
+						"--repo"
+					],
+					"description": "dg repo to build from (default: search up from cwd)",
+					"value": "path"
+				},
+				{
+					"flags": [
+						"--cli-only"
+					],
+					"description": "install the runtime, bundle and launchers; skip the extension"
+				},
+				{
+					"flags": [
+						"--agent-only"
+					],
+					"description": "install the runtime, bundle and launchers; skip the extension, for a non-Claude agent that only needs phone"
+				},
+				{
+					"flags": [
+						"--skills-only"
+					],
+					"description": "copy plugins/dg/skills instruction files only; fetch no binaries and run no skill content"
+				},
+				{
+					"flags": [
+						"--dest"
+					],
+					"description": "directory for --skills-only (default: $DG_SKILLS_DEST, else the skills folder in the dg data dir)",
+					"value": "path"
+				},
+				{
+					"flags": [
+						"--keep-cache"
+					],
+					"description": "leave old dg plugin versions in the Claude plugin cache"
+				},
+				{
+					"flags": [
+						"--with-recommended"
+					],
+					"description": "also install the recommended third-party plugins from the marketplace: unslop, mattpocock-skills"
+				},
+				{
+					"flags": [
+						"--version"
+					],
+					"description": "pin every part to the vX.Y.Z release instead of the newest; fails before any change if a pinned release does not exist",
+					"value": "any"
+				}
+			]
+		},
+		{
+			"name": "update",
+			"description": "update every dg part to the newest release: the Bun runtime, the dg bundle and launchers, the staged extension, and the dg plugin for Claude and Codex; then run doctor",
+			"options": [
+				{
+					"flags": [
+						"--check"
+					],
+					"description": "print installed and newest versions; change nothing"
+				}
+			]
+		},
+		{
+			"name": "batch-open",
+			"description": "open a batch of PRs/URLs in the default browser",
+			"options": [
+				{
+					"flags": [
+						"--repo",
+						"-R"
+					],
+					"description": "default repo for bare PR numbers",
+					"value": "any"
+				},
+				{
+					"flags": [
+						"--group",
+						"-g"
+					],
+					"description": "tab group name (needs --ext)",
+					"value": "any"
+				},
+				{
+					"flags": [
+						"--print"
+					],
+					"description": "print the URLs instead of opening them"
+				},
+				{
+					"flags": [
+						"--ext"
+					],
+					"description": "use the dg-ai-extension instead of the local default"
+				}
+			]
+		},
+		{
+			"name": "launch",
+			"description": "cold-start a Chromium browser with the extension side-loaded + open a batch (needs --ext)",
+			"options": [
+				{
+					"flags": [
+						"--ext"
+					],
+					"description": "use the dg-ai-extension instead of the local default"
+				},
+				{
+					"flags": [
+						"--browser",
+						"-b"
+					],
+					"description": "browser key (see --list)",
+					"value": "any"
+				},
+				{
+					"flags": [
+						"--repo",
+						"-R"
+					],
+					"description": "default repo for bare PR numbers",
+					"value": "any"
+				},
+				{
+					"flags": [
+						"--group",
+						"-g"
+					],
+					"description": "tab group name",
+					"value": "any"
+				},
+				{
+					"flags": [
+						"--list"
+					],
+					"description": "list detected browsers and exit"
+				},
+				{
+					"flags": [
+						"--dry-run"
+					],
+					"description": "print the launch command without running it"
+				}
+			]
+		},
+		{
+			"name": "demo",
+			"description": "record a guided tour to an MP4 in a local browser, or play it through the dg-ai-extension with --ext",
+			"commands": [
+				{
+					"name": "status",
+					"description": "print the result of the last run of a saved demo"
+				},
+				{
+					"name": "player",
+					"description": "Serve the demo player; dg starts this for you"
+				}
+			],
+			"options": [
+				{
+					"flags": [
+						"--ext"
+					],
+					"description": "use the dg-ai-extension instead of the local default"
+				},
+				{
+					"flags": [
+						"--video"
+					],
+					"description": "--ext: start in video mode; local mode always records"
+				},
+				{
+					"flags": [
+						"--print"
+					],
+					"description": "--ext only: print the marked URL instead of opening it"
+				},
+				{
+					"flags": [
+						"--edit"
+					],
+					"description": "--ext only: open a review/edit panel in the browser before playing"
+				},
+				{
+					"flags": [
+						"--verify"
+					],
+					"description": "walk the plan in a real throwaway browser and print findings as JSON, instead of playing it",
+					"value": "any"
+				},
+				{
+					"flags": [
+						"--out"
+					],
+					"description": "where the video file goes",
+					"value": "path"
+				},
+				{
+					"flags": [
+						"--browser"
+					],
+					"description": "skip the system-first browser pick",
+					"value": [
+						"chrome",
+						"msedge",
+						"chromium"
+					]
+				},
+				{
+					"flags": [
+						"--narration",
+						"-n"
+					],
+					"description": "add a voiceover to the recording"
+				},
+				{
+					"flags": [
+						"--windows"
+					],
+					"description": "WSL: drive the Windows-side browser over CDP"
+				},
+				{
+					"flags": [
+						"--wsl-headed"
+					],
+					"description": "WSL: headed browser inside WSL (experimental; only when the human asks)"
+				},
+				{
+					"flags": [
+						"--timeout"
+					],
+					"description": "minutes to wait for the human before the player stops (default 30)",
+					"value": "any"
+				}
+			]
+		},
+		{
+			"name": "rerun",
+			"description": "record a saved demo plan (.md) to an MP4 in a local browser, or replay it via the dg-ai-extension with --ext",
+			"options": [
+				{
+					"flags": [
+						"--ext"
+					],
+					"description": "use the dg-ai-extension instead of the local default"
+				},
+				{
+					"flags": [
+						"--out"
+					],
+					"description": "where the video file goes",
+					"value": "path"
+				},
+				{
+					"flags": [
+						"--browser"
+					],
+					"description": "skip the system-first browser pick",
+					"value": [
+						"chrome",
+						"msedge",
+						"chromium"
+					]
+				},
+				{
+					"flags": [
+						"--narration",
+						"-n"
+					],
+					"description": "add a voiceover to the recording"
+				},
+				{
+					"flags": [
+						"--windows"
+					],
+					"description": "WSL: drive the Windows-side browser over CDP"
+				},
+				{
+					"flags": [
+						"--wsl-headed"
+					],
+					"description": "WSL: headed browser inside WSL (experimental; only when the human asks)"
+				},
+				{
+					"flags": [
+						"--timeout"
+					],
+					"description": "minutes to wait for the human before the player stops (default 30)",
+					"value": "any"
+				},
+				{
+					"flags": [
+						"--video"
+					],
+					"description": "--ext: start in video mode; local mode always records"
+				},
+				{
+					"flags": [
+						"--print"
+					],
+					"description": "--ext only: print the marked URL instead of opening it"
+				}
+			]
+		},
+		{
+			"name": "stash",
+			"description": "Print an artifact path and create its parent directory"
+		},
+		{
+			"name": "address",
+			"description": "Review-thread, CI and Copilot operations for the address workflow",
+			"commands": [
+				{
+					"name": "probe",
+					"description": "verify provider/git access"
+				},
+				{
+					"name": "view-pr",
+					"description": "PR/MR metadata as JSON (state, merged, headRefName); takes a number or URL"
+				},
+				{
+					"name": "gather",
+					"description": "PR metadata + review threads (JSON)"
+				},
+				{
+					"name": "gather-unresolved",
+					"description": "compact array of unresolved, non-ignored threads"
+				},
+				{
+					"name": "gather-overview",
+					"description": "latest Copilot review overview when it flags work (JSON array, [] when clean)"
+				},
+				{
+					"name": "check-bot-review",
+					"description": "whether the provider's AI reviewer has posted on this PR/MR, and how many of its threads are unresolved"
+				},
+				{
+					"name": "gather-ci-failures",
+					"description": "compact array of failing CI checks on the PR"
+				},
+				{
+					"name": "reply",
+					"description": "reply directly to a review comment (auto 🤖 prefix)"
+				},
+				{
+					"name": "resolve",
+					"description": "resolve a review thread"
+				},
+				{
+					"name": "resolve-silent",
+					"description": "alias for resolve (explicit: no reply)"
+				},
+				{
+					"name": "resolve-with-reply",
+					"description": "reply directly (auto 🤖 prefix) + resolve its thread"
+				},
+				{
+					"name": "commit-push",
+					"description": "stage, commit, push"
+				},
+				{
+					"name": "batch-close",
+					"description": "reply+resolve all threads in one call (JSON array or stdin -)"
+				},
+				{
+					"name": "check-copilot",
+					"description": "best-effort copilot reviewer availability (JSON)"
+				},
+				{
+					"name": "request-copilot",
+					"description": "trigger Copilot review [--method=comment|reviewer|retry-comment]"
+				},
+				{
+					"name": "fetch-copilot-review",
+					"description": "latest Copilot review + its comments (JSON)"
+				},
+				{
+					"name": "count-copilot-reviews",
+					"description": "integer count of Copilot-authored reviews on PR"
+				},
+				{
+					"name": "verify-copilot-engaged",
+					"description": "block until copilot-swe-agent posts an issue comment after since_iso [--timeout=<sec>] [--interval=<sec>]"
+				},
+				{
+					"name": "check-no-findings",
+					"description": "one-shot (non-blocking) scan for a copilot-swe-agent no-findings ack after since_iso"
+				},
+				{
+					"name": "await-copilot-review",
+					"description": "block until copilot review lands or no-findings ack after since_iso [--timeout=<sec>] [--interval=<sec>]"
+				}
+			],
+			"options": [
+				{
+					"flags": [
+						"--json"
+					],
+					"description": "print JSON"
+				}
+			]
+		},
+		{
+			"name": "thrash",
+			"description": "Diff, compile, post and tally tiered local or provider reviews"
+		},
+		{
+			"name": "chain",
+			"description": "Render and wire dependent PR/MR stacks"
+		},
+		{
+			"name": "catchup",
+			"description": "Rebase onto origin's default branch, verify, and push"
+		},
+		{
+			"name": "file",
+			"description": "Create, list, view and group provider issues"
+		},
+		{
+			"name": "hooks",
+			"description": "Run and manage the opt-in hooks",
+			"commands": [
+				{
+					"name": "list"
+				},
+				{
+					"name": "status"
+				},
+				{
+					"name": "enable"
+				},
+				{
+					"name": "disable"
+				},
+				{
+					"name": "set"
+				},
+				{
+					"name": "run"
+				}
+			]
+		},
+		{
+			"name": "deps-upgrade",
+			"description": "Batch dependency upgrades, security audits and combined pull requests"
+		},
+		{
+			"name": "meaningful",
+			"description": "Reshape branch commits into reviewable groups"
+		},
+		{
+			"name": "vcs-provider",
+			"description": "Query the detected VCS provider (GitHub or GitLab) for repo info, issues, and pull requests. Run dg-skills vcs-provider <subcommand>.",
+			"commands": [
+				{
+					"name": "detect",
+					"description": "Detect the provider and repo; always exits 0, degrading to nulls plus a reason on failure"
+				},
+				{
+					"name": "capabilities",
+					"description": "Print the resolved provider's capabilities; fails loud when no provider resolves"
+				},
+				{
+					"name": "auth",
+					"description": "Exit 0 when the provider's CLI is authenticated, non-zero otherwise; prints nothing on success"
+				},
+				{
+					"name": "list-prs",
+					"description": "List pull requests for the current repo as a bare JSON array; --limit N caps the count, --head <branch> narrows to one source branch"
+				},
+				{
+					"name": "list-issues",
+					"description": "List open issues for the current repo as normalized JSON; --limit N caps the count"
+				},
+				{
+					"name": "view-issue",
+					"description": "View one issue as normalized JSON"
+				},
+				{
+					"name": "view-pr",
+					"description": "View one pull request or merge request as normalized JSON"
+				},
+				{
+					"name": "list-threads",
+					"description": "List unresolved review threads for a pull request or merge request"
+				},
+				{
+					"name": "create-pr",
+					"description": "Create a pull request or merge request; accepts --draft --title --base --head --body"
+				},
+				{
+					"name": "merged-pr-for-branch",
+					"description": "Print the first merged pull request for <branch>, or JSON null"
+				}
+			],
+			"options": [
+				{
+					"flags": [
+						"--json"
+					],
+					"description": "print JSON"
+				}
+			]
+		},
+		{
+			"name": "clipboard-image",
+			"description": "Save the clipboard image as PNG"
+		},
+		{
+			"name": "proto",
+			"description": "prototype locally (default) or inside a live page with --ext"
+		},
+		{
+			"name": "prototype",
+			"description": "Local prototype commands: ui, serve, wait, confirm, status, stop, and path helpers"
+		},
+		{
+			"name": "verify",
+			"description": "Review finished changes round by round on a local before-and-after board"
+		},
+		{
+			"name": "proxy",
+			"description": "Delegate a prompt to an external AI backend"
+		},
+		{
+			"name": "pw",
+			"description": "Drive a browser from the command line",
+			"commands": [
+				{
+					"name": "open",
+					"description": "Open the browser",
+					"options": [
+						{
+							"flags": [
+								"--scratch"
+							],
+							"description": "use an ephemeral profile, keyed to this directory"
+						},
+						{
+							"flags": [
+								"--headless"
+							],
+							"description": "run without a visible window"
+						},
+						{
+							"flags": [
+								"--windows"
+							],
+							"description": "open Windows Chrome or Edge over CDP (WSL only; not with --scratch)"
+						},
+						{
+							"flags": [
+								"--wsl-headed"
+							],
+							"description": "launch a headed browser inside WSL through WSLg (experimental)"
+						},
+						{
+							"flags": [
+								"--browser"
+							],
+							"description": "browser or channel: chrome, chromium, msedge, firefox, webkit (default: first of chrome, msedge, downloaded chromium)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--profile"
+							],
+							"description": "persistent profile directory (default: ~/.cache/playwright-cli/profiles/<session>)",
+							"value": "path"
+						},
+						{
+							"flags": [
+								"--from"
+							],
+							"description": "seed the session from a saved state (see: pw state list)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--out"
+							],
+							"description": "output directory for snapshots and files (default: /tmp/ai/pw/<cwd-hash>)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--persistent"
+							],
+							"description": "accepted for compatibility; persistent profiles are the default"
+						},
+						{
+							"flags": [
+								"--depth"
+							],
+							"description": "default snapshot depth for this session (0 means unlimited; default: 6)",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "install-browser",
+					"description": "Download Chromium for pw (about 150 MB)",
+					"options": [
+						{
+							"flags": [
+								"--remove"
+							],
+							"description": "delete the downloaded Chromium instead of installing it"
+						}
+					]
+				},
+				{
+					"name": "attach",
+					"description": "Attach to a running browser",
+					"options": [
+						{
+							"flags": [
+								"--cdp"
+							],
+							"description": "CDP endpoint of a running Chromium browser, e.g. http://127.0.0.1:9222",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "close",
+					"description": "Close the browser"
+				},
+				{
+					"name": "list",
+					"description": "List browser sessions"
+				},
+				{
+					"name": "close-all",
+					"description": "Close all browser sessions"
+				},
+				{
+					"name": "kill-all",
+					"description": "Forcefully kill all browser sessions (for stale or zombie processes)"
+				},
+				{
+					"name": "goto",
+					"description": "Navigate to a URL"
+				},
+				{
+					"name": "snapshot",
+					"description": "Capture a page snapshot to obtain element refs",
+					"options": [
+						{
+							"flags": [
+								"--filename"
+							],
+							"description": "save the snapshot to this file (relative paths resolve against the output directory)",
+							"value": "path"
+						},
+						{
+							"flags": [
+								"--depth"
+							],
+							"description": "limit snapshot depth (default: 6; 0 means unlimited)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--full"
+							],
+							"description": "capture the full depth"
+						}
+					]
+				},
+				{
+					"name": "click",
+					"description": "Perform a click on a web page",
+					"options": [
+						{
+							"flags": [
+								"--modifiers"
+							],
+							"description": "modifier keys to hold, comma separated: Alt, Control, ControlOrMeta, Meta, Shift",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "fill",
+					"description": "Fill text into an editable element",
+					"options": [
+						{
+							"flags": [
+								"--submit"
+							],
+							"description": "press Enter after filling"
+						}
+					]
+				},
+				{
+					"name": "type",
+					"description": "Type text into the focused element",
+					"options": [
+						{
+							"flags": [
+								"--submit"
+							],
+							"description": "press Enter after typing"
+						}
+					]
+				},
+				{
+					"name": "press",
+					"description": "Press a key on the keyboard, such as Enter or ArrowLeft"
+				},
+				{
+					"name": "eval",
+					"description": "Evaluate a JavaScript expression or function on the page or an element",
+					"options": [
+						{
+							"flags": [
+								"--filename"
+							],
+							"description": "save the result to this file instead of returning it",
+							"value": "path"
+						}
+					]
+				},
+				{
+					"name": "screenshot",
+					"description": "Take a screenshot of the page or an element",
+					"options": [
+						{
+							"flags": [
+								"--filename"
+							],
+							"description": "file to save to (default: page-<timestamp>.png in the output directory)",
+							"value": "path"
+						},
+						{
+							"flags": [
+								"--full-page"
+							],
+							"description": "capture the full scrollable page"
+						}
+					]
+				},
+				{
+					"name": "check",
+					"description": "Check a checkbox or radio button"
+				},
+				{
+					"name": "console",
+					"description": "List console messages",
+					"options": [
+						{
+							"flags": [
+								"--clear"
+							],
+							"description": "clear the console list after listing it"
+						}
+					]
+				},
+				{
+					"name": "cookie-clear",
+					"description": "Clear all cookies"
+				},
+				{
+					"name": "cookie-delete",
+					"description": "Delete a specific cookie"
+				},
+				{
+					"name": "cookie-get",
+					"description": "Get a specific cookie by name"
+				},
+				{
+					"name": "cookie-list",
+					"description": "List all cookies, optionally filtered by domain or path",
+					"options": [
+						{
+							"flags": [
+								"--domain"
+							],
+							"description": "filter cookies by domain",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--path"
+							],
+							"description": "filter cookies by path",
+							"value": "path"
+						}
+					]
+				},
+				{
+					"name": "cookie-set",
+					"description": "Set a cookie with optional flags",
+					"options": [
+						{
+							"flags": [
+								"--domain"
+							],
+							"description": "cookie domain (default: the current page host)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--path"
+							],
+							"description": "cookie path (default: /)",
+							"value": "path"
+						},
+						{
+							"flags": [
+								"--expires"
+							],
+							"description": "expiration as a unix timestamp in seconds",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--httpOnly"
+							],
+							"description": "mark the cookie HTTP only"
+						},
+						{
+							"flags": [
+								"--secure"
+							],
+							"description": "mark the cookie secure"
+						},
+						{
+							"flags": [
+								"--sameSite"
+							],
+							"description": "SameSite attribute: Strict, Lax, or None",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "dblclick",
+					"description": "Perform a double click on a web page",
+					"options": [
+						{
+							"flags": [
+								"--modifiers"
+							],
+							"description": "modifier keys to hold, comma separated: Alt, Control, ControlOrMeta, Meta, Shift",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "delete-data",
+					"description": "Close the session and delete its saved profile data"
+				},
+				{
+					"name": "dialog-accept",
+					"description": "Accept a dialog"
+				},
+				{
+					"name": "dialog-dismiss",
+					"description": "Dismiss a dialog"
+				},
+				{
+					"name": "drag",
+					"description": "Perform drag and drop between two elements"
+				},
+				{
+					"name": "go-back",
+					"description": "Go back to the previous page"
+				},
+				{
+					"name": "go-forward",
+					"description": "Go forward to the next page"
+				},
+				{
+					"name": "hover",
+					"description": "Hover over an element on the page"
+				},
+				{
+					"name": "keydown",
+					"description": "Press a key down on the keyboard"
+				},
+				{
+					"name": "keyup",
+					"description": "Press a key up on the keyboard"
+				},
+				{
+					"name": "localstorage-clear",
+					"description": "Clear all localStorage"
+				},
+				{
+					"name": "localstorage-delete",
+					"description": "Delete a localStorage item"
+				},
+				{
+					"name": "localstorage-get",
+					"description": "Get a localStorage item by key"
+				},
+				{
+					"name": "localstorage-list",
+					"description": "List all localStorage key-value pairs"
+				},
+				{
+					"name": "localstorage-set",
+					"description": "Set a localStorage item"
+				},
+				{
+					"name": "mousedown",
+					"description": "Press the mouse button down"
+				},
+				{
+					"name": "mousemove",
+					"description": "Move the mouse to a given position"
+				},
+				{
+					"name": "mouseup",
+					"description": "Release the mouse button"
+				},
+				{
+					"name": "mousewheel",
+					"description": "Scroll the mouse wheel"
+				},
+				{
+					"name": "network",
+					"description": "List network requests since the page loaded",
+					"options": [
+						{
+							"flags": [
+								"--static"
+							],
+							"description": "include successful static resources such as images, fonts, and scripts"
+						},
+						{
+							"flags": [
+								"--request-body"
+							],
+							"description": "include the request body"
+						},
+						{
+							"flags": [
+								"--request-headers"
+							],
+							"description": "include the request headers"
+						},
+						{
+							"flags": [
+								"--filter"
+							],
+							"description": "only requests whose url matches this regular expression, such as \"/api/.*user\"",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--clear"
+							],
+							"description": "clear the request list after listing it"
+						}
+					]
+				},
+				{
+					"name": "network-state-set",
+					"description": "Set the browser network state to \"online\" or \"offline\""
+				},
+				{
+					"name": "pdf",
+					"description": "Save the page as PDF (Chromium only)",
+					"options": [
+						{
+							"flags": [
+								"--filename"
+							],
+							"description": "file name to save the pdf to (default: page-<timestamp>.pdf in the output directory)",
+							"value": "path"
+						}
+					]
+				},
+				{
+					"name": "reload",
+					"description": "Reload the current page"
+				},
+				{
+					"name": "resize",
+					"description": "Resize the browser window"
+				},
+				{
+					"name": "route",
+					"description": "Mock network requests matching a URL pattern, such as \"**/api/users\"",
+					"options": [
+						{
+							"flags": [
+								"--status"
+							],
+							"description": "http status code (default: 200)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--body"
+							],
+							"description": "response body (text or json string)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--content-type"
+							],
+							"description": "content-type header of the mocked response",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--header"
+							],
+							"description": "header to add in \"name: value\" format",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--remove-header"
+							],
+							"description": "comma separated request header names to remove",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "route-list",
+					"description": "List all active network routes"
+				},
+				{
+					"name": "select",
+					"description": "Select an option in a dropdown"
+				},
+				{
+					"name": "sessionstorage-clear",
+					"description": "Clear all sessionStorage"
+				},
+				{
+					"name": "sessionstorage-delete",
+					"description": "Delete a sessionStorage item"
+				},
+				{
+					"name": "sessionstorage-get",
+					"description": "Get a sessionStorage item by key"
+				},
+				{
+					"name": "sessionstorage-list",
+					"description": "List all sessionStorage key-value pairs"
+				},
+				{
+					"name": "sessionstorage-set",
+					"description": "Set a sessionStorage item"
+				},
+				{
+					"name": "state",
+					"description": "Named saved sessions (cookies, localStorage, IndexedDB)"
+				},
+				{
+					"name": "state-load",
+					"description": "Load browser storage (authentication) state from a file",
+					"path": true
+				},
+				{
+					"name": "state-save",
+					"description": "Save the current storage (authentication) state to a file",
+					"path": true
+				},
+				{
+					"name": "tab-close",
+					"description": "Close a browser tab"
+				},
+				{
+					"name": "tab-list",
+					"description": "List all tabs"
+				},
+				{
+					"name": "tab-new",
+					"description": "Create a new tab"
+				},
+				{
+					"name": "tab-select",
+					"description": "Select a browser tab"
+				},
+				{
+					"name": "tracing-start",
+					"description": "Start trace recording"
+				},
+				{
+					"name": "tracing-stop",
+					"description": "Stop trace recording and save the trace zip"
+				},
+				{
+					"name": "uncheck",
+					"description": "Uncheck a checkbox"
+				},
+				{
+					"name": "unroute",
+					"description": "Remove routes matching a pattern, or all routes without a pattern"
+				},
+				{
+					"name": "upload",
+					"description": "Upload one or multiple files",
+					"path": true
+				},
+				{
+					"name": "video-chapter",
+					"description": "Add a chapter marker to the video recording",
+					"options": [
+						{
+							"flags": [
+								"--description"
+							],
+							"description": "chapter description",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--duration"
+							],
+							"description": "milliseconds to show the chapter card (default: 2000)",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "video-start",
+					"description": "Start video recording of the current tab (needs ffmpeg)",
+					"options": [
+						{
+							"flags": [
+								"--size"
+							],
+							"description": "video frame size, such as \"800x600\" (default: fits 800x800)",
+							"value": "any"
+						}
+					],
+					"path": true
+				},
+				{
+					"name": "video-stop",
+					"description": "Stop video recording and save the video"
+				}
+			],
+			"options": [
+				{
+					"flags": [
+						"--session",
+						"-s"
+					],
+					"description": "the browser session to use",
+					"value": "any"
+				},
+				{
+					"flags": [
+						"--raw"
+					],
+					"description": "print only the result"
+				},
+				{
+					"flags": [
+						"--codegen"
+					],
+					"description": "print the Playwright code for each step"
+				},
+				{
+					"flags": [
+						"--ext"
+					],
+					"description": "drive the dg-ai-extension tab instead",
+					"mode": {
+						"name": "pw --ext",
+						"commands": [
+							{
+								"name": "current"
+							},
+							{
+								"name": "snapshot"
+							},
+							{
+								"name": "screenshot"
+							},
+							{
+								"name": "selection"
+							},
+							{
+								"name": "console"
+							},
+							{
+								"name": "tools"
+							},
+							{
+								"name": "tabs"
+							},
+							{
+								"name": "count"
+							},
+							{
+								"name": "open"
+							},
+							{
+								"name": "click"
+							},
+							{
+								"name": "fill"
+							},
+							{
+								"name": "upload"
+							},
+							{
+								"name": "call"
+							},
+							{
+								"name": "new"
+							},
+							{
+								"name": "select"
+							},
+							{
+								"name": "close"
+							},
+							{
+								"name": "unmask"
+							},
+							{
+								"name": "dialog"
+							}
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "pw-code",
+			"description": "Run code inside a pw browser session (asks every time)"
+		},
+		{
+			"name": "overwatch-snapshot",
+			"description": "render an Overwatch board JSON snapshot as read-only HTML",
+			"options": [
+				{
+					"flags": [
+						"--input"
+					],
+					"description": "board JSON file, or - for stdin",
+					"value": "path"
+				},
+				{
+					"flags": [
+						"--out"
+					],
+					"description": "HTML output path",
+					"value": "path"
+				},
+				{
+					"flags": [
+						"--throttle-key"
+					],
+					"description": "skip renders within 120 seconds for this key",
+					"value": "any"
+				}
+			]
+		},
+		{
+			"name": "worktree",
+			"description": "Create, list, remove and prune git worktrees for agent workflows",
+			"commands": [
+				{
+					"name": "create"
+				},
+				{
+					"name": "list"
+				},
+				{
+					"name": "ls"
+				},
+				{
+					"name": "remove"
+				},
+				{
+					"name": "rm"
+				},
+				{
+					"name": "prune"
+				}
+			]
+		},
+		{
+			"name": "spec",
+			"description": "Scaffold, validate, review and edit spec plan bundles for /spec orchestration",
+			"commands": [
+				{
+					"name": "perms"
+				},
+				{
+					"name": "perms-batch"
+				},
+				{
+					"name": "next-nnn"
+				},
+				{
+					"name": "roundtable"
+				},
+				{
+					"name": "review"
+				},
+				{
+					"name": "slice"
+				},
+				{
+					"name": "context"
+				},
+				{
+					"name": "brief"
+				},
+				{
+					"name": "diff-bundle"
+				},
+				{
+					"name": "audit"
+				},
+				{
+					"name": "ready"
+				},
+				{
+					"name": "pr-body"
+				},
+				{
+					"name": "issues"
+				},
+				{
+					"name": "slugify"
+				},
+				{
+					"name": "resolve-path"
+				},
+				{
+					"name": "validate"
+				},
+				{
+					"name": "get"
+				},
+				{
+					"name": "set"
+				},
+				{
+					"name": "append-section"
+				},
+				{
+					"name": "roster"
+				},
+				{
+					"name": "scaffold"
+				},
+				{
+					"name": "lint-waves"
+				},
+				{
+					"name": "estimate"
+				},
+				{
+					"name": "prototype-ref"
+				}
+			]
+		},
+		{
+			"name": "assign",
+			"description": "Resolve agent tiers for a plan's slice layer"
+		},
+		{
+			"name": "monolith",
+			"description": "Vocabulary helper and worktree scan generator for the monolith skill"
+		},
+		{
+			"name": "jot",
+			"description": "Agent notes (scratch) and session saves (durable), capped at 2 KB per file.",
+			"commands": [
+				{
+					"name": "add",
+					"description": "Write stdin as a jot; -s/--save for a durable handoff. Prints the path."
+				},
+				{
+					"name": "ls",
+					"description": "Index, newest first: kind, age, name, title. -s saves, -n notes, --all no limit."
+				},
+				{
+					"name": "read",
+					"description": "Print a jot. A split jot prints its index; <name>/<NN> prints one part."
+				},
+				{
+					"name": "kind",
+					"description": "Print note or save for a jot name or path."
+				},
+				{
+					"name": "kick",
+					"description": "Append one checkpoint section from stdin to the common file; --replace updates the same id."
+				},
+				{
+					"name": "kick-list",
+					"description": "List kicked sections: id, summary."
+				},
+				{
+					"name": "kick-take",
+					"description": "Print the one matching section, then remove it from the file. Several matches remove nothing."
+				},
+				{
+					"name": "done",
+					"description": "Remove a jot (file or split folder)."
+				}
+			],
+			"options": [
+				{
+					"flags": [
+						"--json"
+					],
+					"description": "print JSON"
+				}
+			]
+		},
+		{
+			"name": "bg",
+			"description": "Detached background-job primitive for the /bg skill.",
+			"commands": [
+				{
+					"name": "run",
+					"description": "Launch a command detached and print its job record"
+				},
+				{
+					"name": "list",
+					"description": "Print all known background jobs with derived state"
+				},
+				{
+					"name": "prune",
+					"description": "Remove finished jobs whose cwd is inside <dir> (both roots); reports live ones"
+				},
+				{
+					"name": "status",
+					"description": "Print one background job with derived state"
+				},
+				{
+					"name": "cancel",
+					"description": "Terminate a running job (whole process group)"
+				},
+				{
+					"name": "kill",
+					"description": "Alias for cancel"
+				},
+				{
+					"name": "update",
+					"description": "Feed more context to a proxy/agentic job (resume or queue)"
+				},
+				{
+					"name": "drain",
+					"description": "Internal: apply a queued update once a proxy job finishes"
+				}
+			],
+			"options": [
+				{
+					"flags": [
+						"--json"
+					],
+					"description": "print JSON"
+				}
+			]
+		},
+		{
+			"name": "stat",
+			"description": "Track a priority-ordered checklist of agent and user work, for /dg:stat",
+			"commands": [
+				{
+					"name": "checklist",
+					"description": "Print the checklist: emoji view by default, --long for a POSIX table, --plain for ASCII/GFM, --json for data",
+					"options": [
+						{
+							"flags": [
+								"--long",
+								"-l"
+							],
+							"description": "print a POSIX tab-separated table instead"
+						},
+						{
+							"flags": [
+								"--plain",
+								"-p"
+							],
+							"description": "print an ASCII, GitHub-flavored-markdown view instead"
+						},
+						{
+							"flags": [
+								"--json"
+							],
+							"description": "print the checklist as JSON instead"
+						}
+					]
+				},
+				{
+					"name": "add",
+					"description": "Append (or place) a new open checklist item",
+					"options": [
+						{
+							"flags": [
+								"--status"
+							],
+							"description": "one of queued, running, blocked-user, needs-user, parked, failed (default queued)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--eta"
+							],
+							"description": "one of <5 min, ~15 min, ~30 min, ~1 hr, >1 hr, unknown",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--at"
+							],
+							"description": "position by the number shown, counted from the first open item (default: end); fails if the item would land elsewhere",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--under"
+							],
+							"description": "add as a sub-item of this open top-level item",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "done",
+					"description": "Mark the one unfinished item matching <match> as done"
+				},
+				{
+					"name": "status",
+					"description": "Change an item's status (and optionally its ETA); setting a done item's status away from done reopens it",
+					"options": [
+						{
+							"flags": [
+								"--eta"
+							],
+							"description": "one of <5 min, ~15 min, ~30 min, ~1 hr, >1 hr, unknown",
+							"value": "any"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "sniff",
+			"description": "Inventory the secrets, config and tooling a repo needs to run"
+		},
+		{
+			"name": "skill",
+			"description": "Audit skill directories for token weight and hygiene, and split oversized SKILL.md files"
+		},
+		{
+			"name": "ssms",
+			"description": "Read and clean SMS. google drives Messages for Web; signal wraps signal-cli."
+		},
+		{
+			"name": "doctor",
+			"description": "check that each dg-skills item has the tools, credentials and settings it needs; on a terminal, browse the results and apply a fix after a yes",
+			"options": [
+				{
+					"flags": [
+						"--json"
+					],
+					"description": "print the report as JSON"
+				},
+				{
+					"flags": [
+						"--plain"
+					],
+					"description": "print the text report, even on a terminal"
+				}
+			]
+		},
+		{
+			"name": "clean",
+			"description": "remove the leftovers of the move from ~/.dg: empty copies that were set aside, and an empty ~/.dg"
+		},
+		{
+			"name": "completion",
+			"description": "print the bash, zsh or fish completion script, or write or remove the completion files of dg-skills, dg-agent and dg-daemon",
+			"options": [
+				{
+					"flags": [
+						"--install"
+					],
+					"description": "write the completion files for every shell to the per-user folders"
+				},
+				{
+					"flags": [
+						"--uninstall"
+					],
+					"description": "remove the completion files that dg wrote"
+				}
+			],
+			"values": [
+				"bash",
+				"zsh",
+				"fish"
+			]
+		},
+		{
+			"name": "require-extension",
+			"description": "exit non-zero with a hint when this is a CLI-only install (used by skills that need the extension)"
+		}
+	],
+	"options": [
+		{
+			"flags": [
+				"--version",
+				"-V"
+			],
+			"description": "output the version number"
+		}
+	]
+}
