@@ -2368,6 +2368,15 @@ describe("pw --ext site allowlist", () => {
 		expect(h.approvalRequests).toHaveLength(1);
 	});
 
+	it("saves a shared Allow for a request that is still live when the asking one was canceled", async () => {
+		const controller = new AbortController();
+		const h = harness({ sites: "ask", approval: "allow", pageResult: { text: "x" }, onApproval: () => controller.abort() });
+		const first = h.handler({ request: { verb: "selection" }, timeoutMs: 60_000, signal: controller.signal, progress: () => undefined, context: { sessionId: SESSION, agentIdentity: IDENTITY } } as never);
+		const second = h.run({ verb: "selection" });
+		await Promise.all([first, second]);
+		expect(h.fake.session.get(`pwExtSites:${SESSION}`)).toEqual(["https://app.example.test"]);
+	});
+
 	it("asks nothing for tabs, select and close", async () => {
 		const h = harness({ sites: "ask", tabs: [WEB_TAB, groupTab(8, { url: "https://other.example.test/" })] });
 		await h.run({ verb: "tabs" });
@@ -2417,6 +2426,20 @@ describe("pw --ext Stop", () => {
 		expect(answer).toEqual({ ok: false, error: STOPPED });
 		await new Promise((resolve) => setTimeout(resolve, 20));
 		expect(h.fake.session.has(`webmcpGrants:${SESSION}`)).toBe(false);
+	});
+
+	it("closes no tab when Stop comes while close waits for the agent tab lock", async () => {
+		const h = harness({ sites: "ask", tabs: [WEB_TAB, groupTab(8)] });
+		let release: (() => void) | undefined;
+		const holding = h.agentTabsLock.request("agentTabs", () => new Promise<void>((resolve) => (release = resolve)));
+		const closing = h.run({ verb: "close", tabId: 8 });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		const stopping = h.handler.stop(SESSION);
+		expect(await closing).toEqual({ ok: false, error: STOPPED });
+		release?.();
+		await holding;
+		await stopping;
+		expect(h.fake.raw.tabs.remove).not.toHaveBeenCalled();
 	});
 
 	it("opens no tab when Stop comes while new waits for the agent tab lock", async () => {

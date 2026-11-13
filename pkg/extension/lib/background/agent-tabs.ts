@@ -108,7 +108,7 @@ const TITLE_SESSION_CHARS = 4;
 
 export const MAX_AGENT_TABS = 200;
 
-/** The open was canceled while it waited for the agent tab lock. */
+/** A tab change was canceled while it waited for the agent tab lock. */
 export class AgentTabOpenCanceledError extends Error {
 	constructor() {
 		super("The request was canceled before it ran.");
@@ -447,11 +447,15 @@ export function createAgentTabs({
 		select({
 			sessionId,
 			tabId,
+			canceled,
 		}: {
 			sessionId: string;
 			tabId: number;
+			/** Checked inside the lock; a true answer changes nothing. */
+			canceled?: () => boolean;
 		}): Promise<void> {
 			return locked(async () => {
+				if (canceled?.()) throw new AgentTabOpenCanceledError();
 				const record = await read(sessionId);
 				if (!record) throw new Error("This session has no agent tab group.");
 				await requireInGroup(record, tabId);
@@ -462,11 +466,15 @@ export function createAgentTabs({
 		close({
 			sessionId,
 			tabId,
+			canceled,
 		}: {
 			sessionId: string;
 			tabId?: number;
+			/** Checked inside the lock; a true answer closes nothing. */
+			canceled?: () => boolean;
 		}): Promise<{ selectedTabId?: number }> {
 			return locked(async () => {
+				if (canceled?.()) throw new AgentTabOpenCanceledError();
 				const record = await read(sessionId);
 				const closing = tabId ?? record?.selectedTabId;
 				if (!record || closing === undefined)

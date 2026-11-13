@@ -545,6 +545,7 @@ export function createPwExtHandler({
 		const answer = await pending;
 		if (signal.aborted) throw new Refusal("The request was canceled before it ran.");
 		if (answer !== "allow") throw new Refusal(`${SITE_REFUSED[answer]}; the agent did not allow ${origin}. Nothing ran.`);
+		await control.allow(context.sessionId, origin);
 	}
 
 	/** Ends a session's control at once: verbs in flight end, grants and sites go, and its tabs return to the person. */
@@ -846,7 +847,7 @@ export function createPwExtHandler({
 				return ok(`### Result\nOpened ${request.url} in tab ${tab.id}`);
 			}
 			case "select": {
-				await agentTabs.select({ sessionId: context.sessionId, tabId: tab.id });
+				await agentTabs.select({ sessionId: context.sessionId, tabId: tab.id, canceled: () => signal?.aborted === true });
 				void syncShim(tab.id, false);
 				return ok(`### Result\nSelected tab ${tab.id}`);
 			}
@@ -854,6 +855,7 @@ export function createPwExtHandler({
 				const { selectedTabId } = await agentTabs.close({
 					sessionId: context.sessionId,
 					tabId: tab.id,
+					canceled: () => signal?.aborted === true,
 				});
 				return ok(
 					[
@@ -983,6 +985,7 @@ export function createPwExtHandler({
 				);
 			}
 			case "screenshot": {
+				if (signal?.aborted) return CANCELED;
 				const windowId = tab.windowId as number;
 				await api.tabs.update(tab.id, { active: true });
 				const { state } = await api.windows.get(windowId);
@@ -1224,7 +1227,7 @@ export function createPwExtHandler({
 			return scrub(result, await held());
 		} catch (error) {
 			if (await control.stopped(sessionId).catch(() => false)) return STOPPED;
-			if (error instanceof Refusal) return { ok: false, error: error.message };
+			if (error instanceof Refusal || error instanceof AgentTabOpenCanceledError) return { ok: false, error: error.message };
 			if (error instanceof PageError) return { ok: false, error: clean(error.message, { secrets: await held() }) };
 			return {
 				ok: false,
