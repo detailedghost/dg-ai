@@ -357,6 +357,23 @@ describe("sealed sign-in headers, agent fetch and storage", () => {
 		expect(JSON.stringify(read(true))).not.toContain(MARKER);
 	});
 
+	it("removes encoded forms and a token that rotated while the fetch was pending", async () => {
+		const token = "fake/marker+value=for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		await page().fetch("/a", { headers: { Authorization: `Bearer ${token}` } });
+		await settle();
+		reply = async () => {
+			await page().fetch("/b", { headers: { Authorization: "Bearer fake-rotated-value-for-tests" } });
+			return new window.Response(JSON.stringify({ a: encodeURIComponent(token), b: token }), {
+				headers: { "content-type": "application/json" },
+			}) as unknown as Response;
+		};
+		const result = await pwExtNetwork({ kind: "fetch", url: "/echo", method: "GET", headers: [], auth: true, values: true });
+		const text = JSON.stringify(result);
+		expect(text).not.toContain("marker+value");
+		expect(text).not.toContain(encodeURIComponent(token));
+	});
+
 	it("drops sealed values when an XHR changes the account anchor", async () => {
 		pwExtNetwork({ kind: "install", seal: true });
 		await signIn();

@@ -413,10 +413,20 @@ export function pwExtNetwork(
 					}
 				},
 				hidden() {
-					return [...sealed.values.values()].flatMap((value) => {
-						const bare = value.replace(/^\S+\s+/, "");
-						return [value, bare].filter((form) => form.length >= 8);
-					});
+					const lowerHex = (text: string) => text.replace(/%[0-9A-F]{2}/g, (hex) => hex.toLowerCase());
+					return [
+						...new Set(
+							[...sealed.values.values()].flatMap((value) =>
+								[value, value.replace(/^\S+\s+/, "")].flatMap((form) => {
+									const encoded = encodeURIComponent(form);
+									const query = new win.URLSearchParams({ v: form }).toString().slice(2);
+									return [form, JSON.stringify(form).slice(1, -1), encoded, lowerHex(encoded), query, lowerHex(query)];
+								}),
+							),
+						),
+					]
+						.filter((form) => form.length >= 8)
+						.sort((a, b) => b.length - a.length);
 				},
 				sealedGet(name) {
 					return sealed.on ? sealed.values.get(name.toLowerCase()) : undefined;
@@ -451,6 +461,7 @@ export function pwExtNetwork(
 					headers.forEach((value, name) => addHeader(entry.requestHeaders, name, value));
 					if (request.body !== undefined)
 						entry.request = textBody(contentType(entry.requestHeaders), request.body, byteLength(request.body));
+					const used = fresh.hidden();
 					const controller = new AbortController();
 					const timer = setTimeout(() => controller.abort(), AGENT_FETCH_MS);
 					try {
@@ -470,7 +481,7 @@ export function pwExtNetwork(
 					} finally {
 						clearTimeout(timer);
 					}
-					return { entries: [outEntry(entry, request.values, fresh.hidden())] };
+					return { entries: [outEntry(entry, request.values, [...used, ...fresh.hidden()].sort((a, b) => b.length - a.length))] };
 				},
 				storage(area, key, keysOnly, values) {
 					const store = area === "session" ? win.sessionStorage : win.localStorage;

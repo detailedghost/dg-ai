@@ -1578,5 +1578,9 @@ export function createPwExtHandler({
 		if (running.size === 0) live.delete(sessionId);
 		return halted.has(sessionId) ? STOPPED : outcome;
 	};
-	return Object.assign(handler, { stop, stopTab });
+	/** Drops the values a session saved, when the session ends. */
+	function forgetSession(sessionId: string): void {
+		savedValues.delete(sessionId);
+	}
+	return Object.assign(handler, { stop, stopTab, forgetSession });
 }

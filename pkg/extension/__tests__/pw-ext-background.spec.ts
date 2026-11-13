@@ -2932,6 +2932,14 @@ describe("pw --ext storage, fetch and credential save", () => {
 		expectNoMarker(h, [later]);
 	});
 
+	it("forgets saved values when the session ends", async () => {
+		const echoed = { at: 1, via: "fetch", method: "GET", url: "https://outlook.live.com/x", status: 200, requestHeaders: [], responseHeaders: [], response: { type: "text/plain", size: 30, text: `echo ${MARKER}` } };
+		const h = harness({ approval: "allow", tabs: [MAIL_TAB], cookies: { S: { value: MARKER } }, mainResult: hook((action) => (action.kind === "read" ? { entries: [echoed] } : { entries: [] })) });
+		await h.run({ verb: "credential", name: "n", source: "cookie", key: "S" });
+		h.handler.forgetSession(SESSION);
+		expect(outcome(await h.run({ verb: "network", values: true }))).toContain(`echo ${MARKER}`);
+	});
+
 	it("refuses a save on an http page", async () => {
 		const h = harness({ sites: "ask", approval: "allow", tabs: [{ ...MAIL_TAB, url: "http://outlook.live.com/mail/" }], cookies: { S: { value: MARKER } } });
 		const result = await h.run({ verb: "credential", name: "n", source: "cookie", key: "S" });
