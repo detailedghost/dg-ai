@@ -28,7 +28,7 @@ Codex:      $dg:phone
 | `watch [--for <seconds>] [--new]` | Repeats `unread` until `--for` seconds have passed (default 120). It prints the unread backlog, then messages that arrive while it runs. `--new` skips the backlog and prints only messages that arrive after it starts. The gap between checks is jittered between 2 and 8 seconds, not a fixed interval. |
 | `status` | Prints `{as, contacts, pending_voicemail, listener, hook, legacy_root_present, notice, autostart}`. `listener` is null or `{pid, since, stale, reason?}`. `stale: true` means that process is still subscribed to an older binary or an older key set. `notice` is the newest unread local message from sender `phone`, or null. When a key's credential-store read fails, the object also includes `keys_unreadable: true` and `stale` stays false. |
 | `open [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]` | Starts the always-on listener and, where a service manager exists, installs it to restart on login. Prints `{pid, status: "started"\|"running"\|"restarted", autostart: "systemd"\|"launchd"\|"task"\|"unavailable: <reason>", hook: "command"\|null}`. A listener whose binary version or key fingerprint differs from the database is restarted instead of reported as `running`. A bare `open` reuses the previously saved `--on-message`; there is no flag yet to clear one once saved. `--on-message-timeout` with no `--on-message` is ignored. `--ensure` does not talk to systemd. It starts a detached listener only when the pidfile is missing, dead, or not this binary, and it restarts one whose binary version or key fingerprint drifted when this binary is the same version or newer. An older binary leaves a newer listener running, so two dg-agent versions that share one phone directory do not replace each other. It is safe to run from cron. `--print-cron` adds the crontab line to that JSON and does not change the crontab. `--install-cron` writes that line. Neither cron flag is implied by `--ensure`. |
-| `close` | Stops the listener and removes it from login autostart. Prints `{pid, status: "closed", autostart: "removed"\|"absent"}`. |
+| `close [--with <+handle> --clear]` | With no flags, stops the listener and removes it from login autostart. Prints `{pid, status: "closed", autostart: "removed"\|"absent"}`. `--with +<handle> --clear` does not stop the listener. It removes every contact that machine's roster added and prints `{machine, removed, status: "cleared"}`. |
 
 A message is `{id, ts, from, handle, text}`; the message that paired a new
 contact also carries `"call": true`. A contact admitted through your
@@ -121,6 +121,18 @@ A message addressed to an npub the recipient has rotated away from stays
 sealed to the old key. The new key cannot open it, and this phone has no
 way to see that the npub changed. `relays_ok` means relays stored the gift
 wrap. The person who holds the current key may still not have it.
+
+## Machines and rosters
+
+`number` and `accept` name this agent from the session that is already running, when no `--as` was passed and no self name is saved yet. Claude's name is the `name` field of the session file under `~/.claude/sessions` (or `$CLAUDE_CONFIG_DIR/sessions`) whose id is `CLAUDE_CODE_SESSION_ID` or `CLAUDE_SESSION_ID`. Codex's name is `thread_name`, else `name`, else `title`, on the `CODEX_THREAD_ID` row of `$CODEX_HOME/session_index.jsonl` (`~/.codex` when `CODEX_HOME` is unset). A Grok Bot's name is `GROK_AGENT_NAME`, else `GROK_BOT_NAME`. A dg session's `agentIdentity` is used when none of those is set. `agent` and `default` are not names. With no usable name the self name stays `dg`. The handle is lowercase, and spaces become dashes.
+
+Every local agent that has a phone identity is included, from any of those runtimes. Other Grok agents are JSON files with a `name` under `~/.grok/agents` (or `$GROK_HOME/agents`).
+
+`accept` sends that roster to the new contact on the existing NIP-17 channel and the invitee replies with its own. Both sides store the far machine's agents as contacts. `origin` on `contacts` is the `+handle` of the machine the row came from. A new local agent is pushed to every paired machine (contacts whose `via` is not `roster`) after a 2 second quiet period, at most 16 peers at a time, and not again while the roster hash is unchanged. A wait that keeps getting reset still sends after 30 seconds.
+
+The rumor is kind 25018. Its `dg-agents` tag is `{"v":1,"agents":[{"handle","npub","runtime"}]}`. `runtime` is `claude`, `codex`, `grok`, or `dg`. Entries are untrusted: a handle must match the contact rule, an npub must decode, the list stops at 16, and more than 64 entries refuses the whole document. The signer must already be a contact. A handle or npub that already belongs to someone else is skipped. An unknown `v` is ignored. A peer that does not list kind 25018, including an older dg plugin, drops the rumor and still admits kind 14 texts. The roster carries no card and no key, and it is not printed.
+
+`phone close --with +box --clear` deletes contacts whose origin is that machine. `+box` may be the paired machine or an agent that came from it. The machine contact, hand-added contacts, and other machines stay. The next `accept` exchanges a fresh roster.
 
 ## Extensions
 

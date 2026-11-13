@@ -300,9 +300,9 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 		const phone = await load();
 		await phone.phoneOpen(opts, phone.openCloseDeps(getSession()));
 	};
-	const close = async () => {
+	const close = async (opts: { with?: string; clear?: boolean } = {}) => {
 		const phone = await load();
-		await phone.phoneClose(phone.openCloseDeps(getSession()));
+		await phone.phoneClose(phone.openCloseDeps(getSession()), opts);
 	};
 	const card = async (opts: { as?: string; rotate?: boolean; relay?: string[] }) => {
 		const phone = await load();
@@ -325,7 +325,9 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 
 	group
 		.command("close")
-		.description("stop the listener and remove it from login autostart")
+		.description("stop the listener, or with --with and --clear drop one machine's roster contacts")
+		.option("--with <handle>", "machine to hang up, as a +handle; leaves the listener running")
+		.option("--clear", "with --with, remove every contact that machine's roster added")
 		.action(close);
 
 	group

@@ -97,8 +97,9 @@ describe("thread schema migration", () => {
 		const index = opened.query("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_messages_thread'").get();
 		opened.close();
 
-		expect(version).toBe(9);
+		expect(version).toBe(10);
 		expect(tables).toContain("threads");
+		expect(tables).toContain("identities");
 		expect(tables).toContain("thread_members");
 		expect(tables).toContain("pending_threads");
 		expect(index).not.toBeNull();

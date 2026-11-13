@@ -36,7 +36,7 @@ describe("phone skill", () => {
 		expect(skill).toContain("--timeout");
 		expect(skill).toContain("last_seen");
 		expect(skill).toContain('"delivered"');
-		for (const kind of ["25016", "25017"]) expect(guide).toContain(`kind ${kind}`);
+		for (const kind of ["25016", "25017", "25018"]) expect(guide).toContain(`kind ${kind}`);
 		expect(guide).toContain("phone ping");
 		expect(guide).toContain("kind 21059");
 		expect(guide).toContain("phone presence off");
@@ -231,6 +231,15 @@ describe("phone skill", () => {
 		expect(skill).toContain("`say`, `voicemail`, `inbox`, and `thread` were renamed to `text`, `unread`, `messages`, and `group`");
 		expect(skill).toContain("until 1.43.0");
 		expect(skill).not.toMatch(/dg-agent phone (say|voicemail|inbox|thread)\b/);
+	});
+
+	test("documents roster exchange for Claude, Codex, and Grok", () => {
+		for (const text of ["## Machines and rosters", "--with <handle>", "--clear", "GROK_AGENT_NAME", "CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "kind 25018", "phone close --with +box --clear"]) {
+			expect(skill).toContain(text);
+		}
+		expect(guide).toContain("kind 25018");
+		expect(guide).toContain("session_index.jsonl");
+		expect(readRepoFile("AGENTS.md")).toContain("plugins/dg/skills/phone/SKILL.md");
 	});
 
 	test("documents extensions: +handle/ext, --as, DG_PHONE_AS, the waiting line, and machine-wide groups", () => {

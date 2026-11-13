@@ -21,6 +21,7 @@ import {
 	type Seen,
 	capIds,
 	FILE_REQUEST_KIND,
+	ROSTER_KIND,
 	STRANGER_ID_LIMIT,
 	type SubscribeExtra,
 	type SubscribeHooks,
@@ -37,6 +38,7 @@ import { IMAGE_PENDING_TEXT, imageUnavailableText } from "./image";
 import type { CommandPushTarget } from "./push";
 import { createPresence, PRESENCE_MAX_MS, PRESENCE_MIN_MS, type PresenceConfig } from "./presence";
 import { createImageReceiver, MAX_PENDING_IMAGES, receiveStorageFull } from "./receive";
+import { announceRoster, flushRosterPush, handleIncomingRoster, settleCaughtRosters } from "./roster";
 import { createFileRequestHandler } from "./transport";
 import type { WormholeDeps } from "./wormhole";
 import {
@@ -988,6 +990,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 
 	const applyCaught = (caught: Awaited<ReturnType<typeof fetchNew>>) => {
 		const newContactByNpub = new Map(caught.newContacts.map((contact) => [contact.npub, contact]));
+		const freshContacts: string[] = [];
 		const refused = new Set<string>();
 		for (const held of caught.held) holdThread(deps.db, held, deps.now());
 		for (const message of caught.messages) {
@@ -1007,9 +1010,14 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 				caught.reacceptByMessageId.get(message.id),
 			);
 			if (stored === "rejected") refused.add(message.from);
-			if (stored === "stored") presence.stored(message);
+			if (stored === "stored") {
+				presence.stored(message);
+				const arrived = message.call ? newContactByNpub.get(message.from) : undefined;
+				if (arrived) freshContacts.push(arrived.npub);
+			}
 		}
 		images.wake();
+		void settleCaughtRosters(deps, caught.controls, freshContacts);
 		return caught.seen;
 	};
 
@@ -1028,7 +1036,10 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 
 	const onLive = (message: Message, seenNow: Seen, _gate: unknown, extra: SubscribeExtra) => {
 		seen = seenNow;
-		if (admitMessage(deps.db, vault, deps.now, readRelays(deps.db), message, keys, extra.newContact, extra.reaccept) === "stored") presence.stored(message);
+		if (admitMessage(deps.db, vault, deps.now, readRelays(deps.db), message, keys, extra.newContact, extra.reaccept) === "stored") {
+			presence.stored(message);
+			if (extra.newContact) void announceRoster(deps, extra.newContact.npub);
+		}
 		images.wake();
 		rememberAdmission();
 		writeCursor(deps.db, seenNow.cursor);
@@ -1048,6 +1059,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		onControl: (control) => {
 			presence.handle(control);
 			if (control.kind === FILE_REQUEST_KIND) fileRequests.handle(control);
+			if (control.kind === ROSTER_KIND) void handleIncomingRoster(deps, control);
 		},
 		reread: rereadGate,
 		onDrop: logDrop,
@@ -1101,6 +1113,8 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		watching = true;
 		void (async () => {
 			try {
+				await flushRosterPush(deps).catch(() => undefined);
+				if (stopped) return;
 				const loaded = await loadAllKeys(deps);
 				if (stopped) return;
 				const merged = mergeHeldKeys(loaded, keys);
