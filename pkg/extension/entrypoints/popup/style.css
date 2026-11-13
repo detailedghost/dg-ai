@@ -298,7 +298,8 @@ body {
 	letter-spacing: 0.06em;
 }
 
-.ag {
+.ag,
+.drive {
 	position: relative;
 	border: 2px solid var(--line);
 	background: var(--panel);
@@ -358,4 +359,12 @@ summary:focus-visible,
 .menu-btn:focus-visible,
 .menu-item:focus-visible {
 	outline: 2px solid var(--accent);
+}
+
+.drive {
+	margin-bottom: 8px;
+}
+
+.driving {
+	margin-bottom: 12px;
 }

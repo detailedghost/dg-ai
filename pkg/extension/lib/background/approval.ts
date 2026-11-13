@@ -1,4 +1,5 @@
 import { describeError } from "@dg/common";
+import { isOwnPageSender } from "./popup-sender";
 
 export type ApprovalRequest = { title: string; origin: string; lines: string[] };
 /** deny is a Deny click; closed is the approval window closed with no answer; unopened is a window that could not open. */
@@ -111,7 +112,7 @@ export function registerApprovals(): void {
 	browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		const { type, id, allow } = (message ?? {}) as { type?: unknown; id?: unknown; allow?: unknown };
 		if (type !== APPROVAL_MSG.get && type !== APPROVAL_MSG.answer) return undefined;
-		const fromPage = sender.id === browser.runtime.id && (sender.url ?? "").split("?")[0] === page;
+		const fromPage = isOwnPageSender(sender, browser.runtime.id, page);
 		if (!fromPage || typeof id !== "string") {
 			sendResponse(undefined);
 			return undefined;

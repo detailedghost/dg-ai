@@ -163,6 +163,15 @@ export async function agentSessionOfGroup({
 	return (await readRecords(storage)).find((record) => record.groupId === groupId)?.sessionId;
 }
 
+/** Session ids that hold an agent tab group. */
+export async function agentSessionIds({
+	storage,
+}: {
+	storage: AgentTabsStorage;
+}): Promise<Set<string>> {
+	return new Set((await readRecords(storage)).map((record) => record.sessionId));
+}
+
 /** Chrome tab group ids that belong to an agent session. */
 export async function agentGroupIds({
 	storage,

@@ -30,6 +30,7 @@ import { browser } from "wxt/browser";
 import {
 	type AgentTabsBrowserApi,
 	type AgentTabsStorage,
+	agentSessionIds,
 	createAgentTabs,
 } from "./agent-tabs";
 import { createInboxHandler, type InboxBrowserApi } from "./inbox";
@@ -46,7 +47,7 @@ import {
 	openLocalPage,
 	type PagesBrowserApi,
 } from "./local-pages";
-import { isExtensionPageSender, isPopupSender } from "./popup-sender";
+import { isExtensionPageSender, isOwnPageSender, isPopupSender } from "./popup-sender";
 import { createProtoHandler, type ProtoBrowserApi } from "./proto";
 import {
 	createPwExtHandler,
@@ -77,6 +78,7 @@ import {
 
 const DEFAULT_KEEPALIVE_INTERVAL_MS = 20_000;
 const LINK_RETRY_ALARM = "dg-link-retry";
+const NOT_DRIVING = "This session drives no agent tab.";
 const LINK_RETRY_PERIOD_MINUTES = 0.5;
 const DAEMON_ID_KEY = "daemon:id";
 const DAEMON_UNREACHABLE =
@@ -828,6 +830,24 @@ export function registerDaemonLink(
 							sendResponse({ ok: false });
 						}
 					})();
+					return true;
+				}
+				case MSG.pwExtStop: {
+					if (
+						!isOwnPageSender(sender, api.runtime.id, api.runtime.getURL("popup.html")) ||
+						typeof payload.sessionId !== "string"
+					)
+						return undefined;
+					const sessionId = payload.sessionId;
+					const stopper = relayHandlers["pw-ext"] as Partial<Pick<typeof pwExtRelay, "stop">>;
+					void (async () => {
+						const held = await agentSessionIds({ storage: api.storage as unknown as AgentTabsStorage });
+						if (!stopper.stop || !held.has(sessionId)) return { ok: false, error: NOT_DRIVING };
+						await stopper.stop(sessionId);
+						return { ok: true };
+					})().then(sendResponse, (error: unknown) =>
+						sendResponse({ ok: false, error: safeError(error) }),
+					);
 					return true;
 				}
 				case MSG.sessionClose:

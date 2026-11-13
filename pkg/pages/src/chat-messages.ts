@@ -19,6 +19,7 @@ export const MSG = {
 	agentTabsRequest: "dg-chat:agent-tabs-request",
 	agentTabAdopt: "dg-chat:agent-tab-adopt",
 	trustDaemon: "dg-chat:trust-daemon",
+	pwExtStop: "dg-chat:pw-ext-stop",
 } as const;
 
 export type ConfigRelayReply = {

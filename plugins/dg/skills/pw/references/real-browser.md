@@ -53,6 +53,7 @@ group, until the human hands you a tab from the extension popup.
   for the session. Ask for sites only as the task needs them; a denied site
   touches no page. Act only on what the human asked for.
 - Each agent tab shows an "Agent is driving this tab" banner with a Stop button.
+  The toolbar popup has the same Stop for each session that drives tabs.
   If the human clicks Stop, every verb fails with an error that names Stop.
   Stop then: do not retry, and tell the human the session lost control.
 - Each dg session has its own tab group. The CLI picks the session from

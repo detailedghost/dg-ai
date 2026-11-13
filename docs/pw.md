@@ -74,7 +74,10 @@ Rules:
   Stop ends that session's control at once: verbs in flight fail, unmask and
   `dg_` grants and allowed sites go away, the tab group returns to you, and
   each later verb fails with an error that names Stop until a new dg session
-  starts. Only a real click counts; a page script cannot press it.
+  starts. Only a real click counts; a page script cannot press it. The
+  toolbar popup also lists each session that drives agent tabs, with its tab
+  count and a Stop button that runs the same Stop. Use it when a page's own
+  modal dialog covers the banner.
 - Each dg session has its own tab group. The CLI picks the session from
   `--session <id>`, then the `DG_SESSION_ID` environment variable, then the one
   session registered for the working directory. Under `--ext`, `--session` takes
