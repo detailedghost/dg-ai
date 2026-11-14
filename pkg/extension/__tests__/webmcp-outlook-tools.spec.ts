@@ -8,7 +8,6 @@ import findItem from "./fixtures/webmcp-outlook/find-item.json";
 import getItem from "./fixtures/webmcp-outlook/get-item.json";
 import moveItem from "./fixtures/webmcp-outlook/move-item.json";
 
-const OK = { Body: { ResponseMessages: { Items: [{ ResponseClass: "Success", ResponseCode: "NoError" }] } } };
 const REPLIES: Record<string, unknown> = {
 	FindItem: findItem,
 	GetItem: getItem,
@@ -19,15 +18,25 @@ const REPLIES: Record<string, unknown> = {
 
 type Sent = { action: string; body: Record<string, unknown> };
 
-function setup() {
+const success = { ResponseClass: "Success", ResponseCode: "NoError" };
+const notFound = { ResponseClass: "Error", ResponseCode: "ErrorItemNotFound", MessageText: "test.person@example.com" };
+const messages = (Items: unknown[]) => ({ Body: { ResponseMessages: { Items } } });
+
+function oneSuccessPerItem(body: Record<string, unknown>) {
+	const count = (Array.isArray(body.ItemIds) ? body.ItemIds : Array.isArray(body.ItemChanges) ? body.ItemChanges : [0]).length;
+	return messages(Array.from({ length: count }, () => success));
+}
+
+function setup(replies: Record<string, unknown> = {}) {
 	const sent: Sent[] = [];
 	const service = createOwaService({
-		origin: "https://outlook.live.com",
+		location: new URL("https://outlook.live.com/mail/0/"),
 		headers: () => ({ "x-owa-canary": "fixture-canary" }),
 		fetch: async (input, init) => {
 			const action = new URL(String(input)).searchParams.get("action") as string;
-			sent.push({ action, body: JSON.parse(String(init?.body)).Body });
-			return Response.json(REPLIES[action] ?? OK);
+			const body = JSON.parse(String(init?.body)).Body as Record<string, unknown>;
+			sent.push({ action, body });
+			return Response.json(replies[action] ?? REPLIES[action] ?? oneSuccessPerItem(body));
 		},
 	});
 	const tools = createOutlookTools(service);
@@ -153,7 +162,7 @@ describe("dg_outlook_search", () => {
 	function searchSetup(replies: Record<string, unknown[]>) {
 		const sent: Sent[] = [];
 		const service = createOwaService({
-			origin: "https://outlook.live.com",
+			location: new URL("https://outlook.live.com/mail/0/"),
 			headers: () => ({ "x-owa-canary": "fixture-canary" }),
 			fetch: async (input, init) => {
 				const body = JSON.parse(String(init?.body)).Body as { ParentFolderIds: Array<{ Id: string }> };
@@ -354,6 +363,65 @@ describe("the write tools", () => {
 		const { run, sent } = setup();
 		await expect(run("dg_outlook_move", { ids: ["AAMkFixtureItem1="], folder })).rejects.toThrow(error);
 		expect(sent.map((entry) => entry.action)).toEqual(["FindFolder"]);
+	});
+
+	it("moves the ids that still exist and reports a code-only error for each stale id", async () => {
+		const moved = (Id: string) => ({ ...success, Items: [{ ItemId: { Id } }] });
+		const { run } = setup({ MoveItem: messages([moved("AAMkFixtureMoved1="), notFound, moved("AAMkFixtureMoved3=")]) });
+		const output = await run("dg_outlook_move", {
+			ids: ["AAMkFixtureItem1=", "AAMkFixtureStale=", "AAMkFixtureItem3="],
+			folder: "archive",
+		});
+		expect(output).toEqual({
+			moved: 2,
+			ids: ["AAMkFixtureMoved1=", "AAMkFixtureMoved3="],
+			folder: "archive",
+			errors: [{ id: "AAMkFixtureStale=", error: "ErrorItemNotFound" }],
+		});
+		expect(JSON.stringify(output)).not.toContain("test.person@example.com");
+	});
+
+	it("archives the ids that still exist and reports the stale ones", async () => {
+		const { run } = setup({ MoveItem: messages([notFound, { ...success, Items: [{ ItemId: { Id: "AAMkFixtureMoved2=" } }] }]) });
+		expect(await run("dg_outlook_archive", { ids: ["AAMkFixtureStale=", "AAMkFixtureItem2="] })).toEqual({
+			archived: 1,
+			ids: ["AAMkFixtureMoved2="],
+			errors: [{ id: "AAMkFixtureStale=", error: "ErrorItemNotFound" }],
+		});
+	});
+
+	it("deletes the ids that still exist and reports the stale ones", async () => {
+		const { run } = setup({ DeleteItem: messages([success, notFound]) });
+		expect(await run("dg_outlook_delete", { ids: ["AAMkFixtureItem1=", "AAMkFixtureStale="] })).toEqual({
+			deleted: 1,
+			ids: ["AAMkFixtureItem1="],
+			errors: [{ id: "AAMkFixtureStale=", error: "ErrorItemNotFound" }],
+		});
+	});
+
+	it("updates the ids that still exist and reports the stale ones", async () => {
+		const { run } = setup({ UpdateItem: messages([notFound, success]) });
+		expect(await run("dg_outlook_mark_read", { ids: ["AAMkFixtureStale=", "AAMkFixtureItem2="] })).toEqual({
+			updated: 1,
+			ids: ["AAMkFixtureItem2="],
+			errors: [{ id: "AAMkFixtureStale=", error: "ErrorItemNotFound" }],
+		});
+	});
+
+	it("reports an id with no response message as an unknown error", async () => {
+		const { run } = setup({ DeleteItem: messages([success]) });
+		expect(await run("dg_outlook_delete", { ids: ["AAMkFixtureItem1=", "AAMkFixtureItem2="] })).toEqual({
+			deleted: 1,
+			ids: ["AAMkFixtureItem1="],
+			errors: [{ id: "AAMkFixtureItem2=", error: "unknown error" }],
+		});
+	});
+
+	it("fails the call when no id could be moved", async () => {
+		const { run } = setup({ MoveItem: messages([notFound, notFound]) });
+		await expect(run("dg_outlook_move", { ids: ["AAMkFixtureStale=", "AAMkFixtureGone="], folder: "archive" })).rejects.toThrow(
+			"Outlook could not run MoveItem (ErrorItemNotFound).",
+		);
 	});
 
 	it("sends the Deleted Items move for the given ids", async () => {

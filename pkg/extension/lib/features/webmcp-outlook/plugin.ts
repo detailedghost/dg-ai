@@ -23,7 +23,7 @@ export function startOutlookPlugin(host: Window & typeof globalThis): void {
 	Object.defineProperty(slot, STARTED_KEY, { value: true, configurable: true });
 	const pageFetch = host.fetch.bind(host);
 	const observer = installOutlookHeaderObserver(host);
-	const service = createOwaService({ origin: host.location.origin, fetch: pageFetch, headers: observer.getHeaders });
+	const service = createOwaService({ location: host.location, fetch: pageFetch, headers: observer.getHeaders });
 	const register = () => void registerOutlookTools(host.document, createOutlookTools(service)).catch(() => undefined);
 	if (host.document.readyState === "complete") register();
 	else host.addEventListener("load", register, { once: true });

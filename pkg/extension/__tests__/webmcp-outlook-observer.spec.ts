@@ -16,6 +16,7 @@ function host(href = "https://outlook.live.com/mail/0/") {
 }
 
 const SERVICE = "https://outlook.live.com/owa/0/service.svc?action=FindItem&app=Mail";
+const PATH = "/owa/0/service.svc";
 const ACCOUNT_A = {
 	authorization: "Bearer fixture-token-a",
 	"x-owa-canary": "fixture-canary-a",
@@ -38,7 +39,7 @@ describe("installOutlookHeaderObserver", () => {
 		const init = { method: "POST", headers: ACCOUNT_A };
 		await page.fetch(SERVICE, init);
 		expect(original).toHaveBeenCalledWith(SERVICE, init);
-		expect(observer.getHeaders()).toEqual({
+		expect(observer.getHeaders(PATH)).toEqual({
 			authorization: ACCOUNT_A.authorization,
 			"x-owa-canary": ACCOUNT_A["x-owa-canary"],
 			"x-anchormailbox": ACCOUNT_A["x-anchormailbox"],
@@ -55,7 +56,7 @@ describe("installOutlookHeaderObserver", () => {
 		const page = host(href);
 		const observer = installOutlookHeaderObserver(page as never);
 		await page.fetch(url, { headers: ACCOUNT_A });
-		expect(observer.getHeaders()?.["x-owa-canary"]).toBe(ACCOUNT_A["x-owa-canary"]);
+		expect(observer.getHeaders("/owa/service.svc")?.["x-owa-canary"]).toBe(ACCOUNT_A["x-owa-canary"]);
 		observer.dispose();
 	});
 
@@ -69,7 +70,31 @@ describe("installOutlookHeaderObserver", () => {
 		const page = host();
 		const observer = installOutlookHeaderObserver(page as never);
 		await page.fetch(url, { headers: ACCOUNT_A });
-		expect(observer.getHeaders()).toBeUndefined();
+		expect(observer.getHeaders(PATH)).toBeUndefined();
+		observer.dispose();
+	});
+
+	it("keeps the headers of each account endpoint apart and gives one endpoint only its own copy", async () => {
+		const page = host();
+		const observer = installOutlookHeaderObserver(page as never);
+		await page.fetch(SERVICE, { headers: ACCOUNT_A });
+		await page.fetch("https://outlook.live.com/owa/1/service.svc?action=FindItem&app=Mail", { headers: ACCOUNT_B });
+		expect(observer.getHeaders(PATH)?.authorization).toBe(ACCOUNT_A.authorization);
+		expect(observer.getHeaders("/owa/1/service.svc")).toEqual(ACCOUNT_B);
+		expect(JSON.stringify(observer.getHeaders(PATH))).not.toContain("fixture-b");
+		expect(observer.getHeaders("/owa/2/service.svc")).toBeUndefined();
+		expect(observer.getHeaders("/owa/service.svc")).toBeUndefined();
+		observer.dispose();
+	});
+
+	it("drops only the copy of the endpoint whose anchor changed", async () => {
+		const page = host();
+		const observer = installOutlookHeaderObserver(page as never);
+		await page.fetch(SERVICE, { headers: ACCOUNT_A });
+		await page.fetch("/owa/1/service.svc", { headers: ACCOUNT_B });
+		await page.fetch("/owa/1/service.svc", { headers: { "x-anchormailbox": "PUID:fixture-c@example.com" } });
+		expect(observer.getHeaders("/owa/1/service.svc")).toBeUndefined();
+		expect(observer.getHeaders(PATH)?.authorization).toBe(ACCOUNT_A.authorization);
 		observer.dispose();
 	});
 
@@ -77,7 +102,7 @@ describe("installOutlookHeaderObserver", () => {
 		const page = host("https://outlook.com/owa/");
 		const observer = installOutlookHeaderObserver(page as never);
 		await page.fetch("/owa/service.svc", { headers: ACCOUNT_A });
-		expect(observer.getHeaders()).toBeUndefined();
+		expect(observer.getHeaders("/owa/service.svc")).toBeUndefined();
 		observer.dispose();
 	});
 
@@ -85,7 +110,7 @@ describe("installOutlookHeaderObserver", () => {
 		const page = host();
 		const observer = installOutlookHeaderObserver(page as never);
 		await page.fetch(SERVICE, { headers: { "x-anchormailbox": "PUID:fixture-a@example.com" } });
-		expect(observer.getHeaders()).toBeUndefined();
+		expect(observer.getHeaders(PATH)).toBeUndefined();
 		observer.dispose();
 	});
 
@@ -94,10 +119,10 @@ describe("installOutlookHeaderObserver", () => {
 		const observer = installOutlookHeaderObserver(page as never);
 		await page.fetch(SERVICE, { headers: ACCOUNT_A });
 		await page.fetch(SERVICE, { headers: ACCOUNT_B });
-		const held = JSON.stringify(observer.getHeaders());
+		const held = JSON.stringify(observer.getHeaders(PATH));
 		expect(held).not.toContain("fixture-a");
 		expect(held).not.toContain("fixture-session-a");
-		expect(observer.getHeaders()).toEqual(ACCOUNT_B);
+		expect(observer.getHeaders(PATH)).toEqual(ACCOUNT_B);
 		observer.dispose();
 	});
 
@@ -106,7 +131,7 @@ describe("installOutlookHeaderObserver", () => {
 		const observer = installOutlookHeaderObserver(page as never);
 		await page.fetch(SERVICE, { headers: ACCOUNT_A });
 		await page.fetch(SERVICE, { headers: { "x-anchormailbox": ACCOUNT_B["x-anchormailbox"] } });
-		expect(observer.getHeaders()).toBeUndefined();
+		expect(observer.getHeaders(PATH)).toBeUndefined();
 		observer.dispose();
 	});
 
@@ -115,7 +140,7 @@ describe("installOutlookHeaderObserver", () => {
 		const observer = installOutlookHeaderObserver(page as never);
 		await page.fetch(SERVICE, { headers: ACCOUNT_A });
 		await page.fetch(SERVICE, { headers: { "x-owa-sessionid": "fixture-session-a" } });
-		expect(observer.getHeaders()?.authorization).toBe(ACCOUNT_A.authorization);
+		expect(observer.getHeaders(PATH)?.authorization).toBe(ACCOUNT_A.authorization);
 		observer.dispose();
 	});
 
@@ -126,7 +151,7 @@ describe("installOutlookHeaderObserver", () => {
 		await page.fetch(SERVICE, {
 			headers: { authorization: "Bearer fixture-token-a2", "x-anchormailbox": ACCOUNT_A["x-anchormailbox"] },
 		});
-		expect(observer.getHeaders()).toEqual(expect.objectContaining({
+		expect(observer.getHeaders(PATH)).toEqual(expect.objectContaining({
 			authorization: "Bearer fixture-token-a2",
 			"x-owa-canary": ACCOUNT_A["x-owa-canary"],
 		}));
@@ -141,7 +166,7 @@ describe("installOutlookHeaderObserver", () => {
 		xhr.setRequestHeader("x-owa-canary", "fixture-canary-a");
 		xhr.setRequestHeader("authorization", `Bearer ${"t".repeat(9000)}`);
 		xhr.send();
-		expect(observer.getHeaders()).toEqual({ "x-owa-canary": "fixture-canary-a" });
+		expect(observer.getHeaders(PATH)).toEqual({ "x-owa-canary": "fixture-canary-a" });
 		observer.dispose();
 	});
 
@@ -152,7 +177,7 @@ describe("installOutlookHeaderObserver", () => {
 		xhr.open("POST", SERVICE);
 		for (const [name, value] of Object.entries(ACCOUNT_A)) xhr.setRequestHeader(name, value);
 		xhr.send();
-		expect(observer.getHeaders()?.authorization).toBe(ACCOUNT_A.authorization);
+		expect(observer.getHeaders(PATH)?.authorization).toBe(ACCOUNT_A.authorization);
 		observer.dispose();
 	});
 
@@ -160,10 +185,10 @@ describe("installOutlookHeaderObserver", () => {
 		const page = host();
 		const observer = installOutlookHeaderObserver(page as never);
 		await page.fetch(SERVICE, { headers: ACCOUNT_A });
-		const first = observer.getHeaders() as Record<string, string>;
+		const first = observer.getHeaders(PATH) as Record<string, string>;
 		first.authorization = "changed";
-		expect(observer.getHeaders()?.authorization).toBe(ACCOUNT_A.authorization);
+		expect(observer.getHeaders(PATH)?.authorization).toBe(ACCOUNT_A.authorization);
 		observer.dispose();
-		expect(observer.getHeaders()).toBeUndefined();
+		expect(observer.getHeaders(PATH)).toBeUndefined();
 	});
 });

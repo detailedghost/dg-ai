@@ -1,5 +1,5 @@
 import type { WebMcpTool } from "../webmcp-shim";
-import type { OwaItem, OwaService } from "./service";
+import { type OwaItem, type OwaService, owaErrorCode, owaSucceeded } from "./service";
 
 const MAX_IDS = 50;
 const MAX_LIMIT = 50;
@@ -12,6 +12,7 @@ const ADDRESS = /^[^\s@<>]+@[^\s@<>]+$/;
 
 type Args = Record<string, unknown>;
 type FolderRef = { __type: string; Id: string };
+type Outcome = { ids: string[]; errors: Array<{ id: string; error: string }> };
 
 const record = (value: unknown): Record<string, unknown> =>
 	value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -152,8 +153,19 @@ const findItemsShape = {
 	AdditionalProperties: ["Subject", "From", "DateTimeReceived", "IsRead", "Flag", "Preview"].map(field),
 };
 
-const newIds = (items: OwaItem[], fallback: string[]) =>
-	items.map((item, index) => text(record(record(list(item.Items)[0]).ItemId).Id) || (fallback[index] ?? ""));
+/** Splits the per-id response messages into the ids that succeeded and a code-only error per id that failed. */
+function outcome(items: OwaItem[], ids: string[], idOf: (item: OwaItem, id: string) => string = (_item, id) => id): Outcome {
+	const result: Outcome = { ids: [], errors: [] };
+	ids.forEach((id, index) => {
+		const item = items[index];
+		if (item && owaSucceeded(item)) result.ids.push(idOf(item, id));
+		else result.errors.push({ id, error: owaErrorCode(item) });
+	});
+	return result;
+}
+
+const newId = (item: OwaItem, id: string) => text(record(record(list(item.Items)[0]).ItemId).Id) || id;
+const errorsOf = ({ errors }: Outcome) => (errors.length ? { errors } : {});
 
 /** The ten Outlook mail tools; each returns one JSON string and echoes no recipient, subject or body it was given. */
 export function createOutlookTools(service: OwaService): WebMcpTool[] {
@@ -186,14 +198,14 @@ export function createOutlookTools(service: OwaService): WebMcpTool[] {
 		return { __type: "FolderId:#Exchange", Id: text(record(record(found[0]).FolderId).Id) };
 	}
 
-	async function moveItems(ids: string[], folder: FolderRef, signal?: AbortSignal): Promise<string[]> {
+	async function moveItems(ids: string[], folder: FolderRef, signal?: AbortSignal): Promise<Outcome> {
 		const items = await service.call("MoveItem", {
 			__type: "MoveItemRequest:#Exchange",
 			ToFolderId: { __type: "TargetFolderId:#Exchange", BaseFolderId: folder },
 			ItemIds: itemIds(ids),
 			ReturnNewItemIds: true,
 		}, signal);
-		return newIds(items, ids);
+		return outcome(items, ids, newId);
 	}
 
 	async function updateItems(
@@ -202,7 +214,7 @@ export function createOutlookTools(service: OwaService): WebMcpTool[] {
 		Item: Record<string, unknown>,
 		signal?: AbortSignal,
 	): Promise<string> {
-		await service.call("UpdateItem", {
+		const items = await service.call("UpdateItem", {
 			__type: "UpdateItemRequest:#Exchange",
 			ConflictResolution: "AlwaysOverwrite",
 			MessageDisposition: "SaveOnly",
@@ -213,7 +225,8 @@ export function createOutlookTools(service: OwaService): WebMcpTool[] {
 				Updates: [{ __type: "SetItemField:#Exchange", Path: field(FieldURI), Item: { __type: "Message:#Exchange", ...Item } }],
 			})),
 		}, signal);
-		return JSON.stringify({ updated: ids.length, ids });
+		const result = outcome(items, ids);
+		return JSON.stringify({ updated: result.ids.length, ids: result.ids, ...errorsOf(result) });
 	}
 
 	const idsSchema = {
@@ -347,7 +360,7 @@ export function createOutlookTools(service: OwaService): WebMcpTool[] {
 				const ids = idsOf(args);
 				const folder = requireText(args, "folder", { nonEmpty: true });
 				const moved = await moveItems(ids, await folderRef(folder, signal), signal);
-				return JSON.stringify({ moved: moved.length, ids: moved, folder });
+				return JSON.stringify({ moved: moved.ids.length, ids: moved.ids, folder, ...errorsOf(moved) });
 			},
 		},
 		{
@@ -355,8 +368,8 @@ export function createOutlookTools(service: OwaService): WebMcpTool[] {
 			description: "Move messages to the Archive folder; returns the new ids.",
 			inputSchema: schema({ ids: idsSchema }, ["ids"]),
 			async execute(args, { signal } = {}) {
-				const moved = await moveItems(idsOf(args), distinguished("archive"), signal);
-				return JSON.stringify({ archived: moved.length, ids: moved });
+				const archived = await moveItems(idsOf(args), distinguished("archive"), signal);
+				return JSON.stringify({ archived: archived.ids.length, ids: archived.ids, ...errorsOf(archived) });
 			},
 		},
 		{
@@ -365,14 +378,15 @@ export function createOutlookTools(service: OwaService): WebMcpTool[] {
 			inputSchema: schema({ ids: idsSchema }, ["ids"]),
 			async execute(args, { signal } = {}) {
 				const ids = idsOf(args);
-				await service.call("DeleteItem", {
+				const items = await service.call("DeleteItem", {
 					__type: "DeleteItemRequest:#Exchange",
 					DeleteType: "MoveToDeletedItems",
 					SendMeetingCancellations: "SendToNone",
 					AffectedTaskOccurrences: "AllOccurrences",
 					ItemIds: itemIds(ids),
 				}, signal);
-				return JSON.stringify({ deleted: ids.length, ids });
+				const deleted = outcome(items, ids);
+				return JSON.stringify({ deleted: deleted.ids.length, ids: deleted.ids, ...errorsOf(deleted) });
 			},
 		},
 		{

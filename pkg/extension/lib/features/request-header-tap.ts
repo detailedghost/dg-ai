@@ -6,23 +6,24 @@ export type TapHost = {
 	XMLHttpRequest: typeof XMLHttpRequest;
 };
 
-/** Passes the request headers of each trusted page fetch or XHR to observe, and returns a function that restores the page methods. */
+/** Passes the request headers and URL of each trusted page fetch or XHR to observe, and returns a function that restores the page methods. */
 export function tapRequestHeaders(
 	host: TapHost,
 	trusted: (url: URL) => boolean,
-	observe: (headers: Headers) => void,
+	observe: (headers: Headers, url: URL) => void,
 ): () => void {
-	const allowed = (url: string | URL) => {
+	const allowed = (url: string | URL): URL | undefined => {
 		try {
-			return trusted(new URL(url, host.location.href));
+			const parsed = new URL(url, host.location.href);
+			return trusted(parsed) ? parsed : undefined;
 		} catch {
-			return false;
+			return undefined;
 		}
 	};
 	const originalFetch = host.fetch;
 	const wrappedFetch: PageFetch = function (input, init) {
-		const url = input instanceof Request ? input.url : String(input);
-		if (allowed(url)) observe(new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)));
+		const url = allowed(input instanceof Request ? input.url : String(input));
+		if (url) observe(new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)), url);
 		return originalFetch.call(host, input, init);
 	};
 	host.fetch = wrappedFetch;
@@ -30,7 +31,7 @@ export function tapRequestHeaders(
 	const originalOpen = prototype.open;
 	const originalHeader = prototype.setRequestHeader;
 	const originalSend = prototype.send;
-	const requests = new WeakMap<XMLHttpRequest, Headers | undefined>();
+	const requests = new WeakMap<XMLHttpRequest, { headers: Headers; url: URL } | undefined>();
 	const wrappedOpen: XMLHttpRequest["open"] = function (
 		this: XMLHttpRequest,
 		method: string,
@@ -39,20 +40,21 @@ export function tapRequestHeaders(
 		username?: string | null,
 		password?: string | null,
 	) {
-		requests.set(this, allowed(url) ? new Headers() : undefined);
+		const parsed = allowed(url);
+		requests.set(this, parsed ? { headers: new Headers(), url: parsed } : undefined);
 		return originalOpen.call(this, method, url, async, username, password);
 	};
 	const wrappedHeader: XMLHttpRequest["setRequestHeader"] = function (this: XMLHttpRequest, name, value) {
 		originalHeader.call(this, name, value);
 		try {
-			requests.get(this)?.set(name, value);
+			requests.get(this)?.headers.set(name, value);
 		} catch {
 			return;
 		}
 	};
 	const wrappedSend: XMLHttpRequest["send"] = function (this: XMLHttpRequest, body) {
-		const headers = requests.get(this);
-		if (headers) observe(headers);
+		const request = requests.get(this);
+		if (request) observe(request.headers, request.url);
 		return originalSend.call(this, body);
 	};
 	prototype.open = wrappedOpen;

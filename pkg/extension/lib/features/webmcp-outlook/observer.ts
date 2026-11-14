@@ -19,19 +19,22 @@ function pick(headers: Headers): OutlookSessionHeaders {
 	return picked;
 }
 
-/** Keeps the OWA session headers of same-origin service.svc requests in this closure only; an account switch drops the copy. */
+/** Keeps the OWA session headers of same-origin service.svc requests in this closure only, one copy per account endpoint; an account switch drops that endpoint's copy. */
 export function installOutlookHeaderObserver(host: TapHost & { location: Pick<Location, "href" | "origin"> }): {
-	getHeaders(): OutlookSessionHeaders | undefined;
+	getHeaders(servicePath: string): OutlookSessionHeaders | undefined;
 	dispose(): void;
 } {
-	let session: OutlookSessionHeaders | undefined;
-	function observe(headers: Headers): void {
+	const sessions = new Map<string, OutlookSessionHeaders>();
+	function observe(headers: Headers, url: URL): void {
 		const picked = pick(headers);
 		const anchor = picked["x-anchormailbox"];
-		if (session && anchor !== undefined && anchor !== session["x-anchormailbox"]) session = undefined;
+		let session = sessions.get(url.pathname);
+		if (session && anchor !== undefined && anchor !== session["x-anchormailbox"]) {
+			sessions.delete(url.pathname);
+			session = undefined;
+		}
 		if (!picked.authorization && !picked["x-owa-canary"]) return;
-		session =
-			session && session["x-anchormailbox"] === anchor ? { ...session, ...picked } : picked;
+		sessions.set(url.pathname, session && session["x-anchormailbox"] === anchor ? { ...session, ...picked } : picked);
 	}
 	const restore = tapRequestHeaders(
 		host,
@@ -42,9 +45,12 @@ export function installOutlookHeaderObserver(host: TapHost & { location: Pick<Lo
 		observe,
 	);
 	return {
-		getHeaders: () => (session ? { ...session } : undefined),
+		getHeaders(servicePath) {
+			const session = sessions.get(servicePath);
+			return session ? { ...session } : undefined;
+		},
 		dispose() {
-			session = undefined;
+			sessions.clear();
 			restore();
 		},
 	};
