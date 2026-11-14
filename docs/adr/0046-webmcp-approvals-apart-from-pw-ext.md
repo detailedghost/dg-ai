@@ -69,6 +69,48 @@ extension's own `popup.html` (`isOwnPageSender`).
   `webmcp-grant:v1` prefix keeps a grant MAC apart from a script MAC, which
   signs a JSON array.
 
+## Amended 2026-11-14: Web MCP on the person's own tabs
+
+R-13 of spec 018 says Web MCP and pw --ext browser control are separate. This
+amendment takes that to the tabs too: `dg-agent mcp` no longer needs a pw --ext
+session or an agent tab group.
+
+- Two new relay verbs, `webmcp-tools` and `webmcp-call`
+  (`PW_EXT_WEBMCP_VERBS` in `pkg/common/src/pw-ext-format.ts`), carry no tab
+  id. The extension advertises them in its connect handshake, and the daemon
+  refuses them with the update message when an older extension does not list
+  them. They are not `dg-skills pw --ext` verbs.
+- The extension scans the person's open tabs whose origin an enabled built-in
+  script or an approved third-party script covers (`webMcpTabs` in
+  `pkg/extension/lib/background/pw-ext.ts`). It skips private-window,
+  discarded and browser-page tabs, and reads at most 20 tabs. It reads only
+  `dg_` tools; on a mailbox tab only those of an enabled built-in that covers
+  it (R-7).
+- A call goes to the first tab that exposes the tool: the active tab of the
+  focused window, then the most recently used tab. The extension never opens,
+  focuses, moves or groups a tab, adds no banner or dialog shim, and asks no
+  pw --ext site question. pw --ext Stop does not block these verbs.
+- The approval classes stay the only gate. The popup also names the tab title,
+  masked on mail sites with the same rule as `pw --ext tabs`.
+- The session of a `session` grant is the paired dg session that `dg-agent mcp`
+  runs in, the relay `sessionId`. It ends with that session, as before.
+- The list returns tool names and descriptions only, not tab titles or
+  addresses.
+- `pw --ext tools` and `call` still run in the agent's own tab group inside a
+  pw --ext session, and every other pw --ext verb on a tab outside that group
+  is still refused.
+
+Consequences:
+
+- **Good:** an agent can use the `dg_` tools of a signed-in tab the person
+  already has open, with no agent tab group and no driving banner.
+- **Bad:** the extension now runs a MAIN-world tool listing in the person's
+  covered tabs on each list and call. Only tabs of a script the person enabled
+  or approved are touched.
+- **Neutral:** page-registered `dg_` tools on a site that no enabled or approved
+  script covers are not listed. Turning that on means a script run in every
+  open tab.
+
 ## Alternatives considered
 
 - **Keep the site allowlist as a second gate for Web MCP.** R-13 rejects it:
