@@ -73,7 +73,10 @@ describe("createOwaService", () => {
 	it.each([
 		[{ hostname: "outlook.live.com", pathname: "/mail/10/" }, "/owa/10/service.svc"],
 		[{ hostname: "outlook.live.com", pathname: "/mail10/" }, "/owa/0/service.svc"],
-		[{ hostname: "outlook.office.com", pathname: "/calendar/1/" }, "/owa/service.svc"],
+		[{ hostname: "outlook.office.com", pathname: "/calendar/1/" }, "/owa/1/service.svc"],
+		[{ hostname: "outlook.live.com", pathname: "/calendar/1/view/month" }, "/owa/1/service.svc"],
+		[{ hostname: "outlook.live.com", pathname: "/people/2" }, "/owa/2/service.svc"],
+		[{ hostname: "outlook.office.com", pathname: "/calendar/view/month" }, "/owa/service.svc"],
 	])("maps %o to %s", (location, path) => {
 		expect(servicePathOf(location)).toBe(path);
 	});

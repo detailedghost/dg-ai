@@ -12,9 +12,9 @@ const IN_FLIGHT = 4;
 const REFUSED = new Set([401, 429, 440]);
 const CODE = /^[A-Za-z]{1,80}$/;
 
-const ACCOUNT_PATH = /^\/mail\/(\d+)(?:\/|$)/;
+const ACCOUNT_PATH = /^\/[a-z]+\/(\d+)(?:\/|$)/;
 
-/** The service.svc path of the page's own account: /mail/<n>/ posts to /owa/<n>/, and outlook.live.com with no index posts to /owa/0/. */
+/** The service.svc path of the page's own account: /<app>/<n>/ (mail, calendar and the other routes) posts to /owa/<n>/, and outlook.live.com with no index posts to /owa/0/. */
 export function servicePathOf(location: Pick<Location, "hostname" | "pathname">): string {
 	const index = ACCOUNT_PATH.exec(location.pathname)?.[1] ?? (location.hostname === "outlook.live.com" ? "0" : undefined);
 	return index === undefined ? "/owa/service.svc" : `/owa/${index}/service.svc`;

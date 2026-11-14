@@ -252,6 +252,24 @@ describe("dg_outlook_read", () => {
 		});
 	});
 
+	it("shortens a long body so the serialized answer stays valid JSON under the output cap", async () => {
+		const Value = '"quoted"\n'.repeat(5_000);
+		const { run } = setup({
+			GetItem: messages([{ ...success, Items: [{ ItemId: { Id: "AAMkFixtureItem1=" }, Subject: "Fixture subject", Body: { BodyType: "Text", Value } }] }]),
+		});
+		const output = await run("dg_outlook_read", { id: "AAMkFixtureItem1=" });
+		expect(JSON.stringify(output).length).toBeLessThanOrEqual(45_000);
+		expect(output.truncated).toBe(true);
+		expect(Value.startsWith(output.body as string)).toBe(true);
+		expect((output.body as string).length).toBeGreaterThan(25_000);
+	});
+
+	it("keeps a short body whole with no truncated flag", async () => {
+		const { run } = setup();
+		const output = await run("dg_outlook_read", { id: "AAMkFixtureItem1=" });
+		expect(output).not.toHaveProperty("truncated");
+	});
+
 	it("asks only GetItem and never changes the read state", async () => {
 		const { run, sent } = setup();
 		await run("dg_outlook_read", { id: "AAMkFixtureItem1=" });

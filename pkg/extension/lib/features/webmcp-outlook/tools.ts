@@ -6,6 +6,7 @@ const MAX_LIMIT = 50;
 const DEFAULT_LIMIT = 25;
 const BODY_MAX = 50_000;
 const HTML_MAX = 20 * BODY_MAX;
+const OUTPUT_MAX = 45_000;
 const DISTINGUISHED_FOLDERS = ["inbox", "archive", "deleteditems", "junkemail", "drafts", "sentitems"];
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
 const ADDRESS = /^[^\s@<>]+@[^\s@<>]+$/;
@@ -66,6 +67,17 @@ export function htmlToText(html: string): string {
 		.replace(/\n{3,}/g, "\n\n")
 		.trim()
 		.slice(0, BODY_MAX);
+}
+
+/** Shortens the body until the serialized output fits under the transport cap, with room for the background mask. */
+function fitBody(build: (body: string, truncated: boolean) => string, body: string): string {
+	let kept = body;
+	let output = build(kept, false);
+	while (output.length > OUTPUT_MAX && kept.length > 0) {
+		kept = kept.slice(0, Math.max(0, kept.length - (output.length - OUTPUT_MAX)));
+		output = build(kept, true);
+	}
+	return output;
 }
 
 function escapeHtml(plain: string): string {
@@ -296,7 +308,8 @@ export function createOutlookTools(service: OwaService): WebMcpTool[] {
 		},
 		{
 			name: "dg_outlook_read",
-			description: "Read one message as plain text (body capped at 50,000 characters) without changing its read state.",
+			description:
+				"Read one message as plain text without changing its read state. The body is capped at 50,000 characters, and shortened further with truncated set to true when the whole answer would not fit the output limit.",
 			inputSchema: schema({ id: { type: "string", minLength: 1, description: "The OWA item id." } }, ["id"]),
 			async execute(args, { signal } = {}) {
 				const id = requireText(args, "id", { nonEmpty: true });
@@ -312,14 +325,17 @@ export function createOutlookTools(service: OwaService): WebMcpTool[] {
 				}, signal);
 				const item = record(list(record(response).Items)[0]);
 				const body = record(item.Body);
-				return JSON.stringify({
+				const fields = {
 					id: text(record(item.ItemId).Id) || id,
 					subject: text(item.Subject),
 					from: text(record(record(item.From).Mailbox).EmailAddress),
 					to: list(item.ToRecipients).map((recipient) => text(record(recipient).EmailAddress)),
 					date: text(item.DateTimeReceived),
-					body: body.BodyType === "Text" ? text(body.Value).slice(0, BODY_MAX) : htmlToText(text(body.Value)),
-				});
+				};
+				return fitBody(
+					(kept, truncated) => JSON.stringify({ ...fields, body: kept, ...(truncated ? { truncated } : {}) }),
+					body.BodyType === "Text" ? text(body.Value).slice(0, BODY_MAX) : htmlToText(text(body.Value)),
+				);
 			},
 		},
 		{
