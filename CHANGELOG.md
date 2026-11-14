@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.9.0 (2026-11-14)
+
+### Features
+
+- feat(extension): add the Web MCP area approval class ([#209](https://github.com/detailedghost/dg-ai/pull/209))
+
 ## v5.8.1 (2026-11-14)
 
 ### Fixes
