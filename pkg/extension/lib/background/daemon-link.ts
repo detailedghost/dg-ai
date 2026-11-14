@@ -945,7 +945,11 @@ export function registerDaemonLink(
 				case MSG.webmcpGrantsRequest:
 				case MSG.webmcpRevoke:
 				case MSG.webmcpRevokeAll: {
-					if (!isOwnPageSender(sender, api.runtime.id, api.runtime.getURL("popup.html"))) return undefined;
+					if (
+						!isOwnPageSender(sender, api.runtime.id, api.runtime.getURL("popup.html")) &&
+						!isOwnPageSender(sender, api.runtime.id, api.runtime.getURL("options.html"))
+					)
+						return undefined;
 					void answerWebMcpGrants(payload).then(sendResponse, (error: unknown) =>
 						sendResponse({ ok: false, error: safeError(error) }),
 					);
