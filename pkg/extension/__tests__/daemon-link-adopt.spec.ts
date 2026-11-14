@@ -63,6 +63,7 @@ function bootLink(local: LocalArea = makeLocalArea()) {
 			getURL: mock((path: string) => `chrome-extension://test-ext/${path}`),
 			sendMessage: mock((_message: unknown) => Promise.resolve(undefined)),
 		},
+		tabGroups: { onUpdated: { addListener: () => undefined, removeListener: () => undefined } },
 		tabs: { create: mock(() => Promise.resolve()), onUpdated: { addListener: () => undefined, removeListener: () => undefined }, onRemoved: { addListener: () => undefined, removeListener: () => undefined } },
 		storage: makeStorage(local),
 	};

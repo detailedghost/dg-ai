@@ -68,6 +68,7 @@ export type AgentTabsBrowserApi = {
 		get(groupId: number): Promise<{
 			windowId: number;
 			color?: GroupColor;
+			title?: string;
 		}>;
 	};
 };
@@ -141,15 +142,15 @@ async function readRecords(storage: AgentTabsStorage): Promise<AgentRecord[]> {
 		.map(([, record]) => record as AgentRecord);
 }
 
-/** Agent group ids read under the agent tab lock, so an adopt in flight saves its record first. */
-export function lockedAgentGroupIds({
+/** Agent records read under the agent tab lock, so an adopt in flight saves its record first. */
+export function lockedAgentRecords({
 	storage,
 	lock = navigator.locks,
 }: {
 	storage: AgentTabsStorage;
 	lock?: AgentTabsLock;
-}): Promise<Set<number>> {
-	return lock.request(LOCK_NAME, () => agentGroupIds({ storage }));
+}): Promise<AgentRecord[]> {
+	return lock.request(LOCK_NAME, () => readRecords(storage));
 }
 
 /** The session whose agent tab group has this id, if any. */

@@ -103,6 +103,9 @@ export type PwExtBrowserApi = AgentTabsBrowserApi & {
 			args: unknown[];
 		}): Promise<Array<{ result?: unknown }>>;
 	};
+	tabGroups: AgentTabsBrowserApi["tabGroups"] & {
+		onUpdated: TabEvent<(group: { id: number }) => void>;
+	};
 	storage: AgentTabsStorage;
 };
 
@@ -654,6 +657,12 @@ export function createPwExtHandler({
 	api.tabs.onUpdated.addListener((tabId, change) => {
 		const regrouped = change.groupId !== undefined;
 		if (regrouped || change.status === "loading" || change.status === "complete") void syncShim(tabId, regrouped);
+	});
+	api.tabGroups.onUpdated.addListener((group) => {
+		void api.tabs
+			.query({ groupId: group.id })
+			.then((groupTabs) => Promise.all(groupTabs.flatMap((tab) => (tab.id === undefined ? [] : [syncShim(tab.id, false)]))))
+			.catch(() => undefined);
 	});
 	api.tabs.onRemoved.addListener((tabId) => void forgetDialogShim(api.storage, tabId).catch(() => undefined));
 

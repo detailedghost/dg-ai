@@ -52,6 +52,7 @@ function boot() {
 			onStartup: { addListener: mock(() => undefined) },
 			onInstalled: { addListener: mock(() => undefined) },
 		},
+		tabGroups: { onUpdated: { addListener: () => undefined, removeListener: () => undefined } },
 		tabs: {
 			onUpdated: { addListener: () => undefined, removeListener: () => undefined }, onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 			create: tabsCreate,

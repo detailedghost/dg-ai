@@ -1,5 +1,5 @@
 import { createSerialQueue } from "@dg/common";
-import { pwExtBanner } from "@/lib/features/pw-ext-banner";
+import { bannerTitle, pwExtBanner } from "@/lib/features/pw-ext-banner";
 import { type PwExtDialogAction, pwExtDialogs } from "@/lib/features/pw-ext-dialog-main";
 import { pwExtNetwork } from "@/lib/features/pw-ext-network-main";
 import {
@@ -7,13 +7,14 @@ import {
 	type AgentTabsLock,
 	type AgentTabsStorage,
 	type BrowserTab,
-	lockedAgentGroupIds,
+	lockedAgentRecords,
 } from "./agent-tabs";
 import { allowedPage, mailbox } from "./tab-guards";
 
 /** The browser surface the dialog shim needs. */
 export type DialogShimApi = {
 	tabs: { get(tabId: number): Promise<BrowserTab> };
+	tabGroups: { get(groupId: number): Promise<{ title?: string }> };
 	scripting: {
 		executeScript(details: {
 			target: { tabId: number };
@@ -50,9 +51,13 @@ export function forgetDialogShim(storage: AgentTabsStorage, tabId: number): Prom
 	});
 }
 
-function inject(api: DialogShimApi, tabId: number, args: [PwExtDialogAction, string?, number?]) {
+function inject(api: DialogShimApi, tabId: number, args: [PwExtDialogAction, string?, number?], title?: string) {
 	const banner = api.scripting
-		.executeScript({ target: { tabId }, func: pwExtBanner as never, args: [args[0].kind === "install"] })
+		.executeScript({
+			target: { tabId },
+			func: pwExtBanner as never,
+			args: args[0].kind === "install" ? [true, title ?? ""] : [false],
+		})
 		.catch(() => undefined);
 	return Promise.all([
 		api.scripting.executeScript({
@@ -88,16 +93,18 @@ export async function syncDialogShim({
 	lock?: AgentTabsLock;
 }): Promise<void> {
 	const owned = async () => {
-		const groups = await lockedAgentGroupIds({ storage, ...(lock ? { lock } : {}) });
+		const records = await lockedAgentRecords({ storage, ...(lock ? { lock } : {}) });
 		const tab = await api.tabs.get(tabId);
-		return { tab, agent: tab.groupId !== undefined && tab.groupId >= 0 && groups.has(tab.groupId) };
+		const record = tab.groupId !== undefined && tab.groupId >= 0 ? records.find((r) => r.groupId === tab.groupId) : undefined;
+		return { tab, record };
 	};
-	const { tab, agent } = await owned();
+	const { tab, record } = await owned();
 	if (tab.incognito || !allowedPage(tab.url) || mailbox(tab.url)) return;
-	if (agent) {
+	if (record) {
 		await noteDialogShim(storage, tabId);
-		await inject(api, tabId, [{ kind: "install" }, tab.url, tab.groupId]);
-		if ((await owned()).agent) return;
+		const live = (await api.tabGroups.get(record.groupId).catch(() => undefined))?.title;
+		await inject(api, tabId, [{ kind: "install" }, tab.url, tab.groupId], bannerTitle({ ...record, title: live?.trim() || record.title }));
+		if ((await owned()).record) return;
 	} else if (!regrouped && !(await shimmedTabs(storage)).includes(tabId)) return;
 	await inject(api, tabId, [{ kind: "remove" }]);
 }
