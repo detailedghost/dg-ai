@@ -1238,6 +1238,56 @@ esac
 	});
 });
 
+describe("gather-ci-failures — job logs with terminal escape sequences", () => {
+	test("passes --allow-escape-sequences and strips escape bytes from the log excerpt", async () => {
+		const log = newCallLog();
+		const ghBin = fakeGh(`#!/bin/sh
+ARGS="$*"
+if [ -n "$FAKE_CALL_LOG" ]; then printf '%s\\n' "$ARGS" >> "$FAKE_CALL_LOG"; fi
+case "$ARGS" in
+  *"pr view 43 --json headRefOid"*)
+    echo '{"headRefOid":"deadbeef"}'
+    exit 0
+    ;;
+  *"commits/deadbeef/check-runs"*)
+    echo '[{"check_runs":[{"id":700,"name":"build","conclusion":"failure","details_url":"https://github.com/acme/widgets/actions/runs/510/job/700"}]}]'
+    exit 0
+    ;;
+  *"actions/jobs/700/logs"*)
+    case "$ARGS" in
+      *"--allow-escape-sequences"*)
+        printf '\\033[31merror\\033[0m: build \\033]0;title\\007failed\\033[2K\\n'
+        exit 0
+        ;;
+      *)
+        echo 'gh: the response contains terminal escape sequences; pass --allow-escape-sequences' >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  *"actions/runs/510"*)
+    echo '{"path":".github/workflows/build.yml"}'
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`);
+
+		const { stdout, exitCode } = await runCli(["gather-ci-failures", "43"], {
+			env: { AI_VCS_PROVIDER: "github", GH_BIN: ghBin, FAKE_CALL_LOG: log },
+		});
+
+		expect(exitCode).toBe(0);
+		expect(readCalls(log).join("\n")).toContain("--allow-escape-sequences");
+		expect(stdout).not.toContain("\x1b");
+		expect(stdout).not.toContain("\u001b");
+		const parsed = JSON.parse(stdout) as Array<Record<string, unknown>>;
+		expect(parsed[0].logExcerpt).toBe("error: build failed");
+	});
+});
+
 describe("gather-ci-failures — one unavailable job log degrades only that entry", () => {
 	test("degrades one job's logExcerpt to empty when its GitHub Actions log is unavailable, without failing the whole call", async () => {
 		const ghBin = fakeGh(`#!/bin/sh

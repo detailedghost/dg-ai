@@ -396,7 +396,7 @@ async function listCiFailures(tag: ShellTag, ref: PrRef): Promise<CiFailure[]> {
 		let logExcerpt = "";
 		try {
 			const logResult =
-				await tag`api repos/${ownerRepoPath(ref.repo)}/actions/jobs/${jobId}/logs ${apiHostFlags(ref.repo)}`;
+				await tag`api repos/${ownerRepoPath(ref.repo)}/actions/jobs/${jobId}/logs --allow-escape-sequences ${apiHostFlags(ref.repo)}`;
 			logExcerpt = truncateLogExcerpt(logResult.stdout.toString());
 		} catch (err) {
 			if (!isNotFoundError(err)) throw err;
