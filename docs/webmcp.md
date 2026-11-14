@@ -67,11 +67,14 @@ runs on `outlook.live.com`, `outlook.office.com`, `outlook.office365.com` and
 `outlook.cloud.microsoft`, and adds these tools when the page has no WebMCP
 tools of its own:
 
+Agents open Outlook with `pw --ext new <url>`. An Outlook tab that is already
+open cannot be added to an agent from the toolbar popup.
+
 | Tool | Class | What it does |
 |---|---|---|
-| `dg_outlook_list` | `area` (mail) | Newest messages of a folder: id, subject, sender address, date, read, flagged, preview |
+| `dg_outlook_list` | `area` (mail) | Newest messages of a folder: id, sender address, date, read, flagged. Subject and preview are masked |
 | `dg_outlook_search` | `area` (mail) | The same fields for an Outlook search query over the six distinguished mail folders |
-| `dg_outlook_read` | `area` (mail) | One message as plain text, body capped at 50,000 characters; the read state does not change |
+| `dg_outlook_read` | `area` (mail-body) | One message with its subject and its body as plain text, body capped at 50,000 characters; the read state does not change |
 | `dg_outlook_mark_read` | `session` | Marks messages read or unread |
 | `dg_outlook_flag` | `session` | Flags or unflags messages |
 | `dg_outlook_move` | `session` | Moves messages to a folder by its distinguished id or exact name |
@@ -83,8 +86,18 @@ tools of its own:
 - The tools call the Outlook web service from the page with the sign-in
   headers that the page itself sends. Those headers stay in the page and never
   reach the extension background, the agent or a log.
+- List and search never show a subject or a preview. Subject and body text
+  show only through `dg_outlook_read`, behind the mail-body approval.
 - Sender and recipient fields hold addresses only. The extension masks them
   unless an unmask grant holds. Write tools echo only counts and ids.
+- A write tool on several ids reports each id apart. When some ids are stale,
+  it acts on the others and returns their ids with an `errors` list of
+  `{id, error}` entries, where `error` is the Outlook response code only. It
+  fails as a whole only when no id worked.
+- Each signed-in account of a browser profile has its own service endpoint
+  (`/owa/<n>/service.svc`). The tools keep the sign-in headers of each
+  endpoint apart and call only the endpoint of the tab's own account
+  (`/mail/<n>/`).
 - An id list holds at most 50 ids, and `limit` is at most 50. At most 4
   calls run at once in a tab.
 - A tool that runs before the page has sent its first service call waits up
@@ -109,5 +122,6 @@ only. It does not revoke Web MCP grants. After Stop the session's tabs return
 to you, so its Web MCP calls have no tab to run in, but its grants stay until
 the session ends or you revoke them.
 
-See [ADR 0046](adr/0046-webmcp-approvals-apart-from-pw-ext.md) and
-[ADR 0047](adr/0047-webmcp-area-approval-class.md).
+See [ADR 0046](adr/0046-webmcp-approvals-apart-from-pw-ext.md),
+[ADR 0047](adr/0047-webmcp-area-approval-class.md) and
+[ADR 0048](adr/0048-outlook-mail-webmcp-tools.md).
