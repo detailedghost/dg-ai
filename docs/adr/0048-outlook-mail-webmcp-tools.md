@@ -32,12 +32,13 @@ The runtime-registered content script
   `/owa/service.svc` elsewhere when the page has no index. It sends only the
   headers held for that endpoint, so one account's headers never reach another
   account's endpoint. At most 4 calls are in flight per tab, and a queued call
-  whose signal aborted is never sent. A call fails only when no response
+  whose signal aborted, or whose tab switched to another account while it
+  waited, is never sent. A call fails only when no response
   message succeeded.
 - **Tools.** List and search return id, sender address, date, read and flag
   state, and never ask Outlook for the subject or the preview. Read returns the
-  subject and the plain-text body, shortened so the serialized answer stays
-  under the output cap as valid JSON. A write tool on several ids returns the ids
+  subject and the plain-text body, shortened so the serialized answer, measured
+  after the address mask, stays under the output cap as valid JSON. A write tool on several ids returns the ids
   that worked and a code-only error per id that failed.
 - **Mailbox tabs.** `mailbox()` in `pkg/extension/lib/background/tab-guards.ts`
   covers the Outlook hosts. On an Outlook tab only enabled built-in

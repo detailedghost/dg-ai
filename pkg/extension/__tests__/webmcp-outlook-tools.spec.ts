@@ -264,6 +264,16 @@ describe("dg_outlook_read", () => {
 		expect((output.body as string).length).toBeGreaterThan(25_000);
 	});
 
+	it("measures the answer after the address mask, so many short addresses still fit the output cap", async () => {
+		const Value = "a@b.co ".repeat(7_000);
+		const { run } = setup({
+			GetItem: messages([{ ...success, Items: [{ ItemId: { Id: "AAMkFixtureItem1=" }, Body: { BodyType: "Text", Value } }] }]),
+		});
+		const output = await run("dg_outlook_read", { id: "AAMkFixtureItem1=" });
+		expect(redactText(JSON.stringify(output)).length).toBeLessThanOrEqual(45_000);
+		expect(output.truncated).toBe(true);
+	});
+
 	it("keeps a short body whole with no truncated flag", async () => {
 		const { run } = setup();
 		const output = await run("dg_outlook_read", { id: "AAMkFixtureItem1=" });

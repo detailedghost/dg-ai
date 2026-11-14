@@ -99,7 +99,8 @@ there, and the toolbar popup does not add it to an agent.
 - Each signed-in account of a browser profile has its own service endpoint
   (`/owa/<n>/service.svc`). The tools keep the sign-in headers of each
   endpoint apart and call only the endpoint of the tab's own account (the
-  `<n>` in `/mail/<n>/`, `/calendar/<n>/` and the other routes).
+  `<n>` in `/mail/<n>/`, `/calendar/<n>/` and the other routes). A call that
+  waited in the queue while the tab switched account is not sent.
 - An id list holds at most 50 ids, and `limit` is at most 50. At most 4
   calls run at once in a tab.
 - A tool that runs before the page has sent its first service call waits up

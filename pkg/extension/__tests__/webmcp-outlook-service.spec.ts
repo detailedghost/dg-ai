@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
 	createOwaService,
+	OUTLOOK_ACCOUNT_CHANGED,
 	OUTLOOK_CANCELED,
 	OUTLOOK_STILL_LOADING,
 	servicePathOf,
@@ -18,6 +19,7 @@ type Sent = { url: string; init: RequestInit };
 function setup(
 	options: {
 		href?: string;
+		location?: { origin: string; hostname: string; pathname: string };
 		headers?: (path: string) => Record<string, string> | undefined;
 		reply?: (sent: Sent) => Response | Promise<Response>;
 	} = {},
@@ -27,7 +29,7 @@ function setup(
 	const clock = { now: 0 };
 	const headers = options.headers ?? (() => HEADERS);
 	const service = createOwaService({
-		location: new URL(options.href ?? "https://outlook.live.com/mail/0/"),
+		location: options.location ?? new URL(options.href ?? "https://outlook.live.com/mail/0/"),
 		headers: (path) => {
 			asked.push(path);
 			return headers(path);
@@ -233,6 +235,26 @@ describe("createOwaService", () => {
 		await Promise.all(busy);
 		await expect(queued).rejects.toThrow(OUTLOOK_CANCELED);
 		expect(sent.map((entry) => new URL(entry.url).searchParams.get("action"))).toEqual(Array(4).fill("FindItem"));
+	});
+
+	it("never sends a queued call after the tab switched to another account", async () => {
+		const releases: Array<() => void> = [];
+		const location = { origin: "https://outlook.live.com", hostname: "outlook.live.com", pathname: "/mail/0/" };
+		const { service, sent } = setup({
+			location,
+			reply: async () => {
+				await new Promise<void>((resolve) => releases.push(resolve));
+				return Response.json(OK);
+			},
+		});
+		const busy = Array.from({ length: 4 }, () => service.call("FindItem", {}));
+		const queued = service.call("CreateItem", {});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		location.pathname = "/mail/1/";
+		releases.splice(0).forEach((release) => release());
+		await Promise.all(busy);
+		await expect(queued).rejects.toThrow(OUTLOOK_ACCOUNT_CHANGED);
+		expect(sent.map((entry) => new URL(entry.url).pathname)).toEqual(Array(4).fill("/owa/0/service.svc"));
 	});
 
 	it("passes the signal to the page fetch", async () => {

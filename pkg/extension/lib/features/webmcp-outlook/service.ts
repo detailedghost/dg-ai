@@ -6,6 +6,7 @@ export type OwaItem = Record<string, unknown>;
 
 export const OUTLOOK_STILL_LOADING = "Outlook is still loading; retry.";
 export const OUTLOOK_CANCELED = "The Outlook tool call was canceled.";
+export const OUTLOOK_ACCOUNT_CHANGED = "The Outlook account of this tab changed; retry.";
 const HEADERS_WAIT_MS = 10_000;
 const HEADERS_POLL_MS = 100;
 const IN_FLIGHT = 4;
@@ -62,10 +63,10 @@ export function createOwaService({
 		}
 	}
 
-	async function send(action: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<OwaItem[]> {
-		const path = servicePathOf(location);
+	async function send(path: string, action: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<OwaItem[]> {
 		const held = await session(path, signal);
 		live(signal);
+		if (servicePathOf(location) !== path) throw new Error(OUTLOOK_ACCOUNT_CHANGED);
 		let response: Response;
 		try {
 			response = await fetch(`${location.origin}${path}?action=${encodeURIComponent(action)}&app=Mail`, {
@@ -100,8 +101,10 @@ export function createOwaService({
 	}
 
 	return {
-		call: (action: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<OwaItem[]> =>
-			limit(() => send(action, body, signal)),
+		call(action: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<OwaItem[]> {
+			const path = servicePathOf(location);
+			return limit(() => send(path, action, body, signal));
+		},
 	};
 }
 

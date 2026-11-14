@@ -1,3 +1,4 @@
+import { redactText } from "@dg/common";
 import type { WebMcpTool } from "../webmcp-shim";
 import { type OwaItem, type OwaService, owaErrorCode, owaSucceeded } from "./service";
 
@@ -69,12 +70,12 @@ export function htmlToText(html: string): string {
 		.slice(0, BODY_MAX);
 }
 
-/** Shortens the body until the serialized output fits under the transport cap, with room for the background mask. */
+/** Shortens the body until the serialized output, measured after the address mask, fits under the transport cap. */
 function fitBody(build: (body: string, truncated: boolean) => string, body: string): string {
 	let kept = body;
 	let output = build(kept, false);
-	while (output.length > OUTPUT_MAX && kept.length > 0) {
-		kept = kept.slice(0, Math.max(0, kept.length - (output.length - OUTPUT_MAX)));
+	for (let size = redactText(output).length; size > OUTPUT_MAX && kept.length > 0; size = redactText(output).length) {
+		kept = kept.slice(0, Math.max(0, kept.length - (size - OUTPUT_MAX)));
 		output = build(kept, true);
 	}
 	return output;
