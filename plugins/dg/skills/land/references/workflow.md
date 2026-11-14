@@ -15,15 +15,18 @@ Each step lists `IN:` and `OUT:`. A gate is a hard stop: print
 
 ## Step 1 — Resolve the PR
 
-IN: the arguments. OUT: `pr`, `base`, `headRef`, `sha`, `checkout`, `diffBase`, `method`.
+IN: the arguments. OUT: `pr`, `repo`, `base`, `headRef`, `sha`, `checkout`, `diffBase`, `method`.
 
 1. `dg-skills vcs-provider capabilities`. When `kind` is not `github`, stop with `land: not-github`.
 2. `gh pr view <pr> --json number,url,state,isDraft,isCrossRepository,headRefName,baseRefName,headRefOid`.
    - `state` is not `OPEN` → stop with `land: not-open`.
    - `isDraft` is true → stop with `land: draft: mark #<n> ready first (gh pr ready <n>).`
    - `isCrossRepository` is true → stop with `land: fork: #<n> comes from a fork; land pushes fixes to its branch, so land it by hand.`
+   - `repo` is the `<owner>/<repo>` part of `url`. Pass `--repo <repo>` to every later `gh pr` call.
 3. **Stacked check.** `dg-skills vcs-provider list-prs --head <baseRefName>`. Keep rows with `state` `OPEN`. Any row means the base branch is the head of an open PR → stop with `land: stacked: #<n> sits on #<parent>. Merge #<parent> first, or use /dg:chain.`
 4. **Checkout.** When `git branch --show-current` is `headRefName`, `checkout` is the current directory. Otherwise find the worktree on that branch in `git worktree list --porcelain`. With none, stop with `land: no-checkout: check out <headRefName> or run from its worktree.` Prefix every later git, review and address command with `cd "<checkout>" &&`.
+   - `gh repo view --json nameWithOwner -q .nameWithOwner` in the checkout differs from `repo` → stop with `land: other-repo: #<n> is in <repo>, the checkout is in <other>.`
+   - `git -C <checkout> status --porcelain` prints anything → stop with `land: dirty: commit or stash the changes in <checkout> first.` `/dg:address` commits every change in the tree, so unrelated work would land in the PR.
 5. `git -C <checkout> fetch origin <baseRefName> <headRefName>`. Compare local `HEAD` with `headRefOid`:
    - equal → continue.
    - local is ahead → `git push`, then continue.
@@ -31,7 +34,7 @@ IN: the arguments. OUT: `pr`, `base`, `headRef`, `sha`, `checkout`, `diffBase`, 
 6. `diffBase` is `-b <ref>` when given. Otherwise `git merge-base HEAD origin/<baseRefName>`.
 7. `method`: read `gh api repos/{owner}/{repo} --jq '{squash:.allow_squash_merge,merge:.allow_merge_commit,rebase:.allow_rebase_merge}'`. A method flag the repo does not allow → stop with `land: method-not-allowed` and name the allowed ones. With no flag: `squash` when allowed, else the first allowed of `merge`, `rebase`.
 
-GATE: GitHub, open, not draft, not stacked, a checkout on the PR head, local and remote heads equal.
+GATE: GitHub, open, not draft, not a fork, not stacked, a clean checkout of the same repo on the PR head, local and remote heads equal.
 
 ## Step 2 — Review rounds
 
@@ -55,10 +58,10 @@ GATE: review-loop exited 0. On a non-zero exit, stop with `land: review-failed` 
 IN: `pr`, `sha`, `ciRetries`, `waitTimeout`. OUT: `ci` (`pass`, `none`), `attempts`, final `sha`.
 
 1. Read `gh pr view <pr> --json headRefOid -q .headRefOid` up to 6 times, 10 seconds apart, until it equals `sha`. GitHub can take a few seconds after a push. Still different → stop with `land: head-moved: the PR head is not <sha>. Pull, then re-run.`
-2. Watch the checks. Run this as a background job and wait on its exit (see the `/dg:bg` wait rule). The foreground cap is shorter than `waitTimeout`.
+2. Watch the checks. Run this as a background job and wait on its exit (see the `/dg:bg` wait rule). The foreground cap is shorter than `waitTimeout`. Stock macOS has no `timeout`, so use `gtimeout` when only it exists. With neither, run the watch without the prefix and stop the background job yourself when `waitTimeout` passes; count that as exit `124`.
 
    ```sh
-   timeout <waitTimeout> gh pr checks <pr> --watch --fail-fast --interval 30
+   timeout <waitTimeout> gh pr checks <pr> --repo <repo> --watch --fail-fast --interval 30
    ```
 
    | Exit | Meaning | Next |
@@ -66,6 +69,7 @@ IN: `pr`, `sha`, `ciRetries`, `waitTimeout`. OUT: `ci` (`pass`, `none`), `attemp
    | `0` | All checks pass. | `ci = pass`, step 4. |
    | `124` | The wait timed out. | Stop with `land: ci-timeout`. Re-run `/dg:land` later. |
    | `1`, output says no checks are reported | CI did not start yet, or the repo has no CI. | Wait 60 seconds, watch once more. Still none → `ci = none`, step 4. |
+   | `127`, `126` | The command did not run. | Stop with `land: ci-wait-failed` and show the error. Do not fix CI. |
    | `1`, `8`, other | A check failed. | Step 3.3. |
 
 3. **Fix.** When `attempts < ciRetries`:
@@ -104,12 +108,12 @@ IN: everything above. OUT: `mergeCommit`, or a stop.
 6. **Merge.** On yes, run:
 
    ```sh
-   gh pr merge <n> --repo <owner>/<repo> --<method> --delete-branch --match-head-commit <sha>
+   gh pr merge <n> --repo <repo> --<method> --delete-branch --match-head-commit <sha>
    ```
 
-   `<owner>/<repo>` comes from `gh repo view --json nameWithOwner -q .nameWithOwner`. With `--repo`, `gh` deletes only the remote branch. The local branch and its worktree stay for `/dg:cls` or `/dg:address`, which a `/dg:spec` run needs.
+   `<repo>` comes from step 1. With `--repo`, `gh` deletes only the remote branch. The local branch and its worktree stay for `/dg:cls` or `/dg:address`, which a `/dg:spec` run needs.
 
-   - The harness, auto mode or a hook blocks it → print `! gh pr merge <n> --repo <owner>/<repo> --<method> --delete-branch --match-head-commit <sha>` for the human to run in the prompt, and stop. Never retry it another way.
+   - The harness, auto mode or a hook blocks it → print `! gh pr merge <n> --repo <repo> --<method> --delete-branch --match-head-commit <sha>` for the human to run in the prompt, and stop. Never retry it another way.
    - `gh` refuses because the head moved → stop with `land: head-moved`.
    - Success → read `gh pr view <n> --json state,mergeCommit`. `state` `MERGED` → `mergeCommit` is `.mergeCommit.oid`. `state` `OPEN` means a merge queue took it, or auto-merge waits: stop with `land: queued: #<n> waits in the merge queue.` and skip step 6.
 
