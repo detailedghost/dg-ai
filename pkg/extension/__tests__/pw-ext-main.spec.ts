@@ -93,6 +93,43 @@ function installModelContext(tools: FakeTool[], output = "done") {
 }
 
 describe("WebMCP", () => {
+	function installNativeLikeModelContext(tools: FakeTool[]) {
+		const executed: unknown[] = [];
+		Object.defineProperty(window.document, "modelContext", {
+			configurable: true,
+			value: {
+				getTools: async () => tools,
+				executeTool: async (tool: Partial<FakeTool>) => {
+					if (typeof tool.description !== "string")
+						throw new TypeError(
+							"Failed to read the 'description' property from 'RegisteredTool': Required member is undefined.",
+						);
+					executed.push(tool);
+					return "native ok";
+				},
+			},
+		});
+		return executed;
+	}
+
+	it("passes the full listed tool to a native executeTool that requires description", async () => {
+		const tool = { name: "search", description: "Search", inputSchema: { type: "object" } };
+		const executed = installNativeLikeModelContext([tool]);
+		expect(await pwExtWebMcp({ kind: "call", tool: "search", args: { q: "x" }, timeoutMs: 1000 })).toEqual({
+			api: "modelContext",
+			output: "native ok",
+		});
+		expect(executed).toEqual([tool]);
+	});
+
+	it("fails a native executeTool that gets only the tool name", async () => {
+		installNativeLikeModelContext([]);
+		const context = (window.document as unknown as { modelContext: object }).modelContext as {
+			executeTool(tool: object): Promise<string>;
+		};
+		await expect(context.executeTool({ name: "search" })).rejects.toThrow("'description'");
+	});
+
 	it("returns an empty list when the page has no WebMCP", async () => {
 		expect(await pwExtWebMcp({ kind: "tools" })).toEqual({
 			api: "none",

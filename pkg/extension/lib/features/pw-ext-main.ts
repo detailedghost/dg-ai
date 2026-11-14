@@ -226,7 +226,7 @@ export async function pwExtWebMcp(
 		try {
 			const output = await Promise.race([
 				useModern
-					? modern!.executeTool({ name: action.tool }, action.args, { signal: controller.signal })
+					? modern!.executeTool(tool, action.args, { signal: controller.signal })
 					: legacy!.executeTool(action.tool, JSON.stringify(action.args)),
 				timeout,
 			]);

@@ -12,7 +12,7 @@ export type ModelContext = {
 	registerTool(tool: WebMcpTool, options?: { signal?: AbortSignal }): void;
 	getTools(): Promise<WebMcpTool[]>;
 	executeTool(
-		tool: Pick<WebMcpTool, "name">,
+		tool: Omit<WebMcpTool, "execute">,
 		args: Record<string, unknown>,
 		options?: { signal?: AbortSignal },
 	): Promise<string>;
