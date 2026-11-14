@@ -54,7 +54,7 @@ When no row was recorded, continue into finish.md 5-8 as a normal run.
 
 A `--bg` run skips [execute.md](execute.md) §7, as if `--no-land` were given. The `/dg:land` merge
 gate asks a question, and this run asks none. The PR stays a draft. Print last:
-`Land it later with /dg:land <url>.`
+`Land it later: gh pr ready <number>, then /dg:land <url>.`
 
 ## Final review, finish.md 5.c
 

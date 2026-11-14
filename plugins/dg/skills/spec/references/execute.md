@@ -155,7 +155,7 @@ PR body assembly step 8b describes — the body is the reviewer's only briefing.
 ## 7. Land the PR — the default end
 
 Skip this section with `--no-land`. Each skip below prints step 8d's line and then
-`Land it later with /dg:land <url>.`
+`Land it later: gh pr ready <number>, then /dg:land <url>.`
 
 1. **Skip when it cannot land here.** On a GitLab remote (`dg-skills vcs-provider capabilities`
    reports `kind` other than `github`), skip: `/dg:land` is GitHub only. Under `--bg`, skip: the
@@ -173,7 +173,7 @@ Skip this section with `--no-land`. Each skip below prints step 8d's line and th
    `/dg:cls` removes the worktree in a later session. Leave it in place here.
 
 For other review rounds or CI retries, run `/dg:spec -s <bundle> --no-land`, then
-`/dg:land <url> -r N -c N`.
+`gh pr ready <number>` and `/dg:land <url> -r N -c N`.
 
 > **GATE:** `/dg:land` merged the PR, stopped at its merge gate, or stopped at a step it reports.
 

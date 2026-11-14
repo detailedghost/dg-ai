@@ -41,7 +41,7 @@ If a step fails, run dg-skills doctor assign batch-open chain proxy spec stash v
 | `--expensive` | none | Alias of `--profile expensive`. | off |
 | `--proxy <backend>` | `-x` | Delegate slices to the named `/dg:proxy` backend: asks per slice in plan mode, and with `-s` for slices without `agents.proxy`. | off |
 | `--bg` | `-b` | Execute mode only (`-s`): run unattended and stay in this session; use `/dg:bg` to detach. Questions become rows in `## Issues Remediation`. Invalid with bare plan mode (stop and say so). | off |
-| `--no-land` | none | Execute and fast modes: stop at the draft PR/MR and do not run `/dg:land`. For other review rounds or CI retries, pass it, then run `/dg:land -r N -c N`. Invalid with bare plan mode. | off (land) |
+| `--no-land` | none | Execute and fast modes: stop at the draft PR/MR and do not run `/dg:land`. For other review rounds or CI retries, pass it, then run `gh pr ready` and `/dg:land -r N -c N`. Invalid with bare plan mode. | off (land) |
 
 Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass its map to `/dg:spec`.
 

@@ -28,7 +28,7 @@ IN: the arguments. OUT: `pr`, `base`, `headRef`, `sha`, `checkout`, `diffBase`, 
    - local is ahead → `git push`, then continue.
    - local is behind or the two differ → stop with `land: head-mismatch: pull or push <headRefName> first.`
 6. `diffBase` is `-b <ref>` when given. Otherwise `git merge-base HEAD origin/<baseRefName>`.
-7. `method`: the flag when given. Otherwise read `gh api repos/{owner}/{repo} --jq '[.allow_squash_merge,.allow_merge_commit,.allow_rebase_merge]'`. Exactly one `true` → that method. Else `squash`.
+7. `method`: read `gh api repos/{owner}/{repo} --jq '{squash:.allow_squash_merge,merge:.allow_merge_commit,rebase:.allow_rebase_merge}'`. A method flag the repo does not allow → stop with `land: method-not-allowed` and name the allowed ones. With no flag: `squash` when allowed, else the first allowed of `merge`, `rebase`.
 
 GATE: GitHub, open, not draft, not stacked, a checkout on the PR head, local and remote heads equal.
 
@@ -53,7 +53,7 @@ GATE: review-loop exited 0. On a non-zero exit, stop with `land: review-failed` 
 
 IN: `pr`, `sha`, `ciRetries`, `waitTimeout`. OUT: `ci` (`pass`, `none`), `attempts`, final `sha`.
 
-1. Wait until `gh pr view <pr> --json headRefOid -q .headRefOid` equals `sha`. GitHub can take a few seconds after a push.
+1. Read `gh pr view <pr> --json headRefOid -q .headRefOid` up to 6 times, 10 seconds apart, until it equals `sha`. GitHub can take a few seconds after a push. Still different → stop with `land: head-moved: the PR head is not <sha>. Pull, then re-run.`
 2. Watch the checks. Run this as a background job and wait on its exit (see the `/dg:bg` wait rule). The foreground cap is shorter than `waitTimeout`.
 
    ```sh
@@ -108,9 +108,9 @@ IN: everything above. OUT: `mergeCommit`, or a stop.
 
    - The harness, auto mode or a hook blocks it → print `! gh pr merge <n> --<method> --delete-branch --match-head-commit <sha>` for the human to run in the prompt, and stop. Never retry it another way.
    - `gh` refuses because the head moved → stop with `land: head-moved`.
-   - Success → `gh pr view <n> --json state,mergeCommit -q .mergeCommit.oid` is `mergeCommit`.
+   - Success → read `gh pr view <n> --json state,mergeCommit`. `state` `MERGED` → `mergeCommit` is `.mergeCommit.oid`. `state` `OPEN` means a merge queue took it, or auto-merge waits: stop with `land: queued: #<n> waits in the merge queue.` and skip step 6.
 
-GATE: the human said yes and the merge returned 0, or the run stopped with the command printed.
+GATE: `state` is `MERGED`, or the run stopped with the reason or the command printed.
 
 ## Step 6 — Children of the deleted branch
 
