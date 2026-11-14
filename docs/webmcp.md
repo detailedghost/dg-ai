@@ -86,8 +86,12 @@ tools of its own:
 - An id list holds at most 50 ids, and `limit` is at most 50. At most 4
   calls run at once in a tab.
 - A tool that runs before the page has sent its first service call waits up
-  to 10 seconds and then fails with "Outlook is still loading; retry.". On a
-  mailbox tab the agent sees a fixed failure text in place of the tool error.
+  to 10 seconds and then fails with "Outlook is still loading; retry.".
+- A failed call of an enabled built-in `dg_` tool shows the agent the tool's
+  own error, with addresses masked. This lets the agent tell a retry ("Outlook
+  is still loading; retry.", "Outlook refused the request (429)") from bad
+  input. Any other page error on a mailbox tab, such as a failed tool list,
+  shows a fixed failure text.
 
 ## Revoke
 

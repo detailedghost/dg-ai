@@ -2127,6 +2127,46 @@ describe("pw --ext WebMCP on a mailbox tab", () => {
 		expect(await h.run({ verb: "tools" })).toEqual(fixed);
 	});
 
+	it.each([
+		"Outlook is still loading; retry.",
+		"Outlook refused the request (429)",
+		"limit must be an integer from 1 to 50.",
+		"No mail folder has that name.",
+	])("passes the built-in tool error %p through on an Outlook tab", async (error) => {
+		const h = harness({
+			builtInOwned: true,
+			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/" }],
+			approval: "allow",
+			mainResult: () => ({ error }),
+		});
+		expect(await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).toEqual({ ok: false, error });
+	});
+
+	it("masks an address in a built-in tool error on an Outlook tab", async () => {
+		const h = harness({
+			builtInOwned: true,
+			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/" }],
+			approval: "allow",
+			mainResult: () => ({ error: "Outlook refused the request (401) test.person@example.com" }),
+		});
+		const answer = await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });
+		if (answer.ok) throw new Error("expected a failure");
+		expect(answer.error).toContain("Outlook refused the request (401)");
+		expect(answer.error).not.toContain("test.person@example.com");
+	});
+
+	it("keeps the fixed message for a page-sourced tools error on an Outlook tab", async () => {
+		const h = harness({
+			builtInOwned: true,
+			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/" }],
+			mainResult: () => ({ error: "test.person@example.com Fixture subject" }),
+		});
+		expect(await h.run({ verb: "tools" })).toEqual({
+			ok: false,
+			error: "The WebMCP tool failed on the protected mailbox tab.",
+		});
+	});
+
 	it.each(["site_tool", "dg_x", "search_flights"])("refuses call %s with the mailbox error", async (tool) => {
 		const h = harness({ tabs: [protonTab], approval: "allow", mainResult: () => ({ api: "modelContext", output: "x" }) });
 		expect(await h.run({ verb: "call", tool, args: {} })).toEqual({ ok: false, error: PW_EXT_MAILBOX_ERROR });

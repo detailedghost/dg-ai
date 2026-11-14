@@ -1135,7 +1135,7 @@ export function createPwExtHandler({
 						tab.url,
 					]),
 				);
-				if ("error" in called) return pageError(called.error);
+				if ("error" in called) return failed(maskRaw(called.error, RAW_ERROR_MAX, { unmasked, secrets }));
 				if (!("output" in called))
 					return { ok: false, error: "The page returned an unexpected WebMCP result." };
 				return shown(
