@@ -76,7 +76,7 @@ Report missing instructions; never assume a private checkout or cache location.
 | 3 | Wait for CI. On a failed check, `/dg:address` fixes it, pushes, and step 2 reviews the fix; then wait again. Leave the loop only when CI is green on a reviewed head. | the `-c` ceiling, the same check failing twice with the same error, or a wait timeout |
 | 4 | Check the merge state. | behind, conflicting, or blocked: suggest `/dg:catchup` or report |
 | 5 | Ready for your review: summary, open the PR, then ask in the main loop. Merge at the tested SHA only on "Merge now", or at once with `--auto`. | "Not yet" (the default), `--no-merge`, a merge queue, GitHub auto-merge, a changed head, or a blocked merge |
-| 6 | Check the PRs that used the deleted branch as their base. | never |
+| 6 | Check each child PR. Land moved it to the base before the merge. GitHub can close it, so give the recovery when it did. | never |
 | 7 | Final report. | never |
 
 Read [references/workflow.md](references/workflow.md) for each step's commands and gates.
@@ -91,6 +91,7 @@ Read [references/workflow.md](references/workflow.md) for each step's commands a
 - **Only the main loop merges.** A subagent, a slice wave, or a `/dg:spec --bg` run never runs `gh pr merge`. It stops at step 5 and reports the summary and the merge command.
 - **Never work around a blocked merge.** When the harness or a hook blocks `gh pr merge`, print the exact command with a `!` prefix for the human to run, and stop.
 - **Merge only the tested head.** Always pass `--match-head-commit <sha>`, where `<sha>` is the head that CI passed on.
+- **Move the children first.** GitHub does not move the open PRs of a deleted branch. It can close them. Before `gh pr merge`, set each child's base to the PR's base. When a move fails, do not merge. When the merge fails, set each child back.
 - **Do not resolve conflicts here.** A behind or conflicting PR goes to `/dg:catchup`. A stacked PR goes to its parent first, or to `/dg:chain`.
 - **No unreviewed CI fix.** Every CI-fix commit gets a review loop before CI runs on it again.
 - **Edit nothing directly.** All code changes happen inside `/dg:address`.

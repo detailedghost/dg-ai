@@ -112,8 +112,8 @@ IN: everything above. OUT: `mergeCommit`, or a stop.
 Nothing merges later by itself. Never pass gh's own `--auto` to `gh pr merge`, never enqueue a PR, and never turn on a setting that merges later. Only two things start a merge: an explicit "Merge now" answer in the same turn, or this skill's `--auto` flag typed by the person.
 
 1. **Check again.** Run the step 1.7 query again. Auto-merge or a merge queue that someone turned on during the run stops it the same way.
-2. **Stacked children.** `gh pr list --base <headRefName> --state open --json number,title`. These PRs use the branch that the merge deletes as their base.
-3. **Summary.** Print `land: #<n> is ready for your review.` (with `--auto`: `land: #<n> passed review and CI; merging now (--auto).`), then the PR URL, `sha`, `roundsRun`, the fixes from step 2, the CI result, `ciCycles`, `extraRounds`, the files changed (`gh pr view <n> --json files -q '.files[].path'`), `method`, and each child PR.
+2. **Stacked children.** `gh pr list --base <headRefName> --state open --json number,title,autoMergeRequest`. A child with a non-null `autoMergeRequest` → stop with `land: child-auto-merge: turn off auto-merge on #<child> first.` A new base could let it merge by itself. These child PRs use the branch that the merge deletes as their base. GitHub does not move them. It can close them. Land moves them in 5.8.
+3. **Summary.** Print `land: #<n> is ready for your review.` (with `--auto`: `land: #<n> passed review and CI; merging now (--auto).`), then the PR URL, `sha`, `roundsRun`, the fixes from step 2, the CI result, `ciCycles`, `extraRounds`, the files changed (`gh pr view <n> --json files -q '.files[].path'`), `method`, and each child PR. When children exist, add: `Land moves each child to <baseRefName> before the merge. A child keeps the commits of this PR from before the squash, so it will likely need a merge of <baseRefName> (run /dg:catchup, or merge it by hand) before it lands.`
 4. **Open it.** `dg-skills batch-open <url>`, the same helper `/dg:pushup` uses. When it fails, print the URL and continue.
 5. **`--no-merge`, or not the main loop** → print the merge command from 5.8 for later, then go to Step 7, the final report. A subagent, a slice wave or a `--bg` run never asks and never merges. The caller relays the summary to the human.
 6. **`--auto`.** Skip the question. Go to 5.8 with no answer needed. The summary still prints first.
@@ -121,8 +121,11 @@ Nothing merges later by itself. Never pass gh's own `--auto` to `gh pr merge`, n
    - `Not yet (I will review)`: the first option and the default. Print the merge command from 5.8 for later and go to Step 7, the final report.
    - `Merge now at <short sha>`: only after the human has looked at the PR.
 
-   When children exist, the question names them and says GitHub moves them to `<baseRefName>`. Any answer other than `Merge now at <short sha>` is "Not yet".
-8. **Check the head again, then merge.** On "Merge now", or with `--auto`, read `gh pr view <n> --json headRefOid -q .headRefOid`. When it differs from `sha`, the PR changed after the summary. With `--auto`, stop with `land: head-moved` and do not merge. Otherwise run `git -C <checkout> pull --ff-only` (a failure stops with `land: head-moved`), then go back to step 2: a review loop on the new changes, CI, the merge state, and this question again. When it is the same, run:
+   When children exist, the question names them and says land moves them to `<baseRefName>` just before the merge. Any answer other than `Merge now at <short sha>` is "Not yet".
+8. **Check the head again, then merge.** On "Merge now", or with `--auto`, read `gh pr view <n> --json headRefOid -q .headRefOid`. When it differs from `sha`, the PR changed after the summary. With `--auto`, stop with `land: head-moved` and do not merge. Otherwise run `git -C <checkout> pull --ff-only` (a failure stops with `land: head-moved`), then go back to step 2: a review loop on the new changes, CI, the merge state, and this question again. When it is the same:
+
+   1. **Move the children.** For each child from 5.2, run `gh pr edit <child> --repo <repo> --base <baseRefName>`. When one fails, set back each child already moved (`gh pr edit <child> --repo <repo> --base <headRefName>`), stop with `land: retarget-failed: could not move #<child> to <baseRefName>.`, and do not merge.
+   2. Run:
 
    ```sh
    gh pr merge <n> --repo <repo> --<method> --delete-branch --match-head-commit <sha>
@@ -130,21 +133,30 @@ Nothing merges later by itself. Never pass gh's own `--auto` to `gh pr merge`, n
 
    `<repo>` comes from step 1. With `--repo`, `gh` deletes only the remote branch. The local branch and its worktree stay for `/dg:cls` or `/dg:address`, which a `/dg:spec` run needs.
 
-   - The harness, auto mode or a hook blocks it → print `! gh pr merge <n> --repo <repo> --<method> --delete-branch --match-head-commit <sha>` for the human to run in the prompt, and stop. Never retry it another way.
+   - The merge fails, or the harness, auto mode or a hook blocks it → first read `gh pr view <n> --repo <repo> --json state`. When `state` is `MERGED`, the merge worked and only a later part failed (for example the branch delete): do not set the children back, and go to the success case. Otherwise set each child back to `<headRefName>` with `gh pr edit <child> --repo <repo> --base <headRefName>`. The branch still exists, so this is safe. Report each child you set back. Then, for a block, print `! gh pr merge <n> --repo <repo> --<method> --delete-branch --match-head-commit <sha>` for the human to run in the prompt, and stop. Tell the human that the children are on `<headRefName>` again and that they must move them before they run it. Never retry it another way.
    - `gh` refuses because the head moved → handle it as a changed head above.
-   - Success → read `gh pr view <n> --json state,mergeCommit`. `state` `MERGED` → `mergeCommit` is `.mergeCommit.oid`. `state` `OPEN` means GitHub queued it: stop with `land: queued: #<n> did not merge; check the PR page.` and skip step 6.
+   - Success → read `gh pr view <n> --json state,mergeCommit`. `state` `MERGED` → `mergeCommit` is `.mergeCommit.oid`. `state` `OPEN` means GitHub queued it: set each child back to `<headRefName>` as above, stop with `land: queued: #<n> did not merge; check the PR page.` and skip step 6.
 
 GATE: the human answered "Merge now" in this turn, or typed `--auto`, and `state` is `MERGED`, or the run stopped at "ready for your review" with the merge command printed.
 
-## Step 6 — Children of the deleted branch
+## Step 6 — Check the children
 
 IN: the child list from step 5.2. OUT: `children` with their state.
 
-When GitHub deletes the head branch of a merged PR, it moves each open PR that used that branch as its base to the merged PR's base. Check that it did: `gh pr view <child> --json state,baseRefName` for each child.
+GitHub does not move the children of a deleted branch, and it can close them. Land moved them in 5.8. Check each one: `gh pr view <child> --repo <repo> --json state,baseRefName`.
 
-- Open, base is `<baseRefName>` → report it as moved.
-- Open, base still `<headRefName>` → run `gh pr edit <child> --base <baseRefName>` and report it.
-- Closed → report it with `gh pr reopen <child>` and `gh pr edit <child> --base <baseRefName>` for the human. Do not reopen it here.
+- Open, base is `<baseRefName>` → report it as moved. Add that it will likely need a merge of `<baseRefName>` (run `/dg:catchup`, or merge it by hand when a rebase would replay the old commits) before it lands, because it still has the commits of the parent from before the squash.
+- Open, base is `<headRefName>` → run `gh pr edit <child> --repo <repo> --base <baseRefName>` and report it.
+- Closed → GitHub closed it with the branch. Report it and give the human this exact recovery. Do not run it here.
+
+  ```sh
+  git push origin <headSha>:refs/heads/<headRefName>
+  gh pr reopen <child> --repo <repo>
+  gh pr edit <child> --repo <repo> --base <baseRefName>
+  git push origin --delete <headRefName>
+  ```
+
+  `<headSha>` is `sha` from step 5.
 
 ## Step 7 — Final report
 
@@ -156,7 +168,7 @@ land: #<n> <merged|ready for your review|stopped at <state>>
   merge     <mergeCommit or none>
   review    <roundsRun> round(s), <findingsFixed> with fixes, backend <backend>
   CI        <pass|none|failed> after <ciCycles> CI-fix cycle(s), <extraRounds> extra review round(s)
-  children  <#x moved to <base> | none>
+  children  <#x moved to <base>, needs /dg:catchup | #x closed, recovery given | none>
   left      <failed jobs, blocked reason, deferred findings, or nothing>
 ```
 
