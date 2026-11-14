@@ -241,6 +241,38 @@ describe("pw --ext credential save through the daemon", () => {
 		);
 	});
 
+	it("ends the processes left in the group when the run finishes", async () => {
+		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
+		const store = storeFrame(bootstrap);
+		send(socket, store);
+		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
+		allow([execAllowlistLine(Bun.which("sh") as string, undefined, true)]);
+		const frame = execFrame(["sh", "-c", "sleep 30 >/dev/null 2>&1 & echo $!"]);
+		const requestId = frame.requestId;
+		send(cli, frame);
+		const done = await waitForValue(
+			() => cliFrames.find((raw) => (raw as Frame).type === "cli-credentials-result" && (raw as Frame).requestId === requestId) as Frame | undefined,
+			5000,
+			"exec result",
+		);
+		expect(done).toMatchObject({ ok: true, value: { exitCode: 0 } });
+		const line = cliFrames.find((raw) => (raw as Frame).type === "cli-credentials-exec-output" && (raw as Frame).requestId === requestId) as Frame;
+		const pid = Number(String(line.data).trim());
+		expect(Number.isInteger(pid)).toBe(true);
+		await waitForValue(
+			() => {
+				try {
+					process.kill(pid, 0);
+					return undefined;
+				} catch {
+					return true;
+				}
+			},
+			5000,
+			"background job ended",
+		);
+	});
+
 	it("refuses exec of pw/ values with no allowlist, when not listed, and for a listed shell, with no value in any frame", async () => {
 		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
 		const store = storeFrame(bootstrap);

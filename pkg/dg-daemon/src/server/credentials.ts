@@ -298,6 +298,7 @@ async function runExec(requester: Socket, frame: CredentialsCliRequest, deps: Fr
 		return { ok: true, value: { exitCode: await child.exited } };
 	} finally {
 		requester.data.closeWaiters.delete(kill);
+		kill();
 		cleanup();
 	}
 }
