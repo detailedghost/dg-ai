@@ -3,7 +3,7 @@
 Read this file only when `--bg` is present. It lists deltas on a normal `-s` run. It replaces
 [engineering.md 4.3](../../sdlc/references/engineering.md) step 1 and [finish.md](../../sdlc/references/finish.md)
 5.c, and copies neither. `--bg` is valid only with `-s`; bare plan mode with `--bg` stops and says so.
-The run stays in this session. Use `/dg:bg` to detach it.
+The run stays in this session. `/dg:bg` detaches it as a fork.
 
 ## Before launch
 
