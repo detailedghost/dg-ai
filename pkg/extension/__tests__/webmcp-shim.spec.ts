@@ -94,6 +94,21 @@ describe("model context shim", () => {
 		expect(seen).toEqual([{ limit: 5 }]);
 	});
 
+	it("parses a JSON string input before running the tool", async () => {
+		const shim = installModelContextShim(doc);
+		const seen: unknown[] = [];
+		shim.registerTool({
+			...tool("dg_outlook_list"),
+			execute: async (args: unknown) => {
+				seen.push(args);
+				return "ok";
+			},
+		} as never);
+		const [listed] = await shim.getTools();
+		expect(await shim.executeTool(listed as never, '{"limit":5}')).toBe("ok");
+		expect(seen).toEqual([{ limit: 5 }]);
+	});
+
 	it("rejects a non-string output with a TypeError", async () => {
 		const shim = installModelContextShim(doc);
 		shim.registerTool(tool("dg_outlook_list", () => ({ items: [] })));

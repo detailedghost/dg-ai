@@ -1,3 +1,4 @@
+import { stripTerminalEscapes } from "@dg/common";
 import { redactTokens, ShellError, type ShellTag } from "../utils/git";
 
 /** Supported CLI-backed provider identities. */
@@ -210,7 +211,8 @@ export const LOG_EXCERPT_MAX_CHARS = 8000;
 
 /** Shared by both adapters: keeps the tail of a CI log, where the failure detail lives. */
 export function truncateLogExcerpt(text: string): string {
-	return text.length > LOG_EXCERPT_MAX_CHARS ? text.slice(-LOG_EXCERPT_MAX_CHARS) : text;
+	const clean = stripTerminalEscapes(text);
+	return clean.length > LOG_EXCERPT_MAX_CHARS ? clean.slice(-LOG_EXCERPT_MAX_CHARS) : clean;
 }
 
 /** Shared by both adapters: flattens a `--paginate` response, whose pages may already be arrays-of-arrays. */

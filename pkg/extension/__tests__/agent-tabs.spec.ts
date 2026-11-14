@@ -4,6 +4,7 @@ import { MSG } from "@dg/pages/chat-messages";
 import {
 	AgentGroupFullError,
 	agentGroupIds,
+	agentSessionIds,
 	createAgentTabs,
 	groupTitle,
 	MAX_AGENT_TABS,
@@ -29,6 +30,7 @@ type Listener = (
 let currentBrowser: FakeBrowser["api"];
 let currentLocal = makeLocalArea();
 let currentListeners = new Set<Listener>();
+let currentStartup = new Set<() => void>();
 let currentGroupRemoved = new Set<(group: { id: number }) => void>();
 
 const EXTENSION_ID = "ext-self";
@@ -51,6 +53,9 @@ mock.module("wxt/browser", () => ({
 					addListener: (fn: (group: { id: number }) => void) =>
 						currentGroupRemoved.add(fn),
 				},
+				onCreated: { addListener: () => undefined },
+				onUpdated: { addListener: () => undefined },
+				onMoved: { addListener: () => undefined },
 			};
 		},
 		get runtime() {
@@ -58,6 +63,9 @@ mock.module("wxt/browser", () => ({
 				id: EXTENSION_ID,
 				onMessage: {
 					addListener: (fn: Listener) => currentListeners.add(fn),
+				},
+				onStartup: {
+					addListener: (fn: () => void) => currentStartup.add(fn),
 				},
 			};
 		},
@@ -208,6 +216,253 @@ describe("agent tabs open", () => {
 			groupTitle({ agentIdentity: "agent", sessionId: SESSION_A }),
 		);
 		expect(fake.record(SESSION_A)?.groupId).toBe(newGroup);
+	});
+
+	it("reuses the group after a reload cleared the session record", async () => {
+		const { fake, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.reload();
+		const second = await open(SESSION_A, "https://b.example.test/");
+
+		expect(groupOf(fake, second.tabId)).toBe(group);
+		expect(fake.groups.size).toBe(1);
+		expect(fake.record(SESSION_A)?.groupId).toBe(group);
+	});
+
+	it("does not match a group by title when no group id was saved", async () => {
+		const title = groupTitle({ agentIdentity: "agent", sessionId: SESSION_A });
+		const { fake, open } = setup({
+			tabs: [tabOf({ id: 7, groupId: 40 })],
+			groups: [{ id: 40, windowId: 1, title }],
+		});
+		const { tabId } = await open();
+
+		expect(groupOf(fake, tabId)).not.toBe(40);
+		expect(fake.groups.size).toBe(2);
+	});
+
+	it("restores saved records into session storage and reports their tabs", async () => {
+		const { fake, agentTabs, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.reload();
+
+		expect(await agentTabs.restore()).toEqual([first.tabId]);
+		expect(fake.record(SESSION_A)?.groupId).toBe(group);
+		expect(await agentSessionIds({ storage: fake.api.storage })).toEqual(
+			new Set([SESSION_A]),
+		);
+	});
+
+	it("drops a saved record whose group is gone when it restores", async () => {
+		const { fake, agentTabs, open } = setup();
+		const first = await open();
+		fake.dropGroup(groupOf(fake, first.tabId));
+		fake.reload();
+
+		expect(await agentTabs.restore()).toEqual([]);
+		expect(fake.record(SESSION_A)).toBeUndefined();
+	});
+
+	it("adopts no person-made group whose id matches a record saved before a browser restart", async () => {
+		const { fake, agentTabs, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.tabs.clear();
+		fake.groups.clear();
+		fake.addTab({ id: 900, groupId: group });
+		fake.addGroup({ id: group, windowId: 1, title: "Reading list" });
+		fake.reload();
+
+		expect(await agentTabs.restore()).toEqual([]);
+		expect(fake.record(SESSION_A)).toBeUndefined();
+		expect(agentTabs.list({ sessionId: SESSION_A })).resolves.toEqual([]);
+		const next = await open(SESSION_A, "https://b.example.test/");
+		expect(groupOf(fake, next.tabId)).not.toBe(group);
+	});
+
+	it("drops saved records of sessions that are not paired when it restores", async () => {
+		const { fake, agentTabs, open } = setup();
+		await open(SESSION_A);
+		await open(SESSION_B);
+		fake.reload();
+
+		await agentTabs.restore({ paired: new Set([SESSION_B]) });
+
+		expect(fake.record(SESSION_A)).toBeUndefined();
+		expect(fake.record(SESSION_B)).toBeDefined();
+		fake.reload();
+		await agentTabs.restore();
+		expect(fake.record(SESSION_A)).toBeUndefined();
+	});
+
+	it("reuses a group the person moved to another window", async () => {
+		const { fake, agentTabs, open } = setup({
+			windows: [windowOf({ id: 1 }), windowOf({ id: 2, focused: false })],
+		});
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.groups.get(group)!.windowId = 2;
+		fake.tabs.get(first.tabId)!.windowId = 2;
+		await agentTabs.groupChanged({ groupId: group });
+		fake.reload();
+		const second = await open(SESSION_A, "https://b.example.test/");
+
+		expect(groupOf(fake, second.tabId)).toBe(group);
+	});
+
+	it("does not adopt a group whose title no longer matches the saved one", async () => {
+		const { fake, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.groups.get(group)!.title = "Reading list";
+		fake.reload();
+		const second = await open(SESSION_A, "https://b.example.test/");
+
+		expect(groupOf(fake, second.tabId)).not.toBe(group);
+	});
+
+	it("keeps the record when Chrome re-creates the group in another window", async () => {
+		const fake = createFakeBrowser({
+			windows: [windowOf({ id: 1 }), windowOf({ id: 2, focused: false })],
+		});
+		const agentTabs = createAgentTabs({
+			browserApi: fake.api,
+			storage: fake.api.storage,
+			lock: createLock(),
+			graceMs: 200,
+		});
+		const first = await agentTabs.open({ sessionId: SESSION_A, agentIdentity: "agent", url: URL_A });
+		const group = groupOf(fake, first.tabId);
+
+		const removed = agentTabs.groupRemoved({ groupId: group });
+		fake.groups.get(group)!.windowId = 2;
+		fake.tabs.get(first.tabId)!.windowId = 2;
+		agentTabs.groupCreated({ groupId: group });
+		await removed;
+
+		expect(fake.record(SESSION_A)?.groupId).toBe(group);
+		expect(await agentTabs.owns({ sessionId: SESSION_A, tabId: first.tabId })).toBe(true);
+		const second = await agentTabs.open({
+			sessionId: SESSION_A,
+			agentIdentity: "agent",
+			url: "https://b.example.test/",
+		});
+		expect(groupOf(fake, second.tabId)).toBe(group);
+		expect(fake.groups.size).toBe(1);
+		await agentTabs.restore();
+		fake.reload();
+		expect(await agentTabs.restore()).toEqual([first.tabId, second.tabId]);
+	});
+
+	it("drops the record when no group with that id comes back in time", async () => {
+		const fake = createFakeBrowser();
+		const agentTabs = createAgentTabs({
+			browserApi: fake.api,
+			storage: fake.api.storage,
+			lock: createLock(),
+			graceMs: 20,
+		});
+		const first = await agentTabs.open({ sessionId: SESSION_A, agentIdentity: "agent", url: URL_A });
+		const group = groupOf(fake, first.tabId);
+		fake.dropGroup(group);
+
+		await agentTabs.groupRemoved({ groupId: group });
+
+		expect(fake.record(SESSION_A)).toBeUndefined();
+		await agentTabs.restore();
+		expect(fake.record(SESSION_A)).toBeUndefined();
+	});
+
+	it("reports the tabs of a recovered group", async () => {
+		const { fake, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.reload();
+		const second = await open(SESSION_A, "https://b.example.test/");
+
+		expect(group).toBe(groupOf(fake, second.tabId));
+		expect(second.recoveredTabIds).toEqual([first.tabId]);
+	});
+
+	it("reuses a renamed group through the saved group id", async () => {
+		const { fake, agentTabs, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.groups.get(group)!.title = "my rename";
+		await agentTabs.groupChanged({ groupId: group });
+		fake.reload();
+		const second = await open(SESSION_A, "https://b.example.test/");
+
+		expect(groupOf(fake, second.tabId)).toBe(group);
+		expect(fake.groups.size).toBe(1);
+	});
+
+	it("does not reuse another session's group or a group the person made", async () => {
+		const { fake, open } = setup({
+			tabs: [tabOf({ id: 7, groupId: 40 }), tabOf({ id: 8, groupId: 41 })],
+			groups: [
+				{
+					id: 40,
+					windowId: 1,
+					title: groupTitle({ agentIdentity: "agent", sessionId: SESSION_B }),
+				},
+				{ id: 41, windowId: 1, title: "Reading list" },
+			],
+		});
+		const { tabId } = await open();
+
+		expect([40, 41]).not.toContain(groupOf(fake, tabId));
+		expect(fake.groups.size).toBe(3);
+	});
+
+	it("does not take a group that another session's record holds", async () => {
+		const { fake, open } = setup();
+		const first = await open(SESSION_A);
+		const group = groupOf(fake, first.tabId);
+		fake.groups.get(group)!.title = groupTitle({
+			agentIdentity: "agent",
+			sessionId: SESSION_B,
+		});
+		const { tabId } = await open(SESSION_B);
+
+		expect(groupOf(fake, tabId)).not.toBe(group);
+	});
+
+	it("does not take a group saved for another session with the same title", async () => {
+		const { fake, open } = setup();
+		const first = await open(SESSION_A);
+		const group = groupOf(fake, first.tabId);
+		fake.reload();
+		const { tabId } = await open("ab12cdef-9999");
+
+		expect(groupOf(fake, tabId)).not.toBe(group);
+	});
+
+	it("forgets saved groups when the browser starts", async () => {
+		const { fake, agentTabs, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.groups.get(group)!.title = "my rename";
+		await agentTabs.groupChanged({ groupId: group });
+		fake.reload();
+		await agentTabs.clearAll();
+		const second = await open(SESSION_A, "https://b.example.test/");
+
+		expect(groupOf(fake, second.tabId)).not.toBe(group);
+	});
+
+	it("makes a new group after a reload when the saved group is gone", async () => {
+		const { fake, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.dropGroup(group);
+		fake.reload();
+		const second = await open(SESSION_A, "https://b.example.test/");
+
+		expect(groupOf(fake, second.tabId)).not.toBe(group);
+		expect(fake.record(SESSION_A)?.groupId).toBe(groupOf(fake, second.tabId));
 	});
 
 	it("makes one group for two concurrent first opens of one session", async () => {
@@ -1172,7 +1427,7 @@ describe("agent tabs messages", () => {
 			fake.seedRecord(recordOf({ sessionId: SESSION_B, groupId: 11 }));
 
 			for (const fn of currentGroupRemoved) fn({ id: 10 });
-			await Bun.sleep(0);
+			await Bun.sleep(1100);
 
 			expect(fake.record(SESSION_A)).toBeUndefined();
 			expect(fake.record(SESSION_B)).toBeDefined();
@@ -1210,6 +1465,21 @@ describe("createAgentTabs adopt", () => {
 
 		expect(groupOf(fake, 5)).toBe(10);
 		expect(fake.record(SESSION_B)).toBeUndefined();
+	});
+
+	it("reports the tabs of a group an adopt recovered", async () => {
+		const { fake, agentTabs, open } = setup({ tabs: [tabOf({ id: 5 })] });
+		const first = await open();
+		fake.reload();
+
+		const adopted = await agentTabs.adopt({
+			sessionId: SESSION_A,
+			agentIdentity: "agent",
+			tabId: 5,
+		});
+
+		expect(adopted.recoveredTabIds).toEqual([first.tabId]);
+		expect(fake.groups.size).toBe(1);
 	});
 
 	it("adopts a loose tab and makes it the selected tab", async () => {

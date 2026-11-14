@@ -78,6 +78,8 @@ export const INSTALLED_SKILL_FILES = [
 	"jot/references/checkpoint.md",
 	"kick/SKILL.md",
 	"kick/references/args.md",
+	"land/SKILL.md",
+	"land/references/workflow.md",
 	"meaningful/SKILL.md",
 	"meaningful/references/example-plan.json",
 	"meaningful/references/helper-api.md",

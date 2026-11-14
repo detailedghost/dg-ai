@@ -1,3 +1,4 @@
+import { stripTerminalEscapes } from "./ansi";
 import { isRecord } from "./assert";
 
 const LIMIT_LINE =
@@ -15,7 +16,7 @@ function limitMessage(value: unknown): boolean {
 
 /** Recognize usage/quota exhaustion in Claude, Codex and other AI CLI output. */
 export function isAiUsageLimit(output: string): boolean {
-	const clean = output.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+	const clean = stripTerminalEscapes(output);
 	return clean.split(/\r?\n/).some((line) => {
 		if (limitMessage(line)) return true;
 		if (!line.trimStart().startsWith("{")) return false;

@@ -75,6 +75,7 @@ import { createUnmaskGrants, MAX_FILLED_SECRETS, type UnmaskGrant, type UnmaskGr
 import {
 	allowedPage,
 	mailbox,
+	outlookWeb,
 	PW_EXT_BLOCKED_ERROR,
 	PW_EXT_MAILBOX_ERROR,
 	PW_EXT_PRIVATE_ERROR,
@@ -113,6 +114,9 @@ export type PwExtBrowserApi = AgentTabsBrowserApi & {
 			func: (...args: never[]) => unknown;
 			args: unknown[];
 		}): Promise<Array<{ result?: unknown }>>;
+	};
+	tabGroups: AgentTabsBrowserApi["tabGroups"] & {
+		onUpdated: TabEvent<(group: { id: number }) => void>;
 	};
 	storage: AgentTabsStorage;
 };
@@ -337,7 +341,10 @@ const UNSIGNED_JWT = {
 };
 
 /** Redacts page output; an unmask grant leaves email addresses, and a secret fill value is always removed. */
-function mask(text: string, { unmasked = false, secrets = [] }: { unmasked?: boolean; secrets?: string[] } = {}): string {
+function mask(
+	text: string,
+	{ unmasked = false, secrets = [] }: { unmasked?: boolean; secrets?: string[] } = {},
+): string {
 	const redact = unmasked ? redactSecrets : redactText;
 	return redactLiterals(
 		redact(text, [], { literals: secrets, extraPatterns: [SECRET_PAIR, NAMED_SECRET, UNSIGNED_JWT] }),
@@ -418,9 +425,31 @@ function shownUrl(tab: Pick<BrowserTab, "url">, unmasked = false, secrets: strin
 	return mask(tab.url as string, { unmasked, secrets });
 }
 
+const OUTLOOK_WORDS = new Set([
+	"mail",
+	"inbox",
+	"calendar",
+	"people",
+	"tasks",
+	"to do",
+	"files",
+	"search",
+	"settings",
+	"outlook",
+]);
+
+function outlookTitle(title: string): string {
+	const [first = "", ...rest] = title.split(" - ");
+	const count = /^\(\d+\) /.exec(first)?.[0] ?? "";
+	const word = first.slice(count.length);
+	const head = count + (OUTLOOK_WORDS.has(word.trim().toLowerCase()) ? word : "[redacted]");
+	return rest.length ? `${head} - [redacted]` : head;
+}
+
 function shownTitle(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string {
 	if (!allowedPage(tab.url) || mailbox(tab.url)) return "";
-	return mask(tab.title ?? "", { unmasked, secrets });
+	const title = tab.title ?? "";
+	return mask(!unmasked && outlookWeb(tab.url) && title ? outlookTitle(title) : title, { unmasked, secrets });
 }
 
 function pageLines(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string[] {
@@ -706,6 +735,12 @@ export function createPwExtHandler({
 		const regrouped = change.groupId !== undefined;
 		if (regrouped || change.status === "loading" || change.status === "complete") void syncShim(tabId, regrouped);
 	});
+	api.tabGroups.onUpdated.addListener((group) => {
+		void api.tabs
+			.query({ groupId: group.id })
+			.then((groupTabs) => Promise.all(groupTabs.flatMap((tab) => (tab.id === undefined ? [] : [syncShim(tab.id, false)]))))
+			.catch(() => undefined);
+	});
 	api.tabs.onRemoved.addListener((tabId) => void forgetDialogShim(api.storage, tabId).catch(() => undefined));
 
 	function scrub(result: PwExtResult, secrets: string[]): PwExtResult {
@@ -856,7 +891,7 @@ export function createPwExtHandler({
 		{ sessionId, agentIdentity }: PwExtContext,
 		signal: AbortSignal,
 	): Promise<PwExtResult> {
-		const { tabId } = await agentTabs
+		const { tabId, recoveredTabIds } = await agentTabs
 			.open({ sessionId, agentIdentity, url, canceled: () => signal.aborted })
 			.catch((error: unknown) => {
 				if (error instanceof AgentGroupFullError) throw new Refusal(GROUP_FULL);
@@ -865,6 +900,7 @@ export function createPwExtHandler({
 			});
 		await agentTabs.select({ sessionId, tabId });
 		void syncShim(tabId, false);
+		for (const recovered of recoveredTabIds) void syncShim(recovered, true);
 		return ok(`### Result\nOpened ${url} in tab ${tabId}`);
 	}
 
