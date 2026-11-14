@@ -1288,6 +1288,47 @@ esac
 	});
 });
 
+describe("gather-ci-failures — gh without --allow-escape-sequences", () => {
+	test("retries the log call without the flag on an unknown-flag error", async () => {
+		const ghBin = fakeGh(`#!/bin/sh
+ARGS="$*"
+case "$ARGS" in
+  *"pr view 44 --json headRefOid"*)
+    echo '{"headRefOid":"deadbeef"}'
+    exit 0
+    ;;
+  *"commits/deadbeef/check-runs"*)
+    echo '[{"check_runs":[{"id":710,"name":"build","conclusion":"failure","details_url":"https://github.com/acme/widgets/actions/runs/520/job/710"}]}]'
+    exit 0
+    ;;
+  *"actions/jobs/710/logs"*)
+    case "$ARGS" in
+      *"--allow-escape-sequences"*)
+        echo 'unknown flag: --allow-escape-sequences' >&2
+        exit 1
+        ;;
+      *)
+        echo 'plain failure'
+        exit 0
+        ;;
+    esac
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`);
+
+		const { stdout, exitCode } = await runCli(["gather-ci-failures", "44"], {
+			env: { AI_VCS_PROVIDER: "github", GH_BIN: ghBin },
+		});
+
+		expect(exitCode).toBe(0);
+		const parsed = JSON.parse(stdout) as Array<Record<string, unknown>>;
+		expect(parsed[0].logExcerpt).toBe("plain failure");
+	});
+});
+
 describe("gather-ci-failures — one unavailable job log degrades only that entry", () => {
 	test("degrades one job's logExcerpt to empty when its GitHub Actions log is unavailable, without failing the whole call", async () => {
 		const ghBin = fakeGh(`#!/bin/sh
