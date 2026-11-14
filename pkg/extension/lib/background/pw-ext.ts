@@ -1157,7 +1157,10 @@ export function createPwExtHandler({
 						tab.url,
 					]),
 				);
-				if ("error" in called) return pageError(called.error);
+				if ("error" in called)
+					return mailboxToolAllowed(tool, new URL(tab.url as string).origin, await enabledOrNone())
+						? failed(maskRaw(called.error, RAW_ERROR_MAX, { unmasked, secrets }))
+						: pageError(called.error);
 				if (!("output" in called))
 					return { ok: false, error: "The page returned an unexpected WebMCP result." };
 				return shown(

@@ -1,0 +1,39 @@
+{
+	"Body": {
+		"ResponseMessages": {
+			"Items": [
+				{
+					"__type": "FindItemResponseMessage:#Exchange",
+					"ResponseClass": "Success",
+					"ResponseCode": "NoError",
+					"RootFolder": {
+						"IncludesLastItemInRange": true,
+						"TotalItemsInView": 2,
+						"Items": [
+							{
+								"__type": "Message:#Exchange",
+								"ItemId": { "Id": "AAMkFixtureItem1=", "ChangeKey": "CQAAAFixture1" },
+								"Subject": "Fixture subject",
+								"From": { "Mailbox": { "Name": "Test Person", "EmailAddress": "test.person@example.com" } },
+								"DateTimeReceived": "2026-11-01T09:30:00Z",
+								"IsRead": false,
+								"Flag": { "FlagStatus": "Flagged" },
+								"Preview": "Fixture preview text"
+							},
+							{
+								"__type": "Message:#Exchange",
+								"ItemId": { "Id": "AAMkFixtureItem2=", "ChangeKey": "CQAAAFixture2" },
+								"Subject": "Second fixture subject",
+								"From": { "Mailbox": { "Name": "Other Person", "EmailAddress": "other.person@example.com" } },
+								"DateTimeReceived": "2026-10-31T17:05:00Z",
+								"IsRead": true,
+								"Flag": { "FlagStatus": "NotFlagged" },
+								"Preview": "Second fixture preview"
+							}
+						]
+					}
+				}
+			]
+		}
+	}
+}

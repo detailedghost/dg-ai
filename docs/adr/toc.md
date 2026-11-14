@@ -122,6 +122,9 @@ flowchart LR
 - [0047 — Web MCP area approval class](0047-webmcp-area-approval-class.md) — Proposed:
   tools of one area share one grant per session and site under the key `area:<area>`; mail list and search are the `mail` area, and message bodies are the `mail-body` area. Amends 0046.
 
+- [0048 — Outlook mail Web MCP tools over OWA service calls](0048-outlook-mail-webmcp-tools.md) — Proposed:
+  the Outlook built-in ships ten tools that call `service.svc` from the signed-in page with the headers of the tab's own account endpoint; list and search mask subject and preview; write tools report each id apart; the tools are an extra path next to full pw --ext control of Outlook pages.
+
 ## Adding an ADR
 
 Use [the template](template.md). Store each record in `docs/adr/NNNN-kebab-title.md`.

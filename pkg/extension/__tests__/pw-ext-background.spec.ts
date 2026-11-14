@@ -2230,6 +2230,52 @@ describe("pw --ext tools verb data", () => {
 	});
 });
 
+describe("pw --ext on an Outlook tab", () => {
+	const owaTab = { ...WEB_TAB, url: "https://outlook.live.com/mail/0/", title: "Mail - Test Person - Outlook" };
+
+	it("shows the address and the masked title like any page", async () => {
+		const h = harness({ tabs: [owaTab] });
+		const text = outcome(await h.run({ verb: "current" }));
+		expect(text).toContain("outlook.live.com");
+		expect(text).toContain("- Page Title: Mail - [redacted]");
+		expect(text).not.toContain("(protected mailbox)");
+	});
+
+	it("asks for unmask like on any page", async () => {
+		const h = harness({ approval: "allow", tabs: [owaTab] });
+		expect((await h.run({ verb: "unmask", minutes: 5 })).ok).toBe(true);
+		expect(h.approvalRequests).toHaveLength(1);
+	});
+
+	it("does not refuse snapshot with the mailbox error", async () => {
+		const h = harness({ tabs: [owaTab] });
+		expect(await h.run({ verb: "snapshot" })).not.toEqual({ ok: false, error: PW_EXT_MAILBOX_ERROR });
+	});
+
+	it.each([
+		"Outlook is still loading; retry.",
+		"Outlook refused the request (429)",
+		"limit must be an integer from 1 to 50.",
+		"No mail folder has that name.",
+	])("passes the built-in tool error %p through", async (error) => {
+		const h = harness({ builtInOwned: true, tabs: [owaTab], approval: "allow", mainResult: () => ({ error }) });
+		expect(await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).toEqual({ ok: false, error });
+	});
+
+	it("masks an address in a built-in tool error", async () => {
+		const h = harness({
+			builtInOwned: true,
+			tabs: [owaTab],
+			approval: "allow",
+			mainResult: () => ({ error: "Outlook refused the request (401) test.person@example.com" }),
+		});
+		const answer = await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });
+		if (answer.ok) throw new Error("expected a failure");
+		expect(answer.error).toContain("Outlook refused the request (401)");
+		expect(answer.error).not.toContain("test.person@example.com");
+	});
+});
+
 describe("pw --ext call output", () => {
 	const OUTPUT = { api: "modelContext", output: '{"from":"ada@clinic.test"}' };
 
