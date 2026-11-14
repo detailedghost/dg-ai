@@ -119,8 +119,29 @@ describe("land skill", () => {
 		);
 	});
 
-	test("checks the children of the deleted branch", () => {
+	test("lists the children of the deleted branch", () => {
 		expect(WORKFLOW).toContain("gh pr list --base <headRefName> --state open");
+	});
+
+	test("retargets the children before the merge and never trusts GitHub to do it", () => {
+		const step5 = WORKFLOW.slice(WORKFLOW.indexOf("## Step 5"), WORKFLOW.indexOf("## Step 6"));
+		const retarget = step5.indexOf("gh pr edit <child> --repo <repo> --base <baseRefName>");
+		const merge = step5.indexOf("gh pr merge <n> --repo <repo> --<method> --delete-branch");
+		expect(retarget).toBeGreaterThan(-1);
+		expect(retarget).toBeLessThan(merge);
+		expect(step5).toContain("land: retarget-failed:");
+		expect(step5).toContain("gh pr edit <child> --repo <repo> --base <headRefName>");
+		expect(LAND).not.toMatch(/GitHub moves (them|each)/);
+		expect(LAND).not.toContain("Check the PRs that used the deleted branch");
+		expect(SKILL).toContain("**Move the children first.**");
+	});
+
+	test("gives the exact recovery when GitHub closed a child", () => {
+		const step6 = WORKFLOW.slice(WORKFLOW.indexOf("## Step 6"), WORKFLOW.indexOf("## Step 7"));
+		expect(step6).toContain("git push origin <headSha>:refs/heads/<headRefName>");
+		expect(step6).toContain("gh pr reopen <child> --repo <repo>");
+		expect(step6).toContain("git push origin --delete <headRefName>");
+		expect(step6).toContain("/dg:catchup");
 	});
 });
 
