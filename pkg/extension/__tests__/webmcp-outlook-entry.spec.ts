@@ -70,10 +70,15 @@ describe("startOutlookPlugin", () => {
 		expect(init.headers).toEqual(expect.objectContaining({ "x-owa-canary": "fixture-canary" }));
 	});
 
-	it("starts once per page", async () => {
+	it("starts once per page, so a second start taps the page fetch and XHR no second time", async () => {
 		const host = window as unknown as Parameters<typeof startOutlookPlugin>[0];
+		Object.defineProperty(host, "fetch", { configurable: true, writable: true, value: mock(async () => Response.json(OK)) });
 		startOutlookPlugin(host);
+		const tapped = host.fetch;
+		const xhrSend = host.XMLHttpRequest.prototype.send;
 		startOutlookPlugin(host);
+		expect(host.fetch).toBe(tapped);
+		expect(host.XMLHttpRequest.prototype.send).toBe(xhrSend);
 		await settle();
 		expect(await names()).toHaveLength(10);
 	});
