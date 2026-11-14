@@ -52,7 +52,7 @@ export const WEBMCP_TOOL_CLASSES = {
 export const WEBMCP_TOOL_AREAS = {
 	dg_outlook_list: "mail",
 	dg_outlook_search: "mail",
-	dg_outlook_read: "mail",
+	dg_outlook_read: "mail-body",
 } as const satisfies Partial<Record<keyof typeof WEBMCP_TOOL_CLASSES, string>>;
 
 export type WebMcpArea = (typeof WEBMCP_TOOL_AREAS)[keyof typeof WEBMCP_TOOL_AREAS];

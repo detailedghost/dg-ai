@@ -54,7 +54,7 @@ describe("approvalAreaOf", () => {
 	it.each<[string, WebMcpArea | undefined]>([
 		["dg_outlook_list", "mail"],
 		["dg_outlook_search", "mail"],
-		["dg_outlook_read", "mail"],
+		["dg_outlook_read", "mail-body"],
 		["dg_outlook_move", undefined],
 		["dg_outlook_delete", undefined],
 		["dg_outlook_unknown", undefined],
