@@ -131,7 +131,7 @@ export async function pwExtWebMcp(
 	const doc = document as Document & {
 		modelContext?: {
 			getTools(): Promise<Raw[]>;
-			executeTool(tool: Raw, args: object, options?: object): Promise<unknown>;
+			executeTool(tool: Raw, args: string, options?: object): Promise<unknown>;
 		};
 	};
 	const nav = doc.defaultView?.navigator as
@@ -226,7 +226,7 @@ export async function pwExtWebMcp(
 		try {
 			const output = await Promise.race([
 				useModern
-					? modern!.executeTool({ name: action.tool }, action.args, { signal: controller.signal })
+					? modern!.executeTool(tool, JSON.stringify(action.args ?? {}), { signal: controller.signal })
 					: legacy!.executeTool(action.tool, JSON.stringify(action.args)),
 				timeout,
 			]);
