@@ -39,14 +39,30 @@ function dropHidden(html: string): string {
 	return out + html.slice(from);
 }
 
+const TAG_START = /<[A-Za-z/!?]/g;
+
+/** The index just past the > that ends the tag at open, skipping a > inside a quoted attribute; -1 when the tag never ends. */
+function tagEnd(html: string, open: number): number {
+	let quote = "";
+	for (let at = open + 1; at < html.length; at += 1) {
+		const char = html[at];
+		if (quote) {
+			if (char === quote) quote = "";
+		} else if (char === '"' || char === "'") quote = char;
+		else if (char === ">") return at + 1;
+	}
+	return -1;
+}
+
 function dropTags(html: string): string {
 	let out = "";
 	let from = 0;
-	for (let open = html.indexOf("<"); open !== -1; open = html.indexOf("<", from)) {
-		const close = html.indexOf(">", open);
-		if (close === -1) break;
-		out += html.slice(from, open);
-		from = close + 1;
+	TAG_START.lastIndex = 0;
+	for (let match = TAG_START.exec(html); match; match = TAG_START.exec(html)) {
+		const end = tagEnd(html, match.index);
+		if (end === -1) break;
+		out += html.slice(from, match.index);
+		from = TAG_START.lastIndex = end;
 	}
 	return out + html.slice(from);
 }

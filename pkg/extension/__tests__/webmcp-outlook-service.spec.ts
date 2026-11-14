@@ -60,7 +60,7 @@ describe("createOwaService", () => {
 		const { service, sent, asked } = setup({ href });
 		await service.call("FindItem", { Traversal: "Shallow" });
 		expect(sent[0]?.url).toBe(url);
-		expect(asked).toEqual([new URL(url).pathname]);
+		expect([...new Set(asked)]).toEqual([new URL(url).pathname]);
 	});
 
 	it("sends no headers of another account endpoint and waits for its own", async () => {
@@ -255,6 +255,26 @@ describe("createOwaService", () => {
 		await Promise.all(busy);
 		await expect(queued).rejects.toThrow(OUTLOOK_ACCOUNT_CHANGED);
 		expect(sent.map((entry) => new URL(entry.url).pathname)).toEqual(Array(4).fill("/owa/0/service.svc"));
+	});
+
+	it("never sends a queued call after the endpoint's mailbox anchor changed", async () => {
+		const releases: Array<() => void> = [];
+		let held: Record<string, string> = HEADERS;
+		const { service, sent } = setup({
+			headers: () => held,
+			reply: async () => {
+				await new Promise<void>((resolve) => releases.push(resolve));
+				return Response.json(OK);
+			},
+		});
+		const busy = Array.from({ length: 4 }, () => service.call("FindItem", {}));
+		const queued = service.call("CreateItem", {});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		held = { ...HEADERS, authorization: "Bearer fixture-token-b", "x-anchormailbox": "PUID:fixture-b@example.com" };
+		releases.splice(0).forEach((release) => release());
+		await Promise.all(busy);
+		await expect(queued).rejects.toThrow(OUTLOOK_ACCOUNT_CHANGED);
+		expect(sent).toHaveLength(4);
 	});
 
 	it("passes the signal to the page fetch", async () => {

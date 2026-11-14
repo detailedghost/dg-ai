@@ -63,10 +63,17 @@ export function createOwaService({
 		}
 	}
 
-	async function send(path: string, action: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<OwaItem[]> {
+	async function send(
+		path: string,
+		anchor: string | undefined,
+		action: string,
+		body: Record<string, unknown>,
+		signal?: AbortSignal,
+	): Promise<OwaItem[]> {
 		const held = await session(path, signal);
 		live(signal);
-		if (servicePathOf(location) !== path) throw new Error(OUTLOOK_ACCOUNT_CHANGED);
+		if (servicePathOf(location) !== path || (anchor !== undefined && held["x-anchormailbox"] !== anchor))
+			throw new Error(OUTLOOK_ACCOUNT_CHANGED);
 		let response: Response;
 		try {
 			response = await fetch(`${location.origin}${path}?action=${encodeURIComponent(action)}&app=Mail`, {
@@ -103,7 +110,8 @@ export function createOwaService({
 	return {
 		call(action: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<OwaItem[]> {
 			const path = servicePathOf(location);
-			return limit(() => send(path, action, body, signal));
+			const anchor = headers(path)?.["x-anchormailbox"];
+			return limit(() => send(path, anchor, action, body, signal));
 		},
 	};
 }

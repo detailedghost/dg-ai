@@ -32,8 +32,8 @@ The runtime-registered content script
   `/owa/service.svc` elsewhere when the page has no index. It sends only the
   headers held for that endpoint, so one account's headers never reach another
   account's endpoint. At most 4 calls are in flight per tab, and a queued call
-  whose signal aborted, or whose tab switched to another account while it
-  waited, is never sent. A call fails only when no response
+  whose signal aborted, or whose tab or endpoint switched to another account
+  (another path or another `X-AnchorMailbox`) while it waited, is never sent. A call fails only when no response
   message succeeded.
 - **Tools.** List and search return id, sender address, date, read and flag
   state, and never ask Outlook for the subject or the preview. Read returns the

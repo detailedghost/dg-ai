@@ -300,6 +300,15 @@ describe("htmlToText", () => {
 		expect(htmlToText(`<p>${"a".repeat(60_000)}</p>`)).toHaveLength(50_000);
 	});
 
+	it("keeps literal angle brackets that start no tag", () => {
+		expect(htmlToText("<p>Only continue if 1 < 2 and 3 > 2.</p>")).toBe("Only continue if 1 < 2 and 3 > 2.");
+		expect(htmlToText("a <= b, c<3")).toBe("a <= b, c<3");
+	});
+
+	it("skips a > inside a quoted attribute", () => {
+		expect(htmlToText(`<a title="x > y" href='a>b'>link</a> after`)).toBe("link after");
+	});
+
 	it("drops comments and decodes entities once", () => {
 		expect(htmlToText("<!-- hidden -->a &amp;lt; b")).toBe("a &lt; b");
 	});
