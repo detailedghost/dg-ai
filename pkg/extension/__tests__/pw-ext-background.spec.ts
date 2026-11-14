@@ -1844,11 +1844,12 @@ describe("pw --ext WebMCP approval", () => {
 			builtInOwned: true,
 			thirdPartySites: { active: [], stopped: [{ matches: ["https://example.com/*"], stoppedAt: 9_000 }] },
 			tabs: [owaTab],
-			approval: "deny",
+			approval: "allow",
 			mainResult: ran,
 		});
+		await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });
 		expect((await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).ok).toBe(true);
-		expect(h.approvalRequests).toEqual([]);
+		expect(h.approvalRequests).toHaveLength(1);
 	});
 
 	it("remembers a built-in session tool for 30 days across sessions until it is revoked", async () => {
@@ -1885,10 +1886,22 @@ describe("pw --ext WebMCP approval", () => {
 		expect(await h.fake.api.storage.session.get(`webmcpGrants:${SESSION}`)).toEqual({});
 	});
 
-	it("runs a read tool without asking", async () => {
-		const h = harness({ builtInOwned: true, tabs: [owaTab], approval: "deny", mainResult: ran });
+	it("asks once per mail area, so list, search and read share one grant", async () => {
+		const h = harness({ builtInOwned: true, tabs: [owaTab], approval: "allow", mainResult: ran });
 		expect((await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).ok).toBe(true);
-		expect(h.approvalRequests).toEqual([]);
+		expect((await h.run({ verb: "call", tool: "dg_outlook_search", args: { query: "Fixture subject" } })).ok).toBe(true);
+		expect((await h.run({ verb: "call", tool: "dg_outlook_read", args: { id: "fixture-item-1" } })).ok).toBe(true);
+		expect(h.approvalRequests).toEqual([expect.objectContaining({ title: "Allow dg_outlook_list on live.com?" })]);
+		expect(await h.fake.api.storage.session.get(`webmcpGrants:${SESSION}`)).toEqual({
+			[`webmcpGrants:${SESSION}`]: [{ site: "https://live.com", tool: "area:mail" }],
+		});
+	});
+
+	it("does not run a mail area tool on Deny", async () => {
+		const actions: unknown[] = [];
+		const h = harness({ builtInOwned: true, tabs: [owaTab], approval: "deny", mainResult: (action) => void actions.push(action) });
+		expect((await h.run({ verb: "call", tool: "dg_outlook_read", args: { id: "fixture-item-1" } })).ok).toBe(false);
+		expect(actions).toEqual([]);
 	});
 
 	it("asks every time for a site's own tool with no dg_ name", async () => {
@@ -1914,7 +1927,10 @@ describe("pw --ext WebMCP approval", () => {
 		await h.run({ verb: "tools" });
 		await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });
 		await h.run({ verb: "call", tool: "dg_outlook_move", args: { ids: ["a"], folder: "archive" } });
-		expect(h.approvalRequests).toEqual([expect.objectContaining({ title: "Allow dg_outlook_move on live.com?" })]);
+		expect(h.approvalRequests).toEqual([
+			expect.objectContaining({ title: "Allow dg_outlook_list on live.com?" }),
+			expect.objectContaining({ title: "Allow dg_outlook_move on live.com?" }),
+		]);
 		expect(h.fake.session.has(`pwExtSites:${SESSION}`)).toBe(false);
 	});
 
@@ -2090,15 +2106,16 @@ describe("pw --ext WebMCP on a mailbox tab", () => {
 		expect(h.approvalRequests).toHaveLength(2);
 	});
 
-	it("asks nothing for dg_outlook_list on outlook.live.com", async () => {
+	it("asks once per mail area for dg_outlook_list on outlook.live.com", async () => {
 		const h = harness({
 			builtInOwned: true,
 			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/" }],
-			approval: "deny",
+			approval: "allow",
 			mainResult: () => ({ api: "modelContext", output: "[]" }),
 		});
 		expect((await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).ok).toBe(true);
-		expect(h.approvalRequests).toEqual([]);
+		expect((await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).ok).toBe(true);
+		expect(h.approvalRequests).toHaveLength(1);
 	});
 
 	it("replaces a page-sourced error on the mailbox tab with a fixed message", async () => {
@@ -2227,6 +2244,7 @@ describe("pw --ext call output", () => {
 		const h = harness({
 			builtInOwned: true,
 			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/" }],
+			approval: "allow",
 			mainResult: () => ({ api: "modelContext", output: JSON.stringify({ items: [{ id }] }) }),
 		});
 		const answer = await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });

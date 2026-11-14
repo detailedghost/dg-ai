@@ -1,6 +1,9 @@
 import type { WebMcpGrantView } from "@dg/pages/chat-messages";
 import { button, element } from "./dom";
 
+const AREA_LABELS: Record<string, string> = { "area:mail": "mail (all mail read tools)" };
+const grantLabel = (tool: string) => (Object.hasOwn(AREA_LABELS, tool) ? (AREA_LABELS[tool] as string) : tool);
+
 export const siteName = (site: string) => (site.startsWith("https://") ? site.slice("https://".length) : site);
 
 export function parseWebMcpGrants(reply: unknown): WebMcpGrantView[] {
@@ -35,7 +38,8 @@ export function webMcpGrantRow(
 			? sessionLabel(grant.sessionId)
 			: `Remembered until ${new Date(grant.expiresAt).toISOString().slice(0, 10)}`;
 	const scope = grant.kind === "session" ? "this session" : "30 days";
-	identity.append(element(doc, "b", "", grant.tool), element(doc, "div", "mono", `${siteName(grant.site)} · ${scope}`));
+	const label = grantLabel(grant.tool);
+	identity.append(element(doc, "b", "", label), element(doc, "div", "mono", `${siteName(grant.site)} · ${scope}`));
 	identity.append(element(doc, "div", "mono", who));
 	const revoke = button(doc, "btn btn-sm", "Revoke", () => {
 		revoke.disabled = true;
@@ -43,7 +47,7 @@ export function webMcpGrantRow(
 			revoke.disabled = false;
 		});
 	});
-	revoke.setAttribute("aria-label", `Revoke ${grant.tool} on ${siteName(grant.site)}, ${who}`);
+	revoke.setAttribute("aria-label", `Revoke ${label} on ${siteName(grant.site)}, ${who}`);
 	line.append(identity, revoke);
 	row.append(line);
 	return row;

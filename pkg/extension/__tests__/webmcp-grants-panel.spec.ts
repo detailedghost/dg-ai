@@ -54,6 +54,17 @@ function revokeAllButton(container: HTMLElement): HTMLElement {
 }
 
 describe("options Web MCP grants panel", () => {
+	it("names an area grant by its area and sends the grant key unchanged on revoke", async () => {
+		const area: WebMcpGrantView = { kind: "session", sessionId: "abcdef123456", site: "https://live.com", tool: "area:mail" };
+		const { container, sent } = mount([area]);
+		await settle();
+		expect(container.querySelector("b")?.textContent).toBe("mail (all mail read tools)");
+		const revoke = container.querySelector('[aria-label^="Revoke mail (all mail read tools) on live.com"]') as unknown as HTMLElement;
+		revoke.click();
+		await settle();
+		expect(sent).toContainEqual({ type: MSG.webmcpRevoke, grant: area });
+	});
+
 	it("renders session and remembered grants like the popup rows", async () => {
 		const { container } = mount([session, remembered]);
 		await settle();
