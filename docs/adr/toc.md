@@ -119,8 +119,8 @@ flowchart LR
 - [0046 — pw --ext: read the network calls of an agent tab, shape first](0046-pw-ext-network.md) — Accepted:
   a MAIN-world hook in agent tabs records `fetch` and XHR calls; `pw --ext network` shows their shape with no values, and `--values` shows masked values after one Allow per site and session. Amends 0044. Amended 2026-11-13: after that Allow the hook keeps same-origin sign-in headers sealed for `fetch --auth page` and `credential save`, which stores values unseen through a daemon-only frame; adds the `cookies` permission.
 
-- [0047 — Web MCP area approval class and the Outlook mail tools](0047-webmcp-area-approval-class.md) — Proposed:
-  mail list, search and read share one `area` grant per session and site, stored under the key `area:mail`; Outlook tabs become protected mailboxes; the Outlook built-in ships ten OWA service-call tools. Amends 0046.
+- [0047 — Web MCP area approval class](0047-webmcp-area-approval-class.md) — Proposed:
+  tools of one area share one grant per session and site under the key `area:<area>`; mail list and search are the `mail` area, and message bodies are the `mail-body` area. Amends 0046.
 
 ## Adding an ADR
 

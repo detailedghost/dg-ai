@@ -110,5 +110,6 @@ flowchart LR
 
 [ADR 0047](0047-webmcp-area-approval-class.md) adds the `area` class. An area
 grant uses the same `{site, tool}` record with the synthetic tool key
-`area:<area>`, so one mail grant covers list, search and read on a site. The
-`read` class has no tool left.
+`area:<area>`. One `mail` grant covers list and search on a site, and reading
+a message body needs its own `mail-body` grant. The `read` class has no tool
+left.

@@ -1,7 +1,10 @@
 import type { WebMcpGrantView } from "@dg/pages/chat-messages";
 import { button, element } from "./dom";
 
-const AREA_LABELS: Record<string, string> = { "area:mail": "mail (all mail read tools)" };
+const AREA_LABELS: Record<string, string> = {
+	"area:mail": "mail (list and search)",
+	"area:mail-body": "mail-body (read message bodies)",
+};
 const grantLabel = (tool: string) => (Object.hasOwn(AREA_LABELS, tool) ? (AREA_LABELS[tool] as string) : tool);
 
 export const siteName = (site: string) => (site.startsWith("https://") ? site.slice("https://".length) : site);

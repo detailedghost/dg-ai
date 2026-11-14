@@ -58,11 +58,18 @@ describe("options Web MCP grants panel", () => {
 		const area: WebMcpGrantView = { kind: "session", sessionId: "abcdef123456", site: "https://live.com", tool: "area:mail" };
 		const { container, sent } = mount([area]);
 		await settle();
-		expect(container.querySelector("b")?.textContent).toBe("mail (all mail read tools)");
-		const revoke = container.querySelector('[aria-label^="Revoke mail (all mail read tools) on live.com"]') as unknown as HTMLElement;
+		expect(container.querySelector("b")?.textContent).toBe("mail (list and search)");
+		const revoke = container.querySelector('[aria-label^="Revoke mail (list and search) on live.com"]') as unknown as HTMLElement;
 		revoke.click();
 		await settle();
 		expect(sent).toContainEqual({ type: MSG.webmcpRevoke, grant: area });
+	});
+
+	it("names a mail-body grant by its area", async () => {
+		const body: WebMcpGrantView = { kind: "remembered", site: "https://live.com", tool: "area:mail-body", expiresAt: Date.UTC(2026, 11, 13) };
+		const { container } = mount([body]);
+		await settle();
+		expect(container.querySelector("b")?.textContent).toBe("mail-body (read message bodies)");
 	});
 
 	it("renders session and remembered grants like the popup rows", async () => {

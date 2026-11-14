@@ -1882,14 +1882,21 @@ describe("pw --ext WebMCP approval", () => {
 		expect(await h.fake.api.storage.session.get(`webmcpGrants:${SESSION}`)).toEqual({});
 	});
 
-	it("asks once per mail area, so list, search and read share one grant", async () => {
+	it("asks once per mail area, so list and search share one grant and read asks apart", async () => {
 		const h = harness({ builtInOwned: true, tabs: [owaTab], approval: "allow", mainResult: ran });
 		expect((await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).ok).toBe(true);
 		expect((await h.run({ verb: "call", tool: "dg_outlook_search", args: { query: "Fixture subject" } })).ok).toBe(true);
 		expect((await h.run({ verb: "call", tool: "dg_outlook_read", args: { id: "fixture-item-1" } })).ok).toBe(true);
-		expect(h.approvalRequests).toEqual([expect.objectContaining({ title: "Allow dg_outlook_list on live.com?" })]);
+		expect((await h.run({ verb: "call", tool: "dg_outlook_read", args: { id: "fixture-item-2" } })).ok).toBe(true);
+		expect(h.approvalRequests).toEqual([
+			expect.objectContaining({ title: "Allow dg_outlook_list on live.com?" }),
+			expect.objectContaining({ title: "Allow dg_outlook_read on live.com?" }),
+		]);
 		expect(await h.fake.api.storage.session.get(`webmcpGrants:${SESSION}`)).toEqual({
-			[`webmcpGrants:${SESSION}`]: [{ site: "https://live.com", tool: "area:mail" }],
+			[`webmcpGrants:${SESSION}`]: [
+				{ site: "https://live.com", tool: "area:mail" },
+				{ site: "https://live.com", tool: "area:mail-body" },
+			],
 		});
 	});
 

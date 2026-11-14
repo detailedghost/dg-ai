@@ -225,7 +225,8 @@ const SCOPE_LINES: Record<Exclude<WebMcpApprovalClass, "read" | "area">, string>
 	each: "This tool asks every time.",
 };
 const AREA_SCOPE_LINES: Record<WebMcpArea, string> = {
-	mail: "Allow lets this agent use every mail read tool (list, search and read message bodies) on this site until its MCP session ends.",
+	mail: "Allow lets this agent list and search mail on this site until its MCP session ends. Reading a message body asks separately.",
+	"mail-body": "Allow lets this agent read message bodies on this site until its MCP session ends.",
 };
 const REMEMBER_LABEL = `Remember for ${REMEMBER_DAYS} days, for every agent session`;
 
