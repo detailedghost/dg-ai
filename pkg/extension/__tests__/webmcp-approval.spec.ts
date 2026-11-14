@@ -22,8 +22,9 @@ function memoryStorage() {
 			remove: async (key: string) => void delete data[key],
 		},
 		local: {
-			get: async (key: string) => ({ [key]: structuredClone(local[key]) }),
+			get: async (key: string | null) => (key === null ? structuredClone(local) : { [key]: structuredClone(local[key]) }),
 			set: async (items: Record<string, unknown>) => void Object.assign(local, structuredClone(items)),
+			remove: async (key: string) => void delete local[key],
 		},
 	};
 }

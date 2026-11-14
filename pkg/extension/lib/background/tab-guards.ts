@@ -26,3 +26,18 @@ export function mailbox(url: string | undefined): boolean {
 		return false;
 	}
 }
+
+const OUTLOOK_HOSTS = new Set([
+	"outlook.live.com",
+	"outlook.office.com",
+	"outlook.office365.com",
+	"outlook.cloud.microsoft",
+]);
+
+export function outlookWeb(url: string | undefined): boolean {
+	try {
+		return OUTLOOK_HOSTS.has(new URL(url ?? "").hostname);
+	} catch {
+		return false;
+	}
+}

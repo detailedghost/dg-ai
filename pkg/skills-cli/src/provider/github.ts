@@ -395,8 +395,14 @@ async function listCiFailures(tag: ShellTag, ref: PrRef): Promise<CiFailure[]> {
 		const runId = parseWorkflowRunId(run.details_url) ?? parseWorkflowRunId(run.html_url);
 		let logExcerpt = "";
 		try {
-			const logResult =
-				await tag`api repos/${ownerRepoPath(ref.repo)}/actions/jobs/${jobId}/logs ${apiHostFlags(ref.repo)}`;
+			const logPath = `repos/${ownerRepoPath(ref.repo)}/actions/jobs/${jobId}/logs`;
+			let logResult: Awaited<ReturnType<ShellTag>>;
+			try {
+				logResult = await tag`api ${logPath} --allow-escape-sequences ${apiHostFlags(ref.repo)}`;
+			} catch (err) {
+				if (!isCliErrorContaining(err, "unknown flag")) throw err;
+				logResult = await tag`api ${logPath} ${apiHostFlags(ref.repo)}`;
+			}
 			logExcerpt = truncateLogExcerpt(logResult.stdout.toString());
 		} catch (err) {
 			if (!isNotFoundError(err)) throw err;

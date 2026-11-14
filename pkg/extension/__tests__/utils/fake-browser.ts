@@ -41,6 +41,7 @@ type Listeners = {
 	activated: Set<(info: { tabId: number; windowId: number }) => void>;
 	updated: Set<(tabId: number, change: Record<string, unknown>, tab?: unknown) => void>;
 	removed: Set<(tabId: number) => void>;
+	groupUpdated: Set<(group: { id: number }) => void>;
 };
 
 export const TAB_GROUP_ID_NONE = -1;
@@ -107,10 +108,12 @@ export function createFakeBrowser(
 	const tabs = new Map((seed.tabs ?? []).map((t) => [t.id, { ...t }]));
 	const groups = new Map((seed.groups ?? []).map((g) => [g.id, { ...g }]));
 	const session = new Map<string, unknown>();
+	const local = new Map<string, unknown>();
 	const listeners: Listeners = {
 		activated: new Set(),
 		updated: new Set(),
 		removed: new Set(),
+		groupUpdated: new Set(),
 	};
 	const state = {
 		lastFocusedWindowId: seed.lastFocusedWindowId ?? [...windows.keys()][0],
@@ -302,6 +305,10 @@ export function createFakeBrowser(
 			},
 		},
 		tabGroups: {
+			onUpdated: {
+				addListener: (fn: (group: { id: number }) => void) => listeners.groupUpdated.add(fn),
+				removeListener: (fn: (group: { id: number }) => void) => listeners.groupUpdated.delete(fn),
+			},
 			update: mock(
 				async (id: number, props: { title?: string; color?: string }) => {
 					const group = groups.get(id);
@@ -322,6 +329,22 @@ export function createFakeBrowser(
 			]),
 		},
 		storage: {
+			local: {
+				get: mock(async (keys?: string | string[] | null) => {
+					if (keys === undefined || keys === null) return Object.fromEntries(local);
+					const wanted = Array.isArray(keys) ? keys : [keys];
+					return Object.fromEntries(
+						wanted.filter((key) => local.has(key)).map((key) => [key, local.get(key)]),
+					);
+				}),
+				set: mock(async (items: Record<string, unknown>) => {
+					for (const [key, value] of Object.entries(items))
+						local.set(key, structuredClone(value));
+				}),
+				remove: mock(async (keys: string | string[]) => {
+					for (const key of Array.isArray(keys) ? keys : [keys]) local.delete(key);
+				}),
+			},
 			session: {
 				get: mock(async (keys?: string | string[] | null) => {
 					if (keys === undefined || keys === null)
@@ -351,6 +374,9 @@ export function createFakeBrowser(
 		tabs,
 		groups,
 		session,
+		reload() {
+			session.clear();
+		},
 		addTab,
 		addGroup(group: FakeGroup) {
 			groups.set(group.id, { ...group });
@@ -365,6 +391,11 @@ export function createFakeBrowser(
 		flushActivations,
 		fireActivated(info: { tabId: number; windowId: number }) {
 			for (const fn of listeners.activated) fn(info);
+		},
+		renameGroup(id: number, title: string) {
+			const group = groups.get(id);
+			if (group) group.title = title;
+			for (const fn of listeners.groupUpdated) fn({ id });
 		},
 		fireUpdated(tabId: number, change: Record<string, unknown>) {
 			const tab = tabs.get(tabId);

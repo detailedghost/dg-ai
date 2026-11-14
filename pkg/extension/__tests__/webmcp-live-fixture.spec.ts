@@ -36,10 +36,10 @@ describe("Web MCP live fixture script", () => {
 	it("returns fixed strings that hold no page data", async () => {
 		const context = run("http://localhost:8765/");
 
-		expect(await context!.executeTool({ name: "dg_outlook_move" }, { id: "fixture-2" }, {})).toBe(
+		expect(await context!.executeTool({ name: "dg_outlook_move", description: "" }, { id: "fixture-2" }, {})).toBe(
 			"Fixture: moved fixture-2 to Archive. Nothing changed.",
 		);
-		expect(await context!.executeTool({ name: "dg_fixture_echo" }, { text: "hi" }, {})).toBe('Fixture echo: {"text":"hi"}');
+		expect(await context!.executeTool({ name: "dg_fixture_echo", description: "" }, { text: "hi" }, {})).toBe('Fixture echo: {"text":"hi"}');
 	});
 
 	it("fails loudly when the shim was not injected first", () => {

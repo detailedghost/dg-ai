@@ -105,7 +105,7 @@ function harness(options: Options = {}) {
 			tabOf({ id: 21, windowId: WINDOW, title: "User tab" }),
 		],
 		groups: [
-			{ id: GROUP, windowId: WINDOW, title: "mine" },
+			{ id: GROUP, windowId: WINDOW, title: "agent · sess" },
 			{ id: OTHER_GROUP, windowId: WINDOW, title: "theirs" },
 		],
 	});
@@ -1232,6 +1232,64 @@ describe("pw --ext unmask", () => {
 			error: expect.stringContaining("Proton Mail"),
 		});
 		expect(h.approvalRequests).toEqual([]);
+	});
+
+	describe("Outlook page title", () => {
+		const outlookTab = (url: string, title: string) => [{ ...WEB_TAB, url, title }];
+
+		it.each([
+			"https://outlook.live.com/mail/0/",
+			"https://outlook.office.com/mail/",
+			"https://outlook.office365.com/mail/",
+			"https://outlook.cloud.microsoft/mail/",
+		])("masks the account name in the title on %s", async (url) => {
+			const h = harness({ tabs: outlookTab(url, "Mail - Test Person - Outlook") });
+			const text = outcome(await h.run({ verb: "current" }));
+			expect(text).toContain("- Page Title: Mail - [redacted]");
+			expect(text).not.toContain("Test Person");
+		});
+
+		it("masks the email address in the title", async () => {
+			const h = harness({
+				tabs: outlookTab("https://outlook.live.com/mail/0/", "Inbox - test.person@example.com - Outlook"),
+			});
+			const text = outcome(await h.run({ verb: "current" }));
+			expect(text).not.toContain("test.person@example.com");
+			expect(text).not.toContain("Test Person");
+		});
+
+		it.each([
+			["no suffix", "Mail - Test Person", "Mail - [redacted]"],
+			["one part", "Test Person", "[redacted]"],
+			["localized text", "Correo - Persona de Prueba - Outlook", "[redacted] - [redacted]"],
+			["a new-app title", "Outlook (new)", "[redacted]"],
+			["a known word alone", "Calendar", "Calendar"],
+			["an unread count", "(3) Mail - Test Person - Outlook", "(3) Mail - [redacted]"],
+			["a count with text", "(Test Person) Mail - Outlook", "[redacted] - [redacted]"],
+			["a count on an unknown word", "(3) Test Person - Outlook", "(3) [redacted] - [redacted]"],
+		])("fails closed on %s", async (_name, title, shown) => {
+			const h = harness({ tabs: outlookTab("https://outlook.office.com/mail/", title) });
+			const text = outcome(await h.run({ verb: "current" }));
+			expect(text).toContain(`- Page Title: ${shown}`);
+			expect(text).not.toContain("Test Person");
+			expect(text).not.toContain("Persona");
+		});
+
+		it("shows the full title during an unmask grant", async () => {
+			const h = harness({
+				approval: "allow",
+				tabs: outlookTab("https://outlook.live.com/mail/0/", "Mail - Test Person - Outlook"),
+			});
+			await h.run({ verb: "unmask", minutes: 5 });
+			const text = outcome(await h.run({ verb: "current" }));
+			expect(text).toContain("- Page Title: Mail - Test Person - Outlook");
+		});
+
+		it("leaves other sites' titles alone", async () => {
+			const h = harness({ tabs: outlookTab("https://app.example.test/", "Mail - Test Person - Outlook") });
+			const text = outcome(await h.run({ verb: "current" }));
+			expect(text).toContain("- Page Title: Mail - Test Person - Outlook");
+		});
 	});
 
 	it("shows email addresses in the page title and on console output during a grant", async () => {
@@ -2375,6 +2433,18 @@ describe("pw --ext dialog", () => {
 		expect(dialogCalls(h).map((call) => [call.target.tabId, call.args[0]])).toEqual([[tab.id, { kind: "install" }]]);
 	});
 
+	it("installs the shim in the tabs of a recovered group when new reuses it", async () => {
+		const h = harness({ record: false });
+		await h.fake.raw.storage.local.set({
+			[`agentTabsGroup:${SESSION}`]: { ...recordOf({ sessionId: SESSION, agentIdentity: IDENTITY, groupId: GROUP }), windowId: WINDOW, groupTitle: "agent · sess" },
+		});
+		await h.run({ verb: "new", url: "https://app.example.test/" });
+		const tab = await h.createdTab();
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(h.fake.tabs.get(tab.id)?.groupId).toBe(GROUP);
+		expect(dialogCalls(h).map((call) => call.target.tabId).sort()).toEqual([7, tab.id].sort());
+	});
+
 	it("stops waiting on a tab that does not answer when the session ends", async () => {
 		const h = harness();
 		h.fake.state.script = () => new Promise(() => {});
@@ -2930,9 +3000,46 @@ describe("pw --ext agent banner", () => {
 		h.fake.fireUpdated(7, { groupId: -1 });
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		expect(bannerCalls(h).map((call) => [call.world, call.args])).toEqual([
-			[undefined, [true]],
+			[undefined, [true, "agent · sess"]],
 			[undefined, [false]],
 		]);
+	});
+
+	it("updates the strip when the person renames the agent group", async () => {
+		const h = harness();
+		h.fake.fireUpdated(7, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		h.fake.renameGroup(GROUP, "Sammy review");
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(bannerCalls(h).map((call) => call.args)).toEqual([
+			[true, "agent · sess"],
+			[true, "Sammy review"],
+		]);
+	});
+
+	it("shows the renamed title on a new load after the rename", async () => {
+		const h = harness();
+		h.fake.renameGroup(GROUP, "Sammy review");
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		h.fake.fireUpdated(7, { status: "complete" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(bannerCalls(h).at(-1)?.args).toEqual([true, "Sammy review"]);
+	});
+
+	it("falls back to the record title when the live group title is empty", async () => {
+		const h = harness();
+		h.fake.renameGroup(GROUP, "");
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(bannerCalls(h).at(-1)?.args).toEqual([true, "agent · sess"]);
+	});
+
+	it("shows the short session id when the group record has no title", async () => {
+		const h = harness({ record: false });
+		h.fake.seedRecord(recordOf({ sessionId: SESSION, groupId: GROUP, title: "", selectedTabId: 7 }));
+		(h.fake.groups.get(GROUP) as { title: string }).title = "";
+		h.fake.fireUpdated(7, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(bannerCalls(h).map((call) => call.args)).toEqual([[true, "sess"]]);
 	});
 });
 

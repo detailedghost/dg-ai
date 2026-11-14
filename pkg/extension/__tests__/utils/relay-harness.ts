@@ -138,6 +138,7 @@ export async function bootRelay(
 			sendMessage: mock((_m: unknown) => Promise.resolve(undefined)),
 			openOptionsPage: mock(() => Promise.resolve()),
 		},
+		tabGroups: { onUpdated: { addListener: () => undefined, removeListener: () => undefined } },
 		tabs: { create: mock(() => Promise.resolve()), onUpdated: { addListener: () => undefined, removeListener: () => undefined }, onRemoved: { addListener: () => undefined, removeListener: () => undefined } },
 		storage,
 	};

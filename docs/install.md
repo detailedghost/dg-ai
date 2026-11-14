@@ -733,6 +733,7 @@ to copy only the CLI skills into `$CODEX_HOME/skills`.
 | `clipboard-img` | Yes — needs a native WSL, Wayland, or X11 clipboard tool |
 | `channel-review` | Yes |
 | `worktree`, `spec`, `sdlc`, `assign`, `monolith`, `spring-break`, `review-loop`, `polish` | Yes — they call other skills and tools that must be available |
+| `land` | Yes — needs Git, an authenticated `gh` (GitHub only), and the selected review backend |
 | `jot`, `bg`, `cls`, `stat`, `sniff`, `find-work`, `doctor` | Yes — they call other skills and tools that must be available |
 | `db`, `erd` | Yes |
 | `pw` | Yes — needs Bun 1.4.0 or later and Chrome, Edge, or a Chromium from `install-browser` |
