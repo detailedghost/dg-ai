@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { PW_EXT_MAX_TEXT_CHARS, type PwExtRequest } from "@dg/common";
+import { PW_EXT_MAX_TEXT_CHARS, PW_EXT_MAX_TOOLS, type PwExtRequest } from "@dg/common";
 import { PW_EXT_MAILBOX_ERROR } from "@/lib/background/tab-guards";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
 import type { ApprovalRequest } from "@/lib/background/approval";
@@ -77,6 +77,7 @@ type Options = {
 	enabledBuiltIns?: () => Promise<Set<string>>;
 	builtInOwned?: boolean;
 	thirdPartySites?: { active: string[]; stopped: { matches: string[]; stoppedAt: number }[] };
+	runningThirdParty?: string[];
 	documentStart?: number;
 	remember?: boolean;
 	pageDeadlineMs?: number;
@@ -181,6 +182,7 @@ function harness(options: Options = {}) {
 				? { enabledBuiltIns: async () => new Set(["outlook"]) }
 				: {}),
 		...(options.thirdPartySites ? { thirdPartySites: async () => options.thirdPartySites as never } : {}),
+		runningThirdParty: async () => options.runningThirdParty ?? [],
 		...(options.pageDeadlineMs ? { pageDeadlineMs: options.pageDeadlineMs } : {}),
 		lock: agentTabsLock,
 		control: options.sites === "ask" ? createSessionControl({ storage: fake.api.storage }) : allowAllSites,
@@ -3736,6 +3738,53 @@ describe("Web MCP on the person's own tabs", () => {
 		await h.handler.stop(SESSION);
 		const answer = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} }, SESSION);
 		expect(answer.ok).toBe(true);
+	});
+
+	it("masks a secret the session holds in tool output", async () => {
+		const h = anyTabHarness();
+		h.fake.state.script = (details) => {
+			const call = details as { args: unknown[]; world?: string };
+			const action = call.args[0] as { kind: string };
+			if (action.kind === "tools") return { api: "modelContext", tools: pageTools };
+			return { api: "modelContext", output: "token orchid-maple-tree here" };
+		};
+		await createUnmaskGrants({ storage: h.fake.api.storage }).reserve(MCP_SESSION, "orchid-maple-tree");
+		const answer = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
+		expect(answer.ok && answer.data.text).not.toContain("orchid-maple-tree");
+	});
+
+	it("keeps the list within the wire limit of tools", async () => {
+		const many = Array.from({ length: 70 }, (_, i) => ({ name: `dg_outlook_tool${i}`, description: "x" }));
+		const more = Array.from({ length: 70 }, (_, i) => ({ name: `dg_outlook_more${i}`, description: "x" }));
+		const h = anyTabHarness({
+			tabs: [outlookTab(), outlookTab({ id: 31, active: false })],
+			pages: { [OUTLOOK_TAB]: many, 31: more },
+		});
+		const answer = await h.mcp({ verb: "webmcp-tools" });
+		expect(answer.ok && answer.data.tools).toHaveLength(PW_EXT_MAX_TOOLS);
+	});
+
+	it("scans a site only when a running third-party script covers it, loopback included", async () => {
+		const fixture = tabOf({ id: 40, windowId: WINDOW, url: "http://localhost:8000/fixture/", title: "Fixture" });
+		const enabledOnly = anyTabHarness({
+			builtInOwned: false,
+			enabledBuiltIns: async () => new Set(),
+			thirdPartySites: { active: ["http://localhost/*"], stopped: [] },
+			tabs: [fixture],
+			pages: { 40: [{ name: "dg_fixture_read", description: "Read" }] },
+		});
+		const skipped = await enabledOnly.mcp({ verb: "webmcp-tools" });
+		expect(skipped.ok && skipped.data.tools).toEqual([]);
+		expect(enabledOnly.executed()).toEqual([]);
+		const running = anyTabHarness({
+			builtInOwned: false,
+			enabledBuiltIns: async () => new Set(),
+			runningThirdParty: ["http://localhost/*"],
+			tabs: [fixture],
+			pages: { 40: [{ name: "dg_fixture_read", description: "Read" }] },
+		});
+		const listed = await running.mcp({ verb: "webmcp-tools" });
+		expect(listed.ok && listed.data.tools?.map((tool) => tool.name)).toEqual(["dg_fixture_read"]);
 	});
 
 	it("needs a paired session", async () => {

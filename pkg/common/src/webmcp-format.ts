@@ -67,9 +67,13 @@ export function isDgToolName(name: string): boolean {
 	return DG_TOOL_NAME.test(name);
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1"]);
+
 function patternCoversOrigin(pattern: string, origin: string): boolean {
 	try {
 		const { protocol, hostname } = new URL(origin);
+		if (protocol === "http:" && pattern.startsWith("http://"))
+			return LOOPBACK_HOSTS.has(hostname) && pattern.slice("http://".length).split("/")[0] === hostname;
 		if (protocol !== "https:" || !pattern.startsWith("https://")) return false;
 		const host = pattern.slice("https://".length).split("/")[0] ?? "";
 		return host.startsWith("*.") ? hostname === host.slice(2) || hostname.endsWith(host.slice(1)) : hostname === host;
@@ -82,7 +86,7 @@ function builtInOwning(name: string) {
 	return BUILT_IN_SCRIPTS.find((script) => name.startsWith(`dg_${script.id}_`));
 }
 
-/** True when an https match pattern's host covers the origin, a wildcard's base host included; the path part is ignored. */
+/** True when an https match pattern's host, or an http loopback pattern's host on any port, covers the origin; a wildcard's base host is included and the path part is ignored. */
 export function matchesCoverOrigin(matches: readonly string[], origin: string): boolean {
 	return matches.some((pattern) => patternCoversOrigin(pattern, origin));
 }

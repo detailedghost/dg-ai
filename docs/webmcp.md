@@ -18,16 +18,21 @@ revoke.
 
 ### Which tabs `dg-agent mcp` uses
 
-- It looks only at tabs whose site an enabled built-in script or an approved
-  third-party script covers, such as a signed-in Outlook tab when the Outlook
-  script is on. It reads the `dg_` tools those tabs expose. Site tools without
+- It looks only at tabs whose site an enabled built-in script or a running
+  approved third-party script covers, such as a signed-in Outlook tab when the
+  Outlook script is on. A third-party script counts only when the browser runs
+  it, which needs a valid approval. A `http://localhost` or `http://127.0.0.1`
+  script covers that host on any port. It reads the `dg_` tools those tabs expose. Site tools without
   a `dg_` name are left out.
 - It never uses a tab in a private window, a discarded tab, or a browser page.
 - It never opens, focuses, moves, groups or reloads a tab, and it adds no
   banner or dialog hook to the page.
 - When several tabs expose the tool, the call goes to the active tab of the
   focused window, else to the tab you used most recently.
-- It looks at no more than 20 tabs per list or call.
+- It looks at no more than 20 tabs per list or call, and lists no more than
+  100 tools.
+- Values the dg session filled or saved as secrets with pw --ext stay masked
+  in what the agent sees.
 - If no tab exposes the tool, the call fails and asks you to open the site in
   a normal tab.
 - pw --ext snapshot, click and the other browser-control verbs still work only

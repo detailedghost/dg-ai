@@ -81,9 +81,15 @@ session or an agent tab group.
   refuses them with the update message when an older extension does not list
   them. They are not `dg-skills pw --ext` verbs.
 - The extension scans the person's open tabs whose origin an enabled built-in
-  script or an approved third-party script covers (`webMcpTabs` in
+  script or a third-party script that the browser runs covers (only an
+  approved script with a valid signature is registered,
+  `runningThirdPartyMatches` in
+  `pkg/extension/lib/background/webmcp-scripts.ts`) (`webMcpTabs` in
   `pkg/extension/lib/background/pw-ext.ts`). It skips private-window,
-  discarded and browser-page tabs, and reads at most 20 tabs. It reads only
+  discarded and browser-page tabs, reads at most 20 tabs and lists at most 100
+  tools. Held pw --ext secrets of the session stay masked. An `http://localhost`
+  or `http://127.0.0.1` script pattern now covers that host on any port in
+  `matchesCoverOrigin`. It reads only
   `dg_` tools; on a mailbox tab only those of an enabled built-in that covers
   it (R-7).
 - A call goes to the first tab that exposes the tool: the active tab of the

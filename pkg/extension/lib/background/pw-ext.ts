@@ -11,6 +11,7 @@ import {
 	matchesCoverOrigin,
 	isPwExtSecretTooShort,
 	PW_EXT_MAX_TEXT_CHARS,
+	PW_EXT_MAX_TOOLS,
 	PW_EXT_MIN_SECRET_CHARS,
 	PW_EXT_UNMASK_DEFAULT_MINUTES,
 	type PW_EXT_RELAY,
@@ -63,7 +64,7 @@ import { createSessionControl, type SessionControl } from "./session-control";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
 import { siteOf } from "./site-key";
-import { STOPPED_SCRIPTS_KEY, type WebMcpStoppedScript } from "./webmcp-scripts";
+import { runningThirdPartyMatches, STOPPED_SCRIPTS_KEY, type WebMcpStoppedScript } from "./webmcp-scripts";
 import {
 	createRememberedWebMcpGrants,
 	createWebMcpGrants,
@@ -646,6 +647,7 @@ export function createPwExtHandler({
 	}),
 	enabledBuiltIns = () => storedEnabledBuiltIns(api.storage),
 	thirdPartySites = () => storedThirdPartySites(api.storage),
+	runningThirdParty = () => runningThirdPartyMatches(),
 	pageDeadlineMs = PAGE_DEADLINE_MS,
 	lock,
 	control = createSessionControl({ storage: api.storage }),
@@ -660,6 +662,7 @@ export function createPwExtHandler({
 	rememberedWebMcpGrants?: RememberedWebMcpGrants;
 	enabledBuiltIns?: () => Promise<Set<string>>;
 	thirdPartySites?: () => Promise<ThirdPartySites>;
+	runningThirdParty?: () => Promise<string[]>;
 	pageDeadlineMs?: number;
 	lock?: AgentTabsLock;
 	control?: SessionControl;
@@ -1607,17 +1610,17 @@ export function createPwExtHandler({
 
 	/** The person's normal tabs that an enabled built-in or approved third-party script covers, the focused one first, then the most recently used. */
 	async function webMcpTabs(): Promise<LiveTab[]> {
-		const [all, enabled, sites, focused] = await Promise.all([
+		const [all, enabled, running, focused] = await Promise.all([
 			api.tabs.query({}),
 			enabledOrNone(),
-			thirdPartySites().catch(() => ({ active: [], stopped: [] }) as ThirdPartySites),
+			runningThirdParty().catch(() => []),
 			api.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => undefined),
 		]);
 		const covered = (url: string) => {
 			const origin = new URL(url).origin;
 			return (
 				BUILT_IN_SCRIPTS.some((script) => enabled.has(script.id) && matchesCoverOrigin(script.matches, origin)) ||
-				matchesCoverOrigin(sites.active, origin)
+				matchesCoverOrigin(running, origin)
 			);
 		};
 		const focusedFirst = (tab: BrowserTab) => (tab.active && focused?.id !== undefined && tab.windowId === focused.id ? 1 : 0);
@@ -1652,7 +1655,7 @@ export function createPwExtHandler({
 			const found = new Map<string, PwExtTool>();
 			for (const tools of await Promise.all(tabs.map(webMcpToolsOf)))
 				for (const tool of tools) if (!found.has(tool.name)) found.set(tool.name, tool);
-			const tools = [...found.values()];
+			const tools = [...found.values()].slice(0, PW_EXT_MAX_TOOLS);
 			const rows = tools.length
 				? tools.map((tool) => `- ${tool.name}: ${tool.description}`)
 				: ["No open browser tab exposes a dg Web MCP tool."];
@@ -1803,12 +1806,16 @@ export function createPwExtHandler({
 	};
 	async function runWebMcp(request: WebMcpRequest, context: PwExtContext, signal: AbortSignal | undefined): Promise<PwExtResult> {
 		try {
-			return await webMcp(request, context, signal ?? new AbortController().signal);
+			const result = await webMcp(request, context, signal ?? new AbortController().signal);
+			return scrub(result, await grants.secrets(context.sessionId).catch(() => []));
 		} catch (error) {
 			if (error instanceof Refusal) return { ok: false, error: error.message };
+			const secrets = await grants.secrets(context.sessionId).catch(() => []);
 			return {
 				ok: false,
-				error: clean(`Web MCP failed in the browser: ${error instanceof Error ? error.message : String(error)}`).slice(0, 2048),
+				error: clean(`Web MCP failed in the browser: ${error instanceof Error ? error.message : String(error)}`, {
+					secrets,
+				}).slice(0, 2048),
 			};
 		}
 	}

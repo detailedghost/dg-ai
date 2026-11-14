@@ -568,6 +568,14 @@ function chromiumUserScripts(): WebMcpUserScripts | null {
 	}
 }
 
+/** Match patterns of the third-party scripts the browser runs now; only approved scripts with a valid signature get registered. */
+export async function runningThirdPartyMatches(
+	userScripts: () => WebMcpUserScripts | null = chromiumUserScripts,
+): Promise<string[]> {
+	const entries = (await userScripts()?.getScripts()) ?? [];
+	return entries.flatMap((entry) => (entry.id.startsWith(USER_PREFIX) ? (entry.matches ?? []) : []));
+}
+
 const ID_MAX_CHARS = 64;
 const SHA256_CHARS = 64;
 const NAME_MAX_CHARS = 100;
