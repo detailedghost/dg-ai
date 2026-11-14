@@ -233,3 +233,11 @@ sequenceDiagram
 [ADR 0046](0046-webmcp-approvals-apart-from-pw-ext.md) gives them their own
 approvals: the pw --ext site allowlist and Stop of
 [ADR 0045](0045-pw-ext-driving-banner-and-sites.md) no longer apply to them.
+
+## Amended 2026-11-14: Outlook is a protected mailbox (ADR 0047)
+
+Where this record names the signed-in Proton Mail tab as the protected
+mailbox, [ADR 0047](0047-webmcp-area-approval-class.md) adds signed-in Outlook
+on the web tabs (`outlook.live.com`, `outlook.office.com`,
+`outlook.office365.com`, `outlook.cloud.microsoft`). `PW_EXT_MAILBOX_ERROR`
+names both. On an Outlook tab only enabled built-in `dg_outlook_` calls pass.

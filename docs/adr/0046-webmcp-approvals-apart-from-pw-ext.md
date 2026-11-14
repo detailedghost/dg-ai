@@ -105,3 +105,10 @@ flowchart LR
 - `pkg/extension/lib/background/daemon-link.ts`
 - `pkg/extension/lib/features/popup.ts`
 - `pkg/extension/entrypoints/approve/main.ts`
+
+## Amended 2026-11-14: area grants (ADR 0047)
+
+[ADR 0047](0047-webmcp-area-approval-class.md) adds the `area` class. An area
+grant uses the same `{site, tool}` record with the synthetic tool key
+`area:<area>`, so one mail grant covers list, search and read on a site. The
+`read` class has no tool left.
