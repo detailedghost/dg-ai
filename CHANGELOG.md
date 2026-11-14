@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.10.0 (2026-11-14)
+
+### Features
+
+- feat(extension): Outlook mail Web MCP tools (spec 018 mail area) ([#208](https://github.com/detailedghost/dg-ai/pull/208))
+
 ## v5.9.0 (2026-11-14)
 
 ### Features
