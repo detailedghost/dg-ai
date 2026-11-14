@@ -193,6 +193,8 @@ export type BootstrapOptions = {
 	script?: string;
 	cwd?: string;
 	serve?: Record<string, string>;
+	/** Extra release assets: name to the sha256 that SHA256SUMS lists for it (null leaves it out of SHA256SUMS). */
+	extraAssets?: Record<string, string | null>;
 	seed?: (root: string, dir: string) => void;
 	withoutDgHome?: boolean;
 };
@@ -287,6 +289,8 @@ export async function runBootstrap(
 			`${options.sums === "wrong-lib" ? "0".repeat(64) : tarball.sha256}  dg-lib-${version}.tar.gz`,
 		);
 	}
+	for (const [name, hash] of Object.entries(options.extraAssets ?? {}))
+		if (hash !== null) lines.push(`${hash}  ${name}`);
 	writeFileSync(join(serve, "SHA256SUMS"), `${lines.join("\n")}\n`);
 
 	const assets = [
@@ -295,6 +299,7 @@ export async function runBootstrap(
 		"SHA256SUMS",
 		"bootstrap.sh",
 		"bootstrap.ps1",
+		...Object.keys(options.extraAssets ?? {}),
 	];
 	const releases = [
 		...(options.newerEmptyRelease ? [release("v9.0.0", [])] : []),

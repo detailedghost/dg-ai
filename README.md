@@ -31,6 +31,20 @@ see [skills-only installation](docs/install.md#skills-only-install) for `--skill
 The [agent install guide](docs/AGENT-INSTALL.md) separates automated steps from
 browser actions that need a person.
 
+### Claude chat (web-only)
+
+For Claude chat, or another chat bot that takes uploaded skills, `--web-only`
+downloads only the chat-safe web skills, `dg-demo` and `dg-proto`, as upload-ready
+ZIPs. It installs nothing else and runs nothing:
+
+```bash
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --web-only
+```
+
+In PowerShell, run the script as a script block to pass the switch:
+`& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -WebOnly`.
+See [web install](docs/web-install.md).
+
 To add the optional `unslop` skill that `/dg:polish` calls when present, and other pinned third-party
 plugins, see [Recommended plugins](docs/install.md#recommended-plugins).
 

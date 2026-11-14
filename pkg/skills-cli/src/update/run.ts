@@ -174,8 +174,8 @@ const BOOTSTRAP = "https://github.com/detailedghost/dg-ai/releases/latest/downlo
 /** The bootstrap command that refreshes standalone Codex skills, keeping a CLI-only install CLI-only. */
 export function standaloneRefresh(platform: NodeJS.Platform, cliOnly: boolean): string {
 	if (platform === "win32")
-		return `$env:DG_INSTALL_CODEX = "1"; ${cliOnly ? '$env:DG_CLI_ONLY = "1"; ' : ""}irm ${BOOTSTRAP}/bootstrap.ps1 | iex`;
-	return `curl -fsSL ${BOOTSTRAP}/bootstrap.sh | DG_INSTALL_CODEX=1 sh${cliOnly ? " -s -- --cli-only" : ""}`;
+		return `& ([scriptblock]::Create((irm ${BOOTSTRAP}/bootstrap.ps1))) -Codex${cliOnly ? " -CliOnly" : ""}`;
+	return `curl -fsSL ${BOOTSTRAP}/bootstrap.sh | sh -s -- --codex${cliOnly ? " --cli-only" : ""}`;
 }
 
 /** Skills copied into $CODEX_HOME/skills by a standalone install are not refreshed here; say how to refresh them. */

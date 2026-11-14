@@ -405,6 +405,9 @@ jobs:
             END { exit !found }
           ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
 
+      - name: Package the web skills
+        run: bun scripts/package-web-skills.ts --out dist --version "$VERSION"
+
       - name: Add the bootstrap scripts and checksums
         run: |
           cp pkg/skills-cli/bootstrap.sh pkg/skills-cli/bootstrap.ps1 dist/

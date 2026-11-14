@@ -231,3 +231,7 @@ run = "bunx stryker run stryker.verify.conf.mjs"
 description = "Scan git history for secrets with gitleaks"
 tools = { gitleaks = "8.30.1" }
 run = "gitleaks detect --source . --config .gitleaks.toml --redact --verbose"
+
+[tasks."package:web"]
+description = "Validate the web-only skills and build dg-web-skills-<version>.zip into dist/web. Pass the version after --, for example: mise run package:web -- 5.11.0"
+run = "bun scripts/package-web-skills.ts --out dist/web --version"

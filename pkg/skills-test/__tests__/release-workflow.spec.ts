@@ -24,6 +24,7 @@ const STEP = {
 	commit: "Commit the release as dg-release",
 	push: "Push the release commit and tag together",
 	notes: "Extract the release notes from the changelog",
+	web: "Package the web skills",
 	assets: "Add the bootstrap scripts and checksums",
 	publish: "Publish the release",
 	latest: "Move the latest tag to the release commit",
@@ -209,6 +210,7 @@ describe("the release is cut in one fixed order and recovers only forward", () =
 			STEP.commit,
 			STEP.push,
 			STEP.notes,
+			STEP.web,
 			STEP.assets,
 			STEP.publish,
 			STEP.latest,
@@ -814,6 +816,7 @@ const DOCUMENTED_ASSETS = [
 	"bootstrap.sh",
 	"dg-demo-narration-<v>.zip",
 	"dg-lib-<v>.tar.gz",
+	"dg-web-skills-<v>.zip",
 	"runtime.json",
 ];
 
@@ -871,10 +874,16 @@ describe("the release publishes exactly the documented asset names", () => {
 		const extras = ["bootstrap.sh", "bootstrap.ps1", "SHA256SUMS"].filter((name) =>
 			(step(STEP.assets).run ?? "").includes(name),
 		);
-		const published = [...fromBuilds, ...extras]
+		const web = /--out dist --version "\$VERSION"/.test(step(STEP.web).run ?? "") ? ["dg-web-skills-<v>.zip"] : [];
+		const published = [...fromBuilds, ...extras, ...web]
 			.sort();
 
 		expect(published).toEqual([...DOCUMENTED_ASSETS].sort());
+	});
+
+	test("the web skills are packaged into dist before the checksums are written, so SHA256SUMS covers them", () => {
+		expect(step(STEP.web).run).toBe('bun scripts/package-web-skills.ts --out dist --version "$VERSION"');
+		expect(step(STEP.web).if).toBeUndefined();
 	});
 
 	test("no other job uploads an artifact that reaches the release", () => {

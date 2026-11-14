@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo: TOUR_TITLE</title>
+<style>
+/* DG:THEME — paste the full contents of assets/dg-theme.css here, unchanged. */
+</style>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  html, body { background: var(--dg-tour-panel); color: var(--dg-tour-ink); font-family: var(--dg-sans); }
+
+  #dg-frame { position: relative; width: 100%; max-width: 1440px; margin: 0 auto; aspect-ratio: 16 / 9; overflow: hidden; background: var(--dg-bg); }
+  #dg-scaler { position: absolute; left: 0; top: 0; width: 1440px; height: 810px; transform-origin: 0 0; }
+  #dg-stage { position: absolute; inset: 0; overflow: hidden; background: var(--dg-bg); color: var(--dg-ink); }
+  #dg-stage [data-dg-url], #dg-stage [data-dg-screen] { position: absolute; inset: 0; display: none; overflow: hidden; }
+  #dg-stage [data-dg-url].is-active, #dg-stage [data-dg-screen].is-active { display: block; }
+  #dg-stage [data-dg-screen] img { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+
+  #dg-overlay { position: absolute; inset: 0; pointer-events: none; }
+  #dg-scrim { position: absolute; inset: 0; background: var(--dg-tour-scrim); opacity: 0; transition: opacity .2s; }
+  #dg-scrim.show { opacity: 1; }
+  #dg-ring { position: absolute; border: 3px solid var(--dg-tour-accent); border-radius: 0; box-shadow: 3px 3px 0 #111111, inset 2px 2px 0 #111111; display: none; transition: left .25s, top .25s, width .25s, height .25s; }
+  #dg-arrow { position: absolute; overflow: visible; display: none; filter: drop-shadow(3px 3px 0 #111111); }
+  #dg-caption { position: absolute; left: 50%; transform: translateX(-50%); width: min(1100px, 90%); padding: 16px 24px; background: var(--dg-tour-panel); color: var(--dg-tour-ink); border: 2px solid var(--dg-tour-line); border-radius: 0; box-shadow: 6px 6px 0 var(--dg-tour-accent); display: none; }
+  #dg-caption.bottom { bottom: 28px; } #dg-caption.top { top: 28px; }
+  #dg-caption .eyebrow { font-size: 14px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; color: var(--dg-tour-accent); margin-bottom: 6px; }
+  #dg-caption .body { font-size: 22px; line-height: 1.4; }
+  #dg-caption .warn { margin-top: 8px; font-size: 14px; color: var(--dg-tour-setup); }
+
+  #dg-chapter { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: var(--dg-tour-panel); pointer-events: auto; }
+  #dg-chapter.show { display: flex; }
+  #dg-chapter .card { width: 900px; max-width: 90%; padding: 52px 64px; background: var(--dg-tour-panel); border: 3px solid var(--dg-tour-line); border-radius: 0; box-shadow: 12px 12px 0 var(--dg-tour-accent); color: var(--dg-tour-ink); }
+  #dg-chapter .eyebrow { font-size: 15px; letter-spacing: .12em; text-transform: uppercase; font-weight: 600; color: var(--dg-tour-accent); margin-bottom: 18px; }
+  #dg-chapter .title { font-size: 46px; line-height: 1.1; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 18px; }
+  #dg-chapter .detail { font-size: 23px; line-height: 1.45; }
+
+  #dg-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; padding: 12px 16px; max-width: 1440px; margin: 0 auto; }
+  #dg-controls button { min-width: 44px; height: 40px; padding: 0 12px; font: 600 16px var(--dg-sans); color: var(--dg-tour-ink); background: var(--dg-tour-panel); border: 2px solid var(--dg-tour-line); border-radius: 0; cursor: pointer; }
+  #dg-controls button:hover:not(:disabled) { box-shadow: 3px 3px 0 var(--dg-tour-accent); }
+  #dg-controls button:disabled { opacity: .35; cursor: default; }
+  #dg-controls #dg-back { color: var(--dg-accent2); border-color: currentColor; }
+  #dg-controls #dg-next { color: var(--dg-tour-accent); border-color: currentColor; }
+  #dg-progress { min-width: 7ch; text-align: center; font: 14px var(--dg-mono); color: var(--dg-tour-muted); }
+  #dg-plan { display: none; max-width: 1440px; margin: 0 auto 16px; padding: 0 16px; }
+  #dg-plan.show { display: block; }
+  #dg-plan pre { margin: 0; padding: 16px; max-height: 40vh; overflow: auto; white-space: pre-wrap; font: 13px/1.5 var(--dg-mono); color: var(--dg-tour-ink); background: #000; border: 2px solid var(--dg-tour-line); }
+  @media (prefers-reduced-motion: reduce) { #dg-ring, #dg-scrim { transition: none; } }
+</style>
+</head>
+<body>
+<div id="dg-frame">
+  <div id="dg-scaler">
+    <div id="dg-stage">
+      <!-- DG:STAGE
+        Mock stage: one <section data-dg-url="<url>"> per page the tour visits. The first is startUrl.
+        Give mock elements the real app's selectors (id, data-testid, aria-label) so the plan's
+        selectors work here and in a real recording later.
+        Screenshot stage: one <figure data-dg-screen="<id>"><img alt="..." src="data:image/jpeg;base64,..."></figure>
+        per uploaded screenshot, in plan order.
+      -->
+    </div>
+    <div id="dg-overlay" aria-hidden="true">
+      <div id="dg-scrim"></div>
+      <div id="dg-ring"></div>
+      <svg id="dg-arrow" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="dg-caption" role="status" aria-live="polite"><div class="eyebrow"></div><div class="body"></div><div class="warn" hidden></div></div>
+    </div>
+    <div id="dg-chapter"><div class="card"><div class="eyebrow"></div><div class="title"></div><div class="detail"></div></div></div>
+  </div>
+</div>
+<div id="dg-controls" role="toolbar" aria-label="Tour controls">
+  <button type="button" id="dg-first" aria-label="First step">«</button>
+  <button type="button" id="dg-back" aria-label="Back one step">‹</button>
+  <button type="button" id="dg-play" aria-label="Play">▶</button>
+  <button type="button" id="dg-next" aria-label="Forward one step">›</button>
+  <button type="button" id="dg-last" aria-label="Last step">»</button>
+  <span id="dg-progress">0 / 0</span>
+  <button type="button" id="dg-show-plan" aria-expanded="false" aria-controls="dg-plan">Plan</button>
+</div>
+<div id="dg-plan"><pre id="dg-plan-text"></pre></div>
+
+<!-- DG:PLAN — the same Markdown plan the chat reply shows, verbatim. -->
+<script type="text/markdown" id="dg-plan-md"></script>
+
+<!-- DG:TOUR — the plan as data. See references/player.md for every field. -->
+<script type="application/json" id="dg-tour">
+{
+  "title": "TOUR_TITLE",
+  "stage": "mock",
+  "intro": { "eyebrow": "Demo", "title": "TOUR_TITLE", "detail": "" },
+  "outro": null,
+  "steps": []
+}
+</script>
+
+<script>
+(() => {
+  const ARROW = 112, GAP = 6, CAPTION_ZONE = 180, DWELL = 3500, W = 1440, H = 810;
+  const $ = (id) => document.getElementById(id);
+  const tour = JSON.parse($("dg-tour").textContent);
+  const steps = Array.isArray(tour.steps) ? tour.steps : [];
+  const stage = $("dg-stage"), scaler = $("dg-scaler"), frame = $("dg-frame");
+  const ring = $("dg-ring"), arrow = $("dg-arrow"), scrim = $("dg-scrim"), caption = $("dg-caption");
+  const chapter = $("dg-chapter");
+  let index = -1, playing = false, timer = 0, scale = 1, phase = "intro", token = 0;
+
+  $("dg-plan-text").textContent = $("dg-plan-md").textContent.trim() || "(no plan text)";
+
+  function fit() {
+    scale = frame.clientWidth / W;
+    scaler.style.transform = `scale(${scale})`;
+    if (index >= 0 && phase === "steps") place(steps[index]);
+  }
+  window.addEventListener("resize", fit);
+
+  function screens() { return Array.from(stage.querySelectorAll("[data-dg-url], [data-dg-screen]")); }
+  function showScreen(key) {
+    const all = screens();
+    if (!all.length) return;
+    const match = key && all.find((s) => s.dataset.dgUrl === key || s.dataset.dgScreen === key);
+    const current = all.find((s) => s.classList.contains("is-active"));
+    const next = match || current || all[0];
+    all.forEach((s) => s.classList.toggle("is-active", s === next));
+  }
+
+  function chapterCard(card) {
+    if (!card) return false;
+    chapter.querySelector(".eyebrow").textContent = card.eyebrow || "";
+    chapter.querySelector(".title").textContent = card.title || "";
+    chapter.querySelector(".detail").textContent = card.detail || "";
+    chapter.classList.add("show");
+    return true;
+  }
+
+  function boxFor(step) {
+    if (step.box) {
+      const b = step.box;
+      return { x: b.x / 100 * W, y: b.y / 100 * H, width: b.w / 100 * W, height: b.h / 100 * H };
+    }
+    if (!step.selector) return null;
+    const active = stage.querySelector(".is-active") || stage;
+    let el = null;
+    try { el = active.querySelector(step.selector); } catch { el = null; }
+    if (!el) return null;
+    el.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const r = el.getBoundingClientRect(), s = stage.getBoundingClientRect();
+    return { x: (r.left - s.left) / scale, y: (r.top - s.top) / scale, width: r.width / scale, height: r.height / scale, el };
+  }
+
+  function sideFor(box) {
+    const room = { left: box.x, right: W - box.x - box.width, top: box.y, bottom: H - box.y - box.height };
+    return Object.entries(room).sort((a, b) => b[1] - a[1])[0][0];
+  }
+
+  function drawArrow(box, side) {
+    const vertical = side === "top" || side === "bottom";
+    const w = vertical ? 36 : ARROW, h = vertical ? ARROW : 36;
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+    const left = side === "left" ? box.x - GAP - 8 - w : side === "right" ? box.x + box.width + GAP + 8 : cx - w / 2;
+    const top = side === "top" ? box.y - GAP - 8 - h : side === "bottom" ? box.y + box.height + GAP + 8 : cy - h / 2;
+    const tip = { left: [w, h / 2], right: [0, h / 2], top: [w / 2, h], bottom: [w / 2, 0] }[side];
+    const tail = { left: [0, h / 2], right: [w, h / 2], top: [w / 2, 0], bottom: [w / 2, h] }[side];
+    const ux = Math.sign(tip[0] - tail[0]), uy = Math.sign(tip[1] - tail[1]), head = 16;
+    const bx = tip[0] - ux * head * 1.6, by = tip[1] - uy * head * 1.6, px = uy * head, py = ux * head;
+    const accent = getComputedStyle(document.documentElement).getPropertyValue("--dg-tour-accent").trim();
+    arrow.setAttribute("width", w); arrow.setAttribute("height", h); arrow.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    arrow.style.left = `${left}px`; arrow.style.top = `${top}px`;
+    arrow.innerHTML = `<line x1="${tail[0]}" y1="${tail[1]}" x2="${tip[0] - ux * head}" y2="${tip[1] - uy * head}" stroke="${accent}" stroke-width="6" stroke-linecap="square"/>` +
+      `<polygon points="${tip[0]},${tip[1]} ${bx + px},${by + py} ${bx - px},${by - py}" fill="${accent}"/>`;
+    arrow.style.display = "block";
+  }
+
+  function place(step) {
+    const box = boxFor(step);
+    const warn = caption.querySelector(".warn");
+    warn.hidden = true;
+    if (box) {
+      scrim.classList.remove("show");
+      Object.assign(ring.style, { display: "block", left: `${box.x - GAP}px`, top: `${box.y - GAP}px`, width: `${box.width + GAP * 2}px`, height: `${box.height + GAP * 2}px` });
+      drawArrow(box, sideFor(box));
+    } else {
+      ring.style.display = "none"; arrow.style.display = "none";
+      scrim.classList.add("show");
+      if (step.selector || step.box) { warn.textContent = "Target not found"; warn.hidden = false; }
+    }
+    const nearBottom = box && box.y + box.height > H - CAPTION_ZONE;
+    caption.className = nearBottom ? "top" : "bottom";
+    caption.style.display = "block";
+    return box;
+  }
+
+  function typeInto(el, text, done) {
+    if (!el || !("value" in el)) return done();
+    el.focus(); el.value = "";
+    let i = 0;
+    const tick = () => {
+      if (i >= text.length) { el.dispatchEvent(new Event("change", { bubbles: true })); return done(); }
+      el.value += text[i++];
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      timer = setTimeout(tick, 45);
+    };
+    tick();
+  }
+
+  function runAction(step, box, done) {
+    const a = step.action;
+    if (!a || !box || !box.el) return done();
+    if (a.type === "click") { box.el.click(); return done(); }
+    if (a.type === "type") return typeInto(box.el, String(a.text || ""), done);
+    done();
+  }
+
+  function hold(step) {
+    clearTimeout(timer);
+    if (!playing) return;
+    const t = step.timing;
+    if (t === "next") return;
+    if (t === "click") {
+      const box = boxFor(step), my = token;
+      if (box && box.el) box.el.addEventListener("click", () => { if (my === token) go(index + 1); }, { once: true });
+      return;
+    }
+    timer = setTimeout(() => go(index + 1), typeof t === "number" ? t : DWELL);
+  }
+
+  function render() {
+    const count = steps.length;
+    $("dg-progress").textContent = phase === "steps" ? `${index + 1} / ${count}` : phase === "outro" ? "done" : `0 / ${count}`;
+    $("dg-first").disabled = $("dg-back").disabled = phase !== "steps" || index <= 0;
+    $("dg-last").disabled = phase === "steps" ? index >= count - 1 : count === 0;
+    $("dg-next").disabled = phase === "outro";
+    $("dg-play").textContent = playing ? "❚❚" : phase === "outro" ? "↻" : "▶";
+    $("dg-play").setAttribute("aria-label", playing ? "Pause" : phase === "outro" ? "Replay" : "Play");
+  }
+
+  function clearOverlay() {
+    ring.style.display = "none"; arrow.style.display = "none"; caption.style.display = "none"; scrim.classList.remove("show");
+  }
+
+  function go(next) {
+    token++;
+    clearTimeout(timer);
+    if (next >= steps.length) {
+      clearOverlay();
+      phase = "outro"; playing = false;
+      if (!chapterCard(tour.outro)) chapter.classList.remove("show");
+      return render();
+    }
+    phase = "steps"; index = Math.max(0, next);
+    chapter.classList.remove("show");
+    const step = steps[index];
+    showScreen(step.navigate || step.screen);
+    caption.querySelector(".eyebrow").textContent = step.title || (tour.title ? `${tour.title} · ${index + 1}` : `Step ${index + 1}`);
+    caption.querySelector(".body").textContent = step.body || "";
+    const my = token;
+    requestAnimationFrame(() => {
+      if (my !== token) return;
+      const box = place(step);
+      if (playing) runAction(step, box, () => { if (my === token) hold(step); });
+      render();
+    });
+    render();
+  }
+
+  function play() {
+    if (phase === "outro") { index = -1; phase = "intro"; }
+    playing = true;
+    if (phase === "intro") {
+      chapterCard(tour.intro || { eyebrow: "Demo", title: tour.title || "" });
+      render();
+      timer = setTimeout(() => go(0), 2200);
+      return;
+    }
+    go(index);
+  }
+  function pause() { playing = false; clearTimeout(timer); render(); }
+
+  $("dg-play").addEventListener("click", () => (playing ? pause() : play()));
+  $("dg-next").addEventListener("click", () => {
+    if (phase === "steps") {
+      const step = steps[index], box = boxFor(step);
+      if (step.action || step.timing === "click") runAction(step, box, () => go(index + 1));
+      else go(index + 1);
+    } else go(phase === "intro" ? 0 : index + 1);
+  });
+  $("dg-back").addEventListener("click", () => go(index - 1));
+  $("dg-first").addEventListener("click", () => go(0));
+  $("dg-last").addEventListener("click", () => go(steps.length - 1));
+  $("dg-show-plan").addEventListener("click", (e) => {
+    const open = $("dg-plan").classList.toggle("show");
+    e.currentTarget.setAttribute("aria-expanded", String(open));
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.target.closest && e.target.closest("input, textarea, [contenteditable]")) return;
+    if (e.key === "ArrowRight") $("dg-next").click();
+    else if (e.key === "ArrowLeft" && !$("dg-back").disabled) $("dg-back").click();
+    else if (e.key === " ") { e.preventDefault(); $("dg-play").click(); }
+  });
+
+  showScreen(null);
+  fit();
+  chapterCard(tour.intro || { eyebrow: "Demo", title: tour.title || "" });
+  render();
+})();
+</script>
+</body>
+</html>

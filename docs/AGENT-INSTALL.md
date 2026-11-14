@@ -30,14 +30,13 @@ Codex can load the same skills without the Claude plugin. The bootstrap scripts
 keep this opt-in because they write to Codex's local skill directory:
 
 ```bash
-curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | DG_INSTALL_CODEX=1 sh
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --codex
 ```
 
 On Windows PowerShell:
 
 ```powershell
-$env:DG_INSTALL_CODEX = "1"
-irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
+& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -Codex
 ```
 
 These alternative commands install the CLI, stage the browser extension, and copy the
@@ -58,12 +57,11 @@ curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/boots
 On Windows PowerShell:
 
 ```powershell
-$env:DG_CLI_ONLY = "1"
-irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
+& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -CliOnly
 ```
 
-`DG_CLI_ONLY=1` also works for the shell form, and `dg-skills install --cli-only`
-does the same from an installed `dg-skills`. Combined with `DG_INSTALL_CODEX=1`, only
+`dg-skills install --cli-only` does the same from an installed `dg-skills`.
+Combined with `--codex` (`-Codex`), only
 the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills`.
 
 - CLI-only skills: `channel-review`, `google-sms-cleanup` (`dg-skills ssms`;
@@ -113,12 +111,10 @@ curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/boots
 On Windows PowerShell:
 
 ```powershell
-$env:DG_AGENT_ONLY = "1"
-irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
+& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -AgentOnly
 ```
 
-`DG_AGENT_ONLY=1` also works for the shell form, and `dg-skills install --agent-only`
-does the same from an installed `dg-skills`. It accepts neither `--cli-only` nor
+`dg-skills install --agent-only` does the same from an installed `dg-skills`. It accepts neither `--cli-only` nor
 `--skills-only` at the same time. After this, `dg-agent phone
 accept <card>` works; see [docs/phone.md](phone.md).
 
@@ -128,8 +124,8 @@ Use this when the user wants the skill instruction files without the extension. 
 contains a `SKILL.md` — the instruction file and its references, including
 `google-sms-cleanup` — and does not execute that text. The checkout
 commands below do not download the runtime, the bundle or the extension. The
-`DG_SKILLS_ONLY=1` bootstrap also installs the runtime and the bundle, so the
-skills can run `dg-skills`; set `DG_SKILLS_NO_CLI=1` with it to copy the files only.
+`--skills-only` bootstrap also installs the runtime and the bundle, so the
+skills can run `dg-skills`; add `--no-cli` to copy the files only.
 
 From a checkout of this repository:
 
@@ -157,23 +153,44 @@ curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/boots
 On Windows PowerShell:
 
 ```powershell
-$env:DG_SKILLS_ONLY = "1"
-irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
+& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -SkillsOnly
 ```
 
-`DG_SKILLS_ONLY=1` is the shell equivalent of `--skills-only`. This is separate
+This is separate
 from `--cli-only`, which writes `~/.dg/cli-only`. Every skills-only path also
 installs the `dg-skills` CLI from the latest `vX.Y.Z` release into
 the launcher folder ([install layout](install.md#where-dg-keeps-its-files)), checked against the release's `SHA256SUMS`, because the
 skills run it. It fetches no `dg-daemon`, `dg-agent` or extension, leaves the
-`cli-only` marker untouched, and never executes skill content. Set
-`DG_SKILLS_NO_CLI=1` with the bootstraps for an offline copy that skips the CLI.
+`cli-only` marker untouched, and never executes skill content. Add
+`--no-cli` (`-NoCli`) for an offline copy that skips the CLI.
+
+## Web-only install
+
+Use this when the user wants DeeGee in Claude chat, or another chat bot that takes
+uploaded skills, rather than in Claude Code or Codex. It downloads only
+`dg-web-skills-<x.y.z>.zip`, checks it against the release's `SHA256SUMS`, and
+unpacks one upload-ready ZIP per skill into `./dg-web-skills` (or `--dest <dir>`).
+It installs no runtime, bundle, launchers or extension, and runs nothing.
+
+```bash
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --web-only
+```
+
+On Windows PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -WebOnly
+```
+
+An agent can run this and hand over the ZIPs. Uploading them is a person's step:
+Claude has no way to add a skill to an account from inside a chat. See
+[web install](web-install.md).
 
 ## Pin a version
 
 Use this when the user wants a specific release instead of the newest, for
 example to match a pinned CI job or roll back after a bad upgrade. Add
-`--version <x.y.z>` (shell) or set `DG_VERSION` first (PowerShell); it combines
+`--version <x.y.z>` (shell) or `-Version <x.y.z>` (PowerShell); it combines
 with `--cli-only`/`--agent-only` and carries through to `dg-skills install`, so
 `dg-daemon`, `dg-agent` and the extension install from that same release too.
 
@@ -184,8 +201,7 @@ curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/boots
 On Windows PowerShell:
 
 ```powershell
-$env:DG_VERSION = "X.Y.Z"
-irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
+& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -Version X.Y.Z
 ```
 
 `dg-skills install --version X.Y.Z` is the flag on an already installed

@@ -2,23 +2,45 @@
 #
 #   irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 #
-# CLI-only (skip the extension): set $env:DG_CLI_ONLY = "1" first.
-# Agent-only (for a non-Claude agent that only needs phone): set $env:DG_AGENT_ONLY = "1" first.
-# Skills-only (copy the skill files, then the runtime and bundle; no extension and no
-# `dg-skills install`): set $env:DG_SKILLS_ONLY = "1" first.
-# DG_SKILLS_NO_CLI = "1" with it keeps an offline copy of the skill files and downloads no release.
+# Piped `irm | iex` cannot take switches. To pass one, run the script as a script block:
 #
-# Pin a version instead of the newest release: set $env:DG_VERSION = "<x.y.z>" first
-# (piped `irm | iex` cannot take parameters), or pass -Version <x.y.z> when running a
-# saved copy of this file. A leading v is accepted.
+#   & ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -WebOnly
+#
+# -CliOnly     skip the extension.
+# -AgentOnly   install for a non-Claude agent that only needs phone.
+# -SkillsOnly  copy the skill files, then the runtime and bundle; no extension and no `dg-skills install`.
+#              Add -NoCli for an offline copy of the skill files that downloads no release, and
+#              -Dest <dir> to choose where they go.
+# -WebOnly     download only the web skills for Claude chat: the checksum-verified
+#              dg-web-skills-<x.y.z>.zip unpacked into .\dg-web-skills (or -Dest <dir>), one upload-ready
+#              ZIP per skill. No runtime, no bundle, no launchers, no extension, and nothing it unpacks is run.
+# -Codex       also copy the skills into $CODEX_HOME\skills.
+# -Version <x.y.z>  install that release instead of the newest. A leading v is accepted.
+#
+# Older scripts may still set DG_CLI_ONLY, DG_AGENT_ONLY, DG_SKILLS_ONLY, DG_SKILLS_NO_CLI, DG_SKILLS_DEST,
+# DG_INSTALL_CODEX or DG_VERSION; those keep working, and a switch always wins.
 #
 # Layout: runtime\bun-v<bun>, lib\<release>, runtime\current and lib\current junctions, and
 # bin\dg-skills.cmd, bin\dg-agent.cmd, bin\dg-daemon.cmd shims. Every download is verified
 # against SHA256SUMS or runtime.json before anything is installed. Re-running upgrades in place.
 param(
-	[string]$Version
+	[string]$Version,
+	[switch]$CliOnly,
+	[switch]$AgentOnly,
+	[switch]$SkillsOnly,
+	[switch]$NoCli,
+	[switch]$WebOnly,
+	[switch]$Codex,
+	[string]$Dest
 )
 $ErrorActionPreference = "Stop"
+
+$wantCliOnly = $CliOnly.IsPresent -or $env:DG_CLI_ONLY -eq "1"
+$wantAgentOnly = $AgentOnly.IsPresent -or $env:DG_AGENT_ONLY -eq "1"
+$wantSkillsOnly = $SkillsOnly.IsPresent -or $env:DG_SKILLS_ONLY -eq "1"
+$wantNoCli = $NoCli.IsPresent -or $env:DG_SKILLS_NO_CLI -eq "1"
+$wantCodex = $Codex.IsPresent -or $env:DG_INSTALL_CODEX -eq "1"
+$wantWebOnly = $WebOnly.IsPresent
 
 # Copy skill directories as data, matching @dg/common filesToInstall.
 # A skill is an immediate child directory that contains SKILL.md.
@@ -141,14 +163,19 @@ function Get-DgSkillsSource {
 	return (Join-Path $sourceRoot "plugins\dg\skills")
 }
 
-if ($env:DG_SKILLS_ONLY -eq "1" -and $env:DG_CLI_ONLY -eq "1") {
-	throw "dg-skills: set only one of DG_SKILLS_ONLY and DG_CLI_ONLY"
+if ($wantSkillsOnly -and $wantCliOnly) {
+	throw "dg-skills: pass only one of -SkillsOnly and -CliOnly"
 }
-if ($env:DG_SKILLS_ONLY -eq "1" -and $env:DG_AGENT_ONLY -eq "1") {
-	throw "dg-skills: set only one of DG_SKILLS_ONLY and DG_AGENT_ONLY"
+if ($wantSkillsOnly -and $wantAgentOnly) {
+	throw "dg-skills: pass only one of -SkillsOnly and -AgentOnly"
 }
-if ($env:DG_CLI_ONLY -eq "1" -and $env:DG_AGENT_ONLY -eq "1") {
-	throw "dg-skills: set only one of DG_CLI_ONLY and DG_AGENT_ONLY"
+if ($wantCliOnly -and $wantAgentOnly) {
+	throw "dg-skills: pass only one of -CliOnly and -AgentOnly"
+}
+if ($wantWebOnly) {
+	foreach ($other in @(@($wantCliOnly, "-CliOnly"), @($wantSkillsOnly, "-SkillsOnly"), @($wantAgentOnly, "-AgentOnly"), @($wantCodex, "-Codex"), @($wantNoCli, "-NoCli"))) {
+		if ($other[0]) { throw "dg-skills: -WebOnly installs nothing but the web skills; drop $($other[1])" }
+	}
 }
 
 if ($env:DG_HOME) {
@@ -161,15 +188,15 @@ if ($env:DG_HOME) {
 	$binDir = Join-Path $dgHome "bin"
 }
 
-if ($env:DG_SKILLS_ONLY -eq "1") {
-	$skillsDest = if ($env:DG_SKILLS_DEST) { $env:DG_SKILLS_DEST } else { Join-Path $dgHome "skills" }
+if ($wantSkillsOnly) {
+	$skillsDest = if ($Dest) { $Dest } elseif ($env:DG_SKILLS_DEST) { $env:DG_SKILLS_DEST } else { Join-Path $dgHome "skills" }
 	try {
 		Copy-DgSkillTree -Source (Get-DgSkillsSource) -Destination $skillsDest
 	} finally {
 		if ($script:skillsTmp) { Remove-Item -Recurse -Force $script:skillsTmp -ErrorAction SilentlyContinue }
 	}
-	if ($env:DG_SKILLS_NO_CLI -eq "1") {
-		Write-Host "Skipped the dg-skills CLI (DG_SKILLS_NO_CLI=1): offline copy only."
+	if ($wantNoCli) {
+		Write-Host "Skipped the dg-skills CLI (-NoCli): offline copy only."
 		exit 0
 	}
 }
@@ -215,6 +242,44 @@ function Set-DgJunction {
 function Test-DgAvx2 {
 	Add-Type -Namespace Dg -Name Cpu -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool IsProcessorFeaturePresent(uint feature);'
 	return [Dg.Cpu]::IsProcessorFeaturePresent(40)
+}
+
+# The web skills are data for a chat upload: ZIPs and a Markdown guide. They are verified,
+# unpacked into one folder, and never opened or run.
+if ($wantWebOnly) {
+	$webDest = if ($Dest) { $Dest } else { Join-Path (Get-Location).Path "dg-web-skills" }
+	$rel = Resolve-DgRelease
+	$tag = $rel.tag_name
+	$asset = "dg-web-skills-$($tag.Substring(1)).zip"
+	$work = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-web-skills-" + [guid]::NewGuid())
+	New-Item -ItemType Directory -Force -Path $work | Out-Null
+	try {
+		$sumsPath = Join-Path $work "SHA256SUMS"
+		Save-DgAsset $rel "SHA256SUMS" $sumsPath
+		$expected = Get-DgSumsEntry $sumsPath $asset
+		if (-not $expected) { throw "dg-skills: SHA256SUMS in $tag has no entry for $asset" }
+		Write-Host "Downloading $asset..."
+		$zipPath = Join-Path $work $asset
+		Save-DgAsset $rel $asset $zipPath
+		Assert-DgSha256 $zipPath $asset $expected
+		Add-Type -AssemblyName System.IO.Compression.FileSystem
+		$archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+		try { $entries = @($archive.Entries | ForEach-Object { $_.FullName }) } finally { $archive.Dispose() }
+		if ($entries.Count -eq 0) { throw "dg-skills: $asset is empty" }
+		foreach ($entry in $entries) {
+			if ($entry -ne "UPLOAD.md" -and $entry -notmatch '^dg-[a-z0-9-]+\.zip$') { throw "dg-skills: refusing $entry in $asset" }
+		}
+		New-Item -ItemType Directory -Force -Path $webDest | Out-Null
+		Expand-Archive -Path $zipPath -DestinationPath $webDest -Force
+		Write-Host "Web skills $($tag.Substring(1)) are in ${webDest}:"
+		$entries | Where-Object { $_ -like "dg-*.zip" } | ForEach-Object { Write-Host "  $_" }
+		Write-Host "Upload each ZIP as a skill in Claude: Customize, then Skills, then Upload a skill."
+		Write-Host "Turn on code execution in Settings, under Capabilities. A Team or Enterprise owner can add them for everyone."
+		Write-Host "Web-only install: nothing else was installed and nothing was run."
+	} finally {
+		Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
+	}
+	exit 0
 }
 
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
@@ -305,11 +370,11 @@ try {
 		Write-Host "added $binDir to the user PATH; open a new shell"
 	}
 
-	if ($env:DG_SKILLS_ONLY -eq "1") { exit 0 }
+	if ($wantSkillsOnly) { exit 0 }
 
 	$installArgs = @("install")
-	if ($env:DG_CLI_ONLY -eq "1") { $installArgs += "--cli-only" }
-	elseif ($env:DG_AGENT_ONLY -eq "1") { $installArgs += "--agent-only" }
+	if ($wantCliOnly) { $installArgs += "--cli-only" }
+	elseif ($wantAgentOnly) { $installArgs += "--agent-only" }
 	else { Write-Host "Setting up the dg-ai-extension..." }
 	if ($script:pinnedVersion) { $installArgs += @("--version", $script:pinnedVersion) }
 
@@ -321,7 +386,7 @@ try {
 }
 if ($exitCode -ne 0) { exit $exitCode }
 
-if ($env:DG_INSTALL_CODEX -eq "1") {
+if ($wantCodex) {
 	$codexRoot = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
 	$tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-ai-" + [guid]::NewGuid())
 	$archive = Join-Path $tmpDir "dg-ai.zip"
@@ -332,7 +397,7 @@ if ($env:DG_INSTALL_CODEX -eq "1") {
 		$skillsDir = Join-Path $codexRoot "skills"
 		New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
 		foreach ($skill in Get-ChildItem -Directory (Join-Path $sourceRoot "plugins\dg\skills")) {
-			if (($env:DG_CLI_ONLY -eq "1" -or $env:DG_AGENT_ONLY -eq "1") -and (Select-String -Path (Join-Path $skill.FullName "SKILL.md") -Pattern "^requires:.*extension" -Quiet)) { continue }
+			if (($wantCliOnly -or $wantAgentOnly) -and (Select-String -Path (Join-Path $skill.FullName "SKILL.md") -Pattern "^requires:.*extension" -Quiet)) { continue }
 			Copy-Item -Recurse -Force $skill.FullName $skillsDir
 		}
 	} finally {

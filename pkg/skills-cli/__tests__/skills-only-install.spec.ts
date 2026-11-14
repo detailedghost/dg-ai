@@ -492,10 +492,24 @@ describe.skipIf(process.env.DG_BOOTSTRAP_E2E !== "1")("bootstrap.sh --skills-onl
 			});
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
 			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, personasPath(dest), [
-				"Skipped the dg-skills CLI (DG_SKILLS_NO_CLI=1): offline copy only.",
+				"Skipped the dg-skills CLI (--no-cli): offline copy only.",
 			]);
 			expect(result.requests).toEqual([]);
 			expect(existsSync(join(result.root, "bin"))).toBe(false);
+		} finally {
+			rmSync(join(dest, ".."), { recursive: true, force: true });
+		}
+	});
+
+	test("--no-cli and --dest do the same offline copy with no environment variables", async () => {
+		const dest = join(mkdtempSync(join(tmpdir(), "dg-skills-boot-flags-")), "skills");
+		try {
+			const result = await runBootstrap({ args: ["--skills-only", "--no-cli", "--dest", dest] });
+			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
+			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, personasPath(dest), [
+				"Skipped the dg-skills CLI (--no-cli): offline copy only.",
+			]);
+			expect(result.requests).toEqual([]);
 		} finally {
 			rmSync(join(dest, ".."), { recursive: true, force: true });
 		}

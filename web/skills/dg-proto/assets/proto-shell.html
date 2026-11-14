@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototype: PROTO_NAME</title>
+<style>
+/* DG:THEME — paste the full contents of assets/dg-theme.css here, unchanged. */
+</style>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body { padding-bottom: 96px; }
+  html[data-proto-width="mobile"] #dg-items { max-width: 390px; margin-inline: auto; }
+  html[data-proto-width="tablet"] #dg-items { max-width: 768px; margin-inline: auto; }
+  html[data-proto-width="desktop"] #dg-items { max-width: 1440px; margin-inline: auto; }
+  .dg-item { display: none; }
+  .dg-item.is-active { display: block; }
+
+  #proto-decision-bar, #proto-decision-toast, #dg-panel {
+    position: fixed; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 32px);
+    background: var(--pd-bg); color: var(--pd-fg); border: 1px solid var(--pd-border);
+    border-radius: 10px; box-shadow: var(--pd-shadow); z-index: 9999; color-scheme: var(--pd-scheme);
+    font: 13px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  #proto-decision-bar { bottom: 14px; padding: 6px; }
+  #proto-decision-bar[data-verdict="approved"] { border-color: var(--pd-ok); }
+  .proto-decision-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; justify-content: center; }
+  .proto-decision-ic {
+    width: 38px; height: 38px; padding: 0; display: inline-grid; place-items: center; position: relative;
+    border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--pd-muted); font: inherit; cursor: pointer;
+  }
+  .proto-decision-ic:hover:not(:disabled) { background: var(--pd-field); color: var(--pd-fg); }
+  .proto-decision-ic:disabled { opacity: .4; cursor: default; }
+  #dg-label {
+    height: 38px; max-width: min(46ch, 60vw); padding: 0 10px; border: 1px solid var(--pd-border); border-radius: 8px;
+    background: var(--pd-field); color: var(--pd-fg); font: inherit; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #dg-label .dim { color: var(--pd-muted); }
+  #proto-decision-approve { color: var(--pd-ok); border-color: var(--pd-ok); background: var(--pd-ok-soft); }
+  #proto-decision-approve.with-note { color: var(--pd-note); border-color: var(--pd-note); background: var(--pd-note-soft); }
+  #proto-decision-reject { color: var(--pd-bad); border-color: var(--pd-bad); background: var(--pd-bad-soft); }
+  #dg-more { color: var(--pd-acc); border-color: var(--pd-acc); background: var(--pd-acc-soft); }
+  #proto-decision-note[aria-pressed="true"], #dg-rounds[aria-expanded="true"] { background: var(--pd-acc-soft); color: var(--pd-acc); border-color: var(--pd-acc); }
+  #proto-decision-note.has-note::after {
+    content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--pd-note); box-shadow: 0 0 0 2px var(--pd-bg);
+  }
+  .proto-decision-sep { width: 1px; height: 22px; background: var(--pd-border); margin: 0 4px; }
+  #proto-decision-note-row { padding: 4px 4px 8px; }
+  #proto-decision-note-row[hidden], .proto-decision-menu[hidden], #dg-panel[hidden] { display: none; }
+  #proto-decision-notes {
+    width: 100%; min-width: min(420px, 80vw); font: inherit; color: inherit;
+    background: var(--pd-field); border: 1px solid var(--pd-border); border-radius: 8px; padding: 9px 11px;
+  }
+  #proto-decision-bar:has(.with-note) #proto-decision-notes { border-color: var(--pd-note); background: var(--pd-note-soft); }
+  #proto-decision-notes::placeholder { color: var(--pd-muted); }
+  .proto-decision-menu-wrap { position: relative; }
+  .proto-decision-menu {
+    position: absolute; bottom: calc(100% + 8px); left: 0; min-width: 190px; max-height: 50vh; overflow: auto; padding: 4px; display: grid; gap: 2px;
+    background: var(--pd-bg); border: 1px solid var(--pd-border); border-radius: 10px; box-shadow: var(--pd-shadow);
+  }
+  .proto-decision-menu button {
+    display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 6px 10px;
+    border: 0; border-radius: 7px; background: none; color: var(--pd-fg); font: inherit; text-align: left; cursor: pointer;
+  }
+  .proto-decision-menu button span { display: inline-grid; color: var(--pd-muted); }
+  .proto-decision-menu button:hover, .proto-decision-menu button:focus-visible { background: var(--pd-field); }
+  .proto-decision-menu button[aria-checked="true"] { background: var(--pd-acc-soft); color: var(--pd-acc); }
+  .proto-decision-menu .group { padding: 6px 10px 2px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--pd-muted); }
+  #proto-decision-toast {
+    bottom: calc(var(--dg-bar-h, 52px) + 24px); padding: 10px 14px; max-width: min(60ch, calc(100vw - 32px)); z-index: 10000;
+    opacity: 0; pointer-events: none; transition: opacity .2s ease-out;
+  }
+  #proto-decision-toast.show { opacity: 1; pointer-events: auto; }
+  #proto-decision-toast code { user-select: all; font-family: var(--dg-mono); background: var(--pd-field); padding: 1px 5px; border-radius: 4px; }
+  #dg-panel { bottom: calc(var(--dg-bar-h, 52px) + 24px); width: min(520px, calc(100vw - 32px)); max-height: 60vh; overflow: auto; padding: 14px 16px; }
+  #dg-panel h2 { margin: 0 0 4px; font-size: 14px; }
+  #dg-panel .question { margin: 0 0 10px; color: var(--pd-muted); }
+  #dg-panel ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+  #dg-panel .verdict { font-weight: 600; }
+  #dg-panel .verdict.approve, #dg-panel .verdict.accepted { color: var(--pd-ok); }
+  #dg-panel .verdict.reject { color: var(--pd-bad); }
+  #dg-panel .verdict.tweak, #dg-panel .verdict.more { color: var(--pd-acc); }
+  #dg-panel .note { color: var(--pd-muted); }
+  @media (prefers-reduced-motion: reduce) { #proto-decision-toast { transition: none; } }
+</style>
+</head>
+<body>
+
+<main id="dg-items">
+  <!-- DG:ITEMS
+    UI variants: one <section class="dg-item" data-key="A" data-label="Stacked form"> per variant.
+    Plan walkthrough: one <section class="dg-item" data-key="signup-1" data-workflow="Sign up" data-label="Enter email"> per screen.
+    Logic: one <section class="dg-item" data-key="model" data-label="State model"> holding the interactive model.
+    Inside each UI variant, wrap the feature in exactly one element with data-verify-root="PROTO_NAME".
+  -->
+</main>
+
+<div id="dg-panel" role="dialog" aria-label="Rounds" hidden></div>
+
+<div id="proto-decision-bar" role="toolbar" aria-label="Prototype decision">
+  <div id="proto-decision-note-row" hidden>
+    <input id="proto-decision-notes" aria-label="Note" autocomplete="off" placeholder="Note: optional for Approve and More, required for Tweak and Reject">
+  </div>
+  <div class="proto-decision-row">
+    <button type="button" id="dg-prev" class="proto-decision-ic" data-icon="left" title="Previous" aria-label="Previous"></button>
+    <div class="proto-decision-menu-wrap">
+      <button type="button" id="dg-label" aria-haspopup="menu" aria-expanded="false" aria-controls="dg-jump-menu"></button>
+      <div id="dg-jump-menu" class="proto-decision-menu" role="menu" aria-label="Jump to" hidden></div>
+    </div>
+    <button type="button" id="dg-next" class="proto-decision-ic" data-icon="right" title="Next" aria-label="Next"></button>
+    <span class="proto-decision-sep" aria-hidden="true"></span>
+    <button type="button" id="proto-decision-mode" class="proto-decision-ic" data-icon="moon" title="Dark mode" aria-label="Dark mode"></button>
+    <div class="proto-decision-menu-wrap">
+      <button type="button" id="proto-decision-width" class="proto-decision-ic" data-icon="all" aria-haspopup="menu" aria-expanded="false" aria-controls="proto-decision-width-menu" title="Width: all" aria-label="Width: all"></button>
+      <div id="proto-decision-width-menu" class="proto-decision-menu" role="menu" aria-label="Preview width" hidden>
+        <button type="button" role="menuitemradio" data-w="all" aria-checked="true"><span data-icon="all"></span>Responsive</button>
+        <button type="button" role="menuitemradio" data-w="mobile" aria-checked="false"><span data-icon="phone"></span>Mobile</button>
+        <button type="button" role="menuitemradio" data-w="tablet" aria-checked="false"><span data-icon="tablet"></span>Tablet</button>
+        <button type="button" role="menuitemradio" data-w="desktop" aria-checked="false"><span data-icon="monitor"></span>Desktop</button>
+      </div>
+    </div>
+    <span class="proto-decision-sep" aria-hidden="true"></span>
+    <button type="button" id="proto-decision-note" class="proto-decision-ic" data-icon="note" aria-pressed="false" aria-controls="proto-decision-note-row" title="Note" aria-label="Note"></button>
+    <button type="button" id="proto-decision-approve" class="proto-decision-ic" data-icon="check" title="Approve" aria-label="Approve"></button>
+    <button type="button" id="dg-tweak" class="proto-decision-ic" data-icon="edit" title="Tweak this one (note required)" aria-label="Tweak"></button>
+    <button type="button" id="proto-decision-reject" class="proto-decision-ic" data-icon="rework" title="Reject (note required)" aria-label="Reject"></button>
+    <button type="button" id="dg-more" class="proto-decision-ic" data-icon="plus" title="More versions" aria-label="More versions"></button>
+    <span class="proto-decision-sep" aria-hidden="true"></span>
+    <button type="button" id="dg-rounds" class="proto-decision-ic" data-icon="compare" aria-expanded="false" aria-controls="dg-panel" title="Rounds" aria-label="Rounds"></button>
+  </div>
+</div>
+<div id="proto-decision-toast" role="status" aria-live="polite"></div>
+
+<!-- DG:CHAIN — the refine chain. Update it every round. See references/chain.md. -->
+<script type="application/json" id="dg-chain">
+{
+  "name": "PROTO_NAME",
+  "kind": "ui",
+  "question": "",
+  "round": 1,
+  "base": null,
+  "status": "open",
+  "accepted": null,
+  "history": []
+}
+</script>
+
+<script>
+/* DG:ICONS — paste the full contents of assets/dg-icons.js here, unchanged. */
+</script>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const chain = JSON.parse($("dg-chain").textContent);
+  const items = Array.from(document.querySelectorAll("#dg-items .dg-item"));
+  const store = (() => {
+    const prefix = `dg-proto:${chain.name}:`;
+    return {
+      get(key) { try { return localStorage.getItem(prefix + key); } catch { return null; } },
+      set(key, value) { try { localStorage.setItem(prefix + key, value); } catch { /* storage blocked */ } },
+    };
+  })();
+
+  const TEXT_ICONS = { sun: "☀", moon: "☾", all: "▦", phone: "▯", tablet: "▭", monitor: "▬", note: "✎", check: "✓", rework: "⟳", left: "‹", right: "›", edit: "✐", plus: "+", compare: "☰" };
+  function setIcon(node, name) {
+    node.setAttribute("data-icon", name);
+    if (window.dgIcons && window.dgIcons.paths[name]) node.innerHTML = window.dgIcons.svg(name);
+    else node.textContent = TEXT_ICONS[name] || "";
+  }
+  document.querySelectorAll("[data-icon]").forEach((node) => setIcon(node, node.getAttribute("data-icon")));
+
+  const bar = $("proto-decision-bar"), label = $("dg-label"), jump = $("dg-jump-menu");
+  const toast = $("proto-decision-toast"), panel = $("dg-panel");
+  const accepted = chain.status === "accepted";
+  const syncBarHeight = () => document.documentElement.style.setProperty("--dg-bar-h", `${bar.offsetHeight}px`);
+  if (window.ResizeObserver) new ResizeObserver(syncBarHeight).observe(bar);
+  syncBarHeight();
+  const switchable = chain.kind !== "logic" && items.length > 1;
+  let index = 0;
+
+  function say(html, ms) {
+    toast.innerHTML = html;
+    toast.classList.add("show");
+    clearTimeout(say.t);
+    say.t = setTimeout(() => toast.classList.remove("show"), ms || 6000);
+  }
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+  function current() { return items[index]; }
+  function keyOf(item) { return item ? item.dataset.key : ""; }
+  function nameOf(item) {
+    if (!item) return "";
+    const parts = [item.dataset.workflow, item.dataset.label].filter(Boolean);
+    return parts.join(" › ");
+  }
+
+  function show(i) {
+    if (!items.length) { label.textContent = `${chain.name} · nothing to show yet`; return; }
+    index = (i + items.length) % items.length;
+    items.forEach((item, n) => item.classList.toggle("is-active", n === index));
+    const item = current();
+    const round = chain.round ? `R${chain.round}` : "";
+    const key = chain.kind === "ui" ? keyOf(item) : "";
+    label.innerHTML = `${esc(chain.name)} <span class="dim">· ${esc([round, key].filter(Boolean).join(" · "))}</span>${nameOf(item) ? `: ${esc(nameOf(item))}` : ""}`;
+    label.title = label.textContent;
+    jump.querySelectorAll("[role=menuitemradio]").forEach((b) => b.setAttribute("aria-checked", String(Number(b.dataset.i) === index)));
+    store.set("index", String(index));
+    if (history.replaceState) { try { history.replaceState(null, "", `#${encodeURIComponent(keyOf(item))}`); } catch { /* sandboxed */ } }
+  }
+
+  function buildJump() {
+    let group = null;
+    items.forEach((item, i) => {
+      if (item.dataset.workflow && item.dataset.workflow !== group) {
+        group = item.dataset.workflow;
+        const g = document.createElement("div");
+        g.className = "group"; g.textContent = group;
+        jump.appendChild(g);
+      }
+      const b = document.createElement("button");
+      b.type = "button"; b.setAttribute("role", "menuitemradio"); b.dataset.i = String(i);
+      b.textContent = chain.kind === "ui" ? `${keyOf(item)}: ${item.dataset.label || ""}` : item.dataset.label || keyOf(item);
+      b.addEventListener("click", () => { show(i); menu(jump, label, false); });
+      jump.appendChild(b);
+    });
+  }
+
+  function menu(list, button, open) {
+    list.hidden = !open;
+    button.setAttribute("aria-expanded", String(open));
+    if (open) (list.querySelector("[aria-checked=true]") || list.querySelector("button"))?.focus();
+  }
+
+  // Mode
+  const modeBtn = $("proto-decision-mode");
+  function applyMode(m) {
+    document.documentElement.classList.toggle("dark", m === "dark");
+    setIcon(modeBtn, m === "dark" ? "sun" : "moon");
+    modeBtn.title = m === "dark" ? "Light mode" : "Dark mode";
+    modeBtn.setAttribute("aria-label", modeBtn.title);
+    store.set("mode", m);
+  }
+  applyMode(store.get("mode") === "dark" ? "dark" : "light");
+  modeBtn.addEventListener("click", () => applyMode(document.documentElement.classList.contains("dark") ? "light" : "dark"));
+
+  // Width
+  const WIDTH_ICONS = { all: "all", mobile: "phone", tablet: "tablet", desktop: "monitor" };
+  const widthBtn = $("proto-decision-width"), widthMenu = $("proto-decision-width-menu");
+  const widthItems = Array.from(widthMenu.querySelectorAll("[role=menuitemradio]"));
+  function applyWidth(w) {
+    if (!WIDTH_ICONS[w]) w = "all";
+    if (w === "all") document.documentElement.removeAttribute("data-proto-width");
+    else document.documentElement.setAttribute("data-proto-width", w);
+    setIcon(widthBtn, WIDTH_ICONS[w]);
+    widthBtn.title = `Width: ${w}`;
+    widthBtn.setAttribute("aria-label", widthBtn.title);
+    widthItems.forEach((item) => item.setAttribute("aria-checked", String(item.dataset.w === w)));
+    store.set("width", w);
+  }
+  applyWidth(store.get("width") || "all");
+  widthBtn.addEventListener("click", () => menu(widthMenu, widthBtn, widthMenu.hidden));
+  widthItems.forEach((item) => item.addEventListener("click", () => { applyWidth(item.dataset.w); menu(widthMenu, widthBtn, false); widthBtn.focus(); }));
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".proto-decision-menu-wrap")) { menu(widthMenu, widthBtn, false); menu(jump, label, false); }
+  });
+  [widthMenu, jump].forEach((list) => list.addEventListener("keydown", (e) => {
+    const all = Array.from(list.querySelectorAll("button")), i = all.indexOf(document.activeElement);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); all[(i + (e.key === "ArrowDown" ? 1 : -1) + all.length) % all.length].focus(); }
+    if (e.key === "Escape") { menu(list, list === jump ? label : widthBtn, false); }
+  }));
+
+  // Notes
+  const notes = $("proto-decision-notes"), noteRow = $("proto-decision-note-row"), noteBtn = $("proto-decision-note"), approveBtn = $("proto-decision-approve");
+  function showNote(open) { noteRow.hidden = !open; noteBtn.setAttribute("aria-pressed", String(open)); if (open) notes.focus(); }
+  function syncNote() {
+    const has = notes.value.trim().length > 0;
+    noteBtn.classList.toggle("has-note", has);
+    approveBtn.classList.toggle("with-note", has);
+    approveBtn.title = has ? "Approve + note: start the next round from this one" : "Approve: final pick";
+    approveBtn.setAttribute("aria-label", approveBtn.title);
+    store.set("note", notes.value);
+  }
+  notes.value = store.get("note") || "";
+  syncNote();
+  noteBtn.addEventListener("click", () => showNote(noteRow.hidden));
+  notes.addEventListener("input", syncNote);
+  notes.addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
+
+  // Decisions become a chat reply: the artifact never sends anything.
+  function reply(action) {
+    const note = notes.value.trim();
+    const key = chain.kind === "logic" ? "" : keyOf(current());
+    const target = key ? ` ${key}` : "";
+    const viewing = key ? `[was viewing ${key}] ` : "";
+    if ((action === "tweak" || action === "reject") && !note) {
+      showNote(true);
+      say(action === "reject" ? "Add a note first. A rework needs direction." : "Add a note first: what should change?");
+      return;
+    }
+    const text = action === "approve" ? `approve${target}${note ? `: ${note}` : ""}`
+      : action === "tweak" ? `tweak${target}: ${note}`
+      : action === "reject" ? `reject: ${viewing}${note}`
+      : `more${note ? `: ${viewing}${note}` : ""}`;
+    copy(text).then((ok) => say(`${ok ? "Copied" : "Your reply"}: <code>${esc(text)}</code><br>${ok ? "Paste it into the chat, or pick that option there." : "Select it, copy it, and send it in the chat, or pick that option there."}`, 9000));
+    if (action === "approve") bar.dataset.verdict = "approved";
+  }
+  function copy(text) {
+    const fallback = () => {
+      try {
+        const area = document.createElement("textarea");
+        area.value = text; area.setAttribute("readonly", ""); area.style.position = "fixed"; area.style.opacity = "0";
+        document.body.appendChild(area); area.select();
+        const ok = document.execCommand("copy");
+        area.remove();
+        return ok;
+      } catch { return false; }
+    };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(() => true, fallback);
+    } catch { /* clipboard blocked */ }
+    return Promise.resolve(fallback());
+  }
+  approveBtn.addEventListener("click", () => reply("approve"));
+  $("dg-tweak").addEventListener("click", () => reply("tweak"));
+  $("proto-decision-reject").addEventListener("click", () => reply("reject"));
+  $("dg-more").addEventListener("click", () => reply("more"));
+
+  // Rounds panel
+  const roundsBtn = $("dg-rounds");
+  function renderPanel() {
+    const rows = (chain.history || []).map((h) => {
+      const pick = h.variant ? ` ${esc(h.variant)}` : "";
+      return `<li>Round ${esc(h.round)}: <span class="verdict ${esc(h.decision)}">${esc(h.decision)}${pick}</span>${h.note ? ` <span class="note">— ${esc(h.note)}</span>` : ""}</li>`;
+    });
+    if (accepted && chain.accepted) rows.push(`<li><span class="verdict accepted">accepted ${esc(chain.accepted.round)}${esc(chain.accepted.variant || "")}</span>${chain.accepted.note ? ` <span class="note">— ${esc(chain.accepted.note)}</span>` : ""}</li>`);
+    else rows.push(`<li>Round ${esc(chain.round)}: <span class="note">open${chain.base ? `, built from ${esc(chain.base)}` : ""}</span></li>`);
+    panel.innerHTML = `<h2>${esc(chain.name)}</h2>${chain.question ? `<p class="question">${esc(chain.question)}</p>` : ""}<ol>${rows.join("")}</ol>`;
+  }
+  roundsBtn.addEventListener("click", () => {
+    const open = panel.hidden;
+    if (open) renderPanel();
+    panel.hidden = !open;
+    roundsBtn.setAttribute("aria-expanded", String(open));
+  });
+
+  // Switching
+  $("dg-prev").addEventListener("click", () => show(index - 1));
+  $("dg-next").addEventListener("click", () => show(index + 1));
+  label.addEventListener("click", () => menu(jump, label, jump.hidden));
+  document.addEventListener("keydown", (e) => {
+    if (e.target.closest && e.target.closest("input, textarea, select, [contenteditable]")) return;
+    if (!switchable) return;
+    if (e.key === "ArrowLeft") show(index - 1);
+    if (e.key === "ArrowRight") show(index + 1);
+  });
+
+  buildJump();
+  ["dg-prev", "dg-next"].forEach((id) => { $(id).disabled = !switchable; $(id).hidden = chain.kind === "logic"; });
+  label.disabled = !switchable;
+  if (accepted) {
+    ["proto-decision-note", "proto-decision-approve", "dg-tweak", "proto-decision-reject", "dg-more"].forEach((id) => { $(id).disabled = true; });
+    bar.dataset.verdict = "approved";
+  }
+  const fromHash = decodeURIComponent((location.hash || "").slice(1));
+  const hashIndex = items.findIndex((item) => keyOf(item) === fromHash);
+  const acceptedIndex = accepted && chain.accepted ? items.findIndex((item) => keyOf(item) === chain.accepted.variant) : -1;
+  const saved = Number(store.get("index"));
+  show(acceptedIndex >= 0 ? acceptedIndex : hashIndex >= 0 ? hashIndex : Number.isInteger(saved) && saved < items.length ? saved : 0);
+})();
+</script>
+</body>
+</html>
