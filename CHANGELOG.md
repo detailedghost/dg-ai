@@ -1,5 +1,26 @@
 # Changelog
 
+## v5.7.0 (2026-11-14)
+
+### Features
+
+- feat(extension): split settings into tabs on a full-page options tab ([#201](https://github.com/detailedghost/dg-ai/pull/201))
+- feat(extension): separate Web MCP approvals from pw --ext ([#196](https://github.com/detailedghost/dg-ai/pull/196))
+- feat(extension): restyle the agent banner as a top strip ([#194](https://github.com/detailedghost/dg-ai/pull/194))
+- feat(skills): add /dg:land and end spec builds with it ([#203](https://github.com/detailedghost/dg-ai/pull/203))
+- feat(extension): allow pw --ext sites per registrable domain ([#191](https://github.com/detailedghost/dg-ai/pull/191))
+- feat(pw): read agent tab network calls with pw --ext network ([#195](https://github.com/detailedghost/dg-ai/pull/195))
+- feat(skills-cli): add bash, zsh and fish completion ([#197](https://github.com/detailedghost/dg-ai/pull/197))
+- feat(stat): reap leftover agent processes and stop stuck loops ([#192](https://github.com/detailedghost/dg-ai/pull/192))
+
+### Fixes
+
+- fix(extension): pass the full tool to WebMCP executeTool ([#205](https://github.com/detailedghost/dg-ai/pull/205))
+- fix(extension): reuse the agent tab group after an extension reload ([#200](https://github.com/detailedghost/dg-ai/pull/200))
+- fix(extension): mask the Outlook account name in pw --ext page titles ([#199](https://github.com/detailedghost/dg-ai/pull/199))
+- fix(address): handle escape sequences in CI job logs ([#204](https://github.com/detailedghost/dg-ai/pull/204))
+- fix(skills-cli): add stat reap and loops to the completion tree ([#202](https://github.com/detailedghost/dg-ai/pull/202))
+
 ## v5.6.1 (2026-11-13)
 
 ### Fixes
