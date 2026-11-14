@@ -19,7 +19,7 @@ State meaning:
 
 ## Cancel or kill: stop it
 
-- **Claude Code:** a background **Agent** stops with `TaskStop` (by agentId). A background **Bash** stops by killing that shell. A **Workflow** stops through its own controls; it is not a single killable process.
+- **Claude Code:** a background **Agent** stops with `TaskStop` (by agentId). A background **Bash** stops by killing that shell. A **Workflow** stops through `/workflows`. `TaskStop` does not name workflow runs; this is unverified.
 - **Any other agent:** `dg-skills bg cancel <id>` (alias `dg-skills bg kill <id>`). It sends TERM to the job's own process group and escalates to KILL if the job does not exit promptly. The job then reads as `canceled`. It never signals the caller's process group. Canceling an unknown or finished job is a harmless no-op.
 
 ## Update: feed in more context
@@ -27,12 +27,20 @@ State meaning:
 A detached process cannot take new stdin mid-run, so "update" means different things per substrate.
 
 - **Claude Code, background Agent:** native. `SendMessage` to that agent (by name or agentId) continues it with the new context and keeps its transcript. This is the canonical update.
-- **Claude Code, background Bash or Workflow:** not updatable mid-run. Cancel it and relaunch with the fuller task.
+- **Claude Code, background Bash:** not updatable mid-run. Cancel it and relaunch with the fuller task.
+- **Claude Code, Workflow:** see Workflow jobs below.
 - **Any other agent, proxy or agentic job:** `dg-skills bg update <id> '<context>'`.
   - If the job is **still running**, the context is queued. The proxy blocks to completion and cannot take mid-flight input. The job's own completion hook then resumes the backend session with the queued context. `dg-skills bg status` and `dg-skills bg list` show it as `pendingUpdate` until then.
   - If the job is **already finished**, it resumes the session at once as a new chained `bg` job and returns the new job's `id`.
   - The `sessionId` comes from the finished job's log. The proxy prints it only at the end, so a session resumes only after its current run completes. There is nothing to capture at launch.
 - **Any other agent, plain shell job (type A):** refused. There is no session or context to feed an `nx test` process. Cancel and relaunch instead.
+
+## Workflow jobs
+
+- At launch, record the `runId` and the persisted script path: `dg-skills stat add "<task> wf_<id>" --status running`.
+- Update: if the run is still going, stop it through `/workflows` and wait for its agents to exit. Resume refuses a run that is still active. Then edit the script and relaunch with `Workflow({scriptPath, resumeFromRunId})`. Unchanged prefix stages come from cache.
+- Before you diagnose an empty result, read `<session>/subagents/workflows/<runId>/journal.jsonl`.
+- Cancel through `/workflows`.
 
 ## Prune: drop a tree's finished job records
 

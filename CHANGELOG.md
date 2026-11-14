@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.8.1 (2026-11-14)
+
+### Fixes
+
+- fix(skills): retarget child PRs before /dg:land merges ([#206](https://github.com/detailedghost/dg-ai/pull/206))
+
 ## v5.8.0 (2026-11-14)
 
 ### Features

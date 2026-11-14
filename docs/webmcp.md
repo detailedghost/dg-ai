@@ -50,8 +50,7 @@ ticked by default.
 
 - Without it, the grant ends when the MCP session ends.
 - With it, the grant holds for that site and tool, or that site and area, for
-  30 days, for every agent session, also after a browser restart. Use on the
-  grant does not extend it.
+  30 days, for every agent session, also after a browser restart. Use on the grant does not extend it.
 - An `each` tool never shows the checkbox and never stores a grant.
 - Remembered grants live in the extension's `storage.local`, each one signed
   with the extension's HMAC key from IndexedDB. Each record also carries a
