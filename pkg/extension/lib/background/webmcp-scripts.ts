@@ -33,6 +33,7 @@ const NOT_KEPT = "The browser did not keep the registration.";
 const RECORDS_KEY = "webmcpScripts";
 export const STOPPED_SCRIPTS_KEY = "webmcpStoppedScripts";
 const STOPPED_MAX = 100;
+const STOP_PENDING = Number.MAX_SAFE_INTEGER;
 
 /** Sites of a third-party script that stopped; documents loaded before stoppedAt may still hold its tools. */
 export type WebMcpStoppedScript = { matches: string[]; stoppedAt: number };
@@ -229,16 +230,32 @@ export function createWebMcpScripts({
 			.catch(() => undefined);
 	};
 
-	async function noteStopped(matches: string[]): Promise<void> {
+	async function heldStopped(): Promise<WebMcpStoppedScript[]> {
 		const stored = (await storage.local.get(STOPPED_SCRIPTS_KEY))[STOPPED_SCRIPTS_KEY];
-		const held = Array.isArray(stored) ? (stored as WebMcpStoppedScript[]) : [];
-		const all = [...held, { matches: [...matches], stoppedAt: now() }];
+		return Array.isArray(stored) ? (stored as WebMcpStoppedScript[]) : [];
+	}
+
+	async function noteStopped(matches: string[], stoppedAt: number): Promise<void> {
+		const all = [...(await heldStopped()), { matches: [...matches], stoppedAt }];
 		await storage.local.set({ [STOPPED_SCRIPTS_KEY]: all.length > STOPPED_MAX ? foldOldest(all) : all });
 	}
 
 	async function stopUser(id: string, matches: string[]): Promise<void> {
 		await unregisterUser(id);
-		await noteStopped(matches);
+		await noteStopped(matches, now());
+	}
+
+	/** Covers the sites with a pending stop before deactivate drops the active record, then dates it once unregistered. */
+	async function stopActive(id: string, matches: string[], deactivate: () => Promise<void>): Promise<void> {
+		await noteStopped(matches, STOP_PENDING);
+		await deactivate();
+		await unregisterUser(id);
+		const held = await heldStopped();
+		const at = held.findLastIndex(
+			(entry) => entry.stoppedAt === STOP_PENDING && JSON.stringify(entry.matches) === JSON.stringify(matches),
+		);
+		if (at === -1) return;
+		await storage.local.set({ [STOPPED_SCRIPTS_KEY]: held.with(at, { ...held[at], stoppedAt: now() }) });
 	}
 
 	const macPayload = async (record: WebMcpScriptRecord, code: string, approvedAt: number) =>
@@ -483,28 +500,30 @@ export function createWebMcpScripts({
 
 		setEnabled(id: string, enabled: boolean): Promise<void> {
 			return locked(async () => {
-				let stopping: WebMcpScriptRecord | undefined;
-				await mutate((records) => {
-					const before = records.find((record) => record.id === id);
-					if (before && !builtInIds.has(id) && before.enabled && !enabled) stopping = before;
-					if (before) {
-						return records.map((record) => (record.id === id ? { ...record, enabled } : record));
-					}
-					const builtIn = BUILT_IN_SCRIPTS.find((script) => script.id === id);
-					if (!builtIn) throw new Error(`Unknown script ${id}`);
-					return [
-						...records,
-						validateWebMcpScriptRecord({
-							id: builtIn.id,
-							name: builtIn.name,
-							matches: [...builtIn.matches],
-							sha256: EMPTY_HASH,
-							source: "built-in",
-							enabled,
-						}),
-					];
-				});
-				if (stopping) await stopUser(`${USER_PREFIX}${id}`, stopping.matches);
+				const stopping = (await readStored()).find(
+					(record) => record.id === id && !builtInIds.has(id) && record.enabled && !enabled,
+				);
+				const apply = () =>
+					mutate((records) => {
+						if (records.some((record) => record.id === id)) {
+							return records.map((record) => (record.id === id ? { ...record, enabled } : record));
+						}
+						const builtIn = BUILT_IN_SCRIPTS.find((script) => script.id === id);
+						if (!builtIn) throw new Error(`Unknown script ${id}`);
+						return [
+							...records,
+							validateWebMcpScriptRecord({
+								id: builtIn.id,
+								name: builtIn.name,
+								matches: [...builtIn.matches],
+								sha256: EMPTY_HASH,
+								source: "built-in",
+								enabled,
+							}),
+						];
+					});
+				if (stopping) await stopActive(`${USER_PREFIX}${id}`, stopping.matches, apply);
+				else await apply();
 				await runReconcile();
 			});
 		},
@@ -528,9 +547,10 @@ export function createWebMcpScripts({
 			return locked(async () => {
 				if (builtInIds.has(id)) throw new Error("Built-in scripts cannot be removed");
 				const before = await requireThirdParty(id);
-				await mutate((records) => records.filter((record) => record.id !== id));
-				await storage.local.remove([codeKey(id), approvalKey(id), macKey(id)]);
-				await stopUser(`${USER_PREFIX}${id}`, before.matches);
+				await stopActive(`${USER_PREFIX}${id}`, before.matches, async () => {
+					await mutate((records) => records.filter((record) => record.id !== id));
+					await storage.local.remove([codeKey(id), approvalKey(id), macKey(id)]);
+				});
 				await runReconcile();
 			});
 		},

@@ -878,6 +878,28 @@ describe("stopped third-party sites", () => {
 		expect(stopped(storage)).toEqual([{ matches: ["https://flights.example.com/*"], stoppedAt: 1000 }]);
 	});
 
+	it.each([
+		["disable", (scripts: ReturnType<typeof setup>["scripts"], id: string) => scripts.setEnabled(id, false)],
+		["removal", (scripts: ReturnType<typeof setup>["scripts"], id: string) => scripts.remove(id)],
+	])("covers the sites before %s drops the active record", async (_, stop) => {
+		const { scripts, storage } = setup();
+		const { id } = await scripts.addThirdParty(draft());
+		await approveNow(scripts, id);
+		const uncovered: string[] = [];
+		const set = storage.local.set;
+		storage.local.set = async (items) => {
+			await set(items);
+			const records = (storage.data.webmcpScripts ?? []) as { id: string; enabled: boolean }[];
+			if (!records.some((record) => record.id === id && record.enabled) && stopped(storage) === undefined)
+				uncovered.push(Object.keys(items).join(","));
+		};
+
+		await stop(scripts, id);
+
+		expect(uncovered).toEqual([]);
+		expect(stopped(storage)).toEqual([{ matches: ["https://flights.example.com/*"], stoppedAt: 1000 }]);
+	});
+
 	it("records the sites of an orphan registration that reconcile removes", async () => {
 		const { scripts, storage, live, userMatches } = setup();
 		live.user.add("dg-webmcp-user-gone");
