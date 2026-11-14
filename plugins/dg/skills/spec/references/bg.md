@@ -50,6 +50,12 @@ and the worktree is reused on resume.
 
 When no row was recorded, continue into finish.md 5-8 as a normal run.
 
+## No land under `--bg`
+
+A `--bg` run skips [execute.md](execute.md) §7, as if `--no-land` were given. The `/dg:land` merge
+gate asks a question, and this run asks none. The PR stays a draft. Print last:
+`Land it later with /dg:land <url>.`
+
 ## Final review, finish.md 5.c
 
 Under `--bg`, a CRITICAL or HIGH-security residual after the last round is recorded as a

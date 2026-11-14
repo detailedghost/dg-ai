@@ -4,6 +4,7 @@
 |---|---|
 | `/dg:pickup` | No arg — list every candidate (`status: deferred` or `status: in-progress` numbered `.agents/spec/<NNN>_<slug>/` dirs, plus every `.agents/spec/todo/<slug>/` dir) and prompt via `AskUserQuestion`. |
 | `/dg:pickup <arg>` | Match `<arg>` against the `<NNN>` prefix (numbered candidates only) or a slug substring (either location). No match → error: `No parked bundle found matching '<arg>' under .agents/spec/.` |
+| `/dg:pickup [<arg>] --no-land` | Same selection. `--no-land` is never a match argument; it passes through to `/dg:spec -s`, which then stops at the draft PR/MR and skips `/dg:land`. |
 
 The usage line in `SKILL.md` carries these forms; keep it in sync with this table.
 
