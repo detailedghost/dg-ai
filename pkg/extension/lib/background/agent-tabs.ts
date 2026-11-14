@@ -111,6 +111,7 @@ export type AgentTab = {
 
 const RECORD_PREFIX = "agentTabs:";
 const PERSIST_PREFIX = "agentTabsGroup:";
+const GROUP_MOVE_GRACE_MS = 1000;
 const LOCK_NAME = "agentTabs";
 const TITLE_IDENTITY_CHARS = 33;
 const TITLE_SESSION_CHARS = 4;
@@ -210,12 +211,15 @@ export function createAgentTabs({
 	storage,
 	lock = navigator.locks,
 	busy = () => false,
+	graceMs = 0,
 }: {
 	browserApi: AgentTabsBrowserApi;
 	storage: AgentTabsStorage;
 	lock?: AgentTabsLock;
 	busy?(agent: { sessionId: string }): boolean;
+	graceMs?: number;
 }) {
+	const recreated = new Map<number, () => void>();
 	const locked = <T>(task: () => Promise<T>) => lock.request(LOCK_NAME, task);
 
 	async function read(sessionId: string): Promise<AgentRecord | undefined> {
@@ -622,11 +626,31 @@ export function createAgentTabs({
 			});
 		},
 
-		groupRemoved({ groupId }: { groupId: number }): Promise<void> {
-			return locked(async () => {
-				for (const record of await readRecords(storage))
-					if (record.groupId === groupId) await drop(record.sessionId);
+		async groupRemoved({ groupId }: { groupId: number }): Promise<void> {
+			const settle = (back: boolean) =>
+				locked(async () => {
+					for (const record of await readRecords(storage))
+						if (record.groupId === groupId)
+							await (back ? persist(record) : drop(record.sessionId));
+				});
+			if (graceMs <= 0) return settle(false);
+			const returned = new Promise<boolean>((resolve) => {
+				const timer = setTimeout(() => resolve(false), graceMs);
+				recreated.set(groupId, () => {
+					clearTimeout(timer);
+					resolve(true);
+				});
 			});
+			const held = await locked(async () =>
+				(await readRecords(storage)).some((record) => record.groupId === groupId),
+			);
+			const back = held ? await returned : false;
+			recreated.delete(groupId);
+			if (held) await settle(back);
+		},
+
+		groupCreated({ groupId }: { groupId: number }): void {
+			recreated.get(groupId)?.();
 		},
 	};
 }
@@ -652,6 +676,7 @@ export function registerAgentTabs({
 		browserApi: browser as unknown as AgentTabsBrowserApi,
 		storage,
 		busy,
+		graceMs: GROUP_MOVE_GRACE_MS,
 	});
 	const pairings = createPairingStore({ storage: browser.storage });
 
@@ -713,6 +738,10 @@ export function registerAgentTabs({
 		void agentTabs.groupChanged({ groupId: group.id }).catch(logCleanupFailure);
 	browser.tabGroups.onUpdated.addListener(groupChanged);
 	browser.tabGroups.onMoved.addListener(groupChanged);
+
+	browser.tabGroups.onCreated.addListener((group) =>
+		agentTabs.groupCreated({ groupId: group.id }),
+	);
 
 	browser.tabGroups.onRemoved.addListener(
 		(group) =>
