@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+	approvalAreaOf,
 	approvalClassOf,
 	BUILT_IN_SCRIPTS,
 	isDgToolName,
@@ -9,6 +10,7 @@ import {
 	WEBMCP_MAX_MATCHES,
 	WEBMCP_TOOL_CLASSES,
 	type WebMcpApprovalClass,
+	type WebMcpArea,
 	type WebMcpScriptRecord,
 } from "../src/webmcp-format";
 
@@ -23,9 +25,9 @@ const RECORD: WebMcpScriptRecord = {
 
 describe("approvalClassOf", () => {
 	it.each<[string, WebMcpApprovalClass | undefined]>([
-		["dg_outlook_list", "read"],
-		["dg_outlook_search", "read"],
-		["dg_outlook_read", "read"],
+		["dg_outlook_list", "area"],
+		["dg_outlook_search", "area"],
+		["dg_outlook_read", "area"],
 		["dg_outlook_mark_read", "session"],
 		["dg_outlook_flag", "session"],
 		["dg_outlook_move", "session"],
@@ -48,10 +50,31 @@ describe("approvalClassOf", () => {
 	});
 });
 
+describe("approvalAreaOf", () => {
+	it.each<[string, WebMcpArea | undefined]>([
+		["dg_outlook_list", "mail"],
+		["dg_outlook_search", "mail"],
+		["dg_outlook_read", "mail"],
+		["dg_outlook_move", undefined],
+		["dg_outlook_delete", undefined],
+		["dg_outlook_unknown", undefined],
+		["constructor", undefined],
+	])("gives %s the area %s", (name, expected) => {
+		expect(approvalAreaOf(name)).toBe(expected);
+	});
+
+	it("gives an area to every tool of the area class and to no other", () => {
+		for (const [name, approvalClass] of Object.entries(WEBMCP_TOOL_CLASSES))
+			expect(approvalAreaOf(name) !== undefined).toBe(approvalClass === "area");
+	});
+});
+
 describe("approvalClassOf with an origin", () => {
 	it.each<[string, string, WebMcpApprovalClass | undefined]>([
-		["dg_outlook_list", "https://outlook.live.com", "read"],
-		["dg_outlook_list", "https://outlook.office.com", "read"],
+		["dg_outlook_list", "https://outlook.live.com", "area"],
+		["dg_outlook_list", "https://outlook.office.com", "area"],
+		["dg_outlook_read", "https://outlook.office365.com", "area"],
+		["dg_outlook_search", "https://outlook.cloud.microsoft", "area"],
 		["dg_outlook_move", "https://outlook.live.com", "session"],
 		["dg_outlook_delete", "https://outlook.live.com", "each"],
 		["dg_outlook_list", "https://mail.proton.me", "each"],
@@ -98,15 +121,30 @@ describe("isDgToolName", () => {
 });
 
 describe("BUILT_IN_SCRIPTS", () => {
-	it("holds the Outlook script for both Outlook origins, off by default", () => {
+	it("holds the Outlook script for the four Outlook origins, off by default", () => {
 		expect(BUILT_IN_SCRIPTS).toEqual([
 			{
 				id: "outlook",
 				name: "Outlook on the web",
-				matches: ["https://outlook.office.com/*", "https://outlook.live.com/*"],
+				matches: [
+					"https://outlook.office.com/*",
+					"https://outlook.live.com/*",
+					"https://outlook.office365.com/*",
+					"https://outlook.cloud.microsoft/*",
+				],
 				enabledByDefault: false,
 			},
 		]);
+	});
+
+	it.each([
+		["https://outlook.office.com", true],
+		["https://outlook.live.com", true],
+		["https://outlook.office365.com", true],
+		["https://outlook.cloud.microsoft", true],
+		["https://outlook.com", false],
+	])("covers %s in the Outlook matches: %p", (origin, expected) => {
+		expect(matchesCoverOrigin(BUILT_IN_SCRIPTS[0].matches, origin)).toBe(expected);
 	});
 });
 
