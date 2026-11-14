@@ -1313,6 +1313,10 @@ case "$ARGS" in
         ;;
     esac
     ;;
+  *"actions/runs/520"*)
+    echo '{"path":".github/workflows/build.yml"}'
+    exit 0
+    ;;
   *)
     exit 0
     ;;
