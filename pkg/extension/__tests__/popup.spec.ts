@@ -1267,6 +1267,21 @@ describe("mountPopup agent tabs", () => {
 			harness.handle.destroy();
 		});
 
+		test.each([
+			["an Outlook tab", "https://outlook.live.com/mail/0/"],
+			["a Proton Mail tab", "https://mail.proton.me/u/0/inbox"],
+		])("tells the person that %s cannot be added and that agents open Outlook with pw --ext new", async (_name, url) => {
+			const harness = await mounted(withTabs([alpha], [groupOf(ALPHA_ID, "blue", [])]), { tab: { id: 7, url } });
+
+			await openAgentMenu(harness, "alpha");
+			const item = menuItemOf(harness.root, "Add this tab");
+			await settle();
+
+			expect(item?.getAttribute("aria-disabled")).toBe("true");
+			expect(reasonOf(item)).toContain("An open mailbox tab cannot be added. Agents open Outlook with pw --ext new.");
+			harness.handle.destroy();
+		});
+
 		test("is disabled with the owner's name when the tab sits in a busy agent's group", async () => {
 			const harness = await mounted(
 				withTabs(
