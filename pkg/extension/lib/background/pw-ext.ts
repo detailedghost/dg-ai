@@ -64,6 +64,7 @@ import { createUnmaskGrants, MAX_FILLED_SECRETS, type UnmaskGrant, type UnmaskGr
 import {
 	allowedPage,
 	mailbox,
+	outlookWeb,
 	PW_EXT_BLOCKED_ERROR,
 	PW_EXT_MAILBOX_ERROR,
 	PW_EXT_PRIVATE_ERROR,
@@ -297,7 +298,10 @@ const UNSIGNED_JWT = {
 };
 
 /** Redacts page output; an unmask grant leaves email addresses, and a secret fill value is always removed. */
-function mask(text: string, { unmasked = false, secrets = [] }: { unmasked?: boolean; secrets?: string[] } = {}): string {
+function mask(
+	text: string,
+	{ unmasked = false, secrets = [] }: { unmasked?: boolean; secrets?: string[] } = {},
+): string {
 	const redact = unmasked ? redactSecrets : redactText;
 	return redactLiterals(
 		redact(text, [], { literals: secrets, extraPatterns: [SECRET_PAIR, NAMED_SECRET, UNSIGNED_JWT] }),
@@ -378,9 +382,31 @@ function shownUrl(tab: Pick<BrowserTab, "url">, unmasked = false, secrets: strin
 	return mask(tab.url as string, { unmasked, secrets });
 }
 
+const OUTLOOK_WORDS = new Set([
+	"mail",
+	"inbox",
+	"calendar",
+	"people",
+	"tasks",
+	"to do",
+	"files",
+	"search",
+	"settings",
+	"outlook",
+]);
+
+function outlookTitle(title: string): string {
+	const [first = "", ...rest] = title.split(" - ");
+	const count = /^\(\d+\) /.exec(first)?.[0] ?? "";
+	const word = first.slice(count.length);
+	const head = count + (OUTLOOK_WORDS.has(word.trim().toLowerCase()) ? word : "[redacted]");
+	return rest.length ? `${head} - [redacted]` : head;
+}
+
 function shownTitle(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string {
 	if (!allowedPage(tab.url) || mailbox(tab.url)) return "";
-	return mask(tab.title ?? "", { unmasked, secrets });
+	const title = tab.title ?? "";
+	return mask(!unmasked && outlookWeb(tab.url) && title ? outlookTitle(title) : title, { unmasked, secrets });
 }
 
 function pageLines(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string[] {
