@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DeeGee — Settings</title>
+    <meta name="manifest.open_in_tab" content="true" />
   </head>
   <body>
     <header class="mb-8">
@@ -16,12 +17,20 @@
       </p>
     </header>
 
-    <main>
-      <section aria-label="Settings">
-        <p class="note">
-          Changes save as you make them &mdash; there is no Save button.
-        </p>
+    <div id="tabs">
+      <div class="tablist" role="tablist" aria-label="Settings sections">
+        <button class="tab" role="tab" type="button" id="tab-general" aria-controls="panel-general" data-tab="general">General</button>
+        <button class="tab" role="tab" type="button" id="tab-mcp" aria-controls="panel-mcp" data-tab="mcp">MCP</button>
+        <button class="tab" role="tab" type="button" id="tab-recording" aria-controls="panel-recording" data-tab="recording">Recording</button>
+        <button class="tab" role="tab" type="button" id="tab-about" aria-controls="panel-about" data-tab="about">About</button>
+      </div>
 
+    <main>
+      <p class="note">
+        Changes save as you make them &mdash; there is no Save button.
+      </p>
+
+      <section role="tabpanel" id="panel-general" aria-labelledby="tab-general" data-panel="general" tabindex="0">
         <div class="panel">
           <h2 class="sec-h">Tab grouping</h2>
           <p class="note">
@@ -46,9 +55,14 @@
         </div>
 
         <div id="assetDirectoryPanel"></div>
+      </section>
 
+      <section role="tabpanel" id="panel-mcp" aria-labelledby="tab-mcp" data-panel="mcp" tabindex="0" hidden>
         <div id="webmcpScriptsPanel"></div>
+        <div id="webmcpGrantsPanel"></div>
+      </section>
 
+      <section role="tabpanel" id="panel-recording" aria-labelledby="tab-recording" data-panel="recording" tabindex="0" hidden>
         <div class="panel">
           <h2 class="sec-h">Demo narration &mdash; video mode</h2>
           <p class="note">
@@ -93,6 +107,7 @@
         </div>
       </section>
 
+      <section role="tabpanel" id="panel-about" aria-labelledby="tab-about" data-panel="about" tabindex="0" hidden>
       <details class="panel panel-alt">
         <summary class="sec-h cursor-pointer">Privacy</summary>
         <p class="note">
@@ -183,7 +198,9 @@
           </li>
         </ul>
       </details>
+      </section>
     </main>
+    </div>
 
     <script type="module" src="./main.ts"></script>
   </body>
