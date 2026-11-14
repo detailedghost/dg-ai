@@ -113,6 +113,9 @@ flowchart LR
 - [0045 — pw --ext: an "Agent is driving" banner with Stop, and a site allowlist per session](0045-pw-ext-driving-banner-and-sites.md) — Accepted:
   each agent tab shows a banner with Stop, which ends the session's control; the first verb on a new site in a session asks the person to allow it. Amends 0035. Amended 2026-11-13: the toolbar popup has Stop too.
 
+- [0046 — pw --ext: read the network calls of an agent tab, shape first](0046-pw-ext-network.md) — Accepted:
+  a MAIN-world hook in agent tabs records `fetch` and XHR calls; `pw --ext network` shows their shape with no values, and `--values` shows masked values after one Allow per site and session. Amends 0044.
+
 ## Adding an ADR
 
 Use [the template](template.md). Store each record in `docs/adr/NNNN-kebab-title.md`.

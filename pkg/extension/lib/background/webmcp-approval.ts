@@ -13,6 +13,7 @@ const same = (a: WebMcpGrant, b: WebMcpGrant) =>
 /** Session grants in storage.session; a grant matches only in the tab group it was given in. */
 export function createWebMcpGrants({ storage }: { storage: AgentTabsStorage }) {
 	const enqueue = createSerialQueue();
+	const asking = new Map<string, Promise<ApprovalAnswer>>();
 
 	async function read(sessionId: string): Promise<WebMcpGrant[]> {
 		const stored = (await storage.session.get(keyOf(sessionId)))[keyOf(sessionId)];
@@ -30,6 +31,18 @@ export function createWebMcpGrants({ storage }: { storage: AgentTabsStorage }) {
 				if (held.some((entry) => same(entry, grant))) return;
 				await storage.session.set({ [keyOf(sessionId)]: [...held, grant] });
 			});
+		},
+
+		/** Shares one open question per session grant, so concurrent calls show one popup. */
+		once(sessionId: string, grant: WebMcpGrant, ask: () => Promise<ApprovalAnswer>): Promise<ApprovalAnswer> {
+			const key = JSON.stringify([sessionId, grant.origin, grant.tool, grant.groupId]);
+			let pending = asking.get(key);
+			if (!pending) {
+				pending = ask();
+				asking.set(key, pending);
+				void pending.finally(() => asking.delete(key)).catch(() => undefined);
+			}
+			return pending;
 		},
 
 		/** Drops every grant of an ended session. */
@@ -81,12 +94,17 @@ export async function requestWebMcpApproval({
 	const grouped = groupId >= 0;
 	const scope = approvalClass === "session" && grouped ? "session" : "each";
 	const grant = { origin, tool, groupId };
-	if (scope === "session" && (await grants.has(sessionId, grant))) return "allow";
-	const answer = await approvals.request({
-		title: `Allow ${tool} on ${origin}?`,
-		origin,
-		lines: [`Agent: ${agentIdentity}`, `Tool: ${tool}`, argsLine(args), SCOPE_LINES[scope]],
+	const ask = () =>
+		approvals.request({
+			title: `Allow ${tool} on ${origin}?`,
+			origin,
+			lines: [`Agent: ${agentIdentity}`, `Tool: ${tool}`, argsLine(args), SCOPE_LINES[scope]],
+		});
+	if (scope === "each") return ask();
+	if (await grants.has(sessionId, grant)) return "allow";
+	return grants.once(sessionId, grant, async () => {
+		const answer = await ask();
+		if (answer === "allow") await grants.add(sessionId, grant);
+		return answer;
 	});
-	if (answer === "allow" && scope === "session") await grants.add(sessionId, grant);
-	return answer;
 }

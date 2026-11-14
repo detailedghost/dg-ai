@@ -1,3 +1,4 @@
+import path from "node:path";
 import { oneOf, parseFlag, parseOptionalFlag, wholeNumber } from "@dg/common";
 import type { Command } from "commander";
 import {
@@ -18,6 +19,17 @@ import {
 	updateChecklist,
 } from "./index";
 import { runSubtree } from "../utils/lazy-command";
+import { listJobs } from "../bg/jobs";
+import { fileMtime, findStalled, lastLogLine } from "./loops";
+import { renderReap, runReap } from "./reap-run";
+
+function minutes(value: string | undefined, name: string, fallback: number): number {
+	return parseOptionalFlag(wholeNumber(0), value, name) ?? fallback;
+}
+
+function collectPid(value: string, previous: number[] = []): number[] {
+	return [...previous, parseFlag(wholeNumber(2), value, "--pid")];
+}
 
 function parseEta(value: string): EtaBucket {
 	return parseFlag(oneOf(ETA_BUCKETS), value, "--eta");
@@ -149,6 +161,86 @@ export function registerStat(program: Command): void {
 			console.log(
 				JSON.stringify({ kind: "checklist-item-status", order: result.label, status }),
 			);
+		});
+
+	registerReap(stat);
+	registerLoops(stat);
+}
+
+function registerReap(stat: Command): void {
+	stat
+		.command("reap")
+		.description(
+			"Stop leftover agent processes: orphaned watchers and test runs of this repo, and stuck pgrep wait loops of this session",
+		)
+		.option("--dry-run", "print what would be stopped and stop nothing")
+		.option("--json", "print the report as JSON")
+		.option("--cwd <dir>", "repo whose worktrees scope the orphan check (default: the current directory)")
+		.option("--min-age <minutes>", "skip orphans younger than this (default 10)")
+		.option("--loop-min-age <minutes>", "skip wait loops younger than this (default 60)")
+		.option("--session-pid <pid>", "PID of this agent session (default: the nearest claude or codex ancestor)")
+		.option("--other-sessions", "also stop stuck wait loops of other live sessions")
+		.option("--pid <pid>", "stop only this process if it still qualifies, with its loop members when it is a stuck loop; also stops a dev daemon from a live worktree; repeat for more", collectPid)
+		.action(
+			async (options: {
+				dryRun?: boolean;
+				json?: boolean;
+				cwd?: string;
+				minAge?: string;
+				loopMinAge?: string;
+				sessionPid?: string;
+				otherSessions?: boolean;
+				pid?: number[];
+			}) => {
+				if (process.platform === "win32") {
+					console.log(options.json ? JSON.stringify({ supported: false }) : "stat reap: not supported on Windows");
+					return;
+				}
+				const report = await runReap({
+					cwd: options.cwd ?? process.cwd(),
+					dryRun: !!options.dryRun,
+					minAgeMinutes: minutes(options.minAge, "--min-age", 10),
+					loopMinAgeMinutes: minutes(options.loopMinAge, "--loop-min-age", 60),
+					sessionPid: parseOptionalFlag(wholeNumber(2), options.sessionPid, "--session-pid"),
+					otherSessions: !!options.otherSessions,
+					pids: options.pid ?? [],
+				});
+				if (options.json) console.log(JSON.stringify(report));
+				else process.stdout.write(renderReap(report));
+				if (report.failed.length > 0) process.exitCode = 1;
+			},
+		);
+}
+
+function registerLoops(stat: Command): void {
+	stat
+		.command("loops")
+		.description("List running dg-skills bg jobs whose log stopped growing or that ran too long")
+		.option("--json", "print the stalled jobs as JSON")
+		.option("--cwd <dir>", "only jobs started in this directory or below (default: the current directory)")
+		.option("--stall <minutes>", "flag a job whose log has not grown for this long (default 20)")
+		.option("--max-age <minutes>", "flag a job running longer than this (default 180)")
+		.action((options: { json?: boolean; cwd?: string; stall?: string; maxAge?: string }) => {
+			const stalled = findStalled(listJobs(), {
+				cwd: path.resolve(options.cwd ?? process.cwd()),
+				now: Date.now(),
+				stallMinutes: minutes(options.stall, "--stall", 20),
+				maxAgeMinutes: minutes(options.maxAge, "--max-age", 180),
+				logMtime: fileMtime,
+				lastLine: lastLogLine,
+			});
+			if (options.json) {
+				console.log(JSON.stringify({ stalled }));
+				return;
+			}
+			if (stalled.length === 0) {
+				console.log("No stalled bg jobs.");
+				return;
+			}
+			for (const job of stalled)
+				console.log(
+					`stalled ${job.id} (${job.reason}, idle ${job.idleMinutes}m, age ${job.ageMinutes}m) log ${job.logFile}\n  last: ${job.lastLine}`,
+				);
 		});
 }
 

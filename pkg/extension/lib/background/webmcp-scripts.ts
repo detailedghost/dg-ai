@@ -8,7 +8,7 @@ import {
 	WEBMCP_SCRIPT_MAX_BYTES,
 	type WebMcpScriptRecord,
 } from "@dg/common";
-import { defaultIsChromium } from "./pw-ext";
+import { defaultIsChromium } from "@/lib/browser-call";
 import { createWebMcpSigner, type WebMcpSigner } from "./webmcp-signing";
 
 export const WEBMCP_MESSAGES = {

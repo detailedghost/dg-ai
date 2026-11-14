@@ -1,5 +1,6 @@
 import { fail, requireRecord, requireString } from "./assert";
 import { PROTO_PREVIEW_MAX_CHARS } from "./proto-format";
+import { PW_EXT_NETWORK_MAX_FILTER_CHARS, PW_EXT_NETWORK_MAX_LIMIT } from "./pw-ext-network";
 import type { RelayWire } from "./relay-format";
 
 export const PW_EXT_READ_VERBS = [
@@ -11,6 +12,7 @@ export const PW_EXT_READ_VERBS = [
 	"tools",
 	"tabs",
 	"count",
+	"network",
 ] as const;
 export const PW_EXT_WRITE_VERBS = [
 	"open",
@@ -76,6 +78,13 @@ export type PwExtRequest = {
 	answer?: "accept" | "dismiss";
 	/** dialog accept only: the answer a prompt gets. */
 	text?: string;
+	/** network only: a substring of the shape URL. */
+	filter?: string;
+	limit?: number;
+	/** network only: requests that started after this time in ms, or clear to empty the buffer. */
+	since?: number | "clear";
+	/** network only: show values, after a once-per-session approval in the browser. */
+	values?: boolean;
 };
 
 export type PwExtTool = {
@@ -150,6 +159,7 @@ const FIELDS: Record<PwExtVerb, readonly string[]> = {
 	tools: ["tabId"],
 	call: ["tabId", "tool", "args"],
 	dialog: ["tabId", "answer", "text"],
+	network: ["tabId", "filter", "limit", "since", "values"],
 };
 
 const ASSET_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -260,6 +270,27 @@ export function validatePwExtRequest(value: unknown): PwExtRequest {
 			if (bytes(value.text) > PW_EXT_MAX_VALUE_BYTES)
 				fail(`${path}.text exceeds ${PW_EXT_MAX_VALUE_BYTES} bytes`);
 		}
+	}
+	if (verb === "network") {
+		if (value.filter !== undefined) {
+			requireString(value.filter, `${path}.filter`, { nonEmpty: true });
+			if (value.filter.length > PW_EXT_NETWORK_MAX_FILTER_CHARS)
+				fail(`${path}.filter exceeds ${PW_EXT_NETWORK_MAX_FILTER_CHARS} characters`);
+		}
+		if (
+			value.limit !== undefined &&
+			(!Number.isSafeInteger(value.limit) || (value.limit as number) < 1 || (value.limit as number) > PW_EXT_NETWORK_MAX_LIMIT)
+		)
+			fail(`${path}.limit must be an integer from 1 to ${PW_EXT_NETWORK_MAX_LIMIT}`);
+		if (
+			value.since !== undefined &&
+			value.since !== "clear" &&
+			(!Number.isSafeInteger(value.since) || (value.since as number) < 0)
+		)
+			fail(`${path}.since must be a time in ms or clear`);
+		if (value.values !== undefined && value.values !== true) fail(`${path}.values must be true when set`);
+		if (value.since === "clear" && (value.filter !== undefined || value.limit !== undefined || value.values !== undefined))
+			fail(`${path}.since clear takes no other option`);
 	}
 	if (verb === "fill") {
 		if (value.secret !== undefined && value.secret !== true) fail(`${path}.secret must be true when set`);

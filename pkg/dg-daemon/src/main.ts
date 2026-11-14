@@ -1,7 +1,8 @@
+import type { CompletionNode } from "@dg/common/completion";
 import type { LayoutHooks } from "@dg/common/node/layout";
 import type { Command } from "commander";
 
-const SKIP = new Set(["status"]);
+const SKIP = new Set(["status", "completion"]);
 
 type HookSeams = { platform?: NodeJS.Platform };
 
@@ -28,20 +29,16 @@ async function afterLayout(action: Command): Promise<void> {
 	await daemonLayoutHooks().keychainMove(paths);
 }
 
-export async function main(argv: readonly string[]): Promise<number> {
-	if (argv.length === 1 && argv[0] === "--version") {
-		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
-		return 0;
-	}
+/** The dg-daemon program with every command registered and nothing parsed. */
+export async function buildProgram(): Promise<Command> {
 	const [
-		{ Command, CommanderError },
-		{ DgCliError, describeError, emitRedacted, EXIT_GENERAL_FAILURE, forever },
+		{ Command },
+		{ forever },
 		{ registerJobCommands },
 		{ registerOriginCommands },
 		{ registerSessionCommands },
 		{ registerServiceCommands },
-		{ ensureLayout },
-		{ installLayoutPreAction },
+		{ registerCompletionCommand },
 	] = await Promise.all([
 		import("commander"),
 		import("@dg/common"),
@@ -49,8 +46,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 		import("./commands/origin"),
 		import("./commands/sessions"),
 		import("./commands/service"),
-		import("@dg/common/node/layout"),
-		import("@dg/common/node/layout-preaction"),
+		import("@dg/common/completion"),
 	]);
 	const program = new Command();
 	program
@@ -108,6 +104,35 @@ export async function main(argv: readonly string[]): Promise<number> {
 	registerOriginCommands(program);
 	registerSessionCommands(program);
 	registerServiceCommands(program);
+	registerCompletionCommand(program);
+	return program;
+}
+
+export async function main(argv: readonly string[]): Promise<number> {
+	if (argv.length === 1 && argv[0] === "--version") {
+		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
+		return 0;
+	}
+	if (argv[0] === "__complete") {
+		const [{ printCompletions }, { default: tree }] = await Promise.all([
+			import("@dg/common/completion"),
+			import("./completion-tree.json", { with: { type: "json" } }),
+		]);
+		return printCompletions(tree as CompletionNode, argv.slice(1));
+	}
+	const [
+		{ CommanderError },
+		{ DgCliError, describeError, emitRedacted, EXIT_GENERAL_FAILURE },
+		{ ensureLayout },
+		{ installLayoutPreAction },
+		program,
+	] = await Promise.all([
+		import("commander"),
+		import("@dg/common"),
+		import("@dg/common/node/layout"),
+		import("@dg/common/node/layout-preaction"),
+		buildProgram(),
+	]);
 
 	installLayoutPreAction(program, {
 		skip: SKIP,

@@ -24,7 +24,7 @@ OUTPUT
   All warnings/errors/progress go to stderr.
 `;
 
-const SUBCOMMANDS = new Map<string, (args: string[]) => Promise<number>>([
+export const SUBCOMMANDS = new Map<string, (args: string[]) => Promise<number>>([
 	["create", create],
 	["list", list],
 	["ls", list],
