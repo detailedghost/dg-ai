@@ -182,8 +182,8 @@ Then land it: [execute.md](execute.md) §7 applies unchanged in both modes. It m
 runs `/dg:land <url>` in the main loop, unless `--no-land` is given or the remote is GitLab. In
 `-T` mode `/dg:land` uses the current checkout.
 
-> **GATE:** draft PR/MR opened, URL captured, browser group opened; then `/dg:land` merged it, stopped
-> at its merge gate, or was skipped by `--no-land`.
+> **GATE:** draft PR/MR opened, URL captured, browser group opened; then `/dg:land` stopped at "ready
+> for your review", merged on the human's `Merge now` answer, or was skipped by `--no-land`.
 
 ## What fast mode trades away
 

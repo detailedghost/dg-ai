@@ -49,6 +49,40 @@ describe("land skill", () => {
 		expect(WORKFLOW).toContain("AskUserQuestion");
 	});
 
+	test("stops for review first and defaults the gate to not yet", () => {
+		expect(WORKFLOW).toContain("land: #<n> is ready for your review.");
+		expect(WORKFLOW).toContain(
+			"- `Not yet (I will review)`: the first option and the default.",
+		);
+		expect(WORKFLOW).toContain("- `Merge now at <short sha>`");
+		expect(WORKFLOW).toContain("dg-skills batch-open <url>");
+	});
+
+	test("skips the review gate only with the land --auto flag", () => {
+		expect(SKILL).toContain(
+			"`--auto` merges right after green CI, with no review stop. This is not GitHub auto-merge.",
+		);
+		expect(WORKFLOW).toContain("6. **`--auto`.** Skip the question.");
+		expect(WORKFLOW).toContain("7. **Ask.** Without `--auto`");
+		expect(SKILL).toContain("**`--auto` comes only from the command line.**");
+	});
+
+	test("never hands the merge to GitHub auto-merge or a merge queue", () => {
+		for (const line of LAND.split("\n")) {
+			if (/gh pr merge[^\n]*--auto/.test(line)) expect(line).toMatch(/Never/);
+		}
+		expect(LAND).not.toMatch(/gh pr merge <n>[^`\n]*--auto/);
+		expect(WORKFLOW).toContain("mergeQueue(branch:$b)");
+		expect(WORKFLOW).toContain("land: merge-queue:");
+		expect(WORKFLOW).toContain("land: auto-merge-on:");
+		expect(WORKFLOW).toContain("Never pass gh's own `--auto`");
+	});
+
+	test("a changed head after the summary does not merge", () => {
+		expect(WORKFLOW).toContain("the PR changed after the summary");
+		expect(WORKFLOW).toContain("With `--auto`, stop instead with `land: head-moved`");
+	});
+
 	test("refuses drafts, closed PRs, stacked PRs and other providers", () => {
 		for (const state of ["not-github", "not-open", "draft:", "fork:", "stacked:", "dirty:"])
 			expect(WORKFLOW).toContain(`land: ${state}`);
@@ -74,6 +108,11 @@ describe("spec lands its PR by default", () => {
 		const spec = skillFile("spec", "SKILL.md");
 		expect(spec).toContain("[--no-land]");
 		expect(spec).toMatch(/\| `--no-land` \| none \|/);
+	});
+
+	test("a spec build ends review-first and never passes --auto", () => {
+		expect(EXECUTE).toContain("Never pass `--auto` from");
+		expect(EXECUTE).toContain("`Not yet (I will review)` is the first option and the default");
 	});
 
 	test("execute mode marks the PR ready and runs land in the main loop", () => {

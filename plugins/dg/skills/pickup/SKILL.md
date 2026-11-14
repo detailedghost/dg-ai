@@ -70,5 +70,5 @@ If a step fails, run dg-skills doctor spec.
 
 ## After Exit
 
-Handled by `/dg:spec -s` — the `/dg:land` report (merged, or stopped at its merge gate), a draft PR URL
+Handled by `/dg:spec -s` — the `/dg:land` report (ready for your review, or merged on your answer), a draft PR URL
 with `--no-land`, or a stop at whichever `/dg:sdlc` gate wasn't cleared.

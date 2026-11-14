@@ -27,7 +27,7 @@ binaries. The skills-root README itself is not installed.
 | `pickup/` | Resume a parked spec bundle |
 | `prd/` | Prepare a spec bundle for handoff |
 | `proxy/` | Delegate to codex, copilot, pi, opencode, or grok |
-| `land/` | Review a ready PR with local Codex rounds, get CI green, then merge it at the tested head after approval |
+| `land/` | Review a ready PR with local Codex rounds and get CI green, then stop for your review; merge only on your answer or with `--auto` |
 | `pushup/` | Push a branch, open its PR, and group the PR in the browser |
 | `refactor/` | Find architectural improvements, verify each candidate against the code, and discuss a chosen approach |
 | `rename-session/` | Suggest or apply a session name |

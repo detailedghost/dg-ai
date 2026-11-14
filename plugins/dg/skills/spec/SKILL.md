@@ -100,7 +100,7 @@ ran), then drive [sdlc engineering.md](../sdlc/references/engineering.md) 4.1–
 [sdlc finish.md](../sdlc/references/finish.md) steps 5–8 (through the direct PR/MR launch — draft always, then a best-effort `dg-skills batch-open <url>` (when `batch-open` fails, print the URL and continue), per `finish.md` step 8's `/dg:spec` deltas).
 [references/execute.md](references/execute.md) §6 owns the bookkeeping on top of that (persisting
 the PR/MR URL into `plan.md`, restoring cwd). Then §7 marks the PR ready and runs `/dg:land` with its defaults
-in the main loop; its merge gate asks the human. `--no-land`, `--bg`, and GitLab stop at the draft PR/MR.
+in the main loop; it stops at "ready for your review" and asks. `--no-land`, `--bg`, and GitLab stop at the draft.
 
 ## Reference files (lazy-load)
 

@@ -164,8 +164,10 @@ Skip this section with `--no-land`. Each skip below prints step 8d's line and th
 2. **Mark it ready.** `gh pr ready <number>`. The draft said that no human had read the code. The
    `/dg:land` review rounds and its merge gate now take that place.
 3. **Land it.** In the main loop, load [`land/SKILL.md`](../../land/SKILL.md) and run
-   `/dg:land <url>` with its defaults: 3 Codex review rounds, 2 CI retries, and the merge gate that
-   asks the human. `/dg:land` finds the PR's worktree through `git worktree list`, so the session
+   `/dg:land <url>` with its defaults: 3 Codex review rounds, 2 CI retries, then "ready for your
+   review". It opens the PR and asks; `Not yet (I will review)` is the first option and the default,
+   and nothing merges without the human's `Merge now` answer in that turn. Never pass `--auto` from
+   here: a spec build always ends review-first. `/dg:land` finds the PR's worktree through `git worktree list`, so the session
    stays at `$WORKTREE_ORIGIN`.
 4. **Never merge from a slice wave.** No subagent, slice agent, or `/dg:proxy` backend runs
    `/dg:land` or `gh pr merge`. Only the main loop reaches the merge gate.
@@ -173,9 +175,11 @@ Skip this section with `--no-land`. Each skip below prints step 8d's line and th
    `/dg:cls` removes the worktree in a later session. Leave it in place here.
 
 For other review rounds or CI retries, run `/dg:spec -s <bundle> --no-land`, then
-`gh pr ready <number>` and `/dg:land <url> -r N -c N`.
+`gh pr ready <number>` and `/dg:land <url> -r N -c N`. To merge right after green CI with no review
+stop, the person runs `/dg:land <url> --auto` after the spec build.
 
-> **GATE:** `/dg:land` merged the PR, stopped at its merge gate, or stopped at a step it reports.
+> **GATE:** `/dg:land` stopped at "ready for your review", merged on the human's `Merge now` answer,
+> or stopped at a step it reports.
 
 ## Scope note
 

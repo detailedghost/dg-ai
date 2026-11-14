@@ -12,6 +12,7 @@ Each step lists `IN:` and `OUT:`. A gate is a hard stop: print
 - `-p copilot` → stop with `land: copilot-refused: this repo never uses Copilot; pick codex, pi, opencode or grok.`
 - Check any other backend against `dg-skills proxy --list-backends`. An unknown name stops and lists the valid ones.
 - Two merge-method flags → stop and name both.
+- `--auto` → `auto = true`. Only the person's command line sets it; never config, env, or a caller's default. `--auto` with `--no-merge` → stop and name both.
 
 ## Step 1 — Resolve the PR
 
@@ -96,16 +97,24 @@ IN: `pr`. OUT: `mergeState`.
 
 GATE: `CLEAN` or `HAS_HOOKS`, and `headRefOid` still equals `sha`. A new head means someone pushed: stop with `land: head-moved` and re-run.
 
-## Step 5 — Merge gate
+## Step 5 — Ready for your review, then the merge gate
 
 IN: everything above. OUT: `mergeCommit`, or a stop.
 
-1. **Stacked children.** `gh pr list --base <headRefName> --state open --json number,title`. These PRs use the branch that the merge deletes as their base.
-2. **Summary.** Print: PR number and title, `roundsRun`, the fixes from step 2, CI result and attempts, `sha`, `method`, and each child PR.
-3. **`--no-merge`** → print `land: ready to merge #<n> at <sha>.` and the command from 5.5, then go to step 7.
-4. **Not the main loop** → a subagent, a slice wave or a `--bg` run never merges. Print the summary and the command from 5.5 and stop. The caller relays it to the human.
-5. **Ask.** In the main loop, ask with `AskUserQuestion`: `Merge #<n> at <short sha>?`. Options: `Merge (<method>, delete branch)` and `Stop here`. When children exist, the question names them and says GitHub moves them to `<baseRefName>`.
-6. **Merge.** On yes, run:
+Nothing merges later by itself. Never pass gh's own `--auto` to `gh pr merge`, never enqueue a PR, and never turn on a setting that merges later. Only two things start a merge: an explicit "Merge now" answer in the same turn, or this skill's `--auto` flag typed by the person.
+
+1. **Merge queue and auto-merge.** Run `gh api graphql -f query='query($o:String!,$r:String!,$b:String!,$n:Int!){repository(owner:$o,name:$r){mergeQueue(branch:$b){id} pullRequest(number:$n){autoMergeRequest{enabledAt}}}}' -F o=<owner> -F r=<name> -F b=<baseRefName> -F n=<n>`. A non-null `mergeQueue` → stop with `land: merge-queue: <baseRefName> uses a merge queue; land does not enqueue. Merge #<n> from the PR page.` A non-null `autoMergeRequest` → stop with `land: auto-merge-on: turn off auto-merge on #<n> first.`
+2. **Stacked children.** `gh pr list --base <headRefName> --state open --json number,title`. These PRs use the branch that the merge deletes as their base.
+3. **Summary.** Print `land: #<n> is ready for your review.` (with `--auto`: `land: #<n> passed review and CI; merging now (--auto).`), then the PR URL, `sha`, `roundsRun`, the fixes from step 2, CI result and attempts, the files changed (`gh pr view <n> --json files -q '.files[].path'`), `method`, and each child PR.
+4. **Open it.** `dg-skills batch-open <url>`, the same helper `/dg:pushup` uses. When it fails, print the URL and continue.
+5. **`--no-merge`, or not the main loop** → print the merge command from 5.8 for later, then go to Step 7, the final report. A subagent, a slice wave or a `--bg` run never asks and never merges. The caller relays the summary to the human.
+6. **`--auto`.** Skip the question. Go to 5.8 with no answer needed. The summary still prints first.
+7. **Ask.** Without `--auto`, in the main loop, ask with `AskUserQuestion`: `#<n> is ready for your review. Merge it at <short sha>?`. Options, in this order:
+   - `Not yet (I will review)`: the first option and the default. Print the merge command from 5.8 for later and go to Step 7, the final report.
+   - `Merge now at <short sha>`: only after the human has looked at the PR.
+
+   When children exist, the question names them and says GitHub moves them to `<baseRefName>`. Any answer other than `Merge now at <short sha>` is "Not yet".
+8. **Check the head again, then merge.** On "Merge now", or with `--auto`, read `gh pr view <n> --json headRefOid -q .headRefOid`. When it differs from `sha`, the PR changed after the summary: set `sha` to the new head and go back to step 3, so CI, the merge state and this step run again on the new head. With `--auto`, stop instead with `land: head-moved` and do not merge. When it is the same, run:
 
    ```sh
    gh pr merge <n> --repo <repo> --<method> --delete-branch --match-head-commit <sha>
@@ -114,14 +123,14 @@ IN: everything above. OUT: `mergeCommit`, or a stop.
    `<repo>` comes from step 1. With `--repo`, `gh` deletes only the remote branch. The local branch and its worktree stay for `/dg:cls` or `/dg:address`, which a `/dg:spec` run needs.
 
    - The harness, auto mode or a hook blocks it → print `! gh pr merge <n> --repo <repo> --<method> --delete-branch --match-head-commit <sha>` for the human to run in the prompt, and stop. Never retry it another way.
-   - `gh` refuses because the head moved → stop with `land: head-moved`.
-   - Success → read `gh pr view <n> --json state,mergeCommit`. `state` `MERGED` → `mergeCommit` is `.mergeCommit.oid`. `state` `OPEN` means a merge queue took it, or auto-merge waits: stop with `land: queued: #<n> waits in the merge queue.` and skip step 6.
+   - `gh` refuses because the head moved → set `sha` to the new head and go back to step 3. With `--auto`, stop with `land: head-moved`.
+   - Success → read `gh pr view <n> --json state,mergeCommit`. `state` `MERGED` → `mergeCommit` is `.mergeCommit.oid`. `state` `OPEN` means GitHub queued it: stop with `land: queued: #<n> did not merge; check the PR page.` and skip step 6.
 
-GATE: `state` is `MERGED`, or the run stopped with the reason or the command printed.
+GATE: the human answered "Merge now" in this turn, or typed `--auto`, and `state` is `MERGED`, or the run stopped at "ready for your review" with the merge command printed.
 
 ## Step 6 — Children of the deleted branch
 
-IN: the child list from step 5.1. OUT: `children` with their state.
+IN: the child list from step 5.2. OUT: `children` with their state.
 
 When GitHub deletes the head branch of a merged PR, it moves each open PR that used that branch as its base to the merged PR's base. Check that it did: `gh pr view <child> --json state,baseRefName` for each child.
 
@@ -134,7 +143,7 @@ When GitHub deletes the head branch of a merged PR, it moves each open PR that u
 Print one block:
 
 ```text
-land: #<n> <merged|ready|stopped at <state>>
+land: #<n> <merged|ready for your review|stopped at <state>>
   head      <sha>
   merge     <mergeCommit or none>
   review    <roundsRun> round(s), <findingsFixed> with fixes, backend <backend>
