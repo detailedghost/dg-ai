@@ -187,6 +187,108 @@ describe("requestWebMcpApproval", () => {
 	});
 });
 
+describe("the area class", () => {
+	const list = { tool: "dg_outlook_list", class: "area", args: {} } as const;
+	const search = { tool: "dg_outlook_search", class: "area", args: { query: "Fixture subject" } } as const;
+	const read = { tool: "dg_outlook_read", class: "area", args: { id: "fixture-item-1" } } as const;
+
+	it("asks once and lets one mail grant cover list and search in the session and site", async () => {
+		const { requests, storage, ask } = setup();
+		expect(await ask(list)).toBe("allow");
+		expect(await ask(search)).toBe("allow");
+		expect(await ask(list)).toBe("allow");
+		expect(requests).toHaveLength(1);
+		expect(storage.data).toEqual({ "webmcpGrants:s1": [{ site: SITE, tool: "area:mail" }] });
+	});
+
+	it("asks for message bodies apart from list and search", async () => {
+		const { requests, storage, ask } = setup();
+		await ask(list);
+		expect(await ask(read)).toBe("allow");
+		expect(await ask(read)).toBe("allow");
+		expect(requests.map((request) => request.title)).toEqual([
+			"Allow dg_outlook_list on live.com?",
+			"Allow dg_outlook_read on live.com?",
+		]);
+		expect(storage.data).toEqual({
+			"webmcpGrants:s1": [
+				{ site: SITE, tool: "area:mail" },
+				{ site: SITE, tool: "area:mail-body" },
+			],
+		});
+	});
+
+	it("does not let a mail-body grant cover list or search", async () => {
+		const { requests, ask } = setup();
+		await ask(read);
+		await ask(search);
+		expect(requests).toHaveLength(2);
+	});
+
+	it("says in the prompt what each area grant covers", async () => {
+		const { requests, ask } = setup();
+		await ask(list);
+		await ask(read);
+		expect(requests[0]?.lines).toContain(
+			"Allow lets this agent list and search mail on this site until its MCP session ends. Reading a message body asks separately.",
+		);
+		expect(requests[1]?.lines).toContain(
+			"Allow lets this agent read message bodies on this site until its MCP session ends.",
+		);
+	});
+
+	it("asks again in another session and on another site", async () => {
+		const { requests, ask } = setup();
+		await ask(list);
+		await ask({ ...read, sessionId: "s2" });
+		await ask({ ...search, origin: "https://outlook.office.com" });
+		expect(requests).toHaveLength(3);
+	});
+
+	it("does not let an area grant cover a session tool of the same site", async () => {
+		const { requests, ask } = setup();
+		await ask(list);
+		await ask({ tool: "dg_outlook_move", class: "session" });
+		expect(requests).toHaveLength(2);
+	});
+
+	it("shows one prompt per area for concurrent area calls", async () => {
+		const { requests, ask } = setup();
+		await Promise.all([ask(list), ask(search), ask(read), ask(read)]);
+		expect(requests).toHaveLength(2);
+	});
+
+	it("offers remember and keeps the area grant for 30 days across sessions", async () => {
+		const { requests, storage, ask } = setup("allow", { remember: true });
+		await ask(list);
+		await ask(read);
+		expect(requests[0]?.remember).toContain(`${REMEMBER_DAYS} days`);
+		expect(requests[1]?.remember).toContain(`${REMEMBER_DAYS} days`);
+		expect(await ask({ ...search, sessionId: "s9" })).toBe("allow");
+		expect(await ask({ ...read, sessionId: "s9" })).toBe("allow");
+		expect(requests).toHaveLength(2);
+		expect(storage.localData.webmcpRemembered).toEqual([
+			expect.objectContaining({ site: SITE, tool: "area:mail" }),
+			expect.objectContaining({ site: SITE, tool: "area:mail-body" }),
+		]);
+	});
+
+	it("stores nothing on deny", async () => {
+		const { storage, ask } = setup("deny");
+		expect(await ask(list)).toBe("deny");
+		expect(storage.data).toEqual({});
+	});
+
+	it("asks every time and stores nothing for an area-class tool with no known area", async () => {
+		const { requests, storage, ask } = setup("allow", { remember: true });
+		await ask({ tool: "dg_outlook_unknown", class: "area" });
+		await ask({ tool: "dg_outlook_unknown", class: "area" });
+		expect(requests).toHaveLength(2);
+		expect(requests[0]?.remember).toBeUndefined();
+		expect(storage.data).toEqual({});
+	});
+});
+
 describe("createWebMcpGrants", () => {
 	it("keeps both grants when two are added at the same time", async () => {
 		const { grants } = setup();

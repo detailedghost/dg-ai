@@ -24,7 +24,7 @@ class:
 
 | Class | Tools | What happens |
 |---|---|---|
-| `read` | `dg_` tools that only read, such as `dg_outlook_list` | Runs with no question |
+| `area` | `dg_` tools that read one area of a site. Mail is `dg_outlook_list` and `dg_outlook_search`; mail-body is `dg_outlook_read` | Asks once; the Allow holds for that MCP session, site and area, so it covers every tool of the area |
 | `session` | `dg_` tools that change little, such as `dg_outlook_move` | Asks once; the Allow holds for that MCP session, site and tool |
 | `each` | send, delete, reply, forward, event changes, unknown `dg_` tools, third-party tools, and any tool without a `dg_` name | Asks every time |
 
@@ -33,6 +33,9 @@ class:
 - A site is the scheme and registrable domain, the same key that the pw --ext
   allowlist uses, so one grant covers `outlook.live.com` and `mail.live.com`.
   A grant is not tied to a tab group.
+- One mail `area` grant lets the agent list and search mail on that site. It
+  does not cover message bodies. The mail-body area asks apart, also when a
+  mail grant holds. The popup says what each grant covers.
 - On a mailbox tab, only the enabled built-in `dg_` tools for that site run.
   Other tools are refused or left out of `tools`.
 - `tools` asks nothing. It shows the tool list of any page in the agent's
@@ -40,12 +43,12 @@ class:
 
 ## Remember for 30 days
 
-The popup of a `session` tool has a "Remember for 30 days" checkbox. It is not
+The popup of a `session` or `area` tool has a "Remember for 30 days" checkbox. It is not
 ticked by default.
 
 - Without it, the grant ends when the MCP session ends.
-- With it, the grant holds for that site and tool for 30 days, for every agent
-  session, also after a browser restart. Use on the grant does not extend it.
+- With it, the grant holds for that site and tool, or that site and area, for
+  30 days, for every agent session, also after a browser restart. Use on the grant does not extend it.
 - An `each` tool never shows the checkbox and never stores a grant.
 - Remembered grants live in the extension's `storage.local`, each one signed
   with the extension's HMAC key from IndexedDB. Each record also carries a
@@ -58,12 +61,15 @@ ticked by default.
 
 The toolbar popup has a "Web MCP grants" section. It lists each active session
 grant (session, site, tool) and each remembered grant (site, tool, expiry
-date), with a Revoke button per grant and a Revoke all button. Only the
-extension's own popup page can list or revoke grants.
+date), with a Revoke button per grant and a Revoke all button. A mail area
+grant shows as "mail (list and search)", and a mail-body area grant shows as
+"mail-body (read message bodies)". The Options MCP tab has the same list. Only
+the extension's own popup and Options pages can list or revoke grants.
 
 pw --ext Stop, on the banner or in the toolbar popup, ends browser control
 only. It does not revoke Web MCP grants. After Stop the session's tabs return
 to you, so its Web MCP calls have no tab to run in, but its grants stay until
 the session ends or you revoke them.
 
-See [ADR 0046](adr/0046-webmcp-approvals-apart-from-pw-ext.md).
+See [ADR 0046](adr/0046-webmcp-approvals-apart-from-pw-ext.md) and
+[ADR 0047](adr/0047-webmcp-area-approval-class.md).

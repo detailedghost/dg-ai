@@ -341,7 +341,12 @@ describe("reconcile", () => {
 			{
 				id: "dg-webmcp-outlook",
 				js: ["content-scripts/webmcp-outlook-main.js"],
-				matches: ["https://outlook.office.com/*", "https://outlook.live.com/*"],
+				matches: [
+					"https://outlook.office.com/*",
+					"https://outlook.live.com/*",
+					"https://outlook.office365.com/*",
+					"https://outlook.cloud.microsoft/*",
+				],
 				world: "MAIN",
 				runAt: "document_start",
 			},

@@ -1,4 +1,4 @@
-import { createSerialQueue, type WebMcpApprovalClass } from "@dg/common";
+import { approvalAreaOf, createSerialQueue, type WebMcpApprovalClass, type WebMcpArea } from "@dg/common";
 import type { AgentTabsStorage } from "./agent-tabs";
 import type { ApprovalAnswer, Approvals } from "./approval";
 import { siteOf } from "./site-key";
@@ -42,7 +42,8 @@ function createRejectingQueue() {
 }
 
 /** Classes whose Allow may be kept for the session or remembered; read and each never store a grant. */
-const GRANTABLE: ReadonlySet<WebMcpApprovalClass> = new Set(["session"]);
+const GRANTABLE: ReadonlySet<WebMcpApprovalClass> = new Set(["session", "area"]);
+const AREA_GRANT_PREFIX = "area:";
 
 /** Session grants in storage.session; they end with the MCP session, not with pw --ext Stop. */
 export function createWebMcpGrants({ storage }: { storage: AgentTabsStorage }) {
@@ -219,9 +220,13 @@ function argsLine(args: Record<string, unknown>): string {
 	return `Args: ${json.slice(0, ARGS_MAX_CHARS)} (${json.length - ARGS_MAX_CHARS} more characters not shown)`;
 }
 
-const SCOPE_LINES: Record<Exclude<WebMcpApprovalClass, "read">, string> = {
+const SCOPE_LINES: Record<Exclude<WebMcpApprovalClass, "read" | "area">, string> = {
 	session: "Allow lets this agent use this tool on this site until its MCP session ends.",
 	each: "This tool asks every time.",
+};
+const AREA_SCOPE_LINES: Record<WebMcpArea, string> = {
+	mail: "Allow lets this agent list and search mail on this site until its MCP session ends. Reading a message body asks separately.",
+	"mail-body": "Allow lets this agent read message bodies on this site until its MCP session ends.",
 };
 const REMEMBER_LABEL = `Remember for ${REMEMBER_DAYS} days, for every agent session`;
 
@@ -249,16 +254,19 @@ export async function requestWebMcpApproval({
 }): Promise<ApprovalAnswer> {
 	if (approvalClass === "read") return "allow";
 	const site = siteOf(origin);
-	const grantable = GRANTABLE.has(approvalClass);
+	const area = approvalClass === "area" ? approvalAreaOf(tool) : undefined;
+	const effective = approvalClass === "area" && area === undefined ? "each" : approvalClass;
+	const grantable = GRANTABLE.has(effective);
+	const scope = area !== undefined ? AREA_SCOPE_LINES[area] : SCOPE_LINES[effective as keyof typeof SCOPE_LINES];
 	const ask = () =>
 		approvals.ask({
 			title: `Allow ${tool} on ${site.name}?`,
 			origin,
-			lines: [`Agent: ${agentIdentity}`, `Tool: ${tool}`, argsLine(args), SCOPE_LINES[approvalClass]],
+			lines: [`Agent: ${agentIdentity}`, `Tool: ${tool}`, argsLine(args), scope],
 			...(grantable ? { remember: REMEMBER_LABEL } : {}),
 		});
 	if (!grantable) return (await ask()).answer;
-	const grant = { site: site.key, tool };
+	const grant = { site: site.key, tool: area !== undefined ? `${AREA_GRANT_PREFIX}${area}` : tool };
 	if ((await remembered.has(grant)) || (await grants.has(sessionId, grant))) return "allow";
 	return grants.once(sessionId, grant, async () => {
 		const { answer, remember } = await ask();

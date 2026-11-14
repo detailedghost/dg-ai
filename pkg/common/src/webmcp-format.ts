@@ -23,17 +23,22 @@ export const BUILT_IN_SCRIPTS = [
 	{
 		id: "outlook",
 		name: "Outlook on the web",
-		matches: ["https://outlook.office.com/*", "https://outlook.live.com/*"],
+		matches: [
+			"https://outlook.office.com/*",
+			"https://outlook.live.com/*",
+			"https://outlook.office365.com/*",
+			"https://outlook.cloud.microsoft/*",
+		],
 		enabledByDefault: false,
 	},
 ] as const satisfies readonly BuiltInWebMcpScript[];
 
-export type WebMcpApprovalClass = "read" | "session" | "each";
+export type WebMcpApprovalClass = "read" | "area" | "session" | "each";
 
 export const WEBMCP_TOOL_CLASSES = {
-	dg_outlook_list: "read",
-	dg_outlook_search: "read",
-	dg_outlook_read: "read",
+	dg_outlook_list: "area",
+	dg_outlook_search: "area",
+	dg_outlook_read: "area",
 	dg_outlook_mark_read: "session",
 	dg_outlook_flag: "session",
 	dg_outlook_move: "session",
@@ -42,6 +47,19 @@ export const WEBMCP_TOOL_CLASSES = {
 	dg_outlook_delete: "each",
 	dg_outlook_reply: "each",
 } as const satisfies Record<string, WebMcpApprovalClass>;
+
+/** The area whose one grant covers every area-class tool in it. */
+export const WEBMCP_TOOL_AREAS = {
+	dg_outlook_list: "mail",
+	dg_outlook_search: "mail",
+	dg_outlook_read: "mail-body",
+} as const satisfies Partial<Record<keyof typeof WEBMCP_TOOL_CLASSES, string>>;
+
+export type WebMcpArea = (typeof WEBMCP_TOOL_AREAS)[keyof typeof WEBMCP_TOOL_AREAS];
+
+export function approvalAreaOf(name: string): WebMcpArea | undefined {
+	return Object.hasOwn(WEBMCP_TOOL_AREAS, name) ? WEBMCP_TOOL_AREAS[name as keyof typeof WEBMCP_TOOL_AREAS] : undefined;
+}
 
 export const DG_TOOL_NAME = /^dg_[a-z0-9]+_[a-z0-9_]+$/;
 
