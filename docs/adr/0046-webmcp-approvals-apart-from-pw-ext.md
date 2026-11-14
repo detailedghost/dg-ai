@@ -87,7 +87,8 @@ session or an agent tab group.
   `pkg/extension/lib/background/webmcp-scripts.ts`) (`webMcpTabs` in
   `pkg/extension/lib/background/pw-ext.ts`). It skips private-window,
   discarded and browser-page tabs, reads at most 20 tabs and lists at most 100
-  tools. Held pw --ext secrets of the session stay masked. An `http://localhost`
+  tools by count and by a byte budget, and asks the tabs at the same time.
+  Held pw --ext secrets of the session stay masked. An `http://localhost`
   or `http://127.0.0.1` script pattern now covers that host on any port in
   `matchesCoverOrigin`. It reads only
   `dg_` tools; on a mailbox tab only those of an enabled built-in that covers
@@ -95,7 +96,10 @@ session or an agent tab group.
 - A call goes to the first tab that exposes the tool: the active tab of the
   focused window, then the most recently used tab. The extension never opens,
   focuses, moves or groups a tab, adds no banner or dialog shim, and asks no
-  pw --ext site question. pw --ext Stop does not block these verbs.
+  pw --ext site question.
+- After pw --ext Stop of a dg session, these verbs refuse that session. Stop
+  drops the session's held secrets, so the extension could no longer mask
+  them in tool output. The Web MCP grants stay, as before.
 - The approval classes stay the only gate. The popup also names the tab title,
   masked on mail sites with the same rule as `pw --ext tabs`.
 - The session of a `session` grant is the paired dg session that `dg-agent mcp`

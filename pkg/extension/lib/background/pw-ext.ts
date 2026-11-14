@@ -533,6 +533,7 @@ function mapTools(tools: PwExtTool[], transform: (value: string) => string): PwE
 
 const MAILBOX_TOOL_FAILED = "The WebMCP tool failed on the protected mailbox tab.";
 const MAX_WEBMCP_TABS = 20;
+const MAX_WEBMCP_LIST_BYTES = 600_000;
 const noWebMcpTab = (tool: string) =>
 	`No open browser tab exposes ${tool}. Open the site in a normal browser tab with its Web MCP script turned on, then retry.`;
 
@@ -1653,23 +1654,25 @@ export function createPwExtHandler({
 		if (signal.aborted) return CANCELED;
 		if (request.verb === "webmcp-tools") {
 			const found = new Map<string, PwExtTool>();
+			let bytes = 0;
 			for (const tools of await Promise.all(tabs.map(webMcpToolsOf)))
-				for (const tool of tools) if (!found.has(tool.name)) found.set(tool.name, tool);
-			const tools = [...found.values()].slice(0, PW_EXT_MAX_TOOLS);
+				for (const tool of tools) {
+					if (found.has(tool.name) || found.size >= PW_EXT_MAX_TOOLS) continue;
+					const size = new TextEncoder().encode(JSON.stringify(tool)).length;
+					if (bytes + size > MAX_WEBMCP_LIST_BYTES) continue;
+					bytes += size;
+					found.set(tool.name, tool);
+				}
+			const tools = [...found.values()];
 			const rows = tools.length
-				? tools.map((tool) => `- ${tool.name}: ${tool.description}`)
+				? tools.map((tool) => `- ${tool.name}`)
 				: ["No open browser tab exposes a dg Web MCP tool."];
 			return { ok: true, data: { text: clean(["### WebMCP tools", ...rows].join("\n")), tools } };
 		}
 		const tool = request.tool as string;
-		let tab: LiveTab | undefined;
-		for (const candidate of tabs) {
-			if ((await webMcpToolsOf(candidate)).some((entry) => entry.name === tool)) {
-				tab = candidate;
-				break;
-			}
-		}
+		const listings = await Promise.all(tabs.map(webMcpToolsOf));
 		if (signal.aborted) return CANCELED;
+		const tab = tabs.find((_, index) => listings[index]?.some((entry) => entry.name === tool));
 		if (!tab) return { ok: false, error: noWebMcpTab(tool) };
 		await guard("call", tab, tool);
 		const refused = await askDgTool(tool, request.args ?? {}, tab, context, approvalTabTitle(tab));
@@ -1760,7 +1763,7 @@ export function createPwExtHandler({
 				error: "pw --ext works only in Chromium-family browsers (Chrome, Edge, Brave, Vivaldi).",
 			};
 		if (!context?.sessionId) return { ok: false, error: NO_SESSION };
-		if (isWebMcpVerb(request)) return runWebMcp(request, context, signal);
+		if (isWebMcpVerb(request)) return (await isStopped(context.sessionId).catch(() => false)) ? STOPPED : runWebMcp(request, context, signal);
 		if (request.verb === "fill" && request.secret && isPwExtSecretTooShort(request.value as string))
 			return { ok: false, error: SECRET_TOO_SHORT };
 		const { sessionId } = context;

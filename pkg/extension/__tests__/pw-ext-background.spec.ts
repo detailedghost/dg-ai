@@ -3733,11 +3733,48 @@ describe("Web MCP on the person's own tabs", () => {
 		expect(h.executed()).toEqual([]);
 	});
 
-	it("works after pw --ext Stop of the same session", async () => {
+	it("refuses Web MCP for a session the person stopped, so its held secrets cannot leak", async () => {
 		const h = anyTabHarness({ record: true });
 		await h.handler.stop(SESSION);
 		const answer = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} }, SESSION);
+		expect(answer.ok).toBe(false);
+		expect(h.ran).toEqual([]);
+		const other = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
+		expect(other.ok).toBe(true);
+	});
+
+	it("keeps the joined list within a byte budget", async () => {
+		const big = (prefix: string) =>
+			Array.from({ length: 20 }, (_, i) => ({ name: `dg_outlook_${prefix}${i}`, description: "d".repeat(900), inputSchema: JSON.stringify({ type: "object", description: "s".repeat(3900) }) }));
+		const tabs = [0, 1, 2, 3, 4].map((n) => outlookTab({ id: 50 + n, active: false }));
+		const h = anyTabHarness({ tabs, pages: Object.fromEntries(tabs.map((tab, n) => [tab.id, big(`t${n}x`)])) as never });
+		const answer = await h.mcp({ verb: "webmcp-tools" });
 		expect(answer.ok).toBe(true);
+		const size = new TextEncoder().encode(JSON.stringify(answer.ok && answer.data)).length;
+		expect(size).toBeLessThan(700_000);
+		expect((answer.ok && answer.data.tools?.length) || 0).toBeGreaterThan(0);
+	});
+
+	it("does not wait on a stalled tab before a responsive one", async () => {
+		const h = anyTabHarness({
+			tabs: [outlookTab(), outlookTab({ id: 31, active: false, lastAccessed: 5 })],
+			pageDeadlineMs: 300,
+		});
+		let asked = 0;
+		h.fake.state.script = (details) => {
+			const call = details as { args: unknown[]; target: { tabId: number } };
+			const action = call.args[0] as { kind: string; tool?: string };
+			if (call.target.tabId === OUTLOOK_TAB) return new Promise(() => undefined);
+			if (action.kind === "tools") {
+				asked = Date.now();
+				return { api: "modelContext", tools: pageTools };
+			}
+			return { api: "modelContext", output: `ran in ${call.target.tabId}` };
+		};
+		const started = Date.now();
+		const answer = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
+		expect(answer.ok && answer.data.text).toContain("ran in 31");
+		expect(asked - started).toBeLessThan(150);
 	});
 
 	it("masks a secret the session holds in tool output", async () => {

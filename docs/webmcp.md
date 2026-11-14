@@ -153,9 +153,9 @@ grant shows as "mail (list and search)", and a mail-body area grant shows as
 the extension's own popup and Options pages can list or revoke grants.
 
 pw --ext Stop, on the banner or in the toolbar popup, ends browser control
-only. It does not revoke Web MCP grants, and it does not stop `dg-agent mcp`
-calls on your own tabs. Its `pw --ext tools` and `call` stop with the rest of
-browser control. The grants stay until the session ends or you revoke them.
+and the Web MCP calls of that dg session, also `dg-agent mcp` calls on your own
+tabs. It does not revoke Web MCP grants. They stay until the session ends or
+you revoke them.
 
 See [ADR 0046](adr/0046-webmcp-approvals-apart-from-pw-ext.md),
 [ADR 0047](adr/0047-webmcp-area-approval-class.md) and
