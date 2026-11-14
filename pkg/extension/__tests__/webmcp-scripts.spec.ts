@@ -868,6 +868,38 @@ describe("stopped third-party sites", () => {
 		]);
 	});
 
+	it("records the sites of a script disabled while the user scripts api is unavailable", async () => {
+		const { scripts, storage, make } = setup();
+		const { id } = await scripts.addThirdParty(draft());
+		await approveNow(scripts, id);
+
+		await make(false).setEnabled(id, false);
+
+		expect(stopped(storage)).toEqual([{ matches: ["https://flights.example.com/*"], stoppedAt: 1000 }]);
+	});
+
+	it.each([
+		["disable", (scripts: ReturnType<typeof setup>["scripts"], id: string) => scripts.setEnabled(id, false)],
+		["removal", (scripts: ReturnType<typeof setup>["scripts"], id: string) => scripts.remove(id)],
+	])("covers the sites before %s drops the active record", async (_, stop) => {
+		const { scripts, storage } = setup();
+		const { id } = await scripts.addThirdParty(draft());
+		await approveNow(scripts, id);
+		const uncovered: string[] = [];
+		const set = storage.local.set;
+		storage.local.set = async (items) => {
+			await set(items);
+			const records = (storage.data.webmcpScripts ?? []) as { id: string; enabled: boolean }[];
+			if (!records.some((record) => record.id === id && record.enabled) && stopped(storage) === undefined)
+				uncovered.push(Object.keys(items).join(","));
+		};
+
+		await stop(scripts, id);
+
+		expect(uncovered).toEqual([]);
+		expect(stopped(storage)).toEqual([{ matches: ["https://flights.example.com/*"], stoppedAt: 1000 }]);
+	});
+
 	it("records the sites of an orphan registration that reconcile removes", async () => {
 		const { scripts, storage, live, userMatches } = setup();
 		live.user.add("dg-webmcp-user-gone");
@@ -877,6 +909,29 @@ describe("stopped third-party sites", () => {
 
 		expect(live.user.has("dg-webmcp-user-gone")).toBe(false);
 		expect(stopped(storage)).toEqual([{ matches: ["https://*.orphan.example.com/*"], stoppedAt: 1000 }]);
+	});
+
+	it("keeps the sites of the oldest entries when the history is full", async () => {
+		const { scripts, storage } = setup();
+		storage.data.webmcpStoppedScripts = [
+			{ matches: ["https://outlook.office.com/*"], stoppedAt: 10 },
+			...Array.from({ length: 99 }, (_, index) => ({
+				matches: [`https://site${index}.example.com/*`],
+				stoppedAt: 20 + index,
+			})),
+		];
+		const { id } = await scripts.addThirdParty(draft());
+		await approveNow(scripts, id);
+
+		await scripts.remove(id);
+
+		const held = stopped(storage) as { matches: string[]; stoppedAt: number }[];
+		expect(held).toHaveLength(100);
+		expect(held[0]).toEqual({
+			matches: ["https://outlook.office.com/*", "https://site0.example.com/*"],
+			stoppedAt: 20,
+		});
+		expect(held.at(-1)).toEqual({ matches: ["https://flights.example.com/*"], stoppedAt: 1000 });
 	});
 });
 
