@@ -2245,6 +2245,18 @@ describe("pw --ext dialog", () => {
 		expect(dialogCalls(h).map((call) => [call.target.tabId, call.args[0]])).toEqual([[tab.id, { kind: "install" }]]);
 	});
 
+	it("installs the shim in the tabs of a recovered group when new reuses it", async () => {
+		const h = harness({ record: false });
+		await h.fake.raw.storage.local.set({
+			[`agentTabsGroup:${SESSION}`]: { ...recordOf({ sessionId: SESSION, agentIdentity: IDENTITY, groupId: GROUP }), windowId: WINDOW, groupTitle: "mine" },
+		});
+		await h.run({ verb: "new", url: "https://app.example.test/" });
+		const tab = await h.createdTab();
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(h.fake.tabs.get(tab.id)?.groupId).toBe(GROUP);
+		expect(dialogCalls(h).map((call) => call.target.tabId).sort()).toEqual([7, tab.id].sort());
+	});
+
 	it("stops waiting on a tab that does not answer when the session ends", async () => {
 		const h = harness();
 		h.fake.state.script = () => new Promise(() => {});

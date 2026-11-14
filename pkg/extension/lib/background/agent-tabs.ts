@@ -79,6 +79,11 @@ export type AgentTabsStorage = {
 		set(items: Record<string, unknown>): Promise<void>;
 		remove(keys: string): Promise<void>;
 	};
+	local?: {
+		get(keys: string | null): Promise<Record<string, unknown>>;
+		set(items: Record<string, unknown>): Promise<void>;
+		remove(keys: string): Promise<void>;
+	};
 };
 
 export type AgentTabsLock = {
@@ -94,6 +99,8 @@ export type AgentRecord = {
 	selectedTabId?: number;
 };
 
+type SavedRecord = AgentRecord & { windowId?: number; groupTitle?: string };
+
 export type AgentTab = {
 	tabId: number;
 	title: string;
@@ -103,6 +110,8 @@ export type AgentTab = {
 };
 
 const RECORD_PREFIX = "agentTabs:";
+const PERSIST_PREFIX = "agentTabsGroup:";
+const GROUP_MOVE_GRACE_MS = 1000;
 const LOCK_NAME = "agentTabs";
 const TITLE_IDENTITY_CHARS = 33;
 const TITLE_SESSION_CHARS = 4;
@@ -123,6 +132,7 @@ export class AgentGroupFullError extends Error {
 }
 
 const recordKey = (sessionId: string) => `${RECORD_PREFIX}${sessionId}`;
+const persistKey = (sessionId: string) => `${PERSIST_PREFIX}${sessionId}`;
 
 /** At most 40 characters, so the session suffix always survives. */
 export function groupTitle({
@@ -201,12 +211,15 @@ export function createAgentTabs({
 	storage,
 	lock = navigator.locks,
 	busy = () => false,
+	graceMs = 0,
 }: {
 	browserApi: AgentTabsBrowserApi;
 	storage: AgentTabsStorage;
 	lock?: AgentTabsLock;
 	busy?(agent: { sessionId: string }): boolean;
+	graceMs?: number;
 }) {
+	const recreated = new Map<number, () => void>();
 	const locked = <T>(task: () => Promise<T>) => lock.request(LOCK_NAME, task);
 
 	async function read(sessionId: string): Promise<AgentRecord | undefined> {
@@ -214,8 +227,56 @@ export function createAgentTabs({
 		return (await storage.session.get(key))[key] as AgentRecord | undefined;
 	}
 
+	async function persist(record: AgentRecord): Promise<void> {
+		const group = await api.tabGroups.get(record.groupId).catch(() => undefined);
+		const saved: SavedRecord = {
+			...withoutSelection(record),
+			...(group ? { windowId: group.windowId, groupTitle: group.title } : {}),
+		};
+		await storage.local?.set({ [persistKey(record.sessionId)]: saved });
+	}
+
 	async function write(record: AgentRecord): Promise<void> {
 		await storage.session.set({ [recordKey(record.sessionId)]: record });
+		await persist(record);
+	}
+
+	async function persisted(): Promise<SavedRecord[]> {
+		const stored = (await storage.local?.get(null)) ?? {};
+		return Object.entries(stored)
+			.filter(([key]) => key.startsWith(PERSIST_PREFIX))
+			.map(([, record]) => record as SavedRecord);
+	}
+
+	async function drop(sessionId: string): Promise<void> {
+		await storage.session.remove(recordKey(sessionId));
+		await storage.local?.remove(persistKey(sessionId));
+	}
+
+	async function recover(
+		sessionId: string,
+	): Promise<{ record: AgentRecord; tabIds: number[] } | undefined> {
+		const taken = await agentGroupIds({ storage });
+		const key = persistKey(sessionId);
+		const saved = ((await storage.local?.get(key)) ?? {})[key] as
+			| SavedRecord
+			| undefined;
+		if (!saved) return undefined;
+		const group = await api.tabGroups.get(saved.groupId).catch(() => undefined);
+		const tabs = group ? await api.tabs.query({ groupId: saved.groupId }) : [];
+		const tabIds = tabs.flatMap((tab) => (tab.id === undefined ? [] : [tab.id]));
+		if (
+			taken.has(saved.groupId) ||
+			(await liveGroupWindow(saved)) === undefined ||
+			group?.windowId !== saved.windowId ||
+			group?.title !== saved.groupTitle
+		) {
+			await storage.local?.remove(key);
+			return undefined;
+		}
+		const { windowId: _window, groupTitle: _title, ...record } = saved;
+		await write(record);
+		return { record, tabIds };
 	}
 
 	async function rows(record: AgentRecord): Promise<AgentTab[]> {
@@ -322,10 +383,12 @@ export function createAgentTabs({
 			url: string;
 			/** Checked inside the lock; a true answer opens nothing. */
 			canceled?: () => boolean;
-		}): Promise<{ tabId: number }> {
+		}): Promise<{ tabId: number; recoveredTabIds: number[] }> {
 			return locked(async () => {
 				if (canceled?.()) throw new AgentTabOpenCanceledError();
-				const record = await read(sessionId);
+				const existing = await read(sessionId);
+				const recovered = existing ? undefined : await recover(sessionId);
+				const record = existing ?? recovered?.record;
 				const groupWindow = await liveGroupWindow(record);
 				if (
 					record &&
@@ -351,7 +414,8 @@ export function createAgentTabs({
 						windowId: tab.windowId,
 					});
 					if (joined !== record) await write(joined);
-					return { tabId };
+					else await persist(joined);
+					return { tabId, recoveredTabIds: recovered?.tabIds ?? [] };
 				} catch (error) {
 					await api.tabs.remove(tabId).catch(() => undefined);
 					throw error;
@@ -367,7 +431,7 @@ export function createAgentTabs({
 			sessionId: string;
 			agentIdentity: string;
 			tabId: number;
-		}): Promise<void> {
+		}): Promise<{ recoveredTabIds: number[] }> {
 			return locked(async () => {
 				const tab = await api.tabs.get(tabId).catch(() => undefined);
 				if (!tab) throw new Error("tab not found");
@@ -375,10 +439,13 @@ export function createAgentTabs({
 				if (!allowedPage(tab.url) || mailbox(tab.url))
 					throw new Error(BLOCKED_TAB_ERROR);
 				const records = await readRecords(storage);
-				const record = records.find((other) => other.sessionId === sessionId);
+				const found = records.find((other) => other.sessionId === sessionId);
+				const recovered = found ? undefined : await recover(sessionId);
+				const record = found ?? recovered?.record;
+				const recoveredTabIds = recovered?.tabIds ?? [];
 				if (record && tab.groupId === record.groupId) {
 					await write({ ...record, selectedTabId: tabId });
-					return;
+					return { recoveredTabIds };
 				}
 				const owner = records.find(
 					(other) => other.groupId === tab.groupId && other.sessionId !== sessionId,
@@ -410,6 +477,7 @@ export function createAgentTabs({
 							: withoutSelection(owner),
 					);
 				}
+				return { recoveredTabIds };
 			});
 		},
 
@@ -515,7 +583,7 @@ export function createAgentTabs({
 		},
 
 		forget({ sessionId }: { sessionId: string }): Promise<void> {
-			return locked(() => storage.session.remove(recordKey(sessionId)));
+			return locked(() => drop(sessionId));
 		},
 
 		tabRemoved({ tabId }: { tabId: number }): Promise<void> {
@@ -525,12 +593,64 @@ export function createAgentTabs({
 			});
 		},
 
-		groupRemoved({ groupId }: { groupId: number }): Promise<void> {
+		restore({ paired }: { paired?: ReadonlySet<string> } = {}): Promise<number[]> {
+			return locked(async () => {
+				const tabIds: number[] = [];
+				const known = new Set((await readRecords(storage)).map((r) => r.sessionId));
+				for (const record of await persisted()) {
+					if (known.has(record.sessionId)) continue;
+					if (paired && !paired.has(record.sessionId)) {
+						await storage.local?.remove(persistKey(record.sessionId));
+						continue;
+					}
+					const recovered = await recover(record.sessionId);
+					if (recovered) tabIds.push(...recovered.tabIds);
+				}
+				return tabIds;
+			});
+		},
+
+		groupChanged({ groupId }: { groupId: number }): Promise<void> {
 			return locked(async () => {
 				for (const record of await readRecords(storage))
-					if (record.groupId === groupId)
-						await storage.session.remove(recordKey(record.sessionId));
+					if (record.groupId === groupId) await persist(record);
 			});
+		},
+
+		clearAll(): Promise<void> {
+			return locked(async () => {
+				for (const record of await readRecords(storage))
+					await drop(record.sessionId);
+				for (const record of await persisted())
+					await storage.local?.remove(persistKey(record.sessionId));
+			});
+		},
+
+		async groupRemoved({ groupId }: { groupId: number }): Promise<void> {
+			const settle = (back: boolean) =>
+				locked(async () => {
+					for (const record of await readRecords(storage))
+						if (record.groupId === groupId)
+							await (back ? persist(record) : drop(record.sessionId));
+				});
+			if (graceMs <= 0) return settle(false);
+			const returned = new Promise<boolean>((resolve) => {
+				const timer = setTimeout(() => resolve(false), graceMs);
+				recreated.set(groupId, () => {
+					clearTimeout(timer);
+					resolve(true);
+				});
+			});
+			const held = await locked(async () =>
+				(await readRecords(storage)).some((record) => record.groupId === groupId),
+			);
+			const back = held ? await returned : false;
+			recreated.delete(groupId);
+			if (held) await settle(back);
+		},
+
+		groupCreated({ groupId }: { groupId: number }): void {
+			recreated.get(groupId)?.();
 		},
 	};
 }
@@ -556,6 +676,7 @@ export function registerAgentTabs({
 		browserApi: browser as unknown as AgentTabsBrowserApi,
 		storage,
 		busy,
+		graceMs: GROUP_MOVE_GRACE_MS,
 	});
 	const pairings = createPairingStore({ storage: browser.storage });
 
@@ -574,8 +695,12 @@ export function registerAgentTabs({
 				({ sessionId }) => sessionId === request.sessionId,
 			);
 			if (!held) return { ok: false, error: "this agent is not paired" };
-			await agentTabs.adopt({ ...request, agentIdentity: held.agentIdentity });
-			onAdopted?.(request.tabId);
+			const { recoveredTabIds } = await agentTabs.adopt({
+				...request,
+				agentIdentity: held.agentIdentity,
+			});
+			for (const tabId of new Set([request.tabId, ...recoveredTabIds]))
+				onAdopted?.(tabId);
 			return { ok: true };
 		} catch (error) {
 			return { ok: false, error: describeError(error) };
@@ -595,6 +720,27 @@ export function registerAgentTabs({
 
 	browser.tabs.onRemoved.addListener(
 		(tabId) => void agentTabs.tabRemoved({ tabId }).catch(logCleanupFailure),
+	);
+
+	browser.runtime.onStartup.addListener(
+		() => void agentTabs.clearAll().catch(logCleanupFailure),
+	);
+
+	void pairings
+		.list()
+		.then((held) =>
+			agentTabs.restore({ paired: new Set(held.map((h) => h.sessionId)) }),
+		)
+		.then((tabIds) => tabIds.forEach((tabId) => onAdopted?.(tabId)))
+		.catch(logCleanupFailure);
+
+	const groupChanged = (group: { id: number }) =>
+		void agentTabs.groupChanged({ groupId: group.id }).catch(logCleanupFailure);
+	browser.tabGroups.onUpdated.addListener(groupChanged);
+	browser.tabGroups.onMoved.addListener(groupChanged);
+
+	browser.tabGroups.onCreated.addListener((group) =>
+		agentTabs.groupCreated({ groupId: group.id }),
 	);
 
 	browser.tabGroups.onRemoved.addListener(

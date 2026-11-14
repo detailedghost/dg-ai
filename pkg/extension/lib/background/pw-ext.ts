@@ -840,7 +840,7 @@ export function createPwExtHandler({
 		{ sessionId, agentIdentity }: PwExtContext,
 		signal: AbortSignal,
 	): Promise<PwExtResult> {
-		const { tabId } = await agentTabs
+		const { tabId, recoveredTabIds } = await agentTabs
 			.open({ sessionId, agentIdentity, url, canceled: () => signal.aborted })
 			.catch((error: unknown) => {
 				if (error instanceof AgentGroupFullError) throw new Refusal(GROUP_FULL);
@@ -849,6 +849,7 @@ export function createPwExtHandler({
 			});
 		await agentTabs.select({ sessionId, tabId });
 		void syncShim(tabId, false);
+		for (const recovered of recoveredTabIds) void syncShim(recovered, true);
 		return ok(`### Result\nOpened ${url} in tab ${tabId}`);
 	}
 

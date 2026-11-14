@@ -108,6 +108,7 @@ export function createFakeBrowser(
 	const tabs = new Map((seed.tabs ?? []).map((t) => [t.id, { ...t }]));
 	const groups = new Map((seed.groups ?? []).map((g) => [g.id, { ...g }]));
 	const session = new Map<string, unknown>();
+	const local = new Map<string, unknown>();
 	const listeners: Listeners = {
 		activated: new Set(),
 		updated: new Set(),
@@ -328,6 +329,22 @@ export function createFakeBrowser(
 			]),
 		},
 		storage: {
+			local: {
+				get: mock(async (keys?: string | string[] | null) => {
+					if (keys === undefined || keys === null) return Object.fromEntries(local);
+					const wanted = Array.isArray(keys) ? keys : [keys];
+					return Object.fromEntries(
+						wanted.filter((key) => local.has(key)).map((key) => [key, local.get(key)]),
+					);
+				}),
+				set: mock(async (items: Record<string, unknown>) => {
+					for (const [key, value] of Object.entries(items))
+						local.set(key, structuredClone(value));
+				}),
+				remove: mock(async (keys: string | string[]) => {
+					for (const key of Array.isArray(keys) ? keys : [keys]) local.delete(key);
+				}),
+			},
 			session: {
 				get: mock(async (keys?: string | string[] | null) => {
 					if (keys === undefined || keys === null)
@@ -357,6 +374,9 @@ export function createFakeBrowser(
 		tabs,
 		groups,
 		session,
+		reload() {
+			session.clear();
+		},
 		addTab,
 		addGroup(group: FakeGroup) {
 			groups.set(group.id, { ...group });
