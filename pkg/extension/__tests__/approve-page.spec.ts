@@ -38,3 +38,32 @@ test("the approval page focuses no button, so a stray Enter or Space cannot answ
 	expect(sent).toEqual([{ type: "dg-approval:get", id: "id1" }]);
 	await window.happyDOM.close();
 });
+
+test("the approval page shows the remember checkbox unchecked only when offered and sends its state", async () => {
+	const window = new Window({ url: "chrome-extension://dg/approve.html?id=id2" });
+	const html = readFileSync(new URL("../entrypoints/approve/index.html", import.meta.url), "utf8");
+	window.document.body.innerHTML = html.slice(html.indexOf("<main>"), html.indexOf("</main>") + 7);
+	const sent: unknown[] = [];
+	const sendMessage = mock(async (message: { type: string }) => {
+		sent.push(message);
+		return message.type === "dg-approval:get"
+			? { title: "T", origin: "https://a.test", lines: ["x"], remember: "Remember for 30 days" }
+			: true;
+	});
+	setGlobal("document", window.document);
+	setGlobal("location", window.location);
+	setGlobal("window", Object.assign(window, { close: () => undefined }));
+	setGlobal("browser", { runtime: { sendMessage } });
+	const fresh: string = "@/entrypoints/approve/main?remember";
+	await import(fresh);
+	for (let i = 0; i < 20; i++) await Promise.resolve();
+	const box = window.document.getElementById("remember") as unknown as HTMLInputElement;
+	expect(window.document.getElementById("remember-row")?.hasAttribute("hidden")).toBe(false);
+	expect(window.document.getElementById("remember-label")?.textContent).toBe("Remember for 30 days");
+	expect(box.checked).toBe(false);
+	box.checked = true;
+	(window.document.getElementById("allow") as unknown as HTMLButtonElement).click();
+	for (let i = 0; i < 20; i++) await Promise.resolve();
+	expect(sent.at(-1)).toEqual({ type: "dg-approval:answer", id: "id2", allow: true, remember: true });
+	await window.happyDOM.close();
+});

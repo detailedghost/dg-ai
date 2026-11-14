@@ -9,6 +9,7 @@ import {
 	type PairingRun,
 	type PairingSession,
 	type RecordDemoReply,
+	type WebMcpGrantView,
 } from "@dg/pages/chat-messages";
 import { browser } from "wxt/browser";
 import { button, element } from "./dom";
@@ -183,6 +184,22 @@ function parseTabs(value: unknown): AgentTabView[] {
 	});
 }
 
+function parseWebMcpGrants(reply: unknown): WebMcpGrantView[] {
+	const list = (reply as { grants?: unknown } | undefined)?.grants;
+	if (!Array.isArray(list)) return [];
+	return list.flatMap((item): WebMcpGrantView[] => {
+		const grant = (item ?? {}) as Record<string, unknown>;
+		if (typeof grant.site !== "string" || typeof grant.tool !== "string") return [];
+		if (grant.kind === "session" && typeof grant.sessionId === "string")
+			return [{ kind: "session", sessionId: grant.sessionId, site: grant.site, tool: grant.tool }];
+		if (grant.kind === "remembered" && typeof grant.expiresAt === "number")
+			return [{ kind: "remembered", site: grant.site, tool: grant.tool, expiresAt: grant.expiresAt }];
+		return [];
+	});
+}
+
+const siteName = (site: string) => (site.startsWith("https://") ? site.slice("https://".length) : site);
+
 function parseGroups(reply: unknown): Map<string, GroupView> | undefined {
 	const list = (reply as { groups?: unknown } | undefined)?.groups;
 	if (!Array.isArray(list)) return undefined;
@@ -287,6 +304,8 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	let ticking = false;
 	const driveViews = new Map<string, DriveView>();
 	const stopped = new Set<string>();
+	let webmcpGrants: WebMcpGrantView[] = [];
+	let webmcpShown = "[]";
 
 	const sub = element(doc, "div", "sub");
 	const title = element(doc, "div", "grow");
@@ -303,6 +322,19 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	driving.setAttribute("aria-label", "Agents driving tabs");
 	const drivingList = element(doc, "div", "agents");
 	driving.append(element(doc, "div", "cnt", "Agents driving tabs"), drivingList);
+	const webmcp = element(doc, "section", "webmcp");
+	webmcp.setAttribute("aria-label", "Web MCP grants");
+	const webmcpList = element(doc, "div", "agents");
+	const webmcpError = element(doc, "p", "note err");
+	webmcpError.setAttribute("role", "status");
+	webmcpError.hidden = true;
+	const webmcpHead = element(doc, "div", "row");
+	const webmcpTitle = element(doc, "div", "cnt grow", "Web MCP grants");
+	webmcpHead.append(
+		webmcpTitle,
+		button(doc, "btn btn-sm btn-danger", "Revoke all", () => void revokeWebMcp({ type: MSG.webmcpRevokeAll })),
+	);
+	webmcp.append(webmcpHead, webmcpList, webmcpError);
 
 	function closeMenu(returnFocus: boolean): void {
 		if (!openMenu) return;
@@ -425,12 +457,14 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 
 	async function readAgents(): Promise<void> {
 		const version = ++readVersion;
-		const [reply, tabsReply] = await Promise.all([
+		const [reply, tabsReply, grantsReply] = await Promise.all([
 			runtime.sendMessage({ type: MSG.connectionRequest }).catch(() => undefined),
 			runtime.sendMessage({ type: MSG.agentTabsRequest }).catch(() => undefined),
+			runtime.sendMessage({ type: MSG.webmcpGrantsRequest }).catch(() => undefined),
 		]);
 		if (destroyed || version !== readVersion) return;
 		groups = parseGroups(tabsReply) ?? groups;
+		webmcpGrants = parseWebMcpGrants(grantsReply);
 		if ((reply as { daemonChanged?: unknown } | undefined)?.daemonChanged === true) {
 			showDriving();
 			showDaemonChanged();
@@ -544,6 +578,51 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 		});
 		if (counts.size === 0) driving.remove();
 		else if (!driving.isConnected) header.after(driving);
+		showWebMcp();
+	}
+
+	async function revokeWebMcp(message: { type: string; grant?: WebMcpGrantView }): Promise<void> {
+		const reply = (await runtime.sendMessage(message).catch(() => undefined)) as
+			| { ok?: unknown; error?: unknown }
+			| undefined;
+		if (destroyed) return;
+		const error = replyError(reply);
+		webmcpError.hidden = error === undefined;
+		setText(webmcpError, error ?? "");
+		await readAgents();
+	}
+
+	function webMcpRow(grant: WebMcpGrantView): HTMLElement {
+		const row = element(doc, "div", "drive");
+		const line = element(doc, "div", "row");
+		const identity = element(doc, "div", "grow");
+		const who =
+			grant.kind === "session"
+				? driveLabel(grant.sessionId)
+				: `Remembered until ${new Date(grant.expiresAt).toISOString().slice(0, 10)}`;
+		const scope = grant.kind === "session" ? "this session" : "30 days";
+		identity.append(element(doc, "b", "", grant.tool), element(doc, "div", "mono", `${siteName(grant.site)} · ${scope}`));
+		identity.append(element(doc, "div", "mono", who));
+		const revoke = button(doc, "btn btn-sm", "Revoke", () => {
+			revoke.disabled = true;
+			void revokeWebMcp({ type: MSG.webmcpRevoke, grant }).finally(() => {
+				revoke.disabled = false;
+			});
+		});
+		revoke.setAttribute("aria-label", `Revoke ${grant.tool} on ${siteName(grant.site)}, ${who}`);
+		line.append(identity, revoke);
+		row.append(line);
+		return row;
+	}
+
+	function showWebMcp(): void {
+		const shown = JSON.stringify([webmcpGrants, sessions.map((session) => [session.sessionId, session.agentIdentity])]);
+		if (shown !== webmcpShown) {
+			webmcpShown = shown;
+			webmcpList.replaceChildren(...webmcpGrants.map(webMcpRow));
+		}
+		if (webmcpGrants.length === 0) webmcp.remove();
+		else if (!webmcp.isConnected) (driving.isConnected ? driving : header).after(webmcp);
 	}
 
 	async function unpair(view: CardView): Promise<void> {

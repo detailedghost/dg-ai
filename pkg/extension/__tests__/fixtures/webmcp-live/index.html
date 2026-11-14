@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>dg Web MCP fixture</title>
+	</head>
+	<body>
+		<h1>dg Web MCP fixture</h1>
+		<p>Serve this folder on http://localhost, then add dummy-tools.js in Options &gt; Web MCP with the site http://localhost/*.</p>
+		<p>Tools on this page: <output id="tools">waiting for the user script</output></p>
+		<script>
+			const show = async () => {
+				const context = document.modelContext;
+				const out = document.getElementById("tools");
+				if (!context) {
+					out.textContent = "none: document.modelContext is missing, so the user script did not run";
+					return;
+				}
+				out.textContent = (await context.getTools()).map((tool) => tool.name).join(", ") || "none";
+			};
+			setTimeout(show, 1500);
+		</script>
+	</body>
+</html>

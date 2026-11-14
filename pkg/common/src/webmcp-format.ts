@@ -54,7 +54,7 @@ function patternCoversOrigin(pattern: string, origin: string): boolean {
 		const { protocol, hostname } = new URL(origin);
 		if (protocol !== "https:" || !pattern.startsWith("https://")) return false;
 		const host = pattern.slice("https://".length).split("/")[0] ?? "";
-		return host.startsWith("*.") ? hostname.endsWith(host.slice(1)) : hostname === host;
+		return host.startsWith("*.") ? hostname === host.slice(2) || hostname.endsWith(host.slice(1)) : hostname === host;
 	} catch {
 		return false;
 	}
@@ -64,8 +64,13 @@ function builtInOwning(name: string) {
 	return BUILT_IN_SCRIPTS.find((script) => name.startsWith(`dg_${script.id}_`));
 }
 
+/** True when an https match pattern's host covers the origin, a wildcard's base host included; the path part is ignored. */
+export function matchesCoverOrigin(matches: readonly string[], origin: string): boolean {
+	return matches.some((pattern) => patternCoversOrigin(pattern, origin));
+}
+
 function builtInCovers(owner: BuiltInWebMcpScript | undefined, origin: string): boolean {
-	return owner?.matches.some((pattern) => patternCoversOrigin(pattern, origin)) === true;
+	return owner !== undefined && matchesCoverOrigin(owner.matches, origin);
 }
 
 /** The approval class of a tool; with an origin, a dg_ tool keeps its table class only on the origins of the built-in script that owns its prefix. */
@@ -87,6 +92,7 @@ const SCRIPT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const MATCH_PATTERN =
 	/^https:\/\/(?:\*\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)\/\S*$/;
+const LOOPBACK_MATCH_PATTERN = /^http:\/\/(?:localhost|127\.0\.0\.1)\/\S*$/;
 const RECORD_KEYS = ["id", "name", "matches", "sha256", "source", "enabled", "approvedAt"];
 
 export function validateWebMcpScriptRecord(value: unknown): WebMcpScriptRecord {
@@ -102,8 +108,8 @@ export function validateWebMcpScriptRecord(value: unknown): WebMcpScriptRecord {
 		fail(`${path}.matches must hold 1 to ${WEBMCP_MAX_MATCHES} patterns`);
 	for (const [index, match] of value.matches.entries()) {
 		requireString(match, `${path}.matches[${index}]`);
-		if (match.length > 200 || !MATCH_PATTERN.test(match))
-			fail(`${path}.matches[${index}] must be an https://<host>/<path> match pattern`);
+		if (match.length > 200 || !(MATCH_PATTERN.test(match) || LOOPBACK_MATCH_PATTERN.test(match)))
+			fail(`${path}.matches[${index}] must be an https://<host>/<path>, http://localhost/<path> or http://127.0.0.1/<path> match pattern`);
 	}
 	requireString(value.sha256, `${path}.sha256`);
 	if (!SHA256.test(value.sha256)) fail(`${path}.sha256 must be 64 lowercase hex characters`);

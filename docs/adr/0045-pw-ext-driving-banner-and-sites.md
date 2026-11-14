@@ -164,6 +164,20 @@ Two more accepted risks:
 - `pkg/extension/lib/browser-call.ts`
 - `pkg/extension/lib/background/webmcp-approval.ts`
 
+## Amended 2026-11-13: Web MCP is apart from pw --ext
+
+[ADR 0046](0046-webmcp-approvals-apart-from-pw-ext.md) separates Web MCP from
+browser control. The text above stays as the record of this decision. Where it
+says the site allowlist gates every verb, or that Stop drops `dg_` grants, this
+amendment replaces it.
+
+- The site allowlist no longer gates `tools` and `call`. Web MCP approvals
+  gate `call` instead.
+- Stop, on the banner or in the toolbar popup, no longer drops Web MCP grants.
+  It still drops unmask grants and allowed sites.
+- Web MCP grants are keyed by session, site and tool, with no tab group. The
+  toolbar popup revokes them in a Web MCP section apart from Stop.
+
 ## Amended 2026-11-13: the banner is a top strip in the DeeGee style
 
 Variant C, "Top strip", was picked in the `/dg:proto` round on 2026-11-13. The
