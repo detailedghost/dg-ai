@@ -3,7 +3,7 @@ name: dg-demo
 description: Play a guided demo tour as an artifact, with chapter cards, captions and a highlight on each target, over a mock of the UI or uploaded screenshots. Use to demo or walk through a feature.
 ---
 
-# Guided-tour demo (web)
+# Guided-tour demo (chat)
 
 The chat version of DeeGee's `demo` skill. It plays the tour as an HTML artifact in this
 chat. It records no video and opens no browser. Your job: write the plan, build the

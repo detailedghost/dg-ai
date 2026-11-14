@@ -4,15 +4,15 @@
 #
 # Piped `irm | iex` cannot take switches. To pass one, run the script as a script block:
 #
-#   & ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -WebOnly
+#   & ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -ChatOnly
 #
 # -CliOnly     skip the extension.
 # -AgentOnly   install for a non-Claude agent that only needs phone.
 # -SkillsOnly  copy the skill files, then the runtime and bundle; no extension and no `dg-skills install`.
 #              Add -NoCli for an offline copy of the skill files that downloads no release, and
 #              -Dest <dir> to choose where they go.
-# -WebOnly     download only the web skills for Claude chat: the checksum-verified
-#              dg-web-skills-<x.y.z>.zip unpacked into .\dg-web-skills (or -Dest <dir>), one upload-ready
+# -ChatOnly     download only the chat skills for Claude chat: the checksum-verified
+#              dg-chat-skills-<x.y.z>.zip unpacked into .\dg-chat-skills (or -Dest <dir>), one upload-ready
 #              ZIP per skill. No runtime, no bundle, no launchers, no extension, and nothing it unpacks is run.
 # -Codex       also copy the skills into $CODEX_HOME\skills.
 # -Version <x.y.z>  install that release instead of the newest. A leading v is accepted.
@@ -29,7 +29,7 @@ param(
 	[switch]$AgentOnly,
 	[switch]$SkillsOnly,
 	[switch]$NoCli,
-	[switch]$WebOnly,
+	[switch]$ChatOnly,
 	[switch]$Codex,
 	[string]$Dest
 )
@@ -40,7 +40,7 @@ $wantAgentOnly = $AgentOnly.IsPresent -or $env:DG_AGENT_ONLY -eq "1"
 $wantSkillsOnly = $SkillsOnly.IsPresent -or $env:DG_SKILLS_ONLY -eq "1"
 $wantNoCli = $NoCli.IsPresent -or $env:DG_SKILLS_NO_CLI -eq "1"
 $wantCodex = $Codex.IsPresent -or $env:DG_INSTALL_CODEX -eq "1"
-$wantWebOnly = $WebOnly.IsPresent
+$wantChatOnly = $ChatOnly.IsPresent
 
 # Copy skill directories as data, matching @dg/common filesToInstall.
 # A skill is an immediate child directory that contains SKILL.md.
@@ -172,9 +172,9 @@ if ($wantSkillsOnly -and $wantAgentOnly) {
 if ($wantCliOnly -and $wantAgentOnly) {
 	throw "dg-skills: pass only one of -CliOnly and -AgentOnly"
 }
-if ($wantWebOnly) {
+if ($wantChatOnly) {
 	foreach ($other in @(@($wantCliOnly, "-CliOnly"), @($wantSkillsOnly, "-SkillsOnly"), @($wantAgentOnly, "-AgentOnly"), @($wantCodex, "-Codex"), @($wantNoCli, "-NoCli"))) {
-		if ($other[0]) { throw "dg-skills: -WebOnly installs nothing but the web skills; drop $($other[1])" }
+		if ($other[0]) { throw "dg-skills: -ChatOnly installs nothing but the chat skills; drop $($other[1])" }
 	}
 }
 
@@ -244,14 +244,14 @@ function Test-DgAvx2 {
 	return [Dg.Cpu]::IsProcessorFeaturePresent(40)
 }
 
-# The web skills are data for a chat upload: ZIPs and a Markdown guide. They are verified,
+# The chat skills are data for a chat upload: ZIPs and a Markdown guide. They are verified,
 # unpacked into one folder, and never opened or run.
-if ($wantWebOnly) {
-	$webDest = if ($Dest) { $Dest } else { Join-Path (Get-Location).Path "dg-web-skills" }
+if ($wantChatOnly) {
+	$chatDest = if ($Dest) { $Dest } else { Join-Path (Get-Location).Path "dg-chat-skills" }
 	$rel = Resolve-DgRelease
 	$tag = $rel.tag_name
-	$asset = "dg-web-skills-$($tag.Substring(1)).zip"
-	$work = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-web-skills-" + [guid]::NewGuid())
+	$asset = "dg-chat-skills-$($tag.Substring(1)).zip"
+	$work = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-chat-skills-" + [guid]::NewGuid())
 	New-Item -ItemType Directory -Force -Path $work | Out-Null
 	try {
 		$sumsPath = Join-Path $work "SHA256SUMS"
@@ -269,13 +269,13 @@ if ($wantWebOnly) {
 		foreach ($entry in $entries) {
 			if ($entry -ne "UPLOAD.md" -and $entry -notmatch '^dg-[a-z0-9-]+\.zip$') { throw "dg-skills: refusing $entry in $asset" }
 		}
-		New-Item -ItemType Directory -Force -Path $webDest | Out-Null
-		Expand-Archive -Path $zipPath -DestinationPath $webDest -Force
-		Write-Host "Web skills $($tag.Substring(1)) are in ${webDest}:"
+		New-Item -ItemType Directory -Force -Path $chatDest | Out-Null
+		Expand-Archive -Path $zipPath -DestinationPath $chatDest -Force
+		Write-Host "Chat skills $($tag.Substring(1)) are in ${chatDest}:"
 		$entries | Where-Object { $_ -like "dg-*.zip" } | ForEach-Object { Write-Host "  $_" }
 		Write-Host "Upload each ZIP as a skill in Claude: Customize, then Skills, then Upload a skill."
 		Write-Host "Turn on code execution in Settings, under Capabilities. A Team or Enterprise owner can add them for everyone."
-		Write-Host "Web-only install: nothing else was installed and nothing was run."
+		Write-Host "Chat-only install: nothing else was installed and nothing was run."
 	} finally {
 		Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 	}

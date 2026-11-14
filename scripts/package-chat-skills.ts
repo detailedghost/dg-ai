@@ -1,12 +1,12 @@
 /**
- * Validate and package the web-only skills in web/skills for Claude chat uploads.
+ * Validate and package the chat-only skills in chat/skills for Claude chat uploads.
  *
- *   bun scripts/package-web-skills.ts                       validate only
- *   bun scripts/package-web-skills.ts --out dist --version 5.11.0
- *       writes dg-web-skills-<version>.zip: one dg-<name>.zip per skill (the skill folder at
+ *   bun scripts/package-chat-skills.ts                       validate only
+ *   bun scripts/package-chat-skills.ts --out dist --version 5.11.0
+ *       writes dg-chat-skills-<version>.zip: one dg-<name>.zip per skill (the skill folder at
  *       its top level, the layout claude.ai expects) plus UPLOAD.md
- *   bun scripts/package-web-skills.ts --refresh-sources     re-pin web/sources.json after a
- *       deliberate review of the first-class sources a web skill was adapted from
+ *   bun scripts/package-chat-skills.ts --refresh-sources     re-pin chat/sources.json after a
+ *       deliberate review of the first-class sources a chat skill was adapted from
  *
  * The first-class skills under plugins/dg/skills are never read for packaging or changed.
  */
@@ -26,9 +26,9 @@ import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 
 export const REPO = join(import.meta.dir, "..");
-export const WEB = join(REPO, "web");
-export const WEB_SKILLS = join(WEB, "skills");
-export const SOURCES_FILE = join(WEB, "sources.json");
+export const CHAT = join(REPO, "chat");
+export const CHAT_SKILLS = join(CHAT, "skills");
+export const SOURCES_FILE = join(CHAT, "sources.json");
 export const SHARED_FILES = ["dg-theme.css", "dg-icons.js"] as const;
 
 export const NAME_PATTERN = /^dg-[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -64,9 +64,9 @@ export function sha256(bytes: string | Uint8Array): string {
 }
 
 export function skillNames(): string[] {
-	if (!existsSync(WEB_SKILLS)) return [];
-	return readdirSync(WEB_SKILLS)
-		.filter((name) => statSync(join(WEB_SKILLS, name)).isDirectory())
+	if (!existsSync(CHAT_SKILLS)) return [];
+	return readdirSync(CHAT_SKILLS)
+		.filter((name) => statSync(join(CHAT_SKILLS, name)).isDirectory())
 		.sort();
 }
 
@@ -95,7 +95,7 @@ export function frontmatter(text: string): Record<string, string> | null {
 	return out;
 }
 
-export function validateSkill(name: string, root: string = WEB_SKILLS): Finding[] {
+export function validateSkill(name: string, root: string = CHAT_SKILLS): Finding[] {
 	const dir = join(root, name);
 	const findings: Finding[] = [];
 	const add = (file: string, problem: string) => findings.push({ skill: name, file, problem });
@@ -145,8 +145,8 @@ export function validateSkill(name: string, root: string = WEB_SKILLS): Finding[
 	for (const shared of SHARED_FILES) {
 		const copy = join(dir, "assets", shared);
 		if (!existsSync(copy)) continue;
-		if (readFileSync(copy, "utf8") !== readFileSync(join(WEB, "shared", shared), "utf8"))
-			add(`assets/${shared}`, `differs from web/shared/${shared}; copy the shared file over it`);
+		if (readFileSync(copy, "utf8") !== readFileSync(join(CHAT, "shared", shared), "utf8"))
+			add(`assets/${shared}`, `differs from chat/shared/${shared}; copy the shared file over it`);
 	}
 
 	for (const match of readFileSync(skillPath, "utf8").matchAll(/\]\(([^)#\s]+)\)/g)) {
@@ -161,7 +161,7 @@ export function readSources(): Sources {
 	return existsSync(SOURCES_FILE) ? (JSON.parse(readFileSync(SOURCES_FILE, "utf8")) as Sources) : {};
 }
 
-/** Source files whose content changed since the web skill was last reviewed against them. */
+/** Source files whose content changed since the chat skill was last reviewed against them. */
 export function staleSources(sources: Sources = readSources()): Finding[] {
 	const findings: Finding[] = [];
 	for (const [skill, pin] of Object.entries(sources)) {
@@ -172,7 +172,7 @@ export function staleSources(sources: Sources = readSources()): Finding[] {
 				findings.push({
 					skill,
 					file: `${pin.source}/${file}`,
-					problem: "changed since web/skills/" + skill + " was adapted from it. Review the web skill, then run scripts/package-web-skills.ts --refresh-sources",
+					problem: "changed since chat/skills/" + skill + " was adapted from it. Review the chat skill, then run scripts/package-chat-skills.ts --refresh-sources",
 				});
 		}
 	}
@@ -194,7 +194,7 @@ function zip(cwd: string, out: string, entries: string[]): void {
 
 export function uploadGuide(version: string, names: string[]): string {
 	return [
-		`# DeeGee web skills ${version}`,
+		`# DeeGee chat skills ${version}`,
 		"",
 		"Upload each ZIP as a separate skill in Claude: Customize, then Skills, then Upload a skill.",
 		"Code execution must be on in Settings, under Capabilities. On a Team or Enterprise plan,",
@@ -207,25 +207,25 @@ export function uploadGuide(version: string, names: string[]): string {
 	].join("\n");
 }
 
-/** Builds dg-web-skills-<version>.zip in outDir and returns its path. */
+/** Builds dg-chat-skills-<version>.zip in outDir and returns its path. */
 export function packageWebSkills(outDir: string, version: string): string {
 	const names = skillNames();
-	if (names.length === 0) throw new Error("web/skills holds no skills");
-	const stage = mkdtempSync(join(tmpdir(), "dg-web-skills-"));
+	if (names.length === 0) throw new Error("chat/skills holds no skills");
+	const stage = mkdtempSync(join(tmpdir(), "dg-chat-skills-"));
 	try {
 		const zips = join(stage, "zips");
 		mkdirSync(zips);
 		for (const name of names) {
 			const copy = join(stage, "tree", name);
-			for (const file of filesUnder(join(WEB_SKILLS, name))) {
+			for (const file of filesUnder(join(CHAT_SKILLS, name))) {
 				mkdirSync(join(copy, file, ".."), { recursive: true });
-				copyFileSync(join(WEB_SKILLS, name, file), join(copy, file));
+				copyFileSync(join(CHAT_SKILLS, name, file), join(copy, file));
 			}
 			zip(join(stage, "tree"), join(zips, `${name}.zip`), [name]);
 		}
 		writeFileSync(join(zips, "UPLOAD.md"), uploadGuide(version, names));
 		mkdirSync(outDir, { recursive: true });
-		const out = join(outDir, `dg-web-skills-${version}.zip`);
+		const out = join(outDir, `dg-chat-skills-${version}.zip`);
 		rmSync(out, { force: true });
 		zip(zips, out, [...names.map((name) => `${name}.zip`), "UPLOAD.md"]);
 		return out;
@@ -249,7 +249,7 @@ function main(argv: string[]): number {
 	if (findings.length > 0) return 1;
 	const out = arg("--out");
 	if (!out) {
-		console.log(`${skillNames().length} web skills are valid.`);
+		console.log(`${skillNames().length} chat skills are valid.`);
 		return 0;
 	}
 	const version = arg("--version");

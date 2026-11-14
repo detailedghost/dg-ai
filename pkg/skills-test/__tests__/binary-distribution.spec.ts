@@ -132,17 +132,17 @@ describe("the bootstrap scripts install the runtime pin and the bundle, then del
 
 	test("bootstrap.ps1 takes a switch for every mode, so no environment variable is needed", () => {
 		const params = ps1.slice(ps1.indexOf("param("), ps1.indexOf(")\n$ErrorActionPreference"));
-		for (const name of ["CliOnly", "AgentOnly", "SkillsOnly", "NoCli", "WebOnly", "Codex"])
+		for (const name of ["CliOnly", "AgentOnly", "SkillsOnly", "NoCli", "ChatOnly", "Codex"])
 			expect(params).toContain(`[switch]$${name}`);
 		expect(params).toContain("[string]$Dest");
 		expect(ps1).toContain(
-			"& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -WebOnly",
+			"& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -ChatOnly",
 		);
-		expect(ps1).not.toContain("DG_WEB_ONLY");
+		expect(ps1).not.toContain("DG_CHAT_ONLY");
 	});
 
-	test("bootstrap.ps1 -WebOnly verifies and unpacks only the web skills, before any runtime work", () => {
-		const start = ps1.indexOf("if ($wantWebOnly) {\n\t$webDest");
+	test("bootstrap.ps1 -ChatOnly verifies and unpacks only the chat skills, before any runtime work", () => {
+		const start = ps1.indexOf("if ($wantChatOnly) {\n\t$chatDest");
 		const block = ps1.slice(start, ps1.indexOf("$arch = if"));
 		expect(start).toBeGreaterThan(-1);
 		expect(block).toContain('Save-DgAsset $rel "SHA256SUMS" $sumsPath');

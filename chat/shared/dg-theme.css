@@ -1,6 +1,6 @@
 /*
- * DeeGee web theme for chat artifacts.
- * Every value is copied from its first-class source; web-skills.spec.ts fails when one drifts.
+ * DeeGee chat theme for chat artifacts.
+ * Every value is copied from its first-class source; chat-skills.spec.ts fails when one drifts.
  *   --dg-*       pkg/extension/entrypoints/options/style.css (brand, light and dark)
  *   --pd-*       plugins/dg/skills/proto/assets/prototype-decision-bar.html (decision bar)
  *   --dg-tour-*  pkg/skills-cli/src/demo/recorder/overlays.ts (demo recorder, always dark)

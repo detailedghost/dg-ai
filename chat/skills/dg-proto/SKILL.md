@@ -3,7 +3,7 @@ name: dg-proto
 description: Build a throwaway prototype as an artifact, with radically different UI variants, a clickable walkthrough of a plan, or an interactive state model. Pick and refine through chat replies.
 ---
 
-# Prototype (web)
+# Prototype (chat)
 
 The chat version of DeeGee's `proto` skill. A prototype is **throwaway code that answers
 a question**. Here every prototype is one HTML artifact in this chat, and every pick is a

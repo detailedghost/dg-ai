@@ -1,10 +1,10 @@
-# Web install
+# Chat install
 
-DeeGee's web skills bring part of DeeGee to Claude chat, and to other chat bots that
+DeeGee's chat skills bring part of DeeGee to Claude chat, and to other chat bots that
 take uploaded skills. They work entirely inside the chat: they make artifacts and
 replies, run no commands, and reach nothing on your computer.
 
-Claude Code and Codex stay the first-class way to run DeeGee. The web skills are
+Claude Code and Codex stay the first-class way to run DeeGee. The chat skills are
 separate, chat-safe versions of a few first-class skills. They don't change the
 originals or how those work.
 
@@ -16,36 +16,36 @@ originals or how those work.
 | `dg-proto` | `/dg:proto` | Builds UI variants, a clickable walkthrough of a plan, or an interactive state model as one artifact. You pick and refine with chat replies such as `approve C: tighten the spacing`, and the artifact keeps the round history. |
 
 The other skills need your machine, git, the dg CLI, a browser or a mailbox, so they
-have no web version.
+have no chat version.
 
 ## Get the ZIPs
 
 macOS / Linux:
 
 ```bash
-curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --web-only
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --chat-only
 ```
 
 Windows, in PowerShell:
 
 ```powershell
-& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -WebOnly
+& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -ChatOnly
 ```
 
-This downloads `dg-web-skills-<version>.zip` from the latest release, checks it
-against the release's `SHA256SUMS`, and unpacks it into `./dg-web-skills`: one ZIP
+This downloads `dg-chat-skills-<version>.zip` from the latest release, checks it
+against the release's `SHA256SUMS`, and unpacks it into `./dg-chat-skills`: one ZIP
 per skill and an `UPLOAD.md`. Nothing else is installed and nothing it downloads is
 run.
 
 | `bootstrap.sh` | `bootstrap.ps1` | Effect |
 | --- | --- | --- |
-| `--dest <dir>` | `-Dest <dir>` | Unpack somewhere other than `./dg-web-skills` |
+| `--dest <dir>` | `-Dest <dir>` | Unpack somewhere other than `./dg-chat-skills` |
 | `--version <x.y.z>` | `-Version <x.y.z>` | Use that release instead of the newest |
 
-`--web-only` can't be combined with the other install modes, and it has no
+`--chat-only` can't be combined with the other install modes, and it has no
 environment-variable form.
 
-You can also download `dg-web-skills-<version>.zip` from the
+You can also download `dg-chat-skills-<version>.zip` from the
 [releases page](https://github.com/detailedghost/dg-ai/releases) and unzip it yourself.
 
 ## Upload them to Claude
@@ -58,7 +58,7 @@ Custom skills need a paid plan. On a Team or Enterprise plan, an owner can add t
 skills for the whole organization instead. The menu names may differ slightly as
 Claude's settings change.
 
-An agent can run the web-only install and hand you the ZIPs, but uploading them is
+An agent can run the chat-only install and hand you the ZIPs, but uploading them is
 your step: Claude has no way to add a skill to your account from inside a chat.
 
 ## Use them
@@ -73,9 +73,9 @@ Ask in plain words. For example:
 ## Build them from a checkout
 
 ```bash
-mise run package:web -- X.Y.Z
+mise run package:chat -- X.Y.Z
 ```
 
-This validates every web skill and writes `dist/web/dg-web-skills-X.Y.Z.zip`. The
-rules, the shared theme and how the web skills track their first-class sources are in
-[`web/README.md`](../web/README.md).
+This validates every chat skill and writes `dist/chat/dg-chat-skills-X.Y.Z.zip`. The
+rules, the shared theme and how the chat skills track their first-class sources are in
+[`chat/README.md`](../chat/README.md).

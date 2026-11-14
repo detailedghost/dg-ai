@@ -8,8 +8,8 @@
 #       no `dg-skills install`, fetches no extension and executes no skill content. Add --no-cli to keep it
 #       an offline copy of the skill files (nothing is downloaded from a release), and --dest <dir> to
 #       choose where they go.
-#   ... | sh -s -- --web-only    download only the web skills for Claude chat: the checksum-verified
-#       dg-web-skills-<x.y.z>.zip unpacked into ./dg-web-skills (or --dest <dir>), one upload-ready ZIP
+#   ... | sh -s -- --chat-only    download only the chat skills for Claude chat: the checksum-verified
+#       dg-chat-skills-<x.y.z>.zip unpacked into ./dg-chat-skills (or --dest <dir>), one upload-ready ZIP
 #       per skill. No runtime, no bundle, no launchers, no extension, and nothing it unpacks is run.
 #   ... | sh -s -- --codex       also copy the skills into $CODEX_HOME/skills.
 #   ... | sh -s -- --version <x.y.z> (also --version=<x.y.z>): install that release.
@@ -28,7 +28,7 @@ SKILLS_ONLY="${DG_SKILLS_ONLY:-0}"
 AGENT_ONLY="${DG_AGENT_ONLY:-0}"
 NO_CLI="${DG_SKILLS_NO_CLI:-0}"
 INSTALL_CODEX="${DG_INSTALL_CODEX:-0}"
-WEB_ONLY=0
+CHAT_ONLY=0
 DEST_ARG=""
 VERSION_ARG=""
 while [ "$#" -gt 0 ]; do
@@ -36,7 +36,7 @@ while [ "$#" -gt 0 ]; do
     --cli-only) CLI_ONLY=1 ;;
     --skills-only) SKILLS_ONLY=1 ;;
     --agent-only) AGENT_ONLY=1 ;;
-    --web-only) WEB_ONLY=1 ;;
+    --chat-only) CHAT_ONLY=1 ;;
     --no-cli) NO_CLI=1 ;;
     --codex) INSTALL_CODEX=1 ;;
     --dest=*) DEST_ARG=${1#--dest=} ;;
@@ -66,11 +66,11 @@ if [ "$CLI_ONLY" = "1" ] && [ "$AGENT_ONLY" = "1" ]; then
   echo "dg-skills: pass only one of --cli-only and --agent-only" >&2
   exit 1
 fi
-if [ "$WEB_ONLY" = "1" ]; then
+if [ "$CHAT_ONLY" = "1" ]; then
   for other in "CLI_ONLY:--cli-only" "SKILLS_ONLY:--skills-only" "AGENT_ONLY:--agent-only" "INSTALL_CODEX:--codex" "NO_CLI:--no-cli"; do
     eval "set_to=\${${other%%:*}}"
     if [ "$set_to" = "1" ]; then
-      echo "dg-skills: --web-only installs nothing but the web skills; drop ${other#*:}" >&2
+      echo "dg-skills: --chat-only installs nothing but the chat skills; drop ${other#*:}" >&2
       exit 1
     fi
   done
@@ -373,9 +373,9 @@ pick_sha_cmd() {
   fi
 }
 
-# The web skills are data for a chat upload: ZIPs and a Markdown guide. They are verified,
+# The chat skills are data for a chat upload: ZIPs and a Markdown guide. They are verified,
 # unpacked into one folder, and never opened or run.
-install_web_skills() {
+install_chat_skills() {
   dest=$1
   for tool in "$CURL" unzip; do
     command -v "$tool" >/dev/null 2>&1 || die "${tool} is required"
@@ -384,7 +384,7 @@ install_web_skills() {
   resolve_release
   WORK=$(mktemp -d)
   track_tmp "${WORK}"
-  asset="dg-web-skills-${VERSION}.zip"
+  asset="dg-chat-skills-${VERSION}.zip"
   download_asset SHA256SUMS "${WORK}/SHA256SUMS"
   expected=$(sums_entry "${asset}")
   [ -n "${expected}" ] || die "SHA256SUMS in ${tag} has no entry for ${asset}"
@@ -407,13 +407,13 @@ install_web_skills() {
   mkdir -p "${dest}"
   unzip -oq "${WORK}/${asset}" -d "${dest}"
   for entry in ${entries}; do chmod 644 "${dest}/${entry}"; done
-  echo "Web skills ${VERSION} are in ${dest}:"
+  echo "Chat skills ${VERSION} are in ${dest}:"
   for entry in ${entries}; do
     case "${entry}" in dg-*.zip) echo "  ${entry}" ;; esac
   done
   echo "Upload each ZIP as a skill in Claude: Customize, then Skills, then Upload a skill."
   echo "Turn on code execution in Settings, under Capabilities. A Team or Enterprise owner can add them for everyone."
-  echo "Web-only install: nothing else was installed and nothing was run."
+  echo "Chat-only install: nothing else was installed and nothing was run."
 }
 
 if [ "$SKILLS_ONLY" = "1" ]; then
@@ -425,8 +425,8 @@ if [ "$SKILLS_ONLY" = "1" ]; then
   fi
 fi
 
-if [ "$WEB_ONLY" = "1" ]; then
-  install_web_skills "${DEST_ARG:-dg-web-skills}"
+if [ "$CHAT_ONLY" = "1" ]; then
+  install_chat_skills "${DEST_ARG:-dg-chat-skills}"
   exit 0
 fi
 

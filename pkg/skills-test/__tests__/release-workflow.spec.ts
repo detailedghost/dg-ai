@@ -24,7 +24,7 @@ const STEP = {
 	commit: "Commit the release as dg-release",
 	push: "Push the release commit and tag together",
 	notes: "Extract the release notes from the changelog",
-	web: "Package the web skills",
+	chat: "Package the chat skills",
 	assets: "Add the bootstrap scripts and checksums",
 	publish: "Publish the release",
 	latest: "Move the latest tag to the release commit",
@@ -210,7 +210,7 @@ describe("the release is cut in one fixed order and recovers only forward", () =
 			STEP.commit,
 			STEP.push,
 			STEP.notes,
-			STEP.web,
+			STEP.chat,
 			STEP.assets,
 			STEP.publish,
 			STEP.latest,
@@ -816,7 +816,7 @@ const DOCUMENTED_ASSETS = [
 	"bootstrap.sh",
 	"dg-demo-narration-<v>.zip",
 	"dg-lib-<v>.tar.gz",
-	"dg-web-skills-<v>.zip",
+	"dg-chat-skills-<v>.zip",
 	"runtime.json",
 ];
 
@@ -874,16 +874,16 @@ describe("the release publishes exactly the documented asset names", () => {
 		const extras = ["bootstrap.sh", "bootstrap.ps1", "SHA256SUMS"].filter((name) =>
 			(step(STEP.assets).run ?? "").includes(name),
 		);
-		const web = /--out dist --version "\$VERSION"/.test(step(STEP.web).run ?? "") ? ["dg-web-skills-<v>.zip"] : [];
-		const published = [...fromBuilds, ...extras, ...web]
+		const chat = /--out dist --version "\$VERSION"/.test(step(STEP.chat).run ?? "") ? ["dg-chat-skills-<v>.zip"] : [];
+		const published = [...fromBuilds, ...extras, ...chat]
 			.sort();
 
 		expect(published).toEqual([...DOCUMENTED_ASSETS].sort());
 	});
 
-	test("the web skills are packaged into dist before the checksums are written, so SHA256SUMS covers them", () => {
-		expect(step(STEP.web).run).toBe('bun scripts/package-web-skills.ts --out dist --version "$VERSION"');
-		expect(step(STEP.web).if).toBeUndefined();
+	test("the chat skills are packaged into dist before the checksums are written, so SHA256SUMS covers them", () => {
+		expect(step(STEP.chat).run).toBe('bun scripts/package-chat-skills.ts --out dist --version "$VERSION"');
+		expect(step(STEP.chat).if).toBeUndefined();
 	});
 
 	test("no other job uploads an artifact that reaches the release", () => {

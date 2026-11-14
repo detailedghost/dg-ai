@@ -1,6 +1,6 @@
 # Plan format
 
-The web tour reads the same Markdown plan as DeeGee's `/dg:demo`. Keep to this
+The chat tour reads the same Markdown plan as DeeGee's `/dg:demo`. Keep to this
 grammar so a plan written here can be recorded as a real video later.
 
 ## Frontmatter
@@ -9,7 +9,7 @@ grammar so a plan written here can be recorded as a real video later.
 ---
 title: Saved filters                            # shown in captions and the intro card
 startUrl: http://localhost:4200/dashboard       # the first screen; http(s) only
-stage: mock                                     # web only: mock or screenshots
+stage: mock                                     # chat only: mock or screenshots
 intro: "Demo | Saved filters | Keep your views" # Eyebrow | Title | Detail
 outro: "Done | That is it | Thanks for watching"
 ---
@@ -17,7 +17,7 @@ outro: "Done | That is it | Thanks for watching"
 
 - `intro` defaults to the eyebrow `Demo` and the plan `title`.
 - No outro plays unless you set one.
-- `/dg:demo` ignores `stage`. The web player ignores `mode` and `includeSetup`.
+- `/dg:demo` ignores `stage`. The chat player ignores `mode` and `includeSetup`.
 
 ## Steps
 
@@ -57,7 +57,7 @@ what the user would do.
 - Lead with the verb: "Click…", "Notice…", "Now the results…".
 - The title is the label and the body explains it. Don't repeat one in the other.
 
-## Not in the web version
+## Not in the chat version
 
 `## Setup`, `includeSetup`, credential variables, and narration. A plan that uses
 them still plays here: the player skips `## Setup` and shows a `@type` value as typed

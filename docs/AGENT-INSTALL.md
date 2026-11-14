@@ -164,27 +164,27 @@ skills run it. It fetches no `dg-daemon`, `dg-agent` or extension, leaves the
 `cli-only` marker untouched, and never executes skill content. Add
 `--no-cli` (`-NoCli`) for an offline copy that skips the CLI.
 
-## Web-only install
+## Chat-only install
 
 Use this when the user wants DeeGee in Claude chat, or another chat bot that takes
 uploaded skills, rather than in Claude Code or Codex. It downloads only
-`dg-web-skills-<x.y.z>.zip`, checks it against the release's `SHA256SUMS`, and
-unpacks one upload-ready ZIP per skill into `./dg-web-skills` (or `--dest <dir>`).
+`dg-chat-skills-<x.y.z>.zip`, checks it against the release's `SHA256SUMS`, and
+unpacks one upload-ready ZIP per skill into `./dg-chat-skills` (or `--dest <dir>`).
 It installs no runtime, bundle, launchers or extension, and runs nothing.
 
 ```bash
-curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --web-only
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --chat-only
 ```
 
 On Windows PowerShell:
 
 ```powershell
-& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -WebOnly
+& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -ChatOnly
 ```
 
 An agent can run this and hand over the ZIPs. Uploading them is a person's step:
 Claude has no way to add a skill to an account from inside a chat. See
-[web install](web-install.md).
+[chat install](chat-install.md).
 
 ## Pin a version
 

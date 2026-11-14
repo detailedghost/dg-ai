@@ -405,8 +405,8 @@ jobs:
             END { exit !found }
           ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
 
-      - name: Package the web skills
-        run: bun scripts/package-web-skills.ts --out dist --version "$VERSION"
+      - name: Package the chat skills
+        run: bun scripts/package-chat-skills.ts --out dist --version "$VERSION"
 
       - name: Add the bootstrap scripts and checksums
         run: |

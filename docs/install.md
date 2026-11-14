@@ -807,21 +807,21 @@ data folder). Point it at `$CODEX_HOME/skills` when the files should land
 where Codex reads skills. Add `--no-cli` (`-NoCli`) for an offline copy that
 downloads nothing. The skills root `README.md` is not installed.
 
-## Web-only install
+## Chat-only install
 
-Download only the chat-safe web skills, ready to upload to Claude chat. This
+Download only the chat-safe chat skills, ready to upload to Claude chat. This
 installs no runtime, no bundle, no launchers and no extension, and runs nothing
-it downloads. See [web install](web-install.md) for what the skills do and how to
+it downloads. See [chat install](chat-install.md) for what the skills do and how to
 upload them.
 
 <!-- markdownlint-disable MD013 -->
 
 ```bash
-curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --web-only
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --chat-only
 ```
 
 ```powershell
-& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -WebOnly
+& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -ChatOnly
 ```
 
 <!-- markdownlint-enable MD013 -->
@@ -837,14 +837,14 @@ the script runs as a script block, as in the commands above.
 | `--agent-only` | `-AgentOnly` | Install for a non-Claude agent that only needs phone |
 | `--skills-only` | `-SkillsOnly` | Copy the skill files, then the runtime and bundle |
 | `--no-cli` | `-NoCli` | With `--skills-only`: copy the files only, download nothing |
-| `--web-only` | `-WebOnly` | Download only the web skills for Claude chat |
-| `--dest <dir>` | `-Dest <dir>` | Where `--skills-only` or `--web-only` writes |
+| `--chat-only` | `-ChatOnly` | Download only the chat skills for Claude chat |
+| `--dest <dir>` | `-Dest <dir>` | Where `--skills-only` or `--chat-only` writes |
 | `--codex` | `-Codex` | Also copy the skills into `$CODEX_HOME/skills` |
 | `--version <x.y.z>` | `-Version <x.y.z>` | Install that release instead of the newest |
 
 Older scripts may still set `DG_CLI_ONLY`, `DG_AGENT_ONLY`, `DG_SKILLS_ONLY`,
 `DG_SKILLS_NO_CLI`, `DG_SKILLS_DEST`, `DG_INSTALL_CODEX` or `DG_VERSION`. They keep
-working, and a flag always wins. `--web-only` has no environment variable.
+working, and a flag always wins. `--chat-only` has no environment variable.
 
 ## Codex plugin
 
