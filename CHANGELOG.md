@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.8.0 (2026-11-14)
+
+### Features
+
+- feat(pw): save sign-in values without showing them, and read storage ([#198](https://github.com/detailedghost/dg-ai/pull/198))
+
 ## v5.7.0 (2026-11-14)
 
 ### Features
