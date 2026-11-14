@@ -38,7 +38,7 @@ A detached process cannot take new stdin mid-run, so "update" means different th
 ## Workflow jobs
 
 - At launch, record the `runId` and the persisted script path: `dg-skills stat add "<task> wf_<id>" --status running`.
-- Update: edit the script, then relaunch with `Workflow({scriptPath, resumeFromRunId})`. Unchanged prefix stages come from cache.
+- Update: if the run is still going, stop it through `/workflows` and wait for its agents to exit. Resume refuses a run that is still active. Then edit the script and relaunch with `Workflow({scriptPath, resumeFromRunId})`. Unchanged prefix stages come from cache.
 - Before you diagnose an empty result, read `<session>/subagents/workflows/<runId>/journal.jsonl`.
 - Cancel through `/workflows`.
 
