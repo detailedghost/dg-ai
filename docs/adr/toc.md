@@ -123,7 +123,7 @@ flowchart LR
   tools of one area share one grant per session and site under the key `area:<area>`; mail list and search are the `mail` area, and message bodies are the `mail-body` area. Amends 0046.
 
 - [0048 — Outlook mail Web MCP tools over OWA service calls](0048-outlook-mail-webmcp-tools.md) — Proposed:
-  the Outlook built-in ships ten tools that call `service.svc` from the signed-in page with the headers of the tab's own account endpoint; list and search mask subject and preview; write tools report each id apart; Outlook tabs become protected mailboxes. Amends 0035.
+  the Outlook built-in ships ten tools that call `service.svc` from the signed-in page with the headers of the tab's own account endpoint; list and search mask subject and preview; write tools report each id apart; the tools run on the person's own tab, which pw --ext cannot control. Amends 0035.
 
 ## Adding an ADR
 

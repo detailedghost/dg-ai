@@ -14,8 +14,9 @@ Date: 2026-11-14
 - [ADR 0047](0047-webmcp-area-approval-class.md) puts list and search in the
   `mail` area and reading a body in the `mail-body` area.
 - Dante's answers on PR #208 (2026-11-14): list and search mask subject and
-  preview; Outlook tabs stay mailbox tabs; tool errors reach the agent; the
-  built-in stays off by default.
+  preview; Outlook tabs stay mailbox tabs for pw --ext; Web MCP must not need a
+  controlled tab; tool errors reach the agent; the built-in stays off by
+  default.
 
 ## Decision
 
@@ -27,7 +28,7 @@ The runtime-registered content script
   `service.svc` requests in the page closure, one copy per endpoint path
   (`/owa/<n>/service.svc`). An anchor change drops only that endpoint's copy.
 - **Service.** Each call posts to the endpoint of the tab's own account: the
-  `/mail/<n>/` index of the page, or `/owa/0/` on `outlook.live.com` and
+  `<n>` of the page route (`/mail/<n>/`, `/calendar/<n>/` and the others), or `/owa/0/` on `outlook.live.com` and
   `/owa/service.svc` elsewhere when the page has no index. It sends only the
   headers held for that endpoint, so one account's headers never reach another
   account's endpoint. At most 4 calls are in flight per tab, and a queued call
@@ -35,13 +36,17 @@ The runtime-registered content script
   message succeeded.
 - **Tools.** List and search return id, sender address, date, read and flag
   state, and never ask Outlook for the subject or the preview. Read returns the
-  subject and the plain-text body. A write tool on several ids returns the ids
+  subject and the plain-text body, shortened so the serialized answer stays
+  under the output cap as valid JSON. A write tool on several ids returns the ids
   that worked and a code-only error per id that failed.
 - **Mailbox tabs.** `mailbox()` in `pkg/extension/lib/background/tab-guards.ts`
   covers the Outlook hosts. On an Outlook tab only enabled built-in
   `dg_outlook_` calls pass, and their errors reach the agent through
-  `maskRaw`. Agents open Outlook with `pw --ext new`; the popup refuses to add
-  an open Outlook tab.
+  `maskRaw`. The tools run on the person's own signed-in Outlook tab through
+  the Web MCP bridge, with the Web MCP approvals. pw --ext cannot control that
+  tab, and the popup does not add it to an agent. The tool code does not
+  depend on which tab group the tab is in; a separate change lets the bridge
+  reach the person's normal tabs.
 
 ## Consequences
 
@@ -49,8 +54,10 @@ The runtime-registered content script
   bodies need their own prompt.
 - **Good:** a batch move with one stale id still moves the other items and
   tells the agent which id failed.
-- **Bad:** Outlook tabs show no title or address in pw --ext, and the popup
-  cannot hand an open Outlook tab to an agent.
+- **Bad:** Outlook tabs show no title or address in pw --ext, and pw --ext
+  cannot snapshot or click there.
+- **Bad:** until the bridge reaches the person's normal tabs, the tools run
+  only where the bridge already reaches.
 - **Bad:** search can still match on subject text, so an agent can learn
   whether a word is in a subject from the match count.
 - **Neutral:** every OWA request and response shape, and the `/mail/<n>/` to

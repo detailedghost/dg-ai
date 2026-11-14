@@ -67,14 +67,16 @@ runs on `outlook.live.com`, `outlook.office.com`, `outlook.office365.com` and
 `outlook.cloud.microsoft`, and adds these tools when the page has no WebMCP
 tools of its own:
 
-Agents open Outlook with `pw --ext new <url>`. An Outlook tab that is already
-open cannot be added to an agent from the toolbar popup.
+The tools run on your own signed-in Outlook tab, through the Web MCP bridge,
+with the Web MCP approvals above. pw --ext cannot control that tab: it is a
+mailbox tab, so pw --ext refuses `snapshot`, `click` and the other page verbs
+there, and the toolbar popup does not add it to an agent.
 
 | Tool | Class | What it does |
 |---|---|---|
 | `dg_outlook_list` | `area` (mail) | Newest messages of a folder: id, sender address, date, read, flagged. Subject and preview are masked |
 | `dg_outlook_search` | `area` (mail) | The same fields for an Outlook search query over the six distinguished mail folders |
-| `dg_outlook_read` | `area` (mail-body) | One message with its subject and its body as plain text, body capped at 50,000 characters; the read state does not change |
+| `dg_outlook_read` | `area` (mail-body) | One message with its subject and its body as plain text, body capped at 50,000 characters and shortened with `truncated: true` when the answer would not fit the output limit; the read state does not change |
 | `dg_outlook_mark_read` | `session` | Marks messages read or unread |
 | `dg_outlook_flag` | `session` | Flags or unflags messages |
 | `dg_outlook_move` | `session` | Moves messages to a folder by its distinguished id or exact name |
@@ -96,8 +98,8 @@ open cannot be added to an agent from the toolbar popup.
   fails as a whole only when no id worked.
 - Each signed-in account of a browser profile has its own service endpoint
   (`/owa/<n>/service.svc`). The tools keep the sign-in headers of each
-  endpoint apart and call only the endpoint of the tab's own account
-  (`/mail/<n>/`).
+  endpoint apart and call only the endpoint of the tab's own account (the
+  `<n>` in `/mail/<n>/`, `/calendar/<n>/` and the other routes).
 - An id list holds at most 50 ids, and `limit` is at most 50. At most 4
   calls run at once in a tab.
 - A tool that runs before the page has sent its first service call waits up

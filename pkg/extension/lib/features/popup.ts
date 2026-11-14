@@ -26,7 +26,8 @@ const DAEMON_CHANGED_HELP =
 	"A different daemon is running. Trust it to keep using this browser with it.";
 const NO_TOUR = "Open a page with a DeeGee video tour first.";
 const NO_ACTIVE_TAB = "No active tab found. Open a page and try again.";
-const MAILBOX_TAB = "An open mailbox tab cannot be added. Agents open Outlook with pw --ext new.";
+const MAILBOX_TAB =
+	"pw --ext cannot control a mailbox tab. Outlook Web MCP tools run on your own signed-in tab, with their own approvals.";
 const ADD_TAB = "Add this tab";
 const SELECT_TAB = "Select this tab";
 const NO_SHORTCUT =
