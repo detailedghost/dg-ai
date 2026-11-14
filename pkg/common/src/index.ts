@@ -28,6 +28,7 @@ export * from "./regex";
 export * from "./relay-features";
 export * from "./relay-format";
 export * from "./serial-queue";
+export * from "./concurrency-limit";
 export * from "./session-connect";
 export * from "./skill-files";
 export * from "./slug";
