@@ -1631,6 +1631,9 @@
 								"name": "count"
 							},
 							{
+								"name": "network"
+							},
+							{
 								"name": "open"
 							},
 							{
@@ -1991,6 +1994,98 @@
 								"--eta"
 							],
 							"description": "one of <5 min, ~15 min, ~30 min, ~1 hr, >1 hr, unknown",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "reap",
+					"description": "Stop leftover agent processes: orphaned watchers and test runs of this repo, and stuck pgrep wait loops of this session",
+					"options": [
+						{
+							"flags": [
+								"--dry-run"
+							],
+							"description": "print what would be stopped and stop nothing"
+						},
+						{
+							"flags": [
+								"--json"
+							],
+							"description": "print the report as JSON"
+						},
+						{
+							"flags": [
+								"--cwd"
+							],
+							"description": "repo whose worktrees scope the orphan check (default: the current directory)",
+							"value": "path"
+						},
+						{
+							"flags": [
+								"--min-age"
+							],
+							"description": "skip orphans younger than this (default 10)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--loop-min-age"
+							],
+							"description": "skip wait loops younger than this (default 60)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--session-pid"
+							],
+							"description": "PID of this agent session (default: the nearest claude or codex ancestor)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--other-sessions"
+							],
+							"description": "also stop stuck wait loops of other live sessions"
+						},
+						{
+							"flags": [
+								"--pid"
+							],
+							"description": "stop only this process if it still qualifies, with its loop members when it is a stuck loop; also stops a dev daemon from a live worktree; repeat for more",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "loops",
+					"description": "List running dg-skills bg jobs whose log stopped growing or that ran too long",
+					"options": [
+						{
+							"flags": [
+								"--json"
+							],
+							"description": "print the stalled jobs as JSON"
+						},
+						{
+							"flags": [
+								"--cwd"
+							],
+							"description": "only jobs started in this directory or below (default: the current directory)",
+							"value": "path"
+						},
+						{
+							"flags": [
+								"--stall"
+							],
+							"description": "flag a job whose log has not grown for this long (default 20)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--max-age"
+							],
+							"description": "flag a job running longer than this (default 180)",
 							"value": "any"
 						}
 					]
