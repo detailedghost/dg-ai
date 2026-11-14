@@ -20,6 +20,9 @@ export const MSG = {
 	agentTabAdopt: "dg-chat:agent-tab-adopt",
 	trustDaemon: "dg-chat:trust-daemon",
 	pwExtStop: "dg-chat:pw-ext-stop",
+	webmcpGrantsRequest: "dg-chat:webmcp-grants-request",
+	webmcpRevoke: "dg-chat:webmcp-revoke",
+	webmcpRevokeAll: "dg-chat:webmcp-revoke-all",
 } as const;
 
 export type ConfigRelayReply = {
@@ -60,6 +63,13 @@ export type AgentTabView = {
 export type AgentTabsReply = {
 	groups: Array<{ sessionId: string; color: string; tabs: AgentTabView[] }>;
 };
+
+/** A Web MCP grant: session grants end with their MCP session, remembered ones at expiresAt. */
+export type WebMcpGrantView =
+	| { kind: "session"; sessionId: string; site: string; tool: string }
+	| { kind: "remembered"; site: string; tool: string; expiresAt: number };
+
+export type WebMcpGrantsReply = { grants: WebMcpGrantView[] };
 
 export type AgentTabAdoptReply = { ok: true } | { ok: false; error: string };
 

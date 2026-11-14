@@ -23,7 +23,31 @@ export const WEBMCP_MESSAGES = {
 
 export type WebMcpReply = { ok: true; value?: unknown } | { ok: false; error: string };
 
+/** A listed script; problem says why an enabled script is not running. */
+export type WebMcpScriptRow = WebMcpScriptRecord & { problem?: string };
+
+export const USER_SCRIPTS_OFF =
+	"Not running: Allow User Scripts is off for dg-ai-extension (chrome://extensions, or brave://extensions in Brave). Turn it on, then reopen this page.";
+const NOT_KEPT = "The browser did not keep the registration.";
+
 const RECORDS_KEY = "webmcpScripts";
+export const STOPPED_SCRIPTS_KEY = "webmcpStoppedScripts";
+const STOPPED_MAX = 100;
+const STOP_PENDING = Number.MAX_SAFE_INTEGER;
+
+/** Sites of a third-party script that stopped; documents loaded before stoppedAt may still hold its tools. */
+export type WebMcpStoppedScript = { matches: string[]; stoppedAt: number };
+/** Folds the oldest entries into one that covers all their sites until the latest of them stopped. */
+function foldOldest(entries: WebMcpStoppedScript[]): WebMcpStoppedScript[] {
+	const folded = entries.slice(0, entries.length - STOPPED_MAX + 1);
+	return [
+		{
+			matches: [...new Set(folded.flatMap((entry) => entry.matches))],
+			stoppedAt: Math.max(...folded.map((entry) => entry.stoppedAt)),
+		},
+		...entries.slice(entries.length - STOPPED_MAX + 1),
+	];
+}
 const codeKey = (id: string) => `webmcpScriptCode:${id}`;
 const approvalKey = (id: string) => `webmcpApproval:${id}`;
 const macKey = (id: string) => `webmcpMac:${id}`;
@@ -48,7 +72,7 @@ export type WebMcpScripting = {
 export type WebMcpUserScripts = {
 	register(scripts: Record<string, unknown>[]): Promise<void>;
 	unregister(filter: { ids: string[] }): Promise<void>;
-	getScripts(): Promise<{ id: string }[]>;
+	getScripts(): Promise<{ id: string; matches?: string[] }[]>;
 };
 
 export type WebMcpScriptDraft = {
@@ -172,12 +196,23 @@ export function createWebMcpScripts({
 		return record;
 	}
 
-	async function quietly(task: () => Promise<void>, what: string): Promise<void> {
+	const failures = new Map<string, string>();
+
+	async function recorded(recordId: string, scriptId: string, task: () => Promise<void>): Promise<void> {
 		try {
 			await task();
 		} catch (error) {
-			console.warn(`[dg-ai-extension] web mcp ${what}`, describeError(error));
+			failures.set(recordId, describeError(error));
+			console.warn(`[dg-ai-extension] web mcp registration of ${scriptId} failed`, describeError(error));
 		}
+	}
+
+	function keptOrFailed(wanted: Map<string, WebMcpScriptRecord>, live: string[] | null): void {
+		for (const [id, record] of wanted)
+			if (!failures.has(record.id) && !live?.includes(id)) {
+				failures.set(record.id, NOT_KEPT);
+				console.warn(`[dg-ai-extension] web mcp registration of ${id} failed`, NOT_KEPT);
+			}
 	}
 
 	const unregisterBuiltIn = (id: string) =>
@@ -194,6 +229,34 @@ export function createWebMcpScripts({
 			?.unregister({ ids: [id] })
 			.catch(() => undefined);
 	};
+
+	async function heldStopped(): Promise<WebMcpStoppedScript[]> {
+		const stored = (await storage.local.get(STOPPED_SCRIPTS_KEY))[STOPPED_SCRIPTS_KEY];
+		return Array.isArray(stored) ? (stored as WebMcpStoppedScript[]) : [];
+	}
+
+	async function noteStopped(matches: string[], stoppedAt: number): Promise<void> {
+		const all = [...(await heldStopped()), { matches: [...matches], stoppedAt }];
+		await storage.local.set({ [STOPPED_SCRIPTS_KEY]: all.length > STOPPED_MAX ? foldOldest(all) : all });
+	}
+
+	async function stopUser(id: string, matches: string[]): Promise<void> {
+		await unregisterUser(id);
+		await noteStopped(matches, now());
+	}
+
+	/** Covers the sites with a pending stop before deactivate drops the active record, then dates it once unregistered. */
+	async function stopActive(id: string, matches: string[], deactivate: () => Promise<void>): Promise<void> {
+		await noteStopped(matches, STOP_PENDING);
+		await deactivate();
+		await unregisterUser(id);
+		const held = await heldStopped();
+		const at = held.findLastIndex(
+			(entry) => entry.stoppedAt === STOP_PENDING && JSON.stringify(entry.matches) === JSON.stringify(matches),
+		);
+		if (at === -1) return;
+		await storage.local.set({ [STOPPED_SCRIPTS_KEY]: held.with(at, { ...held[at], stoppedAt: now() }) });
+	}
 
 	const macPayload = async (record: WebMcpScriptRecord, code: string, approvedAt: number) =>
 		new TextEncoder().encode(
@@ -261,8 +324,7 @@ export function createWebMcpScripts({
 		for (const id of stale) if (!wanted.has(id)) await unregisterBuiltIn(id);
 		for (const [id, record] of wanted) {
 			await unregisterBuiltIn(id);
-			await quietly(
-				() =>
+			await recorded(record.id, id, () =>
 					registrar.registerContentScripts([
 						{
 							id,
@@ -272,9 +334,9 @@ export function createWebMcpScripts({
 							runAt: "document_start",
 						},
 					]),
-				`registration of ${id} failed`,
 			);
 		}
+		keptOrFailed(wanted, await liveIds(() => registrar.getRegisteredContentScripts()));
 	}
 
 	async function reconcileThirdParty(
@@ -282,8 +344,13 @@ export function createWebMcpScripts({
 		records: WebMcpScriptRecord[],
 		approved: Map<string, string>,
 	): Promise<boolean> {
-		const live = await liveIds(() => registrar.getScripts());
-		if (live === null) return false;
+		let entries: { id: string; matches?: string[] }[];
+		try {
+			entries = await registrar.getScripts();
+		} catch {
+			return false;
+		}
+		const live = entries.map((entry) => entry.id);
 		const own = records.filter((record) => !builtInIds.has(record.id));
 		const wanted = new Map<string, WebMcpScriptRecord>(
 			own
@@ -294,11 +361,15 @@ export function createWebMcpScripts({
 			...live.filter((id) => id.startsWith(USER_PREFIX)),
 			...own.map((record) => `${USER_PREFIX}${record.id}`),
 		]);
-		for (const id of stale) if (!wanted.has(id)) await unregisterUser(id);
+		for (const id of stale) {
+			if (wanted.has(id)) continue;
+			const running = entries.find((entry) => entry.id === id);
+			if (running) await stopUser(id, running.matches ?? []);
+			else await unregisterUser(id);
+		}
 		for (const [id, record] of wanted) {
 			await unregisterUser(id);
-			await quietly(
-				() =>
+			await recorded(record.id, id, () =>
 					registrar.register([
 						{
 							id,
@@ -308,13 +379,14 @@ export function createWebMcpScripts({
 							runAt: "document_idle",
 						},
 					]),
-				`registration of ${id} failed`,
 			);
 		}
+		keptOrFailed(wanted, await liveIds(() => registrar.getScripts()));
 		return true;
 	}
 
 	async function runReconcile(): Promise<void> {
+		failures.clear();
 		const approved = await verifiedApprovals(await readStored());
 		const records = merge(await readStored());
 		if (scripting) await reconcileBuiltIns(scripting, records);
@@ -329,17 +401,56 @@ export function createWebMcpScripts({
 
 	const reconcile = () => locked(runReconcile);
 
+	async function listed(): Promise<WebMcpScriptRecord[]> {
+		const stored = await readStored();
+		const { verified } = await checkApprovals(stored);
+		return merge(
+			stored.map((record) =>
+				!builtInIds.has(record.id) && record.approvedAt !== undefined && !verified.has(record.id)
+					? withoutApproval(record)
+					: record,
+			),
+		);
+	}
+
+	const userId = (record: WebMcpScriptRecord) => `${USER_PREFIX}${record.id}`;
+
+	async function liveUser(): Promise<string[] | null> {
+		const registrar = userScripts ? userRegistrar() : null;
+		return registrar ? liveIds(() => registrar.getScripts()) : null;
+	}
+
+	const notRunning = (record: WebMcpScriptRecord): WebMcpScriptRow => ({
+		...record,
+		problem: `Not running: ${failures.get(record.id) ?? NOT_KEPT}`,
+	});
+
+	function withProblem(record: WebMcpScriptRecord, liveUserIds: string[] | null, liveBuiltIns: string[] | null): WebMcpScriptRow {
+		if (!record.enabled) return record;
+		if (builtInIds.has(record.id))
+			return liveBuiltIns === null || liveBuiltIns.includes(`${BUILT_IN_PREFIX}${record.id}`) ? record : notRunning(record);
+		if (record.approvedAt === undefined) return record;
+		if (liveUserIds === null) return { ...record, problem: USER_SCRIPTS_OFF };
+		return liveUserIds.includes(userId(record)) ? record : notRunning(record);
+	}
+
 	return {
-		async list(): Promise<WebMcpScriptRecord[]> {
-			const stored = await readStored();
-			const { verified } = await checkApprovals(stored);
-			return merge(
-				stored.map((record) =>
-					!builtInIds.has(record.id) && record.approvedAt !== undefined && !verified.has(record.id)
-						? withoutApproval(record)
-						: record,
-				),
-			);
+		/** Lists every script with why an enabled one is not running; first registers an approved script the browser lacks. */
+		async list(): Promise<WebMcpScriptRow[]> {
+			let records = await listed();
+			let liveUserIds = await liveUser();
+			const missing = (ids: string[]) =>
+				records.some(
+					(record) =>
+						!builtInIds.has(record.id) && record.enabled && record.approvedAt !== undefined && !ids.includes(userId(record)),
+				);
+			if (liveUserIds !== null && missing(liveUserIds)) {
+				await reconcile();
+				records = await listed();
+				liveUserIds = await liveUser();
+			}
+			const liveBuiltIns = scripting ? await liveIds(() => scripting.getRegisteredContentScripts()) : null;
+			return records.map((record) => withProblem(record, liveUserIds, liveBuiltIns));
 		},
 
 		code: storedCode,
@@ -389,31 +500,37 @@ export function createWebMcpScripts({
 
 		setEnabled(id: string, enabled: boolean): Promise<void> {
 			return locked(async () => {
-				await mutate((records) => {
-					if (records.some((record) => record.id === id)) {
-						return records.map((record) => (record.id === id ? { ...record, enabled } : record));
-					}
-					const builtIn = BUILT_IN_SCRIPTS.find((script) => script.id === id);
-					if (!builtIn) throw new Error(`Unknown script ${id}`);
-					return [
-						...records,
-						validateWebMcpScriptRecord({
-							id: builtIn.id,
-							name: builtIn.name,
-							matches: [...builtIn.matches],
-							sha256: EMPTY_HASH,
-							source: "built-in",
-							enabled,
-						}),
-					];
-				});
+				const stopping = (await readStored()).find(
+					(record) => record.id === id && !builtInIds.has(id) && record.enabled && !enabled,
+				);
+				const apply = () =>
+					mutate((records) => {
+						if (records.some((record) => record.id === id)) {
+							return records.map((record) => (record.id === id ? { ...record, enabled } : record));
+						}
+						const builtIn = BUILT_IN_SCRIPTS.find((script) => script.id === id);
+						if (!builtIn) throw new Error(`Unknown script ${id}`);
+						return [
+							...records,
+							validateWebMcpScriptRecord({
+								id: builtIn.id,
+								name: builtIn.name,
+								matches: [...builtIn.matches],
+								sha256: EMPTY_HASH,
+								source: "built-in",
+								enabled,
+							}),
+						];
+					});
+				if (stopping) await stopActive(`${USER_PREFIX}${id}`, stopping.matches, apply);
+				else await apply();
 				await runReconcile();
 			});
 		},
 
 		replaceCode(id: string, code: string): Promise<void> {
 			return locked(async () => {
-				await requireThirdParty(id);
+				const before = await requireThirdParty(id);
 				assertCodeSize(code);
 				const sha256 = await digest(code);
 				await storage.local.set({ [codeKey(id)]: code });
@@ -421,7 +538,7 @@ export function createWebMcpScripts({
 				await mutate((records) =>
 					records.map((record) => (record.id === id ? { ...withoutApproval(record), sha256 } : record)),
 				);
-				await unregisterUser(`${USER_PREFIX}${id}`);
+				await stopUser(`${USER_PREFIX}${id}`, before.matches);
 				await runReconcile();
 			});
 		},
@@ -429,10 +546,11 @@ export function createWebMcpScripts({
 		remove(id: string): Promise<void> {
 			return locked(async () => {
 				if (builtInIds.has(id)) throw new Error("Built-in scripts cannot be removed");
-				await requireThirdParty(id);
-				await mutate((records) => records.filter((record) => record.id !== id));
-				await storage.local.remove([codeKey(id), approvalKey(id), macKey(id)]);
-				await unregisterUser(`${USER_PREFIX}${id}`);
+				const before = await requireThirdParty(id);
+				await stopActive(`${USER_PREFIX}${id}`, before.matches, async () => {
+					await mutate((records) => records.filter((record) => record.id !== id));
+					await storage.local.remove([codeKey(id), approvalKey(id), macKey(id)]);
+				});
 				await runReconcile();
 			});
 		},

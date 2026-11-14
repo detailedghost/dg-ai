@@ -260,7 +260,7 @@ export function registerAgentCommands(program: Command): void {
 
 	program
 		.command("mcp")
-		.description("serve the dg tools of the agent's tabs as an MCP server on stdio")
+		.description("serve the Web MCP dg tools of the agent's tabs as an MCP server on stdio; calls use Web MCP approvals")
 		.action(async (_options: unknown, command: Command) => {
 			const session = await resolveCliSession(selectedSession(command));
 			const [{ StdioServerTransport }, { connectCliLink }, { createDgMcpServer }] =

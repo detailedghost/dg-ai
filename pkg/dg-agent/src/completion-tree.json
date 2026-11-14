@@ -193,7 +193,7 @@
 		},
 		{
 			"name": "mcp",
-			"description": "serve the dg tools of the agent's tabs as an MCP server on stdio"
+			"description": "serve the Web MCP dg tools of the agent's tabs as an MCP server on stdio; calls use Web MCP approvals"
 		},
 		{
 			"name": "stage",

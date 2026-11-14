@@ -224,6 +224,7 @@ export const EXT_HELP = `Usage: dg-skills pw --ext [--session <id>] [--tab <id>]
 Drive your real browser through the paired dg-ai-extension.
 Passing --ext gives the CLI control of the tabs in the agent's own tab group.
 The browser asks the user once per site in each session, on the first verb there (open and new too).
+tools and call are the Web MCP bridge: they skip that site question and use Web MCP approvals instead.
 An "Agent is driving" banner on each agent tab has a Stop button. Stop ends the session's control: every later verb fails until a new dg session starts.
 Every verb acts on the agent's selected tab. --tab <id> targets one tab of the group once, without changing the selection.
 
@@ -239,7 +240,7 @@ Read verbs (they never change the page):
   selection               selected text
   console                 errors and console warnings since the first call
   count <ref|selector>    how many elements match, with tag, type, id and name for each; use it to test a selector before click, fill or upload
-  tools                   WebMCP tools the page exposes
+  tools                   Web MCP bridge: WebMCP tools the page exposes
   network [--filter <text>] [--limit N] [--since <ms>|clear] [--values]
                           fetch and XMLHttpRequest calls of the page since it loaded in the agent tab, newest last:
                           method, address with query values removed, status, header names, and the key
@@ -259,7 +260,8 @@ Write verbs (they change the page):
   fill <ref|selector> --value-env NAME | --value-stdin
                           set a password or secret field during an unmask; the value never goes in argv or output
   upload <ref|selector> <file>  set one file on a file input (https pages only)
-  call <tool> <json-args> run one WebMCP tool of the page
+  call <tool> <json-args> Web MCP bridge: run one WebMCP tool of the page; it asks a Web MCP approval
+                          (not the pw --ext site allowlist) unless the tool reads only or a grant holds
   unmask [--minutes N]    ask the user, in the browser, to show email addresses and allow secret fill
                           on this tab's site for N minutes (1-${PW_EXT_UNMASK_MAX_MINUTES}, default ${PW_EXT_UNMASK_DEFAULT_MINUTES})
   unmask --off            end the unmask now

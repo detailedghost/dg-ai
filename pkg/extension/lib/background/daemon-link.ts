@@ -55,7 +55,14 @@ import {
 	type PwExtContext,
 } from "./pw-ext";
 import { createUnmaskGrants } from "./unmask-grants";
-import { createWebMcpGrants } from "./webmcp-approval";
+import {
+	createRememberedWebMcpGrants,
+	createWebMcpGrants,
+	type RememberedWebMcpGrants,
+	type RememberStorage,
+} from "./webmcp-approval";
+import { createWebMcpSigner } from "./webmcp-signing";
+import { createIdbGrantNonces } from "./webmcp-grant-nonces";
 import { forgetAgentTabsAndShims } from "./dialog-shim";
 import { createSessionControl } from "./session-control";
 import { PW_EXT_STOP_MESSAGE } from "@/lib/features/pw-ext-banner";
@@ -68,6 +75,8 @@ import {
 	type ConfigRelayReply,
 	type PairingSession,
 	MSG,
+	type WebMcpGrantsReply,
+	type WebMcpGrantView,
 } from "@dg/pages/chat-messages";
 import {
 	type ChatClient,
@@ -119,6 +128,7 @@ export type RegisterDaemonLinkOptions = {
 		[N in RelayFeatureName]: RelayHandler<FeatureNamed<N>>;
 	}>;
 	pairingStore?: PairingStore;
+	rememberedWebMcpGrants?: RememberedWebMcpGrants;
 };
 
 function withoutPin({ daemonId: _pinned, ...bootstrap }: PairedBootstrap): SessionBootstrap {
@@ -204,6 +214,13 @@ export function registerDaemonLink(
 	const webmcpGrants = createWebMcpGrants({
 		storage: api.storage as unknown as AgentTabsStorage,
 	});
+	const rememberedWebMcpGrants =
+		options.rememberedWebMcpGrants ??
+		createRememberedWebMcpGrants({
+			storage: api.storage as unknown as RememberStorage,
+			signer: createWebMcpSigner(),
+			nonces: createIdbGrantNonces(),
+		});
 	const pwExtApi = api as unknown as PwExtBrowserApi;
 	const sessionControl = createSessionControl({ storage: api.storage as unknown as AgentTabsStorage });
 	const pwExtRelay = createPwExtHandler({
@@ -211,6 +228,7 @@ export function registerDaemonLink(
 		agentTabs,
 		grants: unmaskGrants,
 		webmcpGrants,
+		rememberedWebMcpGrants,
 		control: sessionControl,
 	});
 	const relayHandlers: {
@@ -419,6 +437,27 @@ export function registerDaemonLink(
 			`[dg-chat] pairing storage failed: ${describeError(error)}`,
 			knownTokens(),
 		);
+	}
+
+	async function answerWebMcpGrants(payload: Record<string, unknown>): Promise<unknown> {
+		if (payload.type === MSG.webmcpRevokeAll) {
+			await Promise.all([webmcpGrants.forgetAll(), rememberedWebMcpGrants.forgetAll()]);
+			return { ok: true };
+		}
+		if (payload.type === MSG.webmcpRevoke) {
+			const { kind, sessionId, site, tool } = (payload.grant ?? {}) as Record<string, unknown>;
+			if (typeof site !== "string" || typeof tool !== "string") return { ok: false, error: "Unknown Web MCP grant." };
+			if (kind === "remembered") await rememberedWebMcpGrants.revoke({ site, tool });
+			else if (kind === "session" && typeof sessionId === "string") await webmcpGrants.revoke(sessionId, { site, tool });
+			else return { ok: false, error: "Unknown Web MCP grant." };
+			return { ok: true };
+		}
+		const [held, remembered] = await Promise.all([webmcpGrants.list(), rememberedWebMcpGrants.list()]);
+		const grants: WebMcpGrantView[] = [
+			...held.map((grant) => ({ kind: "session" as const, ...grant })),
+			...remembered.map(({ site, tool, expiresAt }) => ({ kind: "remembered" as const, site, tool, expiresAt })),
+		];
+		return { grants } satisfies WebMcpGrantsReply;
 	}
 
 	function forgetStoredPairing(sessionId: string): void {
@@ -846,6 +885,15 @@ export function registerDaemonLink(
 						await stopper.stop(sessionId);
 						return { ok: true };
 					})().then(sendResponse, (error: unknown) =>
+						sendResponse({ ok: false, error: safeError(error) }),
+					);
+					return true;
+				}
+				case MSG.webmcpGrantsRequest:
+				case MSG.webmcpRevoke:
+				case MSG.webmcpRevokeAll: {
+					if (!isOwnPageSender(sender, api.runtime.id, api.runtime.getURL("popup.html"))) return undefined;
+					void answerWebMcpGrants(payload).then(sendResponse, (error: unknown) =>
 						sendResponse({ ok: false, error: safeError(error) }),
 					);
 					return true;

@@ -43,7 +43,7 @@ popup.
 | `screenshot` | read | Visible part of the tab, saved to `dg-skills stash pw`; brings the tab to the front first |
 | `selection` | read | Selected text |
 | `console` | read | Errors, and console warnings and errors after the first call |
-| `tools` | read | WebMCP tools the page exposes: name, description, input schema |
+| `tools` | read | Web MCP bridge: WebMCP tools the page exposes: name, description, input schema |
 | `count <ref or selector>` | read | How many elements match, with tag, type, id and name for each. An id or name that looks like a generated id shows as `[redacted]`. Test a selector with it before `click`, `fill` or `upload` |
 | `network [--filter <text>] [--limit N] [--since <ms>\|clear] [--values]` | read | The page's `fetch` and `XMLHttpRequest` calls, shape only: method, address with query values removed, status, header names, and the key structure and value types of JSON bodies. `--values` shows values after one Allow per site and session |
 | `open <url>` | write | Opens an http or https URL in the selected tab, or in a new tab when the agent has none |
@@ -56,7 +56,7 @@ popup.
 | `fill <ref or selector> --value-stdin` | write | Same, but reads the value from stdin. Needs `unmask` |
 | `unmask [--minutes N]` | write | Asks you for a time-boxed unmask of the selected tab's origin. `N` is 1 to 60, default 15. `unmask --off` ends it |
 | `upload <ref or selector> <file>` | write | Sets one file on a file input |
-| `call <tool> <json-args>` | write | Runs one WebMCP tool of the page |
+| `call <tool> <json-args>` | write | Web MCP bridge: runs one WebMCP tool of the page under Web MCP approvals |
 | `dialog` | write | Shows the page's last `alert`, `confirm` or `prompt`, how it was answered, and the answer set for the next one |
 | `dialog accept [--text <answer>]` | write | Accepts the next dialog on the page. `--text` is the answer a `prompt` gets |
 | `dialog dismiss` | write | Dismisses the next dialog on the page. Each new page starts at dismiss |
@@ -79,16 +79,19 @@ Rules:
   is touched. After a Deny, verbs that were sent before the answer fail without
   a new popup; a later verb can ask again. Allowed sites live in
   `storage.session` and go away when the session ends. `tabs`, `select` and
-  `close` ask nothing. Mailbox origins keep their guard.
+  `close` ask nothing. `tools` and `call` are the Web MCP bridge: this site
+  question does not gate them, and `call` uses [Web MCP approvals](webmcp.md)
+  instead. Mailbox origins keep their guard.
 - Each agent tab shows an "Agent is driving this tab" banner with a Stop button.
   The banner sits in a closed shadow root in the extension's own script world.
-  Stop ends that session's control at once: verbs in flight fail, unmask and
-  `dg_` grants and allowed sites go away, the tab group returns to you, and
+  Stop ends that session's control at once: verbs in flight fail, unmask
+  grants and allowed sites go away, the tab group returns to you, and
   each later verb fails with an error that names Stop until a new dg session
   starts. Only a real click counts; a page script cannot press it. The
   toolbar popup also lists each session that drives agent tabs, with its tab
   count and a Stop button that runs the same Stop. Use it when a page's own
-  modal dialog covers the banner.
+  modal dialog covers the banner. Stop does not revoke Web MCP grants; the
+  toolbar popup revokes those in its own Web MCP section.
 - Each dg session has its own tab group. The CLI picks the session from
   `--session <id>`, then the `DG_SESSION_ID` environment variable, then the one
   session registered for the working directory. Under `--ext`, `--session` takes
@@ -137,7 +140,7 @@ Rules:
   socket), the request is canceled and nothing more runs.
 - There is no code execution of agent code: no `eval`, no `run-code`, and no
   pw flags besides `--tab`. `call` runs the site's own WebMCP tool code, so it
-  is a write verb.
+  is a write verb. See [Web MCP](webmcp.md) for its approvals.
 - A page dialog never blocks a verb. When an agent tab starts to load, the
   extension puts a small shim over `alert`, `confirm` and `prompt` in that page.
   The shim answers each dialog at once: dismiss by default, or the one answer
@@ -217,8 +220,9 @@ Rules:
   `tabId` or a new verb until you restart `dg-daemon`.
 - Firefox is not supported.
 
-See [ADR 0035](adr/0035-pw-ext-real-browser.md) and
-[ADR 0041](adr/0041-pw-ext-unmask.md).
+See [ADR 0035](adr/0035-pw-ext-real-browser.md),
+[ADR 0041](adr/0041-pw-ext-unmask.md) and
+[ADR 0046](adr/0046-webmcp-approvals-apart-from-pw-ext.md).
 
 ## Security
 

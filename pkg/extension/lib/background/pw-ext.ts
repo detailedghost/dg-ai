@@ -6,6 +6,7 @@ import {
 	isDgToolName,
 	isPwExtWebUrl,
 	mailboxToolAllowed,
+	matchesCoverOrigin,
 	isPwExtSecretTooShort,
 	PW_EXT_MAX_TEXT_CHARS,
 	PW_EXT_MIN_SECRET_CHARS,
@@ -59,7 +60,17 @@ import { createSessionControl, type SessionControl } from "./session-control";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
 import { siteOf } from "./site-key";
-import { createWebMcpGrants, requestWebMcpApproval, type WebMcpGrants } from "./webmcp-approval";
+import { STOPPED_SCRIPTS_KEY, type WebMcpStoppedScript } from "./webmcp-scripts";
+import {
+	createRememberedWebMcpGrants,
+	createWebMcpGrants,
+	type RememberedWebMcpGrants,
+	type RememberStorage,
+	requestWebMcpApproval,
+	type WebMcpGrants,
+} from "./webmcp-approval";
+import { createWebMcpSigner } from "./webmcp-signing";
+import { createIdbGrantNonces } from "./webmcp-grant-nonces";
 import { createUnmaskGrants, MAX_FILLED_SECRETS, type UnmaskGrant, type UnmaskGrants } from "./unmask-grants";
 import {
 	allowedPage,
@@ -132,6 +143,7 @@ const SITE_REFUSED = {
 	unopened: "The approval window could not open",
 } satisfies Record<Exclude<ApprovalAnswer, "allow">, string>;
 const NO_SITE_ASK: ReadonlySet<PwExtVerb> = new Set(["tabs", "select", "close"]);
+const WEB_MCP_VERBS: ReadonlySet<PwExtVerb> = new Set(["tools", "call"]);
 const UNMASK_REFUSED = {
 	deny: "The user clicked Deny in the browser; nothing was unmasked.",
 	closed: "The approval window was closed without an answer; nothing was unmasked.",
@@ -198,6 +210,37 @@ async function storedEnabledBuiltIns(storage: unknown): Promise<Set<string>> {
 			return typeof record?.enabled === "boolean" ? record.enabled : script.enabledByDefault;
 		}).map((script) => script.id),
 	);
+}
+
+/** Sites of enabled third-party scripts, and of stopped ones whose tools may live on in documents loaded earlier. */
+export type ThirdPartySites = { active: string[]; stopped: WebMcpStoppedScript[] };
+
+const textList = (value: unknown): string[] =>
+	Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+
+async function storedThirdPartySites(storage: unknown): Promise<ThirdPartySites> {
+	const local = (storage as { local?: { get(keys: string[]): Promise<Record<string, unknown>> } }).local;
+	if (!local) return { active: [], stopped: [] };
+	const stored = await local.get([BUILT_INS_KEY, STOPPED_SCRIPTS_KEY]);
+	const records = Array.isArray(stored[BUILT_INS_KEY])
+		? (stored[BUILT_INS_KEY] as { source?: unknown; enabled?: unknown; matches?: unknown }[])
+		: [];
+	const stopped = Array.isArray(stored[STOPPED_SCRIPTS_KEY])
+		? (stored[STOPPED_SCRIPTS_KEY] as { matches?: unknown; stoppedAt?: unknown }[])
+		: [];
+	return {
+		active: records.flatMap((record) =>
+			record?.source !== "built-in" && record?.enabled === true ? textList(record.matches) : [],
+		),
+		stopped: stopped.map((entry) => ({
+			matches: textList(entry?.matches),
+			stoppedAt: typeof entry?.stoppedAt === "number" ? entry.stoppedAt : Number.POSITIVE_INFINITY,
+		})),
+	};
+}
+
+function pwExtDocumentStart(): number {
+	return performance.timeOrigin;
 }
 
 function isTabVerb(request: PwExtRequest): request is TabVerbRequest {
@@ -535,7 +578,14 @@ export function createPwExtHandler({
 	now = Date.now,
 	grants = createUnmaskGrants({ storage: api.storage, now }),
 	webmcpGrants = createWebMcpGrants({ storage: api.storage }),
+	rememberedWebMcpGrants = createRememberedWebMcpGrants({
+		storage: api.storage as unknown as RememberStorage,
+		signer: createWebMcpSigner(),
+		nonces: createIdbGrantNonces(),
+		now,
+	}),
 	enabledBuiltIns = () => storedEnabledBuiltIns(api.storage),
+	thirdPartySites = () => storedThirdPartySites(api.storage),
 	pageDeadlineMs = PAGE_DEADLINE_MS,
 	lock,
 	control = createSessionControl({ storage: api.storage }),
@@ -543,11 +593,13 @@ export function createPwExtHandler({
 	browserApi: PwExtBrowserApi;
 	agentTabs?: AgentTabs;
 	isChromium?: () => boolean;
-	approvals?: Pick<Approvals, "request">;
+	approvals?: Pick<Approvals, "request" | "ask">;
 	now?: () => number;
 	grants?: UnmaskGrants;
 	webmcpGrants?: WebMcpGrants;
+	rememberedWebMcpGrants?: RememberedWebMcpGrants;
 	enabledBuiltIns?: () => Promise<Set<string>>;
+	thirdPartySites?: () => Promise<ThirdPartySites>;
 	pageDeadlineMs?: number;
 	lock?: AgentTabsLock;
 	control?: SessionControl;
@@ -636,7 +688,7 @@ export function createPwExtHandler({
 		return undefined;
 	}
 
-	/** Ends a session's control at once: verbs in flight end, grants and sites go, and its tabs return to the person. */
+	/** Ends a session's control at once: verbs in flight end, unmask and value grants and sites go, and its tabs return to the person; Web MCP grants stay. */
 	async function stop(sessionId: string): Promise<void> {
 		halted.add(sessionId);
 		for (const run of live.get(sessionId) ?? []) {
@@ -647,7 +699,6 @@ export function createPwExtHandler({
 		for (const key of deniedThrough.keys()) if (key.startsWith(`${sessionId}\n`)) deniedThrough.delete(key);
 		await Promise.allSettled([
 			grants.forget(sessionId),
-			webmcpGrants.forget(sessionId),
 			forgetAgentTabsAndShims({ browserApi: api, storage: api.storage, agentTabs, sessionId, ...(lock ? { lock } : {}) }),
 		]);
 	}
@@ -1231,6 +1282,20 @@ export function createPwExtHandler({
 		}
 	}
 
+	/** A tool keeps its class-table class only when its enabled built-in covers the origin and no third-party script ran in this document. */
+	async function builtInOwned(tab: LiveTab, tool: string, origin: string): Promise<boolean> {
+		if (!mailboxToolAllowed(tool, origin, await enabledOrNone())) return false;
+		const sites = await thirdPartySites().catch(() => undefined);
+		if (!sites || matchesCoverOrigin(sites.active, origin)) return false;
+		const stopped = sites.stopped.filter((entry) => matchesCoverOrigin(entry.matches, origin));
+		if (stopped.length === 0) return true;
+		const started = await api.scripting
+			.executeScript({ target: { tabId: tab.id }, func: pwExtDocumentStart, args: [] })
+			.then(([frame]) => frame?.result)
+			.catch(() => undefined);
+		return typeof started === "number" && stopped.every((entry) => entry.stoppedAt < started);
+	}
+
 	async function approveDgTool(
 		request: TabVerbRequest,
 		tab: LiveTab,
@@ -1240,23 +1305,21 @@ export function createPwExtHandler({
 		const tool = request.tool as string;
 		if (tab.url === undefined) return { ok: false, error: `This tab has no page address; ${tool} did not run.` };
 		const origin = new URL(tab.url).origin;
-		const approvalClass = approvalClassOf(tool, origin);
-		if (approvalClass === undefined || approvalClass === "read") return undefined;
+		const tableClass = approvalClassOf(tool, origin) ?? "each";
+		const approvalClass = tableClass !== "each" && (await builtInOwned(tab, tool, origin)) ? tableClass : "each";
+		if (approvalClass === "read") return undefined;
 		const answer = await requestWebMcpApproval({
 			approvals: approvals ?? browserApprovals(),
 			grants: webmcpGrants,
+			remembered: rememberedWebMcpGrants,
 			sessionId: context.sessionId,
 			agentIdentity: context.agentIdentity,
 			tool,
 			args: request.args ?? {},
 			origin,
-			groupId: tab.groupId ?? -1,
 			class: approvalClass,
 		});
-		if (signal?.aborted) {
-			if (await isStopped(context.sessionId)) await webmcpGrants.forget(context.sessionId);
-			return CANCELED;
-		}
+		if (signal?.aborted) return CANCELED;
 		if (answer !== "allow") {
 			const reason =
 				answer === "timeout"
@@ -1278,6 +1341,8 @@ export function createPwExtHandler({
 			!(await agentTabs.owns({ sessionId: context.sessionId, tabId: tab.id }))
 		)
 			return { ok: false, error: `The tab left the agent's group; ${tool} did not run.` };
+		if (live.url !== tab.url)
+			return { ok: false, error: `The page changed while the approval was open; ${tool} did not run. Retry.` };
 		return undefined;
 	}
 
@@ -1312,7 +1377,8 @@ export function createPwExtHandler({
 		}
 		await guard(request.verb, tab, request.tool);
 		if (!NO_SITE_ASK.has(request.verb)) {
-			await allowSite(request.verb === "open" ? request.url : tab.url, context, signal, verb);
+			if (!WEB_MCP_VERBS.has(request.verb))
+				await allowSite(request.verb === "open" ? request.url : tab.url, context, signal, verb);
 			const live = await api.tabs.get(tab.id).catch(() => undefined);
 			if (!live || live.groupId !== tab.groupId || !(await agentTabs.owns({ sessionId: context.sessionId, tabId: tab.id })))
 				throw new Refusal(SELECTED_GONE);

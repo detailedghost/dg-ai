@@ -29,7 +29,7 @@ group, until the human hands you a tab from the extension popup.
 | `screenshot` | read | Visible part of the tab, saved to `dg-skills stash pw`; brings the tab to the front first |
 | `selection` | read | Selected text |
 | `console` | read | Errors and console warnings since the first `console` call |
-| `tools` | read | WebMCP tools of the page: name, description, input schema |
+| `tools` | read | Web MCP bridge: WebMCP tools of the page: name, description, input schema |
 | `count <ref or selector>` | read | How many elements match, with tag, type, id and name for each. Test a selector with it before `click`, `fill` or `upload` |
 | `network [--filter <text>] [--limit N] [--since <ms>\|clear] [--values]` | read | The page's fetch and XHR calls: method, address with query values removed, status, header names, JSON key structure. No values unless `--values` |
 | `open <url>` | write | Opens an http or https URL in the selected tab, or in a new tab when the agent has none |
@@ -42,7 +42,7 @@ group, until the human hands you a tab from the extension popup.
 | `fill <ref or selector> --value-stdin` | write | Same, but reads the value from stdin. Needs an `unmask` grant |
 | `unmask [--minutes N]` | write | Asks the human, in a browser popup, to unmask the selected tab's origin for `N` minutes (1 to 60, default 15). `unmask --off` ends it |
 | `upload <ref or selector> <file>` | write | Sets one file on a file input of an https page |
-| `call <tool> <json-args>` | write | Runs one WebMCP tool; `json-args` is a JSON object |
+| `call <tool> <json-args>` | write | Web MCP bridge: runs one WebMCP tool; `json-args` is a JSON object |
 | `dialog` | write | Shows the page's last `alert`, `confirm` or `prompt`, how it was answered, and the answer set for the next one |
 | `dialog accept [--text <answer>]` | write | Accepts the next dialog on the page; `--text` answers a `prompt` |
 | `dialog dismiss` | write | Dismisses the next dialog on the page |
@@ -81,6 +81,12 @@ group, until the human hands you a tab from the extension popup.
   the dg scratch directory or the dg demos directory. No hidden files, no
   symbolic link as the file, and not from the home folder itself.
 - `call` runs the site's own code. Treat it like a click.
+- `tools` and `call` are the Web MCP bridge, not browser control. The site
+  question above does not gate them. `call` asks a Web MCP approval in the
+  browser instead: a read-only `dg_` tool runs at once, a `session` tool asks
+  once per session, site and tool (the human can also remember it for 30 days),
+  and any other tool asks every time. Stop does not revoke a Web MCP grant; the
+  human revokes those in the toolbar popup.
 - Page dialogs never block you. Each `alert`, `confirm` and `prompt` in your tab
   is answered at once: dismissed by default. To accept one, run
   `pw --ext dialog accept [--text <answer>]` first, then do the action again.

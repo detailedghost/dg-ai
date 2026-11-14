@@ -1,23 +1,57 @@
 import { createSerialQueue, type WebMcpApprovalClass } from "@dg/common";
 import type { AgentTabsStorage } from "./agent-tabs";
 import type { ApprovalAnswer, Approvals } from "./approval";
+import { siteOf } from "./site-key";
+import type { GrantNonces } from "./webmcp-grant-nonces";
+import type { WebMcpSigner } from "./webmcp-signing";
 
-/** One tool on one origin in one agent tab group, approved by the person for a dg session. */
-export type WebMcpGrant = { origin: string; tool: string; groupId: number };
+/** One tool on one site, keyed by the registrable-domain site key that the pw --ext allowlist also uses. */
+export type WebMcpGrant = { site: string; tool: string };
+export type WebMcpSessionGrant = WebMcpGrant & { sessionId: string };
+export type WebMcpRememberedGrant = WebMcpGrant & { approvedAt: number; expiresAt: number };
 
+export const REMEMBER_DAYS = 30;
+const REMEMBER_MS = REMEMBER_DAYS * 24 * 60 * 60 * 1000;
+const REMEMBERED_KEY = "webmcpRemembered";
+const MAC_PREFIX = "webmcp-grant:v1\n";
 const ARGS_MAX_CHARS = 600;
-const keyOf = (sessionId: string) => `webmcpGrants:${sessionId}`;
-const same = (a: WebMcpGrant, b: WebMcpGrant) =>
-	a.origin === b.origin && a.tool === b.tool && a.groupId === b.groupId;
+const PREFIX = "webmcpGrants:";
+const keyOf = (sessionId: string) => `${PREFIX}${sessionId}`;
+const same = (a: WebMcpGrant, b: WebMcpGrant) => a.site === b.site && a.tool === b.tool;
+const isGrant = (value: unknown): value is WebMcpGrant =>
+	typeof value === "object" &&
+	value !== null &&
+	typeof (value as WebMcpGrant).site === "string" &&
+	typeof (value as WebMcpGrant).tool === "string";
 
-/** Session grants in storage.session; a grant matches only in the tab group it was given in. */
-export function createWebMcpGrants({ storage }: { storage: AgentTabsStorage }) {
+/** A serial queue whose task rejection reaches the caller, so a failed revoke is not reported as done. */
+function createRejectingQueue() {
 	const enqueue = createSerialQueue();
+	return (task: () => Promise<void>): Promise<void> => {
+		let failure: { error: unknown } | undefined;
+		return enqueue(async () => {
+			try {
+				await task();
+			} catch (error) {
+				failure = { error };
+			}
+		}).then(() => {
+			if (failure) throw failure.error;
+		});
+	};
+}
+
+/** Classes whose Allow may be kept for the session or remembered; read and each never store a grant. */
+const GRANTABLE: ReadonlySet<WebMcpApprovalClass> = new Set(["session"]);
+
+/** Session grants in storage.session; they end with the MCP session, not with pw --ext Stop. */
+export function createWebMcpGrants({ storage }: { storage: AgentTabsStorage }) {
+	const enqueue = createRejectingQueue();
 	const asking = new Map<string, Promise<ApprovalAnswer>>();
 
 	async function read(sessionId: string): Promise<WebMcpGrant[]> {
 		const stored = (await storage.session.get(keyOf(sessionId)))[keyOf(sessionId)];
-		return Array.isArray(stored) ? (stored as WebMcpGrant[]) : [];
+		return Array.isArray(stored) ? stored.filter(isGrant) : [];
 	}
 
 	return {
@@ -29,13 +63,13 @@ export function createWebMcpGrants({ storage }: { storage: AgentTabsStorage }) {
 			return enqueue(async () => {
 				const held = await read(sessionId);
 				if (held.some((entry) => same(entry, grant))) return;
-				await storage.session.set({ [keyOf(sessionId)]: [...held, grant] });
+				await storage.session.set({ [keyOf(sessionId)]: [...held, { site: grant.site, tool: grant.tool }] });
 			});
 		},
 
 		/** Shares one open question per session grant, so concurrent calls show one popup. */
 		once(sessionId: string, grant: WebMcpGrant, ask: () => Promise<ApprovalAnswer>): Promise<ApprovalAnswer> {
-			const key = JSON.stringify([sessionId, grant.origin, grant.tool, grant.groupId]);
+			const key = JSON.stringify([sessionId, grant.site, grant.tool]);
 			let pending = asking.get(key);
 			if (!pending) {
 				pending = ask();
@@ -45,14 +79,136 @@ export function createWebMcpGrants({ storage }: { storage: AgentTabsStorage }) {
 			return pending;
 		},
 
+		async list(): Promise<WebMcpSessionGrant[]> {
+			const stored = await storage.session.get(null);
+			return Object.entries(stored).flatMap(([key, value]) =>
+				key.startsWith(PREFIX) && Array.isArray(value)
+					? value
+							.filter(isGrant)
+							.map((grant) => ({ sessionId: key.slice(PREFIX.length), site: grant.site, tool: grant.tool }))
+					: [],
+			);
+		},
+
+		revoke(sessionId: string, grant: WebMcpGrant): Promise<void> {
+			return enqueue(async () => {
+				const kept = (await read(sessionId)).filter((held) => !same(held, grant));
+				if (kept.length) await storage.session.set({ [keyOf(sessionId)]: kept });
+				else await storage.session.remove(keyOf(sessionId));
+			});
+		},
+
 		/** Drops every grant of an ended session. */
 		forget(sessionId: string): Promise<void> {
 			return enqueue(() => storage.session.remove(keyOf(sessionId)));
+		},
+
+		forgetAll(): Promise<void> {
+			return enqueue(async () => {
+				for (const key of Object.keys(await storage.session.get(null)))
+					if (key.startsWith(PREFIX)) await storage.session.remove(key);
+			});
 		},
 	};
 }
 
 export type WebMcpGrants = ReturnType<typeof createWebMcpGrants>;
+
+export type RememberStorage = {
+	local: {
+		get(keys: string): Promise<Record<string, unknown>>;
+		set(items: Record<string, unknown>): Promise<void>;
+	};
+};
+
+type StoredRemembered = WebMcpRememberedGrant & { nonce: string; mac: string };
+
+const isStoredRemembered = (entry: unknown): entry is StoredRemembered =>
+	isGrant(entry) &&
+	Number.isSafeInteger((entry as StoredRemembered).approvedAt) &&
+	Number.isSafeInteger((entry as StoredRemembered).expiresAt) &&
+	typeof (entry as StoredRemembered).nonce === "string" &&
+	typeof (entry as StoredRemembered).mac === "string";
+
+const newNonce = () => [...crypto.getRandomValues(new Uint8Array(16))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+
+/** 30-day grants in storage.local, signed so a content script cannot forge or extend one, and tied to a live nonce so it cannot replay a revoked one. */
+export function createRememberedWebMcpGrants({
+	storage,
+	signer,
+	nonces,
+	now = Date.now,
+}: {
+	storage: RememberStorage;
+	signer: WebMcpSigner;
+	nonces: GrantNonces;
+	now?: () => number;
+}) {
+	const enqueue = createRejectingQueue();
+	const payload = (grant: WebMcpRememberedGrant & { nonce: string }) =>
+		new TextEncoder().encode(
+			MAC_PREFIX + JSON.stringify([grant.site, grant.tool, grant.approvedAt, grant.expiresAt, grant.nonce]),
+		);
+
+	async function live(): Promise<StoredRemembered[]> {
+		const at = now();
+		const value = (await storage.local.get(REMEMBERED_KEY))[REMEMBERED_KEY];
+		const entries = Array.isArray(value) ? value.filter(isStoredRemembered) : [];
+		const checks = await Promise.all(
+			entries.map(
+				async (entry) =>
+					entry.expiresAt - entry.approvedAt === REMEMBER_MS &&
+					entry.approvedAt <= at &&
+					entry.expiresAt > at &&
+					(await signer.verify(payload(entry), entry.mac).catch(() => false)) &&
+					(await nonces.has(entry.nonce, entry).catch(() => false)),
+			),
+		);
+		return entries.filter((_, index) => checks[index]);
+	}
+
+	return {
+		async has(grant: WebMcpGrant): Promise<boolean> {
+			return (await live()).some((entry) => same(entry, grant));
+		},
+
+		add(grant: WebMcpGrant): Promise<void> {
+			return enqueue(async () => {
+				const approvedAt = now();
+				const nonce = newNonce();
+				const record = { site: grant.site, tool: grant.tool, approvedAt, expiresAt: approvedAt + REMEMBER_MS, nonce };
+				const mac = await signer.sign(payload(record));
+				const held = await live();
+				await nonces.removeGrant(grant);
+				await nonces.add(nonce, grant);
+				await storage.local.set({
+					[REMEMBERED_KEY]: [...held.filter((entry) => !same(entry, grant)), { ...record, mac }],
+				});
+			});
+		},
+
+		async list(): Promise<WebMcpRememberedGrant[]> {
+			return (await live()).map(({ site, tool, approvedAt, expiresAt }) => ({ site, tool, approvedAt, expiresAt }));
+		},
+
+		revoke(grant: WebMcpGrant): Promise<void> {
+			return enqueue(async () => {
+				await nonces.removeGrant(grant);
+				const held = await live();
+				await storage.local.set({ [REMEMBERED_KEY]: held.filter((entry) => !same(entry, grant)) });
+			});
+		},
+
+		forgetAll(): Promise<void> {
+			return enqueue(async () => {
+				await nonces.clear();
+				await storage.local.set({ [REMEMBERED_KEY]: [] });
+			});
+		},
+	};
+}
+
+export type RememberedWebMcpGrants = ReturnType<typeof createRememberedWebMcpGrants>;
 
 function argsLine(args: Record<string, unknown>): string {
 	const json = (JSON.stringify(args) ?? "{}").replace(
@@ -64,47 +220,51 @@ function argsLine(args: Record<string, unknown>): string {
 }
 
 const SCOPE_LINES: Record<Exclude<WebMcpApprovalClass, "read">, string> = {
-	session: "Allow once to let this agent use this tool on this site until its tab group closes.",
+	session: "Allow lets this agent use this tool on this site until its MCP session ends.",
 	each: "This tool asks every time.",
 };
+const REMEMBER_LABEL = `Remember for ${REMEMBER_DAYS} days, for every agent session`;
 
-/** Asks the person at the browser before a dg tool runs; a session grant skips the question in its own tab group. */
+/** Asks the person at the browser before a Web MCP tool runs; a remembered or session grant skips the question. */
 export async function requestWebMcpApproval({
 	approvals,
 	grants,
+	remembered,
 	sessionId,
 	agentIdentity,
 	tool,
 	args,
 	origin,
-	groupId,
 	class: approvalClass,
 }: {
-	approvals: Pick<Approvals, "request">;
+	approvals: Pick<Approvals, "ask">;
 	grants: WebMcpGrants;
+	remembered: RememberedWebMcpGrants;
 	sessionId: string;
 	agentIdentity: string;
 	tool: string;
 	args: Record<string, unknown>;
 	origin: string;
-	groupId: number;
 	class: WebMcpApprovalClass;
 }): Promise<ApprovalAnswer> {
 	if (approvalClass === "read") return "allow";
-	const grouped = groupId >= 0;
-	const scope = approvalClass === "session" && grouped ? "session" : "each";
-	const grant = { origin, tool, groupId };
+	const site = siteOf(origin);
+	const grantable = GRANTABLE.has(approvalClass);
 	const ask = () =>
-		approvals.request({
-			title: `Allow ${tool} on ${origin}?`,
+		approvals.ask({
+			title: `Allow ${tool} on ${site.name}?`,
 			origin,
-			lines: [`Agent: ${agentIdentity}`, `Tool: ${tool}`, argsLine(args), SCOPE_LINES[scope]],
+			lines: [`Agent: ${agentIdentity}`, `Tool: ${tool}`, argsLine(args), SCOPE_LINES[approvalClass]],
+			...(grantable ? { remember: REMEMBER_LABEL } : {}),
 		});
-	if (scope === "each") return ask();
-	if (await grants.has(sessionId, grant)) return "allow";
+	if (!grantable) return (await ask()).answer;
+	const grant = { site: site.key, tool };
+	if ((await remembered.has(grant)) || (await grants.has(sessionId, grant))) return "allow";
 	return grants.once(sessionId, grant, async () => {
-		const answer = await ask();
-		if (answer === "allow") await grants.add(sessionId, grant);
+		const { answer, remember } = await ask();
+		if (answer !== "allow") return answer;
+		await grants.add(sessionId, grant);
+		if (remember) await remembered.add(grant).catch(() => undefined);
 		return answer;
 	});
 }

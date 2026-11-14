@@ -1,5 +1,5 @@
 import { describeError, type WebMcpScriptRecord } from "@dg/common";
-import { WEBMCP_MESSAGES, type WebMcpReply } from "@/lib/background/webmcp-scripts";
+import { WEBMCP_MESSAGES, type WebMcpReply, type WebMcpScriptRow } from "@/lib/background/webmcp-scripts";
 import { failStatus, flashStatus } from "@/lib/ui-helpers";
 
 export const WEBMCP_UNAVAILABLE_NOTE =
@@ -77,11 +77,16 @@ export function mountWebMcpScriptsPanel(
 		return node;
 	}
 
-	function row(record: WebMcpScriptRecord, code?: string): HTMLElement {
+	function row(record: WebMcpScriptRow, code?: string): HTMLElement {
 		const item = el("div", "mb-4");
 		item.setAttribute("data-webmcp-row", record.id);
 		item.appendChild(el("b", undefined, record.name));
 		item.appendChild(el("p", "note", record.matches.join(", ")));
+		if (record.problem !== undefined) {
+			const problem = el("p", "note text-red-600", record.problem);
+			problem.setAttribute("data-webmcp-problem", "");
+			item.appendChild(problem);
+		}
 
 		if (record.source === "built-in") {
 			const label = el("label", "lbl");
@@ -148,7 +153,7 @@ export function mountWebMcpScriptsPanel(
 	}
 
 	async function render(): Promise<void> {
-		const records = await call<WebMcpScriptRecord[]>({ type: WEBMCP_MESSAGES.list });
+		const records = await call<WebMcpScriptRow[]>({ type: WEBMCP_MESSAGES.list });
 		const views = await Promise.all(
 			records.map((record) =>
 				record.source !== "built-in" && record.approvedAt === undefined ? call<string | undefined>({ type: WEBMCP_MESSAGES.code, id: record.id }) : undefined,

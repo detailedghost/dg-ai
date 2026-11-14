@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { PW_EXT_MAX_TEXT_CHARS, type PwExtRequest } from "@dg/common";
 import { PW_EXT_MAILBOX_ERROR } from "@/lib/background/tab-guards";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
+import type { ApprovalRequest } from "@/lib/background/approval";
 import { createPwExtHandler } from "@/lib/background/pw-ext";
+import { createRememberedWebMcpGrants } from "@/lib/background/webmcp-approval";
+import { createWebMcpSigner } from "@/lib/background/webmcp-signing";
+import { createIdbGrantNonces } from "@/lib/background/webmcp-grant-nonces";
+import { IDBFactory } from "fake-indexeddb";
 import { forgetAgentTabsAndShims } from "@/lib/background/dialog-shim";
 import { createSessionControl, type SessionControl } from "@/lib/background/session-control";
 
@@ -69,6 +74,10 @@ type Options = {
 	clock?: { now: number };
 	onApproval?: () => void | Promise<void>;
 	enabledBuiltIns?: () => Promise<Set<string>>;
+	builtInOwned?: boolean;
+	thirdPartySites?: { active: string[]; stopped: { matches: string[]; stoppedAt: number }[] };
+	documentStart?: number;
+	remember?: boolean;
 	pageDeadlineMs?: number;
 	sites?: "ask";
 };
@@ -116,6 +125,7 @@ function harness(options: Options = {}) {
 	);
 	fake.state.script = (details) => {
 		const call = details as { args: unknown[]; world?: string; func?: { name?: string } };
+		if (call.func?.name === "pwExtDocumentStart") return options.documentStart;
 		if (call.world === "MAIN") return options.mainResult?.(call.args[0], call.func?.name);
 		return options.pageResult;
 	};
@@ -127,19 +137,36 @@ function harness(options: Options = {}) {
 	});
 	const approvalRequests: unknown[] = [];
 	const clock = options.clock ?? { now: Date.UTC(2026, 10, 9, 15, 0) };
+	const local: Record<string, unknown> = {};
+	const answerApproval = async (request: ApprovalRequest) => {
+		approvalRequests.push(request);
+		await options.onApproval?.();
+		return options.approval ?? "deny";
+	};
+	const remembered = createRememberedWebMcpGrants({
+		storage: { local: { get: async (key: string) => ({ [key]: local[key] }), set: async (items) => void Object.assign(local, items) } },
+		signer: createWebMcpSigner({
+			loadKey: () => crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]),
+		}),
+		nonces: createIdbGrantNonces(new IDBFactory()),
+		now: () => clock.now,
+	});
 	const handler = createPwExtHandler({
 		browserApi: fake.api,
 		agentTabs,
 		isChromium: () => options.chromium ?? true,
 		approvals: {
-			request: async (request) => {
-				approvalRequests.push(request);
-				await options.onApproval?.();
-				return options.approval ?? "deny";
-			},
+			request: answerApproval,
+			ask: async (request) => ({ answer: await answerApproval(request), remember: options.remember === true }),
 		},
 		now: () => clock.now,
-		...(options.enabledBuiltIns ? { enabledBuiltIns: options.enabledBuiltIns } : {}),
+		rememberedWebMcpGrants: remembered,
+		...(options.enabledBuiltIns
+			? { enabledBuiltIns: options.enabledBuiltIns }
+			: options.builtInOwned
+				? { enabledBuiltIns: async () => new Set(["outlook"]) }
+				: {}),
+		...(options.thirdPartySites ? { thirdPartySites: async () => options.thirdPartySites as never } : {}),
 		...(options.pageDeadlineMs ? { pageDeadlineMs: options.pageDeadlineMs } : {}),
 		lock: agentTabsLock,
 		control: options.sites === "ask" ? createSessionControl({ storage: fake.api.storage }) : allowAllSites,
@@ -168,6 +195,7 @@ function harness(options: Options = {}) {
 		} as never);
 	return {
 		handler,
+		remembered,
 		approvalRequests,
 		agentTabsLock,
 		clock,
@@ -1052,6 +1080,7 @@ describe("pw --ext round 3", () => {
 	it("calls a WebMCP tool with its exact args", async () => {
 		const actions: unknown[] = [];
 		const h = harness({
+			approval: "allow",
 			mainResult: (action) => {
 				actions.push(action);
 				return { api: "modelContext", output: "3 results" };
@@ -1066,6 +1095,7 @@ describe("pw --ext round 3", () => {
 
 	it("refuses to call a tool the page does not expose", async () => {
 		const h = harness({
+			approval: "allow",
 			mainResult: () => ({ error: "No WebMCP tool named search on this page." }),
 		});
 
@@ -1685,7 +1715,7 @@ describe("pw --ext WebMCP approval", () => {
 		const answer = await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["AAMkADQ1="] } });
 		expect(h.approvalRequests).toEqual([
 			expect.objectContaining({
-				title: "Allow dg_outlook_delete on https://outlook.live.com?",
+				title: "Allow dg_outlook_delete on live.com?",
 				origin: "https://outlook.live.com",
 				lines: expect.arrayContaining([`Agent: ${IDENTITY}`, 'Args: {"ids":["AAMkADQ1="]}']),
 			}),
@@ -1722,7 +1752,7 @@ describe("pw --ext WebMCP approval", () => {
 	});
 
 	it("asks once per session for a session-class tool and again for another session", async () => {
-		const h = harness({ tabs: [owaTab], approval: "allow", mainResult: ran });
+		const h = harness({ builtInOwned: true, tabs: [owaTab], approval: "allow", mainResult: ran });
 		h.fake.seedRecord(recordOf({ sessionId: OTHER_SESSION, agentIdentity: IDENTITY, groupId: GROUP, selectedTabId: 7 }));
 		const move = { verb: "call", tool: "dg_outlook_move", args: { ids: ["a"], folder: "archive" } } as const;
 		await h.run(move);
@@ -1732,21 +1762,144 @@ describe("pw --ext WebMCP approval", () => {
 		expect(h.approvalRequests).toHaveLength(2);
 	});
 
-	it("asks again when the stored session grant names another tab group", async () => {
-		const h = harness({ tabs: [owaTab], approval: "allow", mainResult: ran });
+	it("keys a session grant by session, site and tool, with no tab group", async () => {
+		const h = harness({ builtInOwned: true, tabs: [owaTab], approval: "allow", mainResult: ran });
 		const move = { verb: "call", tool: "dg_outlook_move", args: { ids: ["a"], folder: "archive" } } as const;
-		h.fake.api.storage.session.set({
-			[`webmcpGrants:${SESSION}`]: [{ origin: "https://outlook.live.com", tool: "dg_outlook_move", groupId: OTHER_GROUP }],
-		});
 		await h.run(move);
-		expect(h.approvalRequests).toHaveLength(1);
+		expect(await h.fake.api.storage.session.get(`webmcpGrants:${SESSION}`)).toEqual({
+			[`webmcpGrants:${SESSION}`]: [{ site: "https://live.com", tool: "dg_outlook_move" }],
+		});
 	});
 
-	it("runs a read tool and a site tool without asking", async () => {
-		const h = harness({ tabs: [owaTab], approval: "deny", mainResult: ran });
+	it("asks every time and offers no Remember for a third-party dg_outlook_list on outlook.live.com", async () => {
+		const h = harness({ tabs: [owaTab], approval: "allow", remember: true, mainResult: ran });
+		await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });
+		await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });
+		expect(h.approvalRequests).toEqual([
+			expect.objectContaining({
+				title: "Allow dg_outlook_list on live.com?",
+				lines: expect.arrayContaining(["This tool asks every time."]),
+			}),
+			expect.objectContaining({ title: "Allow dg_outlook_list on live.com?" }),
+		]);
+		expect(h.approvalRequests[0]).not.toHaveProperty("remember");
+		expect(await h.remembered.list()).toEqual([]);
+	});
+
+	it("treats dg_outlook_move as each when an enabled third-party script also runs on the origin", async () => {
+		const h = harness({
+			builtInOwned: true,
+			thirdPartySites: { active: ["https://*.outlook.live.com/*"], stopped: [] },
+			tabs: [owaTab],
+			approval: "allow",
+			remember: true,
+			mainResult: ran,
+		});
+		const move = { verb: "call", tool: "dg_outlook_move", args: { ids: ["a"] } } as const;
+		await h.run(move);
+		await h.run(move);
+		expect(h.approvalRequests).toHaveLength(2);
+		expect(h.approvalRequests[0]).not.toHaveProperty("remember");
+		expect(await h.fake.api.storage.session.get(`webmcpGrants:${SESSION}`)).toEqual({});
+		expect(await h.remembered.list()).toEqual([]);
+	});
+
+	it.each([
+		["the document loaded before the script stopped", 1_000, 2_000, 2],
+		["the document start cannot be read", undefined, 2_000, 2],
+		["the document loaded after the script stopped", 3_000, 2_000, 1],
+	] as const)("asks for a built-in session tool by stopped third-party sites when %s", async (_label, documentStart, stoppedAt, asks) => {
+		const h = harness({
+			builtInOwned: true,
+			thirdPartySites: { active: [], stopped: [{ matches: ["https://outlook.live.com/*"], stoppedAt }] },
+			...(documentStart === undefined ? {} : { documentStart }),
+			tabs: [owaTab],
+			approval: "allow",
+			mainResult: ran,
+		});
+		const move = { verb: "call", tool: "dg_outlook_move", args: { ids: ["a"] } } as const;
+		await h.run(move);
+		await h.run(move);
+		expect(h.approvalRequests).toHaveLength(asks);
+	});
+
+	it("ignores stopped third-party sites that do not cover the origin", async () => {
+		const h = harness({
+			builtInOwned: true,
+			thirdPartySites: { active: [], stopped: [{ matches: ["https://example.com/*"], stoppedAt: 9_000 }] },
+			tabs: [owaTab],
+			approval: "deny",
+			mainResult: ran,
+		});
 		expect((await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).ok).toBe(true);
-		expect((await h.run({ verb: "call", tool: "search_flights", args: { to: "LIS" } })).ok).toBe(true);
 		expect(h.approvalRequests).toEqual([]);
+	});
+
+	it("remembers a built-in session tool for 30 days across sessions until it is revoked", async () => {
+		const h = harness({ builtInOwned: true, tabs: [owaTab], approval: "allow", remember: true, mainResult: ran });
+		h.fake.seedRecord(recordOf({ sessionId: OTHER_SESSION, agentIdentity: IDENTITY, groupId: GROUP, selectedTabId: 7 }));
+		const move = { verb: "call", tool: "dg_outlook_move", args: { ids: ["a"] } } as const;
+		await h.run(move);
+		expect(h.approvalRequests).toEqual([
+			expect.objectContaining({ remember: "Remember for 30 days, for every agent session" }),
+		]);
+		expect(await h.remembered.list()).toEqual([
+			expect.objectContaining({
+				site: "https://live.com",
+				tool: "dg_outlook_move",
+				expiresAt: h.clock.now + 30 * 24 * 60 * 60 * 1000,
+			}),
+		]);
+
+		expect((await h.runAs(OTHER_SESSION, move)).ok).toBe(true);
+		expect(h.approvalRequests).toHaveLength(1);
+
+		await h.remembered.revoke({ site: "https://live.com", tool: "dg_outlook_move" });
+		await h.runAs(OTHER_SESSION, move);
+		expect(h.approvalRequests).toHaveLength(2);
+	});
+
+	it("never remembers a built-in each-class tool", async () => {
+		const h = harness({ builtInOwned: true, tabs: [owaTab], approval: "allow", remember: true, mainResult: ran });
+		await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } });
+		await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } });
+		expect(h.approvalRequests).toHaveLength(2);
+		expect(h.approvalRequests[0]).not.toHaveProperty("remember");
+		expect(await h.remembered.list()).toEqual([]);
+		expect(await h.fake.api.storage.session.get(`webmcpGrants:${SESSION}`)).toEqual({});
+	});
+
+	it("runs a read tool without asking", async () => {
+		const h = harness({ builtInOwned: true, tabs: [owaTab], approval: "deny", mainResult: ran });
+		expect((await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).ok).toBe(true);
+		expect(h.approvalRequests).toEqual([]);
+	});
+
+	it("asks every time for a site's own tool with no dg_ name", async () => {
+		const h = harness({ approval: "allow", mainResult: ran });
+		await h.run({ verb: "call", tool: "search_flights", args: { to: "LIS" } });
+		await h.run({ verb: "call", tool: "search_flights", args: { to: "LIS" } });
+		expect(h.approvalRequests).toEqual([
+			expect.objectContaining({ title: expect.stringContaining("search_flights") }),
+			expect.objectContaining({ title: expect.stringContaining("search_flights") }),
+		]);
+		expect(h.approvalRequests[0]).not.toHaveProperty("remember");
+	});
+
+	it("does not run a site's own tool on Deny", async () => {
+		const actions: unknown[] = [];
+		const h = harness({ approval: "deny", mainResult: (action) => void actions.push(action) });
+		expect((await h.run({ verb: "call", tool: "search_flights", args: {} })).ok).toBe(false);
+		expect(actions).toEqual([]);
+	});
+
+	it("does not ask the pw --ext site question for tools or call", async () => {
+		const h = harness({ builtInOwned: true, sites: "ask", tabs: [owaTab], approval: "allow", mainResult: () => ({ ...ran(), tools: [] }) });
+		await h.run({ verb: "tools" });
+		await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });
+		await h.run({ verb: "call", tool: "dg_outlook_move", args: { ids: ["a"], folder: "archive" } });
+		expect(h.approvalRequests).toEqual([expect.objectContaining({ title: "Allow dg_outlook_move on live.com?" })]);
+		expect(h.fake.session.has(`pwExtSites:${SESSION}`)).toBe(false);
 	});
 
 	it("asks every time for an unknown dg_ tool", async () => {
@@ -1778,6 +1931,39 @@ describe("pw --ext WebMCP approval", () => {
 		expect(await h.run({ verb: "call", tool, args: { ids: ["a"] } })).toEqual({ ok: false, error });
 		expect(actions).toEqual([]);
 		expect(await h.fake.api.storage.session.get(`webmcpGrants:${SESSION}`)).toEqual({});
+	});
+
+	it("refuses a read tool and runs nothing when the tab leaves the group before it runs", async () => {
+		const actions: unknown[] = [];
+		const h = harness({ tabs: [owaTab], mainResult: (action) => void actions.push(action) });
+		const get = h.fake.raw.tabs.get;
+		const original = get.getMockImplementation();
+		let reads = 0;
+		get.mockImplementation((async (tabId: number) => {
+			const tab = (await original?.(tabId)) as { groupId?: number } | undefined;
+			return ++reads > 1 && tab ? { ...tab, groupId: -1 } : tab;
+		}) as never);
+		expect((await h.run({ verb: "call", tool: "dg_outlook_read", args: { id: "1" } })).ok).toBe(false);
+		expect(actions).toEqual([]);
+	});
+
+	it("refuses and runs nothing when the page changes while the approval is open", async () => {
+		const actions: unknown[] = [];
+		let h: ReturnType<typeof harness>;
+		h = harness({
+			tabs: [owaTab],
+			approval: "allow",
+			onApproval: () => {
+				const tab = h.fake.tabs.get(7);
+				if (tab) tab.url = "https://evil.example.test/";
+			},
+			mainResult: (action) => void actions.push(action),
+		});
+		expect(await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } })).toEqual({
+			ok: false,
+			error: "The page changed while the approval was open; dg_outlook_delete did not run. Retry.",
+		});
+		expect(actions).toEqual([]);
 	});
 
 	it("refuses and runs nothing when the tab leaves the group while the approval is open", async () => {
@@ -1890,6 +2076,7 @@ describe("pw --ext WebMCP on a mailbox tab", () => {
 
 	it("asks nothing for dg_outlook_list on outlook.live.com", async () => {
 		const h = harness({
+			builtInOwned: true,
 			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/" }],
 			approval: "deny",
 			mainResult: () => ({ api: "modelContext", output: "[]" }),
@@ -2022,6 +2209,7 @@ describe("pw --ext call output", () => {
 	it("passes an OWA item id through unchanged", async () => {
 		const id = "AAMkADQ1ZTI3LTc0OWUtNGMwNS1iYjJmLWQ5MGI4OGE4ZTM1NQBGAAAAAAAbc9WvQ1k3RYaQ0q7yB8HaBwDfDYlFqjH4QZxAu3SVPHaQAAAAAAEMAADfDYlFqjH4QZxAu3SVPHaQAAB5mYQmAAA=";
 		const h = harness({
+			builtInOwned: true,
 			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/" }],
 			mainResult: () => ({ api: "modelContext", output: JSON.stringify({ items: [{ id }] }) }),
 		});
@@ -2248,7 +2436,7 @@ describe("pw --ext dialog", () => {
 	it("installs the shim in the tabs of a recovered group when new reuses it", async () => {
 		const h = harness({ record: false });
 		await h.fake.raw.storage.local.set({
-			[`agentTabsGroup:${SESSION}`]: { ...recordOf({ sessionId: SESSION, agentIdentity: IDENTITY, groupId: GROUP }), windowId: WINDOW, groupTitle: "mine" },
+			[`agentTabsGroup:${SESSION}`]: { ...recordOf({ sessionId: SESSION, agentIdentity: IDENTITY, groupId: GROUP }), windowId: WINDOW, groupTitle: "agent · sess" },
 		});
 		await h.run({ verb: "new", url: "https://app.example.test/" });
 		const tab = await h.createdTab();
@@ -2638,23 +2826,32 @@ describe("pw --ext Stop", () => {
 		expect(await running).toEqual({ ok: false, error: STOPPED });
 	});
 
-	it("keeps no dg_ grant that an Allow gives after Stop", async () => {
-		let asked = 0;
+	it("leaves the session's Web MCP grants in place", async () => {
+		const h = harness({
+			builtInOwned: true,
+			approval: "allow",
+			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/", title: "Mail" }],
+			mainResult: () => ({ api: "modelContext", output: "done" }),
+		});
+		await h.run({ verb: "call", tool: "dg_outlook_move", args: { ids: ["a"], folder: "archive" } });
+		await h.handler.stop(SESSION);
+		expect(h.fake.session.get(`webmcpGrants:${SESSION}`)).toEqual([{ site: "https://live.com", tool: "dg_outlook_move" }]);
+	});
+
+	it("leaves a Web MCP grant that an Allow gives while Stop runs", async () => {
 		const options = {
-			sites: "ask" as const,
+			builtInOwned: true,
 			approval: "allow" as const,
 			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/", title: "Mail" }],
 			mainResult: () => ({ api: "modelContext", output: "done" }),
 			onApproval: () => undefined as void,
 		};
 		const h = harness(options);
-		options.onApproval = () => {
-			if (++asked === 2) void h.handler.stop(SESSION);
-		};
+		options.onApproval = () => void h.handler.stop(SESSION);
 		const answer = await h.run({ verb: "call", tool: "dg_outlook_move", args: { ids: ["a"], folder: "archive" } });
 		expect(answer).toEqual({ ok: false, error: STOPPED });
 		await new Promise((resolve) => setTimeout(resolve, 20));
-		expect(h.fake.session.has(`webmcpGrants:${SESSION}`)).toBe(false);
+		expect(h.fake.session.has(`webmcpGrants:${SESSION}`)).toBe(true);
 	});
 
 	it("closes no tab when Stop comes while close waits for the agent tab lock", async () => {
