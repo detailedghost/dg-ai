@@ -3352,6 +3352,19 @@ describe("pw --ext storage, fetch and credential save", () => {
 		expectNoMarker(h, [result]);
 	});
 
+	it("saves under the domain without the port on a non-default https port", async () => {
+		const h = harness({
+			sites: "ask",
+			approval: "allow",
+			tabs: [{ ...MAIL_TAB, url: "https://outlook.live.com:8443/mail/0/" }],
+			cookies: { SessionCookie: { value: MARKER } },
+			mainResult: hook(() => ({ entries: [] })),
+		});
+		const result = await h.run({ verb: "credential", name: "owa-token", source: "cookie", key: "SessionCookie" });
+		expect(outcome(result)).toContain("Saved pw/live.com/owa-token");
+		expect(h.storedCredentials.map((entry) => entry.site)).toEqual(["live.com"]);
+	});
+
 	it.each([
 		["the grant is denied", { approval: "deny" as const }, { verb: "credential", name: "n", source: "cookie", key: "SessionCookie" }],
 		["the cookie is missing", {}, { verb: "credential", name: "n", source: "cookie", key: "Nope" }],

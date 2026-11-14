@@ -295,7 +295,7 @@ const NOT_SAVED = "Nothing was saved.";
 /** The site segment of a saved credential name: the registrable domain, or the host when it has none. */
 function credentialSite(url: string): string | undefined {
 	const site = siteOf(url);
-	const host = site.grouped ? site.key.replace(/^[a-z]+:\/\//, "") : new URL(url).hostname;
+	const host = site.grouped ? site.key.replace(/^[a-z]+:\/\//, "").replace(/:\d+$/, "") : new URL(url).hostname;
 	return PW_EXT_CREDENTIAL_SITE.test(host) ? host : undefined;
 }
 
