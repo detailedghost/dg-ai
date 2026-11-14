@@ -78,6 +78,13 @@ describe("wxt build", () => {
 		expect(existsSync(resolve(OUT, "webmcp-shim.js"))).toBe(true);
 	});
 
+	it("ships the Outlook built-in plugin for run-time registration only", () => {
+		const scripts = (manifest as Manifest & { content_scripts?: { js?: string[] }[] }).content_scripts ?? [];
+		const code = readFileSync(resolve(OUT, "content-scripts/webmcp-outlook-main.js"), "utf8");
+		expect(code).toContain("service.svc");
+		expect(scripts.flatMap((entry) => entry.js ?? [])).not.toContain("content-scripts/webmcp-outlook-main.js");
+	});
+
 	it("pins the chrome extension id through the manifest key", () => {
 		const digest = createHash("sha256")
 			.update(Buffer.from(manifest.key as string, "base64"))

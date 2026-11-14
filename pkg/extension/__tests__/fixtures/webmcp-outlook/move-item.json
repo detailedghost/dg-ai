@@ -1,0 +1,14 @@
+{
+	"Body": {
+		"ResponseMessages": {
+			"Items": [
+				{
+					"__type": "ItemInfoResponseMessage:#Exchange",
+					"ResponseClass": "Success",
+					"ResponseCode": "NoError",
+					"Items": [{ "__type": "Message:#Exchange", "ItemId": { "Id": "AAMkFixtureMoved1=", "ChangeKey": "CQAAAFixtureM1" } }]
+				}
+			]
+		}
+	}
+}

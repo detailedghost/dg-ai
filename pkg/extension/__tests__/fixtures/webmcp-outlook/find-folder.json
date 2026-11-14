@@ -1,0 +1,20 @@
+{
+	"Body": {
+		"ResponseMessages": {
+			"Items": [
+				{
+					"__type": "FindFolderResponseMessage:#Exchange",
+					"ResponseClass": "Success",
+					"ResponseCode": "NoError",
+					"RootFolder": {
+						"Folders": [
+							{ "__type": "Folder:#Exchange", "FolderId": { "Id": "AAMkFixtureFolder1=", "ChangeKey": "AQAAAFixtureF1" }, "DisplayName": "Fixture folder" },
+							{ "__type": "Folder:#Exchange", "FolderId": { "Id": "AAMkFixtureFolder2=", "ChangeKey": "AQAAAFixtureF2" }, "DisplayName": "Twin folder" },
+							{ "__type": "Folder:#Exchange", "FolderId": { "Id": "AAMkFixtureFolder3=", "ChangeKey": "AQAAAFixtureF3" }, "DisplayName": "Twin folder" }
+						]
+					}
+				}
+			]
+		}
+	}
+}

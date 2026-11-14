@@ -1,0 +1,30 @@
+{
+	"Body": {
+		"ResponseMessages": {
+			"Items": [
+				{
+					"__type": "ItemInfoResponseMessage:#Exchange",
+					"ResponseClass": "Success",
+					"ResponseCode": "NoError",
+					"Items": [
+						{
+							"__type": "Message:#Exchange",
+							"ItemId": { "Id": "AAMkFixtureItem1=", "ChangeKey": "CQAAAFixture1" },
+							"Subject": "Fixture subject",
+							"From": { "Mailbox": { "Name": "Test Person", "EmailAddress": "test.person@example.com" } },
+							"ToRecipients": [
+								{ "Name": "Fixture Reader", "EmailAddress": "fixture.reader@example.com" },
+								{ "Name": "Fixture Team", "EmailAddress": "fixture.team@example.com" }
+							],
+							"DateTimeReceived": "2026-11-01T09:30:00Z",
+							"Body": {
+								"BodyType": "HTML",
+								"Value": "<html><head><style>p{color:red}</style><script>alert(1)</script></head><body><p>Hello &amp; welcome,</p><div>Line two&nbsp;here &lt;ok&gt; &#8212; &#x41;</div><br>Bye</body></html>"
+							}
+						}
+					]
+				}
+			]
+		}
+	}
+}
