@@ -111,11 +111,13 @@ Rules:
   acts. If the page changed, nothing runs. A reload at the same URL is not
   detected.
 - Browser settings pages (`chrome://`, `edge://`, `brave://`, `about:`),
-  extension pages, `file:` pages, the web stores, private windows, and the
-  signed-in Proton Mail tab are refused. `tabs`, `new` and `close` still run
-  when the selected tab is one of them, and `tabs` shows those tabs without their
-  URL or title. `open` navigates a settings page to a web page. The Proton Mail
-  tab is never read, closed or navigated.
+  extension pages, `file:` pages, the web stores, private windows, and
+  signed-in mailbox tabs (Proton Mail and Outlook on the web) are refused.
+  `tabs`, `new` and `close` still run when the selected tab is one of them,
+  and `tabs` shows those tabs without their URL or title. `open` navigates a
+  settings page to a web page. A mailbox tab is never read, closed or
+  navigated. On an Outlook tab, only the enabled built-in `dg_outlook_` tools
+  run through `call` (see [Web MCP](webmcp.md#outlook-on-the-web)).
 - Text output is redacted (tokens, keys, emails, secret query values) and
   capped. Password and secret field contents are left out, and `fill` refuses
   those fields unless an unmask grant holds. Screenshots are not redacted: they

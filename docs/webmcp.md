@@ -24,7 +24,7 @@ class:
 
 | Class | Tools | What happens |
 |---|---|---|
-| `read` | `dg_` tools that only read, such as `dg_outlook_list` | Runs with no question |
+| `area` | `dg_` tools that read one area of a site, such as mail: `dg_outlook_list`, `dg_outlook_search` and `dg_outlook_read` | Asks once; the Allow holds for that MCP session, site and area, so it covers every tool of the area |
 | `session` | `dg_` tools that change little, such as `dg_outlook_move` | Asks once; the Allow holds for that MCP session, site and tool |
 | `each` | send, delete, reply, forward, event changes, unknown `dg_` tools, third-party tools, and any tool without a `dg_` name | Asks every time |
 
@@ -33,18 +33,22 @@ class:
 - A site is the scheme and registrable domain, the same key that the pw --ext
   allowlist uses, so one grant covers `outlook.live.com` and `mail.live.com`.
   A grant is not tied to a tab group.
+- One mail `area` grant lets the agent list, search and read message bodies
+  on that site. The popup says so.
 - On a mailbox tab, only the enabled built-in `dg_` tools for that site run.
-  Other tools are refused or left out of `tools`.
+  Other tools are refused or left out of `tools`. Signed-in Proton Mail and
+  Outlook tabs are mailbox tabs: pw --ext shows them with no address or
+  title and refuses `snapshot`, `click`, `fill` and the other page verbs.
 - `tools` asks nothing. It shows the tool list of any page in the agent's
   group, also a page the tab reached by a link or a redirect.
 
 ## Remember for 30 days
 
-The popup of a `session` tool has a "Remember for 30 days" checkbox. It is not
+The popup of a `session` or `area` tool has a "Remember for 30 days" checkbox. It is not
 ticked by default.
 
 - Without it, the grant ends when the MCP session ends.
-- With it, the grant holds for that site and tool for 30 days, for every agent
+- With it, the grant holds for that site and tool, or that site and area, for 30 days, for every agent
   session, also after a browser restart. Use on the grant does not extend it.
 - An `each` tool never shows the checkbox and never stores a grant.
 - Remembered grants live in the extension's `storage.local`, each one signed
@@ -54,16 +58,50 @@ ticked by default.
   nothing, so a revoked grant cannot be written back.
 - Removing the extension or clearing its data removes them.
 
+## Outlook on the web
+
+The Outlook built-in is off by default. Turn it on in the Options MCP tab. It
+runs on `outlook.live.com`, `outlook.office.com`, `outlook.office365.com` and
+`outlook.cloud.microsoft`, and adds these tools when the page has no WebMCP
+tools of its own:
+
+| Tool | Class | What it does |
+|---|---|---|
+| `dg_outlook_list` | `area` (mail) | Newest messages of a folder: id, subject, sender address, date, read, flagged, preview |
+| `dg_outlook_search` | `area` (mail) | The same fields for an Outlook search query over all mail folders |
+| `dg_outlook_read` | `area` (mail) | One message as plain text, body capped at 50,000 characters; the read state does not change |
+| `dg_outlook_mark_read` | `session` | Marks messages read or unread |
+| `dg_outlook_flag` | `session` | Flags or unflags messages |
+| `dg_outlook_move` | `session` | Moves messages to a folder by its distinguished id or exact name |
+| `dg_outlook_archive` | `session` | Moves messages to Archive |
+| `dg_outlook_draft` | `session` | Saves a plain-text draft; nothing is sent |
+| `dg_outlook_delete` | `each` | Moves messages to Deleted Items, never a permanent delete |
+| `dg_outlook_reply` | `each` | Sends a plain-text reply or reply to all |
+
+- The tools call the Outlook web service from the page with the sign-in
+  headers that the page itself sends. Those headers stay in the page and never
+  reach the extension background, the agent or a log.
+- Sender and recipient fields hold addresses only. The extension masks them
+  unless an unmask grant holds. Write tools echo only counts and ids.
+- An id list holds at most 50 ids, and `limit` is at most 50. At most 4
+  calls run at once in a tab.
+- A tool that runs before the page has sent its first service call waits up
+  to 10 seconds and then fails with "Outlook is still loading; retry.". On a
+  mailbox tab the agent sees a fixed failure text in place of the tool error.
+
 ## Revoke
 
 The toolbar popup has a "Web MCP grants" section. It lists each active session
 grant (session, site, tool) and each remembered grant (site, tool, expiry
-date), with a Revoke button per grant and a Revoke all button. Only the
-extension's own popup page can list or revoke grants.
+date), with a Revoke button per grant and a Revoke all button. A mail area
+grant shows as "mail (all mail read tools)". The Options MCP tab has the same
+list. Only the extension's own popup and Options pages can list or revoke
+grants.
 
 pw --ext Stop, on the banner or in the toolbar popup, ends browser control
 only. It does not revoke Web MCP grants. After Stop the session's tabs return
 to you, so its Web MCP calls have no tab to run in, but its grants stay until
 the session ends or you revoke them.
 
-See [ADR 0046](adr/0046-webmcp-approvals-apart-from-pw-ext.md).
+See [ADR 0046](adr/0046-webmcp-approvals-apart-from-pw-ext.md) and
+[ADR 0047](adr/0047-webmcp-area-approval-class.md).
