@@ -37,9 +37,10 @@ class:
   does not cover message bodies. The mail-body area asks apart, also when a
   mail grant holds. The popup says what each grant covers.
 - On a mailbox tab, only the enabled built-in `dg_` tools for that site run.
-  Other tools are refused or left out of `tools`. Signed-in Proton Mail and
-  Outlook tabs are mailbox tabs: pw --ext shows them with no address or
-  title and refuses `snapshot`, `click`, `fill` and the other page verbs.
+  Other tools are refused or left out of `tools`. The signed-in Proton Mail
+  tab is the mailbox tab: pw --ext shows it with no address or title and
+  refuses `snapshot`, `click`, `fill` and the other page verbs. Outlook is not
+  a mailbox tab.
 - `tools` asks nothing. It shows the tool list of any page in the agent's
   group, also a page the tab reached by a link or a redirect.
 
@@ -66,10 +67,13 @@ runs on `outlook.live.com`, `outlook.office.com`, `outlook.office365.com` and
 `outlook.cloud.microsoft`, and adds these tools when the page has no WebMCP
 tools of its own:
 
-The tools run on your own signed-in Outlook tab, through the Web MCP bridge,
-with the Web MCP approvals above. pw --ext cannot control that tab: it is a
-mailbox tab, so pw --ext refuses `snapshot`, `click` and the other page verbs
-there, and the toolbar popup does not add it to an agent.
+pw --ext fully controls Outlook pages, like any other page: the site approval,
+PII masking and the unmask grant apply, and the title hides the account name
+unless an unmask grant holds. The Web MCP tools are an extra, cheaper path:
+they run on your own signed-in Outlook tab, through the Web MCP bridge, with
+the Web MCP approvals above, and return compact JSON in place of page
+snapshots. Agents use both. PR #210 lets Web MCP reach any of your tabs, not
+only agent tabs.
 
 | Tool | Class | What it does |
 |---|---|---|
@@ -107,8 +111,9 @@ there, and the toolbar popup does not add it to an agent.
 - A failed call of an enabled built-in `dg_` tool shows the agent the tool's
   own error, with addresses masked. This lets the agent tell a retry ("Outlook
   is still loading; retry.", "Outlook refused the request (429)") from bad
-  input. Any other page error on a mailbox tab, such as a failed tool list,
-  shows a fixed failure text.
+  input. The rule follows the built-in ownership check, not the mailbox rule.
+  On the Proton Mail mailbox tab, any other page error shows a fixed failure
+  text.
 
 ## Revoke
 

@@ -6,17 +6,17 @@ Date: 2026-11-14
 ## Context
 
 - The Outlook built-in pointed at `content-scripts/webmcp-outlook-main.js`,
-  which no build shipped. On an Outlook tab, pw --ext could read and click
-  the page like any other site.
+  which no build shipped. Agents drove Outlook only with pw --ext snapshots
+  and clicks, which cost many tokens per message.
 - The spike (`.agents/references/webmcp-outlook-spike.md` on
   `spike/webmcp-outlook`) picks OWA service calls for all ten mail commands.
   The DOM list is virtualized, and a DOM read can mark a message read.
 - [ADR 0047](0047-webmcp-area-approval-class.md) puts list and search in the
   `mail` area and reading a body in the `mail-body` area.
 - Dante's answers on PR #208 (2026-11-14): list and search mask subject and
-  preview; Outlook tabs stay mailbox tabs for pw --ext; Web MCP must not need a
-  controlled tab; tool errors reach the agent; the built-in stays off by
-  default.
+  preview; pw --ext keeps full control of every page, Outlook included, and
+  Web MCP is an extra path; Web MCP must not need a controlled tab; tool
+  errors reach the agent; the built-in stays off by default.
 
 ## Decision
 
@@ -40,14 +40,15 @@ The runtime-registered content script
   subject and the plain-text body, shortened so the serialized answer, measured
   after the address mask, stays under the output cap as valid JSON. A write tool on several ids returns the ids
   that worked and a code-only error per id that failed.
-- **Mailbox tabs.** `mailbox()` in `pkg/extension/lib/background/tab-guards.ts`
-  covers the Outlook hosts. On an Outlook tab only enabled built-in
-  `dg_outlook_` calls pass, and their errors reach the agent through
-  `maskRaw`. The tools run on the person's own signed-in Outlook tab through
-  the Web MCP bridge, with the Web MCP approvals. pw --ext cannot control that
-  tab, and the popup does not add it to an agent. The tool code does not
-  depend on which tab group the tab is in; a separate change lets the bridge
-  reach the person's normal tabs.
+- **Two paths.** Outlook is not a mailbox tab. pw --ext keeps full page
+  control of Outlook pages, like any other page, with the site approval, PII
+  masking, the unmask grant and the #199 title mask of the account name. The
+  Web MCP tools are an extra, cheaper path on the person's own signed-in tab,
+  through the Web MCP bridge, with the Web MCP approvals. Agents use both.
+  The error of an enabled built-in tool reaches the agent through `maskRaw`;
+  this follows `mailboxToolAllowed`, not `mailbox()`. The tool code does not
+  depend on which tab group the tab is in; PR #210 lets the bridge reach the
+  person's normal tabs.
 
 ## Consequences
 
@@ -55,10 +56,12 @@ The runtime-registered content script
   bodies need their own prompt.
 - **Good:** a batch move with one stale id still moves the other items and
   tells the agent which id failed.
-- **Bad:** Outlook tabs show no title or address in pw --ext, and pw --ext
-  cannot snapshot or click there.
-- **Bad:** until the bridge reaches the person's normal tabs, the tools run
-  only where the bridge already reaches.
+- **Good:** an agent can read mail through compact Web MCP JSON and still
+  snapshot or click the page with pw --ext when a tool does not cover a task.
+- **Bad:** pw --ext on an Outlook page can show mail content that the Web MCP
+  approvals guard, behind the pw --ext site approval and masking instead.
+- **Bad:** until the bridge reaches the person's normal tabs (PR #210), the
+  tools run only where the bridge already reaches.
 - **Bad:** search can still match on subject text, so an agent can learn
   whether a word is in a subject from the match count.
 - **Neutral:** every OWA request and response shape, and the `/mail/<n>/` to
@@ -93,6 +96,6 @@ sequenceDiagram
 
 - `pkg/extension/lib/features/webmcp-outlook/`
 - `pkg/extension/lib/features/request-header-tap.ts`
-- `pkg/extension/lib/background/tab-guards.ts`
+- `pkg/extension/lib/background/pw-ext.ts`
 - `pkg/extension/entrypoints/webmcp-outlook-main.content.ts`
 - `.agents/spec/018_web_mcp_plugins/plan.md` R-9, R-11

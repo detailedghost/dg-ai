@@ -116,6 +116,12 @@ Rules:
   when the selected tab is one of them, and `tabs` shows those tabs without their
   URL or title. `open` navigates a settings page to a web page. The Proton Mail
   tab is never read, closed or navigated.
+- Outlook on the web is not a mailbox tab. pw --ext fully controls Outlook
+  pages like any other page, with the site approval, PII masking and the
+  unmask grant. The page title hides the account name unless an unmask grant
+  holds. The Outlook Web MCP tools are an extra, cheaper path on your own
+  signed-in tab (see [Web MCP](webmcp.md#outlook-on-the-web)). Agents use
+  both.
 - Text output is redacted (tokens, keys, emails, secret query values) and
   capped. Password and secret field contents are left out, and `fill` refuses
   those fields unless an unmask grant holds. Screenshots are not redacted: they
@@ -198,9 +204,7 @@ Rules:
     token patterns. Email addresses stay masked unless an `unmask` grant covers
     the site.
   - An extension that does not list `network` refuses the verb at once.
-  - Outlook is not a mailbox origin today, so `network` works there. When
-    Outlook joins the mailbox origins, `network` there needs the new area
-    approval or stays blocked.
+  - Outlook is not a mailbox origin, so `network` works there.
 - One Allow per dg session and registrable domain (for example `live.com`)
   covers `network --values`, `storage --values`, `fetch` with a method other
   than GET or HEAD, `fetch --auth page`, and `credential save`. The popup says

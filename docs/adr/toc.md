@@ -91,7 +91,7 @@ flowchart LR
 - [0031 — Serve the chat and board pages from the daemon on loopback](0031-loopback-pages.md) — Accepted:
   `dg-daemon` serves `/chat` and `/board` behind a token and loopback-origin gate; the extension is the `--ext` path.
 - [0035 — Drive the real browser with `pw --ext` behind a per-call approval](0035-pw-ext-real-browser.md) — Proposed:
-  fixed verbs over the daemon relay; an extension popup asks for every call, and the CLI cannot approve. Amended 2026-11-05: passing `--ext` is the grant and the popup is gone. Amended 2026-11-14: Outlook tabs are protected mailboxes too (0048).
+  fixed verbs over the daemon relay; an extension popup asks for every call, and the CLI cannot approve. Amended 2026-11-05: passing `--ext` is the grant and the popup is gone.
 - [0037 — One browser relay for inbox, proto and pw-ext](0037-one-browser-relay.md) — Proposed:
   one table-driven relay in the daemon and one dispatcher in the extension carry inbox, proto and pw-ext; frames stay byte-identical
 - [0038 — Reduce the extension to pairing and tab control](0038-extension-pairing-only.md) — Proposed:
@@ -123,7 +123,7 @@ flowchart LR
   tools of one area share one grant per session and site under the key `area:<area>`; mail list and search are the `mail` area, and message bodies are the `mail-body` area. Amends 0046.
 
 - [0048 — Outlook mail Web MCP tools over OWA service calls](0048-outlook-mail-webmcp-tools.md) — Proposed:
-  the Outlook built-in ships ten tools that call `service.svc` from the signed-in page with the headers of the tab's own account endpoint; list and search mask subject and preview; write tools report each id apart; the tools run on the person's own tab, which pw --ext cannot control. Amends 0035.
+  the Outlook built-in ships ten tools that call `service.svc` from the signed-in page with the headers of the tab's own account endpoint; list and search mask subject and preview; write tools report each id apart; the tools are an extra path next to full pw --ext control of Outlook pages.
 
 ## Adding an ADR
 
