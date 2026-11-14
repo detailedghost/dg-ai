@@ -101,6 +101,24 @@ describe("installOutlookHeaderObserver", () => {
 		observer.dispose();
 	});
 
+	it("drops the copy when X-AnchorMailbox changes on a request with no token or canary", async () => {
+		const page = host();
+		const observer = installOutlookHeaderObserver(page as never);
+		await page.fetch(SERVICE, { headers: ACCOUNT_A });
+		await page.fetch(SERVICE, { headers: { "x-anchormailbox": ACCOUNT_B["x-anchormailbox"] } });
+		expect(observer.getHeaders()).toBeUndefined();
+		observer.dispose();
+	});
+
+	it("keeps the copy on a request with no token, canary or anchor", async () => {
+		const page = host();
+		const observer = installOutlookHeaderObserver(page as never);
+		await page.fetch(SERVICE, { headers: ACCOUNT_A });
+		await page.fetch(SERVICE, { headers: { "x-owa-sessionid": "fixture-session-a" } });
+		expect(observer.getHeaders()?.authorization).toBe(ACCOUNT_A.authorization);
+		observer.dispose();
+	});
+
 	it("merges a refreshed token into the copy of the same account", async () => {
 		const page = host();
 		const observer = installOutlookHeaderObserver(page as never);

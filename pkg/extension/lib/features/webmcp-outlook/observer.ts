@@ -27,9 +27,11 @@ export function installOutlookHeaderObserver(host: TapHost & { location: Pick<Lo
 	let session: OutlookSessionHeaders | undefined;
 	function observe(headers: Headers): void {
 		const picked = pick(headers);
+		const anchor = picked["x-anchormailbox"];
+		if (session && anchor !== undefined && anchor !== session["x-anchormailbox"]) session = undefined;
 		if (!picked.authorization && !picked["x-owa-canary"]) return;
 		session =
-			session && session["x-anchormailbox"] === picked["x-anchormailbox"] ? { ...session, ...picked } : picked;
+			session && session["x-anchormailbox"] === anchor ? { ...session, ...picked } : picked;
 	}
 	const restore = tapRequestHeaders(
 		host,
