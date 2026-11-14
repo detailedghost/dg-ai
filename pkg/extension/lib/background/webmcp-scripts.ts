@@ -483,8 +483,11 @@ export function createWebMcpScripts({
 
 		setEnabled(id: string, enabled: boolean): Promise<void> {
 			return locked(async () => {
+				let stopping: WebMcpScriptRecord | undefined;
 				await mutate((records) => {
-					if (records.some((record) => record.id === id)) {
+					const before = records.find((record) => record.id === id);
+					if (before && !builtInIds.has(id) && before.enabled && !enabled) stopping = before;
+					if (before) {
 						return records.map((record) => (record.id === id ? { ...record, enabled } : record));
 					}
 					const builtIn = BUILT_IN_SCRIPTS.find((script) => script.id === id);
@@ -501,6 +504,7 @@ export function createWebMcpScripts({
 						}),
 					];
 				});
+				if (stopping) await stopUser(`${USER_PREFIX}${id}`, stopping.matches);
 				await runReconcile();
 			});
 		},

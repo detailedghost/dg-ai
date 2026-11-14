@@ -868,6 +868,16 @@ describe("stopped third-party sites", () => {
 		]);
 	});
 
+	it("records the sites of a script disabled while the user scripts api is unavailable", async () => {
+		const { scripts, storage, make } = setup();
+		const { id } = await scripts.addThirdParty(draft());
+		await approveNow(scripts, id);
+
+		await make(false).setEnabled(id, false);
+
+		expect(stopped(storage)).toEqual([{ matches: ["https://flights.example.com/*"], stoppedAt: 1000 }]);
+	});
+
 	it("records the sites of an orphan registration that reconcile removes", async () => {
 		const { scripts, storage, live, userMatches } = setup();
 		live.user.add("dg-webmcp-user-gone");
