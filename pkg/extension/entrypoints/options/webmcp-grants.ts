@@ -1,6 +1,7 @@
 import { describeError } from "@dg/common";
 import { MSG, type WebMcpGrantView } from "@dg/pages/chat-messages";
 import { button, element } from "@/lib/features/dom";
+import { agentLabel, parseSessions } from "@/lib/features/pairing-sessions";
 import { parseWebMcpGrants, webMcpGrantRow } from "@/lib/features/webmcp-grants";
 
 export const NO_WEBMCP_GRANTS = "No Web MCP grants. Agents ask before a tool runs.";
@@ -29,10 +30,11 @@ export function mountWebMcpGrantsPanel(
 		if (!reply || failure?.ok === false)
 			throw new Error(typeof failure?.error === "string" ? failure.error : "The extension background did not answer");
 		const grants = parseWebMcpGrants(reply);
+		const sessions = parseSessions(await request({ type: MSG.connectionRequest }).catch(() => undefined));
 		list.replaceChildren(
 			...grants.map((grant) =>
 				webMcpGrantRow(doc, grant, {
-					sessionLabel: (sessionId) => sessionId.slice(0, 8),
+					sessionLabel: (sessionId) => agentLabel(sessions, sessionId),
 					onRevoke: (picked) => revoke({ type: MSG.webmcpRevoke, grant: picked }),
 				}),
 			),

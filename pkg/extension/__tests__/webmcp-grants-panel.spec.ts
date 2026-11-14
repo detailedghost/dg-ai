@@ -18,7 +18,7 @@ async function settle(): Promise<void> {
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
-function mount(initial: WebMcpGrantView[], reply: unknown = { ok: true }, listReply?: unknown) {
+function mount(initial: WebMcpGrantView[], reply: unknown = { ok: true }, listReply?: unknown, pairings: unknown[] = []) {
 	const window = new Window();
 	windows.add(window);
 	const container = window.document.createElement("div");
@@ -28,6 +28,7 @@ function mount(initial: WebMcpGrantView[], reply: unknown = { ok: true }, listRe
 	mountWebMcpGrantsPanel(container as unknown as HTMLElement, {
 		request: async (message) => {
 			sent.push(message);
+			if (message.type === MSG.connectionRequest) return { sessions: pairings };
 			if (message.type === MSG.webmcpGrantsRequest) return listReply ?? { grants };
 			if (message.type === MSG.webmcpRevoke) grants = grants.filter((grant) => grant.tool !== message.grant?.tool);
 			if (message.type === MSG.webmcpRevokeAll) grants = [];
@@ -62,6 +63,15 @@ describe("options Web MCP grants panel", () => {
 			"dg_outlook_flaglive.com · 30 daysRemembered until 2026-12-13Revoke",
 		]);
 		expect(container.querySelector("[data-webmcp-grants-empty]")?.hasAttribute("hidden")).toBe(true);
+	});
+
+	it("labels session rows with the pairing name, as the popup does", async () => {
+		const { container } = mount([session], { ok: true }, undefined, [
+			{ sessionId: session.sessionId, agentIdentity: "sbxtest", connected: true },
+		]);
+		await settle();
+
+		expect(container.querySelector(".drive")?.textContent).toContain("sbxtest (abcdef12)");
 	});
 
 	it("revoke sends the popup revoke message with that grant, then redraws", async () => {

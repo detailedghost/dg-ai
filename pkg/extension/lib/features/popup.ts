@@ -13,6 +13,7 @@ import {
 } from "@dg/pages/chat-messages";
 import { browser } from "wxt/browser";
 import { button, element } from "./dom";
+import { agentLabel, parseSessions } from "./pairing-sessions";
 import { parseWebMcpGrants, webMcpGrantRow } from "./webmcp-grants";
 
 const TICK_MS = 2000;
@@ -60,7 +61,6 @@ const HOSTLESS_PROTOCOLS: ReadonlySet<string> = new Set([
 	"chrome-extension:",
 ]);
 
-const PRESENCES: readonly string[] = ["cli", "gone", "idle"];
 
 type PopupRuntime = {
 	onMessage: {
@@ -120,51 +120,6 @@ type DriveView = {
 
 function setText(node: HTMLElement, text: string): void {
 	if (node.textContent !== text) node.textContent = text;
-}
-
-function parseRuns(value: unknown): PairingRun[] {
-	if (!Array.isArray(value)) return [];
-	return value.flatMap((item) => {
-		const run = (item ?? {}) as Partial<PairingRun>;
-		return typeof run.sessionId === "string" &&
-			typeof run.requestId === "string" &&
-			typeof run.feature === "string" &&
-			typeof run.startedAt === "number"
-			? [
-					{
-						sessionId: run.sessionId,
-						requestId: run.requestId,
-						feature: run.feature,
-						startedAt: run.startedAt,
-					},
-				]
-			: [];
-	});
-}
-
-function parseSessions(reply: unknown): PairingSession[] {
-	const list = (reply as { sessions?: unknown } | undefined)?.sessions;
-	if (!Array.isArray(list)) return [];
-	return list.flatMap((item) => {
-		const fields = (item ?? {}) as Record<string, unknown>;
-		if (
-			typeof fields.sessionId !== "string" ||
-			typeof fields.agentIdentity !== "string" ||
-			typeof fields.connected !== "boolean"
-		)
-			return [];
-		return [
-			{
-				sessionId: fields.sessionId,
-				agentIdentity: fields.agentIdentity,
-				connected: fields.connected,
-				presence: PRESENCES.includes(fields.presence as string)
-					? (fields.presence as PairingSession["presence"])
-					: undefined,
-				runs: parseRuns(fields.runs),
-			},
-		];
-	});
 }
 
 function parseTabs(value: unknown): AgentTabView[] {
@@ -467,9 +422,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	}
 
 	function driveLabel(sessionId: string): string {
-		const shortId = sessionId.slice(0, 8);
-		const identity = sessions.find((session) => session.sessionId === sessionId)?.agentIdentity;
-		return identity === undefined ? shortId : `${identity} (${shortId})`;
+		return agentLabel(sessions, sessionId);
 	}
 
 	function showDriveError(view: DriveView, text: string | undefined): void {
