@@ -18,9 +18,10 @@ Each step lists `IN:` and `OUT:`. A gate is a hard stop: print
 IN: the arguments. OUT: `pr`, `base`, `headRef`, `sha`, `checkout`, `diffBase`, `method`.
 
 1. `dg-skills vcs-provider capabilities`. When `kind` is not `github`, stop with `land: not-github`.
-2. `gh pr view <pr> --json number,url,state,isDraft,headRefName,baseRefName,headRefOid`.
+2. `gh pr view <pr> --json number,url,state,isDraft,isCrossRepository,headRefName,baseRefName,headRefOid`.
    - `state` is not `OPEN` → stop with `land: not-open`.
    - `isDraft` is true → stop with `land: draft: mark #<n> ready first (gh pr ready <n>).`
+   - `isCrossRepository` is true → stop with `land: fork: #<n> comes from a fork; land pushes fixes to its branch, so land it by hand.`
 3. **Stacked check.** `dg-skills vcs-provider list-prs --head <baseRefName>`. Keep rows with `state` `OPEN`. Any row means the base branch is the head of an open PR → stop with `land: stacked: #<n> sits on #<parent>. Merge #<parent> first, or use /dg:chain.`
 4. **Checkout.** When `git branch --show-current` is `headRefName`, `checkout` is the current directory. Otherwise find the worktree on that branch in `git worktree list --porcelain`. With none, stop with `land: no-checkout: check out <headRefName> or run from its worktree.` Prefix every later git, review and address command with `cd "<checkout>" &&`.
 5. `git -C <checkout> fetch origin <baseRefName> <headRefName>`. Compare local `HEAD` with `headRefOid`:
@@ -103,10 +104,12 @@ IN: everything above. OUT: `mergeCommit`, or a stop.
 6. **Merge.** On yes, run:
 
    ```sh
-   gh pr merge <n> --<method> --delete-branch --match-head-commit <sha>
+   gh pr merge <n> --repo <owner>/<repo> --<method> --delete-branch --match-head-commit <sha>
    ```
 
-   - The harness, auto mode or a hook blocks it → print `! gh pr merge <n> --<method> --delete-branch --match-head-commit <sha>` for the human to run in the prompt, and stop. Never retry it another way.
+   `<owner>/<repo>` comes from `gh repo view --json nameWithOwner -q .nameWithOwner`. With `--repo`, `gh` deletes only the remote branch. The local branch and its worktree stay for `/dg:cls` or `/dg:address`, which a `/dg:spec` run needs.
+
+   - The harness, auto mode or a hook blocks it → print `! gh pr merge <n> --repo <owner>/<repo> --<method> --delete-branch --match-head-commit <sha>` for the human to run in the prompt, and stop. Never retry it another way.
    - `gh` refuses because the head moved → stop with `land: head-moved`.
    - Success → read `gh pr view <n> --json state,mergeCommit`. `state` `MERGED` → `mergeCommit` is `.mergeCommit.oid`. `state` `OPEN` means a merge queue took it, or auto-merge waits: stop with `land: queued: #<n> waits in the merge queue.` and skip step 6.
 

@@ -33,13 +33,13 @@ describe("land skill", () => {
 
 	test("merges only the tested head and deletes the branch", () => {
 		expect(WORKFLOW).toContain(
-			"gh pr merge <n> --<method> --delete-branch --match-head-commit <sha>",
+			"gh pr merge <n> --repo <owner>/<repo> --<method> --delete-branch --match-head-commit <sha>",
 		);
 	});
 
 	test("prints the merge command with a ! prefix when the harness blocks it", () => {
 		expect(WORKFLOW).toContain(
-			"`! gh pr merge <n> --<method> --delete-branch --match-head-commit <sha>`",
+			"`! gh pr merge <n> --repo <owner>/<repo> --<method> --delete-branch --match-head-commit <sha>`",
 		);
 		expect(SKILL).toContain("Never work around a blocked merge.");
 	});
@@ -50,7 +50,7 @@ describe("land skill", () => {
 	});
 
 	test("refuses drafts, closed PRs, stacked PRs and other providers", () => {
-		for (const state of ["not-github", "not-open", "draft:", "stacked:"])
+		for (const state of ["not-github", "not-open", "draft:", "fork:", "stacked:"])
 			expect(WORKFLOW).toContain(`land: ${state}`);
 	});
 

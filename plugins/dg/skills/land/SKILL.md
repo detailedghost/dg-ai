@@ -36,7 +36,7 @@ only orders the steps, waits for CI, and owns the merge gate.
 | `--rebase` | none | Merge method: rebase. | the repo's method |
 
 The repo's method is the only one the repo allows. When the repo allows
-more than one, it is `--squash`. Every merge also deletes the branch.
+more than one, it is `--squash` when allowed. Every merge also deletes the remote branch.
 
 ## Runtime and skill paths
 
@@ -68,7 +68,7 @@ Report missing instructions; never assume a private checkout or cache location.
 
 | # | Step | Stops when |
 |---|---|---|
-| 1 | Resolve the PR, its head SHA, its base, and its checkout. | not GitHub, draft, closed, stacked, no checkout, local and remote heads differ |
+| 1 | Resolve the PR, its head SHA, its base, and its checkout. | not GitHub, draft, closed, fork, stacked, no checkout, local and remote heads differ |
 | 2 | `/dg:review-loop -p <backend>` for `N` rounds. `/dg:address` fixes and pushes. | review-loop fails |
 | 3 | Wait for CI on the new head. On failure, `/dg:address` fixes it, up to `-c` times. | CI still red, or the wait times out |
 | 4 | Check the merge state. | behind, conflicting, or blocked: suggest `/dg:catchup` or report |
