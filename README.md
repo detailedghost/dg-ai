@@ -73,6 +73,7 @@ Claude Code also accepts the bare `/<name>`.
 | `hunt` | Find the root cause of a bug with parallel evidence gathering |
 | `jobs` | List and control the dg-daemon and channel-review daemons |
 | `jot` | Save a short note or a session handoff; `dg-skills jot` |
+| `land` | Take a ready PR through Codex review rounds and green CI to "ready for your review"; it merges only on your answer, or right away with `--auto` |
 | `kick`, `pickup`, `prd` | Park a planned spec, resume it, or hand it off |
 | `monolith` | Consolidate a codebase's domain vocabulary into `.agents/monolith.md` |
 | `nope` | Reset to the correct file-search defaults and record a feedback note |

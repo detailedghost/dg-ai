@@ -56,6 +56,12 @@ function indexTests(wave: string, skills: readonly string[]): void {
 
 const WAVE_6_SKILLS = ["pw"] as const;
 
+const MERGE_SKILLS = ["land"] as const;
+
+describe("skill indexes list every merge skill", () => {
+	indexTests("merge", MERGE_SKILLS);
+});
+
 describe("skill indexes list every Wave 6 skill", () => {
 	indexTests("Wave 6", WAVE_6_SKILLS);
 });

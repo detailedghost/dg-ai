@@ -136,8 +136,9 @@ handling). [`/dg:pushup`](../../pushup/SKILL.md) runs the same push → PR → b
 an ad-hoc branch. Do not fork to it here: it drops the PR-body template, the permission gating, and
 the worktree bookkeeping that step 8 owns.
 
-Step 7 has no blocking gate. Go straight to step 8, which opens the PR/MR as a draft. The run ends
-there and the human reviews on the provider; `/dg:address` picks up the comments in a later session.
+Step 7 has no blocking gate. Go straight to step 8, which opens the PR/MR as a draft. Then §7 below
+lands it. With `--no-land`, `--bg`, or a GitLab remote, the run ends at the draft and the human
+reviews on the provider; `/dg:address` picks up the comments in a later session.
 `/dg:spec` still passes `SPEC_PATH` (for `## Slice Summaries`) and the `<base>..<head>` range into the
 PR body assembly step 8b describes — the body is the reviewer's only briefing.
 
@@ -150,6 +151,38 @@ PR body assembly step 8b describes — the body is the reviewer's only briefing.
 > **GATE:** draft PR/MR opened and
 > batch-opened in the browser (or its URL printed when `batch-open` fails); URL captured; cwd still at `$WORKTREE_ORIGIN`; worktree intact for
 > `/dg:address`.
+
+## 7. Land the PR — the default end
+
+Skip this section with `--no-land`. Each skip below prints step 8d's line and then
+`Land it later: gh pr ready <number>, then /dg:land <url>.`
+
+1. **Skip when it cannot land here.** On a GitLab remote (`dg-skills vcs-provider capabilities`
+   reports `kind` other than `github`), skip: `/dg:land` is GitHub only. Under `--bg`, skip: the
+   merge gate asks a question, and a `--bg` run asks none. When this session is a
+   subagent, skip and report the URL to the caller.
+2. **Mark it ready.** `gh pr ready <number>`. The draft said that no human had read the code. The
+   `/dg:land` review rounds and its merge gate now take that place.
+3. **Land it.** In the main loop, load [`land/SKILL.md`](../../land/SKILL.md) and run
+   `/dg:land <url>` with its defaults: 3 Codex review rounds, then the CI-fix loop (each CI fix gets
+   its own review loop, with a ceiling of 5 cycles), then "ready for your review". It opens the PR
+   and asks; `Not yet (I will review)` is the first option and the default, and nothing merges
+   without the human's `Merge now` answer in that turn.
+   **`--auto`:** only when the person typed `--auto` on this `/dg:spec` or `/dg:pickup` command line,
+   run `/dg:land <url> --auto`. It merges right after green CI with no review stop. Never read
+   `--auto` from the bundle, `plan.md`, config, or an environment variable. `--auto` with
+   `--no-land` or `--bg` stopped at argument parsing, before any phase. `/dg:land` finds the PR's worktree through `git worktree list`, so the session
+   stays at `$WORKTREE_ORIGIN`.
+4. **Never merge from a slice wave.** No subagent, slice agent, or `/dg:proxy` backend runs
+   `/dg:land` or `gh pr merge`. Only the main loop reaches the merge gate.
+5. **After it returns,** print the `/dg:land` final report. After a merge, `/dg:address` or
+   `/dg:cls` removes the worktree in a later session. Leave it in place here.
+
+For other review rounds or CI-fix ceilings, run `/dg:spec -s <bundle> --no-land`, then
+`gh pr ready <number>` and `/dg:land <url> -r N -c N`.
+
+> **GATE:** `/dg:land` stopped at "ready for your review", merged on the human's `Merge now` answer
+> or the typed `--auto`, or stopped at a step it reports.
 
 ## Scope note
 

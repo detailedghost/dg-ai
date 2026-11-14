@@ -10,7 +10,7 @@ import {
 	section,
 } from "./test-support";
 
-export const MAX_SPEC_SKILL_LINES = 131;
+export const MAX_SPEC_SKILL_LINES = 132;
 const MIN_SENTENCE_LENGTH = 30;
 const STEP_5_LINES_ON_ORIGIN_MASTER = 10;
 const STEP_7C_LINES_ON_ORIGIN_MASTER = 8;

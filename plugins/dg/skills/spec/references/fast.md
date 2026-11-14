@@ -178,7 +178,13 @@ carries the same mechanics for an ad-hoc branch, but this path never forks to it
 - **`-T` mode:** there is no worktree to leave — skip step 8d and print
   `"PR/MR opened (draft): <url>. Review it there — /dg:address picks up the comments."`
 
-> **GATE:** draft PR/MR opened, URL captured, browser group opened.
+Then land it: [execute.md](execute.md) §7 applies unchanged in both modes. It marks the PR ready and
+runs `/dg:land <url>` in the main loop (`/dg:land <url> --auto` when the person typed `--auto`),
+unless `--no-land` is given or the remote is GitLab. In
+`-T` mode `/dg:land` uses the current checkout.
+
+> **GATE:** draft PR/MR opened, URL captured, browser group opened; then `/dg:land` stopped at "ready
+> for your review", merged on the human's `Merge now` answer or `--auto`, or was skipped by `--no-land`.
 
 ## What fast mode trades away
 
