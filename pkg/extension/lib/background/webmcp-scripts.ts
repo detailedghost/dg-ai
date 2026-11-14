@@ -36,6 +36,17 @@ const STOPPED_MAX = 100;
 
 /** Sites of a third-party script that stopped; documents loaded before stoppedAt may still hold its tools. */
 export type WebMcpStoppedScript = { matches: string[]; stoppedAt: number };
+/** Folds the oldest entries into one that covers all their sites until the latest of them stopped. */
+function foldOldest(entries: WebMcpStoppedScript[]): WebMcpStoppedScript[] {
+	const folded = entries.slice(0, entries.length - STOPPED_MAX + 1);
+	return [
+		{
+			matches: [...new Set(folded.flatMap((entry) => entry.matches))],
+			stoppedAt: Math.max(...folded.map((entry) => entry.stoppedAt)),
+		},
+		...entries.slice(entries.length - STOPPED_MAX + 1),
+	];
+}
 const codeKey = (id: string) => `webmcpScriptCode:${id}`;
 const approvalKey = (id: string) => `webmcpApproval:${id}`;
 const macKey = (id: string) => `webmcpMac:${id}`;
@@ -221,7 +232,8 @@ export function createWebMcpScripts({
 	async function noteStopped(matches: string[]): Promise<void> {
 		const stored = (await storage.local.get(STOPPED_SCRIPTS_KEY))[STOPPED_SCRIPTS_KEY];
 		const held = Array.isArray(stored) ? (stored as WebMcpStoppedScript[]) : [];
-		await storage.local.set({ [STOPPED_SCRIPTS_KEY]: [...held, { matches: [...matches], stoppedAt: now() }].slice(-STOPPED_MAX) });
+		const all = [...held, { matches: [...matches], stoppedAt: now() }];
+		await storage.local.set({ [STOPPED_SCRIPTS_KEY]: all.length > STOPPED_MAX ? foldOldest(all) : all });
 	}
 
 	async function stopUser(id: string, matches: string[]): Promise<void> {

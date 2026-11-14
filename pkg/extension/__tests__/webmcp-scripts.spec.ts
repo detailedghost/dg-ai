@@ -878,6 +878,29 @@ describe("stopped third-party sites", () => {
 		expect(live.user.has("dg-webmcp-user-gone")).toBe(false);
 		expect(stopped(storage)).toEqual([{ matches: ["https://*.orphan.example.com/*"], stoppedAt: 1000 }]);
 	});
+
+	it("keeps the sites of the oldest entries when the history is full", async () => {
+		const { scripts, storage } = setup();
+		storage.data.webmcpStoppedScripts = [
+			{ matches: ["https://outlook.office.com/*"], stoppedAt: 10 },
+			...Array.from({ length: 99 }, (_, index) => ({
+				matches: [`https://site${index}.example.com/*`],
+				stoppedAt: 20 + index,
+			})),
+		];
+		const { id } = await scripts.addThirdParty(draft());
+		await approveNow(scripts, id);
+
+		await scripts.remove(id);
+
+		const held = stopped(storage) as { matches: string[]; stoppedAt: number }[];
+		expect(held).toHaveLength(100);
+		expect(held[0]).toEqual({
+			matches: ["https://outlook.office.com/*", "https://site0.example.com/*"],
+			stoppedAt: 20,
+		});
+		expect(held.at(-1)).toEqual({ matches: ["https://flights.example.com/*"], stoppedAt: 1000 });
+	});
 });
 
 describe("approval signing", () => {
