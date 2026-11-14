@@ -83,8 +83,8 @@ function installModelContext(tools: FakeTool[], output = "done") {
 		configurable: true,
 		value: {
 			getTools: async () => tools,
-			executeTool: async (tool: FakeTool, args: object) => {
-				executed.push([tool.name, args]);
+			executeTool: async (tool: FakeTool, args: string) => {
+				executed.push([tool.name, JSON.parse(args)]);
 				return output;
 			},
 		},
@@ -99,12 +99,13 @@ describe("WebMCP", () => {
 			configurable: true,
 			value: {
 				getTools: async () => tools,
-				executeTool: async (tool: Partial<FakeTool>) => {
+				executeTool: async (tool: Partial<FakeTool>, input?: unknown) => {
+					if (typeof input !== "string") throw new TypeError("Failed to parse input arguments");
 					if (typeof tool.description !== "string")
 						throw new TypeError(
 							"Failed to read the 'description' property from 'RegisteredTool': Required member is undefined.",
 						);
-					executed.push(tool);
+					executed.push([tool, input]);
 					return "native ok";
 				},
 			},
@@ -119,15 +120,25 @@ describe("WebMCP", () => {
 			api: "modelContext",
 			output: "native ok",
 		});
-		expect(executed).toEqual([tool]);
+		expect(executed).toEqual([[tool, '{"q":"x"}']]);
+	});
+
+	it("fails a native executeTool that gets an object instead of a JSON string", async () => {
+		installNativeLikeModelContext([]);
+		const context = (window.document as unknown as { modelContext: object }).modelContext as {
+			executeTool(tool: object, input: object): Promise<string>;
+		};
+		await expect(context.executeTool({ name: "a", description: "d" }, { id: "x" })).rejects.toThrow(
+			"Failed to parse input arguments",
+		);
 	});
 
 	it("fails a native executeTool that gets only the tool name", async () => {
 		installNativeLikeModelContext([]);
 		const context = (window.document as unknown as { modelContext: object }).modelContext as {
-			executeTool(tool: object): Promise<string>;
+			executeTool(tool: object, input?: string): Promise<string>;
 		};
-		await expect(context.executeTool({ name: "search" })).rejects.toThrow("'description'");
+		await expect(context.executeTool({ name: "search" }, "{}")).rejects.toThrow("'description'");
 	});
 
 	it("returns an empty list when the page has no WebMCP", async () => {
