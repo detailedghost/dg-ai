@@ -12,8 +12,8 @@ export type ModelContext = {
 	registerTool(tool: WebMcpTool, options?: { signal?: AbortSignal }): void;
 	getTools(): Promise<WebMcpTool[]>;
 	executeTool(
-		tool: Pick<WebMcpTool, "name">,
-		args: Record<string, unknown>,
+		tool: Omit<WebMcpTool, "execute">,
+		args: Record<string, unknown> | string,
 		options?: { signal?: AbortSignal },
 	): Promise<string>;
 };
@@ -47,7 +47,8 @@ function createShim(): ModelContext {
 		async executeTool({ name }, args, options) {
 			const registered = tools.get(name);
 			if (!registered) throw new Error(`No tool named ${name} is registered.`);
-			const output = await registered.execute(args, options);
+			const input = typeof args === "string" ? (JSON.parse(args || "{}") as Record<string, unknown>) : args;
+			const output = await registered.execute(input, options);
 			if (typeof output !== "string") throw new TypeError(`The tool ${name} must return a string.`);
 			return output;
 		},
