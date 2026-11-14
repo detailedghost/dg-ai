@@ -114,10 +114,13 @@ flowchart LR
   each agent tab shows a banner with Stop, which ends the session's control; the first verb on a new site in a session asks the person to allow it. Amends 0035. Amended 2026-11-13: the toolbar popup has Stop too, and Web MCP is apart (0046).
 
 - [0046 — Web MCP approvals apart from pw --ext browser control](0046-webmcp-approvals-apart-from-pw-ext.md) — Proposed:
-  the pw --ext site allowlist and Stop no longer gate or revoke Web MCP; grants are keyed by session, site and tool, a session-class Allow can be remembered for 30 days with a signed record, and the toolbar popup revokes grants. Amends 0035 and 0045.
+  the pw --ext site allowlist and Stop no longer gate or revoke Web MCP; grants are keyed by session, site and tool, a session-class Allow can be remembered for 30 days with a signed record, and the toolbar popup revokes grants. Amends 0035 and 0045. Amended 2026-11-14: area grants under the key `area:<area>` (0047).
 
 - [0046 — pw --ext: read the network calls of an agent tab, shape first](0046-pw-ext-network.md) — Accepted:
   a MAIN-world hook in agent tabs records `fetch` and XHR calls; `pw --ext network` shows their shape with no values, and `--values` shows masked values after one Allow per site and session. Amends 0044. Amended 2026-11-13: after that Allow the hook keeps same-origin sign-in headers sealed for `fetch --auth page` and `credential save`, which stores values unseen through a daemon-only frame; adds the `cookies` permission.
+
+- [0047 — Web MCP area approval class](0047-webmcp-area-approval-class.md) — Proposed:
+  tools of one area share one grant per session and site under the key `area:<area>`; mail list and search are the `mail` area, and message bodies are the `mail-body` area. Amends 0046.
 
 ## Adding an ADR
 
