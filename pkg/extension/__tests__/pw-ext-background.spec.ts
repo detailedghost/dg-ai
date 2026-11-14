@@ -3790,6 +3790,35 @@ describe("Web MCP on the person's own tabs", () => {
 		expect(answer.ok && answer.data.text).not.toContain("orchid-maple-tree");
 	});
 
+	it("masks a whole held secret that has a token-shaped part", async () => {
+		const held = "sk-abcdefgh12345678 tail-passphrase";
+		const h = anyTabHarness();
+		h.fake.state.script = (details) => {
+			const action = (details as { args: unknown[] }).args[0] as { kind: string };
+			if (action.kind === "tools")
+				return { api: "modelContext", tools: [{ name: "dg_outlook_list", description: `List ${held}` }] };
+			return { api: "modelContext", output: `value ${held} end` };
+		};
+		await createUnmaskGrants({ storage: h.fake.api.storage }).reserve(MCP_SESSION, held);
+		const listed = await h.mcp({ verb: "webmcp-tools" });
+		const called = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
+		expect(JSON.stringify(listed)).not.toContain("tail-passphrase");
+		expect(JSON.stringify(called)).not.toContain("tail-passphrase");
+	});
+
+	it("does not run a call when the person clicks Stop while its approval is open", async () => {
+		let h: ReturnType<typeof anyTabHarness> | undefined;
+		h = anyTabHarness({
+			record: true,
+			onApproval: async () => {
+				await h?.handler.stop(SESSION);
+			},
+		});
+		const answer = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_delete", args: { ids: ["a"] } }, SESSION);
+		expect(answer.ok).toBe(false);
+		expect(h.ran.filter((entry) => entry.action.kind === "call")).toEqual([]);
+	});
+
 	it("keeps the list within the wire limit of tools", async () => {
 		const many = Array.from({ length: 70 }, (_, i) => ({ name: `dg_outlook_tool${i}`, description: "x" }));
 		const more = Array.from({ length: 70 }, (_, i) => ({ name: `dg_outlook_more${i}`, description: "x" }));

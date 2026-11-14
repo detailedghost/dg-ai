@@ -1635,7 +1635,7 @@ export function createPwExtHandler({
 	}
 
 	/** The dg_ tools a tab exposes; on a mailbox tab only those of an enabled built-in that covers it. */
-	async function webMcpToolsOf(tab: LiveTab): Promise<PwExtTool[]> {
+	async function webMcpToolsOf(tab: LiveTab, secrets: string[]): Promise<PwExtTool[]> {
 		const listed = await beforeDeadline(inMain(tab, pwExtWebMcp as never, [{ kind: "tools" }, tab.url]))
 			.then(webMcpResult)
 			.catch(() => undefined);
@@ -1644,18 +1644,19 @@ export function createPwExtHandler({
 		const enabled = mailbox(tab.url) ? await enabledOrNone() : undefined;
 		return boundTools(
 			listed.tools.filter((tool) => isDgToolName(tool.name) && (!enabled || mailboxToolAllowed(tool.name, origin, enabled))),
-			{ unmasked: false, secrets: [] },
+			{ unmasked: false, secrets },
 		);
 	}
 
 	/** Lists or calls Web MCP dg_ tools on the person's own tabs; it never opens, focuses, groups or injects into a tab. */
 	async function webMcp(request: WebMcpRequest, context: PwExtContext, signal: AbortSignal): Promise<PwExtResult> {
-		const tabs = await webMcpTabs();
+		const [tabs, secrets] = await Promise.all([webMcpTabs(), grants.secrets(context.sessionId)]);
 		if (signal.aborted) return CANCELED;
+		const toolsOf = (tab: LiveTab) => webMcpToolsOf(tab, secrets);
 		if (request.verb === "webmcp-tools") {
 			const found = new Map<string, PwExtTool>();
 			let bytes = 0;
-			for (const tools of await Promise.all(tabs.map(webMcpToolsOf)))
+			for (const tools of await Promise.all(tabs.map(toolsOf)))
 				for (const tool of tools) {
 					if (found.has(tool.name) || found.size >= PW_EXT_MAX_TOOLS) continue;
 					const size = new TextEncoder().encode(JSON.stringify(tool)).length;
@@ -1667,10 +1668,10 @@ export function createPwExtHandler({
 			const rows = tools.length
 				? tools.map((tool) => `- ${tool.name}`)
 				: ["No open browser tab exposes a dg Web MCP tool."];
-			return { ok: true, data: { text: clean(["### WebMCP tools", ...rows].join("\n")), tools } };
+			return { ok: true, data: { text: clean(["### WebMCP tools", ...rows].join("\n"), { secrets }), tools } };
 		}
 		const tool = request.tool as string;
-		const listings = await Promise.all(tabs.map(webMcpToolsOf));
+		const listings = await Promise.all(tabs.map(toolsOf));
 		if (signal.aborted) return CANCELED;
 		const tab = tabs.find((_, index) => listings[index]?.some((entry) => entry.name === tool));
 		if (!tab) return { ok: false, error: noWebMcpTab(tool) };
@@ -1688,15 +1689,16 @@ export function createPwExtHandler({
 				tab.url,
 			]),
 		);
-		const options = { unmasked: false, secrets: [] };
+		const options = { unmasked: false, secrets };
 		if ("error" in called)
-			return { ok: false, error: mailbox(tab.url) ? MAILBOX_TOOL_FAILED : clean(maskRaw(called.error, RAW_ERROR_MAX, options)) };
+			return { ok: false, error: mailbox(tab.url) ? MAILBOX_TOOL_FAILED : clean(maskRaw(called.error, RAW_ERROR_MAX, options), options) };
 		if (!("output" in called)) return { ok: false, error: "The page returned an unexpected WebMCP result." };
 		return {
 			ok: true,
 			data: {
 				text: clean(
 					[`### Result`, `WebMCP tool ${tool} returned:`, clip(maskRaw(called.output, RAW_OUTPUT_MAX, options), TOOL_OUTPUT_MAX)].join("\n"),
+					options,
 				),
 			},
 		};
@@ -1709,6 +1711,7 @@ export function createPwExtHandler({
 		verb: number,
 	): Promise<PwExtResult> {
 		if (signal.aborted) return CANCELED;
+		if (isWebMcpVerb(request)) return webMcp(request, context, signal);
 		if (request.verb === "new") {
 			await allowSite(request.url, context, signal, verb);
 			if (signal.aborted) return CANCELED;
@@ -1763,7 +1766,6 @@ export function createPwExtHandler({
 				error: "pw --ext works only in Chromium-family browsers (Chrome, Edge, Brave, Vivaldi).",
 			};
 		if (!context?.sessionId) return { ok: false, error: NO_SESSION };
-		if (isWebMcpVerb(request)) return (await isStopped(context.sessionId).catch(() => false)) ? STOPPED : runWebMcp(request, context, signal);
 		if (request.verb === "fill" && request.secret && isPwExtSecretTooShort(request.value as string))
 			return { ok: false, error: SECRET_TOO_SHORT };
 		const { sessionId } = context;
@@ -1807,21 +1809,5 @@ export function createPwExtHandler({
 		if (running.size === 0) live.delete(sessionId);
 		return halted.has(sessionId) ? STOPPED : outcome;
 	};
-	async function runWebMcp(request: WebMcpRequest, context: PwExtContext, signal: AbortSignal | undefined): Promise<PwExtResult> {
-		try {
-			const result = await webMcp(request, context, signal ?? new AbortController().signal);
-			return scrub(result, await grants.secrets(context.sessionId).catch(() => []));
-		} catch (error) {
-			if (error instanceof Refusal) return { ok: false, error: error.message };
-			const secrets = await grants.secrets(context.sessionId).catch(() => []);
-			return {
-				ok: false,
-				error: clean(`Web MCP failed in the browser: ${error instanceof Error ? error.message : String(error)}`, {
-					secrets,
-				}).slice(0, 2048),
-			};
-		}
-	}
-
 	return Object.assign(handler, { stop, stopTab });
 }
