@@ -148,22 +148,70 @@ describe("dg_outlook_list", () => {
 });
 
 describe("dg_outlook_search", () => {
-	it("sends the query as a QueryString search over all mail folders", async () => {
-		const { run, sent } = setup();
-		const output = await run("dg_outlook_search", { query: "Fixture subject", limit: 5 });
-		expect((output.messages as unknown[]).length).toBe(2);
-		expect(sent[0]?.body).toEqual(
-			expect.objectContaining({
-				QueryString: { __type: "QueryStringType:#Exchange", Value: "Fixture subject" },
-				ParentFolderIds: [{ __type: "DistinguishedFolderId:#Exchange", Id: "msgfolderroot" }],
-				Traversal: "Deep",
-				Paging: expect.objectContaining({ MaxEntriesReturned: 5 }),
-			}),
+	const SEARCHED = ["inbox", "archive", "deleteditems", "junkemail", "drafts", "sentitems"];
+
+	function searchSetup(replies: Record<string, unknown[]>) {
+		const sent: Sent[] = [];
+		const service = createOwaService({
+			origin: "https://outlook.live.com",
+			headers: () => ({ "x-owa-canary": "fixture-canary" }),
+			fetch: async (input, init) => {
+				const body = JSON.parse(String(init?.body)).Body as { ParentFolderIds: Array<{ Id: string }> };
+				sent.push({ action: new URL(String(input)).searchParams.get("action") as string, body });
+				const Items = replies[body.ParentFolderIds[0]?.Id ?? ""] ?? [];
+				return Response.json({
+					Body: { ResponseMessages: { Items: [{ ResponseClass: "Success", ResponseCode: "NoError", RootFolder: { Items } }] } },
+				});
+			},
+		});
+		const tool = createOutlookTools(service).find((entry) => entry.name === "dg_outlook_search");
+		const run = async (args: Record<string, unknown>) => JSON.parse(await (tool?.execute(args) ?? "{}"));
+		return { sent, run };
+	}
+
+	const [first, second] = findItem.Body.ResponseMessages.Items[0]?.RootFolder.Items ?? [];
+
+	it("sends one Shallow FindItem with the QueryString to each distinguished mail folder", async () => {
+		const { run, sent } = searchSetup({});
+		await run({ query: "Fixture subject", limit: 5 });
+		expect(sent.map((entry) => entry.action)).toEqual(SEARCHED.map(() => "FindItem"));
+		expect(sent.map((entry) => entry.body)).toEqual(
+			SEARCHED.map((Id) =>
+				expect.objectContaining({
+					QueryString: { __type: "QueryStringType:#Exchange", Value: "Fixture subject" },
+					ParentFolderIds: [{ __type: "DistinguishedFolderId:#Exchange", Id }],
+					Traversal: "Shallow",
+					Paging: expect.objectContaining({ MaxEntriesReturned: 5 }),
+				}),
+			),
 		);
+		expect(JSON.stringify(sent)).not.toContain("Deep");
+		expect(JSON.stringify(sent)).not.toContain("msgfolderroot");
+	});
+
+	it("merges the folders newest first and keeps at most limit messages", async () => {
+		const { run } = searchSetup({ inbox: [second], sentitems: [first], archive: [second] });
+		const output = await run({ query: "Fixture subject", limit: 2 });
+		expect(output.messages.map((entry: { id: string }) => entry.id)).toEqual(["AAMkFixtureItem1=", "AAMkFixtureItem2="]);
 	});
 
 	it("rejects an empty query", async () => {
 		await expect(setup().run("dg_outlook_search", { query: " " })).rejects.toThrow("query must be a non-empty string.");
+	});
+});
+
+describe("the OWA property paths", () => {
+	it("use one bare FieldURI convention in every request", async () => {
+		const { run, sent } = setup();
+		await run("dg_outlook_list", { folder: "Fixture folder" });
+		await run("dg_outlook_search", { query: "Fixture subject" });
+		await run("dg_outlook_read", { id: "AAMkFixtureItem1=" });
+		await run("dg_outlook_mark_read", { ids: ["AAMkFixtureItem1="] });
+		await run("dg_outlook_flag", { ids: ["AAMkFixtureItem1="] });
+		await run("dg_outlook_move", { ids: ["AAMkFixtureItem1="], folder: "Fixture folder" });
+		const uris = [...JSON.stringify(sent).matchAll(/"FieldURI":"([^"]*)"/g)].map((match) => match[1]);
+		expect(uris.length).toBeGreaterThan(0);
+		expect(uris.filter((uri) => uri?.includes(":"))).toEqual([]);
 	});
 });
 
@@ -202,6 +250,34 @@ describe("htmlToText", () => {
 
 	it("drops comments and decodes entities once", () => {
 		expect(htmlToText("<!-- hidden -->a &amp;lt; b")).toBe("a &lt; b");
+	});
+
+	it("drops a comment that holds a > and an unclosed comment to the end", () => {
+		expect(htmlToText("a<!-- x > y -->b<!-- open")).toBe("ab");
+	});
+
+	it("drops head, script, style and title blocks, and an unclosed one to the end", () => {
+		expect(htmlToText("<HEAD><title>t</title></head><p>keep</p><Script>x()</SCRIPT >more<style>a{}")).toBe("keep\nmore");
+	});
+
+	it("keeps a < that no > closes as text", () => {
+		expect(htmlToText("<b>a</b> < b")).toBe("a < b");
+	});
+
+	it("trims spaces at line ends and collapses blank lines", () => {
+		expect(htmlToText("<p>a&nbsp;&nbsp;</p>\t\n\n\n<p>b</p>")).toBe("a\n\nb");
+	});
+
+	it.each([
+		["unclosed style tags", "<style".repeat(80_000)],
+		["unclosed comments", "<!--".repeat(80_000)],
+		["a run of non-breaking spaces", `<p>${"&nbsp;".repeat(100_000)}`],
+		["unclosed angle brackets", "<".repeat(200_000)],
+		["unclosed script tags", "<script>".repeat(80_000)],
+	])("converts %s in linear time", (_, html) => {
+		const start = performance.now();
+		htmlToText(html);
+		expect(performance.now() - start).toBeLessThan(2_000);
 	});
 });
 

@@ -5,6 +5,7 @@ const MAX_IDS = 50;
 const MAX_LIMIT = 50;
 const DEFAULT_LIMIT = 25;
 const BODY_MAX = 50_000;
+const HTML_MAX = 20 * BODY_MAX;
 const DISTINGUISHED_FOLDERS = ["inbox", "archive", "deleteditems", "junkemail", "drafts", "sentitems"];
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
 const ADDRESS = /^[^\s@<>]+@[^\s@<>]+$/;
@@ -21,19 +22,46 @@ function codePoint(code: number): string {
 	return Number.isInteger(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
 }
 
-/** Plain text of an OWA HTML body, built with string rules so it works under Trusted Types; capped at 50,000 characters. */
+function dropHidden(html: string): string {
+	const open = /<!--|<(head|script|style|title)\b/gi;
+	let out = "";
+	let from = 0;
+	for (let match = open.exec(html); match; match = open.exec(html)) {
+		out += html.slice(from, match.index);
+		const close = match[1] ? new RegExp(`<\\/${match[1]}\\s*>`, "gi") : /-->/g;
+		close.lastIndex = open.lastIndex;
+		if (!close.exec(html)) return out;
+		from = open.lastIndex = close.lastIndex;
+	}
+	return out + html.slice(from);
+}
+
+function dropTags(html: string): string {
+	let out = "";
+	let from = 0;
+	for (let open = html.indexOf("<"); open !== -1; open = html.indexOf("<", from)) {
+		const close = html.indexOf(">", open);
+		if (close === -1) break;
+		out += html.slice(from, open);
+		from = close + 1;
+	}
+	return out + html.slice(from);
+}
+
+/** Plain text of an OWA HTML body in linear time, built with string rules so it works under Trusted Types; capped at 50,000 characters. */
 export function htmlToText(html: string): string {
-	return html
-		.replace(/<!--[\s\S]*?-->/g, "")
-		.replace(/<(head|script|style|title)\b[\s\S]*?<\/\1\s*>/gi, "")
-		.replace(/<br\s*\/?>/gi, "\n")
-		.replace(/<\/(p|div|li|tr|h[1-6]|blockquote|table|ul|ol)\s*>/gi, "\n")
-		.replace(/<[^>]*>/g, "")
+	return dropTags(
+		dropHidden(html.slice(0, HTML_MAX))
+			.replace(/<br\s*\/?>/gi, "\n")
+			.replace(/<\/(p|div|li|tr|h[1-6]|blockquote|table|ul|ol)\s*>/gi, "\n"),
+	)
 		.replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (entity, name: string) => {
 			if (name[0] !== "#") return ENTITIES[name.toLowerCase()] ?? entity;
 			return codePoint(name[1]?.toLowerCase() === "x" ? Number.parseInt(name.slice(2), 16) : Number(name.slice(1)));
 		})
-		.replace(/[ \t]+\n/g, "\n")
+		.split("\n")
+		.map((line) => line.trimEnd())
+		.join("\n")
 		.replace(/\n{3,}/g, "\n\n")
 		.trim()
 		.slice(0, BODY_MAX);
@@ -110,6 +138,14 @@ function message(item: OwaItem) {
 	};
 }
 
+const page = (limit: number) => ({
+	__type: "IndexedPageView:#Exchange",
+	BasePoint: "Beginning",
+	Offset: 0,
+	MaxEntriesReturned: limit,
+});
+const newestFirst = (a: { date: string }, b: { date: string }) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0);
+
 const findItemsShape = {
 	__type: "ItemResponseShape:#Exchange",
 	BaseShape: "IdOnly",
@@ -128,7 +164,7 @@ export function createOutlookTools(service: OwaService): WebMcpTool[] {
 			SortOrder: [{ __type: "SortResults:#Exchange", Order: "Descending", Path: field("DateTimeReceived") }],
 			...body,
 		});
-		return JSON.stringify({ messages: list(record(record(response).RootFolder).Items).map((item) => message(record(item))) });
+		return list(record(record(response).RootFolder).Items).map((item) => message(record(item)));
 	}
 
 	async function folderRef(name: string): Promise<FolderRef> {
@@ -138,8 +174,7 @@ export function createOutlookTools(service: OwaService): WebMcpTool[] {
 			__type: "FindFolderRequest:#Exchange",
 			FolderShape: {
 				__type: "FolderResponseShape:#Exchange",
-				BaseShape: "IdOnly",
-				AdditionalProperties: [field("folder:DisplayName")],
+				BaseShape: "Default",
 			},
 			ParentFolderIds: [distinguished("msgfolderroot")],
 			Traversal: "Deep",
@@ -212,16 +247,13 @@ export function createOutlookTools(service: OwaService): WebMcpTool[] {
 			async execute(args) {
 				const limit = limitOf(args);
 				const folder = await folderRef(args.folder === undefined ? "inbox" : requireText(args, "folder", { nonEmpty: true }));
-				return findItems({
-					ParentFolderIds: [folder],
-					Traversal: "Shallow",
-					Paging: { __type: "IndexedPageView:#Exchange", BasePoint: "Beginning", Offset: 0, MaxEntriesReturned: limit },
-				});
+				const messages = await findItems({ ParentFolderIds: [folder], Traversal: "Shallow", Paging: page(limit) });
+				return JSON.stringify({ messages });
 			},
 		},
 		{
 			name: "dg_outlook_search",
-			description: "Search all mail folders with an Outlook search query and return the matching messages, newest first.",
+			description: `Search the ${DISTINGUISHED_FOLDERS.join(", ")} folders with an Outlook search query and return the matching messages, newest first.`,
 			inputSchema: schema(
 				{ query: { type: "string", minLength: 1, description: "The Outlook search query." }, limit: limitSchema },
 				["query"],
@@ -229,12 +261,17 @@ export function createOutlookTools(service: OwaService): WebMcpTool[] {
 			async execute(args) {
 				const query = requireText(args, "query", { nonEmpty: true });
 				const limit = limitOf(args);
-				return findItems({
-					ParentFolderIds: [distinguished("msgfolderroot")],
-					Traversal: "Deep",
-					QueryString: { __type: "QueryStringType:#Exchange", Value: query },
-					Paging: { __type: "IndexedPageView:#Exchange", BasePoint: "Beginning", Offset: 0, MaxEntriesReturned: limit },
-				});
+				const found = await Promise.all(
+					DISTINGUISHED_FOLDERS.map((id) =>
+						findItems({
+							ParentFolderIds: [distinguished(id)],
+							Traversal: "Shallow",
+							QueryString: { __type: "QueryStringType:#Exchange", Value: query },
+							Paging: page(limit),
+						}),
+					),
+				);
+				return JSON.stringify({ messages: found.flat().sort(newestFirst).slice(0, limit) });
 			},
 		},
 		{

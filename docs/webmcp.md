@@ -68,7 +68,7 @@ tools of its own:
 | Tool | Class | What it does |
 |---|---|---|
 | `dg_outlook_list` | `area` (mail) | Newest messages of a folder: id, subject, sender address, date, read, flagged, preview |
-| `dg_outlook_search` | `area` (mail) | The same fields for an Outlook search query over all mail folders |
+| `dg_outlook_search` | `area` (mail) | The same fields for an Outlook search query over the six distinguished mail folders |
 | `dg_outlook_read` | `area` (mail) | One message as plain text, body capped at 50,000 characters; the read state does not change |
 | `dg_outlook_mark_read` | `session` | Marks messages read or unread |
 | `dg_outlook_flag` | `session` | Flags or unflags messages |
