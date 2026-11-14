@@ -202,9 +202,11 @@ const NEEDS_LOADED_TAB: ReadonlySet<PwExtVerb> = new Set([
 	"screenshot",
 ]);
 
+type WebMcpVerb = "webmcp-tools" | "webmcp-call";
 type TabVerbRequest = PwExtRequest & {
-	verb: Exclude<PwExtVerb, "tabs" | "new">;
+	verb: Exclude<PwExtVerb, "tabs" | "new" | WebMcpVerb>;
 };
+type WebMcpRequest = PwExtRequest & { verb: WebMcpVerb };
 
 const BUILT_INS_KEY = "webmcpScripts";
 
@@ -253,7 +255,11 @@ function pwExtDocumentStart(): number {
 }
 
 function isTabVerb(request: PwExtRequest): request is TabVerbRequest {
-	return request.verb !== "tabs" && request.verb !== "new";
+	return request.verb !== "tabs" && request.verb !== "new" && !isWebMcpVerb(request);
+}
+
+function isWebMcpVerb(request: PwExtRequest): request is WebMcpRequest {
+	return request.verb === "webmcp-tools" || request.verb === "webmcp-call";
 }
 
 class Refusal extends Error {}
@@ -525,6 +531,14 @@ function mapTools(tools: PwExtTool[], transform: (value: string) => string): PwE
 }
 
 const MAILBOX_TOOL_FAILED = "The WebMCP tool failed on the protected mailbox tab.";
+const MAX_WEBMCP_TABS = 20;
+const noWebMcpTab = (tool: string) =>
+	`No open browser tab exposes ${tool}. Open the site in a normal browser tab with its Web MCP script turned on, then retry.`;
+
+function approvalTabTitle(tab: Pick<BrowserTab, "url" | "title">): string {
+	if (mailbox(tab.url)) return "(protected mailbox)";
+	return shownTitle(tab) || "(no title)";
+}
 
 function webMcpResult(raw: unknown): PwExtWebMcpResult {
 	const value = raw as Record<string, unknown> | null;
@@ -1530,13 +1544,13 @@ export function createPwExtHandler({
 		return typeof started === "number" && stopped.every((entry) => entry.stoppedAt < started);
 	}
 
-	async function approveDgTool(
-		request: TabVerbRequest,
+	async function askDgTool(
+		tool: string,
+		args: Record<string, unknown>,
 		tab: LiveTab,
 		context: PwExtContext,
-		signal: AbortSignal | undefined,
+		tabTitle?: string,
 	): Promise<PwExtResult | undefined> {
-		const tool = request.tool as string;
 		if (tab.url === undefined) return { ok: false, error: `This tab has no page address; ${tool} did not run.` };
 		const origin = new URL(tab.url).origin;
 		const tableClass = approvalClassOf(tool, origin) ?? "each";
@@ -1549,25 +1563,36 @@ export function createPwExtHandler({
 			sessionId: context.sessionId,
 			agentIdentity: context.agentIdentity,
 			tool,
-			args: request.args ?? {},
+			args,
 			origin,
 			class: approvalClass,
+			...(tabTitle === undefined ? {} : { tabTitle }),
 		});
+		if (answer === "allow") return undefined;
+		const reason =
+			answer === "timeout"
+				? "No answer in the browser within 60 seconds"
+				: answer === "closed"
+					? "The approval window was closed"
+					: answer === "unopened"
+						? "The approval window could not open"
+						: "";
+		return {
+			ok: false,
+			error: answer === "deny" ? `The user denied ${tool} in the browser.` : `${reason || "The approval was not given"}; ${tool} did not run.`,
+		};
+	}
+
+	async function approveDgTool(
+		request: TabVerbRequest,
+		tab: LiveTab,
+		context: PwExtContext,
+		signal: AbortSignal | undefined,
+	): Promise<PwExtResult | undefined> {
+		const tool = request.tool as string;
+		const refused = await askDgTool(tool, request.args ?? {}, tab, context);
 		if (signal?.aborted) return CANCELED;
-		if (answer !== "allow") {
-			const reason =
-				answer === "timeout"
-					? "No answer in the browser within 60 seconds"
-					: answer === "closed"
-						? "The approval window was closed"
-						: answer === "unopened"
-							? "The approval window could not open"
-							: "";
-			return {
-				ok: false,
-				error: answer === "deny" ? `The user denied ${tool} in the browser.` : `${reason || "The approval was not given"}; ${tool} did not run.`,
-			};
-		}
+		if (refused) return refused;
 		const live = await api.tabs.get(tab.id).catch(() => undefined);
 		if (
 			!live ||
@@ -1578,6 +1603,97 @@ export function createPwExtHandler({
 		if (live.url !== tab.url)
 			return { ok: false, error: `The page changed while the approval was open; ${tool} did not run. Retry.` };
 		return undefined;
+	}
+
+	/** The person's normal tabs that an enabled built-in or approved third-party script covers, the focused one first, then the most recently used. */
+	async function webMcpTabs(): Promise<LiveTab[]> {
+		const [all, enabled, sites, focused] = await Promise.all([
+			api.tabs.query({}),
+			enabledOrNone(),
+			thirdPartySites().catch(() => ({ active: [], stopped: [] }) as ThirdPartySites),
+			api.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => undefined),
+		]);
+		const covered = (url: string) => {
+			const origin = new URL(url).origin;
+			return (
+				BUILT_IN_SCRIPTS.some((script) => enabled.has(script.id) && matchesCoverOrigin(script.matches, origin)) ||
+				matchesCoverOrigin(sites.active, origin)
+			);
+		};
+		const focusedFirst = (tab: BrowserTab) => (tab.active && focused?.id !== undefined && tab.windowId === focused.id ? 1 : 0);
+		return all
+			.filter(
+				(tab): tab is LiveTab =>
+					tab.id !== undefined && !tab.incognito && !tab.discarded && allowedPage(tab.url) && covered(tab.url),
+			)
+			.sort((a, b) => focusedFirst(b) - focusedFirst(a) || (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))
+			.slice(0, MAX_WEBMCP_TABS);
+	}
+
+	/** The dg_ tools a tab exposes; on a mailbox tab only those of an enabled built-in that covers it. */
+	async function webMcpToolsOf(tab: LiveTab): Promise<PwExtTool[]> {
+		const listed = await beforeDeadline(inMain(tab, pwExtWebMcp as never, [{ kind: "tools" }, tab.url]))
+			.then(webMcpResult)
+			.catch(() => undefined);
+		if (!listed || !("tools" in listed)) return [];
+		const origin = new URL(tab.url as string).origin;
+		const enabled = mailbox(tab.url) ? await enabledOrNone() : undefined;
+		return boundTools(
+			listed.tools.filter((tool) => isDgToolName(tool.name) && (!enabled || mailboxToolAllowed(tool.name, origin, enabled))),
+			{ unmasked: false, secrets: [] },
+		);
+	}
+
+	/** Lists or calls Web MCP dg_ tools on the person's own tabs; it never opens, focuses, groups or injects into a tab. */
+	async function webMcp(request: WebMcpRequest, context: PwExtContext, signal: AbortSignal): Promise<PwExtResult> {
+		const tabs = await webMcpTabs();
+		if (signal.aborted) return CANCELED;
+		if (request.verb === "webmcp-tools") {
+			const found = new Map<string, PwExtTool>();
+			for (const tools of await Promise.all(tabs.map(webMcpToolsOf)))
+				for (const tool of tools) if (!found.has(tool.name)) found.set(tool.name, tool);
+			const tools = [...found.values()];
+			const rows = tools.length
+				? tools.map((tool) => `- ${tool.name}: ${tool.description}`)
+				: ["No open browser tab exposes a dg Web MCP tool."];
+			return { ok: true, data: { text: clean(["### WebMCP tools", ...rows].join("\n")), tools } };
+		}
+		const tool = request.tool as string;
+		let tab: LiveTab | undefined;
+		for (const candidate of tabs) {
+			if ((await webMcpToolsOf(candidate)).some((entry) => entry.name === tool)) {
+				tab = candidate;
+				break;
+			}
+		}
+		if (signal.aborted) return CANCELED;
+		if (!tab) return { ok: false, error: noWebMcpTab(tool) };
+		await guard("call", tab, tool);
+		const refused = await askDgTool(tool, request.args ?? {}, tab, context, approvalTabTitle(tab));
+		if (signal.aborted) return CANCELED;
+		if (refused) return refused;
+		const live = await api.tabs.get(tab.id).catch(() => undefined);
+		if (!live || live.incognito || live.url !== tab.url)
+			return { ok: false, error: `The page changed while the approval was open; ${tool} did not run. Retry.` };
+		tab.signal = signal;
+		const called = webMcpResult(
+			await inMain(tab, pwExtWebMcp as never, [
+				{ kind: "call", tool, args: request.args, timeoutMs: TOOL_TIMEOUT_MS },
+				tab.url,
+			]),
+		);
+		const options = { unmasked: false, secrets: [] };
+		if ("error" in called)
+			return { ok: false, error: mailbox(tab.url) ? MAILBOX_TOOL_FAILED : clean(maskRaw(called.error, RAW_ERROR_MAX, options)) };
+		if (!("output" in called)) return { ok: false, error: "The page returned an unexpected WebMCP result." };
+		return {
+			ok: true,
+			data: {
+				text: clean(
+					[`### Result`, `WebMCP tool ${tool} returned:`, clip(maskRaw(called.output, RAW_OUTPUT_MAX, options), TOOL_OUTPUT_MAX)].join("\n"),
+				),
+			},
+		};
 	}
 
 	async function execute(
@@ -1641,6 +1757,7 @@ export function createPwExtHandler({
 				error: "pw --ext works only in Chromium-family browsers (Chrome, Edge, Brave, Vivaldi).",
 			};
 		if (!context?.sessionId) return { ok: false, error: NO_SESSION };
+		if (isWebMcpVerb(request)) return runWebMcp(request, context, signal);
 		if (request.verb === "fill" && request.secret && isPwExtSecretTooShort(request.value as string))
 			return { ok: false, error: SECRET_TOO_SHORT };
 		const { sessionId } = context;
@@ -1684,5 +1801,17 @@ export function createPwExtHandler({
 		if (running.size === 0) live.delete(sessionId);
 		return halted.has(sessionId) ? STOPPED : outcome;
 	};
+	async function runWebMcp(request: WebMcpRequest, context: PwExtContext, signal: AbortSignal | undefined): Promise<PwExtResult> {
+		try {
+			return await webMcp(request, context, signal ?? new AbortController().signal);
+		} catch (error) {
+			if (error instanceof Refusal) return { ok: false, error: error.message };
+			return {
+				ok: false,
+				error: clean(`Web MCP failed in the browser: ${error instanceof Error ? error.message : String(error)}`).slice(0, 2048),
+			};
+		}
+	}
+
 	return Object.assign(handler, { stop, stopTab });
 }

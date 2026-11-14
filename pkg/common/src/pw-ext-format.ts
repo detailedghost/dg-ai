@@ -3,6 +3,7 @@ import { PROTO_PREVIEW_MAX_CHARS } from "./proto-format";
 import { PW_EXT_NETWORK_MAX_FILTER_CHARS, PW_EXT_NETWORK_MAX_LIMIT } from "./pw-ext-network";
 import { PW_EXT_CREDENTIAL_NAME, PW_EXT_CREDENTIAL_SOURCES, type PwExtCredentialSource } from "./pw-ext-credential-format";
 import type { RelayWire } from "./relay-format";
+import { isDgToolName } from "./webmcp-format";
 
 export const PW_EXT_READ_VERBS = [
 	"current",
@@ -30,9 +31,12 @@ export const PW_EXT_WRITE_VERBS = [
 	"fetch",
 	"credential",
 ] as const;
+/** Web MCP verbs over the person's own tabs; no agent tab group or pw --ext session. */
+export const PW_EXT_WEBMCP_VERBS = ["webmcp-tools", "webmcp-call"] as const;
 export type PwExtVerb =
 	| (typeof PW_EXT_READ_VERBS)[number]
-	| (typeof PW_EXT_WRITE_VERBS)[number];
+	| (typeof PW_EXT_WRITE_VERBS)[number]
+	| (typeof PW_EXT_WEBMCP_VERBS)[number];
 
 /** Relay deadline used when the caller omits timeoutMs. */
 export const PW_EXT_DEFAULT_TIMEOUT_MS = 120_000;
@@ -186,6 +190,8 @@ const FIELDS: Record<PwExtVerb, readonly string[]> = {
 	],
 	tools: ["tabId"],
 	call: ["tabId", "tool", "args"],
+	"webmcp-tools": [],
+	"webmcp-call": ["tool", "args"],
 	dialog: ["tabId", "answer", "text"],
 	network: ["tabId", "filter", "limit", "since", "values"],
 	storage: ["tabId", "area", "key", "keysOnly", "values"],
@@ -325,10 +331,11 @@ export function validatePwExtRequest(value: unknown): PwExtRequest {
 		requireString(value.filePath, `${path}.filePath`, { nonEmpty: true });
 		if (bytes(value.filePath) > 4096) fail(`${path}.filePath is too long`);
 	}
-	if (verb === "call") {
+	if (verb === "call" || verb === "webmcp-call") {
 		requireString(value.tool, `${path}.tool`, { nonEmpty: true });
 		if (value.tool.length > PW_EXT_MAX_TOOL_NAME_CHARS)
 			fail(`${path}.tool exceeds ${PW_EXT_MAX_TOOL_NAME_CHARS} characters`);
+		if (verb === "webmcp-call" && !isDgToolName(value.tool)) fail(`${path}.tool must be a dg_ tool name`);
 		requireRecord(value.args, `${path}.args`);
 		if (bytes(JSON.stringify(value.args)) > PW_EXT_MAX_CALL_ARGS_BYTES)
 			fail(`${path}.args exceeds ${PW_EXT_MAX_CALL_ARGS_BYTES} bytes`);

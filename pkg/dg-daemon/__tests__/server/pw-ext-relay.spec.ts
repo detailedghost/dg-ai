@@ -239,6 +239,20 @@ describe("daemon pw --ext relay", () => {
 		).toBe(false);
 	});
 
+	it("refuses webmcp-tools at once when the extension lists only the pw --ext verbs", async () => {
+		const { cli, results, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap, MIN_VERSION, {
+			pwExtVerbs: [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS],
+		});
+		const requestId = request(cli, { request: { verb: "webmcp-tools" } });
+
+		expect(await result(results, requestId)).toMatchObject({
+			ok: false,
+			error: "pw --ext webmcp-tools needs a newer dg-ai-extension; update the extension, reload it, and reconnect this session.",
+		});
+		expect(page.frames.some((frame) => frameType(frame) === "pw-ext-browser-request")).toBe(false);
+	});
+
 	it("refuses dialog at once when the extension lists verbs without it", async () => {
 		const { cli, results, port, bootstrap } = await boot();
 		const page = await extension(port, bootstrap, MIN_VERSION, {

@@ -22,6 +22,7 @@ export type BrowserTab = {
 	incognito?: boolean;
 	discarded?: boolean;
 	autoDiscardable?: boolean;
+	lastAccessed?: number;
 };
 
 export type AgentTabsBrowserApi = {

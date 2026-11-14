@@ -241,6 +241,7 @@ export async function requestWebMcpApproval({
 	args,
 	origin,
 	class: approvalClass,
+	tabTitle,
 }: {
 	approvals: Pick<Approvals, "ask">;
 	grants: WebMcpGrants;
@@ -251,6 +252,7 @@ export async function requestWebMcpApproval({
 	args: Record<string, unknown>;
 	origin: string;
 	class: WebMcpApprovalClass;
+	tabTitle?: string;
 }): Promise<ApprovalAnswer> {
 	if (approvalClass === "read") return "allow";
 	const site = siteOf(origin);
@@ -262,7 +264,13 @@ export async function requestWebMcpApproval({
 		approvals.ask({
 			title: `Allow ${tool} on ${site.name}?`,
 			origin,
-			lines: [`Agent: ${agentIdentity}`, `Tool: ${tool}`, argsLine(args), scope],
+			lines: [
+				`Agent: ${agentIdentity}`,
+				...(tabTitle === undefined ? [] : [`Tab: ${tabTitle}`]),
+				`Tool: ${tool}`,
+				argsLine(args),
+				scope,
+			],
 			...(grantable ? { remember: REMEMBER_LABEL } : {}),
 		});
 	if (!grantable) return (await ask()).answer;
