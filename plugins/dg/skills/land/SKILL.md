@@ -26,9 +26,9 @@ only orders the steps, waits for CI, and owns the merge gate.
 | Flag | Short | Effect | Default |
 |---|---|---|---|
 | `<pr-number\|url>` | none | The PR to land. | the PR of the current branch |
-| `--rounds N` | `-r` | The number of review rounds this run adds. | `3` |
+| `--rounds N` | `-r` | The number of review rounds in each review loop. | `3` |
 | `--no-early-stop` | none | Run all `N` rounds. Do not stop at the first dry round. | off |
-| `--ci-retries N` | `-c` | The number of times to fix failing CI with `/dg:address`, push, and wait again. | `2` |
+| `--ci-retries N` | `-c` | The safety ceiling on CI-fix cycles. Each cycle fixes the failed checks with `/dg:address`, pushes, runs a review loop on the fix, and waits for CI again. `0` means no ceiling. | `5` |
 | `--proxy <backend>` | `-p` | The review backend, passed to `/dg:review-loop -p`. One of `codex`, `pi`, `opencode`, `grok`. `copilot` is refused. | `codex` |
 | `--base <ref>` | `-b` | The diff base for the review rounds. | merge base with the PR's base branch |
 | `--wait-timeout <sec>` | `-w` | The cap for each CI wait. | `1800` |
@@ -73,7 +73,7 @@ Report missing instructions; never assume a private checkout or cache location.
 |---|---|---|
 | 1 | Resolve the PR, its head SHA, its base, and its checkout. | not GitHub, draft, closed, fork, stacked, no checkout, local and remote heads differ |
 | 2 | `/dg:review-loop -p <backend>` for `N` rounds. `/dg:address` fixes and pushes. | review-loop fails |
-| 3 | Wait for CI on the new head. On failure, `/dg:address` fixes it, up to `-c` times. | CI still red, or the wait times out |
+| 3 | Wait for CI. On a failed check, `/dg:address` fixes it, pushes, and step 2 reviews the fix; then wait again. Leave the loop only when CI is green on a reviewed head. | the `-c` ceiling, the same check failing twice with the same error, or a wait timeout |
 | 4 | Check the merge state. | behind, conflicting, or blocked: suggest `/dg:catchup` or report |
 | 5 | Ready for your review: summary, open the PR, then ask in the main loop. Merge at the tested SHA only on "Merge now", or at once with `--auto`. | "Not yet" (the default), `--no-merge`, a merge queue, GitHub auto-merge, a changed head, or a blocked merge |
 | 6 | Check the PRs that used the deleted branch as their base. | never |
@@ -92,4 +92,5 @@ Read [references/workflow.md](references/workflow.md) for each step's commands a
 - **Never work around a blocked merge.** When the harness or a hook blocks `gh pr merge`, print the exact command with a `!` prefix for the human to run, and stop.
 - **Merge only the tested head.** Always pass `--match-head-commit <sha>`, where `<sha>` is the head that CI passed on.
 - **Do not resolve conflicts here.** A behind or conflicting PR goes to `/dg:catchup`. A stacked PR goes to its parent first, or to `/dg:chain`.
+- **No unreviewed CI fix.** Every CI-fix commit gets a review loop before CI runs on it again.
 - **Edit nothing directly.** All code changes happen inside `/dg:address`.

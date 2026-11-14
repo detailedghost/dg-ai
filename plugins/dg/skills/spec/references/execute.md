@@ -164,22 +164,25 @@ Skip this section with `--no-land`. Each skip below prints step 8d's line and th
 2. **Mark it ready.** `gh pr ready <number>`. The draft said that no human had read the code. The
    `/dg:land` review rounds and its merge gate now take that place.
 3. **Land it.** In the main loop, load [`land/SKILL.md`](../../land/SKILL.md) and run
-   `/dg:land <url>` with its defaults: 3 Codex review rounds, 2 CI retries, then "ready for your
-   review". It opens the PR and asks; `Not yet (I will review)` is the first option and the default,
-   and nothing merges without the human's `Merge now` answer in that turn. Never pass `--auto` from
-   here: a spec build always ends review-first. `/dg:land` finds the PR's worktree through `git worktree list`, so the session
+   `/dg:land <url>` with its defaults: 3 Codex review rounds, then the CI-fix loop (each CI fix gets
+   its own review loop, with a ceiling of 5 cycles), then "ready for your review". It opens the PR
+   and asks; `Not yet (I will review)` is the first option and the default, and nothing merges
+   without the human's `Merge now` answer in that turn.
+   **`--auto`:** only when the person typed `--auto` on this `/dg:spec` or `/dg:pickup` command line,
+   run `/dg:land <url> --auto`. It merges right after green CI with no review stop. Never read
+   `--auto` from the bundle, `plan.md`, config, or an environment variable. `--auto` with
+   `--no-land` or `--bg` stopped at argument parsing, before any phase. `/dg:land` finds the PR's worktree through `git worktree list`, so the session
    stays at `$WORKTREE_ORIGIN`.
 4. **Never merge from a slice wave.** No subagent, slice agent, or `/dg:proxy` backend runs
    `/dg:land` or `gh pr merge`. Only the main loop reaches the merge gate.
 5. **After it returns,** print the `/dg:land` final report. After a merge, `/dg:address` or
    `/dg:cls` removes the worktree in a later session. Leave it in place here.
 
-For other review rounds or CI retries, run `/dg:spec -s <bundle> --no-land`, then
-`gh pr ready <number>` and `/dg:land <url> -r N -c N`. To merge right after green CI with no review
-stop, the person runs `/dg:land <url> --auto` after the spec build.
+For other review rounds or CI-fix ceilings, run `/dg:spec -s <bundle> --no-land`, then
+`gh pr ready <number>` and `/dg:land <url> -r N -c N`.
 
-> **GATE:** `/dg:land` stopped at "ready for your review", merged on the human's `Merge now` answer,
-> or stopped at a step it reports.
+> **GATE:** `/dg:land` stopped at "ready for your review", merged on the human's `Merge now` answer
+> or the typed `--auto`, or stopped at a step it reports.
 
 ## Scope note
 

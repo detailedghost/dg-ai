@@ -22,7 +22,7 @@ Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also
 
 If a step fails, run dg-skills doctor spec.
 
-**Usage:** `/dg:pickup [NNN-or-substring] [--no-land]`
+**Usage:** `/dg:pickup [NNN-or-substring] [--no-land | --auto]`
 
 ## Flags
 
@@ -30,6 +30,7 @@ If a step fails, run dg-skills doctor spec.
 |---|---|---|---|
 | `NNN-or-substring` | none | The bundle to resume. With none, ask. | ask |
 | `--no-land` | none | Pass `--no-land` to `/dg:spec -s`: stop at the draft PR/MR and do not run `/dg:land`. | off (land) |
+| `--auto` | none | Pass `--auto` to `/dg:spec -s`: end with `/dg:land --auto`, which merges right after green CI with no review stop. Invalid with `--no-land`. | off (review first) |
 
 ## Workflow
 
@@ -49,7 +50,7 @@ If a step fails, run dg-skills doctor spec.
    Use `-f` because `/dg:agent-seed` ignores `.agents/`. Do not add other bundles.
    If this is a re-pickup of an already `in-progress` bundle and nothing changed, skip both the
    `set` and the commit (idempotent no-op).
-5. **Hand off.** Invoke `/dg:spec -s <NNN>_<slug>`, plus `--no-land` when given. It reads only `context.md` + `plan.md`, creates its
+5. **Hand off.** Invoke `/dg:spec -s <NNN>_<slug>`, plus `--no-land` or `--auto` when the person typed it. It reads only `context.md` + `plan.md`, creates its
    own worktree, drives `/dg:sdlc`'s slice-wave through PR, then runs `/dg:land` on it — see
    [`spec/references/execute.md`](../spec/references/execute.md). `/dg:pickup` does no worktree setup
    of its own; that is entirely `/dg:spec -s`'s job.

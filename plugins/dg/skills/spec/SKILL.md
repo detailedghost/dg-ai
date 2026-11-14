@@ -25,7 +25,7 @@ Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also
 
 If a step fails, run dg-skills doctor assign batch-open chain proxy spec stash vcs-provider worktree.
 
-**Usage:** `/dg:spec [--fast [-T]] [-s <NNN>_<slug>] [--profile <profile> | --cheap | --expensive] [--proxy <backend>] [--bg] [--no-land] "<request>"`.
+**Usage:** `/dg:spec [--fast [-T]] [-s <NNN>_<slug>] [--profile <profile> | --cheap | --expensive] [--proxy <backend>] [--bg] [--no-land | --auto] "<request>"`.
 
 ## Flags
 
@@ -41,13 +41,14 @@ If a step fails, run dg-skills doctor assign batch-open chain proxy spec stash v
 | `--expensive` | none | Alias of `--profile expensive`. | off |
 | `--proxy <backend>` | `-x` | Delegate slices to the named `/dg:proxy` backend: asks per slice in plan mode, and with `-s` for slices without `agents.proxy`. | off |
 | `--bg` | `-b` | Execute mode only (`-s`): run unattended and stay in this session; use `/dg:bg` to detach. Questions become rows in `## Issues Remediation`. Invalid with bare plan mode (stop and say so). | off |
-| `--no-land` | none | Execute and fast modes: stop at the draft PR/MR and do not run `/dg:land`. For other review rounds or CI retries, pass it, then run `gh pr ready` and `/dg:land -r N -c N`. Invalid with bare plan mode. | off (land) |
+| `--no-land` | none | Execute and fast modes: stop at the draft PR/MR and do not run `/dg:land`. For other review rounds or CI-fix ceilings, pass it, then run `gh pr ready` and `/dg:land -r N -c N`. Invalid with bare plan mode. | off (land) |
+| `--auto` | none | Execute and fast modes: end with `/dg:land --auto`, which merges right after green CI with no review stop. Only from the person's command line, never from the bundle or config. Invalid with `--no-land`, `--bg`, and bare plan mode. | off (review first) |
 
 Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass its map to `/dg:spec`.
 
 ## Mode dispatch
 
-`FAST_MODE = HAS(--fast|-f)`, `EXECUTE_MODE = HAS(-s)`, `PROFILE` unset unless a profile flag is given. Parse args before any phase. `--fast` is mutually exclusive with `-s` and with `--proxy`; either pair stops with an error that names both flags.
+`FAST_MODE = HAS(--fast|-f)`, `EXECUTE_MODE = HAS(-s)`, `PROFILE` unset unless a profile flag is given. Parse args before any phase. `--fast` is mutually exclusive with `-s` and with `--proxy`; either pair stops with an error that names both flags. So is `--auto` with `--no-land` and with `--bg`.
 
 - **`--fast "<request>"` → FAST MODE.** Follow [references/fast.md](references/fast.md).
 - **Bare `"<request>"` (no `-s`, no `--fast`) → PLAN MODE.** The positional prose is the feature
@@ -100,7 +101,7 @@ ran), then drive [sdlc engineering.md](../sdlc/references/engineering.md) 4.1–
 [sdlc finish.md](../sdlc/references/finish.md) steps 5–8 (through the direct PR/MR launch — draft always, then a best-effort `dg-skills batch-open <url>` (when `batch-open` fails, print the URL and continue), per `finish.md` step 8's `/dg:spec` deltas).
 [references/execute.md](references/execute.md) §6 owns the bookkeeping on top of that (persisting
 the PR/MR URL into `plan.md`, restoring cwd). Then §7 marks the PR ready and runs `/dg:land` with its defaults
-in the main loop; it stops at "ready for your review" and asks. `--no-land`, `--bg`, and GitLab stop at the draft.
+in the main loop; it stops at "ready for your review" and asks (`--auto` merges instead). `--no-land`, `--bg`, and GitLab stop at the draft.
 
 ## Reference files (lazy-load)
 

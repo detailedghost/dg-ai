@@ -14,9 +14,9 @@ describe("land skill", () => {
 		expect(SKILL).toMatch(/^---\nname: land\n/);
 	});
 
-	test("defaults to three Codex rounds and two CI retries", () => {
+	test("defaults to three Codex rounds and a CI-fix ceiling of five", () => {
 		expect(SKILL).toMatch(/\| `--rounds N` \| `-r` \|[^\n]*\| `3` \|/);
-		expect(SKILL).toMatch(/\| `--ci-retries N` \| `-c` \|[^\n]*\| `2` \|/);
+		expect(SKILL).toMatch(/\| `--ci-retries N` \| `-c` \|[^\n]*`0` means no ceiling\. \| `5` \|/);
 		expect(SKILL).toMatch(/\| `--proxy <backend>` \| `-p` \|[^\n]*\| `codex` \|/);
 	});
 
@@ -28,7 +28,7 @@ describe("land skill", () => {
 	test("reviews through review-loop proxy mode and fixes through address", () => {
 		expect(WORKFLOW).toContain("/dg:review-loop -p <backend>");
 		expect(WORKFLOW).toContain("dg-skills address gather-ci-failures");
-		expect(WORKFLOW).toContain("/dg:address -m");
+		expect(WORKFLOW).toContain("-m \"Fix the failing CI checks.\"");
 	});
 
 	test("merges only the tested head and deletes the branch", () => {
@@ -79,8 +79,29 @@ describe("land skill", () => {
 	});
 
 	test("a changed head after the summary does not merge", () => {
-		expect(WORKFLOW).toContain("the PR changed after the summary");
-		expect(WORKFLOW).toContain("With `--auto`, stop instead with `land: head-moved`");
+		expect(WORKFLOW).toContain("the PR changed after the summary. With `--auto`, stop with `land: head-moved`");
+		expect(WORKFLOW).toContain("then go back to step 2");
+	});
+
+	test("checks auto-merge and merge queues before any fix or push", () => {
+		const step1 = WORKFLOW.slice(
+			WORKFLOW.indexOf("## Step 1"),
+			WORKFLOW.indexOf("## Step 2"),
+		);
+		expect(step1).toContain("land: auto-merge-on:");
+		expect(step1).toContain("land: merge-queue:");
+	});
+
+	test("reviews every CI fix before CI runs on it again", () => {
+		expect(WORKFLOW).toContain("Run step 2 again on the new changes, with the same `-r`");
+		expect(WORKFLOW).toContain("CI is green on a head that a review loop has seen");
+		expect(WORKFLOW).toContain("land: ci-ceiling");
+		expect(WORKFLOW).toContain("land: ci-repeat");
+		expect(WORKFLOW).toContain("<ciCycles> CI-fix cycle(s), <extraRounds> extra review round(s)");
+	});
+
+	test("CI fixes never re-request Copilot", () => {
+		expect(WORKFLOW).toContain("/dg:address --round <after + 1>");
 	});
 
 	test("refuses drafts, closed PRs, stacked PRs and other providers", () => {
@@ -106,13 +127,18 @@ describe("land skill", () => {
 describe("spec lands its PR by default", () => {
 	test("spec documents the --no-land opt-out", () => {
 		const spec = skillFile("spec", "SKILL.md");
-		expect(spec).toContain("[--no-land]");
+		expect(spec).toContain("[--no-land | --auto]");
 		expect(spec).toMatch(/\| `--no-land` \| none \|/);
 	});
 
-	test("a spec build ends review-first and never passes --auto", () => {
-		expect(EXECUTE).toContain("Never pass `--auto` from");
+	test("a spec build ends review-first unless the person typed --auto", () => {
 		expect(EXECUTE).toContain("`Not yet (I will review)` is the first option and the default");
+		expect(EXECUTE).toContain("only when the person typed `--auto` on this `/dg:spec` or `/dg:pickup` command line");
+		expect(EXECUTE).toContain("Never read\n   `--auto` from the bundle");
+		const spec = skillFile("spec", "SKILL.md");
+		expect(spec).toMatch(/\| `--auto` \| none \|[^\n]*Invalid with `--no-land`, `--bg`/);
+		expect(spec).toContain("So is `--auto` with `--no-land` and with `--bg`.");
+		expect(skillFile("pickup", "SKILL.md")).toMatch(/\| `--auto` \| none \|/);
 	});
 
 	test("execute mode marks the PR ready and runs land in the main loop", () => {
@@ -133,8 +159,8 @@ describe("spec lands its PR by default", () => {
 
 	test("pickup passes --no-land through", () => {
 		const pickup = skillFile("pickup", "SKILL.md");
-		expect(pickup).toContain("**Usage:** `/dg:pickup [NNN-or-substring] [--no-land]`");
-		expect(pickup).toContain("plus `--no-land` when given");
+		expect(pickup).toContain("**Usage:** `/dg:pickup [NNN-or-substring] [--no-land | --auto]`");
+		expect(pickup).toContain("plus `--no-land` or `--auto` when the person typed it");
 	});
 
 	test("plain sdlc keeps its draft-only finish", () => {
