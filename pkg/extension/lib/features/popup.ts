@@ -26,8 +26,6 @@ const DAEMON_CHANGED_HELP =
 	"A different daemon is running. Trust it to keep using this browser with it.";
 const NO_TOUR = "Open a page with a DeeGee video tour first.";
 const NO_ACTIVE_TAB = "No active tab found. Open a page and try again.";
-const MAILBOX_TAB =
-	"pw --ext cannot control a mailbox tab. Outlook Web MCP tools run on your own signed-in tab, with their own approvals.";
 const ADD_TAB = "Add this tab";
 const SELECT_TAB = "Select this tab";
 const NO_SHORTCUT =
@@ -605,8 +603,8 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 		const tabId = tab?.id;
 		if (tabId === undefined) return { label: ADD_TAB, reason: NO_ACTIVE_TAB };
 		if (tab?.incognito) return { label: ADD_TAB, reason: PRIVATE_TAB_ERROR };
-		if (!allowedPage(tab?.url)) return { label: ADD_TAB, reason: BLOCKED_TAB_ERROR };
-		if (mailbox(tab?.url)) return { label: ADD_TAB, reason: MAILBOX_TAB };
+		if (!allowedPage(tab?.url) || mailbox(tab?.url))
+			return { label: ADD_TAB, reason: BLOCKED_TAB_ERROR };
 		const holds = (sessionId: string) =>
 			groups.get(sessionId)?.tabs.some((other) => other.tabId === tabId);
 		if (holds(session.sessionId)) return { label: SELECT_TAB, tabId };

@@ -78,6 +78,7 @@ import { createUnmaskGrants, MAX_FILLED_SECRETS, type UnmaskGrant, type UnmaskGr
 import {
 	allowedPage,
 	mailbox,
+	outlookWeb,
 	PW_EXT_BLOCKED_ERROR,
 	PW_EXT_MAILBOX_ERROR,
 	PW_EXT_PRIVATE_ERROR,
@@ -470,10 +471,31 @@ function shownUrl(tab: Pick<BrowserTab, "url">, unmasked = false, secrets: strin
 	return mask(tab.url as string, { unmasked, secrets });
 }
 
+const OUTLOOK_WORDS = new Set([
+	"mail",
+	"inbox",
+	"calendar",
+	"people",
+	"tasks",
+	"to do",
+	"files",
+	"search",
+	"settings",
+	"outlook",
+]);
+
+function outlookTitle(title: string): string {
+	const [first = "", ...rest] = title.split(" - ");
+	const count = /^\(\d+\) /.exec(first)?.[0] ?? "";
+	const word = first.slice(count.length);
+	const head = count + (OUTLOOK_WORDS.has(word.trim().toLowerCase()) ? word : "[redacted]");
+	return rest.length ? `${head} - [redacted]` : head;
+}
+
 function shownTitle(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string {
 	if (!allowedPage(tab.url) || mailbox(tab.url)) return "";
 	const title = tab.title ?? "";
-	return mask(title, { unmasked, secrets });
+	return mask(!unmasked && outlookWeb(tab.url) && title ? outlookTitle(title) : title, { unmasked, secrets });
 }
 
 function pageLines(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string[] {
@@ -1135,7 +1157,10 @@ export function createPwExtHandler({
 						tab.url,
 					]),
 				);
-				if ("error" in called) return failed(maskRaw(called.error, RAW_ERROR_MAX, { unmasked, secrets }));
+				if ("error" in called)
+					return mailboxToolAllowed(tool, new URL(tab.url as string).origin, await enabledOrNone())
+						? failed(maskRaw(called.error, RAW_ERROR_MAX, { unmasked, secrets }))
+						: pageError(called.error);
 				if (!("output" in called))
 					return { ok: false, error: "The page returned an unexpected WebMCP result." };
 				return shown(

@@ -1250,46 +1250,55 @@ describe("pw --ext unmask", () => {
 		expect(h.approvalRequests).toEqual([]);
 	});
 
-	describe("Outlook mailbox tab", () => {
+	describe("Outlook page title", () => {
 		const outlookTab = (url: string, title: string) => [{ ...WEB_TAB, url, title }];
-		const OUTLOOK_URLS = [
+
+		it.each([
 			"https://outlook.live.com/mail/0/",
 			"https://outlook.office.com/mail/",
 			"https://outlook.office365.com/mail/",
 			"https://outlook.cloud.microsoft/mail/",
-		];
-
-		it.each(OUTLOOK_URLS)("hides the address and the title of %s", async (url) => {
-			const h = harness({ tabs: outlookTab(url, "Inbox - test.person@example.com - Outlook") });
+		])("masks the account name in the title on %s", async (url) => {
+			const h = harness({ tabs: outlookTab(url, "Mail - Test Person - Outlook") });
 			const text = outcome(await h.run({ verb: "current" }));
-			expect(text).toContain("(protected mailbox)");
-			expect(text).not.toContain("test.person");
-			expect(text).not.toContain(new URL(url).hostname);
+			expect(text).toContain("- Page Title: Mail - [redacted]");
+			expect(text).not.toContain("Test Person");
 		});
 
-		it.each(OUTLOOK_URLS)("refuses snapshot on %s with the mailbox error", async (url) => {
-			const h = harness({ tabs: outlookTab(url, "Mail") });
-			expect(await h.run({ verb: "snapshot" })).toEqual({ ok: false, error: PW_EXT_MAILBOX_ERROR });
+		it("masks the email address in the title", async () => {
+			const h = harness({
+				tabs: outlookTab("https://outlook.live.com/mail/0/", "Inbox - test.person@example.com - Outlook"),
+			});
+			const text = outcome(await h.run({ verb: "current" }));
+			expect(text).not.toContain("test.person@example.com");
+			expect(text).not.toContain("Test Person");
 		});
 
-		it("refuses unmask on Outlook and asks nothing", async () => {
-			const h = harness({ approval: "allow", tabs: outlookTab("https://outlook.live.com/mail/0/", "Mail") });
-			expect(await h.run({ verb: "unmask", minutes: 5 })).toEqual({ ok: false, error: PW_EXT_MAILBOX_ERROR });
-			expect(h.approvalRequests).toEqual([]);
+		it.each([
+			["no suffix", "Mail - Test Person", "Mail - [redacted]"],
+			["one part", "Test Person", "[redacted]"],
+			["localized text", "Correo - Persona de Prueba - Outlook", "[redacted] - [redacted]"],
+			["a new-app title", "Outlook (new)", "[redacted]"],
+			["a known word alone", "Calendar", "Calendar"],
+			["an unread count", "(3) Mail - Test Person - Outlook", "(3) Mail - [redacted]"],
+			["a count with text", "(Test Person) Mail - Outlook", "[redacted] - [redacted]"],
+			["a count on an unknown word", "(3) Test Person - Outlook", "(3) [redacted] - [redacted]"],
+		])("fails closed on %s", async (_name, title, shown) => {
+			const h = harness({ tabs: outlookTab("https://outlook.office.com/mail/", title) });
+			const text = outcome(await h.run({ verb: "current" }));
+			expect(text).toContain(`- Page Title: ${shown}`);
+			expect(text).not.toContain("Test Person");
+			expect(text).not.toContain("Persona");
 		});
 
-		it("refuses a dg_outlook_ call while the Outlook built-in is off", async () => {
+		it("shows the full title during an unmask grant", async () => {
 			const h = harness({
 				approval: "allow",
-				enabledBuiltIns: async () => new Set<string>(),
-				tabs: outlookTab("https://outlook.live.com/mail/0/", "Mail"),
-				mainResult: () => ({ api: "modelContext", output: "[]" }),
+				tabs: outlookTab("https://outlook.live.com/mail/0/", "Mail - Test Person - Outlook"),
 			});
-			expect(await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).toEqual({
-				ok: false,
-				error: PW_EXT_MAILBOX_ERROR,
-			});
-			expect(h.approvalRequests).toEqual([]);
+			await h.run({ verb: "unmask", minutes: 5 });
+			const text = outcome(await h.run({ verb: "current" }));
+			expect(text).toContain("- Page Title: Mail - Test Person - Outlook");
 		});
 
 		it("leaves other sites' titles alone", async () => {
@@ -1708,15 +1717,10 @@ describe("pw --ext WebMCP approval", () => {
 	const OWA = "https://outlook.live.com/mail/0/";
 	const owaTab = { ...WEB_TAB, url: OWA, title: "Mail" };
 	const ran = () => ({ api: "modelContext", output: "done" });
-	const THIRD_PARTY = {
-		enabledBuiltIns: async () => new Set(["outlook"]),
-		thirdPartySites: { active: ["https://outlook.live.com/*"], stopped: [] },
-	};
 
 	it("asks before dg_outlook_delete with the tool, origin and ids, and runs only after Allow", async () => {
 		const actions: unknown[] = [];
 		const h = harness({
-			...THIRD_PARTY,
 			tabs: [owaTab],
 			approval: "allow",
 			mainResult: (action) => {
@@ -1738,7 +1742,7 @@ describe("pw --ext WebMCP approval", () => {
 
 	it("returns the deny error and does not run the tool", async () => {
 		const actions: unknown[] = [];
-		const h = harness({ ...THIRD_PARTY, tabs: [owaTab], approval: "deny", mainResult: (action) => void actions.push(action) });
+		const h = harness({ tabs: [owaTab], approval: "deny", mainResult: (action) => void actions.push(action) });
 		expect(await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } })).toEqual({
 			ok: false,
 			error: "The user denied dg_outlook_delete in the browser.",
@@ -1748,7 +1752,7 @@ describe("pw --ext WebMCP approval", () => {
 
 	it("returns the timeout error and does not run the tool", async () => {
 		const actions: unknown[] = [];
-		const h = harness({ ...THIRD_PARTY, tabs: [owaTab], approval: "timeout", mainResult: (action) => void actions.push(action) });
+		const h = harness({ tabs: [owaTab], approval: "timeout", mainResult: (action) => void actions.push(action) });
 		expect(await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } })).toEqual({
 			ok: false,
 			error: "No answer in the browser within 60 seconds; dg_outlook_delete did not run.",
@@ -1757,7 +1761,7 @@ describe("pw --ext WebMCP approval", () => {
 	});
 
 	it("asks again on a second call of an each-class tool", async () => {
-		const h = harness({ ...THIRD_PARTY, tabs: [owaTab], approval: "allow", mainResult: ran });
+		const h = harness({ tabs: [owaTab], approval: "allow", mainResult: ran });
 		await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } });
 		await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } });
 		expect(h.approvalRequests).toHaveLength(2);
@@ -1784,7 +1788,7 @@ describe("pw --ext WebMCP approval", () => {
 	});
 
 	it("asks every time and offers no Remember for a third-party dg_outlook_list on outlook.live.com", async () => {
-		const h = harness({ ...THIRD_PARTY, tabs: [owaTab], approval: "allow", remember: true, mainResult: ran });
+		const h = harness({ tabs: [owaTab], approval: "allow", remember: true, mainResult: ran });
 		await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });
 		await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });
 		expect(h.approvalRequests).toEqual([
@@ -1938,7 +1942,7 @@ describe("pw --ext WebMCP approval", () => {
 	});
 
 	it("asks every time for an unknown dg_ tool", async () => {
-		const h = harness({ ...THIRD_PARTY, tabs: [owaTab], approval: "allow", mainResult: ran });
+		const h = harness({ tabs: [owaTab], approval: "allow", mainResult: ran });
 		await h.run({ verb: "call", tool: "dg_outlook_unknown", args: {} });
 		await h.run({ verb: "call", tool: "dg_outlook_unknown", args: {} });
 		expect(h.approvalRequests).toHaveLength(2);
@@ -1962,7 +1966,7 @@ describe("pw --ext WebMCP approval", () => {
 		["dg_outlook_move", "unopened", "The approval window could not open; dg_outlook_move did not run."],
 	] as const)("does not run %s and stores no grant when the answer is %s", async (tool, approval, error) => {
 		const actions: unknown[] = [];
-		const h = harness({ ...THIRD_PARTY, tabs: [owaTab], approval, mainResult: (action) => void actions.push(action) });
+		const h = harness({ tabs: [owaTab], approval, mainResult: (action) => void actions.push(action) });
 		expect(await h.run({ verb: "call", tool, args: { ids: ["a"] } })).toEqual({ ok: false, error });
 		expect(actions).toEqual([]);
 		expect(await h.fake.api.storage.session.get(`webmcpGrants:${SESSION}`)).toEqual({});
@@ -1970,7 +1974,7 @@ describe("pw --ext WebMCP approval", () => {
 
 	it("refuses a read tool and runs nothing when the tab leaves the group before it runs", async () => {
 		const actions: unknown[] = [];
-		const h = harness({ ...THIRD_PARTY, tabs: [owaTab], mainResult: (action) => void actions.push(action) });
+		const h = harness({ tabs: [owaTab], mainResult: (action) => void actions.push(action) });
 		const get = h.fake.raw.tabs.get;
 		const original = get.getMockImplementation();
 		let reads = 0;
@@ -1986,7 +1990,6 @@ describe("pw --ext WebMCP approval", () => {
 		const actions: unknown[] = [];
 		let h: ReturnType<typeof harness>;
 		h = harness({
-			...THIRD_PARTY,
 			tabs: [owaTab],
 			approval: "allow",
 			onApproval: () => {
@@ -2006,7 +2009,6 @@ describe("pw --ext WebMCP approval", () => {
 		const actions: unknown[] = [];
 		let h: ReturnType<typeof harness>;
 		h = harness({
-			...THIRD_PARTY,
 			tabs: [owaTab],
 			approval: "allow",
 			onApproval: () => {
@@ -2026,7 +2028,6 @@ describe("pw --ext WebMCP approval", () => {
 		const controller = new AbortController();
 		const actions: unknown[] = [];
 		const h = harness({
-			...THIRD_PARTY,
 			tabs: [owaTab],
 			approval: "allow",
 			signal: controller.signal,
@@ -2041,14 +2042,14 @@ describe("pw --ext WebMCP approval", () => {
 	});
 
 	it("clips the args line to 600 characters and says how many were cut", async () => {
-		const h = harness({ ...THIRD_PARTY, tabs: [owaTab], approval: "allow", mainResult: ran });
+		const h = harness({ tabs: [owaTab], approval: "allow", mainResult: ran });
 		await h.run({ verb: "call", tool: "dg_outlook_delete", args: { note: "n".repeat(5_000) } });
 		const line = (h.approvalRequests[0] as { lines: string[] }).lines.find((entry) => entry.startsWith("Args: "));
 		expect(line).toMatch(/^Args: .{600} \(\d+ more characters not shown\)$/);
 	});
 
 	it("fails cleanly when the tab has no URL", async () => {
-		const h = harness({ ...THIRD_PARTY, tabs: [owaTab], approval: "allow", mainResult: ran });
+		const h = harness({ tabs: [owaTab], approval: "allow", mainResult: ran });
 		const tab = h.fake.tabs.get(7);
 		if (tab) delete (tab as { url?: string }).url;
 		expect((await h.run({ verb: "call", tool: "dg_outlook_delete", args: {} })).ok).toBe(false);
@@ -2132,46 +2133,6 @@ describe("pw --ext WebMCP on a mailbox tab", () => {
 		});
 		const fixed = { ok: false as const, error: "The WebMCP tool failed on the protected mailbox tab." };
 		expect(await h.run({ verb: "tools" })).toEqual(fixed);
-	});
-
-	it.each([
-		"Outlook is still loading; retry.",
-		"Outlook refused the request (429)",
-		"limit must be an integer from 1 to 50.",
-		"No mail folder has that name.",
-	])("passes the built-in tool error %p through on an Outlook tab", async (error) => {
-		const h = harness({
-			builtInOwned: true,
-			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/" }],
-			approval: "allow",
-			mainResult: () => ({ error }),
-		});
-		expect(await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).toEqual({ ok: false, error });
-	});
-
-	it("masks an address in a built-in tool error on an Outlook tab", async () => {
-		const h = harness({
-			builtInOwned: true,
-			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/" }],
-			approval: "allow",
-			mainResult: () => ({ error: "Outlook refused the request (401) test.person@example.com" }),
-		});
-		const answer = await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });
-		if (answer.ok) throw new Error("expected a failure");
-		expect(answer.error).toContain("Outlook refused the request (401)");
-		expect(answer.error).not.toContain("test.person@example.com");
-	});
-
-	it("keeps the fixed message for a page-sourced tools error on an Outlook tab", async () => {
-		const h = harness({
-			builtInOwned: true,
-			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/" }],
-			mainResult: () => ({ error: "test.person@example.com Fixture subject" }),
-		});
-		expect(await h.run({ verb: "tools" })).toEqual({
-			ok: false,
-			error: "The WebMCP tool failed on the protected mailbox tab.",
-		});
 	});
 
 	it.each(["site_tool", "dg_x", "search_flights"])("refuses call %s with the mailbox error", async (tool) => {
@@ -2266,6 +2227,52 @@ describe("pw --ext tools verb data", () => {
 		});
 		const answer = await h.run({ verb: "tools" });
 		expect(JSON.stringify(answer)).not.toContain("zzzzzzzzzzzz");
+	});
+});
+
+describe("pw --ext on an Outlook tab", () => {
+	const owaTab = { ...WEB_TAB, url: "https://outlook.live.com/mail/0/", title: "Mail - Test Person - Outlook" };
+
+	it("shows the address and the masked title like any page", async () => {
+		const h = harness({ tabs: [owaTab] });
+		const text = outcome(await h.run({ verb: "current" }));
+		expect(text).toContain("outlook.live.com");
+		expect(text).toContain("- Page Title: Mail - [redacted]");
+		expect(text).not.toContain("(protected mailbox)");
+	});
+
+	it("asks for unmask like on any page", async () => {
+		const h = harness({ approval: "allow", tabs: [owaTab] });
+		expect((await h.run({ verb: "unmask", minutes: 5 })).ok).toBe(true);
+		expect(h.approvalRequests).toHaveLength(1);
+	});
+
+	it("does not refuse snapshot with the mailbox error", async () => {
+		const h = harness({ tabs: [owaTab] });
+		expect(await h.run({ verb: "snapshot" })).not.toEqual({ ok: false, error: PW_EXT_MAILBOX_ERROR });
+	});
+
+	it.each([
+		"Outlook is still loading; retry.",
+		"Outlook refused the request (429)",
+		"limit must be an integer from 1 to 50.",
+		"No mail folder has that name.",
+	])("passes the built-in tool error %p through", async (error) => {
+		const h = harness({ builtInOwned: true, tabs: [owaTab], approval: "allow", mainResult: () => ({ error }) });
+		expect(await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).toEqual({ ok: false, error });
+	});
+
+	it("masks an address in a built-in tool error", async () => {
+		const h = harness({
+			builtInOwned: true,
+			tabs: [owaTab],
+			approval: "allow",
+			mainResult: () => ({ error: "Outlook refused the request (401) test.person@example.com" }),
+		});
+		const answer = await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });
+		if (answer.ok) throw new Error("expected a failure");
+		expect(answer.error).toContain("Outlook refused the request (401)");
+		expect(answer.error).not.toContain("test.person@example.com");
 	});
 });
 
@@ -2839,7 +2846,7 @@ describe("pw --ext site allowlist", () => {
 		it("does not ask again for an open on another host of the allowed domain", async () => {
 			const h = loginHarness();
 			expect((await h.run({ verb: "selection" })).ok).toBe(true);
-			navigateTab(h, "https://account.live.com/owa/");
+			navigateTab(h, "https://outlook.live.com/owa/");
 			expect((await h.run({ verb: "open", url: "https://login.live.com/ppsecure" })).ok).toBe(true);
 			expect(h.approvalRequests).toHaveLength(1);
 		});
@@ -3307,7 +3314,7 @@ describe("pw --ext network", () => {
 
 describe("pw --ext storage, fetch and credential save", () => {
 	const MARKER = "fake-marker-value-for-tests";
-	const MAIL_TAB = { ...WEB_TAB, url: "https://account.live.com/mail/0/", title: "Mail" };
+	const MAIL_TAB = { ...WEB_TAB, url: "https://outlook.live.com/mail/0/", title: "Mail" };
 	const asks = (h: ReturnType<typeof harness>) =>
 		h.approvalRequests.filter((request) => (request as { title: string }).title.startsWith("Let the agent see values"));
 	const mainCalls = (h: ReturnType<typeof harness>) =>
@@ -3409,7 +3416,7 @@ describe("pw --ext storage, fetch and credential save", () => {
 				site: "live.com",
 				name: "owa-token",
 				value: MARKER,
-				meta: expect.objectContaining({ site: "https://account.live.com", createdBy: "pw --ext credential save" }),
+				meta: expect.objectContaining({ site: "https://outlook.live.com", createdBy: "pw --ext credential save" }),
 			},
 		]);
 		expect(JSON.stringify(h.storedCredentials[0]?.meta)).not.toContain(MARKER);
@@ -3420,7 +3427,7 @@ describe("pw --ext storage, fetch and credential save", () => {
 		const h = harness({
 			sites: "ask",
 			approval: "allow",
-			tabs: [{ ...MAIL_TAB, url: "https://account.live.com:8443/mail/0/" }],
+			tabs: [{ ...MAIL_TAB, url: "https://outlook.live.com:8443/mail/0/" }],
 			cookies: { SessionCookie: { value: MARKER } },
 			mainResult: hook(() => ({ entries: [] })),
 		});
@@ -3457,7 +3464,7 @@ describe("pw --ext storage, fetch and credential save", () => {
 	});
 
 	it("masks a saved value in later output of the session", async () => {
-		const echoed = { at: 1, via: "fetch", method: "GET", url: "https://account.live.com/x", status: 200, requestHeaders: [], responseHeaders: [], response: { type: "text/plain", size: 30, text: `echo ${MARKER}` } };
+		const echoed = { at: 1, via: "fetch", method: "GET", url: "https://outlook.live.com/x", status: 200, requestHeaders: [], responseHeaders: [], response: { type: "text/plain", size: 30, text: `echo ${MARKER}` } };
 		const h = harness({
 			sites: "ask",
 			approval: "allow",
@@ -3472,7 +3479,7 @@ describe("pw --ext storage, fetch and credential save", () => {
 	});
 
 	it("forgets saved values when the session ends", async () => {
-		const echoed = { at: 1, via: "fetch", method: "GET", url: "https://account.live.com/x", status: 200, requestHeaders: [], responseHeaders: [], response: { type: "text/plain", size: 30, text: `echo ${MARKER}` } };
+		const echoed = { at: 1, via: "fetch", method: "GET", url: "https://outlook.live.com/x", status: 200, requestHeaders: [], responseHeaders: [], response: { type: "text/plain", size: 30, text: `echo ${MARKER}` } };
 		const h = harness({ sites: "ask", approval: "allow", tabs: [MAIL_TAB], cookies: { S: { value: MARKER } }, mainResult: hook((action) => (action.kind === "read" ? { entries: [echoed] } : { entries: [] })) });
 		expect((await h.run({ verb: "credential", name: "n", source: "cookie", key: "S" })).ok).toBe(true);
 		expect(outcome(await h.run({ verb: "network", values: true }))).toContain("echo [redacted]");
@@ -3490,7 +3497,7 @@ describe("pw --ext storage, fetch and credential save", () => {
 	});
 
 	it("keeps masking a value whose save outcome is unknown", async () => {
-		const echoed = { at: 1, via: "fetch", method: "GET", url: "https://account.live.com/x", status: 200, requestHeaders: [], responseHeaders: [], response: { type: "text/plain", size: 30, text: `echo ${MARKER}` } };
+		const echoed = { at: 1, via: "fetch", method: "GET", url: "https://outlook.live.com/x", status: 200, requestHeaders: [], responseHeaders: [], response: { type: "text/plain", size: 30, text: `echo ${MARKER}` } };
 		const h = harness({
 			sites: "ask",
 			approval: "allow",
@@ -3504,7 +3511,7 @@ describe("pw --ext storage, fetch and credential save", () => {
 	});
 
 	it("refuses a save on an http page", async () => {
-		const h = harness({ sites: "ask", approval: "allow", tabs: [{ ...MAIL_TAB, url: "http://account.live.com/mail/" }], cookies: { S: { value: MARKER } } });
+		const h = harness({ sites: "ask", approval: "allow", tabs: [{ ...MAIL_TAB, url: "http://outlook.live.com/mail/" }], cookies: { S: { value: MARKER } } });
 		const result = await h.run({ verb: "credential", name: "n", source: "cookie", key: "S" });
 		expect(outcome(result)).toContain("only on https pages");
 		expect(h.storedCredentials).toEqual([]);
