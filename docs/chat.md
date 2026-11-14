@@ -65,7 +65,69 @@ write with no daemon running at all.
 `dg-skills credentials set|list|delete` keeps secrets encrypted in
 dg-daemon's `credentials.db`. `set` reads the value from stdin or a hidden
 prompt, and no command prints it. `grant|revoke` manage read-only service
-tokens. Start a session with `dg-agent start` first. See the
+tokens. `exec <name>[=ENV_VAR]... -- <command>` has dg-daemon run the command
+with the named values in environment variables. The CLI never receives a value.
+The daemon replaces each value in the command's output, also in base64 and
+URL-encoded form, with `[redacted]`. The command gets no stdin. Values under
+`pw/`, which `pw --ext credential save` writes, are never returned by `get`;
+only `exec` and `list` reach them.
+
+`exec` runs a command with `pw/` values only when the person lists it in
+`exec-allowlist` in the dg config directory (for example
+`~/.config/dg/exec-allowlist`). List a small fixed wrapper script that you own
+and that does one job, not a general tool. Each line holds the absolute path of
+the executable, a required `sha256=<hex>` pin, an optional name glob such as
+`pw/live.com/*` (`*` stops at `/`), and an optional `allow-any-args` flag.
+Put a path with spaces in double quotes, with `\"` and `\\` as escapes.
+Lines that start with `#` are comments. `dg-skills credentials allow <path>
+[glob]` prints a ready line with its pin; it never writes the file, so you add
+the line yourself.
+
+The daemon reads the file on each `exec` and resolves the command to its real
+path (a bare name through the daemon's own `PATH`, symlinks followed). It reads
+the file bytes once and hashes them. Each `pw/` name needs at least one line
+that covers it and has the current pin; other lines for the same path, for
+example an old pin, are ignored. With no file, no covering line, no pin, or a
+changed hash, it refuses. It also refuses a shell, interpreter or general tool
+whose arguments can run code or send data anywhere (`sh`, `bash`, `env`,
+`python`, `node`, `bun`, `npm`, `npx`, `curl`, `wget`, `git`, `ssh`, `rsync`,
+`tar`, `make`, `docker`, `vim`, `less`, `find`, `awk`, `sed`, `xargs` and
+similar) unless the line has `allow-any-args`. It checks the name you typed,
+the real file name, and the `#!` line of a script: a script that runs through
+a general tool such as `#!/usr/bin/env curl` needs the flag too. A `#!` line
+that names a shell or interpreter is fine, because that interpreter runs the
+pinned script. Listing a general tool undoes the guard.
+
+The daemon writes the bytes it hashed to a new private directory (mode 0700)
+as a file with mode 0500, runs that copy, and deletes it after the run. So the
+bytes that run are the bytes that matched the pin, and a script keeps its `#!`
+line. A listed script cannot load files next to it by a relative path, because
+it runs from that copy. The command runs in the daemon's home directory, not
+in your working directory, and gets a private per-run `TMPDIR`. For a `pw/`
+value the command runs with a fixed system `PATH`
+(`/usr/local/bin:/usr/bin:/bin`, plus `/opt/homebrew/bin` on macOS when you
+cannot write it; Windows keeps the daemon's `PATH`), and with the daemon's own
+`HOME` and `XDG_CONFIG_HOME`. From your environment it keeps only locale, terminal and
+user names (`LANG`, `LC_*`, `TZ`, `TERM`, `USER` and similar). It drops all
+other variables, such as `LD_PRELOAD`, `NODE_OPTIONS`, `LUA_INIT`,
+`HTTPS_PROXY` or `GIT_CONFIG_GLOBAL`. Set any other variable in the wrapper
+script.
+
+A wrapper must not pass `"$@"` or any other agent input to a general tool.
+If it does, the agent picks the arguments, and the wrapper is the same as that
+tool. Give the wrapper fixed arguments.
+A pinned script pins only its own bytes. It should call tools by absolute
+path and must not import from user-writable places (for example user
+site-packages or node_modules).
+
+List only paths that the agent cannot write. A script the agent can edit is
+the same as an interpreter; the pin catches an edit, but deny writes to it too.
+The agent runs as the same user, so it can edit this file unless its harness
+blocks writes there. In Claude Code, add a deny rule for that path, for
+example `Edit(~/.config/dg/exec-allowlist)` and `Write(~/.config/dg/exec-allowlist)`
+under `permissions.deny`. A listed command that prints or sends the value in a
+changed form can still show it.
+Start a session with `dg-agent start` first. See the
 [developer guide](DEVELOPER.md#credential-store).
 
 See the [chat skill](../plugins/dg/skills/chat/SKILL.md) for commands and the

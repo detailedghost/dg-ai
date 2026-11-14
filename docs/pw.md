@@ -45,6 +45,9 @@ popup.
 | `console` | read | Errors, and console warnings and errors after the first call |
 | `tools` | read | Web MCP bridge: WebMCP tools the page exposes: name, description, input schema |
 | `count <ref or selector>` | read | How many elements match, with tag, type, id and name for each. An id or name that looks like a generated id shows as `[redacted]`. Test a selector with it before `click`, `fill` or `upload` |
+| `storage [local\|session] [--keys] [--key <k>] [--values]` | read | Keys of the page's localStorage or sessionStorage with type, length and JSON key structure. `--values` shows values after the site Allow; tokens and secrets stay masked |
+| `fetch <path\|url> [--method M] [--json <body>\|--body-stdin] [--header Name:Value]... [--auth page] [--values]` | write | Sends one request from the agent tab to its own origin with the page's cookies. Output has the response shape like `network`. `--auth page` adds the page's own sign-in headers, which the agent never sees |
+| `credential save <name> --from cookie:<n>\|header:<n>\|local:<k>\|session:<k> [--path a.b]` | write | Copies one sign-in value of the site into the dg credential store as `pw/<site>/<name>`. The value is never shown. Use it with `dg-skills credentials exec` |
 | `network [--filter <text>] [--limit N] [--since <ms>\|clear] [--values]` | read | The page's `fetch` and `XMLHttpRequest` calls, shape only: method, address with query values removed, status, header names, and the key structure and value types of JSON bodies. `--values` shows values after one Allow per site and session |
 | `open <url>` | write | Opens an http or https URL in the selected tab, or in a new tab when the agent has none |
 | `new [url]` | write | Opens a new tab in the agent's group and selects it; with no URL it opens a blank tab |
@@ -198,6 +201,29 @@ Rules:
   - Outlook is not a mailbox origin today, so `network` works there. When
     Outlook joins the mailbox origins, `network` there needs the new area
     approval or stays blocked.
+- One Allow per dg session and registrable domain (for example `live.com`)
+  covers `network --values`, `storage --values`, `fetch` with a method other
+  than GET or HEAD, `fetch --auth page`, and `credential save`. The popup says
+  that values can hold personal or health data, that the agent can change data
+  with the person's sign-in, and that saved values go to the credential store
+  unseen. It never asks again in that session. It ends at the session end or
+  on Stop.
+- After that Allow, the network hook keeps the newest value of each sign-in
+  header (`Authorization`, `X-OWA-CANARY` and similar) that the page sends to
+  its own origin. It keeps them in a sealed closure that `network` cannot read.
+  They are used only for `fetch --auth page` and `credential save --from
+  header:`. A change of an account header such as `X-AnchorMailbox` drops them.
+  `fetch` does not follow redirects, so a sign-in header never goes to another
+  origin.
+- `credential save` reads a cookie through the browser's cookie API (so
+  `HttpOnly` cookies work), a header from the sealed closure, or a storage key,
+  and sends the value in a frame that only dg-daemon reads. The daemon stores
+  it encrypted as `pw/<registrable domain>/<name>` with metadata: site, source,
+  capture time and expiry when known. The CLI gets only the name. The
+  extension cannot read it back. `dg-skills credentials exec` uses it without
+  printing it.
+- The extension asks for the `cookies` permission, so Chrome shows a new
+  permission prompt once after this update.
 - `console` adds a small wrapper to the page's own `console.warn` and
   `console.error` on the first call. It runs in the page's own context, stays
   for the life of the document, and sees only messages after that first call.

@@ -36,6 +36,7 @@ function fakeCli(
 				set: async (name: string, value: string, meta?: CredentialMeta) => {
 					calls.push({ op: "set", args: [name, value, meta] });
 				},
+				exec: async () => 0,
 				list: async () => options.list ?? [],
 				delete: async (name: string) => {
 					calls.push({ op: "delete", args: [name] });

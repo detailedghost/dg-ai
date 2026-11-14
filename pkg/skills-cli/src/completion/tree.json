@@ -342,6 +342,23 @@
 				{
 					"name": "revoke",
 					"description": "Delete a service grant and its token file"
+				},
+				{
+					"name": "allow",
+					"description": "Print a pinned exec-allowlist line for a command; it never writes the allowlist file",
+					"options": [
+						{
+							"flags": [
+								"--any-args"
+							],
+							"description": "add allow-any-args for a shell, interpreter or general tool; this undoes the guard"
+						}
+					],
+					"path": true
+				},
+				{
+					"name": "exec",
+					"description": "Have dg-daemon run a command with credentials in env vars; the CLI never holds a value, output is scrubbed, and pw/ values need the command in the dg exec-allowlist file"
 				}
 			],
 			"options": [
@@ -1634,6 +1651,9 @@
 								"name": "network"
 							},
 							{
+								"name": "storage"
+							},
+							{
 								"name": "open"
 							},
 							{
@@ -1662,6 +1682,12 @@
 							},
 							{
 								"name": "dialog"
+							},
+							{
+								"name": "fetch"
+							},
+							{
+								"name": "credential"
 							}
 						],
 						"options": [

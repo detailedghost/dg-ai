@@ -1,10 +1,12 @@
 import {
+	type CredentialExecSpec,
 	type CredentialGrantSummary,
 	type CredentialMeta,
 	type CredentialRecord,
 	type CredentialSummary,
 	type CredentialsCliRequest,
 	type CredentialsCliResult,
+	type CredentialsExecOutput,
 	validateCredentialsCliRequest,
 } from "../credentials-format";
 import {
@@ -19,6 +21,7 @@ import { isDaemonLive, readPidFile } from "./pidfile";
 
 export const DG_DAEMON_START_COMMAND = "dg-agent start";
 const CREDENTIALS_REQUEST_TIMEOUT_MS = 10_000;
+const EXEC_TIMEOUT_MS = 86_400_000;
 
 export class DaemonNotRunningError extends DgCliError {
 	constructor() {
@@ -42,6 +45,8 @@ export type ResolvedCredential =
 export type CredentialClient = {
 	set(name: string, value: string, meta?: CredentialMeta): Promise<void>;
 	get(name: string): Promise<CredentialRecord | undefined>;
+	/** Has dg-daemon run a command with stored values; only scrubbed output reaches onOutput, and it resolves to the exit code. */
+	exec(spec: CredentialExecSpec, onOutput: (stream: "stdout" | "stderr", data: string) => void): Promise<number>;
 	list(): Promise<CredentialSummary[]>;
 	delete(name: string): Promise<boolean>;
 	grant(prefix: string): Promise<{ prefix: string; path: string }>;
@@ -127,6 +132,7 @@ export function createCredentialClient(
 		})());
 	const request = async (
 		input: Omit<CredentialsCliRequest, "type" | "requestId">,
+		onOutput?: (stream: "stdout" | "stderr", data: string) => void,
 	): Promise<unknown> => {
 		const requestId = crypto.randomUUID();
 		const grant = loadGrant();
@@ -139,9 +145,21 @@ export function createCredentialClient(
 		const cli = await connect();
 		const reply = await cli.request(
 			frame,
-			(value): value is CredentialsCliResult | ProtocolError =>
-				isReply(value, grant ? undefined : cli.session.sessionId, requestId),
-			CREDENTIALS_REQUEST_TIMEOUT_MS,
+			(value): value is CredentialsCliResult | ProtocolError => {
+				const output = value as Partial<CredentialsExecOutput> | null;
+				if (
+					onOutput &&
+					output?.type === "cli-credentials-exec-output" &&
+					output.requestId === requestId &&
+					(output.stream === "stdout" || output.stream === "stderr") &&
+					typeof output.data === "string"
+				) {
+					onOutput(output.stream, output.data);
+					return false;
+				}
+				return isReply(value, grant ? undefined : cli.session.sessionId, requestId);
+			},
+			onOutput ? EXEC_TIMEOUT_MS : CREDENTIALS_REQUEST_TIMEOUT_MS,
 		);
 		if (reply.type === "error")
 			throw new DgCliError(
@@ -159,6 +177,8 @@ export function createCredentialClient(
 			await request({ operation: "set", name, value, meta });
 		},
 		get,
+		exec: async (spec, onOutput) =>
+			((await request({ operation: "exec", exec: spec }, onOutput)) as { exitCode: number }).exitCode,
 		list: async () =>
 			(await request({ operation: "list" })) as CredentialSummary[],
 		delete: async (name) =>

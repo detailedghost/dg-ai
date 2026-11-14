@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import {
 	formatNetwork,
+	formatStorage,
+	maskStorageValue,
+	validateStorageResult,
 	maskCredentialFields,
 	shownContentType,
 	isSensitiveHeader,
@@ -232,5 +235,38 @@ describe("formatNetwork", () => {
 		expect(out).toContain("/failed → failed");
 		expect(out).toContain("3 of 5 requests");
 		expect(out).toContain(`--since ${AT + 5}`);
+	});
+});
+
+describe("storage helpers", () => {
+	const MARKER = "fake-marker-value-for-tests";
+
+	it("masks credential keys, credential fields and token-like strings", () => {
+		expect(maskStorageValue("msal.idtoken.x", "anything", false)).toBe("[redacted]");
+		expect(maskStorageValue("account", JSON.stringify({ user: "ada", note: "a1b2c3d4e5f6g7h8i9j0k1" }), false)).toBe(
+			'{"user":"ada","note":"[redacted]"}',
+		);
+		expect(maskStorageValue("pref", `theme=dark&session_id=${MARKER}`, false)).toBe("theme=dark&session_id=[redacted]");
+		expect(maskStorageValue("pref", "x1y2z3a4b5c6d7e8f9g0h1", false)).toBe("[redacted]");
+		expect(maskStorageValue("pref", "plain words", false)).toBe("plain words");
+		expect(maskStorageValue("cache", '{"refresh_token":"abc","n":1}', false)).toBe('{"refresh_token":"[redacted]","n":1}');
+		expect(maskStorageValue("cache", '{"refresh_token":"abc","n":1', true)).toBe('{"refresh_token":"[redacted]","n":1');
+	});
+
+	it("formats shapes without values, and masks values on a values read", () => {
+		const items = [
+			{ key: "msal.3f2c9a1e-0b7d-4c55-9e21-7a0f00c0ffee.idtoken", length: 900, type: "json" as const, shape: { keys: [["secret", "string"] as [string, "string"]] } },
+			{ key: "theme", length: 4, type: "text" as const, value: "dark" },
+		];
+		const shape = formatStorage(items, 2, { values: false, value: (text) => text }).join("\n");
+		expect(shape).toContain("- msal.*.idtoken: json, 900 chars {secret string}");
+		expect(shape).not.toContain("dark");
+		const valued = formatStorage(items, 2, { values: true, value: (text) => text }).join("\n");
+		expect(valued).toContain("- theme: text, 4 chars\n    dark");
+	});
+
+	it("validates the page result", () => {
+		expect(validateStorageResult({ items: [{ key: "k", length: 1, type: "text" }], total: 1 }).total).toBe(1);
+		expect(() => validateStorageResult({ items: [{ key: "k", length: 1, type: "blob" }], total: 1 })).toThrow();
 	});
 });

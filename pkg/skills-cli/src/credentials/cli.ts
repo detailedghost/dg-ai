@@ -8,6 +8,7 @@ import {
 import {
 	type CredentialClient,
 	createCredentialClient,
+	execAllowlistLine,
 	resolveDgPaths,
 } from "@dg/common/node";
 import type { Command } from "commander";
@@ -20,12 +21,45 @@ export type CredentialsDeps = {
 		session?: string,
 	): Pick<
 		CredentialClient,
-		"set" | "list" | "delete" | "grant" | "revoke" | "listGrants" | "close"
+		"set" | "exec" | "list" | "delete" | "grant" | "revoke" | "listGrants" | "close"
 	>;
 	readValue(): Promise<string>;
 	write(line: string): void;
 	now(): Date;
+	stdout?(text: string): void;
+	stderr?(text: string): void;
+	exit?(code: number): void;
 };
+
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export function derivedEnvName(name: string): string {
+	const env = name.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+	return /^[0-9]/.test(env) ? `_${env}` : env;
+}
+
+type Binding = { name: string; env: string };
+
+function parseBindings(specs: string[]): Binding[] {
+	const bindings = specs.map((spec, index) => {
+		const equal = spec.indexOf("=");
+		const rawName = equal === -1 ? spec : spec.slice(0, equal);
+		const name = validateCredentialName(rawName);
+		const env = equal === -1 ? derivedEnvName(name) : spec.slice(equal + 1);
+		if (!ENV_NAME.test(env))
+			throw new Error(
+				`Credential spec ${index + 1} has an invalid env var name; use ${ENV_NAME.source}.`,
+			);
+		return { name, env };
+	});
+	const seen = new Set<string>();
+	for (const { env } of bindings) {
+		if (seen.has(env))
+			throw new Error(`Env var ${env} is bound by more than one credential.`);
+		seen.add(env);
+	}
+	return bindings;
+}
 
 export type HiddenInput = {
 	setRawMode(mode: boolean): unknown;
@@ -75,6 +109,11 @@ export async function readCredentialValue(): Promise<string> {
 }
 
 const defaultDeps: CredentialsDeps = {
+	stdout: (text) => process.stdout.write(text),
+	stderr: (text) => process.stderr.write(text),
+	exit: (code) => {
+		process.exitCode = code;
+	},
 	createClient: (session) =>
 		createCredentialClient({ paths: resolveDgPaths(), session }),
 	readValue: readCredentialValue,
@@ -119,7 +158,7 @@ function listEntry(credential: CredentialSummary, now: Date) {
 	};
 }
 
-/** Registers list, set, delete, grant and revoke; no subcommand prints a stored value or token. */
+/** Registers list, set, delete, grant, revoke and exec; no subcommand prints a stored value or token, and exec runs in the daemon. */
 export function registerCredentials(
 	program: Command,
 	deps: CredentialsDeps = defaultDeps,
@@ -238,6 +277,52 @@ export function registerCredentials(
 					prefix,
 					revoked: await client.revoke(prefix),
 				});
+			});
+		});
+
+	credentials
+		.command("allow")
+		.description(
+			"Print a pinned exec-allowlist line for a command; it never writes the allowlist file",
+		)
+		.argument("<path>", "the command to allow, best a small fixed wrapper script the agent cannot write")
+		.argument("[glob]", "the pw/ names it may get, for example pw/live.com/*")
+		.option("--any-args", "add allow-any-args for a shell, interpreter or general tool; this undoes the guard")
+		.action((path: string, glob: string | undefined, options: { anyArgs?: boolean }) => {
+			deps.write(execAllowlistLine(path, glob, options.anyArgs === true));
+		});
+
+	credentials
+		.command("exec")
+		.description(
+			"Have dg-daemon run a command with credentials in env vars; the CLI never holds a value, output is scrubbed, and pw/ values need the command in the dg exec-allowlist file",
+		)
+		.usage("<name>[=ENV_VAR]... -- <command...>")
+		.argument("[args...]", "credential names, then -- and the command")
+		.allowUnknownOption()
+		.action(async (_args: string[], _options, command: Command) => {
+			let root = command;
+			while (root.parent) root = root.parent;
+			const { rawArgs } = root as Command & { rawArgs: string[] };
+			const raw = rawArgs.slice(rawArgs.indexOf("exec") + 1);
+			const split = raw.indexOf("--");
+			if (split === -1) throw new Error("Put -- between the credential names and the command.");
+			if (raw.slice(0, split).some((arg) => arg.startsWith("--session")))
+				throw new Error("Put --session before exec, for example: dg-skills credentials --session <id> exec <name> -- <command>.");
+			const bindings = parseBindings(raw.slice(0, split));
+			const argv = raw.slice(split + 1);
+			if (argv.length === 0) throw new Error("Give a command to run after --.");
+			if (bindings.length === 0) throw new Error("Name at least one credential before --.");
+			const out = deps.stdout ?? process.stdout.write.bind(process.stdout);
+			const err = deps.stderr ?? process.stderr.write.bind(process.stderr);
+			const env = Object.fromEntries(
+				Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string" && ENV_NAME.test(entry[0])),
+			);
+			await withClient(command, async (client) => {
+				const code = await client.exec({ bindings, argv, cwd: process.cwd(), env }, (stream, data) =>
+					(stream === "stdout" ? out : err)(data),
+				);
+				(deps.exit ?? ((c) => { process.exitCode = c; }))(code);
 			});
 		});
 }

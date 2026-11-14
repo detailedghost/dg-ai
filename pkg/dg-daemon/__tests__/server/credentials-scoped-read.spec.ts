@@ -100,3 +100,13 @@ describe("hasCredentialGrant", () => {
 			expect(hasCredentialGrant(request(headers), store as never)).toBe(false);
 	});
 });
+
+describe("sealed pw/ names", () => {
+	it("refuses a grant-scoped read of a pw/ value, also for a grant on pw, with no value in the error", () => {
+		const store = storeOf({ "pw/live.com/owa-auth": "fake-marker-value-for-tests" });
+		const answer = scopedRead({ operation: "get", name: "pw/live.com/owa-auth" }, "pw", store);
+		expect(answer).toMatchObject({ ok: false });
+		expect(JSON.stringify(answer)).not.toContain("fake-marker-value-for-tests");
+		expect(JSON.stringify(scopedRead({ operation: "list" }, "pw", store))).not.toContain("fake-marker-value-for-tests");
+	});
+});

@@ -267,3 +267,388 @@ describe("network hook", () => {
 		});
 	});
 });
+
+describe("sealed sign-in headers, agent fetch and storage", () => {
+	const MARKER = "fake-marker-value-for-tests";
+	const globalsText = () => {
+		const win = window as unknown as Record<string | symbol, unknown>;
+		const parts: string[] = [];
+		for (const key of [...Object.getOwnPropertyNames(win), ...Object.getOwnPropertySymbols(win)]) {
+			try {
+				parts.push(JSON.stringify((win as Record<string | symbol, unknown>)[key as string]) ?? "");
+			} catch {}
+		}
+		return parts.join("\n");
+	};
+	const sealedGet = (name: string) => pwExtNetwork({ kind: "sealed-get", name });
+	const signIn = (url = "/owa/service.svc?action=GetItem", anchor = "PUID:1@fake") =>
+		page().fetch(url, { headers: { Authorization: `Bearer ${MARKER}`, "X-AnchorMailbox": anchor } });
+
+	it("keeps no sign-in header before the approval", async () => {
+		pwExtNetwork({ kind: "install" });
+		await signIn();
+		await settle();
+		expect(sealedGet("authorization")).toEqual({ missing: true });
+	});
+
+	it("keeps same-origin sign-in headers after the approval, never in reads or page globals", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		await signIn();
+		await settle();
+		expect(sealedGet("authorization")).toEqual({ value: `Bearer ${MARKER}` });
+		expect(JSON.stringify(read(true))).not.toContain(MARKER);
+		expect(JSON.stringify(slotEntries())).not.toContain(MARKER);
+		expect(globalsText()).not.toContain(MARKER);
+	});
+
+	it("ignores cross-origin requests and drops the values when the account anchor changes", async () => {
+		pwExtNetwork({ kind: "install" });
+		pwExtNetwork({ kind: "seal" });
+		await signIn("https://other.example.test/x");
+		await settle();
+		expect(sealedGet("authorization")).toEqual({ missing: true });
+		await signIn();
+		await page().fetch("/x", { headers: { "X-AnchorMailbox": "PUID:2@fake" } });
+		await settle();
+		expect(sealedGet("authorization")).toEqual({ missing: true });
+	});
+
+	it("forgets sealed values on remove and on a new owner", async () => {
+		pwExtNetwork({ kind: "install", seal: true }, undefined, 1);
+		await signIn();
+		await settle();
+		pwExtNetwork({ kind: "read", values: false }, undefined, 2);
+		expect(sealedGet("authorization")).toEqual({ missing: true });
+	});
+
+	it("attaches sealed headers to the agent's own fetch and returns no sign-in value", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		await signIn();
+		await settle();
+		const result = (await pwExtNetwork({
+			kind: "fetch",
+			url: "https://mail.example.test/owa/service.svc?action=FindItem",
+			method: "POST",
+			body: '{"A":1}',
+			contentType: "application/json",
+			headers: [],
+			auth: true,
+			values: true,
+		})) as { entries: NetworkEntry[] };
+		const sent = calls.at(-1)?.init?.headers as Headers;
+		expect(sent.get("authorization")).toBe(`Bearer ${MARKER}`);
+		expect(calls.at(-1)?.init?.credentials).toBe("same-origin");
+		expect(result.entries[0]).toMatchObject({ method: "POST", status: 200 });
+		expect(result.entries[0]?.requestHeaders).toContainEqual({ name: "authorization" });
+		expect(JSON.stringify(result)).not.toContain(MARKER);
+	});
+
+	it("removes sealed values from an echoed response and from network reads", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		await signIn();
+		await settle();
+		reply = async () =>
+			new window.Response(JSON.stringify({ echo: `Bearer ${MARKER}`, raw: MARKER }), {
+				headers: { "content-type": "application/json", "x-echo": MARKER },
+			}) as unknown as Response;
+		const result = await pwExtNetwork({ kind: "fetch", url: "/echo", method: "GET", headers: [], auth: true, values: true });
+		await settle();
+		expect(JSON.stringify(result)).not.toContain(MARKER);
+		expect(JSON.stringify(read(true))).not.toContain(MARKER);
+	});
+
+	it("removes a sealed value from a later request URL in a shape-only read", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		await page().fetch("/a", { headers: { "x-api-key": MARKER } });
+		await page().fetch(`/echo/${MARKER}?k=${MARKER}`);
+		await settle();
+		const text = JSON.stringify(read(false));
+		expect(text).toContain("[redacted]");
+		expect(text).not.toContain(MARKER);
+	});
+
+	it("keeps a scrubbed shape-only URL within the wire bound", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		await page().fetch("/a", { headers: { "X-Csrf-Token": "ab12c" } });
+		await page().fetch(`/${"x".repeat(4054)}?t=ab12c&u=ab12c`);
+		await settle();
+		const text = JSON.stringify(read(false));
+		expect(text).toContain("[redacted]");
+		expect(text).not.toContain("ab12c");
+	});
+
+	it("asks for a reload when the page holds a capture slot from an older build", () => {
+		Object.defineProperty(window, Symbol.for("dg.pwExt.network"), { value: { entries: [], active: true, removed: false, wrap() {}, unwrap() {} } });
+		expect(pwExtNetwork({ kind: "read", values: false })).toEqual({
+			error: "This page has network capture from an older extension build. Reload the page to use this one.",
+		});
+	});
+
+	it("removes encoded forms and a token that rotated while the fetch was pending", async () => {
+		const token = "fake/marker+value=for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		await page().fetch("/a", { headers: { Authorization: `Bearer ${token}` } });
+		await settle();
+		let rotated = false;
+		reply = async () => {
+			if (!rotated) {
+				rotated = true;
+				await page().fetch("/b", { headers: { Authorization: "Bearer fake-rotated-value-for-tests" } });
+			}
+			return new window.Response(JSON.stringify({ a: encodeURIComponent(token), b: token }), {
+				headers: { "content-type": "application/json" },
+			}) as unknown as Response;
+		};
+		const result = (await pwExtNetwork({ kind: "fetch", url: "/echo", method: "GET", headers: [], auth: true, values: true })) as {
+			entries: NetworkEntry[];
+		};
+		expect(result.entries[0]?.status).toBe(200);
+		expect(result.entries[0]?.response?.text).toContain("[redacted]");
+		const text = JSON.stringify(result);
+		expect(text).not.toContain("marker+value");
+		expect(text).not.toContain(encodeURIComponent(token));
+	});
+
+	it("drops sealed values when an XHR changes the account anchor", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		await signIn();
+		await settle();
+		const xhr = new (page().XMLHttpRequest)();
+		xhr.open("POST", "https://mail.example.test/owa/service.svc");
+		xhr.setRequestHeader("X-AnchorMailbox", "PUID:9@fake");
+		xhr.send("{}");
+		await settle();
+		expect(sealedGet("authorization")).toEqual({ missing: true });
+	});
+
+	it("refuses an agent fetch to another origin, and auth before any sign-in was seen", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		const base = { method: "GET", headers: [] as [string, string][], values: false };
+		expect(await pwExtNetwork({ kind: "fetch", url: "https://other.example.test/", auth: false, ...base })).toEqual({
+			error: "pw --ext fetch sends requests only to the page's own origin.",
+		});
+		expect(await pwExtNetwork({ kind: "fetch", url: "/x", auth: true, ...base })).toMatchObject({
+			error: expect.stringContaining("No sign-in header"),
+		});
+	});
+
+	it("reads storage shapes, values only on request, and one raw value for a save", () => {
+		window.localStorage.setItem("msal.account", JSON.stringify({ username: "ada", accessToken: MARKER }));
+		window.sessionStorage.setItem("note", "hello");
+		pwExtNetwork({ kind: "install" });
+		const shape = pwExtNetwork({ kind: "storage", area: "local", values: false });
+		expect(shape).toEqual({
+			items: [{ key: "msal.account", length: expect.any(Number), type: "json", shape: { keys: [["username", "string"], ["accessToken", "string"]] } }],
+			total: 1,
+		});
+		expect(JSON.stringify(shape)).not.toContain(MARKER);
+		expect(pwExtNetwork({ kind: "storage", area: "session", values: true })).toMatchObject({ items: [{ key: "note", value: "hello" }] });
+		expect(pwExtNetwork({ kind: "storage", area: "local", keysOnly: true, values: false })).toEqual({
+			items: [{ key: "msal.account", length: expect.any(Number), type: "text" }],
+			total: 1,
+		});
+		expect(pwExtNetwork({ kind: "storage-get", area: "local", key: "msal.account" })).toEqual({
+			value: JSON.stringify({ username: "ada", accessToken: MARKER }),
+		});
+		expect(pwExtNetwork({ kind: "storage-get", area: "local", key: "none" })).toEqual({ missing: true });
+	});
+});
+
+describe("sealed history", () => {
+	it("scrubs a value from retained entries when it leaves the history", async () => {
+		const first = "fake-first-token-value-for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		reply = async () =>
+			new window.Response(JSON.stringify({ echo: first }), { headers: { "content-type": "application/json" } }) as unknown as Response;
+		await page().fetch("/a", { headers: { Authorization: `Bearer ${first}` } });
+		await settle();
+		reply = async () => new window.Response("{}", { headers: { "content-type": "application/json" } }) as unknown as Response;
+		for (let i = 0; i < 70; i++) await page().fetch(`/r${i}`, { headers: { Authorization: `Bearer fake-rotated-value-${i}-for-tests` } });
+		await settle();
+		expect(JSON.stringify(read(true))).not.toContain(first);
+	});
+
+	it("keeps masking a rotated sign-in value in retained responses", async () => {
+		const old = "fake-old-token-value-for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		reply = async () =>
+			new window.Response(JSON.stringify({ echo: old }), { headers: { "content-type": "application/json" } }) as unknown as Response;
+		await page().fetch("/a", { headers: { Authorization: `Bearer ${old}` } });
+		await settle();
+		await page().fetch("/b", { headers: { Authorization: "Bearer fake-new-token-value-for-tests" } });
+		await settle();
+		expect(JSON.stringify(read(true))).not.toContain(old);
+	});
+});
+
+describe("sealed values in storage and long bodies", () => {
+	it("removes a sealed value from storage values", async () => {
+		const token = "fake-csrf-value-for-tests";
+		window.localStorage.setItem("data", JSON.stringify({ data: token }));
+		pwExtNetwork({ kind: "install", seal: true });
+		await page().fetch("/a", { headers: { "X-Csrf-Token": token } });
+		await settle();
+		expect(JSON.stringify(pwExtNetwork({ kind: "storage", area: "local", values: true }))).not.toContain(token);
+	});
+
+	it("keeps a masked body within the wire bound", async () => {
+		const short = "fake8chr";
+		pwExtNetwork({ kind: "install", seal: true });
+		reply = async () =>
+			new window.Response(`${"x".repeat(7992)}${short}`, { headers: { "content-type": "text/plain" } }) as unknown as Response;
+		await page().fetch("/a", { headers: { Authorization: short } });
+		await settle();
+		const [entry] = read(true);
+		expect(entry?.response?.text?.length).toBeLessThanOrEqual(8000);
+		expect(entry?.response?.cut).toBe(true);
+	});
+});
+
+describe("cut edges and delayed responses", () => {
+	it("masks a sealed value cut at the body bound", async () => {
+		const token = "fake-cut-edge-token-value-for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		reply = async () =>
+			new window.Response(`${"x".repeat(7990)}${token}`, { headers: { "content-type": "text/plain" } }) as unknown as Response;
+		await page().fetch("/a", { headers: { Authorization: token } });
+		await settle();
+		const [entry] = read(true);
+		expect(entry?.response?.text).not.toContain(token.slice(0, 10));
+		expect(entry?.response?.text?.endsWith("[redacted]")).toBe(true);
+	});
+
+	it("masks a delayed response that echoes its own sign-in value after the history moved on", async () => {
+		const first = "fake-delayed-token-value-for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		const fast = async () => new window.Response("{}", { headers: { "content-type": "application/json" } }) as unknown as Response;
+		let release: (() => void) | undefined;
+		const slow = new Promise<Response>((resolve) => {
+			release = () =>
+				resolve(new window.Response(JSON.stringify({ echo: first }), { headers: { "content-type": "application/json" } }) as unknown as Response);
+		});
+		reply = () => slow;
+		const pending = page().fetch("/slow", { headers: { Authorization: `Bearer ${first}` } });
+		reply = fast;
+		for (let i = 0; i < 70; i++) await page().fetch(`/r${i}`, { headers: { Authorization: `Bearer fake-rotated-value-${i}-for-tests` } });
+		release?.();
+		await pending;
+		await settle();
+		const text = JSON.stringify(read(true));
+		expect(text).toContain("[redacted]");
+		expect(text).not.toContain(first);
+	});
+});
+
+describe("cut edges after history eviction", () => {
+	it("keeps a cut token prefix masked after the token leaves the history", async () => {
+		const token = "fake-evicted-cut-token-value-for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		reply = async () =>
+			new window.Response(`${"x".repeat(7990)}${token}`, { headers: { "content-type": "text/plain" } }) as unknown as Response;
+		await page().fetch("/a", { headers: { Authorization: token } });
+		await settle();
+		reply = async () => new window.Response("{}", { headers: { "content-type": "application/json" } }) as unknown as Response;
+		for (let i = 0; i < 70; i++) await page().fetch(`/r${i}`, { headers: { Authorization: `Bearer fake-rotated-value-${i}-for-tests` } });
+		await settle();
+		expect(JSON.stringify(read(true))).not.toContain(token.slice(0, 10));
+	});
+});
+
+describe("delayed echo in headers and cut bodies", () => {
+	it("masks a delayed response header and cut body with the request's own value", async () => {
+		const first = "fake-delayed-header-token-for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		let release: (() => void) | undefined;
+		const slow = new Promise<Response>((resolve) => {
+			release = () =>
+				resolve(
+					new window.Response(`${"x".repeat(7990)}${first}`, {
+						headers: { "content-type": "text/plain", "x-echo": first },
+					}) as unknown as Response,
+				);
+		});
+		reply = () => slow;
+		const pending = page().fetch("/slow", { headers: { Authorization: first } });
+		reply = async () => new window.Response("{}", { headers: { "content-type": "application/json" } }) as unknown as Response;
+		for (let i = 0; i < 70; i++) await page().fetch(`/r${i}`, { headers: { Authorization: `Bearer fake-rotated-value-${i}-for-tests` } });
+		release?.();
+		await pending;
+		await settle();
+		expect(JSON.stringify(read(true))).not.toContain(first.slice(0, 10));
+	});
+});
+
+describe("rotated value in response headers", () => {
+	const first = "fake-rotated-header-token-for-tests";
+	const rotate = async () => {
+		reply = async () => new window.Response("{}", { headers: { "content-type": "application/json" } }) as unknown as Response;
+		for (let i = 0; i < 70; i++) await page().fetch(`/r${i}`, { headers: { Authorization: `Bearer fake-rotated-value-${i}-for-tests` } });
+	};
+	const delayed = async (make: () => Response) => {
+		pwExtNetwork({ kind: "install", seal: true });
+		let release: (() => void) | undefined;
+		const slow = new Promise<Response>((resolve) => {
+			release = () => resolve(make());
+		});
+		reply = () => slow;
+		const pending = page().fetch("/slow", { headers: { Authorization: first } });
+		await rotate();
+		release?.();
+		await pending;
+		await settle();
+	};
+
+	it("masks the header of a null-body response", async () => {
+		await delayed(() => new window.Response(null, { status: 204, headers: { "x-echo": first } }) as unknown as Response);
+		const text = JSON.stringify(read(true));
+		expect(text).toContain("[redacted]");
+		expect(text).not.toContain(first.slice(0, 10));
+	});
+
+	it("masks the header while the body is still being read", async () => {
+		const stream = new window.ReadableStream({ start() {} });
+		await delayed(
+			() =>
+				new window.Response(stream as never, {
+					headers: { "content-type": "application/json", "x-echo": first },
+				}) as unknown as Response,
+		);
+		const text = JSON.stringify(read(true));
+		expect(text).toContain("[redacted]");
+		expect(text).not.toContain(first.slice(0, 10));
+	});
+});
+
+describe("short and padded sealed values", () => {
+	it("masks a short sealed value and a trimmed XHR value in an echo", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		await page().fetch("/a", { headers: { "X-Csrf-Token": "ab12c" } });
+		const xhr = new (page().XMLHttpRequest)();
+		xhr.open("GET", "https://mail.example.test/x");
+		xhr.setRequestHeader("Authorization", "Bearer fake-padded-token-for-tests ");
+		xhr.send();
+		await settle();
+		reply = async () =>
+			new window.Response("csrf=ab12c tok=fake-padded-token-for-tests", { headers: { "content-type": "text/plain" } }) as unknown as Response;
+		const text = JSON.stringify(await pwExtNetwork({ kind: "fetch", url: "/echo", method: "GET", headers: [], auth: true, values: true }));
+		expect(text).not.toContain("ab12c");
+		expect(text).not.toContain("fake-padded-token-for-tests");
+	});
+});
+
+describe("late request body capture", () => {
+	it("masks a request body read after the response and after the history moved on", async () => {
+		const first = "fake-late-body-token-value-for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		reply = async () => new window.Response("{}", { headers: { "content-type": "application/json" } }) as unknown as Response;
+		const request = new window.Request("https://mail.example.test/up", {
+			method: "POST",
+			headers: { "content-type": "application/json", Authorization: first },
+			body: JSON.stringify({ token: first, note: first }),
+		});
+		await page().fetch(request as unknown as Request);
+		for (let i = 0; i < 70; i++) await page().fetch(`/r${i}`, { headers: { Authorization: `Bearer fake-rotated-value-${i}-for-tests` } });
+		await settle();
+		expect(JSON.stringify(read(true))).not.toContain(first);
+	});
+});

@@ -31,6 +31,9 @@ group, until the human hands you a tab from the extension popup.
 | `console` | read | Errors and console warnings since the first `console` call |
 | `tools` | read | Web MCP bridge: WebMCP tools of the page: name, description, input schema |
 | `count <ref or selector>` | read | How many elements match, with tag, type, id and name for each. Test a selector with it before `click`, `fill` or `upload` |
+| `storage [local\|session] [--keys] [--key <k>] [--values]` | read | Storage keys with type, length and JSON shape. No values unless `--values` |
+| `fetch <path\|url> [--method M] [--json <body>] [--header N:V]... [--auth page] [--values]` | write | One same-origin request from the agent tab; `--auth page` uses the page's sign-in without showing it |
+| `credential save <name> --from cookie:<n>\|header:<n>\|local:<k>\|session:<k> [--path a.b]` | write | Saves a sign-in value to the credential store as `pw/<site>/<name>`, never shown |
 | `network [--filter <text>] [--limit N] [--since <ms>\|clear] [--values]` | read | The page's fetch and XHR calls: method, address with query values removed, status, header names, JSON key structure. No values unless `--values` |
 | `open <url>` | write | Opens an http or https URL in the selected tab, or in a new tab when the agent has none |
 | `new [url]` | write | Opens a new tab in the agent's group and selects it; with no URL it opens a blank tab |
@@ -100,6 +103,16 @@ group, until the human hands you a tab from the extension popup.
   address to load it again. `--values` asks the human once per site and
   session. Ask for it only when the shape is not enough. Sign-in headers,
   cookies and secrets stay masked even then.
+- To call a site's API with the person's sign-in, use
+  `pw --ext fetch /path --auth page`. To use a sign-in value outside the
+  browser, run `pw --ext credential save <name> --from header:Authorization`
+  (or `cookie:`, `local:`, `session:`), then
+  `dg-skills credentials exec pw/<site>/<name>=TOKEN -- <command>`. dg-daemon
+  runs the command, the value is only in its environment, and its output is
+  scrubbed. The command gets no stdin. It runs only a command that the human
+  listed in the dg `exec-allowlist` file; never edit that file yourself. You never see the value, and you must
+  not try to print or transform it. These ask the human once per site and
+  session.
 - Browser settings pages, extension pages, private windows and the signed-in
   Proton Mail tab are refused. Ask the human to hand you a web page tab.
   `tabs`, `new` and `close` still work when the selected tab is a settings page,

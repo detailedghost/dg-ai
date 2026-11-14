@@ -103,6 +103,104 @@ prints `[redacted]` for an `id` or `name` value that passes
 `looksLikeOpaqueId`, and keeps readable ones so it stays useful to test a
 selector. `snapshot` never prints these attributes.
 
+## Amendment 2026-11-13: sealed sign-in headers, cookies and credential save
+
+Dante approved three changes (spec 018 R-9 follow-up). They reverse the
+statement above that sign-in header values are never captured, under these
+conditions only:
+
+- **One Allow covers more.** The values grant is now keyed by registrable
+  domain (`siteOf` from PR #191, copied unchanged) and is the one Allow per
+  session and site for `network --values`, `storage --values`, `fetch` with a
+  method other than GET or HEAD, `fetch --auth page`, and `credential save`.
+  The popup names all of these. It never asks again in the session and ends
+  at the session end or on Stop.
+- **Sealed headers.** After that Allow, the hook keeps the newest value of
+  each sign-in header that the page sends to its own origin, in a closure
+  separate from the ring buffer. `network` reads never include it, and no
+  error, log or output carries it. It is used only to attach to the agent's
+  same-origin `fetch --auth page` (which does not follow redirects) and to
+  hand to `credential save --from header:`. A change of an account anchor
+  header drops it; leaving the agent group, a new owner or Stop clears it.
+  The closure is reachable through the page-visible slot by a page script,
+  which already holds these values.
+- **Cookies.** The extension adds the `cookies` permission, a new install-time
+  prompt. It is used only for `credential save --from cookie:` on the agent
+  tab's URL, after the Allow. Host scope does not change.
+- **Daemon-only write.** The worker sends a captured value in a
+  `pw-ext-credential-store` frame on the extension socket. Only the daemon
+  reads it; it accepts it only from the extension peer with a valid session
+  token for an active session, stores it encrypted as
+  `pw/<registrable domain>/<name>`, and replies with the name only. The
+  extension peer still cannot `get` it.
+- **Exec in the daemon (Dante, 2026-11-13, option a).** A session `get`, and
+  a grant-scoped `get`, is refused for every name under `pw/`, with an error
+  that holds no value. `dg-skills credentials exec <name>[=ENV]... -- <cmd>`
+  sends only names, the command, the working directory and the CLI's
+  environment to dg-daemon. The daemon resolves the values, spawns the child
+  with the values in environment variables and no stdin, scrubs its stdout
+  and stderr (literal, base64, base64url, URL-encoded and form forms, also
+  split across chunks), and streams only scrubbed text back. It kills the
+  child when the CLI disconnects. The CLI process never holds a value, and no
+  value is in a process argument list. The `{{cred:name}}` argument form is
+  removed.
+- **What this does not block.** The agent chooses the command. A command
+  that transforms the value before it prints it (for example
+  `sh -c 'echo $X | rev'`), writes it to a file, or sends it over the network
+  can still expose it. A process of the same user can also read the child's
+  environment while it runs. So `pw/` values are protected against accidental
+  exposure in agent output, not against an agent that tries on purpose. A
+  stronger step, an allowlist of exec commands that the human sets, is an
+  open decision and is not built.
+- **Exec allowlist (Dante, 2026-11-13, option a; Sammy's review).** For an
+  `exec` that uses any `pw/` name, dg-daemon reads `exec-allowlist` in the dg
+  config directory on each call. Each line needs an absolute path and a
+  `sha256=<hex>` pin; it may add a name glob (`*` stops at `/`) and the
+  `allow-any-args` flag. The daemon resolves argv[0] to its real path (a bare
+  name through the daemon's own `PATH`, symlinks followed), reads its bytes
+  once, and hashes them. Each `pw/` name needs a covering line with the
+  current pin; stale lines are ignored. It refuses shells, interpreters and
+  general tools whose arguments can run code or send data anywhere (for
+  example `npm`, `curl`, `git`, `ssh`, `rsync`, `tar`, `make`, `docker`,
+  editors and pagers) unless the line has `allow-any-args`. It classifies the
+  typed name, the real file name, and the `#!` interpreter (after `env`); a
+  shell or interpreter in the `#!` line is fine, because it runs the pinned
+  script. The daemon writes the hashed bytes to a private 0700 directory as a
+  0500 file, runs that copy from the daemon's home directory with a private
+  per-run `TMPDIR`, and deletes it after the run. `dg-skills credentials allow <path> [glob]` prints a pinned
+  line and never writes the file. The recommended entry is a small fixed
+  wrapper script that the person owns. For a `pw/` exec the daemon keeps only
+  locale, terminal and user variables from the caller, sets `HOME` and
+  `XDG_CONFIG_HOME` to its own, and sets a fixed system `PATH`
+  (`/usr/local/bin:/usr/bin:/bin`, plus `/opt/homebrew/bin` on macOS when it
+  is not user-writable; Windows keeps the daemon's `PATH`). argv[0] still
+  resolves through the daemon's `PATH`, and the pin covers it. A pinned
+  script pins only its own bytes. It should call tools by absolute path and
+  must not import from user-writable places (for example user site-packages
+  or node_modules). On disconnect it sends
+  SIGTERM to the process group, then SIGKILL after 2 seconds; on Windows it
+  ends the process tree. Names outside `pw/` do not use the allowlist.
+- **What the allowlist does not block.** The agent runs as the same user, so
+  it can edit the file unless the agent harness blocks writes to it; the docs
+  suggest a Claude Code deny rule for that path and for every listed script.
+  The pin refuses a listed file after an edit, but a file the agent can write
+  and the person pins again is the same as an interpreter. A listed command
+  that prints, stores or sends the value in a changed form can still expose
+  it. An `allow-any-args` line undoes the guard for that executable. A
+  wrapper that passes `"$@"` or other agent input to a general tool is the
+  same as that tool. The private copy closes the gap between the hash check
+  and the start, but a same-user process can still write the private
+  directory while the copy exists, and a listed script can load other files
+  that are not pinned.
+- **Saved values mask later output.** Before the store frame goes out, the
+  worker reserves the value with the session's held secrets in
+  `storage.session`, so all later output of the session masks it, also after
+  a worker restart. The page hook keeps masking a rotated sign-in value while
+  a retained response may hold it.
+- **Storage.** `storage` reads localStorage or sessionStorage through the
+  hook: keys, type, length and JSON shape by default; values after the Allow,
+  with credential-named keys and token-like strings always masked.
+
 ## Consequences
 
 - **Good:** the agent learns endpoint names, header names and body keys with no

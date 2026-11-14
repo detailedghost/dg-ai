@@ -3,7 +3,9 @@ import {
 	approvalClassOf,
 	BUILT_IN_SCRIPTS,
 	formatNetwork,
+	formatStorage,
 	isDgToolName,
+	PW_EXT_CREDENTIAL_SITE,
 	isPwExtWebUrl,
 	mailboxToolAllowed,
 	matchesCoverOrigin,
@@ -21,6 +23,7 @@ import {
 	redactText,
 	validateNetworkEntries,
 	validatePwExtRequest,
+	validateStorageResult,
 } from "@dg/common";
 import {
 	type PwExtDialogAction,
@@ -119,6 +122,9 @@ export type PwExtBrowserApi = AgentTabsBrowserApi & {
 		onUpdated: TabEvent<(group: { id: number }) => void>;
 	};
 	storage: AgentTabsStorage;
+	cookies?: {
+		get(details: { url: string; name: string }): Promise<{ value: string; expirationDate?: number } | null>;
+	};
 };
 
 export type PwExtResult =
@@ -173,6 +179,9 @@ const PAGE_VERBS = [
 	"call",
 	"dialog",
 	"network",
+	"storage",
+	"fetch",
+	"credential",
 ] as const satisfies readonly PwExtVerb[];
 const BLOCKS_BROWSER_PAGE: ReadonlySet<PwExtVerb> = new Set([
 	...PAGE_VERBS,
@@ -278,7 +287,42 @@ const VALUES_REFUSED = {
 } satisfies Record<Exclude<ApprovalAnswer, "allow">, string>;
 const valuesRefused = (answer: Exclude<ApprovalAnswer, "allow">, site: string) =>
 	`${VALUES_REFUSED[answer]}; pw --ext network --values shows values on ${site} only after the user clicks Allow in the dg approval window. Run it again to ask once more. Without --values, network shows the shape only.`;
-const valuesSiteOf = (url: string) => new URL(url).origin;
+const valuesSiteOf = (url: string) => siteOf(url).key;
+const BAD_STORAGE = "The page returned an unexpected storage result.";
+const FETCH_DEADLINE_MS = 35_000;
+const NOT_SAVED = "Nothing was saved.";
+
+/** The site segment of a saved credential name: the registrable domain, or the host when it has none. */
+function credentialSite(url: string): string | undefined {
+	const site = siteOf(url);
+	const host = site.grouped ? site.key.replace(/^[a-z]+:\/\//, "").replace(/:\d+$/, "") : new URL(url).hostname;
+	return PW_EXT_CREDENTIAL_SITE.test(host) ? host : undefined;
+}
+
+function jsonPath(raw: string, path: string): string | undefined {
+	let value: unknown;
+	try {
+		value = JSON.parse(raw);
+	} catch {
+		return undefined;
+	}
+	for (const part of path.split(".")) {
+		if (typeof value !== "object" || value === null || !Object.hasOwn(value, part)) return undefined;
+		value = (value as Record<string, unknown>)[part];
+	}
+	return typeof value === "string" || typeof value === "number" ? String(value) : undefined;
+}
+
+function jwtExpiry(value: string): string | undefined {
+	const part = value.replace(/^Bearer\s+/i, "").split(".")[1];
+	if (!part) return undefined;
+	try {
+		const exp = (JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/"))) as { exp?: unknown }).exp;
+		return typeof exp === "number" && Number.isFinite(exp) ? new Date(exp * 1000).toISOString() : undefined;
+	} catch {
+		return undefined;
+	}
+}
 const DIALOG_ANSWERS = ["accept", "dismiss"];
 
 /** Per-request seams that need the session capability. */
@@ -287,6 +331,8 @@ export type PwExtContext = {
 	agentIdentity: string;
 	fetchAsset(assetId: string): Promise<Blob>;
 	deleteAsset(assetId: string): Promise<void>;
+	/** Sends a captured value to dg-daemon's credential store and resolves to its store name; the value goes nowhere else. */
+	storeCredential(entry: { site: string; name: string; value: string; meta: Record<string, unknown> }): Promise<string>;
 };
 
 function pageResult(raw: unknown): PwExtPageResult {
@@ -649,7 +695,7 @@ export function createPwExtHandler({
 		await control.allow(context.sessionId, site.key);
 	}
 
-	/** Asks the person once per site and session before network shows values; one Allow lasts until the session ends or Stop. */
+	/** Asks the person once per site and session before values show or the site's sign-in is used or saved; one Allow lasts until the session ends or Stop. */
 	async function allowValues(tab: LiveTab, context: PwExtContext, signal: AbortSignal | undefined): Promise<PwExtResult | undefined> {
 		const site = valuesSiteOf(tab.url as string);
 		if (await control.valuesAllowed(context.sessionId, site)) return undefined;
@@ -660,14 +706,15 @@ export function createPwExtHandler({
 		if (!pending) {
 			pending = (async () => {
 				const answer = await (approvals ?? browserApprovals()).request({
-					title: "Let the agent see network values?",
+					title: "Let the agent see values and use your sign-in on this site?",
 					origin: site,
 					lines: [
 						`Agent: ${context.agentIdentity}`,
 						`Tab group: ${groupTitle(context)}`,
-						"The agent sees request and response values on this site: addresses, headers and bodies.",
-						"These values can contain personal or health data.",
-						"Passwords, cookies, sign-in headers and known secrets stay masked.",
+						"The agent sees request, response and storage values on this site. They can contain personal or health data.",
+						"The agent can send its own requests to this site with your sign-in, and they can change data here.",
+						"The agent can save a sign-in cookie, header or stored value into the dg credential store. It never sees that value.",
+						"Passwords, cookies, sign-in headers and known secrets stay masked in what the agent sees.",
 						"You are asked once. It lasts until this dg session ends or you click Stop.",
 					],
 				});
@@ -685,7 +732,15 @@ export function createPwExtHandler({
 		const live = await api.tabs.get(tab.id).catch(() => undefined);
 		if (!live || live.groupId !== tab.groupId || live.url !== tab.url)
 			return { ok: false, error: "The tab changed while the approval was open; nothing was read. Retry." };
+		await inMain(tab, pwExtNetwork as never, [{ kind: "seal" }, tab.url, tab.groupId ?? -1]).catch(() => undefined);
 		return undefined;
+	}
+
+	/** True when the session that owns the tab's group approved the tab's site. */
+	async function sealFor(tab: BrowserTab): Promise<boolean> {
+		if (tab.groupId === undefined || tab.groupId < 0 || !tab.url) return false;
+		const sessionId = await agentSessionOfGroup({ storage: api.storage, groupId: tab.groupId });
+		return sessionId ? control.valuesAllowed(sessionId, valuesSiteOf(tab.url)) : false;
 	}
 
 	/** Ends a session's control at once: verbs in flight end, unmask and value grants and sites go, and its tabs return to the person; Web MCP grants stay. */
@@ -712,6 +767,20 @@ export function createPwExtHandler({
 	}
 	const enabledOrNone = () => enabledBuiltIns().catch(() => new Set<string>());
 
+	async function withDeadline<T>(ms: number, work: Promise<T>): Promise<T> {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			return await Promise.race([
+				work,
+				new Promise<never>((_, reject) => {
+					timer = setTimeout(() => reject(new Refusal(`The request did not finish within ${Math.round(ms / 1000)} seconds.`)), ms);
+				}),
+			]);
+		} finally {
+			clearTimeout(timer);
+		}
+	}
+
 	async function beforeDeadline<T>(work: Promise<T>): Promise<T> {
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		try {
@@ -727,7 +796,7 @@ export function createPwExtHandler({
 	}
 
 	const syncShim = (tabId: number, regrouped: boolean) =>
-		syncDialogShim({ browserApi: api, storage: api.storage, tabId, regrouped, ...(lock ? { lock } : {}) }).catch(
+		syncDialogShim({ browserApi: api, storage: api.storage, tabId, regrouped, seal: sealFor, ...(lock ? { lock } : {}) }).catch(
 			() => undefined,
 		);
 
@@ -1168,6 +1237,168 @@ export function createPwExtHandler({
 					...(request.limit === undefined ? {} : { limit: request.limit }),
 				});
 				return shown([...page(), "### Network", ...lines].join("\n"));
+			}
+			case "storage": {
+				const options = { unmasked, secrets };
+				const values = request.values === true;
+				if (values) {
+					const refused = await allowValues(tab, context, signal);
+					if (refused) return refused;
+				}
+				const area = request.area ?? "local";
+				await beforeDeadline(syncShim(tab.id, false));
+				const raw = (await beforeDeadline(
+					inMain(tab, pwExtNetwork as never, [
+						{
+							kind: "storage",
+							area,
+							...(request.key === undefined ? {} : { key: request.key }),
+							...(request.keysOnly ? { keysOnly: true } : {}),
+							values,
+						},
+						tab.url,
+						tab.groupId ?? -1,
+					]),
+				)) as { error?: unknown } | null;
+				if (typeof raw?.error === "string") return failed(maskRaw(raw.error, RAW_ERROR_MAX, options));
+				let result: ReturnType<typeof validateStorageResult>;
+				try {
+					result = validateStorageResult(raw);
+				} catch {
+					throw new Refusal(BAD_STORAGE);
+				}
+				const lines = formatStorage(result.items, result.total, {
+					values,
+					value: (text) => maskRaw(maskRaw(text, RAW_OUTPUT_MAX, options).replace(/%40/gi, "@"), RAW_OUTPUT_MAX, options),
+				});
+				return shown([...page(), `### Storage (${area})`, ...lines].join("\n"));
+			}
+			case "fetch": {
+				const options = { unmasked, secrets };
+				const values = request.values === true;
+				const method = request.method ?? "GET";
+				let target: URL;
+				try {
+					target = new URL(request.url as string, tab.url);
+				} catch {
+					return failed("The address is not valid; nothing was sent.");
+				}
+				if (target.origin !== new URL(tab.url as string).origin)
+					return failed(`pw --ext fetch sends requests only to the tab's own origin, ${new URL(tab.url as string).origin}; nothing was sent.`);
+				if (values || request.auth === "page" || (method !== "GET" && method !== "HEAD")) {
+					const refused = await allowValues(tab, context, signal);
+					if (refused) return refused;
+				}
+				await beforeDeadline(syncShim(tab.id, false));
+				const raw = (await withDeadline(FETCH_DEADLINE_MS, inMain(tab, pwExtNetwork as never, [
+					{
+						kind: "fetch",
+						url: target.href,
+						method,
+						...(request.body === undefined ? {} : { body: request.body }),
+						...(request.contentType === undefined ? {} : { contentType: request.contentType }),
+						headers: request.headers ?? [],
+						auth: request.auth === "page",
+						values,
+					},
+					tab.url,
+					tab.groupId ?? -1,
+				]))) as { error?: unknown } | null;
+				if (typeof raw?.error === "string") return failed(maskRaw(raw.error, RAW_ERROR_MAX, options));
+				let entries: ReturnType<typeof validateNetworkEntries>;
+				try {
+					entries = validateNetworkEntries(raw);
+				} catch {
+					throw new Refusal(BAD_NETWORK);
+				}
+				const lines = formatNetwork(entries, {
+					values,
+					value: (text) => maskRaw(maskRaw(text, RAW_OUTPUT_MAX, options).replace(/%40/gi, "@"), RAW_OUTPUT_MAX, options),
+				}).slice(1, -1);
+				return shown([...page(), "### Fetch", ...lines].join("\n"));
+			}
+			case "credential": {
+				const refused = await allowValues(tab, context, signal);
+				if (refused) return refused;
+				if (new URL(tab.url as string).protocol !== "https:")
+					return failed(`pw --ext credential save works only on https pages. ${NOT_SAVED}`);
+				const site = credentialSite(tab.url as string);
+				if (!site) return failed(`pw --ext credential save needs a site with a domain name or an IP address. ${NOT_SAVED}`);
+				const source = request.source as NonNullable<PwExtRequest["source"]>;
+				const key = request.key as string;
+				const label = `${source} ${source === "header" ? key.toLowerCase() : key}`;
+				let value: string | undefined;
+				let expiresAt: string | undefined;
+				try {
+					if (source === "cookie") {
+						if (!api.cookies) return failed(`This browser gives pw --ext no cookie access. ${NOT_SAVED}`);
+						const cookie = await api.cookies.get({ url: tab.url as string, name: key });
+						value = cookie?.value || undefined;
+						if (cookie?.expirationDate !== undefined) expiresAt = new Date(cookie.expirationDate * 1000).toISOString();
+					} else {
+						await beforeDeadline(syncShim(tab.id, false));
+						const raw = (await beforeDeadline(
+							inMain(tab, pwExtNetwork as never, [
+								source === "header"
+									? { kind: "sealed-get", name: key.toLowerCase() }
+									: { kind: "storage-get", area: source, key },
+								tab.url,
+								tab.groupId ?? -1,
+							]),
+						)) as { value?: unknown } | null;
+						value = typeof raw?.value === "string" && raw.value !== "" ? raw.value : undefined;
+					}
+				} catch (error) {
+					if (error instanceof Refusal) throw error;
+					return failed(`Could not read the ${label}. ${NOT_SAVED}`);
+				}
+				if (value === undefined)
+					return failed(
+						source === "header"
+							? `No ${key.toLowerCase()} header was seen on this page since the approval. Act in the page, for example open a folder, then retry. ${NOT_SAVED}`
+							: `No ${label} on this site. ${NOT_SAVED}`,
+					);
+				if (request.path !== undefined) {
+					value = jsonPath(value, request.path);
+					if (value === undefined || value === "")
+						return failed(`The ${label} has no string or number at --path ${request.path}. ${NOT_SAVED}`);
+				}
+				expiresAt ??= jwtExpiry(value);
+				const meta = {
+					site: new URL(tab.url as string).origin,
+					source: `${source}:${source === "header" ? key.toLowerCase() : key}${request.path === undefined ? "" : `#${request.path}`}`,
+					createdBy: "pw --ext credential save",
+					capturedAt: new Date(now()).toISOString(),
+					...(expiresAt === undefined ? {} : { expiresAt }),
+				};
+				if (signal?.aborted) return CANCELED;
+				if (await isStopped(context.sessionId)) return STOPPED;
+				const live = await api.tabs.get(tab.id).catch(() => undefined);
+				if (
+					!live ||
+					live.url !== tab.url ||
+					!(await agentTabs.owns({ sessionId: context.sessionId, tabId: tab.id })) ||
+					!(await control.valuesAllowed(context.sessionId, valuesSiteOf(tab.url as string)))
+				)
+					return failed(`The tab or its approval changed during the save. ${NOT_SAVED}`);
+				if ((await grants.reserve(context.sessionId, value)) === "full")
+					return failed(`This session already holds ${MAX_FILLED_SECRETS} secret values; start a new dg session to save more. ${NOT_SAVED}`);
+				if (signal?.aborted) return CANCELED;
+				if (await isStopped(context.sessionId)) return STOPPED;
+				let stored: string;
+				try {
+					stored = await context.storeCredential({ site, name: request.name as string, value, meta });
+				} catch (error) {
+					const reason = error instanceof Error ? error.message : "dg-daemon refused the save.";
+					return { ok: false, error: clip(redactLiterals(reason, [value]), 300) };
+				}
+				return ok(
+					[
+						"### Result",
+						`Saved ${stored} from the ${label}${request.path === undefined ? "" : ` at ${request.path}`}${expiresAt === undefined ? "" : `, expires ${expiresAt}`}.`,
+						`The value was not shown. Use it with: dg-skills credentials exec ${stored}=NAME -- <command>`,
+					].join("\n"),
+				);
 			}
 			case "screenshot": {
 				if (signal?.aborted) return CANCELED;

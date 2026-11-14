@@ -25,3 +25,5 @@ export * from "./session-tokens";
 export * from "./sqlite";
 export * from "./tree-copy";
 export * from "./wsl-guard";
+export * from "./credential-scrub";
+export * from "./exec-allowlist";

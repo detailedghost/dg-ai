@@ -15,7 +15,7 @@ dg-skills pw --help >/dev/null 2>&1 ||
 
 Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
-If a step fails, run dg-skills doctor pw pw-code stash.
+If a step fails, run dg-skills doctor pw pw-code stash credentials.
 
 `/dg:pw` drives a browser through `playwright-core`. It needs Bun >= 1.4.0 and Google Chrome or Microsoft Edge. Below, `pw <command>` means `dg-skills pw <command>`.
 

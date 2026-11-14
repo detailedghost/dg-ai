@@ -201,6 +201,9 @@ const POSITIONALS: Record<PwExtVerb, readonly string[]> = {
 	call: ["tool", "json-args"],
 	dialog: ["answer?"],
 	network: [],
+	storage: ["area?"],
+	fetch: ["url"],
+	credential: ["action", "name"],
 };
 const OPTIONS = {
 	ext: { type: "boolean" },
@@ -216,6 +219,15 @@ const OPTIONS = {
 	limit: { type: "string" },
 	since: { type: "string" },
 	values: { type: "boolean" },
+	method: { type: "string" },
+	json: { type: "string" },
+	"body-stdin": { type: "boolean" },
+	header: { type: "string", multiple: true },
+	auth: { type: "string" },
+	key: { type: "string" },
+	keys: { type: "boolean" },
+	from: { type: "string" },
+	path: { type: "string" },
 } as const;
 const STAGED_PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
 
@@ -249,6 +261,10 @@ Read verbs (they never change the page):
                           --since <ms> keeps calls that started after that time, --since clear empties the list.
                           --values shows values too, after the user clicks Allow once in the browser for this site
                           and session; passwords, cookies, sign-in headers and secrets stay masked
+  storage [local|session] [--keys] [--key <k>] [--values]
+                          keys of the page's localStorage (default) or sessionStorage, with type, length and
+                          JSON key structure; --keys lists keys only, --key shows one key; --values shows values
+                          after the same Allow; tokens and secrets stay masked
 
 Write verbs (they change the page):
   open <url>              open an http(s) URL in the agent's selected tab, or in a new tab when it has none
@@ -267,7 +283,16 @@ Write verbs (they change the page):
   unmask --off            end the unmask now
   dialog                  the page's last alert, confirm or prompt, how it was answered, and the answer set for the next one
   dialog accept [--text <answer>]  accept the next dialog on this page; --text is the answer a prompt gets
-  dialog dismiss          dismiss the next dialog on this page; each new page starts at dismiss`;
+  dialog dismiss          dismiss the next dialog on this page; each new page starts at dismiss
+  fetch <path|url> [--method M] [--json <body>|--body-stdin] [--header Name:Value]... [--auth page] [--values]
+                          send one request from the agent tab to its own origin, with the page's cookies;
+                          --auth page adds the page's own sign-in headers, which you never see; output has
+                          the shape of the response, values only with --values. A method other than GET or
+                          HEAD, --auth page and --values need the user's one Allow for this site and session
+  credential save <name> --from cookie:<n>|header:<n>|local:<k>|session:<k> [--path a.b]
+                          copy a sign-in value of this site straight into the dg credential store as
+                          pw/<site>/<name>, after the same Allow; the value is never shown. --path picks a value
+                          inside a JSON value. Use it with dg-skills credentials exec`;
 
 class ExtUsageError extends Error {}
 
@@ -349,12 +374,18 @@ function parseRequest(
 	if (parsed.values.text !== undefined && (verb !== "dialog" || rest[0] !== "accept"))
 		throw new ExtUsageError("--text works only with pw --ext dialog accept.");
 	const networkOption =
-		parsed.values.filter !== undefined ||
-		parsed.values.limit !== undefined ||
-		parsed.values.since !== undefined ||
-		parsed.values.values === true;
+		parsed.values.filter !== undefined || parsed.values.limit !== undefined || parsed.values.since !== undefined;
 	if (networkOption && verb !== "network")
-		throw new ExtUsageError("--filter, --limit, --since and --values work only with pw --ext network.");
+		throw new ExtUsageError("--filter, --limit and --since work only with pw --ext network.");
+	if (parsed.values.values && !["network", "storage", "fetch"].includes(verb))
+		throw new ExtUsageError("--values works only with pw --ext network, storage or fetch.");
+	const only = (names: (keyof typeof parsed.values)[], verbs: string[], label: string) => {
+		if (names.some((name) => parsed.values[name] !== undefined) && !verbs.includes(verb))
+			throw new ExtUsageError(`${label} work${names.length === 1 ? "s" : ""} only with pw --ext ${verbs.join(" or ")}.`);
+	};
+	only(["method", "json", "body-stdin", "header", "auth"], ["fetch"], "--method, --json, --body-stdin, --header and --auth");
+	only(["from", "path"], ["credential"], "--from and --path");
+	only(["key", "keys"], ["storage"], "--key and --keys");
 	if (verb === "dialog" && rest.length === 1 && rest[0] !== "accept" && rest[0] !== "dismiss")
 		throw new ExtUsageError("pw --ext dialog takes accept or dismiss.");
 	if (parsed.values.off && parsed.values.minutes !== undefined)
@@ -390,6 +421,28 @@ function parseRequest(
 			fileSize: staged.bytes.length,
 			fileType: staged.fileType,
 			filePath: staged.filePath,
+		});
+	} else if (verb === "storage") {
+		if (rest[0] !== undefined && rest[0] !== "local" && rest[0] !== "session")
+			throw new ExtUsageError("pw --ext storage takes local or session.");
+		Object.assign(request, {
+			...(rest[0] === undefined ? {} : { area: rest[0] }),
+			...(parsed.values.key === undefined ? {} : { key: parsed.values.key }),
+			...(parsed.values.keys ? { keysOnly: true } : {}),
+			...(parsed.values.values ? { values: true } : {}),
+		});
+	} else if (verb === "fetch") {
+		Object.assign(request, fetchOptions(rest[0] as string, parsed.values, source));
+	} else if (verb === "credential") {
+		if (rest[0] !== "save") throw new ExtUsageError("pw --ext credential takes save <name> --from <source>:<key>.");
+		const from = /^(cookie|header|local|session):(.+)$/.exec(parsed.values.from ?? "");
+		if (!from)
+			throw new ExtUsageError("pw --ext credential save needs --from cookie:<name>, header:<name>, local:<key> or session:<key>.");
+		Object.assign(request, {
+			name: rest[1],
+			source: from[1],
+			key: from[2],
+			...(parsed.values.path === undefined ? {} : { path: parsed.values.path }),
 		});
 	} else if (verb === "call") {
 		let args: unknown;
@@ -446,6 +499,39 @@ function parseRequest(
 			),
 		);
 	}
+}
+
+function fetchOptions(
+	url: string,
+	values: { method?: string; json?: string; "body-stdin"?: boolean; header?: string[]; auth?: string; values?: boolean },
+	source: SecretSource,
+): Partial<PwExtRequest> {
+	const options: Partial<PwExtRequest> = { url };
+	if (values.json !== undefined && values["body-stdin"])
+		throw new ExtUsageError("pw --ext fetch takes --json or --body-stdin, not both.");
+	if (values.json !== undefined) {
+		try {
+			JSON.parse(values.json);
+		} catch {
+			throw new ExtUsageError("pw --ext fetch --json needs valid JSON.");
+		}
+		Object.assign(options, { body: values.json, contentType: "application/json" });
+	}
+	if (values["body-stdin"]) options.body = (source.readStdin ?? (() => readFileSync(0, "utf8")))();
+	const method = (values.method ?? (options.body === undefined ? "GET" : "POST")).toUpperCase();
+	if (method !== "GET") options.method = method;
+	if (values.header?.length)
+		options.headers = values.header.map((pair) => {
+			const at = pair.indexOf(":");
+			if (at < 1) throw new ExtUsageError("pw --ext fetch --header takes Name:Value.");
+			return [pair.slice(0, at).trim(), pair.slice(at + 1).trim()] as [string, string];
+		});
+	if (values.auth !== undefined) {
+		if (values.auth !== "page") throw new ExtUsageError("pw --ext fetch --auth takes page.");
+		options.auth = "page";
+	}
+	if (values.values) options.values = true;
+	return options;
 }
 
 function networkOptions(values: { filter?: string; limit?: string; since?: string; values?: boolean }): Partial<PwExtRequest> {

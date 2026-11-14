@@ -51,7 +51,12 @@ export function forgetDialogShim(storage: AgentTabsStorage, tabId: number): Prom
 	});
 }
 
-function inject(api: DialogShimApi, tabId: number, args: [PwExtDialogAction, string?, number?], title?: string) {
+function inject(
+	api: DialogShimApi,
+	tabId: number,
+	args: [PwExtDialogAction & { seal?: boolean }, string?, number?],
+	title?: string,
+) {
 	const banner = api.scripting
 		.executeScript({
 			target: { tabId },
@@ -85,12 +90,15 @@ export async function syncDialogShim({
 	tabId,
 	regrouped,
 	lock,
+	seal,
 }: {
 	browserApi: DialogShimApi;
 	storage: AgentTabsStorage;
 	tabId: number;
 	regrouped: boolean;
 	lock?: AgentTabsLock;
+	/** True when the tab's session approved this site, so the network hook may keep sign-in headers. */
+	seal?: (tab: BrowserTab) => Promise<boolean>;
 }): Promise<void> {
 	const owned = async () => {
 		const records = await lockedAgentRecords({ storage, ...(lock ? { lock } : {}) });
@@ -102,8 +110,14 @@ export async function syncDialogShim({
 	if (tab.incognito || !allowedPage(tab.url) || mailbox(tab.url)) return;
 	if (record) {
 		await noteDialogShim(storage, tabId);
+		const sealed = seal ? await seal(tab).catch(() => false) : false;
 		const live = (await api.tabGroups.get(record.groupId).catch(() => undefined))?.title;
-		await inject(api, tabId, [{ kind: "install" }, tab.url, tab.groupId], bannerTitle({ ...record, title: live?.trim() || record.title }));
+		await inject(
+			api,
+			tabId,
+			[{ kind: "install", ...(sealed ? { seal: true } : {}) }, tab.url, tab.groupId],
+			bannerTitle({ ...record, title: live?.trim() || record.title }),
+		);
 		if ((await owned()).record) return;
 	} else if (!regrouped && !(await shimmedTabs(storage)).includes(tabId)) return;
 	await inject(api, tabId, [{ kind: "remove" }]);
