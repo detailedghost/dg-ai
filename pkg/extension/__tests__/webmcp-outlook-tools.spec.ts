@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { isDgToolName, redactText, WEBMCP_TOOL_CLASSES } from "@dg/common";
-import { createOwaService } from "@/lib/features/webmcp-outlook/service";
+import { createOwaService, OUTLOOK_CANCELED } from "@/lib/features/webmcp-outlook/service";
 import { createOutlookTools, htmlToText } from "@/lib/features/webmcp-outlook/tools";
 import createItem from "./fixtures/webmcp-outlook/create-item.json";
 import findFolder from "./fixtures/webmcp-outlook/find-folder.json";
@@ -416,6 +416,21 @@ describe("the write tools", () => {
 			ReferenceItemId: { __type: "ItemId:#Exchange", Id: "AAMkFixtureItem1=" },
 			NewBodyContent: { __type: "BodyContentType:#Exchange", BodyType: "HTML", Value: "&lt;i&gt;ok&lt;/i&gt;" },
 		});
+	});
+
+	it.each([
+		["dg_outlook_reply", { id: "AAMkFixtureItem1=", body: "ok" }],
+		["dg_outlook_draft", { to: ["test.person@example.com"], subject: "Fixture subject", body: "ok" }],
+		["dg_outlook_move", { ids: ["AAMkFixtureItem1="], folder: "Fixture folder" }],
+		["dg_outlook_search", { query: "Fixture subject" }],
+	])("sends nothing for %s once its signal has aborted", async (name, args) => {
+		const { tools, sent } = setup();
+		const controller = new AbortController();
+		controller.abort();
+		await expect(tools.find((tool) => tool.name === name)?.execute(args, { signal: controller.signal })).rejects.toThrow(
+			OUTLOOK_CANCELED,
+		);
+		expect(sent).toEqual([]);
 	});
 
 	it("sends a reply to all when replyAll is true", async () => {

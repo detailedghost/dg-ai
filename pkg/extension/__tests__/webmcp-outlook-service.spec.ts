@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createOwaService, OUTLOOK_STILL_LOADING } from "@/lib/features/webmcp-outlook/service";
+import { createOwaService, OUTLOOK_CANCELED, OUTLOOK_STILL_LOADING } from "@/lib/features/webmcp-outlook/service";
 
 const HEADERS = {
 	authorization: "Bearer fixture-token",
@@ -157,5 +157,31 @@ describe("createOwaService", () => {
 		}
 		await Promise.all(calls);
 		expect(peak).toBe(4);
+	});
+
+	it("never sends a queued call whose signal aborts while it waits for a slot", async () => {
+		const releases: Array<() => void> = [];
+		const { service, sent } = setup({
+			reply: async () => {
+				await new Promise<void>((resolve) => releases.push(resolve));
+				return Response.json(OK);
+			},
+		});
+		const busy = Array.from({ length: 4 }, () => service.call("FindItem", {}));
+		const controller = new AbortController();
+		const queued = service.call("CreateItem", {}, controller.signal);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		controller.abort();
+		releases.splice(0).forEach((release) => release());
+		await Promise.all(busy);
+		await expect(queued).rejects.toThrow(OUTLOOK_CANCELED);
+		expect(sent.map((entry) => new URL(entry.url).searchParams.get("action"))).toEqual(Array(4).fill("FindItem"));
+	});
+
+	it("passes the signal to the page fetch", async () => {
+		const { service, sent } = setup();
+		const controller = new AbortController();
+		await service.call("GetItem", {}, controller.signal);
+		expect(sent[0]?.init.signal).toBe(controller.signal);
 	});
 });

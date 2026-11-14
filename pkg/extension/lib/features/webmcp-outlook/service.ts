@@ -5,6 +5,7 @@ type PageFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Respo
 export type OwaItem = Record<string, unknown>;
 
 export const OUTLOOK_STILL_LOADING = "Outlook is still loading; retry.";
+export const OUTLOOK_CANCELED = "The Outlook tool call was canceled.";
 const HEADERS_WAIT_MS = 10_000;
 const HEADERS_POLL_MS = 100;
 const IN_FLIGHT = 4;
@@ -33,9 +34,14 @@ export function createOwaService({
 }) {
 	const limit = createConcurrencyLimit(IN_FLIGHT);
 
-	async function session(): Promise<OutlookSessionHeaders> {
+	const live = (signal?: AbortSignal) => {
+		if (signal?.aborted) throw new Error(OUTLOOK_CANCELED);
+	};
+
+	async function session(signal?: AbortSignal): Promise<OutlookSessionHeaders> {
 		const start = now();
 		for (;;) {
+			live(signal);
 			const held = headers();
 			if (held) return held;
 			if (now() - start >= HEADERS_WAIT_MS) throw new Error(OUTLOOK_STILL_LOADING);
@@ -43,13 +49,15 @@ export function createOwaService({
 		}
 	}
 
-	async function send(action: string, body: Record<string, unknown>): Promise<OwaItem[]> {
-		const held = await session();
+	async function send(action: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<OwaItem[]> {
+		const held = await session(signal);
+		live(signal);
 		let response: Response;
 		try {
 			response = await fetch(`${origin}${servicePath(origin)}?action=${encodeURIComponent(action)}&app=Mail`, {
 				method: "POST",
 				credentials: "include",
+				signal,
 				headers: {
 					...held,
 					action,
@@ -63,6 +71,7 @@ export function createOwaService({
 				}),
 			});
 		} catch {
+			live(signal);
 			throw new Error("Outlook did not answer.");
 		}
 		if (REFUSED.has(response.status)) throw new Error(`Outlook refused the request (${response.status})`);
@@ -79,7 +88,8 @@ export function createOwaService({
 	}
 
 	return {
-		call: (action: string, body: Record<string, unknown>): Promise<OwaItem[]> => limit(() => send(action, body)),
+		call: (action: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<OwaItem[]> =>
+			limit(() => send(action, body, signal)),
 	};
 }
 
