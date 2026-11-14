@@ -1,6 +1,6 @@
 ---
 name: bg
-description: Run a task in the background so you can keep working, for any agent. Picks the right background primitive for the runtime. Claude Code uses a background Agent or Bash, or an opt-in Workflow. Any other CLI agent detaches a shell job through the dg CLI. Triggers on "do this in the background", "kick this off while I keep going", "background this", `/dg:bg <task>`.
+description: Run a task in the background so you can keep working, for any agent. Picks the right background primitive for the runtime. Claude Code uses a background Agent or Bash, or a Workflow for multi-role work. Any other CLI agent detaches a shell job through the dg CLI. Triggers on "do this in the background", "kick this off while I keep going", "background this", `/dg:bg <task>`.
 ---
 
 # /dg:bg: Run This In The Background
@@ -19,7 +19,7 @@ dg-skills bg --help >/dev/null 2>&1 ||
 
 Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
-If a step fails, run dg-skills doctor bg proxy.
+If a step fails, run dg-skills doctor bg proxy stat.
 
 ## Usage
 
@@ -29,7 +29,7 @@ If a step fails, run dg-skills doctor bg proxy.
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
-| `--workflow` | `-w` | Opt in to a multi-agent Workflow for work with several roles that fan out and then synthesize. Claude Code only; see [references/claude-code.md](references/claude-code.md). | off (one background agent) |
+| `--workflow` | `-w` | Force a Workflow for any class of task. Without it, a class C task still runs as a Workflow. Claude Code only; see [references/claude-code.md](references/claude-code.md). | off (the class picks the primitive) |
 
 Everything up to a flag is the task. It is either a natural-language task ("investigate the flaky auth test and summarize the cause") or a literal shell command ("npx nx test web").
 
@@ -46,6 +46,8 @@ Managing a launched job (see [references/job-management.md](references/job-manag
 - **A: Shell command or long process.** A build, test run, script, or data pull. It has a command line and an exit code.
 - **B: Agentic task.** It needs a model to reason, read code, edit, or investigate. It reads as an instruction, not a command.
 - **C: Multi-agent orchestration.** Several roles with dependencies or waves (fan-out, then synthesis). Rare. Most big tasks are still one background agent.
+
+Classification is automatic. Shape and consent are separate. The shape (A, B, or C) comes from the task. For class C, typing `/dg:bg <task>` is the opt-in to a Workflow, because these instructions tell the agent to call Workflow. This matches the Workflow tool rule: the user invoked a skill or slash command whose instructions tell you to call Workflow. Before launch, print one cost line: items x stages x model tier, with a rough token range. Then launch. `-w` forces a Workflow for any class.
 
 **2. Detect your runtime:**
 
@@ -65,6 +67,6 @@ Managing a launched job (see [references/job-management.md](references/job-manag
 ## Guardrails
 
 - **Do not background what needs a human mid-flight.** No interactive prompts (stdin) and no destructive one-offs the user has not confirmed. Background work runs unattended.
-- **Reversibility first.** Prefer a single background agent or job over a Workflow until orchestration is clearly needed. One job is easy to cancel. A fan-out is not.
+- **Reversibility first.** Prefer a single background agent or job when the task is not clearly class C. One job is easy to cancel. A fan-out is not. For class C, the cost line is the gate.
 - **One verb, three substrates.** You pick the mechanism from the task and the runtime. The user types `/dg:bg <task>`.
 - **Wait on the job, never on `pgrep -f`.** To wait for background work, wait on its exit or its output: the task notification, `wait <pid>`, `tail --pid=<known pid>`, `dg-skills bg status <id>`, or a command that exits by itself, such as `gh pr checks --watch`. Never write `until ! pgrep -f "<pattern>"` or `while pgrep -f "<pattern>"`. `pgrep -f` also matches the loop's own command line, so the loop never ends. `/dg:stat` stops these loops.
