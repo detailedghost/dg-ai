@@ -130,12 +130,10 @@ const htmlBody = (plain: string) => ({ __type: "BodyContentType:#Exchange", Body
 function message(item: OwaItem) {
 	return {
 		id: text(record(item.ItemId).Id),
-		subject: text(item.Subject),
 		from: text(record(record(item.From).Mailbox).EmailAddress),
 		date: text(item.DateTimeReceived),
 		read: item.IsRead === true,
 		flagged: record(item.Flag).FlagStatus === "Flagged",
-		preview: text(item.Preview),
 	};
 }
 
@@ -150,7 +148,7 @@ const newestFirst = (a: { date: string }, b: { date: string }) => (Date.parse(b.
 const findItemsShape = {
 	__type: "ItemResponseShape:#Exchange",
 	BaseShape: "IdOnly",
-	AdditionalProperties: ["Subject", "From", "DateTimeReceived", "IsRead", "Flag", "Preview"].map(field),
+	AdditionalProperties: ["From", "DateTimeReceived", "IsRead", "Flag"].map(field),
 };
 
 /** Splits the per-id response messages into the ids that succeeded and a code-only error per id that failed. */
@@ -253,7 +251,8 @@ export function createOutlookTools(service: OwaService): WebMcpTool[] {
 	return [
 		{
 			name: "dg_outlook_list",
-			description: "List the newest messages in a mail folder: id, subject, sender address, date, read, flagged and preview.",
+			description:
+				"List the newest messages in a mail folder: id, sender address, date, read and flagged. Subject and preview are masked; read one message with dg_outlook_read.",
 			inputSchema: schema({
 				folder: {
 					type: "string",
@@ -274,7 +273,7 @@ export function createOutlookTools(service: OwaService): WebMcpTool[] {
 		},
 		{
 			name: "dg_outlook_search",
-			description: `Search the ${DISTINGUISHED_FOLDERS.join(", ")} folders with an Outlook search query and return the matching messages, newest first.`,
+			description: `Search the ${DISTINGUISHED_FOLDERS.join(", ")} folders with an Outlook search query and return the matching messages, newest first, with the fields of dg_outlook_list. Subject and preview are masked.`,
 			inputSchema: schema(
 				{ query: { type: "string", minLength: 1, description: "The Outlook search query." }, limit: limitSchema },
 				["query"],

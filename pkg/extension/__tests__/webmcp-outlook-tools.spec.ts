@@ -98,21 +98,17 @@ describe("dg_outlook_list", () => {
 			messages: [
 				{
 					id: "AAMkFixtureItem1=",
-					subject: "Fixture subject",
 					from: "test.person@example.com",
 					date: "2026-11-01T09:30:00Z",
 					read: false,
 					flagged: true,
-					preview: "Fixture preview text",
 				},
 				{
 					id: "AAMkFixtureItem2=",
-					subject: "Second fixture subject",
 					from: "other.person@example.com",
 					date: "2026-10-31T17:05:00Z",
 					read: true,
 					flagged: false,
-					preview: "Second fixture preview",
 				},
 			],
 		});
@@ -125,6 +121,17 @@ describe("dg_outlook_list", () => {
 				Paging: expect.objectContaining({ MaxEntriesReturned: 25 }),
 			}),
 		);
+	});
+
+	it("masks the subject and the preview and does not ask Outlook for them", async () => {
+		const { run, sent } = setup();
+		const output = JSON.stringify(await run("dg_outlook_list"));
+		for (const hidden of ["Fixture subject", "Second fixture subject", "Fixture preview text", "Second fixture preview"])
+			expect(output).not.toContain(hidden);
+		const asked = JSON.stringify(sent[0]?.body);
+		expect(asked).not.toContain('"Subject"');
+		expect(asked).not.toContain('"Preview"');
+		expect(asked).toContain('"From"');
 	});
 
 	it("lists a distinguished folder with the given limit", async () => {
@@ -196,6 +203,14 @@ describe("dg_outlook_search", () => {
 		);
 		expect(JSON.stringify(sent)).not.toContain("Deep");
 		expect(JSON.stringify(sent)).not.toContain("msgfolderroot");
+	});
+
+	it("masks the subject and the preview of each match", async () => {
+		const { run } = searchSetup({ inbox: [first, second] });
+		const output = await run({ query: "Fixture subject" });
+		expect(output.messages).toHaveLength(2);
+		for (const entry of output.messages) expect(Object.keys(entry).sort()).toEqual(["date", "flagged", "from", "id", "read"]);
+		expect(JSON.stringify(output)).not.toContain("preview");
 	});
 
 	it("merges the folders newest first and keeps at most limit messages", async () => {
