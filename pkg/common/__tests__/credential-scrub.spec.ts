@@ -35,6 +35,29 @@ describe("scrubber", () => {
 	});
 });
 
+describe("overlapping values", () => {
+	const values = ["fake-alpha-over", "over-bravo-tail"];
+	const text = "x fake-alpha-over-bravo-tail y";
+
+	test("redacts the union of overlapping values in one pass", () => {
+		expect(scrubText(text, values)).toBe("x [redacted] y");
+	});
+
+	test("redacts the union of overlapping values split at every chunk boundary", () => {
+		for (let cut = 1; cut < text.length; cut++) {
+			const scrubber = createScrubber(values);
+			const joined = scrubber.push(text.slice(0, cut)) + scrubber.push(text.slice(cut)) + scrubber.flush();
+			expect(joined).toBe("x [redacted] y");
+		}
+	});
+
+	test("redacts the union when each character arrives alone", () => {
+		const scrubber = createScrubber(values);
+		const joined = [...text].map((char) => scrubber.push(char)).join("") + scrubber.flush();
+		expect(joined).toBe("x [redacted] y");
+	});
+});
+
 describe("scrubber hold-back", () => {
 	test("emits a prompt at once when no tail could start a secret", () => {
 		const scrubber = createScrubber(["fake-marker-value-for-tests"]);
