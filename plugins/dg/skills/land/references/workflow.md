@@ -30,12 +30,13 @@ IN: the arguments. OUT: `pr`, `repo`, `base`, `headRef`, `sha`, `checkout`, `dif
    - `git -C <checkout> status --porcelain` prints anything → stop with `land: dirty: commit or stash the changes in <checkout> first.` `/dg:address` commits every change in the tree, so unrelated work would land in the PR.
 5. `git -C <checkout> fetch origin <baseRefName> <headRefName>`. Compare local `HEAD` with `headRefOid`:
    - equal → continue.
-   - local is ahead → `git push`, then continue.
+   - local is ahead → push it only after step 1.7 passes, so no push reaches a PR with auto-merge on.
    - local is behind or the two differ → stop with `land: head-mismatch: pull or push <headRefName> first.`
 6. `diffBase` is `-b <ref>` when given. Otherwise `git merge-base HEAD origin/<baseRefName>`.
 7. **Nothing that merges by itself.** Run `gh api graphql -f query='query($o:String!,$r:String!,$b:String!,$n:Int!){repository(owner:$o,name:$r){mergeQueue(branch:$b){id} pullRequest(number:$n){autoMergeRequest{enabledAt}}}}' -F o=<owner> -F r=<name> -F b=<baseRefName> -F n=<n>`. Do this before any fix, push or CI wait, because GitHub auto-merge could merge the PR while land works.
    - A non-null `autoMergeRequest` → stop with `land: auto-merge-on: turn off auto-merge on #<n> first.`
    - A non-null `mergeQueue` → stop with `land: merge-queue: <baseRefName> uses a merge queue; land does not enqueue. Merge #<n> from the PR page.`
+   - Both null and local was ahead in step 1.5 → `git push` now.
 8. `method`: read `gh api repos/{owner}/{repo} --jq '{squash:.allow_squash_merge,merge:.allow_merge_commit,rebase:.allow_rebase_merge}'`. A method flag the repo does not allow → stop with `land: method-not-allowed` and name the allowed ones. With no flag: `squash` when allowed, else the first allowed of `merge`, `rebase`.
 
 GATE: GitHub, open, not draft, not a fork, not stacked, no auto-merge, no merge queue, a clean checkout of the same repo on the PR head, local and remote heads equal.
@@ -76,11 +77,11 @@ IN: `pr`, `sha`, `ciRetries`, `waitTimeout`. OUT: `ci` (`pass`, `none`), `ciCycl
    | `124` | The wait timed out. | Stop with `land: ci-timeout`. Re-run `/dg:land` later. |
    | `1`, output says no checks are reported | CI did not start yet, or the repo has no CI. | Wait 60 seconds, watch once more. Still none → `ci = none`, step 4. |
    | `127`, `126` | The command did not run. | Stop with `land: ci-wait-failed` and show the error. Do not fix CI. |
-   | `1`, `8`, other | A check failed. | Step 3.3. |
+   | `1`, `8`, other | A check failed, or `gh` itself failed. | Confirm with `gh pr checks <pr> --repo <repo> --json name,bucket`. A row with `bucket` `fail` → step 3.3. No such row, or the command fails (network, auth, API) → stop with `land: ci-wait-failed` and show the output. Never send a tool error to `/dg:address`. |
 
 3. **Fix the failed checks.**
    - `ciCycles += 1`. When `ciRetries > 0` and `ciCycles > ciRetries` → stop with `land: ci-ceiling` (step 3.4).
-   - `dg-skills address gather-ci-failures <pr>` lists the failed jobs. Keep each job's name and the first lines of its `logExcerpt` as its signature.
+   - `dg-skills address gather-ci-failures <pr>` lists the failed jobs. A job's signature is its name plus the error lines of its `logExcerpt`, with the volatile parts removed: the leading timestamp of each line, run and job IDs, durations, and hex SHAs.
    - A job whose signature is the same as in the previous cycle failed twice with the same error after a fix → stop with `land: ci-repeat` (step 3.4). Do not loop blindly.
    - Load [../../address/SKILL.md](../../address/SKILL.md) and run `/dg:address --round <after + 1> -m "Fix the failing CI checks."`. It fixes, commits and pushes. `--round` turns off the Copilot re-request in its Phase 6, so a CI fix never asks Copilot.
    - Run step 2 again on the new changes, with the same `-r` and early-stop setting. Then go back to step 3.1 with the new `sha`.
