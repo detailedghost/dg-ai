@@ -78,7 +78,6 @@ import { createUnmaskGrants, MAX_FILLED_SECRETS, type UnmaskGrant, type UnmaskGr
 import {
 	allowedPage,
 	mailbox,
-	outlookWeb,
 	PW_EXT_BLOCKED_ERROR,
 	PW_EXT_MAILBOX_ERROR,
 	PW_EXT_PRIVATE_ERROR,
@@ -471,31 +470,10 @@ function shownUrl(tab: Pick<BrowserTab, "url">, unmasked = false, secrets: strin
 	return mask(tab.url as string, { unmasked, secrets });
 }
 
-const OUTLOOK_WORDS = new Set([
-	"mail",
-	"inbox",
-	"calendar",
-	"people",
-	"tasks",
-	"to do",
-	"files",
-	"search",
-	"settings",
-	"outlook",
-]);
-
-function outlookTitle(title: string): string {
-	const [first = "", ...rest] = title.split(" - ");
-	const count = /^\(\d+\) /.exec(first)?.[0] ?? "";
-	const word = first.slice(count.length);
-	const head = count + (OUTLOOK_WORDS.has(word.trim().toLowerCase()) ? word : "[redacted]");
-	return rest.length ? `${head} - [redacted]` : head;
-}
-
 function shownTitle(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string {
 	if (!allowedPage(tab.url) || mailbox(tab.url)) return "";
 	const title = tab.title ?? "";
-	return mask(!unmasked && outlookWeb(tab.url) && title ? outlookTitle(title) : title, { unmasked, secrets });
+	return mask(title, { unmasked, secrets });
 }
 
 function pageLines(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string[] {
