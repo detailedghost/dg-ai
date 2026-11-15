@@ -48,14 +48,16 @@ that the relay registered for this client, and the secret.
    `relay.secret.key`, `relay.secret.region`, and `envs.<name>.awsProfile`.
    Never put the secret value in config or a chat. The daemon reads it into
    memory at start and never writes it to disk in plaintext.
-1. Optional: to start without an AWS SSO session each time, run
-   `dg-skills channel-review connect relay --env <env>` once. It fetches the
-   secret through AWS and stores it in the dg credential store as
-   `channel-review/relay/<env>`. dg-daemon must run. The
-   command also creates the `channel-review` grant the daemon reads through.
+1. Run `dg-skills channel-review connect relay --env <env>` once per
+   environment. It prints the AWS CLI command to fetch that env's secret and
+   prompts you to paste the result; it never runs the AWS CLI itself. It then
+   stores the pasted value in the dg credential store as
+   `channel-review/relay/<env>`. dg-daemon must run. The command also creates
+   the `channel-review` grant the daemon reads through.
    `CHANNEL_REVIEW_RELAY_SECRET_<ENV>` in the git-ignored `.env` still works as
-   a fallback. Keep `.env` at mode 600, and never commit it. To move an
-   existing value into the store, run `dg-skills channel-review migrate-env`.
+   a fallback when the store is unavailable. Keep `.env` at mode 600, and
+   never commit it. To move an existing value into the store, run
+   `dg-skills channel-review migrate-env`.
 
 ## 4. Local setup
 
@@ -82,7 +84,6 @@ that the relay registered for this client, and the secret.
 
 ## 5. Check and start
 
-1. **Human:** `aws sso login --profile <envs.<name>.awsProfile>`.
 1. Run `mise run remote:status`. It prints JSON. Require `secret` and
    `reactions` to be `ok`, an id for every chat, and the selected runner probe
    to be `ok`. Fix each error before you go on.
@@ -119,8 +120,8 @@ to upgrade dependencies on a schedule. Both stay off until enabled.
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `The relay rejected the secret` or `rejected the API code (HTTP 401)` | Wrong secret, `relay.secret.key`, `relay.appName`, or env. Check the secret and run `aws sso login --profile <profile>`. |
-| `AWS SSO session expired` | Run `aws sso login --profile <profile>`. |
+| `The relay rejected the secret` or `rejected the API code (HTTP 401)` | Wrong secret, `relay.secret.key`, `relay.appName`, or env. Fetch the secret again and run `dg-skills channel-review connect relay --env <env>` to paste a fresh value. |
+| `no relay secret stored for <env>` | Run `dg-skills channel-review connect relay --env <env>`. If the AWS CLI reports an expired SSO session while you fetch the value to paste, sign in to that profile with the AWS CLI first. |
 | `<bot> is not a member of this chat, or the chat id is wrong` | Add the bot to the chat, or fix the chat `id`. |
 | `Chat "<topic>" not found` | The relay's service mailbox is not in the chat. Add it, or set the chat `id`. |
 | `reaction id "<id>" is not in the Teams reaction catalog` | The configured id is not a Teams reaction. Use a catalog id or capture a custom one. |

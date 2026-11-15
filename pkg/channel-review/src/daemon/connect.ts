@@ -1,11 +1,8 @@
+import { DgCliError } from "@dg/common";
 import type { ChannelConfig } from "../config";
-import { localSecretName } from "../credentials";
+import { localSecretName, missingRelaySecretRemedy } from "../credentials";
 import type { Log } from "../engine";
-import {
-	createTeamsRelayProvider,
-	fetchRelaySecret,
-	RelayAuthError,
-} from "../providers/teams-relay";
+import { createTeamsRelayProvider, RelayAuthError } from "../providers/teams-relay";
 import type { Connection, DaemonSeams, ResolvedEnv } from "./shared";
 
 export function authRemedy(config: ChannelConfig, env: ResolvedEnv): string {
@@ -13,8 +10,12 @@ export function authRemedy(config: ChannelConfig, env: ResolvedEnv): string {
 	return [
 		"The relay rejected the secret.",
 		`Check that the AWS secret ${id} (key ${key}) holds the ${env.name} API code,`,
-		`and run: aws sso login --profile ${env.awsProfile}`,
+		`then run: dg-skills channel-review connect relay --env ${env.name}`,
 	].join(" ");
+}
+
+function missingSecretError(env: ResolvedEnv): DgCliError {
+	return new DgCliError(missingRelaySecretRemedy(env.name));
 }
 
 export async function connect({
@@ -30,18 +31,8 @@ export async function connect({
 	seams: DaemonSeams;
 	log?: Log;
 }): Promise<Connection> {
-	const fetchSecret =
-		seams.fetchSecret ?? ((params) => fetchRelaySecret(params));
-	const { region, id, key } = config.relay.secret;
-	const local = (seams.env ?? process.env)[localSecretName(env.name)]?.trim();
-	const secret =
-		local ||
-		(await fetchSecret({
-			profile: env.awsProfile,
-			region,
-			id,
-			key,
-		}));
+	const secret = (seams.env ?? process.env)[localSecretName(env.name)]?.trim();
+	if (!secret) throw missingSecretError(env);
 	const createProvider = seams.createProvider ?? createTeamsRelayProvider;
 	const provider = createProvider(config, env, {
 		fetch: globalThis.fetch,

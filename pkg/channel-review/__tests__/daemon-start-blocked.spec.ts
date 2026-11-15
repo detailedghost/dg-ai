@@ -31,7 +31,7 @@ posix("start while the legacy channel-review folder is unmoved", () => {
 
 		const attempt = start(
 			{},
-			{ platform: h.platform, system: h.system, io: h.io, which: () => "/usr/bin/aws", spawn, argv: ["/usr/bin/bun", import.meta.path] },
+			{ platform: h.platform, system: h.system, io: h.io, spawn, argv: ["/usr/bin/bun", import.meta.path] },
 		);
 
 		await expect(attempt).rejects.toBeInstanceOf(DgCliError);

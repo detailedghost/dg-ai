@@ -2,6 +2,7 @@ import { rmSync } from "node:fs";
 import { describeError, wait } from "@dg/common";
 import type { SystemSeams } from "@dg/common/node";
 import { type EnvName, loadConfig, resolveEnv } from "../config";
+import { createGrantCredentialSource, resolveSecrets } from "../credentials";
 import { channelReviewPaths } from "../paths";
 import { connect } from "./connect";
 import { isOurDaemon, readPidRecord } from "./pid";
@@ -36,11 +37,17 @@ async function recoverAfterKill(
 		const config = loadConfig(channelReviewPaths(env, system).configPath);
 		const resolved = resolveEnv(config, env);
 		const log = ioLog(io);
+		const secrets = await resolveSecrets({
+			envName: resolved.name,
+			env: seams.env ?? process.env,
+			source: seams.credentials ?? createGrantCredentialSource(system),
+		});
+		if (secrets.warning) log.warn(secrets.warning);
 		const { provider, chats } = await connect({
 			config,
 			env: resolved,
 			overrides: {},
-			seams,
+			seams: { ...seams, env: secrets.env },
 			log,
 		});
 		const { engine, state, process: processes } = buildEngine({

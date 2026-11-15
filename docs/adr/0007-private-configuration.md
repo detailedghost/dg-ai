@@ -42,5 +42,5 @@ flowchart LR
 - [plugins/dg/skills/channel-review/references/config.example.json](../../plugins/dg/skills/channel-review/references/config.example.json)
 - [.env.example](../../.env.example)
 - [.gitignore](../../.gitignore)
-- [pkg/channel-review/src/providers/teams-relay/secret.ts](../../pkg/channel-review/src/providers/teams-relay/secret.ts)
+- [pkg/channel-review/src/credentials.ts](../../pkg/channel-review/src/credentials.ts)
 - [pkg/channel-review/src/automation/start.ts](../../pkg/channel-review/src/automation/start.ts)

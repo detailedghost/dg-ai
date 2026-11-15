@@ -41,8 +41,11 @@ function localInstallWorld(): LocalInstallWorld {
 	return { directory, repo, home, output, destination: join(home, ".dg/data/dg-ai-extension-chrome") };
 }
 
-async function runLocalInstall(world: LocalInstallWorld, freshBuild: string) {
+async function runLocalInstall(world: LocalInstallWorld, freshBuild: string | null) {
 	const { home, repo, output } = world;
+	const build = freshBuild === null
+		? 'throw new Error("simulated build failure");'
+		: `writeFileSync(${JSON.stringify(join(output, "background.js"))}, ${JSON.stringify(freshBuild)});`;
 	const script = `
 import { mock } from "bun:test";
 import * as node from "@dg/common/node";
@@ -50,7 +53,7 @@ import { writeFileSync } from "node:fs";
 import { Command } from "commander";
 mock.module("@dg/common/node", () => ({ ...node, isWSL: () => false, run: (command, args) => {
   if (command !== "bun" || args.join(" ") !== "run build") throw new Error("unexpected command");
-  writeFileSync(${JSON.stringify(join(output, "background.js"))}, ${JSON.stringify(freshBuild)});
+  ${build}
   return "";
 } }));
 const { registerInstall } = await import(${JSON.stringify(new URL("../src/commands/install.ts", import.meta.url).pathname)});
@@ -80,6 +83,21 @@ test("install --local rebuilds stale output and replaces an installed extension 
 		expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
 		expect(stdout).toContain("staged at");
 		expect(readFileSync(join(world.destination, "background.js"), "utf8")).toBe("fresh local build");
+	} finally {
+		rmSync(world.directory, { recursive: true, force: true });
+	}
+});
+
+test("install --local leaves an existing cli-only marker in place when the local build fails", async () => {
+	const world = localInstallWorld();
+	try {
+		const marker = join(world.home, ".dg/config/cli-only");
+		mkdirSync(dirname(marker), { recursive: true });
+		writeFileSync(marker, "");
+		const { stdout, exitCode } = await runLocalInstall(world, null);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).not.toContain("staged at");
+		expect(existsSync(marker)).toBe(true);
 	} finally {
 		rmSync(world.directory, { recursive: true, force: true });
 	}

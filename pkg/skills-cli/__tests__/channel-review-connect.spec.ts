@@ -106,6 +106,7 @@ function createHarness(
 		grants?: CredentialGrantSummary[];
 		status?: number;
 		failSet?: boolean;
+		relayKey?: string;
 	} = {},
 ) {
 	const lines: string[] = [];
@@ -114,7 +115,6 @@ function createHarness(
 	const opened: string[] = [];
 	const prompts: string[] = [];
 	const requests: { url: string; init: RequestInit }[] = [];
-	const relayCalls: unknown[] = [];
 	let launches = 0;
 	let clientClosed = 0;
 	let setFailed = false;
@@ -157,13 +157,9 @@ function createHarness(
 				profile: "example-dev",
 				region: "us-east-1",
 				id: "relay/chat",
-				key: "KEY",
+				key: options.relayKey ?? "KEY",
 			},
 		}),
-		fetchRelaySecret: async (params) => {
-			relayCalls.push(params);
-			return RELAY_SECRET;
-		},
 		fetch: async (url, init) => {
 			requests.push({ url, init });
 			return new Response("{}", { status: options.status ?? 200 });
@@ -181,7 +177,6 @@ function createHarness(
 		opened,
 		prompts,
 		requests,
-		relayCalls,
 		launches: () => launches,
 		clientClosed: () => clientClosed,
 		run: (provider: ConnectProvider, flags: ConnectFlags = {}) =>
@@ -657,8 +652,15 @@ describe("channel-review connect sentry", () => {
 });
 
 describe("channel-review connect relay", () => {
-	test("fetches the secret once through AWS and prints only stored", async () => {
+	test("names a punctuated secret key as one literal jq key", async () => {
+		const h = createHarness({ pasted: RELAY_SECRET, relayKey: "relay.secret-key" });
+		await h.run("relay", {});
+		expect(h.prompts[0]?.split("\n")[1]).toEndWith("| jq -r --arg key relay.secret-key '.[$key]'");
+	});
+
+	test("prompts for the pasted secret, naming the AWS lookup, and prints only stored", async () => {
 		const h = createHarness({
+			pasted: RELAY_SECRET,
 			grants: [
 				{
 					prefix: "channel-review",
@@ -668,13 +670,11 @@ describe("channel-review connect relay", () => {
 			],
 		});
 		await h.run("relay", { env: "prod" });
-		expect(h.relayCalls).toEqual([
-			{
-				profile: "example-dev",
-				region: "us-east-1",
-				id: "relay/chat",
-				key: "KEY",
-			},
+		expect(h.prompts).toEqual([
+			[
+				"Fetch the prod relay secret yourself, then paste it below:",
+				"aws secretsmanager get-secret-value --secret-id relay/chat --region us-east-1 --profile example-dev --query SecretString --output text | jq -r --arg key KEY '.[$key]'",
+			].join("\n"),
 		]);
 		expect(h.sets).toEqual([
 			{
@@ -685,5 +685,13 @@ describe("channel-review connect relay", () => {
 		]);
 		expect(h.lines).toEqual(["stored channel-review/relay/prod"]);
 		expect(h.launches()).toBe(0);
+	});
+
+	test("rejects an empty paste and stores nothing", async () => {
+		const h = createHarness({});
+		await expect(h.run("relay", { env: "prod" })).rejects.toThrow(
+			"That is not a relay secret.",
+		);
+		expect(h.sets).toEqual([]);
 	});
 });

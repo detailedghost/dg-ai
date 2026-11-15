@@ -7,6 +7,7 @@ export * from "./daemon-id";
 export * from "./daemon-start";
 export * from "./dg-config";
 export * from "./dg-paths";
+export * from "./file-lock";
 export * from "./fs";
 export * from "./install-lock";
 export * from "./install-skills";

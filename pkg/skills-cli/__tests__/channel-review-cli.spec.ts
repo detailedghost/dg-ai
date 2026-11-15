@@ -179,7 +179,7 @@ describe("channel-review status", () => {
 		}
 	});
 
-	test("with config and no aws it reports env dev, running false, runner probes, and a preflight secret error", async () => {
+	test("with config and no stored secret it reports env dev, running false, runner probes, and a preflight secret error", async () => {
 		writeConfig();
 		const result = await run(["status"]);
 		expect(result.code).toBe(1);
@@ -190,7 +190,7 @@ describe("channel-review status", () => {
 			runners: { claude: "CR-201", codex: "CR-201", copilot: "CR-201", grok: "CR-201" },
 		});
 		expect(body.logPath).toBe(join(dgHome, "state", "channel-review", "daemon.dev.log"));
-		expect(body.preflight.secret.error).toContain("aws");
+		expect(body.preflight.secret.error).toContain("connect relay --env dev");
 	});
 
 	test("status --env prod names env prod and uses the prod paths", async () => {
@@ -301,11 +301,11 @@ describe("channel-review start and stop", () => {
 		expect(result.stderr).toContain("--force");
 	});
 
-	test("start without the aws CLI exits 1 naming aws", async () => {
+	test("start with no stored relay secret exits 1 naming connect relay", async () => {
 		writeConfig();
 		const result = await run(["start"]);
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain("aws");
+		expect(result.stderr).toContain("connect relay --env dev");
 	});
 
 	test("stop when nothing runs exits 0 with not running", async () => {

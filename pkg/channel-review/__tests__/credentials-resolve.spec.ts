@@ -124,14 +124,14 @@ describe("resolveSecrets", () => {
 		expect(resolved.secrets.sentry.source).toBe("env");
 	});
 
-	test("reports aws for the relay and missing for the sinks when neither store nor env has them", async () => {
+	test("reports missing for the relay and the sinks when neither store nor env has them", async () => {
 		const resolved = await resolveSecrets({
 			envName: "dev",
 			env: { DATADOG_API_KEY: "env-api" },
 			source: createFakeCredentialSource(),
 		});
 		expect(resolved.env.CHANNEL_REVIEW_RELAY_SECRET_DEV).toBeUndefined();
-		expect(resolved.secrets.relay.source).toBe("aws");
+		expect(resolved.secrets.relay.source).toBe("missing");
 		expect(resolved.secrets.datadog.source).toBe("missing");
 		expect(resolved.secrets.sentry.source).toBe("missing");
 	});
@@ -176,7 +176,7 @@ describe("resolveSecrets", () => {
 });
 
 describe("daemon credential wiring", () => {
-	test("serve connects with the stored relay secret and skips AWS", async () => {
+	test("serve connects with the stored relay secret", async () => {
 		const h = createDaemonHarness();
 		harnesses.push(h);
 		h.seams.credentials = createFakeCredentialSource({
@@ -191,7 +191,6 @@ describe("daemon credential wiring", () => {
 		controller.abort();
 		await done;
 		expect(h.providerSecrets).toEqual([STORE_RELAY]);
-		expect(h.fetchSecretCalls).toEqual([]);
 		expect(JSON.stringify(h.log.lines)).not.toContain(STORE_RELAY);
 	});
 

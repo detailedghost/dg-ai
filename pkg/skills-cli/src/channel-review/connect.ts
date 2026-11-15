@@ -4,7 +4,6 @@ import {
 	channelReviewPaths,
 	DATADOG_CREDENTIAL,
 	type EnvName,
-	fetchRelaySecret,
 	loadConfig,
 	relayCredentialName,
 	resolveEnv,
@@ -21,6 +20,7 @@ import {
 } from "@dg/common/node";
 import { promptHidden } from "../credentials/cli";
 import { guardedDest } from "../utils/layout-guard";
+import { shellValue } from "../worktree/shared";
 
 export const CONNECT_TOKEN_NAME = "channel-review-daemon";
 export const CONNECT_PROVIDERS = ["datadog", "sentry", "relay"] as const;
@@ -114,7 +114,7 @@ export type ConnectClient = Pick<
 	CredentialClient,
 	"set" | "listGrants" | "grant" | "close"
 >;
-type RelayParams = Parameters<typeof fetchRelaySecret>[0];
+type RelayParams = { profile: string; region: string; id: string; key: string };
 
 export type ConnectDeps = {
 	createClient(session?: string): ConnectClient;
@@ -122,7 +122,6 @@ export type ConnectDeps = {
 	openExternal(url: string): Promise<void>;
 	readSecret(prompt: string): Promise<string>;
 	relayTarget(env?: EnvName): { envName: EnvName; params: RelayParams };
-	fetchRelaySecret(params: RelayParams): Promise<string>;
 	fetch(url: string, init: RequestInit): Promise<Response>;
 	write(line: string): void;
 	now(): Date;
@@ -166,7 +165,6 @@ export const defaultConnectDeps: ConnectDeps = {
 			params: { profile: resolved.awsProfile, ...config.relay.secret },
 		};
 	},
-	fetchRelaySecret: (params) => fetchRelaySecret(params),
 	fetch: (url, init) => fetch(url, init),
 	write: (line) => console.log(line),
 	now: () => new Date(),
@@ -630,7 +628,14 @@ async function connectRelay(
 	deps: ConnectDeps,
 ): Promise<void> {
 	const { envName, params } = deps.relayTarget(flags.env);
-	const value = await deps.fetchRelaySecret(params);
+	const { profile, region, id, key } = params;
+	const pasted = await deps.readSecret(
+		[
+			`Fetch the ${envName} relay secret yourself, then paste it below:`,
+			`aws secretsmanager get-secret-value --secret-id ${shellValue(id)} --region ${shellValue(region)} --profile ${shellValue(profile)} --query SecretString --output text | jq -r --arg key ${shellValue(key)} '.[$key]'`,
+		].join("\n"),
+	);
+	const value = validate(pasted, /\S/, "relay secret");
 	await store(deps, flags, relayCredentialName(envName), value, {
 		provider: "relay",
 		createdBy: "connect",

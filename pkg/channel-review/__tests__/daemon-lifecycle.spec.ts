@@ -129,7 +129,6 @@ function startSeams(h: DaemonHarness, spawn: ReturnType<typeof fakeSpawn>["spawn
 		platform: h.platform,
 		system: h.system,
 		io: h.io,
-		which: () => "/usr/bin/aws",
 		spawn,
 		execPath: "/usr/bin/bun",
 		argv: ["/usr/bin/bun", import.meta.path],
@@ -237,14 +236,6 @@ describe("start", () => {
 		const { spawn, spawned } = fakeSpawn(h);
 		expect(await start({}, startSeams(h, spawn))).toBe(1);
 		expect(h.io.all()).toContain(h.paths.configPath);
-		expect(spawned).toHaveLength(0);
-	});
-
-	test("without the aws CLI it exits 1 naming aws and does not spawn", async () => {
-		const h = setup();
-		const { spawn, spawned } = fakeSpawn(h);
-		expect(await start({}, startSeams(h, spawn, { which: () => null }))).toBe(1);
-		expect(h.io.all()).toContain("aws");
 		expect(spawned).toHaveLength(0);
 	});
 
@@ -395,7 +386,6 @@ describe("start with a real detached child", () => {
 					},
 					system: h.system,
 					io: h.io,
-					which: () => "/usr/bin/aws",
 					runArgv: [process.execPath, script],
 					startTimeoutMs: 10_000,
 				},
