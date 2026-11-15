@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.11.0 (2026-11-15)
+
+### Features
+
+- feat(extension): run Web MCP tools on the person's own tabs ([#210](https://github.com/detailedghost/dg-ai/pull/210))
+
 ## v5.10.0 (2026-11-14)
 
 ### Features
