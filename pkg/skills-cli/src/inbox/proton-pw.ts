@@ -22,6 +22,11 @@ import {
 	protonProfilePaths,
 } from "@dg/inbox";
 import { exitAfterDrain } from "@dg/common/exit";
+import {
+	protonRequestLog,
+	type PwRunner,
+	pwCommandError,
+} from "./proton-request-log";
 
 export { PROTON_SIGN_IN_COMMAND, ProtonSignedOutError, protonProfilePaths };
 
@@ -33,9 +38,7 @@ const CONTEXT_DESTROYED =
 const EVAL_ATTEMPTS = 5;
 const EVAL_RETRY_MS = 300;
 
-export type PwRunner = (
-	argv: string[],
-) => Promise<{ code: number; out: string; err: string }>;
+export type { PwRunner };
 
 export type SignInDeps = {
 	openSession(spec: ProtonPwSessionSpec): Promise<ProtonPwSession>;
@@ -183,25 +186,6 @@ async function runPw(argv: string[]) {
 	return { code, out: out.trim(), err: err.trim() };
 }
 
-function headerValues(text: string, name: string): string[] {
-	return [...text.matchAll(new RegExp(`^\\s+${name}:\\s*(.+)$`, "gim"))].map(
-		(match) => match[1]?.trim() ?? "",
-	);
-}
-
-function headerValue(text: string, name: string): string | undefined {
-	return headerValues(text, name).at(-1);
-}
-
-function pwCommandError(
-	message: string,
-	result: { code: number; out: string; err: string },
-): Error {
-	return new Error(
-		`${message} code=${result.code} err=${result.err} out=${result.out}`,
-	);
-}
-
 export async function openProtonSession(
 	spec: ProtonPwSessionSpec,
 	run: PwRunner = runPw,
@@ -236,77 +220,12 @@ export async function openProtonSession(
 		}
 		throw pwCommandError("Proton page evaluation failed.", last);
 	};
+	const log = protonRequestLog(session, run);
 	return {
 		page: {
 			url: async () => String(await evaluate("location.href")),
-			clearObservedHeaders: async () => {
-				const cleared = await run([
-					session,
-					"--raw",
-					"network",
-					"--filter",
-					"/api/",
-					"--clear",
-				]);
-				if (cleared.code !== 0)
-					throw pwCommandError(
-						"Could not reset the Proton request log.",
-						cleared,
-					);
-				const reloaded = await run([session, "reload"]);
-				if (reloaded.code !== 0)
-					throw pwCommandError(
-						"Could not reset the Proton request log.",
-						reloaded,
-					);
-			},
-			observedHeaders: async () => {
-				const listing = await run([
-					session,
-					"--raw",
-					"network",
-					"--request-headers",
-					"--filter",
-					"/api/",
-				]);
-				if (listing.code !== 0)
-					throw pwCommandError(
-						"Could not read the Proton request headers.",
-						listing,
-					);
-				const uids = new Set(headerValues(listing.out, "x-pm-uid"));
-				if (uids.size > 1) {
-					const cleared = await run([
-						session,
-						"--raw",
-						"network",
-						"--filter",
-						"/api/",
-						"--clear",
-					]);
-					if (cleared.code !== 0)
-						throw pwCommandError(
-							"Could not reset the Proton request log.",
-							cleared,
-						);
-					const reloaded = await run([session, "reload"]);
-					if (reloaded.code !== 0)
-						throw pwCommandError(
-							"Could not reset the Proton request log.",
-							reloaded,
-						);
-					return undefined;
-				}
-				const uid = headerValue(listing.out, "x-pm-uid");
-				if (!uid) return undefined;
-				const appVersion = headerValue(listing.out, "x-pm-appversion");
-				const locale = headerValue(listing.out, "x-pm-locale");
-				return {
-					uid,
-					...(appVersion ? { appVersion } : {}),
-					...(locale ? { locale } : {}),
-				};
-			},
+			clearObservedHeaders: log.reset,
+			observedHeaders: log.sessionHeaders,
 			evaluate: (script, call) =>
 				evaluate(`async () => (${script})(${JSON.stringify(call)})`),
 		},

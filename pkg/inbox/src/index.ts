@@ -13,7 +13,10 @@ export type {
 	InboxBrowserRequest,
 	InboxBrowserResponse,
 } from "@dg/common";
-export { isProtonMailOrigin } from "./protonmail/page-session";
+export {
+	isProtonMailOrigin,
+	type ProtonSessionHeaders,
+} from "./protonmail/page-session";
 export { ExtensionProtonMailClient } from "./protonmail/extension-client";
 export {
 	createPwBrowserRequest,

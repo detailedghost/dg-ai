@@ -24,6 +24,7 @@ import {
 	writeSignedInMarker,
 } from "../src/inbox/proton-pw";
 import { inboxCliHarness } from "./inbox-cli-harness";
+import { ProtonRefreshPendingError } from "../src/inbox/proton-request-log";
 
 const SIGN_IN_COMMAND = "dg-skills inbox proton sign-in";
 
@@ -129,6 +130,15 @@ function recordingRunner(replies: Record<string, string> = {}) {
 	return { run, calls };
 }
 
+function instantTimers() {
+	return spyOn(globalThis, "setTimeout").mockImplementation(((
+		callback: () => void,
+	) => {
+		callback();
+		return 0;
+	}) as never);
+}
+
 const spec = (headless: boolean) => ({
 	name: "inbox-proton",
 	profileDir: "/data/dg/inbox/proton-profile",
@@ -206,11 +216,12 @@ describe("proton-pw openProtonSession", () => {
 
 	test("observedHeaders keeps only uid, app version and locale", async () => {
 		const listing = [
-			"GET https://mail.proton.me/api/core/v4/users",
-			"  x-pm-uid: fixture-uid",
-			"  x-pm-appversion: web-mail@1.2.3",
-			"  x-pm-locale: en_US",
-			"  cookie: AUTH-secret=hunter2",
+			"[GET] https://mail.proton.me/api/core/v4/users => [200] OK",
+			"  Request headers:",
+			"    x-pm-uid: fixture-uid",
+			"    x-pm-appversion: web-mail@1.2.3",
+			"    x-pm-locale: en_US",
+			"    cookie: AUTH-secret=hunter2",
 		].join("\n");
 		const { run } = recordingRunner({ network: listing });
 		const session = await openProtonSession(spec(true), run);
@@ -225,10 +236,12 @@ describe("proton-pw openProtonSession", () => {
 
 	test("observedHeaders refuses a log with two uids and clears it", async () => {
 		const listing = [
-			"GET https://mail.proton.me/api/core/v4/users",
-			"  x-pm-uid: uid-account-0",
-			"GET https://mail.proton.me/api/core/v4/users",
-			"  x-pm-uid: uid-account-1",
+			"[GET] https://mail.proton.me/api/core/v4/users => [200] OK",
+			"  Request headers:",
+			"    x-pm-uid: uid-account-0",
+			"[GET] https://mail.proton.me/api/core/v4/users => [200] OK",
+			"  Request headers:",
+			"    x-pm-uid: uid-account-1",
 		].join("\n");
 		const { run, calls } = recordingRunner({ network: listing });
 		const session = await openProtonSession(spec(true), run);
@@ -239,10 +252,12 @@ describe("proton-pw openProtonSession", () => {
 
 	test("observedHeaders does not reload when a two-uid log cannot be cleared", async () => {
 		const listing = [
-			"GET https://mail.proton.me/api/core/v4/users",
-			"  x-pm-uid: uid-account-0",
-			"GET https://mail.proton.me/api/core/v4/users",
-			"  x-pm-uid: uid-account-1",
+			"[GET] https://mail.proton.me/api/core/v4/users => [200] OK",
+			"  Request headers:",
+			"    x-pm-uid: uid-account-0",
+			"[GET] https://mail.proton.me/api/core/v4/users => [200] OK",
+			"  Request headers:",
+			"    x-pm-uid: uid-account-1",
 		].join("\n");
 		const calls: string[][] = [];
 		const run: PwRunner = async (argv) => {
@@ -262,10 +277,12 @@ describe("proton-pw openProtonSession", () => {
 
 	test("observedHeaders does not clear a log with one repeated uid", async () => {
 		const listing = [
-			"GET https://mail.proton.me/api/core/v4/users",
-			"  x-pm-uid: uid-account-0",
-			"GET https://mail.proton.me/api/mail/v4/messages",
-			"  x-pm-uid: uid-account-0",
+			"[GET] https://mail.proton.me/api/core/v4/users => [200] OK",
+			"  Request headers:",
+			"    x-pm-uid: uid-account-0",
+			"[GET] https://mail.proton.me/api/mail/v4/messages => [200] OK",
+			"  Request headers:",
+			"    x-pm-uid: uid-account-0",
 		].join("\n");
 		const { run, calls } = recordingRunner({ network: listing });
 		const session = await openProtonSession(spec(true), run);
@@ -276,12 +293,14 @@ describe("proton-pw openProtonSession", () => {
 
 	test("clearObservedHeaders empties the api request log, then reloads so the page makes fresh requests", async () => {
 		let log = [
-			"GET https://mail.proton.me/api/core/v4/users",
-			"  x-pm-uid: uid-account-0",
+			"[GET] https://mail.proton.me/api/core/v4/users => [200] OK",
+			"  Request headers:",
+			"    x-pm-uid: uid-account-0",
 		].join("\n");
 		const fresh = [
-			"GET https://mail.proton.me/api/core/v4/users",
-			"  x-pm-uid: uid-account-1",
+			"[GET] https://mail.proton.me/api/core/v4/users => [200] OK",
+			"  Request headers:",
+			"    x-pm-uid: uid-account-1",
 		].join("\n");
 		const calls: string[][] = [];
 		const run: PwRunner = async (argv) => {
@@ -327,6 +346,235 @@ describe("proton-pw openProtonSession", () => {
 		const { run } = recordingRunner({ network: "" });
 		const session = await openProtonSession(spec(true), run);
 		expect(await session.page.observedHeaders()).toBeUndefined();
+	});
+
+	const request = (status: string, uid: string, extra: string[] = []) => [
+		`[GET] https://mail.proton.me/api/core/v4/users${status}`,
+		"  Request headers:",
+		`    x-pm-uid: ${uid}`,
+		...extra,
+	];
+
+	test("observedHeaders ignores api requests rejected with 401 before the session refresh", async () => {
+		const listing = [
+			...request(" => [401] Unauthorized", "fixture-uid"),
+			...request(" => [403] Forbidden", "fixture-uid"),
+		].join("\n");
+		const { run, calls } = recordingRunner({ network: listing });
+		const session = await openProtonSession(spec(true), run);
+		expect(await session.page.observedHeaders()).toBeUndefined();
+		expect(calls.some((argv) => argv.includes("--clear"))).toBe(false);
+	});
+
+	test("observedHeaders accepts the session once a request after the refresh succeeds", async () => {
+		const listing = [
+			...request(" => [401] Unauthorized", "fixture-uid", [
+				"    x-pm-appversion: web-mail@0.0.1",
+			]),
+			"[POST] https://mail.proton.me/api/auth/refresh => [200] OK",
+			"  Request headers:",
+			"    x-pm-uid: fixture-uid",
+			"    x-pm-appversion: web-mail@1.2.3",
+			...request(" => [401] Unauthorized", "fixture-uid", [
+				"    x-pm-appversion: web-mail@0.0.2",
+			]),
+		].join("\n");
+		const { run } = recordingRunner({ network: listing });
+		const session = await openProtonSession(spec(true), run);
+		expect(await session.page.observedHeaders()).toEqual({
+			uid: "fixture-uid",
+			appVersion: "web-mail@1.2.3",
+		});
+	});
+
+	test("observedHeaders ignores pending and failed api requests", async () => {
+		const listing = [
+			...request("", "fixture-uid"),
+			...request(" => [FAILED] net::ERR_ABORTED", "fixture-uid"),
+		].join("\n");
+		const { run } = recordingRunner({ network: listing });
+		const session = await openProtonSession(spec(true), run);
+		expect(await session.page.observedHeaders()).toBeUndefined();
+	});
+
+	test("observedHeaders accepts a non-auth error response as an authenticated session", async () => {
+		const listing = request(" => [422] Unprocessable Entity", "fixture-uid");
+		const { run } = recordingRunner({ network: listing.join("\n") });
+		const session = await openProtonSession(spec(true), run);
+		expect((await session.page.observedHeaders())?.uid).toBe("fixture-uid");
+	});
+
+	test("observedHeaders keeps each accepted request's headers apart", async () => {
+		const listing = [
+			...request(" => [200] OK", "fixture-uid", [
+				"    x-pm-appversion: web-mail@1.2.3",
+			]),
+			...request(" => [200] OK", "fixture-uid"),
+		].join("\n");
+		const { run } = recordingRunner({ network: listing });
+		const session = await openProtonSession(spec(true), run);
+		expect(await session.page.observedHeaders()).toEqual({
+			uid: "fixture-uid",
+			appVersion: "web-mail@1.2.3",
+		});
+	});
+
+	test("observedHeaders lists only api request headers, and a two-uid log is cleared and reloaded", async () => {
+		const listing = [
+			...request(" => [200] OK", "uid-account-0"),
+			...request(" => [200] OK", "uid-account-1"),
+		].join("\n");
+		const { run, calls } = recordingRunner({ network: listing });
+		const session = await openProtonSession(spec(true), run);
+		calls.length = 0;
+		await session.page.observedHeaders();
+		expect(calls).toEqual([
+			[
+				"-s=inbox-proton",
+				"--raw",
+				"network",
+				"--request-headers",
+				"--filter",
+				"/api/",
+			],
+			["-s=inbox-proton", "--raw", "network", "--filter", "auth/refresh"],
+			["-s=inbox-proton", "--raw", "network", "--filter", "/api/", "--clear"],
+			["-s=inbox-proton", "reload"],
+		]);
+	});
+
+	test("clearObservedHeaders waits for the page's own token refresh to finish before it reloads", async () => {
+		const timers = instantTimers();
+		try {
+			const refresh = [
+				"[POST] https://mail.proton.me/api/auth/refresh",
+				"[POST] https://mail.proton.me/api/auth/refresh",
+				"[POST] https://mail.proton.me/api/auth/refresh => [200] OK",
+			];
+			const calls: string[][] = [];
+			const run: PwRunner = async (argv) => {
+				calls.push(argv);
+				const out = argv.includes("auth/refresh") ? refresh.shift()! : "";
+				return { code: 0, out, err: "" };
+			};
+			const session = await openProtonSession(spec(true), run);
+			calls.length = 0;
+			await session.page.clearObservedHeaders();
+			expect(calls.map((argv) => argv.at(-1))).toEqual([
+				"auth/refresh",
+				"auth/refresh",
+				"auth/refresh",
+				"--clear",
+				"reload",
+			]);
+			expect(timers).toHaveBeenCalledTimes(2);
+			expect(timers.mock.calls[0]?.[1]).toBe(250);
+		} finally {
+			timers.mockRestore();
+		}
+	});
+
+	test("clearObservedHeaders gives up without a reload when a refresh stays pending for 20 checks", async () => {
+		const timers = instantTimers();
+		try {
+			const calls: string[][] = [];
+			const run: PwRunner = async (argv) => {
+				calls.push(argv);
+				const out = argv.includes("auth/refresh")
+					? "[GET] https://mail.proton.me/api/core/v4/users => [200] OK\n[POST] https://mail.proton.me/api/auth/refresh"
+					: "";
+				return { code: 0, out, err: "" };
+			};
+			const session = await openProtonSession(spec(true), run);
+			calls.length = 0;
+			const error = await session.page.clearObservedHeaders().then(
+				() => undefined,
+				(caught: unknown) => caught,
+			);
+			expect(error).toBeInstanceOf(ProtonRefreshPendingError);
+			expect(error).not.toBeInstanceOf(ProtonSignedOutError);
+			expect((error as Error).message).toBe(
+				"Proton Mail is still refreshing its session. The profile may still be signed in. Retry in a moment.",
+			);
+			expect(calls).toHaveLength(20);
+			expect(calls.every((argv) => argv.includes("auth/refresh"))).toBe(true);
+			expect(timers).toHaveBeenCalledTimes(19);
+		} finally {
+			timers.mockRestore();
+		}
+	});
+
+	test("clearObservedHeaders treats a pending refresh with a query string as pending", async () => {
+		const timers = instantTimers();
+		try {
+			const refresh = [
+				"[POST] https://mail.proton.me/api/auth/refresh?Source=resume",
+				"[POST] https://mail.proton.me/api/auth/refresh?Source=resume => [200] OK",
+			];
+			const calls: string[][] = [];
+			const run: PwRunner = async (argv) => {
+				calls.push(argv);
+				const out = argv.includes("auth/refresh") ? refresh.shift()! : "";
+				return { code: 0, out, err: "" };
+			};
+			const session = await openProtonSession(spec(true), run);
+			calls.length = 0;
+			await session.page.clearObservedHeaders();
+			expect(calls.map((argv) => argv.at(-1))).toEqual([
+				"auth/refresh",
+				"auth/refresh",
+				"--clear",
+				"reload",
+			]);
+		} finally {
+			timers.mockRestore();
+		}
+	});
+
+	test("clearObservedHeaders does not reload when it cannot read the refresh request", async () => {
+		const calls: string[][] = [];
+		const run: PwRunner = async (argv) => {
+			calls.push(argv);
+			return argv.includes("auth/refresh")
+				? { code: 1, out: "", err: "network failed" }
+				: { code: 0, out: "", err: "" };
+		};
+		const session = await openProtonSession(spec(true), run);
+		await expect(session.page.clearObservedHeaders()).rejects.toThrow(
+			"Could not read the Proton request log. code=1 err=network failed",
+		);
+		expect(calls.some((argv) => argv.includes("reload"))).toBe(false);
+	});
+
+	test("observedHeaders rejects when a two-uid log cannot be reloaded", async () => {
+		const listing = [
+			...request(" => [200] OK", "uid-account-0"),
+			...request(" => [200] OK", "uid-account-1"),
+		].join("\n");
+		const run: PwRunner = async (argv) => {
+			if (argv.includes("reload"))
+				return { code: 1, out: "", err: "reload failed" };
+			return {
+				code: 0,
+				out: argv.includes("--clear") ? "" : listing,
+				err: "",
+			};
+		};
+		const session = await openProtonSession(spec(true), run);
+		await expect(session.page.observedHeaders()).rejects.toThrow(
+			"Could not reset the Proton request log. code=1 err=reload failed",
+		);
+	});
+
+	test("observedHeaders still refuses two uids when one of them was rejected", async () => {
+		const listing = [
+			...request(" => [401] Unauthorized", "uid-account-0"),
+			...request(" => [200] OK", "uid-account-1"),
+		].join("\n");
+		const { run, calls } = recordingRunner({ network: listing });
+		const session = await openProtonSession(spec(true), run);
+		expect(await session.page.observedHeaders()).toBeUndefined();
+		expect(calls.filter((argv) => argv.includes("--clear"))).toHaveLength(1);
 	});
 
 
@@ -490,7 +738,38 @@ describe("proton-pw marker handling", () => {
 			}));
 			await expect(
 				runtime.pwBrowserRequest({ operation: "list-folders" }),
-			).rejects.toThrow(/did not make an API request/);
+			).rejects.toThrow(/did not finish loading a signed-in/);
+			expect(existsSync(protonProfilePaths(data.dir).markerPath)).toBe(true);
+		} finally {
+			timers.mockRestore();
+			data.cleanup();
+		}
+	});
+
+	test("a saved session whose first launch gets 401 keeps the sign-in marker", async () => {
+		const data = tempDataDir();
+		const timers = instantTimers();
+		try {
+			writeSignedInMarker(data.dir);
+			const headers = [undefined, undefined, { uid: "fixture-uid" }];
+			const answers: unknown[] = [
+				{ error: { code: "auth-expired", status: 401 } },
+				{ hasMore: false },
+			];
+			const runtime = protonPwRuntime(data.dir, async () => ({
+				page: {
+					url: () => "https://mail.proton.me/u/0/inbox",
+					clearObservedHeaders: async () => {},
+					observedHeaders: () =>
+						headers.length > 1 ? headers.shift() : headers[0],
+					evaluate: async () => answers.shift(),
+				},
+				close: async () => {},
+			}));
+			await expect(
+				runtime.pwBrowserRequest({ operation: "list-folders" }),
+			).resolves.toEqual({ hasMore: false });
+			await runtime.close();
 			expect(existsSync(protonProfilePaths(data.dir).markerPath)).toBe(true);
 		} finally {
 			timers.mockRestore();
@@ -500,6 +779,7 @@ describe("proton-pw marker handling", () => {
 
 	test("a page that left mail.proton.me clears the sign-in marker", async () => {
 		const data = tempDataDir();
+		const timers = instantTimers();
 		try {
 			writeSignedInMarker(data.dir);
 			const runtime = protonPwRuntime(data.dir, async () => ({
@@ -516,10 +796,12 @@ describe("proton-pw marker handling", () => {
 			).rejects.toBeInstanceOf(ProtonSignedOutError);
 			expect(existsSync(protonProfilePaths(data.dir).markerPath)).toBe(false);
 		} finally {
+			timers.mockRestore();
 			data.cleanup();
 		}
 	});
 });
+
 
 describe("proton-pw runProtonSignIn", () => {
 	function signInSeam(url: string, uid: string | undefined) {

@@ -126,6 +126,14 @@ description = "Mutation-test the Proton filter plan and safety checks"
 dir = "pkg/inbox"
 run = "bunx stryker run stryker.filter-policy.conf.mjs"
 
+[tasks."test:inbox:session:mutate"]
+description = "Mutation-test the Proton pw session wait, sign-out detection and request-log reading"
+run = """
+set -e
+(cd pkg/inbox && bunx stryker run stryker.proton-session.conf.mjs)
+(cd pkg/skills-cli && bunx stryker run stryker.proton-session.conf.mjs)
+"""
+
 [tasks."test:agent"]
 description = "Run the dg-agent unit tests"
 dir = "pkg/dg-agent"
