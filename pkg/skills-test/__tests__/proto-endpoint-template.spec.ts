@@ -10,6 +10,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sentinelPaths } from "../../skills-cli/src/prototype/paths";
+import { readDecision } from "../../skills-cli/src/prototype/sentinels";
 
 const ASSETS = join(
 	import.meta.dir,
@@ -106,6 +108,28 @@ describe("prototype endpoint template", () => {
 				"utf8",
 			),
 		).toBe("browser\n");
+	});
+
+	test("a more action writes the more sentinel, and status reports decision more", async () => {
+		const response = await post({
+			...confirm("demo-more"),
+			variant: "not-listed",
+			action: "more",
+			notes: "[was viewing A] bolder",
+		});
+		expect(response.status).toBe(200);
+		const dir = join(sandbox, "project", ".agents", "prototype", "demo-more");
+		expect(readFileSync(join(dir, ".more"), "utf8")).toBe("[was viewing A] bolder");
+		expect(readFileSync(join(dir, ".source"), "utf8")).toBe("browser\n");
+		expect(existsSync(join(dir, ".selection"))).toBe(false);
+		expect(readDecision(sentinelPaths(dir))).toEqual({ status: "more", decision: "more" });
+	});
+
+	test("a more action with no note still writes the more sentinel", async () => {
+		await post({ ...confirm("demo-more-empty"), action: "more" });
+		const dir = join(sandbox, "project", ".agents", "prototype", "demo-more-empty");
+		expect(readFileSync(join(dir, ".more"), "utf8")).toBe("\n");
+		expect(readDecision(sentinelPaths(dir)).decision).toBe("more");
 	});
 
 	test("selftest:true in the POST body writes to <name>-selftest, never the real name", async () => {
@@ -295,6 +319,16 @@ describe("framework endpoint templates", () => {
 			const source = readFileSync(join(ASSETS, file), "utf8");
 			expect(source).toContain('body.action === "status"');
 			expect(source).toContain(".reload");
+		},
+	);
+
+	test.each(["prototype-endpoint.next.ts", "prototype-endpoint.astro.ts"])(
+		"%s records a more action in the more sentinel before the variant check",
+		(file) => {
+			const source = readFileSync(join(ASSETS, file), "utf8");
+			expect(source).toContain('body.action === "reject" || body.action === "more"');
+			expect(source).toContain("join(protoDir, `.${body.action}`)");
+			expect(source.indexOf('body.action === "more"')).toBeLessThan(source.indexOf("unknown variant"));
 		},
 	);
 

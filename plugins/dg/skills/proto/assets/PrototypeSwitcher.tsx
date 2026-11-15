@@ -31,7 +31,7 @@ const WIDTHS: { key: Width; icon: string; label: string }[] = [
 ];
 const WIDTH_NAMES: Record<Width, string> = { all: "all", mobile: "mobile 390", tablet: "tablet 768", desktop: "desktop 1440" };
 const TEXT_ICONS: Record<string, string> = {
-  sun: "☀", moon: "☾", all: "▦", phone: "▯", tablet: "▭", monitor: "▬", left: "‹", right: "›", note: "✎", check: "✓", rework: "⟳",
+  sun: "☀", moon: "☾", all: "▦", phone: "▯", tablet: "▭", monitor: "▬", left: "‹", right: "›", note: "✎", check: "✓", rework: "⟳", plus: "+",
 };
 const CONFETTI_COLORS = ["#22c55e", "#4c8dff", "#a855f7", "#f59e0b", "#f43f5e", "#14b8a6"];
 
@@ -51,13 +51,14 @@ function Icon({ name }: { name: string }) {
 const SWITCHER_STYLE_ID = "ps-switcher-styles";
 const SWITCHER_CSS = `
 .ps-bar{--ps-surface:#ffffff;--ps-surface-2:#fafaf8;--ps-fg:#18181b;--ps-mut:#5f5f66;--ps-line:#cfcfc8;--ps-acc:#0f766e;--ps-acc-soft:#e6f4f2;
-  --ps-ok:#15803d;--ps-ok-soft:#e8f6ec;--ps-bad:#dc2626;--ps-bad-soft:#fdecec;--ps-note:#a16207;--ps-note-soft:#fef6c7;
+  --ps-ok:#15803d;--ps-ok-soft:#e8f6ec;--ps-bad:#dc2626;--ps-bad-soft:#fdecec;--ps-note:#a16207;--ps-note-soft:#fef6c7;--ps-more:#7c3aed;--ps-more-soft:#f3edff;
   position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:9999;max-width:calc(100vw - 32px);padding:6px;box-sizing:border-box;
   background:var(--ps-surface);color:var(--ps-fg);border:1px solid var(--ps-line);border-radius:10px;box-shadow:0 8px 24px rgb(15 23 42/.18);
   font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;user-select:none}
 html.dark .ps-bar,html.dark .ps-toast{--ps-surface:#1b1b1e;--ps-surface-2:#202024;--ps-fg:#f4f4f5;--ps-mut:#a1a1aa;--ps-line:#3f3f46;--ps-acc:#2dd4bf;--ps-acc-soft:#123430;
-  --ps-ok:#4ade80;--ps-ok-soft:#14301f;--ps-bad:#f87171;--ps-bad-soft:#3a1616;--ps-note:#facc15;--ps-note-soft:#36310f}
+  --ps-ok:#4ade80;--ps-ok-soft:#14301f;--ps-bad:#f87171;--ps-bad-soft:#3a1616;--ps-note:#facc15;--ps-note-soft:#36310f;--ps-more:#c4b5fd;--ps-more-soft:#2a2140}
 .ps-bar[data-verdict="changes"]{border-color:var(--ps-bad)}
+.ps-bar[data-verdict="more"]{border-color:var(--ps-more)}
 .ps-bar.is-working{border-color:transparent;background:linear-gradient(var(--ps-surface),var(--ps-surface)) padding-box,
   conic-gradient(from var(--ps-spin),var(--ps-acc),transparent 35%,transparent 65%,var(--ps-acc)) border-box;animation:ps-ring 1.6s linear infinite}
 @property --ps-spin{syntax:"<angle>";inherits:false;initial-value:0deg}
@@ -71,6 +72,7 @@ html.dark .ps-bar,html.dark .ps-toast{--ps-surface:#1b1b1e;--ps-surface-2:#20202
 .ps-approve{color:var(--ps-ok);border-color:var(--ps-ok);background:var(--ps-ok-soft)}
 .ps-approve.with-note{color:var(--ps-note);border-color:var(--ps-note);background:var(--ps-note-soft)}
 .ps-reject{color:var(--ps-bad);border-color:var(--ps-bad);background:var(--ps-bad-soft)}
+.ps-more{color:var(--ps-more);border-color:var(--ps-more);background:var(--ps-more-soft)}
 .ps-note[aria-pressed="true"]{background:var(--ps-acc-soft);color:var(--ps-acc);border-color:var(--ps-acc)}
 .ps-note.has-note::after{content:"";position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--ps-note);box-shadow:0 0 0 2px var(--ps-surface)}
 .ps-sep{width:1px;height:22px;background:var(--ps-line);margin:0 4px}
@@ -189,7 +191,7 @@ export default function PrototypeSwitcher({
   basePath = "",
   rejectReasons = DEFAULT_REJECT_REASONS,
 }: Props) {
-  const [outcome, setOutcome] = useState<"confirm" | "reject" | null>(null);
+  const [outcome, setOutcome] = useState<"confirm" | "reject" | "more" | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const [notes, setNotes] = useState("");
@@ -253,7 +255,7 @@ export default function PrototypeSwitcher({
 
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
-    const state = outcome === "reject" ? "processing" : outcome === "confirm" ? "done" : "waiting";
+    const state = outcome === "reject" || outcome === "more" ? "processing" : outcome === "confirm" ? "done" : "waiting";
     let link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
     if (!link) {
       link = document.createElement("link");
@@ -341,7 +343,7 @@ export default function PrototypeSwitcher({
   }, []);
 
   const submit = useCallback(
-    (action: "confirm" | "reject") => {
+    (action: "confirm" | "reject" | "more") => {
       setError(null);
       if (action === "reject" && !notes.trim()) {
         showNotes(true);
@@ -353,7 +355,8 @@ export default function PrototypeSwitcher({
         ? `${window.location.protocol}//${window.location.hostname}:${basePort}`
         : window.location.origin;
       const url = `${base}${basePath}/prototype-confirm`;
-      const payload = JSON.stringify({ name: prototypeName, variant: current, variants, notes, action, url: window.location.href });
+      const sent = action === "more" && notes.trim() ? `[was viewing ${current}] ${notes.trim()}` : notes;
+      const payload = JSON.stringify({ name: prototypeName, variant: current, variants, notes: sent, action, url: window.location.href });
 
       const closeAfter = action === "confirm" && notes.trim().length === 0;
 
@@ -372,6 +375,7 @@ export default function PrototypeSwitcher({
           }
           setOutcome(action);
           if (action === "reject") say("Sent back for rework.");
+          if (action === "more") say("Generating more versions. Keep this tab open.");
           if (closeAfter) window.setTimeout(closeTab, 2200);
         })
         .catch(err => {
@@ -434,7 +438,7 @@ export default function PrototypeSwitcher({
 
   const label = labels?.[current];
   const hasNotes = notes.trim().length > 0;
-  const working = submitting || outcome === "reject";
+  const working = submitting || outcome === "reject" || outcome === "more";
   const widthName = `Width: ${WIDTH_NAMES[width]}`;
   const approveLabel = hasNotes ? "Approve + note" : "Approve";
 
@@ -447,7 +451,7 @@ export default function PrototypeSwitcher({
       )}
       <div
         className={`ps-bar${working ? " is-working" : ""}`}
-        data-verdict={outcome === "reject" ? "changes" : undefined}
+        data-verdict={outcome === "reject" ? "changes" : outcome === "more" ? "more" : undefined}
         role="toolbar"
         aria-label="Prototype decision"
       >
@@ -459,7 +463,7 @@ export default function PrototypeSwitcher({
               aria-label={`Note for variant ${current}`}
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              placeholder="Note: optional for Approve, required for Reject. What should change?"
+              placeholder="Note: optional for Approve and More versions, required for Reject. What should change?"
               rows={3}
             />
             <div className="ps-chips">
@@ -563,6 +567,16 @@ export default function PrototypeSwitcher({
             aria-label="Reject"
           >
             <Icon name="rework" />
+          </button>
+          <button
+            type="button"
+            className="ps-ic ps-more"
+            onClick={() => submit("more")}
+            disabled={submitting}
+            title="More versions (note optional)"
+            aria-label="More versions"
+          >
+            <Icon name="plus" />
           </button>
           </div>
         </div>

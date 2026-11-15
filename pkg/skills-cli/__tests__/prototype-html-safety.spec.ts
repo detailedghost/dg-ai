@@ -13,6 +13,13 @@ describe("prototype decision bar", () => {
 		);
 	});
 
+	test("colors More versions with the verify board's violet in light and dark", () => {
+		expect(html).toContain("--pk-more:#7c3aed;--pk-more-soft:#f3edff;");
+		expect(html).toContain("--pk-more:#c4b5fd;--pk-more-soft:#2a2140;");
+		expect(html).toContain("#protobar .pk-more{color:var(--pk-more);border-color:var(--pk-more);background:var(--pk-more-soft);}");
+		expect(html).toContain('id="proto-more" class="ic pk-more" data-icon="plus"');
+	});
+
 	test("posts the more action through the decision endpoint", () => {
 		expect(html).toContain("window.prototypeDecide('more'");
 	});

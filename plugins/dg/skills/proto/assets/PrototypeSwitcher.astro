@@ -40,13 +40,14 @@ if (import.meta.env.PROD) {
   (function () {
     var css = `
 .ps-bar{--ps-surface:#ffffff;--ps-surface-2:#fafaf8;--ps-fg:#18181b;--ps-mut:#5f5f66;--ps-line:#cfcfc8;--ps-acc:#0f766e;--ps-acc-soft:#e6f4f2;
-  --ps-ok:#15803d;--ps-ok-soft:#e8f6ec;--ps-bad:#dc2626;--ps-bad-soft:#fdecec;--ps-note:#a16207;--ps-note-soft:#fef6c7;
+  --ps-ok:#15803d;--ps-ok-soft:#e8f6ec;--ps-bad:#dc2626;--ps-bad-soft:#fdecec;--ps-note:#a16207;--ps-note-soft:#fef6c7;--ps-more:#7c3aed;--ps-more-soft:#f3edff;
   position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:9999;max-width:calc(100vw - 32px);padding:6px;box-sizing:border-box;
   background:var(--ps-surface);color:var(--ps-fg);border:1px solid var(--ps-line);border-radius:10px;box-shadow:0 8px 24px rgb(15 23 42/.18);
   font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;user-select:none}
 html.dark .ps-bar,html.dark .ps-toast{--ps-surface:#1b1b1e;--ps-surface-2:#202024;--ps-fg:#f4f4f5;--ps-mut:#a1a1aa;--ps-line:#3f3f46;--ps-acc:#2dd4bf;--ps-acc-soft:#123430;
-  --ps-ok:#4ade80;--ps-ok-soft:#14301f;--ps-bad:#f87171;--ps-bad-soft:#3a1616;--ps-note:#facc15;--ps-note-soft:#36310f}
+  --ps-ok:#4ade80;--ps-ok-soft:#14301f;--ps-bad:#f87171;--ps-bad-soft:#3a1616;--ps-note:#facc15;--ps-note-soft:#36310f;--ps-more:#c4b5fd;--ps-more-soft:#2a2140}
 .ps-bar[data-verdict="changes"]{border-color:var(--ps-bad)}
+.ps-bar[data-verdict="more"]{border-color:var(--ps-more)}
 .ps-bar.is-working{border-color:transparent;background:linear-gradient(var(--ps-surface),var(--ps-surface)) padding-box,
   conic-gradient(from var(--ps-spin),var(--ps-acc),transparent 35%,transparent 65%,var(--ps-acc)) border-box;animation:ps-ring 1.6s linear infinite}
 @property --ps-spin{syntax:"<angle>";inherits:false;initial-value:0deg}
@@ -60,6 +61,7 @@ html.dark .ps-bar,html.dark .ps-toast{--ps-surface:#1b1b1e;--ps-surface-2:#20202
 .ps-approve{color:var(--ps-ok);border-color:var(--ps-ok);background:var(--ps-ok-soft)}
 .ps-approve.with-note{color:var(--ps-note);border-color:var(--ps-note);background:var(--ps-note-soft)}
 .ps-reject{color:var(--ps-bad);border-color:var(--ps-bad);background:var(--ps-bad-soft)}
+.ps-more{color:var(--ps-more);border-color:var(--ps-more);background:var(--ps-more-soft)}
 .ps-note[aria-pressed="true"]{background:var(--ps-acc-soft);color:var(--ps-acc);border-color:var(--ps-acc)}
 .ps-note.has-note::after{content:"";position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--ps-note);box-shadow:0 0 0 2px var(--ps-surface)}
 .ps-sep{width:1px;height:22px;background:var(--ps-line);margin:0 4px}
@@ -128,7 +130,7 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
       <div id="ps-bar" class="ps-bar" role="toolbar" aria-label="Prototype decision">
         <div id="ps-note-row" class="ps-note-row" hidden>
           <textarea id="ps-notes-area" rows="3" aria-label="Note"
-            placeholder="Note: optional for Approve, required for Reject. What should change?"></textarea>
+            placeholder="Note: optional for Approve and More versions, required for Reject. What should change?"></textarea>
           <div id="ps-chips" class="ps-chips"></div>
         </div>
         <div class="ps-row">
@@ -155,6 +157,7 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
           <button type="button" id="ps-notes-btn" class="ps-ic ps-note" data-icon="note" aria-pressed="false" aria-controls="ps-note-row" title="Note" aria-label="Note"></button>
           <button type="button" id="ps-approve-btn" class="ps-ic ps-approve" data-icon="check" title="Approve" aria-label="Approve"></button>
           <button type="button" id="ps-reject-btn" class="ps-ic ps-reject" data-icon="rework" title="Reject (note required)" aria-label="Reject"></button>
+          <button type="button" id="ps-more-btn" class="ps-ic ps-more" data-icon="plus" title="More versions (note optional)" aria-label="More versions"></button>
           </div>
         </div>
         <div id="ps-error" class="ps-error" hidden></div>
@@ -172,7 +175,7 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
       </div>
     `;
 
-    var TEXT_ICONS = { sun: "☀", moon: "☾", all: "▦", phone: "▯", tablet: "▭", monitor: "▬", left: "‹", right: "›", note: "✎", check: "✓", rework: "⟳" };
+    var TEXT_ICONS = { sun: "☀", moon: "☾", all: "▦", phone: "▯", tablet: "▭", monitor: "▬", left: "‹", right: "›", note: "✎", check: "✓", rework: "⟳", plus: "+" };
     function setIcon(node, name) {
       node.setAttribute("data-icon", name);
       if (window.dgIcons) node.innerHTML = window.dgIcons.svg(name);
@@ -195,6 +198,7 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
     var notesBtnEl   = document.getElementById("ps-notes-btn");
     var approveBtn   = document.getElementById("ps-approve-btn");
     var rejectBtn    = document.getElementById("ps-reject-btn");
+    var moreBtn      = document.getElementById("ps-more-btn");
     var modeBtn      = document.getElementById("ps-mode");
     var widthBtn     = document.getElementById("ps-width");
     var widthMenu    = document.getElementById("ps-width-menu");
@@ -408,7 +412,9 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
     function setDecisionBtns(disabled) {
       approveBtn.disabled = disabled;
       rejectBtn.disabled = disabled;
-      bar.classList.toggle("is-working", disabled || bar.getAttribute("data-verdict") === "changes");
+      moreBtn.disabled = disabled;
+      var verdict = bar.getAttribute("data-verdict");
+      bar.classList.toggle("is-working", disabled || verdict === "changes" || verdict === "more");
     }
 
     function showError(message) {
@@ -421,6 +427,11 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
         setFavicon("done");
         showConfirmOverlay();
         if (closeAfter) setTimeout(closeTab, 2200);
+      } else if (action === "more") {
+        setFavicon("processing");
+        bar.setAttribute("data-verdict", "more");
+        bar.classList.add("is-working");
+        say("Generating more versions. Keep this tab open. It refreshes when they are ready.");
       } else {
         setFavicon("processing");
         bar.setAttribute("data-verdict", "changes");
@@ -443,6 +454,7 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
       setDecisionBtns(true);
       var closeAfter = action === "confirm" && !hadNotes;
       var url = window.location.origin + basePath + "/prototype-confirm";
+      if (action === "more" && hadNotes) notes = "[was viewing " + activeCurrent + "] " + notes.trim();
       var payload = JSON.stringify({
         name: prototypeName,
         variant: activeCurrent,
@@ -488,6 +500,7 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
 
     approveBtn.addEventListener("click", function () { submit("confirm"); });
     rejectBtn.addEventListener("click", function () { submit("reject"); });
+    moreBtn.addEventListener("click", function () { submit("more"); });
     document.getElementById("ps-close").addEventListener("click", function () { closeTab(); });
 
     var confirmUrl = window.location.origin + basePath + "/prototype-confirm";

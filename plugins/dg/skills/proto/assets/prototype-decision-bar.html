@@ -1,6 +1,6 @@
 <div id="proto-decision-bar" role="toolbar" aria-label="Prototype decision">
   <div id="proto-decision-note-row" hidden>
-    <input id="proto-decision-notes" aria-label="Note" autocomplete="off" placeholder="Note: optional for Approve, required for Reject">
+    <input id="proto-decision-notes" aria-label="Note" autocomplete="off" placeholder="Note: optional for Approve and More versions, required for Reject">
   </div>
   <div class="proto-decision-row">
     <button type="button" id="proto-decision-mode" class="proto-decision-ic" data-icon="moon" title="Dark mode" aria-label="Dark mode"></button>
@@ -17,6 +17,7 @@
     <button type="button" id="proto-decision-note" class="proto-decision-ic" data-icon="note" aria-pressed="false" aria-controls="proto-decision-note-row" title="Note" aria-label="Note"></button>
     <button type="button" id="proto-decision-approve" class="proto-decision-ic" data-icon="check" title="Approve" aria-label="Approve"></button>
     <button type="button" id="proto-decision-reject" class="proto-decision-ic" data-icon="rework" title="Reject (note required)" aria-label="Reject"></button>
+    <button type="button" id="proto-decision-more" class="proto-decision-ic" data-icon="plus" title="More versions (note optional)" aria-label="More versions"></button>
   </div>
 </div>
 <div id="proto-decision-toast" role="status" aria-live="polite"></div>
@@ -26,12 +27,14 @@
     --pd-bg: #ffffff; --pd-fg: #18181b; --pd-border: #cfcfc8; --pd-field: #fafaf8; --pd-muted: #5f5f66;
     --pd-acc: #0f766e; --pd-acc-soft: #e6f4f2; --pd-ok: #15803d; --pd-ok-soft: #e8f6ec;
     --pd-bad: #dc2626; --pd-bad-soft: #fdecec; --pd-note: #a16207; --pd-note-soft: #fef6c7;
+    --pd-more: #7c3aed; --pd-more-soft: #f3edff;
     --pd-shadow: 0 8px 24px rgba(15, 23, 42, .18); --pd-scheme: light;
   }
   html.dark {
     --pd-bg: #1b1b1e; --pd-fg: #f4f4f5; --pd-border: #3f3f46; --pd-field: #202024; --pd-muted: #a1a1aa;
     --pd-acc: #2dd4bf; --pd-acc-soft: #123430; --pd-ok: #4ade80; --pd-ok-soft: #14301f;
     --pd-bad: #f87171; --pd-bad-soft: #3a1616; --pd-note: #facc15; --pd-note-soft: #36310f;
+    --pd-more: #c4b5fd; --pd-more-soft: #2a2140;
     --pd-shadow: 0 8px 24px rgba(0, 0, 0, .35); --pd-scheme: dark;
   }
   html[data-proto-width="mobile"] body { max-width: 390px; margin-inline: auto; }
@@ -49,6 +52,7 @@
   #proto-decision-bar[data-verdict="approved"] { border-color: var(--pd-ok); }
   #proto-decision-bar[data-verdict="approvedNote"] { border-color: var(--pd-note); }
   #proto-decision-bar[data-verdict="changes"] { border-color: var(--pd-bad); }
+  #proto-decision-bar[data-verdict="more"] { border-color: var(--pd-more); }
   #proto-decision-bar.is-working {
     border-color: transparent;
     background: linear-gradient(var(--pd-bg), var(--pd-bg)) padding-box,
@@ -67,6 +71,8 @@
   #proto-decision-approve { color: var(--pd-ok); border-color: var(--pd-ok); background: var(--pd-ok-soft); }
   #proto-decision-approve.with-note { color: var(--pd-note); border-color: var(--pd-note); background: var(--pd-note-soft); }
   #proto-decision-reject { color: var(--pd-bad); border-color: var(--pd-bad); background: var(--pd-bad-soft); }
+  #proto-decision-more { color: var(--pd-more); border-color: var(--pd-more); background: var(--pd-more-soft); }
+  .proto-decision-ic:disabled { opacity: .35; cursor: default; }
   #proto-decision-note[aria-pressed="true"] { background: var(--pd-acc-soft); color: var(--pd-acc); border-color: var(--pd-acc); }
   #proto-decision-note.has-note::after {
     content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%;
@@ -116,7 +122,7 @@
     setVariant: (v) => { currentVariant = String(v); },
   };
 
-  var TEXT_ICONS = { sun: "☀", moon: "☾", all: "▦", phone: "▯", tablet: "▭", monitor: "▬", note: "✎", check: "✓", rework: "⟳" };
+  var TEXT_ICONS = { sun: "☀", moon: "☾", all: "▦", phone: "▯", tablet: "▭", monitor: "▬", note: "✎", check: "✓", rework: "⟳", plus: "+" };
   function setIcon(node, name) {
     node.setAttribute("data-icon", name);
     if (window.dgIcons) node.innerHTML = window.dgIcons.svg(name);
@@ -253,7 +259,28 @@
       : key === "approvedNote" ? `Approved variant ${currentVariant}. Your note starts the next round.` : "Sent back for rework.");
   }
 
+  function askForMore() {
+    if (typeof window.prototypeDecide !== "function") {
+      say("No server here. Open the localhost URL prototype-serve printed, or tell the agent you want more versions.");
+      return;
+    }
+    var text = notes.value.trim();
+    var buttons = bar.querySelectorAll("button");
+    buttons.forEach((b) => { b.disabled = true; });
+    Promise.resolve(window.prototypeDecide("more", "", text ? `[was viewing ${currentVariant}] ${text}` : "")).then((ok) => {
+      if (!ok) {
+        buttons.forEach((b) => { b.disabled = false; });
+        say("Could not reach the prototype server. Try again.");
+        return;
+      }
+      bar.dataset.verdict = "more";
+      bar.classList.add("is-working");
+      say("Asked for more versions.");
+    });
+  }
+
   approveBtn.addEventListener("click", () => { decide("confirm"); });
   document.getElementById("proto-decision-reject").addEventListener("click", () => { decide("reject"); });
+  document.getElementById("proto-decision-more").addEventListener("click", askForMore);
 })();
 </script>
