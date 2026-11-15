@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.11.1 (2026-11-15)
+
+### Fixes
+
+- fix(inbox): stop headless Proton runs from falsely reporting signed out ([#213](https://github.com/detailedghost/dg-ai/pull/213))
+
 ## v5.11.0 (2026-11-15)
 
 ### Features
