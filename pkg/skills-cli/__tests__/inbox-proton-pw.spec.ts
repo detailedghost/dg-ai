@@ -427,9 +427,77 @@ describe("proton-pw openProtonSession", () => {
 				"--filter",
 				"/api/",
 			],
+			["-s=inbox-proton", "--raw", "network", "--filter", "auth/refresh"],
 			["-s=inbox-proton", "--raw", "network", "--filter", "/api/", "--clear"],
 			["-s=inbox-proton", "reload"],
 		]);
+	});
+
+	test("clearObservedHeaders waits for the page's own token refresh to finish before it reloads", async () => {
+		const timers = instantTimers();
+		try {
+			const refresh = [
+				"[POST] https://mail.proton.me/api/auth/refresh",
+				"[POST] https://mail.proton.me/api/auth/refresh",
+				"[POST] https://mail.proton.me/api/auth/refresh => [200] OK",
+			];
+			const calls: string[][] = [];
+			const run: PwRunner = async (argv) => {
+				calls.push(argv);
+				const out = argv.includes("auth/refresh") ? refresh.shift()! : "";
+				return { code: 0, out, err: "" };
+			};
+			const session = await openProtonSession(spec(true), run);
+			calls.length = 0;
+			await session.page.clearObservedHeaders();
+			expect(calls.map((argv) => argv.at(-1))).toEqual([
+				"auth/refresh",
+				"auth/refresh",
+				"auth/refresh",
+				"--clear",
+				"reload",
+			]);
+			expect(timers).toHaveBeenCalledTimes(2);
+			expect(timers.mock.calls[0]?.[1]).toBe(250);
+		} finally {
+			timers.mockRestore();
+		}
+	});
+
+	test("clearObservedHeaders reloads after 20 checks when a refresh never finishes", async () => {
+		const timers = instantTimers();
+		try {
+			const calls: string[][] = [];
+			const run: PwRunner = async (argv) => {
+				calls.push(argv);
+				const out = argv.includes("auth/refresh")
+					? "[GET] https://mail.proton.me/api/core/v4/users => [200] OK\n[POST] https://mail.proton.me/api/auth/refresh"
+					: "";
+				return { code: 0, out, err: "" };
+			};
+			const session = await openProtonSession(spec(true), run);
+			calls.length = 0;
+			await session.page.clearObservedHeaders();
+			expect(calls.filter((argv) => argv.includes("auth/refresh"))).toHaveLength(20);
+			expect(calls.at(-1)).toEqual(["-s=inbox-proton", "reload"]);
+		} finally {
+			timers.mockRestore();
+		}
+	});
+
+	test("clearObservedHeaders does not reload when it cannot read the refresh request", async () => {
+		const calls: string[][] = [];
+		const run: PwRunner = async (argv) => {
+			calls.push(argv);
+			return argv.includes("auth/refresh")
+				? { code: 1, out: "", err: "network failed" }
+				: { code: 0, out: "", err: "" };
+		};
+		const session = await openProtonSession(spec(true), run);
+		await expect(session.page.clearObservedHeaders()).rejects.toThrow(
+			"Could not read the Proton request log. code=1 err=network failed",
+		);
+		expect(calls.some((argv) => argv.includes("reload"))).toBe(false);
 	});
 
 	test("observedHeaders rejects when a two-uid log cannot be reloaded", async () => {

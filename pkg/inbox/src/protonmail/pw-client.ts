@@ -16,6 +16,7 @@ export const PROTON_MAIL_URL = "https://mail.proton.me";
 export const PROTON_SESSION_NAME = "inbox-proton";
 
 const PAGE_SCRIPT: string = buildProtonPageScript();
+/** 40 reads 500ms apart: about 20s for Proton to resume and refresh the session. */
 const HEADER_WAIT_ATTEMPTS = 40;
 const HEADER_WAIT_MS = 500;
 
@@ -193,7 +194,7 @@ export function createPwBrowserRequest(input: {
 			if (want !== undefined && account !== want) throw mismatch();
 		return account;
 	};
-	const signedOut = async (error: unknown) => {
+	const closeIfSignedOut = async (error: unknown) => {
 		if (error instanceof ProtonSignedOutError) await close();
 		return error;
 	};
@@ -220,7 +221,7 @@ export function createPwBrowserRequest(input: {
 						cached = { headers, account };
 					}
 				} catch (error) {
-					throw await signedOut(error);
+					throw await closeIfSignedOut(error);
 				}
 				const result = (await page.evaluate(PAGE_SCRIPT, {
 					request,
@@ -229,14 +230,14 @@ export function createPwBrowserRequest(input: {
 				})) as ProtonPageResult;
 				if (result && typeof result === "object" && "error" in result) {
 					const failure = result.error as { code?: unknown; status?: unknown };
-					const code = failure.code as string;
+					const code = String(failure.code);
 					if (!refreshed && REFRESHABLE_CODES.has(code)) {
 						refreshed = true;
 						cached = undefined;
 						continue;
 					}
 					if (SIGNED_OUT_CODES.has(code))
-						throw await signedOut(new ProtonSignedOutError());
+						throw await closeIfSignedOut(new ProtonSignedOutError());
 					throw new Error(
 						protonOperationDiagnostic(failure) ??
 							"Proton page operation failed.",
