@@ -711,7 +711,7 @@ describe("proton-pw marker handling", () => {
 			}));
 			await expect(
 				runtime.pwBrowserRequest({ operation: "list-folders" }),
-			).rejects.toThrow(/did not make an API request/);
+			).rejects.toThrow(/did not finish loading a signed-in/);
 			expect(existsSync(protonProfilePaths(data.dir).markerPath)).toBe(true);
 		} finally {
 			timers.mockRestore();

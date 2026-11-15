@@ -754,7 +754,7 @@ describe("pw-client createPwBrowserRequest", () => {
 		);
 		expect(error).toBeInstanceOf(ProtonHeadersTimeoutError);
 		expect((error as Error).message).toBe(
-			"Proton Mail did not make an API request in time. The profile may still be signed in. Retry in a moment.",
+			"Proton Mail did not finish loading a signed-in /u/N mail page with an authenticated API request in time. The profile may still be signed in. Retry in a moment.",
 		);
 		expect(nested.calls).toEqual([]);
 	});
@@ -842,7 +842,6 @@ describe("pw-client createPwBrowserRequest", () => {
 			transport.browserRequest({ operation: "list-folders", accountHint: "0" }),
 		);
 		expect(error).toBeInstanceOf(ProtonHeadersTimeoutError);
-		expect((error as Error).message).not.toContain("account-mismatch");
 		expect(sleeps).toHaveLength(40);
 		expect(calls).toEqual([]);
 	});

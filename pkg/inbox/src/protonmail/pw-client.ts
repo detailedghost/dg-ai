@@ -32,7 +32,7 @@ export class ProtonSignedOutError extends Error {
 export class ProtonHeadersTimeoutError extends Error {
 	constructor() {
 		super(
-			"Proton Mail did not make an API request in time. The profile may still be signed in. Retry in a moment.",
+			"Proton Mail did not finish loading a signed-in /u/N mail page with an authenticated API request in time. The profile may still be signed in. Retry in a moment.",
 		);
 	}
 }
