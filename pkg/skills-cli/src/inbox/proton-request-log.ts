@@ -78,7 +78,8 @@ export function protonRequestLog(
 			if (listing.code !== 0)
 				throw pwCommandError("Could not read the Proton request log.", listing);
 			if (!REFRESH_PENDING.test(listing.out)) return;
-			if (attempt + 1 >= REFRESH_WAIT_ATTEMPTS) throw new ProtonRefreshPendingError();
+			if (attempt + 1 >= REFRESH_WAIT_ATTEMPTS)
+				throw new ProtonRefreshPendingError();
 			await new Promise((resolve) => setTimeout(resolve, REFRESH_WAIT_MS));
 		}
 	};
