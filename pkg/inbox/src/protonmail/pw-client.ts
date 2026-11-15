@@ -191,6 +191,9 @@ export function createPwBrowserRequest(input: {
 		const url = new URL(await page.url());
 		if (!isProtonMailOrigin(url.origin)) return OFF_ORIGIN;
 		const account = accountOf(url);
+		// Proton's resume passes through mail paths with no /u/N, such as /login
+		// or /inbox, before it settles; only a different /u/N is a mismatch.
+		if (account === undefined) return undefined;
 		for (const want of expected)
 			if (want !== undefined && account !== want) throw mismatch();
 		return account;

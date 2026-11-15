@@ -819,6 +819,62 @@ describe("pw-client createPwBrowserRequest", () => {
 		}
 	});
 
+	test("a hinted request waits through mail paths with no /u/N while Proton resumes", async () => {
+		const { transport, calls } = scripted({
+			urls: [
+				"https://account.proton.me/authorize",
+				"https://mail.proton.me/login",
+				"https://mail.proton.me/inbox",
+				"https://mail.proton.me/u/0/inbox",
+			],
+		});
+		await expect(
+			transport.browserRequest({ operation: "list-folders", accountHint: "0" }),
+		).resolves.toEqual({ hasMore: false });
+		expect(calls).toEqual(["clear", "observe", "evaluate"]);
+	});
+
+	test("a hinted request whose page never reaches /u/N times out instead of reporting a mismatch", async () => {
+		const { transport, sleeps, calls } = scripted({
+			urls: ["https://mail.proton.me/inbox"],
+		});
+		const error = await settle(
+			transport.browserRequest({ operation: "list-folders", accountHint: "0" }),
+		);
+		expect(error).toBeInstanceOf(ProtonHeadersTimeoutError);
+		expect((error as Error).message).not.toContain("account-mismatch");
+		expect(sleeps).toHaveLength(40);
+		expect(calls).toEqual([]);
+	});
+
+	test("a hinted request that lands on another /u/N still rejects as a mismatch at once", async () => {
+		const { transport, sleeps, calls } = scripted({
+			urls: ["https://mail.proton.me/login", "https://mail.proton.me/u/1/inbox"],
+		});
+		await expect(
+			transport.browserRequest({ operation: "list-folders", accountHint: "0" }),
+		).rejects.toThrow(/account-mismatch/);
+		expect(sleeps).toEqual([500]);
+		expect(calls).toEqual([]);
+	});
+
+	test("a pinned session waits through a /u/-less path during the refresh retry", async () => {
+		const { transport, calls } = scripted({
+			urls: [
+				"https://mail.proton.me/u/0/inbox",
+				"https://mail.proton.me/u/0/inbox",
+				"https://mail.proton.me/u/0/inbox",
+				"https://mail.proton.me/login",
+				"https://mail.proton.me/u/0/inbox",
+			],
+			answers: [{ error: { code: "auth-expired", status: 401 } }],
+		});
+		await expect(
+			transport.browserRequest({ operation: "list-folders" }),
+		).resolves.toEqual({ hasMore: false });
+		expect(calls.filter((call) => call === "evaluate")).toHaveLength(2);
+	});
+
 	test("never imports playwright-core statically", () => {
 		const staticImport =
 			/^\s*(?:import|export)\s+(?!type\b)[^;]*?from\s+["']playwright-core["']|^\s*import\s+["']playwright-core["']/m;
