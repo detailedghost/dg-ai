@@ -2,8 +2,6 @@ import {
 	isDgToolName,
 	isPwExtCliResult,
 	PW_EXT_DEFAULT_TIMEOUT_MS,
-	PW_EXT_MAX_TAB_ID,
-	PW_EXT_NO_TAB_ERROR,
 	type PwExtCliRequest,
 	type PwExtCliResult,
 	type PwExtRequest,
@@ -20,16 +18,12 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { DG_AGENT_PACKAGE_VERSION } from "../version";
 
-export const MAX_TAB_LOOKUPS = 20;
 export const MAX_IN_FLIGHT = 2;
 export const MAX_RECONNECTS = 1;
 const REQUEST_TIMEOUT_MS = PW_EXT_DEFAULT_TIMEOUT_MS + 5_000;
 const NEEDS_NEWER_EXTENSION =
 	"dg-agent mcp needs a newer dg-ai-extension; update and reload it";
 const LOST_SESSION = "dg-agent mcp lost its session; restart it.";
-const TAB_LINE = /^- (?:\[selected\] )?(\d+): /;
-const TAB_DESCRIPTION =
-	"Tab id from pw --ext tabs. Needed when several tabs expose this tool.";
 
 export class McpLinkClosedError extends Error {
 	constructor(readonly submitted = true) {
@@ -72,93 +66,14 @@ export type DgMcpDeps = {
 	now(): number;
 };
 
-type Exposure = { tool: PwExtTool; tabs: number[] };
-
-function parseTabIds(text: string): number[] {
-	const ids = new Set<number>();
-	for (const line of text.split("\n")) {
-		const match = TAB_LINE.exec(line);
-		const id = match ? Number(match[1]) : Number.NaN;
-		if (Number.isSafeInteger(id) && id <= PW_EXT_MAX_TAB_ID) ids.add(id);
-	}
-	return [...ids];
-}
-
-function parseSchema(raw: string | undefined): { schema: Record<string, unknown>; properties: Record<string, unknown> } {
-	let schema: Record<string, unknown> = { type: "object" };
+function inputSchemaOf(raw: string | undefined): Tool["inputSchema"] {
+	let schema: Record<string, unknown> = {};
 	try {
 		const parsed: unknown = JSON.parse(raw ?? "");
 		if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed))
 			schema = parsed as Record<string, unknown>;
 	} catch {}
-	const existing = schema.properties;
-	const properties =
-		typeof existing === "object" && existing !== null && !Array.isArray(existing)
-			? (existing as Record<string, unknown>)
-			: {};
-	return { schema, properties };
-}
-
-const SCHEMA_DEPTH_MAX = 16;
-
-function localRef(root: unknown, ref: string): unknown {
-	if (!ref.startsWith("#")) return undefined;
-	let at = root;
-	try {
-		for (const part of ref.slice(1).split("/").slice(1)) {
-			const key = decodeURIComponent(part).replace(/~1/g, "/").replace(/~0/g, "~");
-			if (typeof at !== "object" || at === null || !Object.hasOwn(at, key)) return undefined;
-			at = (at as Record<string, unknown>)[key];
-		}
-	} catch {
-		return undefined;
-	}
-	return at;
-}
-
-/** Property names a schema declares through local $ref, allOf, anyOf and oneOf, and whether the walk went too deep. */
-function declaredNames(schema: Record<string, unknown>): { names: Set<string>; tooDeep: boolean } {
-	const names = new Set<string>();
-	const seen = new Set<object>();
-	let tooDeep = false;
-	const walk = (node: unknown, depth: number): void => {
-		if (typeof node !== "object" || node === null || seen.has(node)) return;
-		if (depth > SCHEMA_DEPTH_MAX) {
-			tooDeep = true;
-			return;
-		}
-		seen.add(node);
-		const record = node as Record<string, unknown>;
-		const properties = record.properties;
-		if (typeof properties === "object" && properties !== null && !Array.isArray(properties))
-			for (const name of Object.keys(properties)) names.add(name);
-		if (typeof record.$ref === "string") walk(localRef(schema, record.$ref), depth + 1);
-		for (const key of ["allOf", "anyOf", "oneOf"]) {
-			const list = record[key];
-			if (Array.isArray(list)) for (const item of list) walk(item, depth + 1);
-		}
-	};
-	walk(schema, 0);
-	return { names, tooDeep };
-}
-
-/** The argument that picks the tab: the first of tab, dg_tab, dg_tab_2, … that the tool does not use. */
-function tabKey(raw: string | undefined): string {
-	const { names, tooDeep } = declaredNames(parseSchema(raw).schema);
-	const taken = (key: string) => names.has(key) || (tooDeep && (raw ?? "").includes(JSON.stringify(key)));
-	if (!taken("tab")) return "tab";
-	let key = "dg_tab";
-	for (let n = 2; taken(key); n++) key = `dg_tab_${n}`;
-	return key;
-}
-
-function withTabProperty(raw: string | undefined): Tool["inputSchema"] {
-	const { schema, properties } = parseSchema(raw);
-	return {
-		...schema,
-		type: "object",
-		properties: { ...properties, [tabKey(raw)]: { type: "integer", description: TAB_DESCRIPTION } } as Record<string, object>,
-	};
+	return { ...schema, type: "object" };
 }
 
 function failure(text: string) {
@@ -169,7 +84,7 @@ function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-/** The dg-agent MCP server: dg_ tools of the agent's tabs, called through the daemon relay. */
+/** The dg-agent MCP server: dg_ Web MCP tools of the person's own browser tabs, called through the daemon relay. */
 export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 	const server = new Server(
 		{ name: "dg-agent", version: DG_AGENT_PACKAGE_VERSION },
@@ -179,7 +94,6 @@ export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 	let closes = 0;
 	let lost = false;
 	let sequence = 0;
-	let listed: Map<string, Exposure> | undefined;
 	let slots = MAX_IN_FLIGHT;
 	const waiting: Array<() => void> = [];
 
@@ -279,79 +193,33 @@ export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 			} catch (error) {
 				if (!(error instanceof McpLinkClosedError)) throw error;
 				drop(pending, active);
-				if (request.verb === "call" && error.submitted)
+				if (request.verb === "webmcp-call" && error.submitted)
 					throw new CallInterruptedError(request.tool as string);
 			}
 		}
 	}
 
-	async function exposures(signal?: AbortSignal): Promise<Map<string, Exposure>> {
-		const listing = await send({ verb: "tabs" }, signal);
-		if (!listing.ok && listing.error === PW_EXT_NO_TAB_ERROR) return new Map();
-		if (!listing.ok)
-			throw new McpError(ErrorCode.InternalError, listing.error ?? "pw --ext tabs failed.");
-		const tabs = parseTabIds(listing.data?.text ?? "").slice(0, MAX_TAB_LOOKUPS);
-		const replies = await Promise.all(tabs.map(async (tabId) => ({
-			tabId,
-			reply: await send({ verb: "tools", tabId }, signal),
-		})));
-		const found = new Map<string, Exposure>();
-		let firstError: string | undefined;
-		let usable = 0;
-		for (const { tabId, reply } of replies) {
-			if (!reply.ok) {
-				firstError ??= reply.error ?? "pw --ext tools failed.";
-				continue;
-			}
-			let tools: PwExtTool[] | undefined;
-			try {
-				tools = validatePwExtResponse(reply.data).tools;
-			} catch (error) {
-				firstError ??= `Invalid reply from the extension: ${messageOf(error)}`;
-				continue;
-			}
-			if (!tools) throw new McpError(ErrorCode.InternalError, NEEDS_NEWER_EXTENSION);
-			usable += 1;
-			for (const tool of tools) {
-				if (!isDgToolName(tool.name)) continue;
-				const entry = found.get(tool.name);
-				if (entry) entry.tabs.push(tabId);
-				else found.set(tool.name, { tool, tabs: [tabId] });
-			}
+	async function tools(signal?: AbortSignal): Promise<PwExtTool[]> {
+		const reply = await send({ verb: "webmcp-tools" }, signal);
+		if (!reply.ok)
+			throw new McpError(ErrorCode.InternalError, reply.error ?? "Web MCP tools failed in the browser.");
+		let found: PwExtTool[] | undefined;
+		try {
+			found = validatePwExtResponse(reply.data).tools;
+		} catch (error) {
+			throw new McpError(ErrorCode.InternalError, `Invalid reply from the extension: ${messageOf(error)}`);
 		}
-		if (firstError !== undefined && usable === 0)
-			throw new McpError(ErrorCode.InternalError, firstError);
-		listed = found;
-		return found;
-	}
-
-	async function pickTab(
-		name: string,
-		key: string,
-		given: unknown,
-		signal?: AbortSignal,
-	): Promise<number> {
-		if (given !== undefined) {
-			if (typeof given !== "number" || !Number.isSafeInteger(given) || given < 0 || given > PW_EXT_MAX_TAB_ID)
-				throw new Error(`${key} must be a tab id from pw --ext tabs.`);
-			return given;
-		}
-		const tabs = (await exposures(signal)).get(name)?.tabs ?? [];
-		if (tabs.length === 0)
-			throw new Error(`No agent tab exposes ${name}. Open the site with pw --ext new <url>.`);
-		if (tabs.length > 1)
-			throw new Error(`Several tabs expose ${name}: ${tabs.join(", ")}. Pass ${key}.`);
-		return tabs[0] as number;
+		if (!found) throw new McpError(ErrorCode.InternalError, NEEDS_NEWER_EXTENSION);
+		return found.filter((tool) => isDgToolName(tool.name));
 	}
 
 	server.setRequestHandler(ListToolsRequestSchema, async (_request, extra) => {
 		try {
-			const found = await exposures(extra.signal);
 			return {
-				tools: [...found.values()].map(({ tool }) => ({
+				tools: (await tools(extra.signal)).map((tool) => ({
 					name: tool.name,
 					description: tool.description,
-					inputSchema: withTabProperty(tool.inputSchema),
+					inputSchema: inputSchemaOf(tool.inputSchema),
 				})),
 			};
 		} catch (error) {
@@ -364,12 +232,10 @@ export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 		const { name } = params;
 		if (!isDgToolName(name)) return failure(`${name} is not a dg tool.`);
 		try {
-			const all = params.arguments ?? {};
-			const own = listed?.has(name) ? listed : await exposures(extra.signal);
-			const key = tabKey(own.get(name)?.tool.inputSchema);
-			const { [key]: tab, ...args } = all;
-			const tabId = await pickTab(name, key, tab, extra.signal);
-			const reply = await send({ verb: "call", tabId, tool: name, args }, extra.signal);
+			const reply = await send(
+				{ verb: "webmcp-call", tool: name, args: params.arguments ?? {} },
+				extra.signal,
+			);
 			if (!reply.ok) return failure(reply.error ?? `${name} failed in the browser.`);
 			const { text } = validatePwExtResponse(reply.data);
 			return { content: [{ type: "text" as const, text }] };

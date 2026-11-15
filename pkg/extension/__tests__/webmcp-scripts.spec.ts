@@ -9,6 +9,7 @@ import { createWebMcpSigner, type WebMcpSigner } from "@/lib/background/webmcp-s
 import {
 	createWebMcpScripts,
 	registerWebMcpScripts,
+	runningThirdPartyMatches,
 	USER_SCRIPTS_OFF,
 	userScriptsAvailable,
 } from "@/lib/background/webmcp-scripts";
@@ -1299,5 +1300,21 @@ describe("registerWebMcpScripts", () => {
 		await send(OPTIONS, { type: "dg-webmcp:reconcile" });
 
 		expect(reconciled.count).toBe(0);
+	});
+});
+
+describe("runningThirdPartyMatches", () => {
+	it("returns the matches of registered third-party scripts only", async () => {
+		const userScripts = {
+			register: async () => undefined,
+			unregister: async () => undefined,
+			getScripts: async () => [
+				{ id: "dg-webmcp-user-fixture", matches: ["http://localhost/*"] },
+				{ id: "dg-webmcp-outlook", matches: ["https://outlook.office.com/*"] },
+				{ id: "other", matches: ["https://example.test/*"] },
+			],
+		};
+		expect(await runningThirdPartyMatches(() => userScripts)).toEqual(["http://localhost/*"]);
+		expect(await runningThirdPartyMatches(() => null)).toEqual([]);
 	});
 });

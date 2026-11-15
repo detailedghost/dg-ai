@@ -10,6 +10,7 @@ import {
 	type PwExtCliResult,
 	type PwExtRequest,
 	type PwExtVerb,
+	type PW_EXT_WEBMCP_VERBS,
 	PW_EXT_READ_VERBS,
 	PW_EXT_MAX_UPLOAD_BYTES,
 	PW_EXT_NETWORK_MAX_LIMIT,
@@ -181,7 +182,9 @@ function stageFile(file: string, cwd: string): StagedFile {
 	};
 }
 
-const POSITIONALS: Record<PwExtVerb, readonly string[]> = {
+type CliVerb = Exclude<PwExtVerb, (typeof PW_EXT_WEBMCP_VERBS)[number]>;
+
+const POSITIONALS: Record<CliVerb, readonly string[]> = {
 	current: [],
 	snapshot: [],
 	screenshot: [],
@@ -394,7 +397,7 @@ function parseRequest(
 		throw new ExtUsageError(
 			"pw --ext fill takes a secret only from --value-env or --value-stdin, never as an argument.",
 		);
-	const names = secretFill ? ["target"] : POSITIONALS[verb as PwExtVerb];
+	const names = secretFill ? ["target"] : POSITIONALS[verb as CliVerb];
 	const tab =
 		parsed.values.tab === undefined
 			? undefined

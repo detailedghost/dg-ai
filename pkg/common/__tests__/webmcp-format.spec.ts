@@ -157,6 +157,11 @@ describe("matchesCoverOrigin", () => {
 		[["https://example.com/*", "https://outlook.live.com/x/*"], "https://outlook.live.com", true],
 		[["https://outlook.office.com/*"], "https://outlook.live.com", false],
 		[["http://localhost/*"], "https://outlook.live.com", false],
+		[["http://localhost/*"], "http://localhost:8000", true],
+		[["http://127.0.0.1/fixture/*"], "http://127.0.0.1:3000", true],
+		[["http://localhost/*"], "http://127.0.0.1", false],
+		[["http://localhost/*"], "https://localhost", false],
+		[["https://localhost/*"], "http://localhost", false],
 		[[], "https://outlook.live.com", false],
 	])("gives %p on %s the answer %p", (matches, origin, expected) => {
 		expect(matchesCoverOrigin(matches, origin)).toBe(expected);

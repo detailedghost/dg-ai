@@ -7,6 +7,7 @@ import {
 	CHAT_PROTOCOL_VERSION,
 	OVERWATCH_SESSION_ID,
 	PW_EXT_READ_VERBS,
+	PW_EXT_WEBMCP_VERBS,
 	PW_EXT_WRITE_VERBS,
 	type SessionBootstrap,
 	validateChatFrame,
@@ -385,7 +386,7 @@ test("the first frame sent on open is the connect capability handshake carrying 
 		token: bootstrap.token,
 		protocolVersion: CHAT_PROTOCOL_VERSION,
 		extensionVersion: "1.9.3",
-		pwExtVerbs: [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS],
+		pwExtVerbs: [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS, ...PW_EXT_WEBMCP_VERBS],
 	});
 });
 
@@ -1065,7 +1066,7 @@ test("the background lists the pw --ext verbs it supports in its connect handsha
 	const connect = socket.send.mock.calls
 		.map(([raw]) => JSON.parse(raw))
 		.find((frame) => frame.type === "connect");
-	expect(connect.pwExtVerbs).toEqual([...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS]);
+	expect(connect.pwExtVerbs).toEqual([...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS, ...PW_EXT_WEBMCP_VERBS]);
 });
 
 test("a socket error is relayed to the chat page as a connection change with its detail", async () => {

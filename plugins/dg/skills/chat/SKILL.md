@@ -159,7 +159,7 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
 - `manifest --commands <path> [--subagents <path>]` — publish the commands the
   human may run from the chat composer, and optionally the subagent names they
   may `@`-mention.
-- `mcp` — serve the `dg_` tools of this agent's tabs as an MCP server on stdio.
+- `mcp` — serve the `dg_` Web MCP tools of the person's open browser tabs as an MCP server on stdio; no pw --ext session or agent tab group.
   Each tool call goes to the tab that owns the tool.
 
 `-s, --session <id>` selects a session explicitly. Without it, the CLI uses

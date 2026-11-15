@@ -32,6 +32,8 @@ describe("validatePwExtRequest", () => {
 		{ verb: "fill", target: "input[name=q]", value: "hello" },
 		{ verb: "count", target: "input[type=file]" },
 		{ verb: "count", target: "e4", tabId: 3 },
+		{ verb: "webmcp-tools" },
+		{ verb: "webmcp-call", tool: "dg_outlook_list", args: {} },
 	])("accepts %p", (request) => {
 		expect(validatePwExtRequest(request)).toEqual(request);
 	});
@@ -58,6 +60,10 @@ describe("validatePwExtRequest", () => {
 		{ verb: "count" },
 		{ verb: "count", target: "" },
 		{ verb: "count", target: "#q", value: "x" },
+		{ verb: "webmcp-tools", tabId: 3 },
+		{ verb: "webmcp-call", tool: "dg_outlook_list", args: {}, tabId: 3 },
+		{ verb: "webmcp-call", tool: "site_compose", args: {} },
+		{ verb: "webmcp-call", tool: "dg_outlook_list" },
 	])("rejects %p", (request) => {
 		expect(() => validatePwExtRequest(request)).toThrow();
 	});

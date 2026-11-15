@@ -12,6 +12,7 @@ import {
 	emitRedacted,
 	noteSecret,
 	PW_EXT_READ_VERBS,
+	PW_EXT_WEBMCP_VERBS,
 	PW_EXT_WRITE_VERBS,
 	validateChatFrame,
 } from "@dg/common";
@@ -463,7 +464,7 @@ export function registerDaemonLink(
 		},
 		link: { onSessionAdopt: (bootstrap) => void adoptPushed(bootstrap) },
 		extensionVersion: api.runtime.getManifest?.().version,
-		pwExtVerbs: [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS],
+		pwExtVerbs: [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS, ...PW_EXT_WEBMCP_VERBS],
 		keepaliveIntervalMs,
 	});
 

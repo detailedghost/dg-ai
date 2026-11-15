@@ -8,14 +8,35 @@ revoke.
 
 ## How an agent reaches Web MCP
 
-- `dg-agent mcp` serves the `dg_` tools of the agent's tabs as an MCP server
+- `dg-agent mcp` serves the `dg_` tools of your own open tabs as an MCP server
   on stdio. Each tool call goes through the dg-daemon to the paired
-  dg-ai-extension.
+  dg-ai-extension. It needs no pw --ext session and no agent tab group. It
+  shows no "Agent is driving" banner and asks no pw --ext site question.
 - `dg-skills pw --ext tools` and `dg-skills pw --ext call <tool> <json-args>`
-  are the CLI bridge to the same tools.
-- Both run the tool in a tab of the agent's own tab group. The agent gets those
-  tabs through `pw --ext open` or `new`, or when you hand it a tab in the
-  extension popup.
+  still run a tool in a tab of the agent's own tab group, inside a pw --ext
+  session.
+
+### Which tabs `dg-agent mcp` uses
+
+- It looks only at tabs whose site an enabled built-in script or a running
+  approved third-party script covers, such as a signed-in Outlook tab when the
+  Outlook script is on. A third-party script counts only when the browser runs
+  it, which needs a valid approval. A `http://localhost` or `http://127.0.0.1`
+  script covers that host on any port. It reads the `dg_` tools those tabs expose. Site tools without
+  a `dg_` name are left out.
+- It never uses a tab in a private window, a discarded tab, or a browser page.
+- It never opens, focuses, moves, groups or reloads a tab, and it adds no
+  banner or dialog hook to the page.
+- When several tabs expose the tool, the call goes to the active tab of the
+  focused window, else to the tab you used most recently.
+- It looks at no more than 20 tabs per list or call, and lists no more than
+  100 tools.
+- Values the dg session filled or saved as secrets with pw --ext stay masked
+  in what the agent sees.
+- If no tab exposes the tool, the call fails and asks you to open the site in
+  a normal tab.
+- pw --ext snapshot, click and the other browser-control verbs still work only
+  in the agent's own tab group. They are refused on your other tabs.
 
 ## Approvals
 
@@ -29,6 +50,8 @@ class:
 | `each` | send, delete, reply, forward, event changes, unknown `dg_` tools, third-party tools, and any tool without a `dg_` name | Asks every time |
 
 - The approval popup names the tool, the site, the agent and the arguments.
+  For a `dg-agent mcp` call it also names the tab title. On a mail site the
+  title is masked, so no subject line shows.
   Deny, no answer in 60 seconds, or a closed window runs nothing.
 - A site is the scheme and registrable domain, the same key that the pw --ext
   allowlist uses, so one grant covers `outlook.live.com` and `mail.live.com`.
@@ -42,7 +65,12 @@ class:
   refuses `snapshot`, `click`, `fill` and the other page verbs. Outlook is not
   a mailbox tab.
 - `tools` asks nothing. It shows the tool list of any page in the agent's
-  group, also a page the tab reached by a link or a redirect.
+  group, also a page the tab reached by a link or a redirect. The
+  `dg-agent mcp` list also asks nothing. It shows only the `dg_` tool names and
+  descriptions, not your tab titles or addresses.
+- The MCP session is the dg session that `dg-agent mcp` is paired with. A
+  `session` grant holds for repeat calls in that dg session and ends when the
+  session ends.
 
 ## Remember for 30 days
 
@@ -125,9 +153,9 @@ grant shows as "mail (list and search)", and a mail-body area grant shows as
 the extension's own popup and Options pages can list or revoke grants.
 
 pw --ext Stop, on the banner or in the toolbar popup, ends browser control
-only. It does not revoke Web MCP grants. After Stop the session's tabs return
-to you, so its Web MCP calls have no tab to run in, but its grants stay until
-the session ends or you revoke them.
+and the Web MCP calls of that dg session, also `dg-agent mcp` calls on your own
+tabs. It does not revoke Web MCP grants. They stay until the session ends or
+you revoke them.
 
 See [ADR 0046](adr/0046-webmcp-approvals-apart-from-pw-ext.md),
 [ADR 0047](adr/0047-webmcp-area-approval-class.md) and

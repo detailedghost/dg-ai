@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { PW_EXT_MAX_TEXT_CHARS, type PwExtRequest } from "@dg/common";
+import { PW_EXT_MAX_TEXT_CHARS, PW_EXT_MAX_TOOLS, type PwExtRequest } from "@dg/common";
 import { PW_EXT_MAILBOX_ERROR } from "@/lib/background/tab-guards";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
 import type { ApprovalRequest } from "@/lib/background/approval";
@@ -77,6 +77,7 @@ type Options = {
 	enabledBuiltIns?: () => Promise<Set<string>>;
 	builtInOwned?: boolean;
 	thirdPartySites?: { active: string[]; stopped: { matches: string[]; stoppedAt: number }[] };
+	runningThirdParty?: string[];
 	documentStart?: number;
 	remember?: boolean;
 	pageDeadlineMs?: number;
@@ -181,6 +182,7 @@ function harness(options: Options = {}) {
 				? { enabledBuiltIns: async () => new Set(["outlook"]) }
 				: {}),
 		...(options.thirdPartySites ? { thirdPartySites: async () => options.thirdPartySites as never } : {}),
+		runningThirdParty: async () => options.runningThirdParty ?? [],
 		...(options.pageDeadlineMs ? { pageDeadlineMs: options.pageDeadlineMs } : {}),
 		lock: agentTabsLock,
 		control: options.sites === "ask" ? createSessionControl({ storage: fake.api.storage }) : allowAllSites,
@@ -3540,5 +3542,319 @@ describe("pw --ext storage, fetch and credential save", () => {
 		h.fake.fireUpdated(7, { status: "loading" });
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		expect(mainCalls(h)).toContainEqual({ kind: "install", seal: true });
+	});
+});
+
+describe("Web MCP on the person's own tabs", () => {
+	const MCP_SESSION = "mcp-session";
+	const OUTLOOK_TAB = 30;
+	const outlookTab = (overrides: Partial<FakeTab> = {}) =>
+		tabOf({
+			id: OUTLOOK_TAB,
+			windowId: WINDOW,
+			url: "https://outlook.office.com/mail/inbox",
+			title: "Inbox - Jane Doe - Outlook",
+			active: true,
+			lastAccessed: 100,
+			...overrides,
+		});
+	const pageTools = [
+		{ name: "dg_outlook_list", description: "List mail" },
+		{ name: "dg_outlook_move", description: "Move mail" },
+		{ name: "dg_outlook_delete", description: "Delete mail" },
+		{ name: "site_compose", description: "Site tool" },
+	];
+
+	function anyTabHarness(options: Options & { pages?: Record<number, typeof pageTools> } = {}) {
+		const h = harness({ record: false, builtInOwned: true, approval: "allow", tabs: [outlookTab()], ...options });
+		const ran: { tabId: number; action: { kind: string; tool?: string } }[] = [];
+		h.fake.state.script = (details) => {
+			const call = details as { args: unknown[]; world?: string; target: { tabId: number } };
+			const action = call.args[0] as { kind: string; tool?: string };
+			ran.push({ tabId: call.target.tabId, action });
+			if (call.world !== "MAIN") return undefined;
+			if (action.kind === "tools") return { api: "modelContext", tools: options.pages?.[call.target.tabId] ?? pageTools };
+			return { api: "modelContext", output: `ran ${action.tool} in ${call.target.tabId}` };
+		};
+		const mcp = (request: PwExtRequest, sessionId = MCP_SESSION) => h.runAs(sessionId, request);
+		return { ...h, ran, mcp };
+	}
+
+	function untouched(h: ReturnType<typeof anyTabHarness>) {
+		expect(h.fake.raw.tabs.create).not.toHaveBeenCalled();
+		expect(h.fake.raw.tabs.update).not.toHaveBeenCalled();
+		expect(h.fake.raw.tabs.group).not.toHaveBeenCalled();
+		expect(h.fake.raw.windows.update).not.toHaveBeenCalled();
+		expect(h.fake.raw.windows.create).not.toHaveBeenCalled();
+		expect(h.fake.raw.tabGroups.update).not.toHaveBeenCalled();
+	}
+
+	it("lists the dg tools of a normal Outlook tab with no agent group, banner or site question", async () => {
+		const h = anyTabHarness();
+		const answer = await h.mcp({ verb: "webmcp-tools" });
+		expect(answer.ok && answer.data.tools?.map((tool) => tool.name)).toEqual([
+			"dg_outlook_list",
+			"dg_outlook_move",
+			"dg_outlook_delete",
+		]);
+		expect(answer.ok && answer.data.text).not.toContain("outlook.office.com");
+		expect(answer.ok && answer.data.text).not.toContain("Jane Doe");
+		expect(h.approvalRequests).toEqual([]);
+		expect(h.executed().map((entry) => [entry.target.tabId, entry.world])).toEqual([[OUTLOOK_TAB, "MAIN"]]);
+		expect(h.fake.record(MCP_SESSION)).toBeUndefined();
+		untouched(h);
+	});
+
+	it("scans no tab when no enabled script covers it", async () => {
+		const h = anyTabHarness({ builtInOwned: false, enabledBuiltIns: async () => new Set() });
+		const answer = await h.mcp({ verb: "webmcp-tools" });
+		expect(answer.ok && answer.data.tools).toEqual([]);
+		expect(h.executed()).toEqual([]);
+	});
+
+	it("runs an area tool after one Allow per MCP session and returns its output", async () => {
+		const h = anyTabHarness();
+		const list = { verb: "webmcp-call", tool: "dg_outlook_list", args: { folder: "inbox" } } as const;
+		const answer = await h.mcp(list);
+		await h.mcp(list);
+		expect(answer.ok && answer.data.text).toContain(`ran dg_outlook_list in ${OUTLOOK_TAB}`);
+		expect(h.approvalRequests).toEqual([expect.objectContaining({ title: "Allow dg_outlook_list on office.com?" })]);
+		untouched(h);
+	});
+
+	it("asks once per MCP session for a session tool and names the site and the masked tab title", async () => {
+		const h = anyTabHarness();
+		const move = { verb: "webmcp-call", tool: "dg_outlook_move", args: { ids: ["a"], folder: "archive" } } as const;
+		await h.mcp(move);
+		await h.mcp(move);
+		expect(h.approvalRequests).toEqual([
+			expect.objectContaining({
+				title: "Allow dg_outlook_move on office.com?",
+				origin: "https://outlook.office.com",
+				lines: expect.arrayContaining(["Tab: Inbox - [redacted]"]),
+			}),
+		]);
+		expect(JSON.stringify(h.approvalRequests)).not.toContain("Jane Doe");
+		await h.mcp(move, "other-mcp-session");
+		expect(h.approvalRequests).toHaveLength(2);
+		expect(h.ran.filter((entry) => entry.action.kind === "call")).toHaveLength(3);
+		untouched(h);
+	});
+
+	it("asks every time for an each tool", async () => {
+		const h = anyTabHarness();
+		const remove = { verb: "webmcp-call", tool: "dg_outlook_delete", args: { ids: ["a"] } } as const;
+		await h.mcp(remove);
+		await h.mcp(remove);
+		expect(h.approvalRequests).toHaveLength(2);
+		expect(h.approvalRequests[0]).not.toHaveProperty("remember");
+	});
+
+	it("runs nothing when the person denies", async () => {
+		const h = anyTabHarness({ approval: "deny" });
+		expect(await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_delete", args: { ids: ["a"] } })).toEqual({
+			ok: false,
+			error: "The user denied dg_outlook_delete in the browser.",
+		});
+		expect(h.ran.filter((entry) => entry.action.kind === "call")).toEqual([]);
+	});
+
+	it("treats a tool as each when an approved third-party script covers the site", async () => {
+		const h = anyTabHarness({ thirdPartySites: { active: ["https://outlook.office.com/*"], stopped: [] } });
+		await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
+		await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
+		expect(h.approvalRequests).toHaveLength(2);
+	});
+
+	it("never uses a tab in a private window", async () => {
+		const h = anyTabHarness({ tabs: [outlookTab({ incognito: true })] });
+		const listed = await h.mcp({ verb: "webmcp-tools" });
+		expect(listed.ok && listed.data.tools).toEqual([]);
+		const called = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
+		expect(called.ok).toBe(false);
+		expect(h.executed()).toEqual([]);
+	});
+
+	it("prefers the active tab of the focused window, then the most recently used tab", async () => {
+		const older = outlookTab({ id: 31, active: false, lastAccessed: 50 });
+		const newer = outlookTab({ id: 32, active: false, lastAccessed: 500 });
+		const focused = anyTabHarness({ tabs: [older, outlookTab({ lastAccessed: 10 }), newer] });
+		const first = await focused.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
+		expect(first.ok && first.data.text).toContain(`in ${OUTLOOK_TAB}`);
+		const recent = anyTabHarness({ tabs: [older, newer] });
+		const second = await recent.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
+		expect(second.ok && second.data.text).toContain("in 32");
+		untouched(focused);
+		untouched(recent);
+	});
+
+	it("skips a covered tab that does not expose the tool", async () => {
+		const h = anyTabHarness({
+			tabs: [outlookTab(), outlookTab({ id: 31, active: false, lastAccessed: 5 })],
+			pages: { [OUTLOOK_TAB]: [], 31: pageTools },
+		});
+		const answer = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
+		expect(answer.ok && answer.data.text).toContain("in 31");
+	});
+
+	it("fails with an open-the-site message when no tab exposes the tool", async () => {
+		const h = anyTabHarness({ pages: { [OUTLOOK_TAB]: [] } });
+		expect(await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} })).toEqual({
+			ok: false,
+			error:
+				"No open browser tab exposes dg_outlook_list. Open the site in a normal browser tab with its Web MCP script turned on, then retry.",
+		});
+		untouched(h);
+	});
+
+	it("does not run when the tab navigates while the popup is open", async () => {
+		let h: ReturnType<typeof anyTabHarness> | undefined;
+		h = anyTabHarness({
+			onApproval: () => {
+				(h?.fake.tabs.get(OUTLOOK_TAB) as FakeTab).url = "https://outlook.office.com/mail/sent";
+			},
+		});
+		const answer = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_move", args: { ids: ["a"], folder: "x" } });
+		expect(answer).toEqual({
+			ok: false,
+			error: "The page changed while the approval was open; dg_outlook_move did not run. Retry.",
+		});
+		expect(h.ran.filter((entry) => entry.action.kind === "call")).toEqual([]);
+	});
+
+	it("still refuses pw --ext raw verbs on that tab", async () => {
+		const h = anyTabHarness({ record: true });
+		for (const request of [
+			{ verb: "snapshot", tabId: OUTLOOK_TAB },
+			{ verb: "click", tabId: OUTLOOK_TAB, target: "e1" },
+			{ verb: "call", tabId: OUTLOOK_TAB, tool: "dg_outlook_list", args: {} },
+		] as PwExtRequest[])
+			expect(await h.run(request)).toEqual({ ok: false, error: NOT_IN_GROUP(OUTLOOK_TAB) });
+		expect(h.executed()).toEqual([]);
+	});
+
+	it("refuses Web MCP for a session the person stopped, so its held secrets cannot leak", async () => {
+		const h = anyTabHarness({ record: true });
+		await h.handler.stop(SESSION);
+		const answer = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} }, SESSION);
+		expect(answer.ok).toBe(false);
+		expect(h.ran).toEqual([]);
+		const other = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
+		expect(other.ok).toBe(true);
+	});
+
+	it("keeps the joined list within a byte budget", async () => {
+		const big = (prefix: string) =>
+			Array.from({ length: 20 }, (_, i) => ({ name: `dg_outlook_${prefix}${i}`, description: "d".repeat(900), inputSchema: JSON.stringify({ type: "object", description: "s".repeat(3900) }) }));
+		const tabs = [0, 1, 2, 3, 4].map((n) => outlookTab({ id: 50 + n, active: false }));
+		const h = anyTabHarness({ tabs, pages: Object.fromEntries(tabs.map((tab, n) => [tab.id, big(`t${n}x`)])) as never });
+		const answer = await h.mcp({ verb: "webmcp-tools" });
+		expect(answer.ok).toBe(true);
+		const size = new TextEncoder().encode(JSON.stringify(answer.ok && answer.data)).length;
+		expect(size).toBeLessThan(700_000);
+		expect((answer.ok && answer.data.tools?.length) || 0).toBeGreaterThan(0);
+	});
+
+	it("does not wait on a stalled tab before a responsive one", async () => {
+		const h = anyTabHarness({
+			tabs: [outlookTab(), outlookTab({ id: 31, active: false, lastAccessed: 5 })],
+			pageDeadlineMs: 300,
+		});
+		let asked = 0;
+		h.fake.state.script = (details) => {
+			const call = details as { args: unknown[]; target: { tabId: number } };
+			const action = call.args[0] as { kind: string; tool?: string };
+			if (call.target.tabId === OUTLOOK_TAB) return new Promise(() => undefined);
+			if (action.kind === "tools") {
+				asked = Date.now();
+				return { api: "modelContext", tools: pageTools };
+			}
+			return { api: "modelContext", output: `ran in ${call.target.tabId}` };
+		};
+		const started = Date.now();
+		const answer = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
+		expect(answer.ok && answer.data.text).toContain("ran in 31");
+		expect(asked - started).toBeLessThan(150);
+	});
+
+	it("masks a secret the session holds in tool output", async () => {
+		const h = anyTabHarness();
+		h.fake.state.script = (details) => {
+			const call = details as { args: unknown[]; world?: string };
+			const action = call.args[0] as { kind: string };
+			if (action.kind === "tools") return { api: "modelContext", tools: pageTools };
+			return { api: "modelContext", output: "token orchid-maple-tree here" };
+		};
+		await createUnmaskGrants({ storage: h.fake.api.storage }).reserve(MCP_SESSION, "orchid-maple-tree");
+		const answer = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
+		expect(answer.ok && answer.data.text).not.toContain("orchid-maple-tree");
+	});
+
+	it("masks a whole held secret that has a token-shaped part", async () => {
+		const held = "sk-abcdefgh12345678 tail-passphrase";
+		const h = anyTabHarness();
+		h.fake.state.script = (details) => {
+			const action = (details as { args: unknown[] }).args[0] as { kind: string };
+			if (action.kind === "tools")
+				return { api: "modelContext", tools: [{ name: "dg_outlook_list", description: `List ${held}` }] };
+			return { api: "modelContext", output: `value ${held} end` };
+		};
+		await createUnmaskGrants({ storage: h.fake.api.storage }).reserve(MCP_SESSION, held);
+		const listed = await h.mcp({ verb: "webmcp-tools" });
+		const called = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
+		expect(JSON.stringify(listed)).not.toContain("tail-passphrase");
+		expect(JSON.stringify(called)).not.toContain("tail-passphrase");
+	});
+
+	it("does not run a call when the person clicks Stop while its approval is open", async () => {
+		let h: ReturnType<typeof anyTabHarness> | undefined;
+		h = anyTabHarness({
+			record: true,
+			onApproval: async () => {
+				await h?.handler.stop(SESSION);
+			},
+		});
+		const answer = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_delete", args: { ids: ["a"] } }, SESSION);
+		expect(answer.ok).toBe(false);
+		expect(h.ran.filter((entry) => entry.action.kind === "call")).toEqual([]);
+	});
+
+	it("keeps the list within the wire limit of tools", async () => {
+		const many = Array.from({ length: 70 }, (_, i) => ({ name: `dg_outlook_tool${i}`, description: "x" }));
+		const more = Array.from({ length: 70 }, (_, i) => ({ name: `dg_outlook_more${i}`, description: "x" }));
+		const h = anyTabHarness({
+			tabs: [outlookTab(), outlookTab({ id: 31, active: false })],
+			pages: { [OUTLOOK_TAB]: many, 31: more },
+		});
+		const answer = await h.mcp({ verb: "webmcp-tools" });
+		expect(answer.ok && answer.data.tools).toHaveLength(PW_EXT_MAX_TOOLS);
+	});
+
+	it("scans a site only when a running third-party script covers it, loopback included", async () => {
+		const fixture = tabOf({ id: 40, windowId: WINDOW, url: "http://localhost:8000/fixture/", title: "Fixture" });
+		const enabledOnly = anyTabHarness({
+			builtInOwned: false,
+			enabledBuiltIns: async () => new Set(),
+			thirdPartySites: { active: ["http://localhost/*"], stopped: [] },
+			tabs: [fixture],
+			pages: { 40: [{ name: "dg_fixture_read", description: "Read" }] },
+		});
+		const skipped = await enabledOnly.mcp({ verb: "webmcp-tools" });
+		expect(skipped.ok && skipped.data.tools).toEqual([]);
+		expect(enabledOnly.executed()).toEqual([]);
+		const running = anyTabHarness({
+			builtInOwned: false,
+			enabledBuiltIns: async () => new Set(),
+			runningThirdParty: ["http://localhost/*"],
+			tabs: [fixture],
+			pages: { 40: [{ name: "dg_fixture_read", description: "Read" }] },
+		});
+		const listed = await running.mcp({ verb: "webmcp-tools" });
+		expect(listed.ok && listed.data.tools?.map((tool) => tool.name)).toEqual(["dg_fixture_read"]);
+	});
+
+	it("needs a paired session", async () => {
+		const h = anyTabHarness();
+		expect(await h.runWithoutContext({ verb: "webmcp-tools" })).toEqual({ ok: false, error: NO_SESSION });
 	});
 });
