@@ -26,6 +26,7 @@ export interface CaptureRequest {
 	state: ShotState;
 	menuSelector: string;
 	fingerprintRoot?: string;
+	signIn?: string;
 }
 
 export interface CaptureShot {

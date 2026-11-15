@@ -19,6 +19,7 @@ export interface AcceptTarget {
 	name: string;
 	chain: string;
 	labels?: Record<string, string>;
+	signIn?: string;
 }
 
 export interface AcceptSeams {
@@ -39,8 +40,17 @@ interface Captured {
 
 const rootSelector = (name: string): string => `[data-verify-root="${name}"]`;
 
-const repair = (name: string): string =>
-	`run prototype fingerprint ${name} --url=<loopback-url>`;
+const repair = (name: string, signIn = false): string =>
+	`run prototype fingerprint ${name} --url=<loopback-url>${signIn ? " --sign-in=<loopback-url>" : ""}`;
+
+const redirected = (target: URL, finalUrl: string): string | undefined => {
+	try {
+		const landed = new URL(finalUrl);
+		return landed.pathname === target.pathname ? undefined : landed.pathname;
+	} catch {
+		return undefined;
+	}
+};
 
 const firstLine = (error: unknown): string =>
 	(error instanceof Error ? error.message : String(error)).split("\n")[0] ?? "";
@@ -69,22 +79,30 @@ async function readLayouts(
 	variant: string,
 	url: string | undefined,
 	seams: AcceptSeams,
+	signIn?: string,
 ): Promise<Captured> {
 	const none = (skipped: string): Captured => ({ fingerprint: null, skipped, shots: false });
-	if (!url) return none(`no page url recorded; ${repair(name)}`);
+	const fix = repair(name, signIn !== undefined);
+	if (!url) return none(`no page url recorded; ${fix}`);
 	let page: URL;
 	try {
 		page = new URL(url);
 	} catch {
-		return none(`page url is not a valid url; ${repair(name)}`);
+		return none(`page url is not a valid url; ${fix}`);
 	}
 	if (!isLoopbackUrl(page))
-		return none(`page url is not on loopback; ${repair(name)}`);
+		return none(`page url is not on loopback; ${fix}`);
+	if (signIn !== undefined && !URL.canParse(signIn))
+		return none(`sign-in url is not a valid url; ${fix}`);
+	if (signIn !== undefined && !isLoopbackUrl(new URL(signIn)))
+		return none(`sign-in url is not on loopback; ${fix}`);
+	if (signIn !== undefined && new URL(signIn).origin !== page.origin)
+		return none(`sign-in url is not on the page url's origin ${page.origin}; ${fix}`);
 	let capturer: Capturer;
 	try {
 		capturer = await seams.open();
 	} catch (error) {
-		return none(`browser unavailable (${firstLine(error)}); ${repair(name)}`);
+		return none(`browser unavailable (${firstLine(error)}); ${fix}`);
 	}
 	const root = rootSelector(name);
 	const readings: Reading[] = [];
@@ -109,11 +127,16 @@ async function readLayouts(
 					state: "default",
 					menuSelector: "[data-verify-menu]",
 					fingerprintRoot: root,
+					...(signIn ? { signIn } : {}),
 				});
 				writeFileSync(join(dir, SHOTS_DIR, `${viewport.id}-${theme}.png`), shot.png);
 				shots = true;
 				if (!shot.fingerprint || "error" in shot.fingerprint) {
-					skipped ??= shot.fingerprint?.error ?? "root: no layout reading returned";
+					const reason = shot.fingerprint?.error ?? "root: no layout reading returned";
+					const landed = redirected(target, shot.finalUrl);
+					skipped ??= landed
+						? `${reason}; the page redirected to ${landed}, so it may need a sign-in; ${repair(name, true)}`
+						: reason;
 					continue;
 				}
 				readings.push({
@@ -128,7 +151,7 @@ async function readLayouts(
 			}
 		}
 	} catch (error) {
-		skipped = `capture failed (${firstLine(error)}); ${repair(name)}`;
+		skipped = `capture failed (${firstLine(error)}); ${fix}`;
 	} finally {
 		await capturer.close().catch(() => undefined);
 	}
@@ -177,7 +200,9 @@ export async function recordAcceptance(
 			shots: false,
 		}),
 	);
-	const accepted = build(await readLayouts(target.dir, target.name, claim.variant, claim.url, seams));
+	const accepted = build(
+		await readLayouts(target.dir, target.name, claim.variant, claim.url, seams, target.signIn),
+	);
 	store(target.dir, accepted);
 	return accepted;
 }
@@ -188,11 +213,13 @@ export async function refingerprint(
 	name: string,
 	url: string,
 	overrides: Partial<AcceptSeams> = {},
+	signIn?: string,
 ): Promise<AcceptedRecord> {
 	const prior = loadRecord(dir);
 	if (!prior) throw new Error(`nothing accepted for "${name}"`);
 	if (!isLoopbackUrl(new URL(url))) throw new Error("refused non-loopback url");
-	const captured = await readLayouts(dir, name, prior.variant, url, { ...DEFAULT_SEAMS, ...overrides });
+	if (signIn !== undefined && !isLoopbackUrl(new URL(signIn))) throw new Error("refused non-loopback sign-in url");
+	const captured = await readLayouts(dir, name, prior.variant, url, { ...DEFAULT_SEAMS, ...overrides }, signIn);
 	const shotsDir = join(dir, SHOTS_DIR);
 	const keptShots = existsSync(shotsDir) && readdirSync(shotsDir).length > 0;
 	const updated: AcceptedRecord = {

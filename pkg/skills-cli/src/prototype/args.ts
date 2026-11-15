@@ -14,6 +14,7 @@ export interface Flags {
 	notes: string;
 	source: string;
 	url?: string;
+	signIn?: string;
 	rest: string[];
 }
 
@@ -60,6 +61,8 @@ export function parseFlags(argv: string[], allowed: readonly string[]): Flags {
 			flags.source = arg.slice("--source=".length).trim() || "cli";
 		else if (arg.startsWith("--url="))
 			flags.url = arg.slice("--url=".length).trim() || undefined;
+		else if (arg.startsWith("--sign-in="))
+			flags.signIn = arg.slice("--sign-in=".length).trim() || undefined;
 		else flags.rest.push(arg);
 	}
 	return flags;

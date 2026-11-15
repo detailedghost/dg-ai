@@ -114,14 +114,16 @@ export const USAGE = `Usage: prototype <command> [options]
                                                  Render, serve, open, and block for one decision
   serve <html-file> <name> [--light] [--port=PORT] [--idle=SEC] [--dir=PATH]
                                                  Serve a self-contained prototype page
-  wait <name> [--timeout=SEC] [--light] [--json]  Block until a variant is selected, rejected, or more versions are asked for
+  wait <name> [--timeout=SEC] [--light] [--json] [--sign-in=LOOPBACK_URL]
+                                                 Block until a variant is selected, rejected, or more versions are asked for.
+                                                 --sign-in opens that page first, in the same browser, before the layout read.
   confirm <name> <variant> [--light] [--notes=TEXT] [--selftest] [--source=TEXT]
                                                  Write the selection sentinel (and optional notes).
                                                  --selftest writes to <name>-selftest instead.
                                                  --source names who decided (default "cli").
   status <name> [--light] [--json] [--require-pending]
                                                  Print the selection, "rejected", "more", or "pending"
-  fingerprint <name> --url=LOOPBACK_URL [--light]
+  fingerprint <name> --url=LOOPBACK_URL [--light] [--sign-in=LOOPBACK_URL]
                                                  Read the accepted layout again from a running page
   stop <name>                                    Stop a ui session's server and drop its state
   path <name> [--light]                          Print the selection sentinel path
@@ -136,10 +138,10 @@ export const USAGE = `Usage: prototype <command> [options]
 `;
 
 const NAME_COMMANDS: Record<string, readonly string[]> = {
-	wait: ["--timeout", "--light", "--json"],
+	wait: ["--timeout", "--light", "--json", "--sign-in"],
 	confirm: ["--light", "--notes", "--selftest", "--source"],
 	status: ["--light", "--json", "--require-pending"],
-	fingerprint: ["--light", "--url"],
+	fingerprint: ["--light", "--url", "--sign-in"],
 	path: ["--light"],
 	"await-decision": ["--timeout", "--light", "--json"],
 	"decision-path": ["--light"],
@@ -180,7 +182,7 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 	if (command === "fingerprint") {
 		const dir = protoDir(name, { cwd: process.cwd(), light: flags.light });
 		if (!flags.url) throw new Error("fingerprint requires --url=<loopback-url>");
-		const record = await refingerprint(dir, name, flags.url);
+		const record = await refingerprint(dir, name, flags.url, {}, flags.signIn);
 		write(
 			`recorded ${join(dir, "accepted.json")} (${record.fingerprint ? `${record.fingerprint.readings.length} readings` : `skipped: ${record.skipped}`})\n`,
 		);
@@ -194,7 +196,12 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 			const result = await wait(
 				paths,
 				flags.timeoutSec,
-				acceptanceHook({ dir: paths.dir, name: targetName, chain: targetName }),
+				acceptanceHook({
+					dir: paths.dir,
+					name: targetName,
+					chain: targetName,
+					...(flags.signIn ? { signIn: flags.signIn } : {}),
+				}),
 			);
 			write(formatWait(result, flags.json));
 			return result.status === "timeout" ? 1 : 0;

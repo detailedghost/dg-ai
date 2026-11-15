@@ -1,4 +1,4 @@
-import { collectLayout, PROTOTYPE_CHROME_SELECTOR } from "../layout/fingerprint";
+import { collectLayout, PROTOTYPE_CHROME_SELECTOR, settleAnimations } from "../layout/fingerprint";
 import { resolveBrowserBinary, sandboxDisabled } from "../utils/cdp-harness";
 import {
 	menuIsOpen,
@@ -90,6 +90,19 @@ export async function openPlaywrightCapturer(options?: {
 					return route.fulfill({ response });
 				});
 				const page = await context.newPage();
+				if (request.signIn) {
+					const signInPath = new URL(request.signIn).pathname;
+					await page.goto(request.signIn, { waitUntil: "commit", timeout: 10_000 }).catch(() => {
+						throw new Error("verify sign-in page did not load");
+					});
+					await page
+						.waitForURL((url) => url.pathname !== signInPath, { waitUntil: "load", timeout: 10_000 })
+						.catch(() => {
+							throw new Error("verify sign-in page did not redirect");
+						});
+					if (!isLoopbackUrl(new URL(page.url()))) throw new Error("verify sign-in left the machine");
+					refused.length = 0;
+				}
 				const target = withCaptureQuery(request.url, request.theme, request.state);
 				const response = await page.goto(target, { waitUntil: "domcontentloaded", timeout: 10_000 }).catch((error) => {
 					if (refused.length > 0) throw new Error(`verify refused a request to ${refused[0]}`);
@@ -110,6 +123,7 @@ export async function openPlaywrightCapturer(options?: {
 				if (request.fingerprintRoot) {
 					await page.waitForSelector(request.fingerprintRoot, { state: "attached", timeout: 5_000 }).catch(() => undefined);
 					await page.evaluate(() => document.fonts.ready).catch(() => undefined);
+					await page.evaluate(settleAnimations, { root: request.fingerprintRoot, timeoutMs: 2_000 }).catch(() => undefined);
 				}
 				const fingerprint = request.fingerprintRoot
 					? await page.evaluate(collectLayout, {

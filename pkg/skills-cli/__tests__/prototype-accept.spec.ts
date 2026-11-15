@@ -273,6 +273,28 @@ describe("prototype acceptance record from hand-wired commands", () => {
 		expect(result.stderr).toContain("prototype: refused non-loopback url");
 	});
 
+	test("wait takes --sign-in and names it in the repair command", async () => {
+		await cli(["confirm", "gated", "A"]).done;
+		const result = await cli(["wait", "gated", "--timeout=1", "--sign-in=http://127.0.0.1:4321/prototype-signin"]).done;
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toBe("A\n");
+		expect(readRecord("gated").skipped).toContain("--sign-in=<loopback-url>");
+		expect(result.stderr).not.toContain("prototype-signin");
+	});
+
+	test("fingerprint refuses a non-loopback sign-in url", async () => {
+		await cli(["confirm", "gated2", "A"]).done;
+		await cli(["wait", "gated2", "--timeout=1"]).done;
+		const result = await cli([
+			"fingerprint",
+			"gated2",
+			"--url=http://127.0.0.1:4321/",
+			"--sign-in=https://login.example.com/",
+		]).done;
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("prototype: refused non-loopback sign-in url");
+	});
+
 	test("status --json reports the accepted record", async () => {
 		await cli(["confirm", "wired3", "A"]).done;
 		await cli(["wait", "wired3", "--timeout=1"]).done;
@@ -376,6 +398,76 @@ describe("recordAcceptance", () => {
 		);
 		expect(opened).toBe(false);
 		expect(record.skipped).toContain("no page url recorded");
+	});
+
+	test("opens the sign-in page before every shot and keeps it out of the record", async () => {
+		const seen: CaptureRequest[] = [];
+		const signIn = "http://127.0.0.1:4321/prototype-signin?returnUrl=%2F";
+		const record = await recordAcceptance({ ...target(), signIn }, claim, { open: fake(found, seen), now });
+		expect(record.skipped).toBeNull();
+		expect(seen).toHaveLength(6);
+		expect(seen.every((request) => request.signIn === signIn)).toBe(true);
+		expect(seen.every((request) => request.cookies.length === 0 && Object.keys(request.headers).length === 0)).toBe(true);
+		expect(readFileSync(join(root, "sandbox", "accepted.json"), "utf8")).not.toContain("prototype-signin");
+	});
+
+	test("sends no sign-in page when none is set", async () => {
+		const seen: CaptureRequest[] = [];
+		await recordAcceptance(target(), claim, { open: fake(found, seen), now });
+		expect(seen.every((request) => request.signIn === undefined)).toBe(true);
+	});
+
+	test("skips without opening a browser when the sign-in url is not on loopback", async () => {
+		let opened = false;
+		const record = await recordAcceptance(
+			{ ...target(), signIn: "https://login.example.com/" },
+			claim,
+			{ open: async () => { opened = true; throw new Error("no"); }, now },
+		);
+		expect(opened).toBe(false);
+		expect(record.fingerprint).toBeNull();
+		expect(record.skipped).toContain("sign-in url is not on loopback");
+		expect(record.skipped).toContain("--sign-in=<loopback-url>");
+		expect(record.skipped).not.toContain("login.example.com");
+	});
+
+	test("skips without opening a browser when the sign-in url is on another origin", async () => {
+		let opened = false;
+		const record = await recordAcceptance(
+			{ ...target(), signIn: "http://localhost:4321/prototype-signin" },
+			claim,
+			{ open: async () => { opened = true; throw new Error("no"); }, now },
+		);
+		expect(opened).toBe(false);
+		expect(record.skipped).toContain("sign-in url is not on the page url's origin http://127.0.0.1:4321");
+	});
+
+	test("names the sign-in fix when the page redirected away from the prototype", async () => {
+		const record = await recordAcceptance(
+			target(),
+			{ ...claim, url: "http://127.0.0.1:4321/sms" },
+			{
+				open: async () => ({
+					async shot() {
+						return {
+							png,
+							html: "",
+							finalUrl: "http://127.0.0.1:4321/Login/SignIn?ReturnUrl=%2Fsms",
+							menuFound: false,
+							scrolled: false,
+							engine: "playwright",
+							fingerprint: { error: 'root: found 0 visible [data-verify-root="demo"]' },
+						};
+					},
+					async close() {},
+				}),
+				now,
+			},
+		);
+		expect(record.fingerprint).toBeNull();
+		expect(record.skipped).toBe(
+			'root: found 0 visible [data-verify-root="demo"]; the page redirected to /Login/SignIn, so it may need a sign-in; run prototype fingerprint demo --url=<loopback-url> --sign-in=<loopback-url>',
+		);
 	});
 
 	test("skips a non-loopback url", async () => {
