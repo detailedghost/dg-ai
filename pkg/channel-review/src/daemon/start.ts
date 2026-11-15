@@ -46,7 +46,6 @@ type StartSeams = {
 	platform: PlatformSeam;
 	io: DaemonIo;
 	system?: SystemSeams;
-	which?: (name: string) => string | null | undefined;
 	spawn?: SpawnFn;
 	execPath?: string;
 	argv?: string[];
@@ -92,12 +91,6 @@ export async function start(
 		io.err(describeError(error));
 		return 1;
 	}
-	const which = seams.which ?? Bun.which;
-	if (!which("aws")) {
-		io.err("the aws CLI is not on PATH; install it and run aws sso login");
-		return 1;
-	}
-
 	const paths = channelReviewPaths(env.name, system);
 	assertNotBlocked(paths.dg, "channel-review");
 	assertNotBlocked(paths.dg, "daemon");

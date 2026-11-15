@@ -301,11 +301,11 @@ describe("channel-review start and stop", () => {
 		expect(result.stderr).toContain("--force");
 	});
 
-	test("start without the aws CLI exits 1 naming aws", async () => {
+	test("start with no stored relay secret exits 1 naming connect relay", async () => {
 		writeConfig();
 		const result = await run(["start"]);
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain("aws");
+		expect(result.stderr).toContain("connect relay --env dev");
 	});
 
 	test("stop when nothing runs exits 0 with not running", async () => {
