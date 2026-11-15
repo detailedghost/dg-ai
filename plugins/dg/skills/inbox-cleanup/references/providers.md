@@ -64,7 +64,12 @@ sign-in marker stays under `DG_HOME/inbox`. If the Windows profile is cleared,
 delete the marker or run sign-in again. The pw profile holds one Proton account:
 a profile `accountHint` that does not match the open `/u/N` path stops the run
 with `account-mismatch`. Other inbox commands run the profile headless and exit 4 with the
-sign-in command when it is signed out. `dg-skills doctor inbox` reads a marker file
+sign-in command when it is signed out. Each headless launch starts without
+Proton's short-lived AUTH cookie, so the page refreshes its session from the
+saved refresh cookie on its own. Inbox commands wait for an authenticated API
+response, ride out a pass through `account.proton.me` while the session resumes,
+and reload and retry once when an operation gets a 401. They exit 4 only when the
+page stays signed out, so a saved session needs no new human sign-in. `dg-skills doctor inbox` reads a marker file
 to report whether the profile is signed in and never starts a browser. The rest of
 this section describes the `--ext` path.
 

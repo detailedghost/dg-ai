@@ -37,9 +37,56 @@ function seam(options: { url?: string; answer?: unknown } = {}) {
 			opened.push(spec);
 			return session;
 		},
+		sleep: async () => {},
 	});
 	return { transport, evaluated, opened, closed: () => closed };
 }
+
+/** A fake page whose URL, observed headers and page answers follow scripts. */
+function scripted(options: {
+	urls?: string[];
+	headers?: ({ uid: string } | undefined)[];
+	answers?: unknown[];
+}) {
+	const urls = [...(options.urls ?? [])];
+	const headers = [...(options.headers ?? [])];
+	const answers = [...(options.answers ?? [])];
+	let url = MAIL_URL;
+	let header: { uid: string } | undefined = { uid: "fixture-session-uid" };
+	const calls: string[] = [];
+	const sleeps: number[] = [];
+	let closed = 0;
+	const transport = createPwBrowserRequest({
+		dataDir: "/data/dg",
+		openSession: async () => ({
+			page: {
+				url: () => {
+					if (urls.length > 0) url = urls.shift()!;
+					return url;
+				},
+				clearObservedHeaders: async () => void calls.push("clear"),
+				observedHeaders: () => {
+					calls.push("observe");
+					if (headers.length > 0) header = headers.shift();
+					return header;
+				},
+				evaluate: async () => {
+					calls.push("evaluate");
+					return answers.length > 0 ? answers.shift() : { hasMore: false };
+				},
+			},
+			close: async () => void (closed += 1),
+		}),
+		sleep: async (ms) => void sleeps.push(ms),
+	});
+	return { transport, calls, sleeps, closed: () => closed };
+}
+
+const settle = (promise: Promise<unknown>) =>
+	promise.then(
+		() => undefined,
+		(caught: unknown) => caught,
+	);
 
 describe("pw-client createPwBrowserRequest", () => {
 	test("sends each request through the injected page seam", async () => {
@@ -556,6 +603,217 @@ describe("pw-client createPwBrowserRequest", () => {
 		url = "https://mail.proton.me/u/0/inbox";
 		await transport.browserRequest({ operation: "list-filters" });
 		expect(order).toEqual(["clear", "observe", "clear", "observe"]);
+	});
+
+	test("a fresh launch whose first api calls get 401 waits for the refreshed session instead of reporting signed out", async () => {
+		const { transport, calls } = scripted({
+			headers: [undefined, undefined, { uid: "fixture-session-uid" }],
+		});
+		await expect(
+			transport.browserRequest({ operation: "list-folders" }),
+		).resolves.toEqual({ hasMore: false });
+		expect(calls).toEqual([
+			"clear",
+			"observe",
+			"observe",
+			"observe",
+			"evaluate",
+		]);
+	});
+
+	test("a resume that passes through account.proton.me and back is not signed out", async () => {
+		const account = "https://account.proton.me/authorize";
+		const { transport, calls, closed } = scripted({
+			urls: [account, account, MAIL_URL, account, MAIL_URL],
+		});
+		await expect(
+			transport.browserRequest({ operation: "session-status" }),
+		).resolves.toEqual({ hasMore: false });
+		expect(calls).toEqual(["clear", "observe", "evaluate"]);
+		expect(closed()).toBe(0);
+	});
+
+	test("a page that stays on account.proton.me for the whole wait is signed out after every attempt", async () => {
+		const { transport, sleeps, closed, calls } = scripted({
+			urls: ["https://account.proton.me/login"],
+		});
+		const error = await settle(
+			transport.browserRequest({ operation: "list-folders" }),
+		);
+		expect(error).toBeInstanceOf(ProtonSignedOutError);
+		expect(sleeps).toEqual(Array(40).fill(500));
+		expect(calls).toEqual([]);
+		expect(closed()).toBe(1);
+	});
+
+	test("a page that leaves the mail origin after headers for the whole wait is signed out", async () => {
+		const login = "https://account.proton.me/login";
+		const { transport, sleeps, closed } = scripted({
+			urls: [MAIL_URL, MAIL_URL, login],
+		});
+		const error = await settle(
+			transport.browserRequest({ operation: "list-folders" }),
+		);
+		expect(error).toBeInstanceOf(ProtonSignedOutError);
+		expect(sleeps).toHaveLength(40);
+		expect(closed()).toBe(1);
+	});
+
+	test("a page that leaves the mail origin while waiting for headers is signed out only when it stays away", async () => {
+		const login = "https://account.proton.me/login";
+		const { transport, sleeps, closed, calls } = scripted({
+			urls: [MAIL_URL, login],
+			headers: [undefined],
+		});
+		const error = await settle(
+			transport.browserRequest({ operation: "list-folders" }),
+		);
+		expect(error).toBeInstanceOf(ProtonSignedOutError);
+		expect(calls).toEqual(["clear"]);
+		expect(sleeps).toHaveLength(40);
+		expect(closed()).toBe(1);
+	});
+
+	test("a page that stays on mail without an authenticated response times out without a signed-out error", async () => {
+		const { transport, sleeps, closed, calls } = scripted({
+			headers: [undefined],
+		});
+		const error = await settle(
+			transport.browserRequest({ operation: "list-folders" }),
+		);
+		expect(error).toBeInstanceOf(ProtonHeadersTimeoutError);
+		expect(error).not.toBeInstanceOf(ProtonSignedOutError);
+		expect(sleeps).toEqual(Array(40).fill(500));
+		expect(calls.filter((call) => call === "observe")).toHaveLength(40);
+		expect(closed()).toBe(0);
+	});
+
+	test("an auth-expired answer reloads, waits for the refreshed session and retries once", async () => {
+		const { transport, calls, closed } = scripted({
+			answers: [{ error: { code: "auth-expired", status: 401 } }],
+		});
+		await expect(
+			transport.browserRequest({ operation: "list-folders" }),
+		).resolves.toEqual({ hasMore: false });
+		expect(calls).toEqual([
+			"clear",
+			"observe",
+			"evaluate",
+			"clear",
+			"observe",
+			"evaluate",
+		]);
+		expect(closed()).toBe(0);
+	});
+
+	test("a mail-tab-navigated answer reloads and retries once", async () => {
+		const { transport, calls } = scripted({
+			answers: [{ error: { code: "mail-tab-navigated" } }],
+		});
+		await transport.browserRequest({ operation: "list-folders" });
+		expect(calls.filter((call) => call === "evaluate")).toHaveLength(2);
+		expect(calls.filter((call) => call === "clear")).toHaveLength(2);
+	});
+
+	test("a second auth-expired answer is signed out and closes the session", async () => {
+		const expired = { error: { code: "auth-expired", status: 401 } };
+		const { transport, calls, closed } = scripted({
+			answers: [expired, expired, { hasMore: false }],
+		});
+		const error = await settle(
+			transport.browserRequest({ operation: "list-folders" }),
+		);
+		expect(error).toBeInstanceOf(ProtonSignedOutError);
+		expect(calls.filter((call) => call === "evaluate")).toHaveLength(2);
+		expect(closed()).toBe(1);
+	});
+
+	test("a second mail-tab-navigated answer is signed out", async () => {
+		const navigated = { error: { code: "mail-tab-navigated" } };
+		const { transport } = scripted({ answers: [navigated, navigated] });
+		await expect(
+			transport.browserRequest({ operation: "list-folders" }),
+		).rejects.toBeInstanceOf(ProtonSignedOutError);
+	});
+
+	test("reads a multi-digit /u/N account with or without a trailing path", async () => {
+		const { transport, calls } = scripted({
+			urls: ["https://mail.proton.me/u/12"],
+		});
+		await transport.browserRequest({ operation: "list-folders" });
+		expect(calls).toContain("evaluate");
+		const nested = scripted({
+			urls: ["https://mail.proton.me/inbox/u/1/"],
+			headers: [undefined],
+		});
+		const error = await settle(
+			nested.transport.browserRequest({ operation: "list-folders" }),
+		);
+		expect(error).toBeInstanceOf(ProtonHeadersTimeoutError);
+		expect((error as Error).message).toBe(
+			"Proton Mail did not make an API request in time. The profile may still be signed in. Retry in a moment.",
+		);
+		expect(nested.calls).toEqual([]);
+	});
+
+	test("a session-unobserved answer is signed out without a retry", async () => {
+		const { transport, calls, closed } = scripted({
+			answers: [{ error: { code: "session-unobserved" } }],
+		});
+		const error = await settle(
+			transport.browserRequest({ operation: "list-folders" }),
+		);
+		expect(error).toBeInstanceOf(ProtonSignedOutError);
+		expect(calls.filter((call) => call === "evaluate")).toHaveLength(1);
+		expect(closed()).toBe(1);
+	});
+
+	test("another page error is not retried and keeps the session open", async () => {
+		const { transport, calls, closed } = scripted({
+			answers: [{ error: { code: "http-failure", status: 500 } }],
+		});
+		await expect(
+			transport.browserRequest({ operation: "list-folders" }),
+		).rejects.toThrow(/http-failure/);
+		expect(calls.filter((call) => call === "evaluate")).toHaveLength(1);
+		expect(closed()).toBe(0);
+	});
+
+	test("a page error without a code uses the generic diagnostic", async () => {
+		const { transport } = scripted({ answers: [{ error: {} }] });
+		await expect(
+			transport.browserRequest({ operation: "list-folders" }),
+		).rejects.toThrow("Proton page operation failed.");
+	});
+
+	test("the default wait sleeps on real timers", async () => {
+		const timers = spyOn(globalThis, "setTimeout").mockImplementation(((
+			callback: () => void,
+		) => {
+			callback();
+			return 0;
+		}) as never);
+		try {
+			const transport = createPwBrowserRequest({
+				dataDir: "/data/dg",
+				openSession: async () => ({
+					page: {
+						url: () => "https://account.proton.me/login",
+						clearObservedHeaders: async () => {},
+						observedHeaders: () => undefined,
+						evaluate: async () => ({ hasMore: false }),
+					},
+					close: async () => {},
+				}),
+			});
+			await expect(
+				transport.browserRequest({ operation: "list-folders" }),
+			).rejects.toBeInstanceOf(ProtonSignedOutError);
+			expect(timers).toHaveBeenCalledTimes(40);
+			expect(timers.mock.calls[0]?.[1]).toBe(500);
+		} finally {
+			timers.mockRestore();
+		}
 	});
 
 	test("never imports playwright-core statically", () => {

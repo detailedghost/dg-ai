@@ -16,7 +16,7 @@ export const PROTON_MAIL_URL = "https://mail.proton.me";
 export const PROTON_SESSION_NAME = "inbox-proton";
 
 const PAGE_SCRIPT: string = buildProtonPageScript();
-const HEADER_WAIT_ATTEMPTS = 20;
+const HEADER_WAIT_ATTEMPTS = 40;
 const HEADER_WAIT_MS = 500;
 
 export class ProtonSignedOutError extends Error {
@@ -42,9 +42,18 @@ const SIGNED_OUT_CODES = new Set([
 	"session-unobserved",
 ]);
 
+/**
+ * Codes the page can recover from on its own: a reload lets the web app
+ * refresh its session from the saved refresh cookie. A rejected call changed
+ * nothing on the server, so one retry is safe for every operation.
+ */
+const REFRESHABLE_CODES = new Set(["auth-expired", "mail-tab-navigated"]);
+
 export type ProtonPwPage = {
 	url(): string | Promise<string>;
+	/** Empties the request log and reloads, so the page makes fresh requests. */
 	clearObservedHeaders(): Promise<void>;
+	/** Headers from an API request whose response was not a 401 or 403. */
 	observedHeaders():
 		| ProtonSessionHeaders
 		| undefined
@@ -75,30 +84,59 @@ export function protonProfilePaths(dataDir: string): {
 	};
 }
 
-const pause = () => new Promise((resolve) => setTimeout(resolve, HEADER_WAIT_MS));
+type Sleep = (ms: number) => Promise<void>;
 
-async function observeHeaders(
-	page: ProtonPwPage,
-	verify: () => Promise<string | undefined>,
-): Promise<ProtonSessionHeaders> {
-	for (let attempt = 0; attempt < HEADER_WAIT_ATTEMPTS; attempt++) {
-		await verify();
-		const headers = await page.observedHeaders();
-		if (headers?.uid) return headers;
-		await pause();
-	}
-	throw new ProtonHeadersTimeoutError();
+const defaultSleep: Sleep = (ms) =>
+	new Promise((resolve) => setTimeout(resolve, ms));
+
+/** The page is on another origin, such as account.proton.me during Proton's session resume. */
+const OFF_ORIGIN = Symbol("off-origin");
+type AccountRead = string | undefined | typeof OFF_ORIGIN;
+
+/**
+ * Proton's session resume can pass through account.proton.me and back, so an
+ * off-origin read only counts as signed out when it lasts for the whole wait.
+ */
+function waitFailure(last: AccountRead): Error {
+	return last === OFF_ORIGIN
+		? new ProtonSignedOutError()
+		: new ProtonHeadersTimeoutError();
 }
 
 async function resolveAccount(
-	verify: () => Promise<string | undefined>,
+	read: () => Promise<AccountRead>,
+	sleep: Sleep,
 ): Promise<string> {
+	let last: AccountRead;
 	for (let attempt = 0; attempt < HEADER_WAIT_ATTEMPTS; attempt++) {
-		const account = await verify();
-		if (account !== undefined) return account;
-		await pause();
+		last = await read();
+		if (typeof last === "string") return last;
+		await sleep(HEADER_WAIT_MS);
 	}
-	throw new ProtonHeadersTimeoutError();
+	throw waitFailure(last);
+}
+
+/**
+ * Waits for an authenticated API response. A fresh browser launch has no
+ * AUTH cookie, because Proton sets it without an expiry and Chromium drops
+ * session cookies on restart, so the page's first requests get 401 until the
+ * web app refreshes the session with its saved refresh cookie.
+ */
+async function observeHeaders(
+	page: ProtonPwPage,
+	read: () => Promise<AccountRead>,
+	sleep: Sleep,
+): Promise<ProtonSessionHeaders> {
+	let last: AccountRead;
+	for (let attempt = 0; attempt < HEADER_WAIT_ATTEMPTS; attempt++) {
+		last = await read();
+		if (last !== OFF_ORIGIN) {
+			const headers = await page.observedHeaders();
+			if (headers?.uid) return headers;
+		}
+		await sleep(HEADER_WAIT_MS);
+	}
+	throw waitFailure(last);
 }
 
 function accountOf(url: URL): string | undefined {
@@ -108,11 +146,13 @@ function accountOf(url: URL): string | undefined {
 export function createPwBrowserRequest(input: {
 	dataDir: string;
 	openSession(spec: ProtonPwSessionSpec): Promise<ProtonPwSession>;
+	sleep?: Sleep;
 }): {
 	browserRequest(request: InboxBrowserRequest): Promise<InboxBrowserResponse>;
 	close(): Promise<void>;
 } {
 	const { profileDir } = protonProfilePaths(input.dataDir);
+	const sleep = input.sleep ?? defaultSleep;
 	let opened: Promise<ProtonPwSession> | undefined;
 	const open = (accountHint: string | undefined) =>
 		(opened ??= input.openSession({
@@ -145,16 +185,17 @@ export function createPwBrowserRequest(input: {
 	const currentAccount = async (
 		page: ProtonPwPage,
 		...expected: (string | undefined)[]
-	) => {
+	): Promise<AccountRead> => {
 		const url = new URL(await page.url());
-		if (!isProtonMailOrigin(url.origin)) {
-			await close();
-			throw new ProtonSignedOutError();
-		}
+		if (!isProtonMailOrigin(url.origin)) return OFF_ORIGIN;
 		const account = accountOf(url);
 		for (const want of expected)
 			if (want !== undefined && account !== want) throw mismatch();
 		return account;
+	};
+	const signedOut = async (error: unknown) => {
+		if (error instanceof ProtonSignedOutError) await close();
+		return error;
 	};
 	return {
 		close,
@@ -162,36 +203,47 @@ export function createPwBrowserRequest(input: {
 			const request = validateInboxBrowserRequest(raw);
 			const { accountHint } = request;
 			const { page } = await open(accountHint);
-			const verify = () => currentAccount(page, accountHint, pinned);
-			const account = await resolveAccount(verify);
-			pinned ??= account;
-			if (cached && cached.account !== account) throw mismatch();
-			let headers = cached?.headers;
-			if (!headers) {
+			const read = () => currentAccount(page, accountHint, pinned);
+			let refreshed = false;
+			for (;;) {
+				let account: string;
+				let headers: ProtonSessionHeaders;
 				try {
-					await page.clearObservedHeaders();
-					headers = await observeHeaders(page, verify);
+					account = await resolveAccount(read, sleep);
+					pinned ??= account;
+					if (cached && cached.account !== account) throw mismatch();
+					if (cached) headers = cached.headers;
+					else {
+						await page.clearObservedHeaders();
+						headers = await observeHeaders(page, read, sleep);
+						await resolveAccount(read, sleep);
+						cached = { headers, account };
+					}
 				} catch (error) {
-					if (error instanceof ProtonSignedOutError) await close();
-					throw error;
+					throw await signedOut(error);
 				}
-				await verify();
-				cached = { headers, account };
+				const result = (await page.evaluate(PAGE_SCRIPT, {
+					request,
+					headers,
+					account,
+				})) as ProtonPageResult;
+				if (result && typeof result === "object" && "error" in result) {
+					const failure = result.error as { code?: unknown; status?: unknown };
+					const code = failure.code as string;
+					if (!refreshed && REFRESHABLE_CODES.has(code)) {
+						refreshed = true;
+						cached = undefined;
+						continue;
+					}
+					if (SIGNED_OUT_CODES.has(code))
+						throw await signedOut(new ProtonSignedOutError());
+					throw new Error(
+						protonOperationDiagnostic(failure) ??
+							"Proton page operation failed.",
+					);
+				}
+				return sanitizeInboxBrowserResponse(validateInboxBrowserResponse(result));
 			}
-			const result = (await page.evaluate(PAGE_SCRIPT, {
-				request,
-				headers,
-				account,
-			})) as ProtonPageResult;
-			if (result && typeof result === "object" && "error" in result) {
-				const failure = result.error as { code?: unknown; status?: unknown };
-				if (typeof failure.code === "string" && SIGNED_OUT_CODES.has(failure.code))
-					throw new ProtonSignedOutError();
-				throw new Error(
-					protonOperationDiagnostic(failure) ?? "Proton page operation failed.",
-				);
-			}
-			return sanitizeInboxBrowserResponse(validateInboxBrowserResponse(result));
 		},
 	};
 }

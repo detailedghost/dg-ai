@@ -193,6 +193,23 @@ function headerValue(text: string, name: string): string | undefined {
 	return headerValues(text, name).at(-1);
 }
 
+/** Proton answers a missing or expired AUTH cookie with one of these. */
+const AUTH_REJECTED = new Set([401, 403]);
+
+/** Splits a pw network listing into one block per request line. */
+function requestBlocks(listing: string): string[] {
+	return listing.split(/^(?=\[[A-Z]+\] )/m);
+}
+
+/**
+ * True when the request got a response that was not an auth rejection.
+ * Pending and failed requests prove nothing about the session.
+ */
+function authenticated(block: string): boolean {
+	const status = /^\[[A-Z]+\] \S+ => \[(\d{3})\]/.exec(block)?.[1];
+	return status !== undefined && !AUTH_REJECTED.has(Number(status));
+}
+
 function pwCommandError(
 	message: string,
 	result: { code: number; out: string; err: string },
@@ -297,10 +314,13 @@ export async function openProtonSession(
 						);
 					return undefined;
 				}
-				const uid = headerValue(listing.out, "x-pm-uid");
+				const accepted = requestBlocks(listing.out)
+					.filter(authenticated)
+					.join("\n");
+				const uid = headerValue(accepted, "x-pm-uid");
 				if (!uid) return undefined;
-				const appVersion = headerValue(listing.out, "x-pm-appversion");
-				const locale = headerValue(listing.out, "x-pm-locale");
+				const appVersion = headerValue(accepted, "x-pm-appversion");
+				const locale = headerValue(accepted, "x-pm-locale");
 				return {
 					uid,
 					...(appVersion ? { appVersion } : {}),
