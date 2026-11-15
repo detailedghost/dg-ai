@@ -88,4 +88,4 @@ make the notes box unusable.
 **Delivery.** `navigator.sendBeacon` first, so the click's user activation stays live for
 `window.close()`. A `fetch` fallback runs when the beacon is refused.
 
-`dg-skills prototype wait` reports the action (`confirm` or `reject`) and the notes text.
+`dg-skills prototype wait` reports the action (`confirm`, `reject`, or `more`) and the notes text.
