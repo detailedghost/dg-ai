@@ -1,7 +1,7 @@
 import type { ProtonSessionHeaders } from "@dg/inbox";
 
 export type PwResult = { code: number; out: string; err: string };
-type Run = (argv: string[]) => Promise<PwResult>;
+export type PwRunner = (argv: string[]) => Promise<PwResult>;
 
 /** A refresh request line with no response yet: `[POST] <url>` and nothing after it. */
 const REFRESH_PENDING = /^\[POST\] \S*auth\/refresh$/m;
@@ -9,6 +9,15 @@ const REFRESH_WAIT_ATTEMPTS = 20;
 const REFRESH_WAIT_MS = 250;
 /** Proton answers a missing or expired AUTH cookie with one of these. */
 const AUTH_REJECTED = new Set([401, 403]);
+
+/** Not a sign-out: the saved session is still being refreshed, so the marker stays. */
+export class ProtonRefreshPendingError extends Error {
+	constructor() {
+		super(
+			"Proton Mail is still refreshing its session. The profile may still be signed in. Retry in a moment.",
+		);
+	}
+}
 
 export function pwCommandError(message: string, result: PwResult): Error {
 	return new Error(
@@ -46,7 +55,7 @@ function authenticated(block: string): boolean {
  */
 export function protonRequestLog(
 	session: string,
-	run: Run,
+	run: PwRunner,
 ): {
 	reset(): Promise<void>;
 	sessionHeaders(): Promise<ProtonSessionHeaders | undefined>;
@@ -54,10 +63,11 @@ export function protonRequestLog(
 	/**
 	 * Proton's refresh token is one-time. A reload that aborts the page's own
 	 * refresh after the server rotated it can leave a dead refresh cookie in the
-	 * profile, so wait for that request to finish first.
+	 * profile, so wait for that request to finish first, and never reload while
+	 * it is still pending.
 	 */
 	const awaitPendingRefresh = async () => {
-		for (let attempt = 0; attempt < REFRESH_WAIT_ATTEMPTS; attempt++) {
+		for (let attempt = 0; ; attempt++) {
 			const listing = await run([
 				session,
 				"--raw",
@@ -68,6 +78,7 @@ export function protonRequestLog(
 			if (listing.code !== 0)
 				throw pwCommandError("Could not read the Proton request log.", listing);
 			if (!REFRESH_PENDING.test(listing.out)) return;
+			if (attempt + 1 >= REFRESH_WAIT_ATTEMPTS) throw new ProtonRefreshPendingError();
 			await new Promise((resolve) => setTimeout(resolve, REFRESH_WAIT_MS));
 		}
 	};

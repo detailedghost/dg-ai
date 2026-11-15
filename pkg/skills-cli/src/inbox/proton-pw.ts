@@ -22,7 +22,11 @@ import {
 	protonProfilePaths,
 } from "@dg/inbox";
 import { exitAfterDrain } from "@dg/common/exit";
-import { protonRequestLog, pwCommandError } from "./proton-request-log";
+import {
+	protonRequestLog,
+	type PwRunner,
+	pwCommandError,
+} from "./proton-request-log";
 
 export { PROTON_SIGN_IN_COMMAND, ProtonSignedOutError, protonProfilePaths };
 
@@ -34,9 +38,7 @@ const CONTEXT_DESTROYED =
 const EVAL_ATTEMPTS = 5;
 const EVAL_RETRY_MS = 300;
 
-export type PwRunner = (
-	argv: string[],
-) => Promise<{ code: number; out: string; err: string }>;
+export type { PwRunner };
 
 export type SignInDeps = {
 	openSession(spec: ProtonPwSessionSpec): Promise<ProtonPwSession>;

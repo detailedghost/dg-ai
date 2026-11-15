@@ -45,8 +45,9 @@ const SIGNED_OUT_CODES = new Set([
 
 /**
  * Codes the page can recover from on its own: a reload lets the web app
- * refresh its session from the saved refresh cookie. A rejected call changed
- * nothing on the server, so one retry is safe for every operation.
+ * refresh its session from the saved refresh cookie, or finish a resume that
+ * passed through account.proton.me. A rejected call changed nothing on the
+ * server, so one retry is safe for every operation.
  */
 const REFRESHABLE_CODES = new Set(["auth-expired", "mail-tab-navigated"]);
 

@@ -24,6 +24,7 @@ import {
 	writeSignedInMarker,
 } from "../src/inbox/proton-pw";
 import { inboxCliHarness } from "./inbox-cli-harness";
+import { ProtonRefreshPendingError } from "../src/inbox/proton-request-log";
 
 const SIGN_IN_COMMAND = "dg-skills inbox proton sign-in";
 
@@ -127,6 +128,15 @@ function recordingRunner(replies: Record<string, string> = {}) {
 		return { code: 0, out: key ? replies[key]! : "", err: "" };
 	};
 	return { run, calls };
+}
+
+function instantTimers() {
+	return spyOn(globalThis, "setTimeout").mockImplementation(((
+		callback: () => void,
+	) => {
+		callback();
+		return 0;
+	}) as never);
 }
 
 const spec = (headless: boolean) => ({
@@ -464,7 +474,7 @@ describe("proton-pw openProtonSession", () => {
 		}
 	});
 
-	test("clearObservedHeaders reloads after 20 checks when a refresh never finishes", async () => {
+	test("clearObservedHeaders gives up without a reload when a refresh stays pending for 20 checks", async () => {
 		const timers = instantTimers();
 		try {
 			const calls: string[][] = [];
@@ -477,9 +487,18 @@ describe("proton-pw openProtonSession", () => {
 			};
 			const session = await openProtonSession(spec(true), run);
 			calls.length = 0;
-			await session.page.clearObservedHeaders();
-			expect(calls.filter((argv) => argv.includes("auth/refresh"))).toHaveLength(20);
-			expect(calls.at(-1)).toEqual(["-s=inbox-proton", "reload"]);
+			const error = await session.page.clearObservedHeaders().then(
+				() => undefined,
+				(caught: unknown) => caught,
+			);
+			expect(error).toBeInstanceOf(ProtonRefreshPendingError);
+			expect(error).not.toBeInstanceOf(ProtonSignedOutError);
+			expect((error as Error).message).toBe(
+				"Proton Mail is still refreshing its session. The profile may still be signed in. Retry in a moment.",
+			);
+			expect(calls).toHaveLength(20);
+			expect(calls.every((argv) => argv.includes("auth/refresh"))).toBe(true);
+			expect(timers).toHaveBeenCalledTimes(19);
 		} finally {
 			timers.mockRestore();
 		}
@@ -756,14 +775,6 @@ describe("proton-pw marker handling", () => {
 	});
 });
 
-function instantTimers() {
-	return spyOn(globalThis, "setTimeout").mockImplementation(((
-		callback: () => void,
-	) => {
-		callback();
-		return 0;
-	}) as never);
-}
 
 describe("proton-pw runProtonSignIn", () => {
 	function signInSeam(url: string, uid: string | undefined) {

@@ -42,7 +42,10 @@ function seam(options: { url?: string; answer?: unknown } = {}) {
 	return { transport, evaluated, opened, closed: () => closed };
 }
 
-/** A fake page whose URL, observed headers and page answers follow scripts. */
+/**
+ * A fake page whose URL, observed headers and page answers follow scripts.
+ * Once a URL or header script runs out, its last value repeats.
+ */
 function scripted(options: {
 	urls?: string[];
 	headers?: ({ uid: string } | undefined)[];
