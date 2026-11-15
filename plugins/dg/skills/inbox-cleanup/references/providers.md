@@ -68,8 +68,9 @@ sign-in command when it is signed out. Each headless launch starts without
 Proton's short-lived AUTH cookie, so the page refreshes its session from the
 saved refresh cookie on its own. Inbox commands wait for an authenticated API
 response, ride out a pass through `account.proton.me` while the session resumes,
-and reload and retry once when an operation gets a 401. They exit 4 only when the
-page stays signed out, so a saved session needs no new human sign-in.
+and reload and retry once when an operation gets a 401 or loses the mail tab.
+They exit 4 only when the page stays signed out for the whole wait, about 20
+seconds, so a saved session needs no new human sign-in.
 `dg-skills doctor inbox` reads a marker file to report whether the profile is
 signed in and never starts a browser. The rest of
 this section describes the `--ext` path.

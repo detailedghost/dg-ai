@@ -504,6 +504,33 @@ describe("proton-pw openProtonSession", () => {
 		}
 	});
 
+	test("clearObservedHeaders treats a pending refresh with a query string as pending", async () => {
+		const timers = instantTimers();
+		try {
+			const refresh = [
+				"[POST] https://mail.proton.me/api/auth/refresh?Source=resume",
+				"[POST] https://mail.proton.me/api/auth/refresh?Source=resume => [200] OK",
+			];
+			const calls: string[][] = [];
+			const run: PwRunner = async (argv) => {
+				calls.push(argv);
+				const out = argv.includes("auth/refresh") ? refresh.shift()! : "";
+				return { code: 0, out, err: "" };
+			};
+			const session = await openProtonSession(spec(true), run);
+			calls.length = 0;
+			await session.page.clearObservedHeaders();
+			expect(calls.map((argv) => argv.at(-1))).toEqual([
+				"auth/refresh",
+				"auth/refresh",
+				"--clear",
+				"reload",
+			]);
+		} finally {
+			timers.mockRestore();
+		}
+	});
+
 	test("clearObservedHeaders does not reload when it cannot read the refresh request", async () => {
 		const calls: string[][] = [];
 		const run: PwRunner = async (argv) => {

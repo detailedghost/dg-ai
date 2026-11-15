@@ -3,8 +3,8 @@ import type { ProtonSessionHeaders } from "@dg/inbox";
 export type PwResult = { code: number; out: string; err: string };
 export type PwRunner = (argv: string[]) => Promise<PwResult>;
 
-/** A refresh request line with no response yet: `[POST] <url>` and nothing after it. */
-const REFRESH_PENDING = /^\[POST\] \S*auth\/refresh$/m;
+/** A refresh request line with no response yet: `[POST] <url>`, optionally with a query, and nothing after it. */
+const REFRESH_PENDING = /^\[POST\] \S*auth\/refresh(?:\?\S*)?$/m;
 const REFRESH_WAIT_ATTEMPTS = 20;
 const REFRESH_WAIT_MS = 250;
 /** Proton answers a missing or expired AUTH cookie with one of these. */
