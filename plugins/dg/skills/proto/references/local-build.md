@@ -50,7 +50,7 @@ wants something that opens with zero tooling, or a file to share.
 
 A prototype with a running server records the user's decision as sentinel files:
 
-1. The switcher bar has **Approve** and **Reject** buttons (plus **More versions** on the `prototype ui` bar only; `prototype serve` accepts the `more` action when the supplied HTML implements the control, and the mounted templates lack it and treat an unknown action as a selection) that POST `{ name, action, variant, variants?, notes? }`. The route depends on the flow:
+1. The switcher bar has **Approve**, **Reject**, and **More versions** buttons that POST `{ name, action, variant, variants?, notes? }`. The route depends on the flow:
    - **Mounted in an app dev server** (React, Astro, Next): the switcher POSTs `/prototype-confirm`, handled by a copied endpoint template.
    - **Page served by `prototype serve` or `prototype ui`**: the injected client POSTs `/prototype-decision`.
    Use the template that matches the flow. A mismatched route 404s while `sendBeacon` still reports success, so the selection silently never arrives.
@@ -79,7 +79,7 @@ The tab favicon shows the decision state: waiting for the user's decision, proce
 
 **`--light` with a mounted endpoint.** Export `PROTOTYPE_LIGHT=1` in the dev server's environment before launching it. The endpoint reads it to write the sentinel where the `--light` waiter is watching. Without it, the endpoint writes under `.agents/` and `wait --light` times out with no feedback. `prototype serve` learns `--light` from its own arguments and needs no variable.
 
-**Endpoint security.** Dev only, localhost only. The variant key is checked against the caller-supplied list for `confirm`. The check is skipped for `reject`.
+**Endpoint security.** Dev only, localhost only. The variant key is checked against the caller-supplied list for `confirm`. The check is skipped for `reject` and `more`.
 
 **Who made the pick.** Every sentinel write also records `.source`: `browser` from a real page click (`prototype serve`, `prototype ui`, and every endpoint template), `cli` from `prototype confirm` run directly, or whatever `prototype confirm --source=TEXT` named. `prototype status <name> --json` prints `{"status":...,"source":...}`; the plain (non-JSON) form is unchanged. Use this to tell a real decision apart from one recorded by hand.
 
@@ -99,7 +99,7 @@ dg-skills prototype status <name> --require-pending
 
 | File | Use |
 |---|---|
-| `PrototypeSwitcher.tsx` | React, Next, or Vite switcher bar with Approve, Reject, and notes |
+| `PrototypeSwitcher.tsx` | React, Next, or Vite switcher bar with Approve, Reject, More versions, and notes |
 | `PrototypeSwitcher.astro` | Astro switcher bar with the same controls |
 | `prototype-decision-bar.html` | Decision-only bar for a hand-written self-contained page |
 | `prototype-endpoint.ts` | Express, Vite, or Bun endpoint for `POST /prototype-confirm` |

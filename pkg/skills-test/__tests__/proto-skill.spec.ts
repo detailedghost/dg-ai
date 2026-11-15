@@ -273,7 +273,7 @@ describe("proto skill local mode", () => {
 		for (const file of ["assets/PrototypeSwitcher.tsx", "assets/PrototypeSwitcher.astro"]) {
 			const source = skillFile(file);
 			expect(source).toContain("dgIcons");
-			for (const icon of ["sun", "moon", "all", "phone", "tablet", "monitor", "left", "right", "note", "check", "rework"])
+			for (const icon of ["sun", "moon", "all", "phone", "tablet", "monitor", "left", "right", "note", "check", "rework", "plus"])
 				expect(source).toContain(`${icon}:`);
 			expect(source).toContain('role="menuitemradio"');
 			expect(source).toContain("data-proto-width");
@@ -303,9 +303,33 @@ describe("proto skill local mode", () => {
 			const act = source.slice(groups[2]);
 			expect(act.indexOf("ps-note")).toBeLessThan(act.indexOf("ps-approve"));
 			expect(act.indexOf("ps-approve")).toBeLessThan(act.indexOf("ps-reject"));
+			expect(act.indexOf("ps-reject")).toBeLessThan(act.indexOf("ps-more"));
 			expect(source).toContain('grid-template-areas:"nav nav nav" "tools . act"');
 			expect(source).toContain(".ps-group{display:contents}");
 		}
+	});
+
+	test("every copied bar has a More versions button in the verify board's violet with its plus icon", () => {
+		const verifyCss = readFileSync(join(import.meta.dir, "..", "..", "..", "plugins", "dg", "skills", "verify", "assets", "board.css"), "utf8");
+		const verifyHtml = readFileSync(join(import.meta.dir, "..", "..", "..", "plugins", "dg", "skills", "verify", "assets", "index.html"), "utf8");
+		expect(verifyCss).toContain("--more:#7c3aed;--more-soft:#f3edff");
+		expect(verifyCss).toContain("--more:#c4b5fd;--more-soft:#2a2140");
+		expect(verifyHtml).toMatch(/id="v-more" class="ic pk-more" data-icon="plus"/);
+		for (const file of ["assets/PrototypeSwitcher.tsx", "assets/PrototypeSwitcher.astro", "assets/prototype-decision-bar.html"]) {
+			const source = skillFile(file);
+			expect(source).toContain('aria-label="More versions"');
+			expect(source).toContain('title="More versions (note optional)"');
+			expect(source).toMatch(/#7c3aed;\s*--p[sd]-more-soft:\s*#f3edff/);
+			expect(source).toMatch(/#c4b5fd;\s*--p[sd]-more-soft:\s*#2a2140/);
+			expect(source).toContain("optional for Approve and More versions, required for Reject");
+			expect(source).toContain("[was viewing ");
+		}
+		expect(skillFile("assets/PrototypeSwitcher.tsx")).toContain('submit("more")');
+		expect(skillFile("assets/PrototypeSwitcher.tsx")).toContain("Generating more versions");
+		expect(skillFile("assets/PrototypeSwitcher.astro")).toContain('submit("more")');
+		expect(skillFile("assets/PrototypeSwitcher.astro")).toContain("Generating more versions");
+		expect(skillFile("assets/PrototypeSwitcher.astro")).toContain('verdict === "more"');
+		expect(skillFile("assets/prototype-decision-bar.html")).toContain('window.prototypeDecide("more", ""');
 	});
 
 	test("ships the copyable switcher and endpoint assets", () => {
@@ -323,7 +347,7 @@ describe("proto skill local mode", () => {
 			expect(skillFile(file).length).toBeGreaterThan(0);
 		}
 		const bar = skillFile("assets/prototype-decision-bar.html");
-		for (const icon of ["moon", "all", "note", "check", "rework"])
+		for (const icon of ["moon", "all", "note", "check", "rework", "plus"])
 			expect(bar).toContain(`data-icon="${icon}"`);
 		expect(bar).toContain('role="menuitemradio" data-w="tablet"');
 		expect(bar).toContain("window.dgIcons");

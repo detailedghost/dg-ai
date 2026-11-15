@@ -9,7 +9,7 @@ interface ConfirmBody {
 	variants: string[];
 	notes?: string;
 	url?: string;
-	action?: "confirm" | "reject" | "status";
+	action?: "confirm" | "reject" | "more" | "status";
 	selftest?: boolean;
 }
 
@@ -131,13 +131,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 	const protoDir = dirname(sentinelPath);
 	mkdirSync(protoDir, { recursive: true });
 
-	if (body.action === "reject") {
+	if (body.action === "reject" || body.action === "more") {
 		const notes =
 			typeof body.notes === "string" && body.notes.length > 0
 				? body.notes
 				: "\n";
 		writeFileSync(join(protoDir, ".source"), "browser\n", "utf8");
-		writeFileSync(join(protoDir, ".reject"), notes, "utf8");
+		writeFileSync(join(protoDir, `.${body.action}`), notes, "utf8");
 		return NextResponse.json({ ok: true });
 	}
 	if (!Array.isArray(body.variants) || !body.variants.includes(body.variant)) {
