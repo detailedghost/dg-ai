@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.11.2 (2026-11-15)
+
+### Fixes
+
+- fix(common): land final follow-ups for process kill, install marker, file lock, relay secret and SQLite ([#214](https://github.com/detailedghost/dg-ai/pull/214))
+
 ## v5.11.1 (2026-11-15)
 
 ### Fixes
