@@ -1,5 +1,12 @@
 # Changelog
 
+## v5.11.3 (2026-11-16)
+
+### Fixes
+
+- fix(proto): sign in before the acceptance layout capture ([#216](https://github.com/detailedghost/dg-ai/pull/216))
+- fix(proto): add More versions to the copied decision bars ([#215](https://github.com/detailedghost/dg-ai/pull/215))
+
 ## v5.11.2 (2026-11-15)
 
 ### Fixes
