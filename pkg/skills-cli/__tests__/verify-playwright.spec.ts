@@ -227,6 +227,74 @@ main{min-height:100vh;display:flex;flex-direction:column;padding:16px;box-sizing
 		});
 	});
 
+	test.skipIf(!browser)("reads a root behind a login after it opens the sign-in page in the same browser", async () => {
+		const server = Bun.serve({
+			hostname: "127.0.0.1",
+			port: 0,
+			fetch(req) {
+				const url = new URL(req.url);
+				const html = (body: string) => new Response(body, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+				if (url.pathname === "/prototype-signin" || (url.pathname === "/Login/signin" && req.method === "POST"))
+					return new Response(null, {
+						status: 302,
+						headers: { Location: "/", "Set-Cookie": "dummy-session=dummy-value; Path=/; HttpOnly" },
+					});
+				if (url.pathname === "/prototype-signin-form")
+					return html(
+						'<!doctype html><html lang="en"><head><title>Sign in</title></head><body><form method="post" action="/Login/signin"><input type="hidden" name="Username" value="dummy-user"></form><script>setTimeout(() => document.forms[0].submit(), 200)</script></body></html>',
+					);
+				if (url.pathname === "/Login/SignIn") return html(bare("<p>Sign in</p>").replace(' data-verify-root="demo"', ""));
+				if (!(req.headers.get("cookie") ?? "").includes("dummy-session=dummy-value"))
+					return new Response(null, { status: 302, headers: { Location: `/Login/SignIn?ReturnUrl=${encodeURIComponent(url.pathname)}` } });
+				return html(bare('<button type="button">Add note</button>'));
+			},
+		});
+		const capturer = await openPlaywrightCapturer({ noSandbox: true });
+		const request = (extra: Partial<CaptureRequest> = {}): CaptureRequest => ({
+			url: `http://127.0.0.1:${server.port}/sms`,
+			headers: {},
+			cookies: [],
+			width: 1440,
+			height: 900,
+			theme: "light",
+			state: "default",
+			menuSelector: "[data-verify-menu]",
+			fingerprintRoot: ROOT,
+			...extra,
+		});
+		try {
+			const anonymous = await capturer.shot(request());
+			expect(anonymous.fingerprint).toEqual({ error: `root: found 0 visible ${ROOT}` });
+			expect(new URL(anonymous.finalUrl).pathname).toBe("/Login/SignIn");
+			for (const path of ["/prototype-signin", "/prototype-signin-form"]) {
+				const signedIn = await capturer.shot(request({ signIn: `http://127.0.0.1:${server.port}${path}` }));
+				expect(new URL(signedIn.finalUrl).pathname).toBe("/sms");
+				expect(signedIn.fingerprint && "controls" in signedIn.fingerprint && signedIn.fingerprint.controls.map((row) => row.name)).toEqual(["Add note"]);
+			}
+		} finally {
+			await capturer.close();
+			server.stop(true);
+		}
+	});
+
+	test.skipIf(!browser)("waits for an opacity entrance animation on the root before it reads the layout", async () => {
+		const page = `<!doctype html><html lang="en"><head><title>Demo</title><style>body{margin:0;font:16px sans-serif}@keyframes enter{from{opacity:0}to{opacity:1}}main{animation:enter 300ms ease-out 700ms both}</style></head><body><main data-verify-root="demo"><button type="button">Add note</button></main></body></html>`;
+		await withPage(async (request, capturer) => {
+			const shot = await capturer.shot(request());
+			expect(shot.fingerprint && "controls" in shot.fingerprint && shot.fingerprint.controls.map((row) => row.name)).toEqual(["Add note"]);
+		}, page);
+	});
+
+	test.skipIf(!browser)("does not wait on an infinite animation and still reads the root", async () => {
+		const page = `<!doctype html><html lang="en"><head><title>Demo</title><style>body{margin:0;font:16px sans-serif}@keyframes pulse{from{opacity:.6}to{opacity:1}}main{animation:pulse 1s infinite alternate}</style></head><body><main data-verify-root="demo"><button type="button">Add note</button></main></body></html>`;
+		await withPage(async (request, capturer) => {
+			const started = Date.now();
+			const shot = await capturer.shot(request());
+			expect(Date.now() - started).toBeLessThan(2_000);
+			expect(shot.fingerprint && "controls" in shot.fingerprint).toBe(true);
+		}, page);
+	});
+
 	test.skipIf(!browser)("hides the prototype chrome only when a fingerprint root is requested", async () => {
 		await withPage(async (request, capturer) => {
 			const plain = await capturer.shot(request({ fingerprintRoot: undefined }));

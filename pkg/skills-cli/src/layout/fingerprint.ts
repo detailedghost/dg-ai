@@ -79,6 +79,26 @@ export function identityKeys(
 	});
 }
 
+/** Runs in the page; waits out finite animations on the root, its ancestors, and its subtree. */
+export async function settleAnimations(options: {
+	root: string;
+	timeoutMs: number;
+}): Promise<void> {
+	const root = document.querySelector(options.root);
+	if (!root) return;
+	const running = document.getAnimations().filter((animation) => {
+		const effect = animation.effect;
+		if (!(effect instanceof KeyframeEffect) || !effect.target) return false;
+		if (effect.getComputedTiming().endTime === Number.POSITIVE_INFINITY) return false;
+		return effect.target.contains(root) || root.contains(effect.target);
+	});
+	if (running.length === 0) return;
+	await Promise.race([
+		Promise.allSettled(running.map((animation) => animation.finished)),
+		new Promise((resolve) => setTimeout(resolve, options.timeoutMs)),
+	]);
+}
+
 /** Runs in the page, so it stays self-contained; it hides prototype chrome before reading. */
 export function collectLayout(selectors: {
 	root: string;
