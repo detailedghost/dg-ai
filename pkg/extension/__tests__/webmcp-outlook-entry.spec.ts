@@ -17,7 +17,7 @@ function reset() {
 }
 
 beforeEach(() => {
-	window = new Window({ url: "https://outlook.live.com/mail/0/" });
+	window = new Window({ url: "https://outlook.live.com/mail/" });
 	doc = window.document as unknown as Document;
 	reset();
 });
@@ -59,15 +59,20 @@ describe("startOutlookPlugin", () => {
 		await settle();
 		expect(await names()).toHaveLength(10);
 
-		await host.fetch("/owa/0/service.svc?action=FindItem&app=Mail", {
-			headers: { "x-owa-canary": "fixture-canary", "x-anchormailbox": "PUID:fixture@example.com" },
+		await host.fetch("/owa/service.svc?action=FindFolder&app=Mail", {
+			headers: {
+				authorization: "Bearer fixture-token",
+				"x-anchormailbox": "PUID:fixture@example.com",
+				"x-owa-sessionid": "fixture-session",
+			},
 		});
 		const context = installModelContextShim(doc);
 		const output = await context.executeTool({ name: "dg_outlook_delete", description: "" }, '{"ids":["AAMkFixtureItem1="]}');
 		expect(JSON.parse(output)).toEqual({ deleted: 1, ids: ["AAMkFixtureItem1="] });
 		const [url, init] = pageFetch.mock.calls.at(-1) as [string, RequestInit];
-		expect(url).toBe("https://outlook.live.com/owa/0/service.svc?action=DeleteItem&app=Mail");
-		expect(init.headers).toEqual(expect.objectContaining({ "x-owa-canary": "fixture-canary" }));
+		expect(url).toBe("https://outlook.live.com/owa/service.svc?action=DeleteItem&app=Mail");
+		expect(init.headers).toEqual(expect.objectContaining({ authorization: "Bearer fixture-token" }));
+		expect(init.headers).not.toHaveProperty("x-owa-canary");
 	});
 
 	it("starts once per page, so a second start taps the page fetch and XHR no second time", async () => {

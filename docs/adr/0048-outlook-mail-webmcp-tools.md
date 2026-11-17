@@ -28,8 +28,8 @@ The runtime-registered content script
   `service.svc` requests in the page closure, one copy per endpoint path
   (`/owa/<n>/service.svc`). An anchor change drops only that endpoint's copy.
 - **Service.** Each call posts to the endpoint of the tab's own account: the
-  `<n>` of the page route (`/mail/<n>/`, `/calendar/<n>/` and the others), or `/owa/0/` on `outlook.live.com` and
-  `/owa/service.svc` elsewhere when the page has no index. It sends only the
+  `<n>` of the page route (`/mail/<n>/`, `/calendar/<n>/` and the others), or
+  `/owa/service.svc` when the page has no index, `outlook.live.com` included. It sends only the
   headers held for that endpoint, so one account's headers never reach another
   account's endpoint. At most 4 calls are in flight per tab, and a queued call
   whose signal aborted, or whose tab or endpoint switched to another account

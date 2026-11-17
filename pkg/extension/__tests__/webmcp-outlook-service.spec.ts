@@ -19,7 +19,7 @@ type Sent = { url: string; init: RequestInit };
 function setup(
 	options: {
 		href?: string;
-		location?: { origin: string; hostname: string; pathname: string };
+		location?: { origin: string; pathname: string };
 		headers?: (path: string) => Record<string, string> | undefined;
 		reply?: (sent: Sent) => Response | Promise<Response>;
 	} = {},
@@ -51,7 +51,7 @@ describe("createOwaService", () => {
 	it.each([
 		["https://outlook.live.com/mail/0/", "https://outlook.live.com/owa/0/service.svc?action=FindItem&app=Mail"],
 		["https://outlook.live.com/mail/1/inbox", "https://outlook.live.com/owa/1/service.svc?action=FindItem&app=Mail"],
-		["https://outlook.live.com/mail/", "https://outlook.live.com/owa/0/service.svc?action=FindItem&app=Mail"],
+		["https://outlook.live.com/mail/", "https://outlook.live.com/owa/service.svc?action=FindItem&app=Mail"],
 		["https://outlook.office.com/mail/", "https://outlook.office.com/owa/service.svc?action=FindItem&app=Mail"],
 		["https://outlook.office.com/mail/2/", "https://outlook.office.com/owa/2/service.svc?action=FindItem&app=Mail"],
 		["https://outlook.cloud.microsoft/mail/", "https://outlook.cloud.microsoft/owa/service.svc?action=FindItem&app=Mail"],
@@ -74,7 +74,7 @@ describe("createOwaService", () => {
 
 	it.each([
 		[{ hostname: "outlook.live.com", pathname: "/mail/10/" }, "/owa/10/service.svc"],
-		[{ hostname: "outlook.live.com", pathname: "/mail10/" }, "/owa/0/service.svc"],
+		[{ hostname: "outlook.live.com", pathname: "/mail10/" }, "/owa/service.svc"],
 		[{ hostname: "outlook.office.com", pathname: "/calendar/1/" }, "/owa/1/service.svc"],
 		[{ hostname: "outlook.live.com", pathname: "/calendar/1/view/month" }, "/owa/1/service.svc"],
 		[{ hostname: "outlook.live.com", pathname: "/people/2" }, "/owa/2/service.svc"],
