@@ -587,11 +587,19 @@ export function pwExtPageAction(
 		}
 		if (from === to && text === "") return false;
 		if (text && input.maxLength >= 0 && value.length - (to - from) + text.length > input.maxLength) return false;
+		const next = value.slice(0, from) + text + value.slice(to);
+		setValue(input, next);
+		const kept = input.value === next;
+		setValue(input, value);
+		try {
+			input.setSelectionRange(start, end);
+		} catch {}
+		if (!kept) return false;
 		const scope = win as unknown as typeof globalThis;
 		const data = text ? { data: text } : {};
 		if (!input.dispatchEvent(new scope.InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType, ...data }))) return false;
 		if (!input.isConnected) return false;
-		setValue(input, value.slice(0, from) + text + value.slice(to));
+		setValue(input, next);
 		try {
 			input.setSelectionRange(from + text.length, from + text.length);
 		} catch {}
@@ -651,7 +659,9 @@ export function pwExtPageAction(
 			target.dispatchEvent(new scope.Event("change", { bubbles: true }));
 		};
 		const change = (text: string, inputType: string): void => {
-			if (edit(input, text, inputType)) edited.add(target);
+			if (!edit(input, text, inputType) || edited.has(target)) return;
+			edited.add(target);
+			target.addEventListener("focusout", commit, { once: true });
 		};
 		let proceed = send("keydown");
 		if (proceed && !command && (char !== undefined || name === "Enter")) proceed = send("keypress");

@@ -820,3 +820,45 @@ describe("press commit and targets", () => {
 		expect(clicked).toEqual(["img"]);
 	});
 });
+
+describe("press after review round 3", () => {
+	const press = (key: string) => pwExtPageAction({ kind: "press", chord: key, key, modifiers: [] });
+
+	it("keeps a number field value when a key would make it invalid", () => {
+		page(`<input id="n" type="number" aria-label="N" value="12">`);
+		const input = el<HTMLInputElement>("#n");
+		let owner = Object.getPrototypeOf(input);
+		while (!Object.getOwnPropertyDescriptor(owner, "value")) owner = Object.getPrototypeOf(owner);
+		const native = Object.getOwnPropertyDescriptor(owner, "value") as PropertyDescriptor;
+		Object.setPrototypeOf(
+			input,
+			Object.create(Object.getPrototypeOf(input), {
+				value: {
+					get() {
+						return native.get?.call(this);
+					},
+					set(next: string) {
+						native.set?.call(this, /^-?\d+(\.\d+)?$/.test(next) ? next : "");
+					},
+				},
+			}),
+		);
+		input.focus();
+		press("-");
+		expect(input.value).toBe("12");
+		press("3");
+		expect(input.value).toBe("123");
+	});
+
+	it("fires change once when another verb moves focus away", () => {
+		page(`<input id="a" aria-label="A"><input id="b" aria-label="B">`);
+		const a = el<HTMLInputElement>("#a");
+		let changes = 0;
+		a.addEventListener("change", () => changes++);
+		a.focus();
+		press("x");
+		press("y");
+		pwExtPageAction({ kind: "fill", target: "#b", value: "z" });
+		expect(changes).toBe(1);
+	});
+});
