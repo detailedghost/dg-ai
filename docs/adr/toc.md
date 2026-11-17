@@ -111,7 +111,7 @@ flowchart LR
   a MAIN-world shim in agent tabs answers `alert`, `confirm` and `prompt` at once from a one-shot policy that `pw --ext dialog` sets; no new permission. Amends 0035.
 
 - [0045 — pw --ext: an "Agent is driving" banner with Stop, and a site allowlist per session](0045-pw-ext-driving-banner-and-sites.md) — Accepted:
-  each agent tab shows a banner with Stop, which ends the session's control; the first verb on a new site in a session asks the person to allow it. Amends 0035. Amended 2026-11-13: the toolbar popup has Stop too, and Web MCP is apart (0046).
+  each agent tab shows a banner with Stop, which ends the session's control; the first verb on a new site in a session asks the person to allow it. Amends 0035. Amended 2026-11-13: the toolbar popup has Stop too, and Web MCP is apart (0046). Amended 2026-11-17: the banner is a bottom-left pill, so it does not cover fixed top headers.
 
 - [0046 — Web MCP approvals apart from pw --ext browser control](0046-webmcp-approvals-apart-from-pw-ext.md) — Proposed:
   the pw --ext site allowlist no longer gates Web MCP, and pw --ext Stop refuses that session's Web MCP calls but does not revoke grants; grants are keyed by session, site and tool, a session-class Allow can be remembered for 30 days with a signed record, and the toolbar popup revokes grants. Amends 0035 and 0045. Amended 2026-11-14: area grants under the key `area:<area>` (0047), and `dg-agent mcp` uses the person's own covered tabs through `webmcp-tools` and `webmcp-call`, with no pw --ext session or agent tab group.

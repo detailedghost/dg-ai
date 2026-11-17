@@ -81,6 +81,7 @@
         "bun-types": "^1.4.4",
         "fake-indexeddb": "^6.2.8",
         "happy-dom": "^21.0.3",
+        "playwright-core": "1.65.0",
         "tailwindcss": "^4.3.3",
         "typescript": "^7.0.2",
         "wxt": "^0.21.5",

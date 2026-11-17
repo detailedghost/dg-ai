@@ -59,21 +59,33 @@ describe("agent banner", () => {
 		expect(host.textContent).toBe("");
 	});
 
-	it("keeps the banner host out of the page layout as a strip over the page top", () => {
+	it("floats the banner host as a pill in the bottom-left corner, clear of the page top", () => {
 		pwExtBanner(true);
 		const host = hosts()[0] as unknown as HTMLElement;
 		for (const [name, value] of [
 			["position", "fixed"],
-			["top", "0px"],
-			["left", "0px"],
-			["right", "0px"],
-			["bottom", "auto"],
-			["height", "auto"],
+			["top", "auto"],
+			["left", "12px"],
+			["right", "auto"],
+			["bottom", "12px"],
+			["width", "auto"],
+			["max-width", "min(440px, calc(100vw - 24px))"],
 			["z-index", "2147483647"],
 		]) {
 			expect(host.style.getPropertyValue(name)).toBe(value);
 			expect(host.style.getPropertyPriority(name)).toBe("important");
 		}
+	});
+
+	it("leaves the page layout styles untouched while shown and after it hides", () => {
+		const html = window.document.documentElement;
+		const body = window.document.body;
+		html.setAttribute("style", "height: 100vh");
+		const before = [html.getAttribute("style"), body.getAttribute("style"), html.className, body.className];
+		pwExtBanner(true);
+		expect([html.getAttribute("style"), body.getAttribute("style"), html.className, body.className]).toEqual(before);
+		pwExtBanner(false);
+		expect([html.getAttribute("style"), body.getAttribute("style"), html.className, body.className]).toEqual(before);
 	});
 
 	it("shows the ghost as inline SVG, the agent text, and the group title in the shadow root", () => {
@@ -84,7 +96,6 @@ describe("agent banner", () => {
 		expect(root.querySelector("img")).toBeNull();
 		expect(root.querySelector("style")?.textContent).toContain("prefers-color-scheme: dark");
 		expect(root.querySelector('[role="status"]')).not.toBeNull();
-		expect(root.textContent).toContain("DeeGee");
 		expect(root.textContent).toContain("Agent is driving this tab");
 		expect(root.textContent).toContain("claude-code · 3f9a");
 	});
