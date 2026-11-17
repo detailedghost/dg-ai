@@ -36,7 +36,10 @@ The runtime-registered content script
   (another path or another `X-AnchorMailbox`) while it waited, is never sent. A call fails only when no response
   message succeeded.
 - **Tools.** List and search return id, sender address, date, read and flag
-  state, and never ask Outlook for the subject or the preview. Read returns the
+  state, and never ask Outlook for the subject or the preview. Search sends one
+  `FindItem` over the six distinguished folders with a case-insensitive
+  `Subject` substring restriction, not a `QueryString`, so it does not depend
+  on the search index. A folder that fails shows as a code-only error. Read returns the
   subject and the plain-text body, shortened so the serialized answer, measured
   after the address mask, stays under the output cap as valid JSON. A write tool on several ids returns the ids
   that worked and a code-only error per id that failed.

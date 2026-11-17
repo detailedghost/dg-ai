@@ -165,8 +165,9 @@ describe("dg_outlook_list", () => {
 
 describe("dg_outlook_search", () => {
 	const SEARCHED = ["inbox", "archive", "deleteditems", "junkemail", "drafts", "sentitems"];
+	const failed = (ResponseCode: string) => ({ ResponseClass: "Error", ResponseCode, MessageText: "test.person@example.com" });
 
-	function searchSetup(replies: Record<string, unknown[]>) {
+	function searchSetup(replies: Record<string, unknown>) {
 		const sent: Sent[] = [];
 		const service = createOwaService({
 			location: new URL("https://outlook.live.com/mail/0/"),
@@ -174,10 +175,13 @@ describe("dg_outlook_search", () => {
 			fetch: async (input, init) => {
 				const body = JSON.parse(String(init?.body)).Body as { ParentFolderIds: Array<{ Id: string }> };
 				sent.push({ action: new URL(String(input)).searchParams.get("action") as string, body });
-				const Items = replies[body.ParentFolderIds[0]?.Id ?? ""] ?? [];
-				return Response.json({
-					Body: { ResponseMessages: { Items: [{ ResponseClass: "Success", ResponseCode: "NoError", RootFolder: { Items } }] } },
+				const Items = body.ParentFolderIds.map(({ Id }) => {
+					const reply = replies[Id] ?? [];
+					return Array.isArray(reply)
+						? { ResponseClass: "Success", ResponseCode: "NoError", RootFolder: { Items: reply } }
+						: reply;
 				});
+				return Response.json({ Body: { ResponseMessages: { Items } } });
 			},
 		});
 		const tool = createOutlookTools(service).find((entry) => entry.name === "dg_outlook_search");
@@ -187,29 +191,39 @@ describe("dg_outlook_search", () => {
 
 	const [first, second] = findItem.Body.ResponseMessages.Items[0]?.RootFolder.Items ?? [];
 
-	it("sends one Shallow FindItem with the QueryString to each distinguished mail folder", async () => {
+	it("sends one Shallow FindItem over the six distinguished mail folders with a case-insensitive Subject restriction", async () => {
 		const { run, sent } = searchSetup({});
 		await run({ query: "Fixture subject", limit: 5 });
-		expect(sent.map((entry) => entry.action)).toEqual(SEARCHED.map(() => "FindItem"));
-		expect(sent.map((entry) => entry.body)).toEqual(
-			SEARCHED.map((Id) =>
-				expect.objectContaining({
-					QueryString: { __type: "QueryStringType:#Exchange", Value: "Fixture subject" },
-					ParentFolderIds: [{ __type: "DistinguishedFolderId:#Exchange", Id }],
-					Traversal: "Shallow",
-					Paging: expect.objectContaining({ MaxEntriesReturned: 5 }),
-				}),
-			),
+		expect(sent).toHaveLength(1);
+		expect(sent[0]?.action).toBe("FindItem");
+		expect(sent[0]?.body).toEqual(
+			expect.objectContaining({
+				ParentFolderIds: SEARCHED.map((Id) => ({ __type: "DistinguishedFolderId:#Exchange", Id })),
+				Traversal: "Shallow",
+				Paging: expect.objectContaining({ MaxEntriesReturned: 5 }),
+				Restriction: {
+					__type: "RestrictionType:#Exchange",
+					Item: {
+						__type: "Contains:#Exchange",
+						Item: { __type: "PropertyUri:#Exchange", FieldURI: "Subject" },
+						Constant: { __type: "Constant:#Exchange", Value: "Fixture subject" },
+						ContainmentMode: "Substring",
+						ContainmentComparison: "IgnoreCase",
+					},
+				},
+			}),
 		);
+		expect(JSON.stringify(sent)).not.toContain("QueryString");
 		expect(JSON.stringify(sent)).not.toContain("Deep");
 		expect(JSON.stringify(sent)).not.toContain("msgfolderroot");
 	});
 
 	it("masks the subject and the preview of each match", async () => {
-		const { run } = searchSetup({ inbox: [first, second] });
+		const { run } = searchSetup({ drafts: [first, second] });
 		const output = await run({ query: "Fixture subject" });
 		expect(output.messages).toHaveLength(2);
 		for (const entry of output.messages) expect(Object.keys(entry).sort()).toEqual(["date", "flagged", "from", "id", "read"]);
+		expect(JSON.stringify(output)).not.toContain("subject");
 		expect(JSON.stringify(output)).not.toContain("preview");
 	});
 
@@ -217,6 +231,22 @@ describe("dg_outlook_search", () => {
 		const { run } = searchSetup({ inbox: [second], sentitems: [first], archive: [second] });
 		const output = await run({ query: "Fixture subject", limit: 2 });
 		expect(output.messages.map((entry: { id: string }) => entry.id)).toEqual(["AAMkFixtureItem1=", "AAMkFixtureItem2="]);
+		expect(output).not.toHaveProperty("errors");
+	});
+
+	it("returns the matches of the other folders and a code-only error for a folder that failed", async () => {
+		const { run } = searchSetup({ inbox: [first], archive: failed("ErrorFolderNotFound") });
+		const output = await run({ query: "Fixture subject" });
+		expect(output.messages.map((entry: { id: string }) => entry.id)).toEqual(["AAMkFixtureItem1="]);
+		expect(output.errors).toEqual([{ folder: "archive", error: "ErrorFolderNotFound" }]);
+		expect(JSON.stringify(output.errors)).not.toContain("example.com");
+	});
+
+	it("fails when every folder failed", async () => {
+		const { run } = searchSetup(Object.fromEntries(SEARCHED.map((Id) => [Id, failed("ErrorInvalidRestriction")])));
+		await expect(run({ query: "Fixture subject" })).rejects.toThrow(
+			"Outlook could not run FindItem (ErrorInvalidRestriction).",
+		);
 	});
 
 	it("rejects an empty query", async () => {

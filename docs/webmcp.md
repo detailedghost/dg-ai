@@ -106,7 +106,7 @@ only agent tabs.
 | Tool | Class | What it does |
 |---|---|---|
 | `dg_outlook_list` | `area` (mail) | Newest messages of a folder: id, sender address, date, read, flagged. Subject and preview are masked |
-| `dg_outlook_search` | `area` (mail) | The same fields for an Outlook search query over the six distinguished mail folders |
+| `dg_outlook_search` | `area` (mail) | The same fields for the messages whose subject holds the query text, ignoring case, in the six distinguished mail folders. A folder that fails shows in an `errors` list of `{folder, error}` entries |
 | `dg_outlook_read` | `area` (mail-body) | One message with its subject and its body as plain text, body capped at 50,000 characters and shortened with `truncated: true` when the answer would not fit the output limit; the read state does not change |
 | `dg_outlook_mark_read` | `session` | Marks messages read or unread |
 | `dg_outlook_flag` | `session` | Flags or unflags messages |
