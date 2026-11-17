@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.11.4 (2026-11-17)
+
+### Fixes
+
+- fix(extension): post to /owa/service.svc on outlook.live.com with no account index ([#217](https://github.com/detailedghost/dg-ai/pull/217))
+
 ## v5.11.3 (2026-11-16)
 
 ### Fixes
