@@ -396,6 +396,22 @@ describe("JSON text masking", () => {
 		expect(out).not.toContain("example.com");
 	});
 
+	it("keeps numbers, layout and entries whose masked keys collide", () => {
+		const raw = '{\n  "ada@example.com": {"id": 9007199254740993},\n  "bob@example.com": {"id": 2}\n}';
+		expect(maskJsonStrings(raw, (value) => redactText(value))).toBe(
+			'{\n  "[redacted]": {"id": 9007199254740993},\n  "[redacted]": {"id": 2}\n}',
+		);
+	});
+
+	it("masks only a direct string value under a secret key", () => {
+		const raw = JSON.stringify({ token: ["short", "dummy-long-value"], secret: "dummy-secret-value", note: "plain" });
+		expect(JSON.parse(maskJsonStrings(raw, (value) => value) as string)).toEqual({
+			token: ["short", "dummy-long-value"],
+			secret: "[redacted]",
+			note: "plain",
+		});
+	});
+
 	it("returns undefined for text that is not JSON", () => {
 		expect(maskJsonStrings("3 results", (value) => value)).toBeUndefined();
 	});

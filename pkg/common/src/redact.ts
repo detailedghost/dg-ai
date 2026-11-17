@@ -191,22 +191,28 @@ export function redactSecrets(
 	return redactWith(SECRET_PATTERNS, message, secrets, options);
 }
 
-/** Masks each key and string value of a JSON text and every value under a secret key; undefined when the text is not JSON. */
+/** Masks each key and string value of a JSON text in place and every value under a secret key; undefined when the text is not JSON. */
 export function maskJsonStrings(text: string, maskString: (value: string) => string): string | undefined {
-	let parsed: unknown;
 	try {
-		parsed = JSON.parse(text);
+		JSON.parse(text);
 	} catch {
 		return undefined;
 	}
-	const walk = (value: unknown, key?: string): unknown => {
-		if (typeof value === "string")
-			return key !== undefined && SECRET_KEYS.includes(key) && value.length >= 8 ? REDACTED : maskString(value);
-		if (Array.isArray(value)) return value.map((inner) => walk(inner));
-		if (typeof value !== "object" || value === null) return value;
-		return Object.fromEntries(Object.entries(value).map(([name, inner]) => [maskString(name), walk(inner, name)]));
-	};
-	return JSON.stringify(walk(parsed));
+	let key: string | undefined;
+	return text.replace(/"(?:[^"\\]|\\.)*"(\s*:)?|[[{,]/g, (token, colon: string | undefined) => {
+		if (!token.startsWith('"')) {
+			key = undefined;
+			return token;
+		}
+		const value = JSON.parse(colon ? token.slice(0, -colon.length) : token) as string;
+		if (colon) {
+			key = value;
+			return `${JSON.stringify(maskString(value))}${colon}`;
+		}
+		const secret = key !== undefined && SECRET_KEYS.includes(key) && value.length >= 8;
+		key = undefined;
+		return JSON.stringify(secret ? REDACTED : maskString(value));
+	});
 }
 
 export function redactUnknown(value: unknown): unknown {
