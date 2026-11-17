@@ -82,7 +82,8 @@ group, until the human hands you a tab from the extension popup.
   The keys are synthetic events: a plain character or `Backspace` edits a text
   field, `Tab` moves focus, and Enter or Space on a button clicks it. A chord
   with `Control`, `Alt` or `Meta` sends the events only. `press` does not type
-  into a password or secret field; use `fill --value-env` there.
+  into a password or secret field; use `fill --value-env` there. It does not
+  edit an email or number field, whose caret the browser hides; use `fill`.
 - Refs such as `e4` come from the last `--ext snapshot` on that tab. A CSS
   selector must match exactly one element.
 - The first `console` call on a tab starts capture. Call it again later to see

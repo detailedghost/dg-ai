@@ -567,8 +567,15 @@ export function pwExtPageAction(
 	const focusOrder = (): HTMLElement[] => {
 		const index = (el: HTMLElement): number =>
 			!el.hasAttribute("tabindex") && el.getAttribute("contenteditable") === "true" ? 0 : el.tabIndex;
+		const radioSkipped = (el: HTMLElement): boolean => {
+			const radio = el as HTMLInputElement;
+			if (el.tagName !== "INPUT" || radio.type.toLowerCase() !== "radio" || !radio.name || radio.checked) return false;
+			return (Array.from(doc.querySelectorAll("input")) as HTMLInputElement[]).some(
+				(other) => other.type.toLowerCase() === "radio" && other.name === radio.name && other.form === radio.form && other.checked,
+			);
+		};
 		const order = (Array.from(doc.querySelectorAll(FOCUSABLE)) as HTMLElement[]).filter(
-			(el) => index(el) >= 0 && !el.matches(":disabled") && !el.closest("fieldset[disabled]") && !hidden(el),
+			(el) => index(el) >= 0 && !el.matches(":disabled") && !el.closest("fieldset[disabled]") && !hidden(el) && !radioSkipped(el),
 		);
 		return [...order.filter((el) => index(el) > 0).sort((a, b) => index(a) - index(b)), ...order.filter((el) => index(el) === 0)];
 	};
@@ -641,6 +648,15 @@ export function pwExtPageAction(
 		const textField =
 			(target.tagName === "INPUT" && (TEXT_INPUTS.has(type) || type === "password")) || target.tagName === "TEXTAREA";
 		const typing = char !== undefined || name === "Backspace" || name === "Delete" || (name === "Enter" && target.tagName === "TEXTAREA");
+		const caretless = (): boolean => {
+			try {
+				return input.selectionStart === null;
+			} catch {
+				return true;
+			}
+		};
+		if (typing && textField && caretless())
+			return { error: `pw --ext press cannot edit ${describe(target)}: the browser hides its caret. Use pw --ext fill to set its value.` };
 		if (typing && (isSecret(target) || insideSecret(target)))
 			return { error: "pw --ext press does not type into a password or secret field. Use pw --ext fill <target> --value-env NAME." };
 		const init = {
@@ -661,9 +677,14 @@ export function pwExtPageAction(
 			target.dispatchEvent(new scope.Event("change", { bubbles: true }));
 		};
 		const change = (text: string, inputType: string): void => {
-			if (!edit(input, text, inputType) || edited.has(target)) return;
-			edited.add(target);
-			target.addEventListener("focusout", commit, { once: true });
+			const fresh = !edited.has(target);
+			if (fresh) {
+				edited.add(target);
+				target.addEventListener("focusout", commit, { once: true });
+			}
+			if (edit(input, text, inputType) || !fresh) return;
+			edited.delete(target);
+			target.removeEventListener("focusout", commit);
 		};
 		let proceed = send("keydown");
 		if (proceed && !command && (char !== undefined || name === "Enter")) proceed = send("keypress");
@@ -699,7 +720,7 @@ export function pwExtPageAction(
 				effect = `; clicked ${label}`;
 			} else if (name === " " && (target.tagName === "BUTTON" || ["submit", "button", "reset", "image", "checkbox", "radio"].includes(type))) {
 				spaceClick = true;
-			} else if (editable && char !== undefined && (type !== "number" || /^[0-9eE+\-.]$/.test(char))) change(char, "insertText");
+			} else if (editable && char !== undefined) change(char, "insertText");
 			else if (editable && name === "Backspace") change("", "deleteContentBackward");
 			else if (editable && name === "Delete") change("", "deleteContentForward");
 		}

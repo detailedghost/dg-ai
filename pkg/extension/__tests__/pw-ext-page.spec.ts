@@ -824,30 +824,12 @@ describe("press commit and targets", () => {
 describe("press after review round 3", () => {
 	const press = (key: string) => pwExtPageAction({ kind: "press", chord: key, key, modifiers: [] });
 
-	it("keeps a number field value when a key would make it invalid", () => {
+	it("refuses to edit a number field and keeps its value", () => {
 		page(`<input id="n" type="number" aria-label="N" value="12">`);
 		const input = el<HTMLInputElement>("#n");
-		let owner = Object.getPrototypeOf(input);
-		while (!Object.getOwnPropertyDescriptor(owner, "value")) owner = Object.getPrototypeOf(owner);
-		const native = Object.getOwnPropertyDescriptor(owner, "value") as PropertyDescriptor;
-		Object.setPrototypeOf(
-			input,
-			Object.create(Object.getPrototypeOf(input), {
-				value: {
-					get() {
-						return native.get?.call(this);
-					},
-					set(next: string) {
-						native.set?.call(this, /^-?\d+(\.\d+)?$/.test(next) ? next : "");
-					},
-				},
-			}),
-		);
 		input.focus();
-		press("-");
+		expect(press("-")).toEqual({ error: expect.stringContaining("the browser hides its caret") });
 		expect(input.value).toBe("12");
-		press("3");
-		expect(input.value).toBe("123");
 	});
 
 	it("fires change once when another verb moves focus away", () => {
@@ -897,5 +879,49 @@ describe("press after review round 5", () => {
 		expect(pwExtPageAction({ kind: "press", chord: "Tab", key: "Tab", modifiers: [] })).toEqual({
 			detail: 'pressed Tab on button "A"; focus moved to textbox "Editor"',
 		});
+	});
+});
+
+describe("press after review round 6", () => {
+	const press = (chord: string, key = chord, modifiers: string[] = []) =>
+		pwExtPageAction({ kind: "press", chord, key, modifiers });
+
+	it("refuses to edit a field whose caret the browser hides, and leaves Enter alone", () => {
+		page(`<form id="f"><input id="m" type="email" aria-label="Email" value="a@b.test"></form>`);
+		const input = el<HTMLInputElement>("#m");
+		Object.defineProperty(input, "selectionStart", { configurable: true, get: () => null });
+		let submitted = 0;
+		el<HTMLFormElement>("#f").addEventListener("submit", (event) => {
+			event.preventDefault();
+			submitted++;
+		});
+		input.focus();
+		for (const key of ["x", "Backspace", "Delete"])
+			expect(press(key)).toEqual({ error: expect.stringContaining("the browser hides its caret") });
+		expect(input.value).toBe("a@b.test");
+		expect(press("Enter")).toMatchObject({ detail: expect.stringContaining("submitted the form") });
+		expect(submitted).toBe(1);
+	});
+
+	it("fires change when an input handler moves focus away", () => {
+		page(`<input id="a" aria-label="A"><input id="b" aria-label="B">`);
+		const a = el<HTMLInputElement>("#a");
+		let changes = 0;
+		a.addEventListener("change", () => changes++);
+		a.addEventListener("input", () => el<HTMLInputElement>("#b").focus());
+		a.focus();
+		press("x");
+		expect(changes).toBe(1);
+	});
+
+	it("treats a radio group with a checked member as one Tab stop", () => {
+		page(`<button id="s">Start</button>
+			<input type="radio" name="size" id="r1" aria-label="Small">
+			<input type="radio" name="size" id="r2" aria-label="Large" checked>
+			<input type="radio" name="size" id="r3" aria-label="Huge">
+			<button id="e">End</button>`);
+		el<HTMLElement>("#s").focus();
+		expect(press("Tab")).toEqual({ detail: 'pressed Tab on button "Start"; focus moved to radio "Large"' });
+		expect(press("Tab")).toEqual({ detail: 'pressed Tab on radio "Large"; focus moved to button "End"' });
 	});
 });

@@ -252,7 +252,9 @@ Rules:
   does the browser's default for Enter in a form field (it clicks the form's
   submit button, or submits the form), Enter or Space on a button, Tab and
   Shift+Tab, a plain character, Backspace and Delete in a text field. Other
-  keys, such as Escape and the arrow keys, are events only.
+  keys, such as Escape and the arrow keys, are events only. `press` refuses to
+  edit an email or number field, because the browser hides its caret; use
+  `fill` there.
 - A CLI newer than a running dg-daemon gets the daemon's validator error for
   `tabId` or a new verb until you restart `dg-daemon`.
 - Firefox is not supported.
