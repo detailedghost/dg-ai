@@ -562,3 +562,142 @@ describe("page deadline", () => {
 		expect(clicks).toBe(1);
 	});
 });
+
+describe("press", () => {
+	const press = (chord: string, key = chord, modifiers: string[] = []) =>
+		pwExtPageAction({ kind: "press", chord, key, modifiers });
+
+	function keys(target: { addEventListener(type: string, fn: (event: KeyboardEvent) => void): void }): string[] {
+		const seen: string[] = [];
+		for (const type of ["keydown", "keypress", "keyup"])
+			target.addEventListener(type, (event) => seen.push(`${event.type}:${event.key}:${event.code}`));
+		return seen;
+	}
+
+	it("submits a search form through its button when the page leaves Enter alone", () => {
+		page(`<form id="f"><label for="q">Search</label><input id="q"><button>Go</button></form>`);
+		let submitted = 0;
+		el<HTMLFormElement>("#f").addEventListener("submit", (event) => {
+			event.preventDefault();
+			submitted++;
+		});
+		const seen = keys(el<HTMLElement>("#q"));
+		el<HTMLInputElement>("#q").focus();
+		expect(press("Enter")).toEqual({ detail: 'pressed Enter on textbox "Search"; clicked button "Go" to submit the form' });
+		expect(submitted).toBe(1);
+		expect(seen).toEqual(["keydown:Enter:Enter", "keypress:Enter:Enter", "keyup:Enter:Enter"]);
+	});
+
+	it("submits a form without a button", () => {
+		page(`<form id="f"><input id="q" aria-label="Search"></form>`);
+		let submitted = 0;
+		el<HTMLFormElement>("#f").addEventListener("submit", (event) => {
+			event.preventDefault();
+			submitted++;
+		});
+		el<HTMLInputElement>("#q").focus();
+		expect(press("Enter")).toEqual({ detail: 'pressed Enter on textbox "Search"; submitted the form' });
+		expect(submitted).toBe(1);
+	});
+
+	it("does not submit when the page handles Enter itself", () => {
+		page(`<form id="f"><input id="q" aria-label="Search"></form>`);
+		let submitted = 0;
+		let handled = 0;
+		el<HTMLFormElement>("#f").addEventListener("submit", (event) => {
+			event.preventDefault();
+			submitted++;
+		});
+		el<HTMLElement>("#q").addEventListener("keydown", (event) => {
+			if ((event as KeyboardEvent).key === "Enter") {
+				handled++;
+				event.preventDefault();
+			}
+		});
+		el<HTMLInputElement>("#q").focus();
+		expect(press("Enter")).toEqual({ detail: 'pressed Enter on textbox "Search"' });
+		expect(handled).toBe(1);
+		expect(submitted).toBe(0);
+	});
+
+	it("types a plain character and deletes it with Backspace, firing input each time", () => {
+		page(`<input id="q" aria-label="Search" value="ca">`);
+		const input = el<HTMLInputElement>("#q");
+		const inputs: string[] = [];
+		input.addEventListener("input", (event) => inputs.push((event as InputEvent).inputType));
+		input.focus();
+		input.setSelectionRange(2, 2);
+		expect(press("t")).toEqual({ detail: 'pressed t on textbox "Search"' });
+		expect(input.value).toBe("cat");
+		expect(press("Backspace")).toEqual({ detail: 'pressed Backspace on textbox "Search"' });
+		expect(input.value).toBe("ca");
+		expect(inputs).toEqual(["insertText", "deleteContentBackward"]);
+	});
+
+	it("sends a modifier chord as events only", () => {
+		page(`<input id="q" aria-label="Search" value="cat">`);
+		const input = el<HTMLInputElement>("#q");
+		const chords: string[] = [];
+		input.addEventListener("keydown", (event) => {
+			const e = event as KeyboardEvent;
+			chords.push(`${e.ctrlKey ? "Control+" : ""}${e.shiftKey ? "Shift+" : ""}${e.key}`);
+		});
+		input.focus();
+		expect(press("Control+a", "a", ["Control"])).toEqual({ detail: 'pressed Control+a on textbox "Search"' });
+		expect(input.value).toBe("cat");
+		expect(chords).toEqual(["Control+a"]);
+	});
+
+	it("moves focus with Tab and Shift+Tab", () => {
+		page(`<input id="a" aria-label="A"><button id="b">B</button><input id="c" aria-label="C" disabled>`);
+		el<HTMLInputElement>("#a").focus();
+		expect(press("Tab")).toEqual({ detail: 'pressed Tab on textbox "A"; focus moved to button "B"' });
+		expect(window.document.activeElement?.id).toBe("b");
+		expect(press("Shift+Tab", "Tab", ["Shift"])).toEqual({ detail: 'pressed Shift+Tab on button "B"; focus moved to textbox "A"' });
+		expect(window.document.activeElement?.id).toBe("a");
+	});
+
+	it("sends Escape and arrow keys to the focused element without a default action", () => {
+		page(`<div id="list" role="listbox" tabindex="0" aria-label="Results"></div>`);
+		const list = el<HTMLElement>("#list");
+		const seen = keys(list);
+		list.focus();
+		expect(press("ArrowDown")).toEqual({ detail: 'pressed ArrowDown on listbox "Results"' });
+		expect(press("Escape")).toEqual({ detail: 'pressed Escape on listbox "Results"' });
+		expect(seen).toEqual(["keydown:ArrowDown:ArrowDown", "keyup:ArrowDown:ArrowDown", "keydown:Escape:Escape", "keyup:Escape:Escape"]);
+	});
+
+	it("clicks a focused button on Enter", () => {
+		page(`<button id="go">Go</button>`);
+		let clicks = 0;
+		el<HTMLElement>("#go").addEventListener("click", () => clicks++);
+		el<HTMLElement>("#go").focus();
+		expect(press("Enter")).toEqual({ detail: 'pressed Enter on button "Go"; clicked button "Go"' });
+		expect(clicks).toBe(1);
+	});
+
+	it("sends the key to the page when nothing has focus", () => {
+		page(`<p>Hi</p>`);
+		const seen = keys(window.document.body as unknown as HTMLElement);
+		expect(press("Escape")).toEqual({ detail: "pressed Escape on the page" });
+		expect(seen).toEqual(["keydown:Escape:Escape", "keyup:Escape:Escape"]);
+	});
+
+	it("refuses to type into a password field but still submits it with Enter", () => {
+		page(`<form id="f"><input id="pw" type="password" aria-label="Password" value="hunter2-x"></form>`);
+		let submitted = 0;
+		el<HTMLFormElement>("#f").addEventListener("submit", (event) => {
+			event.preventDefault();
+			submitted++;
+		});
+		const input = el<HTMLInputElement>("#pw");
+		const seen = keys(input);
+		input.focus();
+		for (const key of ["x", "Backspace", "Delete"])
+			expect(press(key)).toEqual({ error: expect.stringContaining("does not type into a password or secret field") });
+		expect(input.value).toBe("hunter2-x");
+		expect(seen).toEqual([]);
+		expect(press("Enter")).toEqual({ detail: 'pressed Enter on textbox "Password"; submitted the form' });
+		expect(submitted).toBe(1);
+	});
+});

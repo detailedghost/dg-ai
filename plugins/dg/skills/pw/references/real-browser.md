@@ -41,6 +41,7 @@ group, until the human hands you a tab from the extension popup.
 | `close [tabId]` | write | Closes a tab of the group; the selected tab by default |
 | `click <ref or selector>` | write | Clicks one element |
 | `fill <ref or selector> <text>` | write | Sets one text field, or a date or time field (`date` as `YYYY-MM-DD`, `time` as `HH:MM`, plus `datetime-local`, `month` and `week`), or picks one `<select>` option by value, then label, then case-insensitive label. A multi-select is refused |
+| `press <key>` | write | Presses a key on the focused element, or on the page when nothing has focus: `Enter`, `Escape`, `Tab`, `ArrowDown`, `Backspace`, a plain character such as `a`, or a chord such as `Shift+Tab` or `Control+a`. Enter in a form field submits the form when the page does not handle the key |
 | `fill <ref or selector> --value-env NAME` | write | Sets a password or secret field from your environment variable `NAME`. Needs an `unmask` grant |
 | `fill <ref or selector> --value-stdin` | write | Same, but reads the value from stdin. Needs an `unmask` grant |
 | `unmask [--minutes N]` | write | Asks the human, in a browser popup, to unmask the selected tab's origin for `N` minutes (1 to 60, default 15). `unmask --off` ends it |
@@ -76,6 +77,12 @@ group, until the human hands you a tab from the extension popup.
   `pw --ext tabs`, then `pw --ext select <id>`.
 - A group holds at most 200 tabs. `new` and a first `open` stop at that limit.
 - `screenshot` brings the tab to the front and leaves it there.
+- `press` acts on the focused element. `fill` focuses its field, so to submit a
+  search box run `pw --ext fill <ref> "<text>"`, then `pw --ext press Enter`.
+  The keys are synthetic events: a plain character or `Backspace` edits a text
+  field, `Tab` moves focus, and Enter or Space on a button clicks it. A chord
+  with `Control`, `Alt` or `Meta` sends the events only. `press` does not type
+  into a password or secret field; use `fill --value-env` there.
 - Refs such as `e4` come from the last `--ext snapshot` on that tab. A CSS
   selector must match exactly one element.
 - The first `console` call on a tab starts capture. Call it again later to see

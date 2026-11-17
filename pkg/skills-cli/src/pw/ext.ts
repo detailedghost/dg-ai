@@ -20,6 +20,7 @@ import {
 	describeError,
 	isPwExtCliResult,
 	isPwExtSecretTooShort,
+	normalizeKey,
 	PW_EXT_MIN_SECRET_CHARS,
 	redactLiterals,
 	redactSecrets,
@@ -198,6 +199,7 @@ const POSITIONALS: Record<CliVerb, readonly string[]> = {
 	click: ["target"],
 	count: ["target"],
 	fill: ["target", "value"],
+	press: ["key"],
 	upload: ["target", "file"],
 	unmask: [],
 	tools: [],
@@ -278,6 +280,8 @@ Write verbs (they change the page):
   fill <ref|selector> <text>  set one text, date or time field (YYYY-MM-DD, HH:MM), or pick a select option by value or label
   fill <ref|selector> --value-env NAME | --value-stdin
                           set a password or secret field during an unmask; the value never goes in argv or output
+  press <key>             press a key on the focused element, such as Enter, Escape, Tab, ArrowDown, Backspace,
+                          a or Shift+Tab; Enter in a form field submits the form when the page does not handle it
   upload <ref|selector> <file>  set one file on a file input (https pages only)
   call <tool> <json-args> Web MCP bridge: run one WebMCP tool of the page; it asks a Web MCP approval
                           (not the pw --ext site allowlist) unless the tool reads only or a grant holds
@@ -465,7 +469,9 @@ function parseRequest(
 			request[key] =
 				key === "tabId"
 					? tabIdOf(value, `pw --ext ${verb} takes a tab id from pw --ext tabs.`)
-					: value;
+					: key === "key"
+						? normalizeKey(value)
+						: value;
 		});
 	let secret: string | undefined;
 	if (secretFill) {

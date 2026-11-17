@@ -303,6 +303,30 @@ describe("pw --ext background handler", () => {
 		expect(h.executed()[0]?.args).toEqual([{ kind: "count", target: "#q" }, WEB_TAB.url, false, [], expect.any(Number)]);
 	});
 
+	it("runs a press in the page with the chord split into key and modifiers", async () => {
+		const h = harness({ pageResult: { detail: 'pressed Shift+Tab on textbox "Search"; focus moved to button "Go"' } });
+		const answer = await h.run({ verb: "press", key: "Shift+Tab" });
+
+		expect(answer).toMatchObject({ ok: true });
+		if (answer.ok) expect(answer.data.text).toContain("pressed Shift+Tab");
+		expect(h.executed()[0]?.args).toEqual([
+			{ kind: "press", chord: "Shift+Tab", key: "Tab", modifiers: ["Shift"] },
+			WEB_TAB.url,
+			false,
+			[],
+			expect.any(Number),
+		]);
+	});
+
+	it("touches no page on a press when the person denies the site", async () => {
+		const h = harness({ sites: "ask", approval: "deny", pageResult: { detail: "x" } });
+		expect(await h.run({ verb: "press", key: "Enter" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("may not use example.test and its subdomains"),
+		});
+		expect(h.executed()).toEqual([]);
+	});
+
 	it("runs a fill and keeps the typed value out of the result", async () => {
 		const h = harness({ pageResult: { detail: 'filled textbox "Search"' } });
 		const answer = await h.run({ verb: "fill", target: "e2", value: "cats" });
@@ -397,6 +421,7 @@ describe("pw --ext background handler", () => {
 		{ verb: "snapshot" },
 		{ verb: "click", target: "e1" },
 		{ verb: "fill", target: "e1", value: "x" },
+		{ verb: "press", key: "Enter" },
 		{ verb: "selection" },
 		{ verb: "console" },
 		{ verb: "tools" },
@@ -2174,7 +2199,7 @@ describe("pw --ext WebMCP on a mailbox tab", () => {
 		expect(answer.ok && answer.data.tools).toEqual([]);
 	});
 
-	it.each(["snapshot", "click", "fill", "count", "selection", "console", "screenshot", "unmask", "upload"] as const)(
+	it.each(["snapshot", "click", "fill", "press", "count", "selection", "console", "screenshot", "unmask", "upload"] as const)(
 		"still refuses %s",
 		async (verb) => {
 			const h = harness({ tabs: [protonTab], approval: "allow" });
@@ -2182,6 +2207,7 @@ describe("pw --ext WebMCP on a mailbox tab", () => {
 				snapshot: { verb: "snapshot" },
 				click: { verb: "click", target: "e1" },
 				fill: { verb: "fill", target: "e1", value: "x" },
+				press: { verb: "press", key: "Enter" },
 				count: { verb: "count", target: "e1" },
 				selection: { verb: "selection" },
 				console: { verb: "console" },
@@ -2252,6 +2278,12 @@ describe("pw --ext on an Outlook tab", () => {
 	it("does not refuse snapshot with the mailbox error", async () => {
 		const h = harness({ tabs: [owaTab] });
 		expect(await h.run({ verb: "snapshot" })).not.toEqual({ ok: false, error: PW_EXT_MAILBOX_ERROR });
+	});
+
+	it("runs a press like on any page", async () => {
+		const h = harness({ tabs: [owaTab], pageResult: { detail: 'pressed Enter on searchbox "Search"' } });
+		expect(outcome(await h.run({ verb: "press", key: "Enter" }))).toContain("pressed Enter");
+		expect(h.executed()).toHaveLength(1);
 	});
 
 	it.each([
@@ -2902,6 +2934,7 @@ describe("pw --ext Stop", () => {
 		await h.handler.stop(SESSION);
 		expect(await h.run({ verb: "snapshot" })).toEqual({ ok: false, error: STOPPED });
 		expect(await h.run({ verb: "tabs" })).toEqual({ ok: false, error: STOPPED });
+		expect(await h.run({ verb: "press", key: "Enter" })).toEqual({ ok: false, error: STOPPED });
 		expect(h.fake.record(SESSION)).toBeUndefined();
 		expect([...h.fake.session.keys()].filter((key) => key.endsWith(SESSION))).toEqual([`pwExtStopped:${SESSION}`]);
 		expect((await h.runAs(OTHER_SESSION, { verb: "tabs" })).ok).toBe(true);

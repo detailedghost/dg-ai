@@ -100,6 +100,9 @@ describe("pw --ext", () => {
 		[["click", "e3"], { verb: "click", target: "e3" }],
 		[["fill", "#q", "cats"], { verb: "fill", target: "#q", value: "cats" }],
 		[["count", "input[type=file]"], { verb: "count", target: "input[type=file]" }],
+		[["press", "enter"], { verb: "press", key: "Enter" }],
+		[["press", "shift+tab"], { verb: "press", key: "Shift+Tab" }],
+		[["press", "a"], { verb: "press", key: "a" }],
 		[["current"], { verb: "current" }],
 		[["selection"], { verb: "selection" }],
 		[["console"], { verb: "console" }],
@@ -143,7 +146,18 @@ describe("pw --ext", () => {
 		expect(help).toContain("--session <id>");
 		expect(help).toContain("DG_SESSION_ID");
 		expect(help).toContain("count <ref|selector>");
+		expect(help).toContain("press <key>");
 	});
+
+	test.each([[["press"]], [["press", "Enter", "e3"]], [["press", "Bogus"]], [["press", "--key", "Enter"]]])(
+		"refuses %p before it connects",
+		async (argv) => {
+			const env = clientEnv();
+			const d = deps(() => ({ ok: true, data: { text: "ok" } }));
+			expect(await runExt(["--ext", ...argv], env, d.value)).toBe(2);
+			expect(d.sent).toEqual([]);
+		},
+	);
 
 	test("saves a screenshot to the pw scratch dir and prints the path", async () => {
 		const env = clientEnv();
@@ -325,12 +339,12 @@ describe("pw --ext tab verbs and --tab", () => {
 		expect(env.stderr.join("\n")).toContain("pw --ext new takes [<url>].");
 	});
 
-	test("lists all 22 verbs for an unknown verb", async () => {
+	test("lists all 23 verbs for an unknown verb", async () => {
 		const env = clientEnv();
 		await runExt(["--ext", "nope"], env, deps(() => ({})).value);
 		const verbs = [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS];
 
-		expect(verbs).toHaveLength(22);
+		expect(verbs).toHaveLength(23);
 		for (const verb of verbs) expect(env.stderr.join("\n")).toContain(verb);
 		expect(env.stderr.join("\n")).toContain(`Use one of: ${verbs.join(", ")}.`);
 	});

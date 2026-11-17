@@ -1,4 +1,5 @@
 import { fail, requireRecord, requireString } from "./assert";
+import { parseKeyChord } from "./keyboard-keys";
 import { PROTO_PREVIEW_MAX_CHARS } from "./proto-format";
 import { PW_EXT_NETWORK_MAX_FILTER_CHARS, PW_EXT_NETWORK_MAX_LIMIT } from "./pw-ext-network";
 import { PW_EXT_CREDENTIAL_NAME, PW_EXT_CREDENTIAL_SOURCES, type PwExtCredentialSource } from "./pw-ext-credential-format";
@@ -21,6 +22,7 @@ export const PW_EXT_WRITE_VERBS = [
 	"open",
 	"click",
 	"fill",
+	"press",
 	"upload",
 	"call",
 	"new",
@@ -102,7 +104,7 @@ export type PwExtRequest = {
 	auth?: "page";
 	/** storage only. */
 	area?: "local" | "session";
-	/** storage: one key; credential: the cookie, header or storage key to save. */
+	/** storage: one key; credential: the cookie, header or storage key to save; press: a key chord such as Enter or Shift+Tab. */
 	key?: string;
 	keysOnly?: boolean;
 	/** credential only: the short name under pw/<site>/. */
@@ -178,6 +180,7 @@ const FIELDS: Record<PwExtVerb, readonly string[]> = {
 	click: ["tabId", "target"],
 	count: ["tabId", "target"],
 	fill: ["tabId", "target", "value", "secret"],
+	press: ["tabId", "key"],
 	unmask: ["tabId", "minutes", "off"],
 	upload: [
 		"tabId",
@@ -387,6 +390,10 @@ export function validatePwExtRequest(value: unknown): PwExtRequest {
 		if (value.values !== undefined && value.values !== true) fail(`${path}.values must be true when set`);
 		if (value.since === "clear" && (value.filter !== undefined || value.limit !== undefined || value.values !== undefined))
 			fail(`${path}.since clear takes no other option`);
+	}
+	if (verb === "press") {
+		requireString(value.key, `${path}.key`, { nonEmpty: true });
+		if (!parseKeyChord(value.key)) fail(`${path}.key must be a key such as Enter, Tab, a or Shift+Tab`);
 	}
 	if (verb === "fill") {
 		if (value.secret !== undefined && value.secret !== true) fail(`${path}.secret must be true when set`);

@@ -3,6 +3,7 @@ export type PwExtPageAction =
 	| { kind: "click"; target: string }
 	| { kind: "count"; target: string }
 	| { kind: "fill"; target: string; value: string; secret?: boolean; until?: number }
+	| { kind: "press"; chord: string; key: string; modifiers: string[] }
 	| {
 			kind: "upload";
 			target: string;
@@ -559,6 +560,105 @@ export function pwExtPageAction(
 		return { detail: `uploaded ${fileName} to ${describe(el)}` };
 	};
 
+	const FOCUSABLE = "a[href],button,input,select,textarea,summary,iframe,[contenteditable='true'],[tabindex]";
+	const BUTTON_INPUTS = new Set(["submit", "button", "reset", "image", "checkbox", "radio", "file", "color", "range"]);
+
+	const focusOrder = (): HTMLElement[] => {
+		const order = (Array.from(doc.querySelectorAll(FOCUSABLE)) as HTMLElement[]).filter(
+			(el) => el.tabIndex >= 0 && !(el as HTMLButtonElement).disabled && !hidden(el),
+		);
+		return [...order.filter((el) => el.tabIndex > 0).sort((a, b) => a.tabIndex - b.tabIndex), ...order.filter((el) => el.tabIndex === 0)];
+	};
+
+	const edit = (input: HTMLInputElement, text: string, inputType: string): void => {
+		const value = input.value;
+		const start = input.selectionStart ?? value.length;
+		const end = input.selectionEnd ?? value.length;
+		const from = text === "" && start === end ? (inputType === "deleteContentBackward" ? Math.max(0, start - 1) : start) : start;
+		const to = text === "" && start === end && inputType === "deleteContentForward" ? Math.min(value.length, end + 1) : end;
+		setValue(input, value.slice(0, from) + text + value.slice(to));
+		try {
+			input.setSelectionRange(from + text.length, from + text.length);
+		} catch {}
+		const scope = win as unknown as typeof globalThis;
+		input.dispatchEvent(new scope.InputEvent("input", { bubbles: true, inputType, ...(text ? { data: text } : {}) }));
+	};
+
+	const submit = (form: HTMLFormElement): string => {
+		const submitter = Array.from(form.elements).find(
+			(el) =>
+				(el.tagName === "BUTTON" && (el as HTMLButtonElement).type === "submit") ||
+				(el.tagName === "INPUT" && ["submit", "image"].includes((el as HTMLInputElement).type.toLowerCase())),
+		) as HTMLElement | undefined;
+		if (submitter) {
+			if ((submitter as HTMLButtonElement).disabled) return "";
+			submitter.click();
+			return `; clicked ${describe(submitter)} to submit the form`;
+		}
+		form.requestSubmit();
+		return "; submitted the form";
+	};
+
+	const press = (chord: string, key: string, modifiers: string[]): PwExtPageResult => {
+		const scope = win as unknown as typeof globalThis;
+		const active = doc.activeElement;
+		const target = active && active !== doc.body ? active : (doc.body ?? doc.documentElement);
+		const label = target === doc.body || target === doc.documentElement ? "the page" : describe(target);
+		const mac = /Mac|iPhone|iPad/.test(scope.navigator?.platform ?? "");
+		const held = new Set(modifiers.map((m) => (m === "ControlOrMeta" ? (mac ? "Meta" : "Control") : m)));
+		const command = held.has("Control") || held.has("Alt") || held.has("Meta");
+		const name = key === "Space" ? " " : key;
+		const char = [...name].length === 1 && !command ? name : undefined;
+		const input = target as HTMLInputElement;
+		const type = target.tagName === "INPUT" ? input.type.toLowerCase() : "";
+		const textField =
+			(target.tagName === "INPUT" && (TEXT_INPUTS.has(type) || type === "password")) || target.tagName === "TEXTAREA";
+		const typing = char !== undefined || name === "Backspace" || name === "Delete";
+		if (typing && (isSecret(target) || insideSecret(target)))
+			return { error: "pw --ext press does not type into a password or secret field. Use pw --ext fill <target> --value-env NAME." };
+		const init = {
+			key: name,
+			code: /^[a-z]$/i.test(name) ? `Key${name.toUpperCase()}` : /^\d$/.test(name) ? `Digit${name}` : name === " " ? "Space" : char ? "" : name,
+			bubbles: true,
+			cancelable: true,
+			composed: true,
+			shiftKey: held.has("Shift"),
+			ctrlKey: held.has("Control"),
+			altKey: held.has("Alt"),
+			metaKey: held.has("Meta"),
+		};
+		const send = (type: string): boolean => target.dispatchEvent(new scope.KeyboardEvent(type, init));
+		let proceed = send("keydown");
+		if (proceed && !command && (char !== undefined || name === "Enter")) proceed = send("keypress");
+		let effect = "";
+		const editable = textField && !input.disabled && !input.readOnly;
+		if (proceed && target.isConnected && !command) {
+			if (name === "Tab") {
+				const order = focusOrder();
+				const at = order.indexOf(target as HTMLElement);
+				const next = held.has("Shift") ? order[at <= 0 ? order.length - 1 : at - 1] : order[(at + 1) % order.length];
+				if (next) {
+					next.focus();
+					effect = `; focus moved to ${describe(next)}`;
+				}
+			} else if (name === "Enter" && target.tagName === "TEXTAREA") {
+				if (editable) edit(input, "\n", "insertLineBreak");
+			} else if (name === "Enter" && target.tagName === "INPUT" && !BUTTON_INPUTS.has(type) && input.form) {
+				effect = submit(input.form);
+			} else if (
+				(name === "Enter" && (target.tagName === "BUTTON" || (target.tagName === "A" && target.hasAttribute("href")) || ["submit", "button", "reset", "image"].includes(type))) ||
+				(name === " " && (target.tagName === "BUTTON" || ["submit", "button", "reset", "image", "checkbox", "radio"].includes(type)))
+			) {
+				(target as HTMLElement).click();
+				effect = `; clicked ${label}`;
+			} else if (editable && char !== undefined) edit(input, char, "insertText");
+			else if (editable && name === "Backspace") edit(input, "", "deleteContentBackward");
+			else if (editable && name === "Delete") edit(input, "", "deleteContentForward");
+		}
+		if (target.isConnected) send("keyup");
+		return { detail: `pressed ${chord} on ${label}${effect}` };
+	};
+
 	const selection = (): PwExtPageResult => {
 		const active = doc.activeElement as HTMLInputElement | null;
 		if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
@@ -626,6 +726,8 @@ export function pwExtPageAction(
 				return count(action.target);
 			case "fill":
 				return fill(action.target, action.value, action.secret === true, action.until);
+			case "press":
+				return press(action.chord, action.key, action.modifiers);
 			case "selection":
 				return selection();
 			case "upload":
