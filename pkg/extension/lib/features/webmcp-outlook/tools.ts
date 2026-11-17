@@ -172,6 +172,16 @@ const page = (limit: number) => ({
 	Offset: 0,
 	MaxEntriesReturned: limit,
 });
+const subjectContains = (Value: string) => ({
+	__type: "RestrictionType:#Exchange",
+	Item: {
+		__type: "Contains:#Exchange",
+		Item: field("Subject"),
+		Constant: { __type: "Constant:#Exchange", Value },
+		ContainmentMode: "Substring",
+		ContainmentComparison: "IgnoreCase",
+	},
+});
 const newestFirst = (a: { date: string }, b: { date: string }) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0);
 
 const findItemsShape = {
@@ -197,14 +207,16 @@ const errorsOf = ({ errors }: Outcome) => (errors.length ? { errors } : {});
 /** The ten Outlook mail tools; each returns one JSON string and echoes no recipient, subject or body it was given. */
 export function createOutlookTools(service: OwaService): WebMcpTool[] {
 	async function findItems(body: Record<string, unknown>, signal?: AbortSignal) {
-		const [response] = await service.call("FindItem", {
+		return service.call("FindItem", {
 			__type: "FindItemRequest:#Exchange",
 			ItemShape: findItemsShape,
 			SortOrder: [{ __type: "SortResults:#Exchange", Order: "Descending", Path: field("DateTimeReceived") }],
 			...body,
 		}, signal);
-		return list(record(record(response).RootFolder).Items).map((item) => message(record(item)));
 	}
+
+	const messagesOf = (response: OwaItem | undefined) =>
+		list(record(record(response).RootFolder).Items).map((item) => message(record(item)));
 
 	async function folderRef(name: string, signal?: AbortSignal): Promise<FolderRef> {
 		const id = name.toLowerCase();
@@ -296,31 +308,34 @@ export function createOutlookTools(service: OwaService): WebMcpTool[] {
 					args.folder === undefined ? "inbox" : requireText(args, "folder", { nonEmpty: true }),
 					signal,
 				);
-				const messages = await findItems({ ParentFolderIds: [folder], Traversal: "Shallow", Paging: page(limit) }, signal);
-				return JSON.stringify({ messages });
+				const [response] = await findItems({ ParentFolderIds: [folder], Traversal: "Shallow", Paging: page(limit) }, signal);
+				return JSON.stringify({ messages: messagesOf(response) });
 			},
 		},
 		{
 			name: "dg_outlook_search",
-			description: `Search the ${DISTINGUISHED_FOLDERS.join(", ")} folders with an Outlook search query and return the matching messages, newest first, with the fields of dg_outlook_list. Subject and preview are masked.`,
+			description: `Find the messages whose subject holds the query text, ignoring case, in the ${DISTINGUISHED_FOLDERS.join(", ")} folders, newest first, with the fields of dg_outlook_list. Subject and preview are masked.`,
 			inputSchema: schema(
-				{ query: { type: "string", minLength: 1, description: "The Outlook search query." }, limit: limitSchema },
+				{
+					query: { type: "string", minLength: 1, description: "Text to find in the subject, ignoring case." },
+					limit: limitSchema,
+				},
 				["query"],
 			),
 			async execute(args, { signal } = {}) {
 				const query = requireText(args, "query", { nonEmpty: true });
 				const limit = limitOf(args);
-				const found = await Promise.all(
-					DISTINGUISHED_FOLDERS.map((id) =>
-						findItems({
-							ParentFolderIds: [distinguished(id)],
-							Traversal: "Shallow",
-							QueryString: { __type: "QueryStringType:#Exchange", Value: query },
-							Paging: page(limit),
-						}, signal),
-					),
+				const responses = await findItems({
+					ParentFolderIds: DISTINGUISHED_FOLDERS.map(distinguished),
+					Traversal: "Shallow",
+					Restriction: subjectContains(query),
+					Paging: page(limit),
+				}, signal);
+				const errors = DISTINGUISHED_FOLDERS.flatMap((folder, index) =>
+					owaSucceeded(responses[index]) ? [] : [{ folder, error: owaErrorCode(responses[index]) }],
 				);
-				return JSON.stringify({ messages: found.flat().sort(newestFirst).slice(0, limit) });
+				const messages = responses.filter(owaSucceeded).flatMap(messagesOf).sort(newestFirst).slice(0, limit);
+				return JSON.stringify({ messages, ...(errors.length ? { errors } : {}) });
 			},
 		},
 		{
