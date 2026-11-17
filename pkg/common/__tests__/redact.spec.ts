@@ -3,6 +3,7 @@ import {
 	clearNotedSecrets,
 	emitRedacted,
 	installRedactingConsole,
+	maskJsonStrings,
 	noteSecret,
 	redactLiterals,
 	redactSecrets,
@@ -350,5 +351,52 @@ describe("redactText with literals", () => {
 	it("masks the line-break-free form of a literal", () => {
 		expect(redactText("value orchidmaple", [], { literals: ["orchid\nmaple"] })).toBe("value [redacted]");
 		expect(redactLiterals("value orchidmaple", ["orchid\r\nmaple"])).toBe("value [redacted]");
+	});
+});
+
+describe("JSON text masking", () => {
+	const parsed = (text: string) => JSON.parse(text) as unknown;
+
+	it.each([
+		["a newline", { body: "line one\nada@example.com" }],
+		["a tab", { body: "cell\tada@example.com" }],
+		["a backslash", { body: "C:\\dir\\ada@example.com" }],
+		["a quote", { body: 'say "hi" ada@example.com' }],
+		["a unicode escape", { body: "\u0001ada@example.com" }],
+	])("keeps raw JSON valid when an email follows %s", (_name, value) => {
+		const out = redactText(JSON.stringify(value));
+		expect(() => parsed(out)).not.toThrow();
+		expect(out).toContain("[redacted]");
+		expect(out).not.toContain("example.com");
+	});
+
+	it("masks a secret-key value that holds an escaped quote and keeps the JSON valid", () => {
+		const out = redactText(JSON.stringify({ token: 'dummy-value\"tail-part' }));
+		expect(parsed(out)).toEqual({ token: "[redacted]" });
+	});
+
+	it("masks a literal that ends inside an escape without breaking the JSON", () => {
+		const out = redactText(JSON.stringify({ note: "a dummyword\nnext" }), [], { literals: ["dummyword\\"] });
+		expect(() => parsed(out)).not.toThrow();
+		expect(out).not.toContain("dummyword");
+	});
+
+	it("masks each decoded key and string value and returns valid JSON", () => {
+		const raw = JSON.stringify({
+			"ada@example.com": { body: "line\nada@example.com", list: ["x\tbob@example.com", 3, null] },
+			token: "dummy-token-value",
+			id: "AAMkADQ1=",
+		});
+		const out = maskJsonStrings(raw, (value) => redactText(value)) as string;
+		expect(parsed(out)).toEqual({
+			"[redacted]": { body: "line\n[redacted]", list: ["x\t[redacted]", 3, null] },
+			token: "[redacted]",
+			id: "AAMkADQ1=",
+		});
+		expect(out).not.toContain("example.com");
+	});
+
+	it("returns undefined for text that is not JSON", () => {
+		expect(maskJsonStrings("3 results", (value) => value)).toBeUndefined();
 	});
 });

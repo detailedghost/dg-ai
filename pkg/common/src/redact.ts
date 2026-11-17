@@ -14,6 +14,8 @@ export function clearNotedSecrets(): void {
 	notedSecrets.clear();
 }
 
+const SECRET_KEYS = ["token", "accessToken", "refreshToken", "apiKey", "authorization", "password", "secret", "cookie"];
+
 const EMAIL = {
 	pattern: /(^|[^A-Z0-9._%+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
 	replacement: `$1${REDACTED}`,
@@ -53,8 +55,7 @@ const SECRET_PATTERNS: ReadonlyArray<{ pattern: RegExp; replacement: string }> =
 		replacement: REDACTED,
 	},
 	{
-		pattern:
-			/"(token|accessToken|refreshToken|apiKey|authorization|password|secret|cookie)"\s*:\s*"[^"]{8,}"/g,
+		pattern: new RegExp(`"(${SECRET_KEYS.join("|")})"\\s*:\\s*"(?:[^"\\\\]|\\\\.){8,}"`, "g"),
 		replacement: `"$1":"${REDACTED}"`,
 	},
 ];
@@ -157,6 +158,11 @@ function redactWith(
 			const [head, tail] = keptEnds(match[0], expanded);
 			masked.fill(1, at + head, at + match[0].length - tail);
 		}
+	for (let at = message.indexOf("\\"); at !== -1; ) {
+		const end = at + (/^u[0-9A-Fa-f]{4}/.test(message.slice(at + 1, at + 6)) ? 6 : 2);
+		if (masked.subarray(at, end).includes(1)) masked.fill(1, at, Math.min(end, message.length));
+		at = message.indexOf("\\", end);
+	}
 	const parts: string[] = [];
 	let start = 0;
 	for (let i = 1; i <= message.length; i++) {
@@ -183,6 +189,24 @@ export function redactSecrets(
 	options?: RedactOptions,
 ): string {
 	return redactWith(SECRET_PATTERNS, message, secrets, options);
+}
+
+/** Masks each key and string value of a JSON text and every value under a secret key; undefined when the text is not JSON. */
+export function maskJsonStrings(text: string, maskString: (value: string) => string): string | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		return undefined;
+	}
+	const walk = (value: unknown, key?: string): unknown => {
+		if (typeof value === "string")
+			return key !== undefined && SECRET_KEYS.includes(key) && value.length >= 8 ? REDACTED : maskString(value);
+		if (Array.isArray(value)) return value.map((inner) => walk(inner));
+		if (typeof value !== "object" || value === null) return value;
+		return Object.fromEntries(Object.entries(value).map(([name, inner]) => [maskString(name), walk(inner, name)]));
+	};
+	return JSON.stringify(walk(parsed));
 }
 
 export function redactUnknown(value: unknown): unknown {

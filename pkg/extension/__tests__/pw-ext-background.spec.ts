@@ -1308,6 +1308,48 @@ describe("pw --ext unmask", () => {
 			const text = outcome(await h.run({ verb: "current" }));
 			expect(text).toContain("- Page Title: Mail - Test Person - Outlook");
 		});
+
+		const NAMED = { tree: '- button "Account manager for Test Person" [ref=e1]', text: "Test Person" };
+
+		it.each([
+			"https://outlook.live.com/mail/0/",
+			"https://outlook.office.com/mail/",
+			"https://outlook.office365.com/mail/",
+			"https://outlook.cloud.microsoft/mail/",
+		])("masks the title's account name in a snapshot on %s", async (url) => {
+			const h = harness({ tabs: outlookTab(url, "Mail - Test Person - Outlook"), pageResult: NAMED });
+			const text = outcome(await h.run({ verb: "snapshot" }));
+			expect(text).toContain('- button "Account manager for [redacted]" [ref=e1]');
+			expect(text).not.toContain("Test Person");
+		});
+
+		it("does not treat the first title part or the Outlook suffix as the account name", async () => {
+			const h = harness({
+				tabs: outlookTab("https://outlook.office.com/mail/", "Inbox - Test Person - Outlook"),
+				pageResult: { tree: '- link "Inbox"\n- text: Outlook', text: "Inbox Outlook" },
+			});
+			const text = outcome(await h.run({ verb: "snapshot" }));
+			expect(text).toContain('- link "Inbox"');
+			expect(text).toContain("- text: Outlook");
+		});
+
+		it("shows the name in a snapshot during an unmask grant", async () => {
+			const h = harness({
+				approval: "allow",
+				tabs: outlookTab("https://outlook.live.com/mail/0/", "Mail - Test Person - Outlook"),
+				pageResult: NAMED,
+			});
+			await h.run({ verb: "unmask", minutes: 5 });
+			expect(outcome(await h.run({ verb: "snapshot" }))).toContain("Account manager for Test Person");
+		});
+
+		it("leaves other sites' snapshots alone", async () => {
+			const h = harness({
+				tabs: outlookTab("https://app.example.test/", "Mail - Test Person - Outlook"),
+				pageResult: NAMED,
+			});
+			expect(outcome(await h.run({ verb: "snapshot" }))).toContain("Account manager for Test Person");
+		});
 	});
 
 	it("shows email addresses in the page title and on console output during a grant", async () => {
@@ -2280,6 +2322,30 @@ describe("pw --ext on an Outlook tab", () => {
 
 describe("pw --ext call output", () => {
 	const OUTPUT = { api: "modelContext", output: '{"from":"ada@clinic.test"}' };
+
+	const JSON_OUTPUT = {
+		api: "modelContext",
+		output: JSON.stringify({
+			body: "line one\nada@clinic.test",
+			quote: 'say "hi" bob@clinic.test',
+			path: "C:\\dir\\carol@clinic.test",
+			token: "dummy-token-value",
+		}),
+	};
+	const returned = (text: string) => text.slice(text.indexOf("returned:\n") + 10, text.indexOf("\n### Page"));
+
+	it("masks decoded JSON values and keeps the output valid JSON", async () => {
+		const h = harness({ approval: "allow", mainResult: () => JSON_OUTPUT });
+		const text = outcome(await h.run({ verb: "call", tool: "dg_outlook_read", args: {} }));
+		expect(JSON.parse(returned(text))).toEqual({
+			body: "line one\n[redacted]",
+			quote: 'say "hi" [redacted]',
+			path: "C:\\dir[redacted]",
+			token: "[redacted]",
+		});
+		expect(text).not.toContain("clinic.test");
+		expect(text).not.toContain("dummy-token-value");
+	});
 
 	it("keeps an email address under an active unmask grant and redacts it without one", async () => {
 		const h = harness({
@@ -3775,6 +3841,22 @@ describe("Web MCP on the person's own tabs", () => {
 		const answer = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
 		expect(answer.ok && answer.data.text).toContain("ran in 31");
 		expect(asked - started).toBeLessThan(150);
+	});
+
+	it("returns a JSON tool result as valid JSON with decoded values masked", async () => {
+		const h = anyTabHarness();
+		h.fake.state.script = (details) => {
+			const action = (details as { args: unknown[] }).args[0] as { kind: string };
+			if (action.kind === "tools") return { api: "modelContext", tools: pageTools };
+			return { api: "modelContext", output: JSON.stringify({ body: "hi\nada@example.com", held: "x orchid-maple-tree" }) };
+		};
+		await createUnmaskGrants({ storage: h.fake.api.storage }).reserve(MCP_SESSION, "orchid-maple-tree");
+		const answer = await h.mcp({ verb: "webmcp-call", tool: "dg_outlook_list", args: {} });
+		const text = answer.ok ? answer.data.text : "";
+		expect(JSON.parse(text.slice(text.indexOf("returned:\n") + 10))).toEqual({
+			body: "hi\n[redacted]",
+			held: "x [redacted]",
+		});
 	});
 
 	it("masks a secret the session holds in tool output", async () => {

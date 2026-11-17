@@ -19,6 +19,7 @@ import {
 	type PwExtResponse,
 	type PwExtTool,
 	type PwExtVerb,
+	maskJsonStrings,
 	redactLiterals,
 	redactSecrets,
 	redactText,
@@ -427,6 +428,12 @@ function maskRaw(raw: string, rawMax: number, options: { unmasked: boolean; secr
 	return `${masked.slice(0, start)}[redacted]…`;
 }
 
+/** Masks a JSON tool output value by value so it stays valid JSON; other text goes through maskRaw. */
+function maskOutput(raw: string, options: { unmasked: boolean; secrets: string[] }): string {
+	const masked = maskJsonStrings(raw, (value) => mask(value, options)) ?? maskRaw(raw, RAW_OUTPUT_MAX, options);
+	return clip(masked, TOOL_OUTPUT_MAX);
+}
+
 /** Masks raw MAIN-world console entries before it shortens them, so a cut cannot split a held secret. */
 function consoleWarnings(raw: unknown, options: { unmasked: boolean; secrets: string[] }): string[] {
 	const entries = (raw as { entries?: unknown } | null | undefined)?.entries;
@@ -497,6 +504,14 @@ function outlookTitle(title: string): string {
 	const word = first.slice(count.length);
 	const head = count + (OUTLOOK_WORDS.has(word.trim().toLowerCase()) ? word : "[redacted]");
 	return rest.length ? `${head} - [redacted]` : head;
+}
+
+/** The title parts outlookTitle hides, as literals to mask elsewhere on the page. */
+function outlookIdentity(title: string | undefined): string[] {
+	const [, ...rest] = (title ?? "").split(" - ");
+	return rest
+		.map((part) => part.trim())
+		.filter((part) => part.length >= 3 && !OUTLOOK_WORDS.has(part.toLowerCase()));
 }
 
 function shownTitle(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string {
@@ -1038,6 +1053,7 @@ export function createPwExtHandler({
 	): Promise<PwExtResult> {
 		const unmasked = grant !== undefined;
 		const secrets = await grants.secrets(context.sessionId);
+		const hidden = !unmasked && outlookWeb(tab.url) ? [...secrets, ...outlookIdentity(tab.title)] : secrets;
 		if (signal?.aborted) {
 			await release();
 			return CANCELED;
@@ -1049,9 +1065,14 @@ export function createPwExtHandler({
 				: failed(maskRaw(error, RAW_ERROR_MAX, { unmasked, secrets }));
 		const shown = (text: string): PwExtResult => ({
 			ok: true,
-			data: { text: clean(grant ? `${unmaskLine(grant)}\n${text}` : text, { unmasked, secrets }) },
+			data: { text: clean(grant ? `${unmaskLine(grant)}\n${text}` : text, { unmasked, secrets: hidden }) },
 		});
-		const failed = (error: string): PwExtResult => ({ ok: false, error: clean(error, { unmasked, secrets }) });
+		const shownOutput = (head: string, output: string, tail: string): PwExtResult => {
+			const options = { unmasked, secrets: hidden };
+			const top = mask(grant ? `${unmaskLine(grant)}\n${head}` : head, options);
+			return { ok: true, data: { text: cap([top, output, mask(tail, options)].join("\n")) } };
+		};
+		const failed = (error: string): PwExtResult => ({ ok: false, error: clean(error, { unmasked, secrets: hidden }) });
 		switch (request.verb) {
 			case "current":
 				return shown(page().join("\n"));
@@ -1181,13 +1202,10 @@ export function createPwExtHandler({
 						: pageError(called.error);
 				if (!("output" in called))
 					return { ok: false, error: "The page returned an unexpected WebMCP result." };
-				return shown(
-					[
-						`### Result`,
-						`WebMCP tool ${request.tool} returned:`,
-						clip(maskRaw(called.output, RAW_OUTPUT_MAX, { unmasked, secrets }), TOOL_OUTPUT_MAX),
-						...page(),
-					].join("\n"),
+				return shownOutput(
+					`### Result\nWebMCP tool ${request.tool} returned:`,
+					maskOutput(called.output, { unmasked, secrets: hidden }),
+					page().join("\n"),
 				);
 			}
 			case "dialog": {
@@ -1491,7 +1509,7 @@ export function createPwExtHandler({
 								return undefined;
 							})
 						: undefined;
-				const result = await inPage(tab, action, unmasked, secrets);
+				const result = await inPage(tab, action, unmasked, hidden);
 				if ("error" in result) {
 					await release();
 					return failed(result.error);
@@ -1696,10 +1714,7 @@ export function createPwExtHandler({
 		return {
 			ok: true,
 			data: {
-				text: clean(
-					[`### Result`, `WebMCP tool ${tool} returned:`, clip(maskRaw(called.output, RAW_OUTPUT_MAX, options), TOOL_OUTPUT_MAX)].join("\n"),
-					options,
-				),
+				text: cap(`${mask(`### Result\nWebMCP tool ${tool} returned:`, options)}\n${maskOutput(called.output, options)}`),
 			},
 		};
 	}
