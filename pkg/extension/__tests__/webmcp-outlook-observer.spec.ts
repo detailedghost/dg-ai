@@ -7,7 +7,7 @@ class FakeXhr extends EventTarget {
 	send(_body?: unknown) {}
 }
 
-function host(href = "https://outlook.live.com/mail/0/") {
+function host(href = "https://outlook.live.com/mail/") {
 	return {
 		location: new URL(href),
 		fetch: mock(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response("{}")),
@@ -15,8 +15,8 @@ function host(href = "https://outlook.live.com/mail/0/") {
 	};
 }
 
-const SERVICE = "https://outlook.live.com/owa/0/service.svc?action=FindItem&app=Mail";
-const PATH = "/owa/0/service.svc";
+const SERVICE = "https://outlook.live.com/owa/service.svc?action=FindFolder&app=Mail";
+const PATH = "/owa/service.svc";
 const ACCOUNT_A = {
 	authorization: "Bearer fixture-token-a",
 	"x-owa-canary": "fixture-canary-a",
@@ -64,6 +64,7 @@ describe("installOutlookHeaderObserver", () => {
 		"https://login.microsoftonline.com/owa/service.svc",
 		"https://outlook.live.com.evil.example/owa/0/service.svc",
 		"https://outlook.live.com/owa/0/startupdata.ashx",
+		"https://outlook.live.com/owa/published/service.svc",
 		"https://outlook.live.com/api/service.svc/x",
 		"http://outlook.live.com/owa/0/service.svc",
 	])("ignores headers sent to %s", async (url) => {
@@ -83,7 +84,7 @@ describe("installOutlookHeaderObserver", () => {
 		expect(observer.getHeaders("/owa/1/service.svc")).toEqual(ACCOUNT_B);
 		expect(JSON.stringify(observer.getHeaders(PATH))).not.toContain("fixture-b");
 		expect(observer.getHeaders("/owa/2/service.svc")).toBeUndefined();
-		expect(observer.getHeaders("/owa/service.svc")).toBeUndefined();
+		expect(observer.getHeaders("/owa/0/service.svc")).toBeUndefined();
 		observer.dispose();
 	});
 
@@ -103,6 +104,19 @@ describe("installOutlookHeaderObserver", () => {
 		const observer = installOutlookHeaderObserver(page as never);
 		await page.fetch("/owa/service.svc", { headers: ACCOUNT_A });
 		expect(observer.getHeaders("/owa/service.svc")).toBeUndefined();
+		observer.dispose();
+	});
+
+	it("keeps the token headers of an outlook.live.com request that sends no canary", async () => {
+		const page = host();
+		const observer = installOutlookHeaderObserver(page as never);
+		const live = {
+			authorization: ACCOUNT_A.authorization,
+			"x-anchormailbox": ACCOUNT_A["x-anchormailbox"],
+			"x-owa-sessionid": ACCOUNT_A["x-owa-sessionid"],
+		};
+		await page.fetch(SERVICE, { method: "POST", headers: live });
+		expect(observer.getHeaders(PATH)).toEqual(live);
 		observer.dispose();
 	});
 

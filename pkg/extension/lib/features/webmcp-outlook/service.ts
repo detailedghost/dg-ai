@@ -15,9 +15,9 @@ const CODE = /^[A-Za-z]{1,80}$/;
 
 const ACCOUNT_PATH = /^\/[a-z]+\/(\d+)(?:\/|$)/;
 
-/** The service.svc path of the page's own account: /<app>/<n>/ (mail, calendar and the other routes) posts to /owa/<n>/, and outlook.live.com with no index posts to /owa/0/. */
-export function servicePathOf(location: Pick<Location, "hostname" | "pathname">): string {
-	const index = ACCOUNT_PATH.exec(location.pathname)?.[1] ?? (location.hostname === "outlook.live.com" ? "0" : undefined);
+/** The service.svc path of the page's own account: /<app>/<n>/ (mail, calendar and the other routes) posts to /owa/<n>/, and a page with no index posts to /owa/. */
+export function servicePathOf(location: Pick<Location, "pathname">): string {
+	const index = ACCOUNT_PATH.exec(location.pathname)?.[1];
 	return index === undefined ? "/owa/service.svc" : `/owa/${index}/service.svc`;
 }
 
@@ -40,7 +40,7 @@ export function createOwaService({
 	now = Date.now,
 	sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }: {
-	location: Pick<Location, "origin" | "hostname" | "pathname">;
+	location: Pick<Location, "origin" | "pathname">;
 	fetch: PageFetch;
 	headers: (servicePath: string) => OutlookSessionHeaders | undefined;
 	now?: () => number;
