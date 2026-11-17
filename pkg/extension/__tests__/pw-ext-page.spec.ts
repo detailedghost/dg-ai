@@ -889,3 +889,13 @@ describe("press after review round 4", () => {
 		expect(order).toEqual(["keyup", "click", "keyup"]);
 	});
 });
+
+describe("press after review round 5", () => {
+	it("tabs into a contenteditable editor without a tabindex", () => {
+		page(`<button id="a">A</button><div id="ed" contenteditable="true" role="textbox" aria-label="Editor"></div><button id="c" tabindex="-1">C</button>`);
+		el<HTMLElement>("#a").focus();
+		expect(pwExtPageAction({ kind: "press", chord: "Tab", key: "Tab", modifiers: [] })).toEqual({
+			detail: 'pressed Tab on button "A"; focus moved to textbox "Editor"',
+		});
+	});
+});

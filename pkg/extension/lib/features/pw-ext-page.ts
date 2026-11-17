@@ -565,10 +565,12 @@ export function pwExtPageAction(
 	const BUTTON_INPUTS = new Set(["submit", "button", "reset", "image", "checkbox", "radio", "file", "color", "range"]);
 
 	const focusOrder = (): HTMLElement[] => {
+		const index = (el: HTMLElement): number =>
+			!el.hasAttribute("tabindex") && el.getAttribute("contenteditable") === "true" ? 0 : el.tabIndex;
 		const order = (Array.from(doc.querySelectorAll(FOCUSABLE)) as HTMLElement[]).filter(
-			(el) => el.tabIndex >= 0 && !el.matches(":disabled") && !el.closest("fieldset[disabled]") && !hidden(el),
+			(el) => index(el) >= 0 && !el.matches(":disabled") && !el.closest("fieldset[disabled]") && !hidden(el),
 		);
-		return [...order.filter((el) => el.tabIndex > 0).sort((a, b) => a.tabIndex - b.tabIndex), ...order.filter((el) => el.tabIndex === 0)];
+		return [...order.filter((el) => index(el) > 0).sort((a, b) => index(a) - index(b)), ...order.filter((el) => index(el) === 0)];
 	};
 
 	const LOW_SURROGATE = /[\uDC00-\uDFFF]/;
