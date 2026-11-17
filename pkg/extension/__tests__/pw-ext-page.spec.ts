@@ -757,3 +757,66 @@ describe("press edge cases", () => {
 		expect(press("Tab")).toEqual({ detail: 'pressed Tab on textbox "A"; focus moved to button "C"' });
 	});
 });
+
+describe("press commit and targets", () => {
+	const press = (chord: string, key = chord, modifiers: string[] = []) =>
+		pwExtPageAction({ kind: "press", chord, key, modifiers });
+
+	it("refuses a newline in a secret textarea", () => {
+		page(`<textarea id="s" name="client_secret" aria-label="Secret">abc</textarea>`);
+		const area = el<HTMLTextAreaElement>("#s");
+		area.focus();
+		expect(press("Enter")).toEqual({ error: expect.stringContaining("does not type into a password or secret field") });
+		expect(area.value).toBe("abc");
+	});
+
+	it("ignores a letter in a number field", () => {
+		page(`<input id="n" type="number" aria-label="N" value="12">`);
+		const input = el<HTMLInputElement>("#n");
+		input.focus();
+		press("a");
+		expect(input.value).toBe("12");
+	});
+
+	it("fires change when Tab leaves an edited field, and keyup on the new focus", () => {
+		page(`<input id="a" aria-label="A"><input id="b" aria-label="B">`);
+		const a = el<HTMLInputElement>("#a");
+		const b = el<HTMLInputElement>("#b");
+		const changes: string[] = [];
+		a.addEventListener("change", () => changes.push(a.value));
+		const keyups: string[] = [];
+		a.addEventListener("keyup", () => keyups.push("a"));
+		b.addEventListener("keyup", () => keyups.push("b"));
+		a.focus();
+		press("x");
+		press("Tab");
+		expect(changes).toEqual(["x"]);
+		expect(keyups).toEqual(["a", "b"]);
+	});
+
+	it("fires change before it submits on Enter", () => {
+		page(`<form id="f"><input id="q" aria-label="Q"></form>`);
+		const order: string[] = [];
+		el<HTMLElement>("#q").addEventListener("change", () => order.push("change"));
+		el<HTMLFormElement>("#f").addEventListener("submit", (event) => {
+			event.preventDefault();
+			order.push("submit");
+		});
+		el<HTMLInputElement>("#q").focus();
+		press("c");
+		press("Enter");
+		expect(order).toEqual(["change", "submit"]);
+	});
+
+	it("uses an image submit button as the form's default button", () => {
+		page(`<form id="f"><input id="q" aria-label="Q"><input id="img" type="image" alt="Search"><button id="b">B</button></form>`);
+		const clicked: string[] = [];
+		for (const id of ["img", "b"]) el<HTMLElement>(`#${id}`).addEventListener("click", (event) => {
+			event.preventDefault();
+			clicked.push(id);
+		});
+		el<HTMLInputElement>("#q").focus();
+		press("Enter");
+		expect(clicked).toEqual(["img"]);
+	});
+});

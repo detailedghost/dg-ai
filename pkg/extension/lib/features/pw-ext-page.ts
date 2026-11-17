@@ -40,6 +40,7 @@ export function pwExtPageAction(
 	const doc = document;
 	const win = doc.defaultView as unknown as Window & Record<symbol, unknown>;
 	const REFS = Symbol.for("dg.pwExt.refs");
+	const EDITED = Symbol.for("dg.pwExt.pressEdited");
 	const CONSOLE = Symbol.for("dg.pwExt.console");
 	const SECRET_NAME = /pass|secret|token|otp|cvv|cvc|ssn|pin\b|api[-_]?key/i;
 	const TEXT_INPUTS = new Set([
@@ -599,11 +600,9 @@ export function pwExtPageAction(
 	};
 
 	const submit = (form: HTMLFormElement): string => {
-		const submitter = Array.from(form.elements).find(
-			(el) =>
-				(el.tagName === "BUTTON" && (el as HTMLButtonElement).type === "submit") ||
-				(el.tagName === "INPUT" && ["submit", "image"].includes((el as HTMLInputElement).type.toLowerCase())),
-		) as HTMLElement | undefined;
+		const submitter = (Array.from(doc.querySelectorAll("button,input")) as HTMLButtonElement[]).find(
+			(el) => el.form === form && (el.tagName === "BUTTON" ? el.type === "submit" : ["submit", "image"].includes(el.type.toLowerCase())),
+		);
 		if (submitter) {
 			if ((submitter as HTMLButtonElement).disabled) return "";
 			submitter.click();
@@ -631,7 +630,7 @@ export function pwExtPageAction(
 		const type = target.tagName === "INPUT" ? input.type.toLowerCase() : "";
 		const textField =
 			(target.tagName === "INPUT" && (TEXT_INPUTS.has(type) || type === "password")) || target.tagName === "TEXTAREA";
-		const typing = char !== undefined || name === "Backspace" || name === "Delete";
+		const typing = char !== undefined || name === "Backspace" || name === "Delete" || (name === "Enter" && target.tagName === "TEXTAREA");
 		if (typing && (isSecret(target) || insideSecret(target)))
 			return { error: "pw --ext press does not type into a password or secret field. Use pw --ext fill <target> --value-env NAME." };
 		const init = {
@@ -645,13 +644,22 @@ export function pwExtPageAction(
 			altKey: held.has("Alt"),
 			metaKey: held.has("Meta"),
 		};
-		const send = (type: string): boolean => target.dispatchEvent(new scope.KeyboardEvent(type, init));
+		const send = (type: string, to: Element = target): boolean => to.dispatchEvent(new scope.KeyboardEvent(type, init));
+		const edited = (win[EDITED] ??= new WeakSet<Element>()) as WeakSet<Element>;
+		const commit = (): void => {
+			if (!edited.delete(target)) return;
+			target.dispatchEvent(new scope.Event("change", { bubbles: true }));
+		};
+		const change = (text: string, inputType: string): void => {
+			if (edit(input, text, inputType)) edited.add(target);
+		};
 		let proceed = send("keydown");
 		if (proceed && !command && (char !== undefined || name === "Enter")) proceed = send("keypress");
 		let effect = "";
 		const editable = textField && !input.disabled && !input.readOnly;
 		if (proceed && target.isConnected && !command) {
 			if (name === "Tab") {
+				commit();
 				const order = focusOrder();
 				const at = order.indexOf(target as HTMLElement);
 				const next = held.has("Shift") ? order[at <= 0 ? order.length - 1 : at - 1] : order[(at + 1) % order.length];
@@ -660,20 +668,22 @@ export function pwExtPageAction(
 					effect = `; focus moved to ${describe(next)}`;
 				}
 			} else if (name === "Enter" && target.tagName === "TEXTAREA") {
-				if (editable) edit(input, "\n", "insertLineBreak");
-			} else if (name === "Enter" && target.tagName === "INPUT" && !BUTTON_INPUTS.has(type) && input.form) {
-				effect = submit(input.form);
+				if (editable) change("\n", "insertLineBreak");
+			} else if (name === "Enter" && target.tagName === "INPUT" && !BUTTON_INPUTS.has(type)) {
+				commit();
+				if (input.form && target.isConnected) effect = submit(input.form);
 			} else if (
 				(name === "Enter" && (target.tagName === "BUTTON" || (target.tagName === "A" && target.hasAttribute("href")) || ["submit", "button", "reset", "image"].includes(type))) ||
 				(name === " " && (target.tagName === "BUTTON" || ["submit", "button", "reset", "image", "checkbox", "radio"].includes(type)))
 			) {
 				(target as HTMLElement).click();
 				effect = `; clicked ${label}`;
-			} else if (editable && char !== undefined) edit(input, char, "insertText");
-			else if (editable && name === "Backspace") edit(input, "", "deleteContentBackward");
-			else if (editable && name === "Delete") edit(input, "", "deleteContentForward");
+			} else if (editable && char !== undefined && (type !== "number" || /^[0-9eE+\-.]$/.test(char))) change(char, "insertText");
+			else if (editable && name === "Backspace") change("", "deleteContentBackward");
+			else if (editable && name === "Delete") change("", "deleteContentForward");
 		}
-		if (target.isConnected) send("keyup");
+		const focused = doc.activeElement && doc.activeElement !== doc.body ? doc.activeElement : target;
+		if (focused.isConnected) send("keyup", focused);
 		return { detail: `pressed ${chord} on ${label}${effect}` };
 	};
 
