@@ -1,5 +1,17 @@
 # Changelog
 
+## v5.12.0 (2026-11-17)
+
+### Features
+
+- feat(pw): press a key with pw --ext press ([#221](https://github.com/detailedghost/dg-ai/pull/221))
+
+### Fixes
+
+- fix(extension): move the agent banner to a bottom-left pill ([#219](https://github.com/detailedghost/dg-ai/pull/219))
+- fix(extension): keep masked Web MCP JSON valid and hide the Outlook name in snapshots ([#218](https://github.com/detailedghost/dg-ai/pull/218))
+- fix(extension): search Outlook mail with a subject restriction ([#220](https://github.com/detailedghost/dg-ai/pull/220))
+
 ## v5.11.4 (2026-11-17)
 
 ### Fixes
