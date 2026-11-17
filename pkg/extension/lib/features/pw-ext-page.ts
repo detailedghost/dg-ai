@@ -565,23 +565,37 @@ export function pwExtPageAction(
 
 	const focusOrder = (): HTMLElement[] => {
 		const order = (Array.from(doc.querySelectorAll(FOCUSABLE)) as HTMLElement[]).filter(
-			(el) => el.tabIndex >= 0 && !(el as HTMLButtonElement).disabled && !hidden(el),
+			(el) => el.tabIndex >= 0 && !el.matches(":disabled") && !el.closest("fieldset[disabled]") && !hidden(el),
 		);
 		return [...order.filter((el) => el.tabIndex > 0).sort((a, b) => a.tabIndex - b.tabIndex), ...order.filter((el) => el.tabIndex === 0)];
 	};
 
-	const edit = (input: HTMLInputElement, text: string, inputType: string): void => {
+	const LOW_SURROGATE = /[\uDC00-\uDFFF]/;
+
+	const edit = (input: HTMLInputElement, text: string, inputType: string): boolean => {
 		const value = input.value;
 		const start = input.selectionStart ?? value.length;
 		const end = input.selectionEnd ?? value.length;
-		const from = text === "" && start === end ? (inputType === "deleteContentBackward" ? Math.max(0, start - 1) : start) : start;
-		const to = text === "" && start === end && inputType === "deleteContentForward" ? Math.min(value.length, end + 1) : end;
+		let from = start;
+		let to = end;
+		if (text === "" && start === end) {
+			if (inputType === "deleteContentBackward" && start > 0)
+				from = start - (start > 1 && LOW_SURROGATE.test(value[start - 1] ?? "") ? 2 : 1);
+			if (inputType === "deleteContentForward" && end < value.length)
+				to = end + (LOW_SURROGATE.test(value[end + 1] ?? "") ? 2 : 1);
+		}
+		if (from === to && text === "") return false;
+		if (text && input.maxLength >= 0 && value.length - (to - from) + text.length > input.maxLength) return false;
+		const scope = win as unknown as typeof globalThis;
+		const data = text ? { data: text } : {};
+		if (!input.dispatchEvent(new scope.InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType, ...data }))) return false;
+		if (!input.isConnected) return false;
 		setValue(input, value.slice(0, from) + text + value.slice(to));
 		try {
 			input.setSelectionRange(from + text.length, from + text.length);
 		} catch {}
-		const scope = win as unknown as typeof globalThis;
-		input.dispatchEvent(new scope.InputEvent("input", { bubbles: true, inputType, ...(text ? { data: text } : {}) }));
+		input.dispatchEvent(new scope.InputEvent("input", { bubbles: true, inputType, ...data }));
+		return true;
 	};
 
 	const submit = (form: HTMLFormElement): string => {
@@ -595,6 +609,10 @@ export function pwExtPageAction(
 			submitter.click();
 			return `; clicked ${describe(submitter)} to submit the form`;
 		}
+		const blocking = Array.from(form.elements).filter(
+			(el) => el.tagName === "INPUT" && !BUTTON_INPUTS.has((el as HTMLInputElement).type.toLowerCase()) && (el as HTMLInputElement).type.toLowerCase() !== "hidden",
+		);
+		if (blocking.length > 1) return "";
 		form.requestSubmit();
 		return "; submitted the form";
 	};

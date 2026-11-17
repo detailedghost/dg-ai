@@ -701,3 +701,59 @@ describe("press", () => {
 		expect(submitted).toBe(1);
 	});
 });
+
+describe("press edge cases", () => {
+	const press = (key: string) => pwExtPageAction({ kind: "press", chord: key, key, modifiers: [] });
+
+	it("does not submit a buttonless form with two text fields", () => {
+		page(`<form id="f"><input id="a" aria-label="A"><input id="b" aria-label="B"></form>`);
+		let submitted = 0;
+		el<HTMLFormElement>("#f").addEventListener("submit", (event) => {
+			event.preventDefault();
+			submitted++;
+		});
+		el<HTMLInputElement>("#a").focus();
+		expect(press("Enter")).toEqual({ detail: 'pressed Enter on textbox "A"' });
+		expect(submitted).toBe(0);
+	});
+
+	it("leaves the value alone when beforeinput is canceled", () => {
+		page(`<input id="q" aria-label="Q" value="ca">`);
+		const input = el<HTMLInputElement>("#q");
+		let inputs = 0;
+		input.addEventListener("beforeinput", (event) => event.preventDefault());
+		input.addEventListener("input", () => inputs++);
+		input.focus();
+		input.setSelectionRange(2, 2);
+		press("t");
+		expect(input.value).toBe("ca");
+		expect(inputs).toBe(0);
+	});
+
+	it("keeps to maxlength", () => {
+		page(`<input id="q" aria-label="Q" value="cat" maxlength="3">`);
+		const input = el<HTMLInputElement>("#q");
+		input.focus();
+		input.setSelectionRange(3, 3);
+		press("a");
+		expect(input.value).toBe("cat");
+	});
+
+	it("deletes a whole emoji with Backspace and Delete", () => {
+		page(`<input id="q" aria-label="Q" value="a😀b😀">`);
+		const input = el<HTMLInputElement>("#q");
+		input.focus();
+		input.setSelectionRange(3, 3);
+		press("Backspace");
+		expect(input.value).toBe("ab😀");
+		input.setSelectionRange(2, 2);
+		press("Delete");
+		expect(input.value).toBe("ab");
+	});
+
+	it("skips a control disabled through its fieldset on Tab", () => {
+		page(`<input id="a" aria-label="A"><fieldset disabled><input id="b" aria-label="B"></fieldset><button id="c">C</button>`);
+		el<HTMLInputElement>("#a").focus();
+		expect(press("Tab")).toEqual({ detail: 'pressed Tab on textbox "A"; focus moved to button "C"' });
+	});
+});
