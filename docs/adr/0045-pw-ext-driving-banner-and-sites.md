@@ -202,3 +202,44 @@ the banner and the toolbar popup do not change.
 - **Bad:** the strip covers about 50 pixels at the top of the page, so it can
   hide part of a page's own fixed header. The page below the strip still takes
   clicks.
+
+## Amended 2026-11-17: the banner is a pill in the bottom-left corner
+
+A live test on an Outlook agent tab found that the top strip covered Outlook's
+fixed top header. The search box was hidden and could not be clicked. The test
+on `example.com` passed because that page has no fixed header. This amendment
+replaces the placement of the 2026-11-13 top strip amendment and its "Bad" line
+about the 50 pixels at the top.
+
+The banner is now a compact pill fixed 12 pixels from the bottom-left corner of
+the viewport. It is at most 440 pixels wide, or the viewport width less 24
+pixels. The ghost, "Agent is driving this tab", the group title and Stop stay.
+The title truncates with an ellipsis, and below 420 pixels of viewport the
+title is hidden so Stop stays in view. The "DeeGee" eyebrow is gone to keep the
+pill short. The diagonal-stripe band sits on the top edge of the pill.
+
+The banner changes no page style. Stop and `pwExtBanner(false)` remove only the
+banner host, so the page layout is the same as before the banner.
+
+A page cannot give up space at the top for an injected strip in a reliable way:
+
+- `html { margin-top }` or `padding-top` moves the normal flow down, but a
+  `position: fixed` or `sticky` header stays at the top of the viewport, under
+  the strip.
+- `html { transform: translateY() }` moves fixed elements with it, but a
+  100vh app shell such as Outlook then loses the same height at the bottom.
+  It also breaks pages that set their own transform or scroll on `html`.
+- `zoom` or a scale has the same 100vh problem and changes the page size.
+- A change to page styles must be saved and put back on Stop, and the page can
+  change the same styles in the meantime.
+
+- **Good:** the banner does not cover a fixed top header, a sticky toolbar or
+  the search box of an app shell.
+- **Good:** removal restores the page layout by construction.
+- **Bad:** the pill can cover a small area in the bottom-left corner, such as
+  the end of a side list or an icon at the bottom of an app rail. The page
+  below the rest of the viewport still takes clicks.
+- **Bad:** a long group title shows in part. The full title is in the tooltip.
+
+- `pkg/extension/lib/features/pw-ext-banner.ts`
+- `pkg/extension/__tests__/pw-ext-banner-e2e.spec.ts`

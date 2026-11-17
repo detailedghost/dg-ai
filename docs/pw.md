@@ -86,6 +86,8 @@ Rules:
   question does not gate them, and `call` uses [Web MCP approvals](webmcp.md)
   instead. Mailbox origins keep their guard.
 - Each agent tab shows an "Agent is driving this tab" banner with a Stop button.
+  The banner is a small pill in the bottom-left corner, so it does not cover a
+  page's fixed top header or search box. It does not change the page layout.
   The banner sits in a closed shadow root in the extension's own script world.
   Stop ends that session's control at once: verbs in flight fail, unmask
   grants and allowed sites go away, the tab group returns to you, and
