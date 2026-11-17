@@ -666,13 +666,23 @@ export function pwExtPageAction(
 		let proceed = send("keydown");
 		if (proceed && !command && (char !== undefined || name === "Enter")) proceed = send("keypress");
 		let effect = "";
+		let spaceClick = false;
 		const editable = textField && !input.disabled && !input.readOnly;
 		if (proceed && target.isConnected && !command) {
 			if (name === "Tab") {
 				commit();
 				const order = focusOrder();
+				const back = held.has("Shift");
 				const at = order.indexOf(target as HTMLElement);
-				const next = held.has("Shift") ? order[at <= 0 ? order.length - 1 : at - 1] : order[(at + 1) % order.length];
+				const inPage = at < 0 && target !== doc.body && target !== doc.documentElement;
+				const after = (el: Element) => (target.compareDocumentPosition(el) & 4) !== 0;
+				const next = inPage
+					? back
+						? order.filter((el) => !after(el)).pop() ?? order[order.length - 1]
+						: order.find(after) ?? order[0]
+					: back
+						? order[at <= 0 ? order.length - 1 : at - 1]
+						: order[(at + 1) % order.length];
 				if (next) {
 					next.focus();
 					effect = `; focus moved to ${describe(next)}`;
@@ -682,18 +692,21 @@ export function pwExtPageAction(
 			} else if (name === "Enter" && target.tagName === "INPUT" && !BUTTON_INPUTS.has(type)) {
 				commit();
 				if (input.form && target.isConnected) effect = submit(input.form);
-			} else if (
-				(name === "Enter" && (target.tagName === "BUTTON" || (target.tagName === "A" && target.hasAttribute("href")) || ["submit", "button", "reset", "image"].includes(type))) ||
-				(name === " " && (target.tagName === "BUTTON" || ["submit", "button", "reset", "image", "checkbox", "radio"].includes(type)))
-			) {
+			} else if (name === "Enter" && (target.tagName === "BUTTON" || (target.tagName === "A" && target.hasAttribute("href")) || ["submit", "button", "reset", "image"].includes(type))) {
 				(target as HTMLElement).click();
 				effect = `; clicked ${label}`;
+			} else if (name === " " && (target.tagName === "BUTTON" || ["submit", "button", "reset", "image", "checkbox", "radio"].includes(type))) {
+				spaceClick = true;
 			} else if (editable && char !== undefined && (type !== "number" || /^[0-9eE+\-.]$/.test(char))) change(char, "insertText");
 			else if (editable && name === "Backspace") change("", "deleteContentBackward");
 			else if (editable && name === "Delete") change("", "deleteContentForward");
 		}
 		const focused = doc.activeElement && doc.activeElement !== doc.body ? doc.activeElement : target;
-		if (focused.isConnected) send("keyup", focused);
+		const released = focused.isConnected && send("keyup", focused);
+		if (spaceClick && released && target.isConnected) {
+			(target as HTMLElement).click();
+			effect = `; clicked ${label}`;
+		}
 		return { detail: `pressed ${chord} on ${label}${effect}` };
 	};
 

@@ -862,3 +862,30 @@ describe("press after review round 3", () => {
 		expect(changes).toBe(1);
 	});
 });
+
+describe("press after review round 4", () => {
+	const press = (chord: string, key = chord, modifiers: string[] = []) =>
+		pwExtPageAction({ kind: "press", chord, key, modifiers });
+
+	it("tabs on from a focused control that is out of the tab order", () => {
+		page(`<button id="a">A</button><input id="q" aria-label="Q" tabindex="-1"><button id="c">C</button>`);
+		el<HTMLInputElement>("#q").focus();
+		expect(press("Tab")).toEqual({ detail: 'pressed Tab on textbox "Q"; focus moved to button "C"' });
+		el<HTMLInputElement>("#q").focus();
+		expect(press("Shift+Tab", "Tab", ["Shift"])).toEqual({ detail: 'pressed Shift+Tab on textbox "Q"; focus moved to button "A"' });
+	});
+
+	it("clicks on Space only after an uncanceled keyup", () => {
+		page(`<button id="go">Go</button>`);
+		const go = el<HTMLElement>("#go");
+		const order: string[] = [];
+		go.addEventListener("keyup", () => order.push("keyup"));
+		go.addEventListener("click", () => order.push("click"));
+		go.focus();
+		expect(press(" ")).toEqual({ detail: 'pressed   on button "Go"; clicked button "Go"' });
+		expect(order).toEqual(["keyup", "click"]);
+		go.addEventListener("keyup", (event) => event.preventDefault());
+		expect(press(" ")).toEqual({ detail: 'pressed   on button "Go"' });
+		expect(order).toEqual(["keyup", "click", "keyup"]);
+	});
+});
