@@ -1663,6 +1663,9 @@
 								"name": "fill"
 							},
 							{
+								"name": "press"
+							},
+							{
 								"name": "upload"
 							},
 							{

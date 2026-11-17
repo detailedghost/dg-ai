@@ -1,4 +1,4 @@
-import { normalizeKey } from "../../core/keys";
+import { normalizeKey } from "@dg/common";
 import type { DaemonHandler } from "../../core/spec";
 
 const keydown: DaemonHandler = async (ctx, args) => {

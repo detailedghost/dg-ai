@@ -562,3 +562,366 @@ describe("page deadline", () => {
 		expect(clicks).toBe(1);
 	});
 });
+
+describe("press", () => {
+	const press = (chord: string, key = chord, modifiers: string[] = []) =>
+		pwExtPageAction({ kind: "press", chord, key, modifiers });
+
+	function keys(target: { addEventListener(type: string, fn: (event: KeyboardEvent) => void): void }): string[] {
+		const seen: string[] = [];
+		for (const type of ["keydown", "keypress", "keyup"])
+			target.addEventListener(type, (event) => seen.push(`${event.type}:${event.key}:${event.code}`));
+		return seen;
+	}
+
+	it("submits a search form through its button when the page leaves Enter alone", () => {
+		page(`<form id="f"><label for="q">Search</label><input id="q"><button>Go</button></form>`);
+		let submitted = 0;
+		el<HTMLFormElement>("#f").addEventListener("submit", (event) => {
+			event.preventDefault();
+			submitted++;
+		});
+		const seen = keys(el<HTMLElement>("#q"));
+		el<HTMLInputElement>("#q").focus();
+		expect(press("Enter")).toEqual({ detail: 'pressed Enter on textbox "Search"; clicked button "Go" to submit the form' });
+		expect(submitted).toBe(1);
+		expect(seen).toEqual(["keydown:Enter:Enter", "keypress:Enter:Enter", "keyup:Enter:Enter"]);
+	});
+
+	it("submits a form without a button", () => {
+		page(`<form id="f"><input id="q" aria-label="Search"></form>`);
+		let submitted = 0;
+		el<HTMLFormElement>("#f").addEventListener("submit", (event) => {
+			event.preventDefault();
+			submitted++;
+		});
+		el<HTMLInputElement>("#q").focus();
+		expect(press("Enter")).toEqual({ detail: 'pressed Enter on textbox "Search"; submitted the form' });
+		expect(submitted).toBe(1);
+	});
+
+	it("does not submit when the page handles Enter itself", () => {
+		page(`<form id="f"><input id="q" aria-label="Search"></form>`);
+		let submitted = 0;
+		let handled = 0;
+		el<HTMLFormElement>("#f").addEventListener("submit", (event) => {
+			event.preventDefault();
+			submitted++;
+		});
+		el<HTMLElement>("#q").addEventListener("keydown", (event) => {
+			if ((event as KeyboardEvent).key === "Enter") {
+				handled++;
+				event.preventDefault();
+			}
+		});
+		el<HTMLInputElement>("#q").focus();
+		expect(press("Enter")).toEqual({ detail: 'pressed Enter on textbox "Search"' });
+		expect(handled).toBe(1);
+		expect(submitted).toBe(0);
+	});
+
+	it("types a plain character and deletes it with Backspace, firing input each time", () => {
+		page(`<input id="q" aria-label="Search" value="ca">`);
+		const input = el<HTMLInputElement>("#q");
+		const inputs: string[] = [];
+		input.addEventListener("input", (event) => inputs.push((event as InputEvent).inputType));
+		input.focus();
+		input.setSelectionRange(2, 2);
+		expect(press("t")).toEqual({ detail: 'pressed t on textbox "Search"' });
+		expect(input.value).toBe("cat");
+		expect(press("Backspace")).toEqual({ detail: 'pressed Backspace on textbox "Search"' });
+		expect(input.value).toBe("ca");
+		expect(inputs).toEqual(["insertText", "deleteContentBackward"]);
+	});
+
+	it("sends a modifier chord as events only", () => {
+		page(`<input id="q" aria-label="Search" value="cat">`);
+		const input = el<HTMLInputElement>("#q");
+		const chords: string[] = [];
+		input.addEventListener("keydown", (event) => {
+			const e = event as KeyboardEvent;
+			chords.push(`${e.ctrlKey ? "Control+" : ""}${e.shiftKey ? "Shift+" : ""}${e.key}`);
+		});
+		input.focus();
+		expect(press("Control+a", "a", ["Control"])).toEqual({ detail: 'pressed Control+a on textbox "Search"' });
+		expect(input.value).toBe("cat");
+		expect(chords).toEqual(["Control+a"]);
+	});
+
+	it("moves focus with Tab and Shift+Tab", () => {
+		page(`<input id="a" aria-label="A"><button id="b">B</button><input id="c" aria-label="C" disabled>`);
+		el<HTMLInputElement>("#a").focus();
+		expect(press("Tab")).toEqual({ detail: 'pressed Tab on textbox "A"; focus moved to button "B"' });
+		expect(window.document.activeElement?.id).toBe("b");
+		expect(press("Shift+Tab", "Tab", ["Shift"])).toEqual({ detail: 'pressed Shift+Tab on button "B"; focus moved to textbox "A"' });
+		expect(window.document.activeElement?.id).toBe("a");
+	});
+
+	it("sends Escape and arrow keys to the focused element without a default action", () => {
+		page(`<div id="list" role="listbox" tabindex="0" aria-label="Results"></div>`);
+		const list = el<HTMLElement>("#list");
+		const seen = keys(list);
+		list.focus();
+		expect(press("ArrowDown")).toEqual({ detail: 'pressed ArrowDown on listbox "Results"' });
+		expect(press("Escape")).toEqual({ detail: 'pressed Escape on listbox "Results"' });
+		expect(seen).toEqual(["keydown:ArrowDown:ArrowDown", "keyup:ArrowDown:ArrowDown", "keydown:Escape:Escape", "keyup:Escape:Escape"]);
+	});
+
+	it("clicks a focused button on Enter", () => {
+		page(`<button id="go">Go</button>`);
+		let clicks = 0;
+		el<HTMLElement>("#go").addEventListener("click", () => clicks++);
+		el<HTMLElement>("#go").focus();
+		expect(press("Enter")).toEqual({ detail: 'pressed Enter on button "Go"; clicked button "Go"' });
+		expect(clicks).toBe(1);
+	});
+
+	it("sends the key to the page when nothing has focus", () => {
+		page(`<p>Hi</p>`);
+		const seen = keys(window.document.body as unknown as HTMLElement);
+		expect(press("Escape")).toEqual({ detail: "pressed Escape on the page" });
+		expect(seen).toEqual(["keydown:Escape:Escape", "keyup:Escape:Escape"]);
+	});
+
+	it("refuses to type into a password field but still submits it with Enter", () => {
+		page(`<form id="f"><input id="pw" type="password" aria-label="Password" value="hunter2-x"></form>`);
+		let submitted = 0;
+		el<HTMLFormElement>("#f").addEventListener("submit", (event) => {
+			event.preventDefault();
+			submitted++;
+		});
+		const input = el<HTMLInputElement>("#pw");
+		const seen = keys(input);
+		input.focus();
+		for (const key of ["x", "Backspace", "Delete"])
+			expect(press(key)).toEqual({ error: expect.stringContaining("does not type into a password or secret field") });
+		expect(input.value).toBe("hunter2-x");
+		expect(seen).toEqual([]);
+		expect(press("Enter")).toEqual({ detail: 'pressed Enter on textbox "Password"; submitted the form' });
+		expect(submitted).toBe(1);
+	});
+});
+
+describe("press edge cases", () => {
+	const press = (key: string) => pwExtPageAction({ kind: "press", chord: key, key, modifiers: [] });
+
+	it("does not submit a buttonless form with two text fields", () => {
+		page(`<form id="f"><input id="a" aria-label="A"><input id="b" aria-label="B"></form>`);
+		let submitted = 0;
+		el<HTMLFormElement>("#f").addEventListener("submit", (event) => {
+			event.preventDefault();
+			submitted++;
+		});
+		el<HTMLInputElement>("#a").focus();
+		expect(press("Enter")).toEqual({ detail: 'pressed Enter on textbox "A"' });
+		expect(submitted).toBe(0);
+	});
+
+	it("leaves the value alone when beforeinput is canceled", () => {
+		page(`<input id="q" aria-label="Q" value="ca">`);
+		const input = el<HTMLInputElement>("#q");
+		let inputs = 0;
+		input.addEventListener("beforeinput", (event) => event.preventDefault());
+		input.addEventListener("input", () => inputs++);
+		input.focus();
+		input.setSelectionRange(2, 2);
+		press("t");
+		expect(input.value).toBe("ca");
+		expect(inputs).toBe(0);
+	});
+
+	it("keeps to maxlength", () => {
+		page(`<input id="q" aria-label="Q" value="cat" maxlength="3">`);
+		const input = el<HTMLInputElement>("#q");
+		input.focus();
+		input.setSelectionRange(3, 3);
+		press("a");
+		expect(input.value).toBe("cat");
+	});
+
+	it("deletes a whole emoji with Backspace and Delete", () => {
+		page(`<input id="q" aria-label="Q" value="a😀b😀">`);
+		const input = el<HTMLInputElement>("#q");
+		input.focus();
+		input.setSelectionRange(3, 3);
+		press("Backspace");
+		expect(input.value).toBe("ab😀");
+		input.setSelectionRange(2, 2);
+		press("Delete");
+		expect(input.value).toBe("ab");
+	});
+
+	it("skips a control disabled through its fieldset on Tab", () => {
+		page(`<input id="a" aria-label="A"><fieldset disabled><input id="b" aria-label="B"></fieldset><button id="c">C</button>`);
+		el<HTMLInputElement>("#a").focus();
+		expect(press("Tab")).toEqual({ detail: 'pressed Tab on textbox "A"; focus moved to button "C"' });
+	});
+});
+
+describe("press commit and targets", () => {
+	const press = (chord: string, key = chord, modifiers: string[] = []) =>
+		pwExtPageAction({ kind: "press", chord, key, modifiers });
+
+	it("refuses a newline in a secret textarea", () => {
+		page(`<textarea id="s" name="client_secret" aria-label="Secret">abc</textarea>`);
+		const area = el<HTMLTextAreaElement>("#s");
+		area.focus();
+		expect(press("Enter")).toEqual({ error: expect.stringContaining("does not type into a password or secret field") });
+		expect(area.value).toBe("abc");
+	});
+
+	it("ignores a letter in a number field", () => {
+		page(`<input id="n" type="number" aria-label="N" value="12">`);
+		const input = el<HTMLInputElement>("#n");
+		input.focus();
+		press("a");
+		expect(input.value).toBe("12");
+	});
+
+	it("fires change when Tab leaves an edited field, and keyup on the new focus", () => {
+		page(`<input id="a" aria-label="A"><input id="b" aria-label="B">`);
+		const a = el<HTMLInputElement>("#a");
+		const b = el<HTMLInputElement>("#b");
+		const changes: string[] = [];
+		a.addEventListener("change", () => changes.push(a.value));
+		const keyups: string[] = [];
+		a.addEventListener("keyup", () => keyups.push("a"));
+		b.addEventListener("keyup", () => keyups.push("b"));
+		a.focus();
+		press("x");
+		press("Tab");
+		expect(changes).toEqual(["x"]);
+		expect(keyups).toEqual(["a", "b"]);
+	});
+
+	it("fires change before it submits on Enter", () => {
+		page(`<form id="f"><input id="q" aria-label="Q"></form>`);
+		const order: string[] = [];
+		el<HTMLElement>("#q").addEventListener("change", () => order.push("change"));
+		el<HTMLFormElement>("#f").addEventListener("submit", (event) => {
+			event.preventDefault();
+			order.push("submit");
+		});
+		el<HTMLInputElement>("#q").focus();
+		press("c");
+		press("Enter");
+		expect(order).toEqual(["change", "submit"]);
+	});
+
+	it("uses an image submit button as the form's default button", () => {
+		page(`<form id="f"><input id="q" aria-label="Q"><input id="img" type="image" alt="Search"><button id="b">B</button></form>`);
+		const clicked: string[] = [];
+		for (const id of ["img", "b"]) el<HTMLElement>(`#${id}`).addEventListener("click", (event) => {
+			event.preventDefault();
+			clicked.push(id);
+		});
+		el<HTMLInputElement>("#q").focus();
+		press("Enter");
+		expect(clicked).toEqual(["img"]);
+	});
+});
+
+describe("press after review round 3", () => {
+	const press = (key: string) => pwExtPageAction({ kind: "press", chord: key, key, modifiers: [] });
+
+	it("refuses to edit a number field and keeps its value", () => {
+		page(`<input id="n" type="number" aria-label="N" value="12">`);
+		const input = el<HTMLInputElement>("#n");
+		input.focus();
+		expect(press("-")).toEqual({ error: expect.stringContaining("the browser hides its caret") });
+		expect(input.value).toBe("12");
+	});
+
+	it("fires change once when another verb moves focus away", () => {
+		page(`<input id="a" aria-label="A"><input id="b" aria-label="B">`);
+		const a = el<HTMLInputElement>("#a");
+		let changes = 0;
+		a.addEventListener("change", () => changes++);
+		a.focus();
+		press("x");
+		press("y");
+		pwExtPageAction({ kind: "fill", target: "#b", value: "z" });
+		expect(changes).toBe(1);
+	});
+});
+
+describe("press after review round 4", () => {
+	const press = (chord: string, key = chord, modifiers: string[] = []) =>
+		pwExtPageAction({ kind: "press", chord, key, modifiers });
+
+	it("tabs on from a focused control that is out of the tab order", () => {
+		page(`<button id="a">A</button><input id="q" aria-label="Q" tabindex="-1"><button id="c">C</button>`);
+		el<HTMLInputElement>("#q").focus();
+		expect(press("Tab")).toEqual({ detail: 'pressed Tab on textbox "Q"; focus moved to button "C"' });
+		el<HTMLInputElement>("#q").focus();
+		expect(press("Shift+Tab", "Tab", ["Shift"])).toEqual({ detail: 'pressed Shift+Tab on textbox "Q"; focus moved to button "A"' });
+	});
+
+	it("clicks on Space only after an uncanceled keyup", () => {
+		page(`<button id="go">Go</button>`);
+		const go = el<HTMLElement>("#go");
+		const order: string[] = [];
+		go.addEventListener("keyup", () => order.push("keyup"));
+		go.addEventListener("click", () => order.push("click"));
+		go.focus();
+		expect(press(" ")).toEqual({ detail: 'pressed   on button "Go"; clicked button "Go"' });
+		expect(order).toEqual(["keyup", "click"]);
+		go.addEventListener("keyup", (event) => event.preventDefault());
+		expect(press(" ")).toEqual({ detail: 'pressed   on button "Go"' });
+		expect(order).toEqual(["keyup", "click", "keyup"]);
+	});
+});
+
+describe("press after review round 5", () => {
+	it("tabs into a contenteditable editor without a tabindex", () => {
+		page(`<button id="a">A</button><div id="ed" contenteditable="true" role="textbox" aria-label="Editor"></div><button id="c" tabindex="-1">C</button>`);
+		el<HTMLElement>("#a").focus();
+		expect(pwExtPageAction({ kind: "press", chord: "Tab", key: "Tab", modifiers: [] })).toEqual({
+			detail: 'pressed Tab on button "A"; focus moved to textbox "Editor"',
+		});
+	});
+});
+
+describe("press after review round 6", () => {
+	const press = (chord: string, key = chord, modifiers: string[] = []) =>
+		pwExtPageAction({ kind: "press", chord, key, modifiers });
+
+	it("refuses to edit a field whose caret the browser hides, and leaves Enter alone", () => {
+		page(`<form id="f"><input id="m" type="email" aria-label="Email" value="a@b.test"></form>`);
+		const input = el<HTMLInputElement>("#m");
+		Object.defineProperty(input, "selectionStart", { configurable: true, get: () => null });
+		let submitted = 0;
+		el<HTMLFormElement>("#f").addEventListener("submit", (event) => {
+			event.preventDefault();
+			submitted++;
+		});
+		input.focus();
+		for (const key of ["x", "Backspace", "Delete"])
+			expect(press(key)).toEqual({ error: expect.stringContaining("the browser hides its caret") });
+		expect(input.value).toBe("a@b.test");
+		expect(press("Enter")).toMatchObject({ detail: expect.stringContaining("submitted the form") });
+		expect(submitted).toBe(1);
+	});
+
+	it("fires change when an input handler moves focus away", () => {
+		page(`<input id="a" aria-label="A"><input id="b" aria-label="B">`);
+		const a = el<HTMLInputElement>("#a");
+		let changes = 0;
+		a.addEventListener("change", () => changes++);
+		a.addEventListener("input", () => el<HTMLInputElement>("#b").focus());
+		a.focus();
+		press("x");
+		expect(changes).toBe(1);
+	});
+
+	it("treats a radio group with a checked member as one Tab stop", () => {
+		page(`<button id="s">Start</button>
+			<input type="radio" name="size" id="r1" aria-label="Small">
+			<input type="radio" name="size" id="r2" aria-label="Large" checked>
+			<input type="radio" name="size" id="r3" aria-label="Huge">
+			<button id="e">End</button>`);
+		el<HTMLElement>("#s").focus();
+		expect(press("Tab")).toEqual({ detail: 'pressed Tab on button "Start"; focus moved to radio "Large"' });
+		expect(press("Tab")).toEqual({ detail: 'pressed Tab on radio "Large"; focus moved to button "End"' });
+	});
+});

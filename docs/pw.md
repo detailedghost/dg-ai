@@ -55,6 +55,7 @@ popup.
 | `close [tabId]` | write | Closes a tab of the group; the selected tab by default |
 | `click <ref or selector>` | write | Clicks one element |
 | `fill <ref or selector> <text>` | write | Sets one text field, or a date or time field (`date` as `YYYY-MM-DD`, `time` as `HH:MM`, plus `datetime-local`, `month` and `week`), or picks one `<select>` option by value, then label, then case-insensitive label. A multi-select is refused |
+| `press <key>` | write | Presses a key on the focused element, or on the page when nothing has focus: `Enter`, `Escape`, `Tab`, `ArrowDown`, `Backspace`, a plain character such as `a`, or a chord such as `Shift+Tab` or `Control+a`. Enter in a form field submits the form when the page does not handle the key |
 | `fill <ref or selector> --value-env NAME` | write | Sets a password or secret field from the CLI environment variable `NAME`. Needs `unmask` |
 | `fill <ref or selector> --value-stdin` | write | Same, but reads the value from stdin. Needs `unmask` |
 | `unmask [--minutes N]` | write | Asks you for a time-boxed unmask of the selected tab's origin. `N` is 1 to 60, default 15. `unmask --off` ends it |
@@ -246,8 +247,16 @@ Rules:
   `navigator.modelContextTesting` preview. With neither, it prints "This page
   exposes no WebMCP tools." Tool discovery and a tool call each have a timeout;
   the site's own tool code can keep running after it.
-- `click` and `fill` send synthetic events. A page that checks for trusted
-  input ignores them.
+- `click`, `fill` and `press` send synthetic events. A page that checks for
+  trusted input ignores them. `press` sets `key` and `code` on its keyboard
+  events but not the legacy `keyCode`, because the page script runs in the
+  extension's isolated world. When the page does not cancel the key, `press`
+  does the browser's default for Enter in a form field (it clicks the form's
+  submit button, or submits the form), Enter or Space on a button, Tab and
+  Shift+Tab, a plain character, Backspace and Delete in a text field. Other
+  keys, such as Escape and the arrow keys, are events only. `press` refuses to
+  edit an email or number field, because the browser hides its caret; use
+  `fill` there.
 - A CLI newer than a running dg-daemon gets the daemon's validator error for
   `tabId` or a new verb until you restart `dg-daemon`.
 - Firefox is not supported.

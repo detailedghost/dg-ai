@@ -26,6 +26,8 @@ import {
 	validateNetworkEntries,
 	validatePwExtRequest,
 	validateStorageResult,
+	type KeyChord,
+	parseKeyChord,
 } from "@dg/common";
 import {
 	type PwExtDialogAction,
@@ -174,6 +176,7 @@ const PAGE_VERBS = [
 	"click",
 	"count",
 	"fill",
+	"press",
 	"upload",
 	"selection",
 	"console",
@@ -1494,7 +1497,9 @@ export function createPwExtHandler({
 									value: request.value as string,
 									...(request.secret ? { secret: true, ...(grant ? { until: grant.until } : {}) } : {}),
 								}
-							: { kind: request.verb };
+							: request.verb === "press"
+								? { kind: "press", chord: request.key as string, ...(parseKeyChord(request.key as string) as KeyChord) }
+								: { kind: request.verb };
 				if (request.verb === "fill" && request.secret && grant) {
 					const live = await api.tabs.get(tab.id).catch(() => undefined);
 					if (!live || !(await grants.active(context.sessionId, live))) {

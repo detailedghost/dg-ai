@@ -32,6 +32,10 @@ describe("validatePwExtRequest", () => {
 		{ verb: "fill", target: "input[name=q]", value: "hello" },
 		{ verb: "count", target: "input[type=file]" },
 		{ verb: "count", target: "e4", tabId: 3 },
+		{ verb: "press", key: "Enter" },
+		{ verb: "press", key: "Shift+Tab", tabId: 3 },
+		{ verb: "press", key: "a" },
+		{ verb: "press", key: "Control++" },
 		{ verb: "webmcp-tools" },
 		{ verb: "webmcp-call", tool: "dg_outlook_list", args: {} },
 	])("accepts %p", (request) => {
@@ -60,6 +64,13 @@ describe("validatePwExtRequest", () => {
 		{ verb: "count" },
 		{ verb: "count", target: "" },
 		{ verb: "count", target: "#q", value: "x" },
+		{ verb: "press" },
+		{ verb: "press", key: "" },
+		{ verb: "press", key: "enter" },
+		{ verb: "press", key: "ab" },
+		{ verb: "press", key: "Shift+Shift" },
+		{ verb: "press", key: "Hyper+a" },
+		{ verb: "press", key: "Enter", target: "#q" },
 		{ verb: "webmcp-tools", tabId: 3 },
 		{ verb: "webmcp-call", tool: "dg_outlook_list", args: {}, tabId: 3 },
 		{ verb: "webmcp-call", tool: "site_compose", args: {} },
@@ -393,6 +404,8 @@ describe("PW_EXT_RELAY table", () => {
 		[{}, "count", false],
 		[{ pwExtVerbs: ["current"] }, "count", false],
 		[{ pwExtVerbs: ["current", "count"] }, "count", true],
+		[{}, "press", false],
+		[{ pwExtVerbs: ["current", "press"] }, "press", true],
 	])("supports peer %p for verb %p: %p", (peer, verb, expected) => {
 		const supports = PW_EXT_RELAY.checks.find((entry) => entry.check === "supports");
 		const cli = { type: "cli-pw-ext-request" as const, requestId: "r", request: { verb: verb as never } };
