@@ -412,6 +412,23 @@ describe("JSON text masking", () => {
 		});
 	});
 
+	it("masks all strings in one call", () => {
+		const calls: string[] = [];
+		const raw = JSON.stringify({ a: "ada@example.com", b: ["x", "y"] });
+		const out = maskJsonStrings(raw, (value) => {
+			calls.push(value);
+			return redactText(value);
+		});
+		expect(calls).toHaveLength(1);
+		expect(JSON.parse(out as string)).toEqual({ a: "[redacted]", b: ["x", "y"] });
+	});
+
+	it("masks each string alone when a mask crosses into the next string", () => {
+		const raw = JSON.stringify(["one", "two"]);
+		const out = maskJsonStrings(raw, (value) => (value.includes("\u0000") ? "[redacted]" : value.toUpperCase()));
+		expect(JSON.parse(out as string)).toEqual(["ONE", "TWO"]);
+	});
+
 	it("returns undefined for text that is not JSON", () => {
 		expect(maskJsonStrings("3 results", (value) => value)).toBeUndefined();
 	});

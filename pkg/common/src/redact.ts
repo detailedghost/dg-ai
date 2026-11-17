@@ -191,6 +191,9 @@ export function redactSecrets(
 	return redactWith(SECRET_PATTERNS, message, secrets, options);
 }
 
+const JSON_TOKEN = /"(?:[^"\\]|\\.)*"(\s*:)?|[[{,]/g;
+const BATCH_SEPARATOR = "\n\u0000\n";
+
 /** Masks each key and string value of a JSON text in place and every value under a secret key; undefined when the text is not JSON. */
 export function maskJsonStrings(text: string, maskString: (value: string) => string): string | undefined {
 	try {
@@ -198,20 +201,30 @@ export function maskJsonStrings(text: string, maskString: (value: string) => str
 	} catch {
 		return undefined;
 	}
+	const strings: { value: string; secret: boolean }[] = [];
 	let key: string | undefined;
-	return text.replace(/"(?:[^"\\]|\\.)*"(\s*:)?|[[{,]/g, (token, colon: string | undefined) => {
+	for (const [token, colon] of text.matchAll(JSON_TOKEN)) {
 		if (!token.startsWith('"')) {
 			key = undefined;
-			return token;
+			continue;
 		}
 		const value = JSON.parse(colon ? token.slice(0, -colon.length) : token) as string;
-		if (colon) {
-			key = value;
-			return `${JSON.stringify(maskString(value))}${colon}`;
-		}
-		const secret = key !== undefined && SECRET_KEYS.includes(key) && value.length >= 8;
-		key = undefined;
-		return JSON.stringify(secret ? REDACTED : maskString(value));
+		const secret = !colon && key !== undefined && SECRET_KEYS.includes(key) && value.length >= 8;
+		strings.push({ value, secret });
+		key = colon ? value : undefined;
+	}
+	const values = strings.map((entry) => entry.value);
+	const batch = values.some((value) => value.includes(BATCH_SEPARATOR))
+		? []
+		: maskString(values.join(BATCH_SEPARATOR)).split(BATCH_SEPARATOR);
+	const masked = batch.length === values.length ? batch : values.map(maskString);
+	let at = 0;
+	return text.replace(JSON_TOKEN, (token, colon: string | undefined) => {
+		if (!token.startsWith('"')) return token;
+		const entry = strings[at];
+		const out = entry?.secret ? REDACTED : (masked[at] ?? REDACTED);
+		at++;
+		return `${JSON.stringify(out)}${colon ?? ""}`;
 	});
 }
 
