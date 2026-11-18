@@ -32,7 +32,7 @@ export type AgentTabsBrowserApi = {
 			type?: string;
 			incognito?: boolean;
 		}>;
-		get(windowId: number): Promise<{ incognito?: boolean; state?: string }>;
+		get(windowId: number): Promise<{ incognito?: boolean; state?: string; focused?: boolean }>;
 		create(props: {
 			url: string;
 			focused: boolean;

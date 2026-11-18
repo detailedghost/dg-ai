@@ -81,6 +81,7 @@ type Options = {
 	documentStart?: number;
 	remember?: boolean;
 	pageDeadlineMs?: number;
+	captureDeadlineMs?: number;
 	sites?: "ask";
 	cookies?: Record<string, { value: string; expirationDate?: number }>;
 	store?: (entry: { site: string; name: string; value: string; meta: Record<string, unknown> }) => Promise<string>;
@@ -184,6 +185,7 @@ function harness(options: Options = {}) {
 		...(options.thirdPartySites ? { thirdPartySites: async () => options.thirdPartySites as never } : {}),
 		runningThirdParty: async () => options.runningThirdParty ?? [],
 		...(options.pageDeadlineMs ? { pageDeadlineMs: options.pageDeadlineMs } : {}),
+		...(options.captureDeadlineMs ? { captureDeadlineMs: options.captureDeadlineMs } : {}),
 		lock: agentTabsLock,
 		control: options.sites === "ask" ? createSessionControl({ storage: fake.api.storage }) : allowAllSites,
 	});
@@ -1038,6 +1040,56 @@ describe("pw --ext screenshot", () => {
 		expect(answer).toMatchObject({ ok: true });
 		expect(h.fake.raw.tabs.update).toHaveBeenCalledWith(8, { active: true });
 		expect(h.selectedId()).toBe(7);
+	});
+
+	it("fails at once when the tab does not become active", async () => {
+		const h = harness({ tabs: [{ ...WEB_TAB, active: false }, groupTab(8, { active: true })] });
+		h.fake.raw.tabs.update.mockImplementationOnce(async (id: number) => ({ ...(h.fake.tabs.get(id) as FakeTab) }));
+
+		expect(await h.run({ verb: "screenshot" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("did not become the active tab"),
+		});
+		expect(h.fake.raw.tabs.captureVisibleTab).not.toHaveBeenCalled();
+	});
+
+	it("fails at once when the window stays minimized", async () => {
+		const h = harness({ windowState: "minimized" });
+		h.fake.raw.windows.update.mockImplementationOnce(async (id: number) => ({ ...h.fake.windows.get(id) }) as never);
+
+		expect(await h.run({ verb: "screenshot" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("stayed minimized"),
+		});
+		expect(h.fake.raw.tabs.captureVisibleTab).not.toHaveBeenCalled();
+	});
+
+	it("names the unfocused window when the capture never finishes", async () => {
+		const h = harness({ captureDeadlineMs: 20 });
+		h.fake.raw.tabs.captureVisibleTab.mockImplementationOnce(() => new Promise<string>(() => {}));
+		h.fake.raw.windows.update.mockImplementationOnce(async (id: number) => {
+			const target = h.fake.windows.get(id) as { focused: boolean };
+			target.focused = false;
+			return { ...target } as never;
+		});
+
+		expect(await h.run({ verb: "screenshot" })).toEqual({
+			ok: false,
+			error: expect.stringContaining(
+				"because the browser window is not focused. Bring the browser window with the agent tab to the front, then retry.",
+			),
+		});
+	});
+
+	it("stops waiting when the page never draws a frame", async () => {
+		const h = harness({ captureDeadlineMs: 20 });
+		h.fake.state.script = () => new Promise(() => {});
+
+		expect(await h.run({ verb: "screenshot" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("the browser did not draw the tab"),
+		});
+		expect(h.fake.raw.tabs.captureVisibleTab).not.toHaveBeenCalled();
 	});
 });
 

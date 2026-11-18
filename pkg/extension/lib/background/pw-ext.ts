@@ -374,6 +374,12 @@ function pageResult(raw: unknown): PwExtPageResult {
 	return raw as PwExtPageResult;
 }
 const JPEG_QUALITY = 70;
+const CAPTURE_DEADLINE_MS = 10_000;
+const BRING_FORWARD = "Bring the browser window with the agent tab to the front, then retry.";
+const SHOT_INACTIVE = `The agent tab did not become the active tab in its window, so it cannot be captured. ${BRING_FORWARD}`;
+const SHOT_MINIMIZED = `The browser window stayed minimized, so the agent tab cannot be captured. Restore the window, then retry.`;
+const shotStuck = (seconds: number, reason: string) =>
+	`The screenshot did not finish within ${seconds} seconds because ${reason}. ${BRING_FORWARD}`;
 
 function cap(text: string): string {
 	const marker = "\n[truncated]";
@@ -668,6 +674,7 @@ export function createPwExtHandler({
 	thirdPartySites = () => storedThirdPartySites(api.storage),
 	runningThirdParty = () => runningThirdPartyMatches(),
 	pageDeadlineMs = PAGE_DEADLINE_MS,
+	captureDeadlineMs = CAPTURE_DEADLINE_MS,
 	lock,
 	control = createSessionControl({ storage: api.storage }),
 }: {
@@ -683,6 +690,7 @@ export function createPwExtHandler({
 	thirdPartySites?: () => Promise<ThirdPartySites>;
 	runningThirdParty?: () => Promise<string[]>;
 	pageDeadlineMs?: number;
+	captureDeadlineMs?: number;
 	lock?: AgentTabsLock;
 	control?: SessionControl;
 }) {
@@ -826,6 +834,35 @@ export function createPwExtHandler({
 					timer = setTimeout(() => reject(new Refusal(pageStuck(Math.round(pageDeadlineMs / 1000)))), pageDeadlineMs);
 				}),
 			]);
+		} finally {
+			clearTimeout(timer);
+		}
+	}
+
+	async function stuckReason(tabId: number, windowId: number): Promise<string> {
+		const [shown, window] = await Promise.all([
+			api.tabs.get(tabId).catch(() => undefined),
+			api.windows.get(windowId).catch(() => undefined),
+		]);
+		if (window?.state === "minimized") return "the browser window is minimized";
+		if (shown?.active === false) return "the agent tab is not the active tab in its window";
+		if (window?.focused === false) return "the browser window is not focused";
+		return "the browser did not draw the tab; the window may be behind another window or on another desktop";
+	}
+
+	async function beforeCaptureDeadline<T>(work: Promise<T>, tabId: number, windowId: number): Promise<T> {
+		const late = Symbol("late");
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			const result = await Promise.race([
+				work,
+				new Promise<typeof late>((resolve) => {
+					timer = setTimeout(() => resolve(late), captureDeadlineMs);
+				}),
+			]);
+			if (result === late)
+				throw new Refusal(shotStuck(Math.round(captureDeadlineMs / 1000), await stuckReason(tabId, windowId)));
+			return result;
 		} finally {
 			clearTimeout(timer);
 		}
@@ -1453,19 +1490,30 @@ export function createPwExtHandler({
 					...(state === "minimized" ? { state: "normal" as const } : {}),
 				});
 				if (signal?.aborted) return CANCELED;
-				await api.scripting.executeScript({
-					target: { tabId: tab.id },
-					func: nextFrame,
-					args: [],
-				});
+				const [front, frontWindow] = await Promise.all([api.tabs.get(tab.id), api.windows.get(windowId)]);
+				if (frontWindow.state === "minimized") return { ok: false, error: SHOT_MINIMIZED };
+				if (front.active === false) return { ok: false, error: SHOT_INACTIVE };
+				await beforeCaptureDeadline(
+					api.scripting.executeScript({
+						target: { tabId: tab.id },
+						func: nextFrame,
+						args: [],
+					}),
+					tab.id,
+					windowId,
+				);
 				if (signal?.aborted) return CANCELED;
 				const watch = watchTab(tab);
 				let captured: string;
 				try {
-					captured = await api.tabs.captureVisibleTab(windowId, {
-						format: "jpeg",
-						quality: JPEG_QUALITY,
-					});
+					captured = await beforeCaptureDeadline(
+						api.tabs.captureVisibleTab(windowId, {
+							format: "jpeg",
+							quality: JPEG_QUALITY,
+						}),
+						tab.id,
+						windowId,
+					);
 					const after = await api.tabs.get(tab.id);
 					const [shown] = await api.tabs.query({ active: true, windowId });
 					if (
