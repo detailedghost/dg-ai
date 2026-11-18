@@ -107,6 +107,14 @@ async function cmdGather(args: string[]): Promise<void> {
 	process.stdout.write(JSON.stringify({ pr, threads }) + "\n");
 }
 
+async function currentUserOrNull(provider: Awaited<ReturnType<typeof getProvider>>): Promise<string | null> {
+	try {
+		return await provider.currentUser();
+	} catch {
+		return null;
+	}
+}
+
 const INCLUDE_RESOLVED_UNREPLIED = "--include-resolved-unreplied";
 
 async function cmdGatherUnresolved(rawArgs: string[]): Promise<void> {
@@ -115,14 +123,16 @@ async function cmdGatherUnresolved(rawArgs: string[]): Promise<void> {
 	const ref = toThreadRef(args[0]);
 	const provider = await getProvider();
 	const threads = await provider.listUnresolvedThreads({ includeResolved: includeResolvedUnreplied }, ref);
-	const me = includeResolvedUnreplied ? await provider.currentUser() : "";
+	const me = includeResolvedUnreplied && threads.some((t) => t.resolved) ? await currentUserOrNull(provider) : null;
 
 	const result = threads
 		.filter((t) => !t.comments.some((c) => c.body.toLowerCase().includes("#ignore")))
 		.filter(
 			(t) =>
 				!t.resolved ||
-				(!t.comments.some((c) => hasBotPrefix(c.body)) && t.resolvedBy?.toLowerCase() !== me.toLowerCase()),
+				(me !== null &&
+					!t.comments.some((c) => hasBotPrefix(c.body)) &&
+					t.resolvedBy?.toLowerCase() !== me.toLowerCase()),
 		)
 		.filter((t) => {
 			const isExplain = t.comments.some((c) => c.body.toLowerCase().includes("#explain"));

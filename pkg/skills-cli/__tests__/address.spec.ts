@@ -735,6 +735,38 @@ describe("gather-unresolved --include-resolved-unreplied", () => {
 		expect(JSON.parse(stdout)).toEqual([]);
 	});
 
+	test("keeps unresolved threads and drops resolved ones when the current user cannot be read", async () => {
+		const prPath = writeJson("gh-ru5-pr.json", rawPr(9001, "OPEN"));
+		const threadsPath = writeJson(
+			"gh-ru5-threads.json",
+			ghThreadsResponse([
+				ghThread("RT-OPEN", false, [
+					{ databaseId: 7501, author: "alice", body: "fix this" },
+				]),
+				ghThread(
+					"RT-DONE",
+					true,
+					[{ databaseId: 7502, author: "copilot", body: "x" }],
+					{ resolvedBy: "copilot" },
+				),
+			]),
+		);
+		const script = ghListScript(prPath, threadsPath).replace(
+			`echo '{"login":"me"}'
+    exit 0`,
+			"echo 'Resource not accessible' >&2\n    exit 1",
+		);
+		const ghBin = fakeGh(script);
+
+		const { stdout, exitCode } = await runCli(["gather-unresolved", FLAG], {
+			env: { AI_VCS_PROVIDER: "github", GH_BIN: ghBin },
+		});
+
+		expect(exitCode).toBe(0);
+		const parsed = JSON.parse(stdout) as Array<Record<string, unknown>>;
+		expect(parsed.map((t) => t.threadId)).toEqual(["RT-OPEN"]);
+	});
+
 	test("gathers the same reply-only item on GitLab from resolved_by", async () => {
 		const mrPath = writeJson("gl-ru-mr.json", rawMr(1, "opened"));
 		const discussionsPath = writeJson("gl-ru-discussions.json", [

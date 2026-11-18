@@ -81,7 +81,7 @@ De-duplicate: if `reviewDir == $PWD`, glob only once.
 
 Reply-only items: the flag also returns a resolved thread when no comment starts with a bot marker and `resolvedBy` is not the current user. Such an item has `mode="reply-only"`, plus `resolvedBy`, `isOutdated`, and `createdAt`. A thread the current user resolved with no reply is not returned. GitLab returns them the same way, from `resolved_by`. `isOutdated` is always `false` on GitLab.
 
-For each reply-only item, find the fixing commit: `git log -L <line>,<line>:<path> --after=<createdAt> --format=%h`, using the comment's original line and its `createdAt`. Take the oldest hit, then read its patch. It counts only when it changes the code the comment names. A commit that merely touches the line is not a fix. A reply-only item has no fix to make.
+For each reply-only item, find the fixing commit: `git log --reverse --after=<createdAt> --format=%h -- <path>`, using the comment's `createdAt`. The original line number may not exist at HEAD, so read the patches in order. The first one that changes the code the comment names is the candidate. A commit that merely touches the file is not a fix. The candidate must already be pushed: `git merge-base --is-ancestor <sha> @{u}` must succeed. Otherwise there is no fixing commit. A reply-only item has no fix to make.
 
 - Commit found: keep `mode="reply-only"` and set `fixSha`.
 - No fixing commit: set `mode="fix"`. It is now a normal fix item.
