@@ -532,9 +532,17 @@ export function pwExtPageAction(
 		if ((!field && !editable) || input.disabled || input.readOnly)
 			return { error: `${describe(el)} cannot be filled.` };
 		input.focus?.();
-		if (editable) el.textContent = value;
-		else setValue(el, value);
-		fire(el);
+		(win[EDITED] as WeakSet<Element> | undefined)?.delete(el);
+		if (editable || input.type.toLowerCase() === "number") {
+			if (editable) el.textContent = value;
+			else setValue(el, value);
+			fire(el);
+			return { detail: `filled ${describe(el)}` };
+		}
+		const typed = typeText(input, value);
+		input.dispatchEvent(new (win as unknown as typeof globalThis).Event("change", { bubbles: true }));
+		const total = [...value].length;
+		if (typed < total) return { error: `${describe(el)} took ${typed} of ${total} characters.` };
 		return { detail: `filled ${describe(el)}` };
 	};
 
@@ -582,10 +590,21 @@ export function pwExtPageAction(
 
 	const LOW_SURROGATE = /[\uDC00-\uDFFF]/;
 
-	const edit = (input: HTMLInputElement, text: string, inputType: string): boolean => {
+	const keyInit = (name: string, char: string | undefined, held: Set<string>) => ({
+		key: name,
+		code: /^[a-z]$/i.test(name) ? `Key${name.toUpperCase()}` : /^\d$/.test(name) ? `Digit${name}` : name === " " ? "Space" : char ? "" : name,
+		bubbles: true,
+		cancelable: true,
+		composed: true,
+		shiftKey: held.has("Shift"),
+		ctrlKey: held.has("Control"),
+		altKey: held.has("Alt"),
+		metaKey: held.has("Meta"),
+	});
+
+	const edit = (input: HTMLInputElement, text: string, inputType: string, range?: [number, number]): boolean => {
 		const value = input.value;
-		const start = input.selectionStart ?? value.length;
-		const end = input.selectionEnd ?? value.length;
+		const [start, end] = range ?? [input.selectionStart ?? value.length, input.selectionEnd ?? value.length];
 		let from = start;
 		let to = end;
 		if (text === "" && start === end) {
@@ -606,14 +625,35 @@ export function pwExtPageAction(
 		if (!kept) return false;
 		const scope = win as unknown as typeof globalThis;
 		const data = text ? { data: text } : {};
-		if (!input.dispatchEvent(new scope.InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType, ...data }))) return false;
+		if (!input.dispatchEvent(new scope.InputEvent("beforeinput", { bubbles: true, cancelable: true, composed: true, inputType, ...data }))) return false;
 		if (!input.isConnected) return false;
 		setValue(input, next);
 		try {
 			input.setSelectionRange(from + text.length, from + text.length);
 		} catch {}
-		input.dispatchEvent(new scope.InputEvent("input", { bubbles: true, inputType, ...data }));
+		input.dispatchEvent(new scope.InputEvent("input", { bubbles: true, composed: true, inputType, ...data }));
 		return true;
+	};
+
+	const typeText = (input: HTMLInputElement, value: string): number => {
+		const scope = win as unknown as typeof globalThis;
+		const chars = [...value];
+		let range: [number, number] = [0, input.value.length];
+		if (chars.length === 0) {
+			if (range[1] > 0) edit(input, "", "deleteContentBackward", range);
+			return 0;
+		}
+		let typed = 0;
+		for (const char of chars) {
+			const init = keyInit(char, char, new Set());
+			const send = (kind: string): boolean => input.dispatchEvent(new scope.KeyboardEvent(kind, init));
+			const landed = send("keydown") && send("keypress") && input.isConnected && edit(input, char, "insertText", range);
+			if (input.isConnected) send("keyup");
+			if (!landed) break;
+			typed++;
+			range = [input.value.length, input.value.length];
+		}
+		return typed;
 	};
 
 	const submit = (form: HTMLFormElement): string => {
@@ -659,17 +699,7 @@ export function pwExtPageAction(
 			return { error: `pw --ext press cannot edit ${describe(target)}: the browser hides its caret. Use pw --ext fill to set its value.` };
 		if (typing && (isSecret(target) || insideSecret(target)))
 			return { error: "pw --ext press does not type into a password or secret field. Use pw --ext fill <target> --value-env NAME." };
-		const init = {
-			key: name,
-			code: /^[a-z]$/i.test(name) ? `Key${name.toUpperCase()}` : /^\d$/.test(name) ? `Digit${name}` : name === " " ? "Space" : char ? "" : name,
-			bubbles: true,
-			cancelable: true,
-			composed: true,
-			shiftKey: held.has("Shift"),
-			ctrlKey: held.has("Control"),
-			altKey: held.has("Alt"),
-			metaKey: held.has("Meta"),
-		};
+		const init = keyInit(name, char, held);
 		const send = (type: string, to: Element = target): boolean => to.dispatchEvent(new scope.KeyboardEvent(type, init));
 		const edited = (win[EDITED] ??= new WeakSet<Element>()) as WeakSet<Element>;
 		const commit = (): void => {

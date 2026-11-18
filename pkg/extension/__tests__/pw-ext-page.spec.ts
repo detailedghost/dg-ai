@@ -193,7 +193,115 @@ describe("fill", () => {
 		const result = pwExtPageAction({ kind: "fill", target: "#q", value: "kittens" });
 		expect(result).toEqual({ detail: 'filled textbox "Search"' });
 		expect(input.value).toBe("kittens");
-		expect(events).toEqual(["input", "change"]);
+		expect(events).toEqual([...Array(7).fill("input"), "change"]);
+	});
+
+	it("types each character with key, beforeinput and input events", () => {
+		page(`<input id="q" aria-label="Search">`);
+		const input = el<HTMLInputElement>("#q");
+		const events: string[] = [];
+		for (const kind of ["keydown", "keypress", "keyup"])
+			input.addEventListener(kind, (event) => events.push(`${kind}:${(event as KeyboardEvent).key}`));
+		for (const kind of ["beforeinput", "input"])
+			input.addEventListener(kind, (event) => {
+				const typed = event as InputEvent;
+				const shape = (event as unknown) instanceof window.InputEvent ? `${typed.inputType}:${typed.data}` : "plain";
+				events.push(`${kind}:${shape}:${input.value}`);
+			});
+		input.addEventListener("change", () => events.push("change"));
+		pwExtPageAction({ kind: "fill", target: "#q", value: "ab" });
+		expect(events).toEqual([
+			"keydown:a",
+			"keypress:a",
+			"beforeinput:insertText:a:",
+			"input:insertText:a:a",
+			"keyup:a",
+			"keydown:b",
+			"keypress:b",
+			"beforeinput:insertText:b:a",
+			"input:insertText:b:ab",
+			"keyup:b",
+			"change",
+		]);
+	});
+
+	it("drives a React-like controlled input and its Enter handler", () => {
+		page(`<form id="f"><input id="q" aria-label="Search" role="combobox"></form>`);
+		const input = el<HTMLInputElement>("#q");
+		const native = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value") as PropertyDescriptor;
+		let tracked = "";
+		Object.defineProperty(input, "value", {
+			configurable: true,
+			get: () => native.get?.call(input),
+			set: (next: string) => {
+				tracked = next;
+				native.set?.call(input, next);
+			},
+		});
+		let state = "";
+		const searches: string[] = [];
+		const suggestions: string[] = [];
+		input.addEventListener("input", (event) => {
+			const current = native.get?.call(input) as string;
+			if (current === tracked) return;
+			tracked = current;
+			state = current;
+			if ((event as unknown) instanceof window.InputEvent && (event as InputEvent).inputType === "insertText") suggestions.push(state);
+		});
+		input.addEventListener("keydown", (event) => {
+			if ((event as KeyboardEvent).key === "Enter") searches.push(state);
+		});
+		pwExtPageAction({ kind: "fill", target: "#q", value: "dglive" });
+		pwExtPageAction({ kind: "press", chord: "Enter", key: "Enter", modifiers: [] });
+		expect(state).toBe("dglive");
+		expect(suggestions).toEqual(["d", "dg", "dgl", "dgli", "dgliv", "dglive"]);
+		expect(searches).toEqual(["dglive"]);
+	});
+
+	it("replaces an existing value, also in a field without a caret", () => {
+		page(`<input id="t" aria-label="T" value="old"><input id="e" type="email" aria-label="E" value="old@example.test">`);
+		pwExtPageAction({ kind: "fill", target: "#t", value: "new" });
+		pwExtPageAction({ kind: "fill", target: "#e", value: "ada@example.test" });
+		expect(el<HTMLInputElement>("#t").value).toBe("new");
+		expect(el<HTMLInputElement>("#e").value).toBe("ada@example.test");
+	});
+
+	it("clears the field for an empty value", () => {
+		page(`<input id="t" aria-label="T" value="old">`);
+		const input = el<HTMLInputElement>("#t");
+		const kinds: string[] = [];
+		input.addEventListener("input", (event) => kinds.push((event as InputEvent).inputType));
+		expect(pwExtPageAction({ kind: "fill", target: "#t", value: "" })).toEqual({ detail: 'filled textbox "T"' });
+		expect(input.value).toBe("");
+		expect(kinds).toEqual(["deleteContentBackward"]);
+	});
+
+	it("stops at maxlength and reports the count without the text", () => {
+		page(`<input id="t" aria-label="T" maxlength="3">`);
+		const result = pwExtPageAction({ kind: "fill", target: "#t", value: "abcde" });
+		expect(result).toEqual({ error: 'textbox "T" took 3 of 5 characters.' });
+		expect(el<HTMLInputElement>("#t").value).toBe("abc");
+	});
+
+	it("skips a character whose keydown the page cancels", () => {
+		page(`<input id="t" aria-label="T">`);
+		const input = el<HTMLInputElement>("#t");
+		input.addEventListener("keydown", (event) => event.preventDefault());
+		expect(pwExtPageAction({ kind: "fill", target: "#t", value: "ab" })).toEqual({ error: 'textbox "T" took 0 of 2 characters.' });
+		expect(input.value).toBe("");
+	});
+
+	it("sets a number field in one step", () => {
+		page(`<input id="n" type="number" aria-label="N">`);
+		expect(pwExtPageAction({ kind: "fill", target: "#n", value: "-1e3" })).toEqual({ detail: expect.stringContaining("filled") });
+		expect(el<HTMLInputElement>("#n").value).toBe("-1e3");
+	});
+
+	it("lets press continue typing after fill", () => {
+		page(`<input id="q" aria-label="Q">`);
+		pwExtPageAction({ kind: "fill", target: "#q", value: "ab" });
+		pwExtPageAction({ kind: "press", chord: "c", key: "c", modifiers: [] });
+		expect(el<HTMLInputElement>("#q").value).toBe("abc");
 	});
 
 	it.each([
@@ -546,6 +654,13 @@ describe("unmask grant", () => {
 		expect(result).toEqual({ detail: expect.stringContaining("filled") });
 		expect(JSON.stringify(result)).not.toContain("Temp-Pass-123");
 		expect(el<HTMLInputElement>("#p").value).toBe("Temp-Pass-123");
+	});
+
+	it("never echoes a secret when a fill stops early", () => {
+		page(`<label>Password <input id="p" type="password" maxlength="4"></label>`);
+		const result = pwExtPageAction({ kind: "fill", target: "#p", value: "Temp-Pass-123", secret: true }, undefined, true);
+		expect(result).toEqual({ error: expect.stringContaining("took 4 of 13") });
+		expect(JSON.stringify(result)).not.toContain("Temp");
 	});
 });
 
