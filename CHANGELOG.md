@@ -1,5 +1,12 @@
 # Changelog
 
+## v5.12.1 (2026-11-18)
+
+### Fixes
+
+- fix(extension): type pw --ext fill key by key ([#224](https://github.com/detailedghost/dg-ai/pull/224))
+- fix(extension): fail fast when pw --ext screenshot cannot capture ([#223](https://github.com/detailedghost/dg-ai/pull/223))
+
 ## v5.12.0 (2026-11-17)
 
 ### Features
