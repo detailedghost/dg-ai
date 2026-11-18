@@ -52,6 +52,7 @@ export function pwExtPageAction(
 		"tel",
 		"number",
 	]);
+	const ATOMIC_INPUTS = new Set(["number", "email", "url"]);
 	const DATE_INPUTS: Record<string, [RegExp, string]> = {
 		date: [/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD"],
 		time: [/^\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?$/, "HH:MM (24-hour)"],
@@ -532,9 +533,18 @@ export function pwExtPageAction(
 		if ((!field && !editable) || input.disabled || input.readOnly)
 			return { error: `${describe(el)} cannot be filled.` };
 		input.focus?.();
-		if (editable) el.textContent = value;
-		else setValue(el, value);
-		fire(el);
+		(win[EDITED] as WeakSet<Element> | undefined)?.delete(el);
+		if (editable || secret || ATOMIC_INPUTS.has(input.type.toLowerCase())) {
+			if (editable) el.textContent = value;
+			else setValue(el, value);
+			fire(el);
+			return { detail: `filled ${describe(el)}` };
+		}
+		const chars = [...(el.tagName === "TEXTAREA" ? value.replace(/\r\n?/g, "\n") : value.replace(/[\r\n]/g, ""))];
+		const typed = typeText(input, chars);
+		if (typed < 0) return { error: `${describe(el)} kept its old value.` };
+		input.dispatchEvent(new (win as unknown as typeof globalThis).Event("change", { bubbles: true }));
+		if (typed < chars.length) return { error: `${describe(el)} took ${typed} of ${chars.length} characters.` };
 		return { detail: `filled ${describe(el)}` };
 	};
 
@@ -582,6 +592,39 @@ export function pwExtPageAction(
 
 	const LOW_SURROGATE = /[\uDC00-\uDFFF]/;
 
+	const LEGACY_KEYS: Record<string, number> = {
+		Backspace: 8,
+		Tab: 9,
+		Enter: 13,
+		Escape: 27,
+		" ": 32,
+		ArrowLeft: 37,
+		ArrowUp: 38,
+		ArrowRight: 39,
+		ArrowDown: 40,
+		Delete: 46,
+	};
+
+	const legacyCode = (kind: string, name: string, char: string | undefined): number => {
+		if (kind === "keypress") return name === "Enter" ? 13 : (char?.codePointAt(0) ?? 0);
+		return LEGACY_KEYS[name] ?? (/^[a-z\d]$/i.test(name) ? name.toUpperCase().charCodeAt(0) : 0);
+	};
+
+	const keyInit = (kind: string, name: string, char: string | undefined, held: Set<string>) => ({
+		key: name,
+		keyCode: legacyCode(kind, name, char),
+		which: legacyCode(kind, name, char),
+		charCode: kind === "keypress" ? legacyCode(kind, name, char) : 0,
+		code: /^[a-z]$/i.test(name) ? `Key${name.toUpperCase()}` : /^\d$/.test(name) ? `Digit${name}` : name === " " ? "Space" : char ? "" : name,
+		bubbles: true,
+		cancelable: true,
+		composed: true,
+		shiftKey: held.has("Shift"),
+		ctrlKey: held.has("Control"),
+		altKey: held.has("Alt"),
+		metaKey: held.has("Meta"),
+	});
+
 	const edit = (input: HTMLInputElement, text: string, inputType: string): boolean => {
 		const value = input.value;
 		const start = input.selectionStart ?? value.length;
@@ -606,14 +649,38 @@ export function pwExtPageAction(
 		if (!kept) return false;
 		const scope = win as unknown as typeof globalThis;
 		const data = text ? { data: text } : {};
-		if (!input.dispatchEvent(new scope.InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType, ...data }))) return false;
+		if (!input.dispatchEvent(new scope.InputEvent("beforeinput", { bubbles: true, cancelable: true, composed: true, inputType, ...data }))) return false;
 		if (!input.isConnected) return false;
 		setValue(input, next);
 		try {
 			input.setSelectionRange(from + text.length, from + text.length);
 		} catch {}
-		input.dispatchEvent(new scope.InputEvent("input", { bubbles: true, inputType, ...data }));
+		input.dispatchEvent(new scope.InputEvent("input", { bubbles: true, composed: true, inputType, ...data }));
 		return true;
+	};
+
+	const typeText = (input: HTMLInputElement, chars: string[]): number => {
+		const scope = win as unknown as typeof globalThis;
+		try {
+			input.setSelectionRange(0, input.value.length);
+		} catch {}
+		if (chars.length === 0) return input.value === "" || edit(input, "", "deleteContentBackward") ? 0 : -1;
+		let typed = 0;
+		const open = (): boolean => input.isConnected && !input.disabled && !input.readOnly;
+		for (const char of chars) {
+			if (char === "\n") {
+				if (!open() || !edit(input, char, "insertLineBreak")) break;
+				typed++;
+				continue;
+			}
+			const send = (kind: string): boolean =>
+				input.dispatchEvent(new scope.KeyboardEvent(kind, keyInit(kind, char, char, new Set())));
+			const landed = send("keydown") && send("keypress") && open() && edit(input, char, "insertText");
+			if (input.isConnected) send("keyup");
+			if (!landed) break;
+			typed++;
+		}
+		return typed;
 	};
 
 	const submit = (form: HTMLFormElement): string => {
@@ -659,18 +726,8 @@ export function pwExtPageAction(
 			return { error: `pw --ext press cannot edit ${describe(target)}: the browser hides its caret. Use pw --ext fill to set its value.` };
 		if (typing && (isSecret(target) || insideSecret(target)))
 			return { error: "pw --ext press does not type into a password or secret field. Use pw --ext fill <target> --value-env NAME." };
-		const init = {
-			key: name,
-			code: /^[a-z]$/i.test(name) ? `Key${name.toUpperCase()}` : /^\d$/.test(name) ? `Digit${name}` : name === " " ? "Space" : char ? "" : name,
-			bubbles: true,
-			cancelable: true,
-			composed: true,
-			shiftKey: held.has("Shift"),
-			ctrlKey: held.has("Control"),
-			altKey: held.has("Alt"),
-			metaKey: held.has("Meta"),
-		};
-		const send = (type: string, to: Element = target): boolean => to.dispatchEvent(new scope.KeyboardEvent(type, init));
+		const send = (type: string, to: Element = target): boolean =>
+			to.dispatchEvent(new scope.KeyboardEvent(type, keyInit(type, name, char, held)));
 		const edited = (win[EDITED] ??= new WeakSet<Element>()) as WeakSet<Element>;
 		const commit = (): void => {
 			if (!edited.delete(target)) return;
