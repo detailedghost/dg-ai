@@ -666,12 +666,16 @@ export function pwExtPageAction(
 		} catch {}
 		if (chars.length === 0) return input.value === "" || edit(input, "", "deleteContentBackward") ? 0 : -1;
 		let typed = 0;
+		const open = (): boolean => input.isConnected && !input.disabled && !input.readOnly;
 		for (const char of chars) {
-			const line = char === "\n";
-			const name = line ? "Enter" : char;
+			if (char === "\n") {
+				if (!open() || !edit(input, char, "insertLineBreak")) break;
+				typed++;
+				continue;
+			}
 			const send = (kind: string): boolean =>
-				input.dispatchEvent(new scope.KeyboardEvent(kind, keyInit(kind, name, line ? undefined : char, new Set())));
-			const landed = send("keydown") && send("keypress") && input.isConnected && edit(input, char, line ? "insertLineBreak" : "insertText");
+				input.dispatchEvent(new scope.KeyboardEvent(kind, keyInit(kind, char, char, new Set())));
+			const landed = send("keydown") && send("keypress") && open() && edit(input, char, "insertText");
 			if (input.isConnected) send("keyup");
 			if (!landed) break;
 			typed++;

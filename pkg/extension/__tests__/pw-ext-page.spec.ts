@@ -342,6 +342,33 @@ describe("fill", () => {
 		expect(downs).toEqual([49, 65]);
 	});
 
+	it("inserts textarea line breaks without an Enter key", () => {
+		page(`<textarea id="a" aria-label="A"></textarea>`);
+		const area = el<HTMLTextAreaElement>("#a");
+		const sent: string[] = [];
+		const kinds: string[] = [];
+		area.addEventListener("keydown", (event) => {
+			if ((event as KeyboardEvent).key !== "Enter") return;
+			sent.push(area.value);
+			event.preventDefault();
+		});
+		area.addEventListener("input", (event) => kinds.push((event as InputEvent).inputType));
+		expect(pwExtPageAction({ kind: "fill", target: "#a", value: "one\ntwo" })).toEqual({ detail: expect.stringContaining("filled") });
+		expect(area.value).toBe("one\ntwo");
+		expect(sent).toEqual([]);
+		expect(kinds[3]).toBe("insertLineBreak");
+	});
+
+	it("stops typing when the page locks the field", () => {
+		page(`<input id="t" aria-label="T">`);
+		const input = el<HTMLInputElement>("#t");
+		input.addEventListener("input", () => {
+			input.readOnly = true;
+		});
+		expect(pwExtPageAction({ kind: "fill", target: "#t", value: "abc" })).toEqual({ error: 'textbox "T" took 1 of 3 characters.' });
+		expect(input.value).toBe("a");
+	});
+
 	it("stops at maxlength and reports the count without the text", () => {
 		page(`<input id="t" aria-label="T" maxlength="3">`);
 		const result = pwExtPageAction({ kind: "fill", target: "#t", value: "abcde" });
