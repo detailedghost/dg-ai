@@ -309,6 +309,39 @@ describe("fill", () => {
 		expect(input.value).toBe("ab)");
 	});
 
+	it("follows a caret a keydown handler moves", () => {
+		page(`<input id="t" aria-label="T">`);
+		const input = el<HTMLInputElement>("#t");
+		input.addEventListener("keydown", (event) => {
+			if ((event as KeyboardEvent).key === "b") input.setSelectionRange(0, 0);
+		});
+		pwExtPageAction({ kind: "fill", target: "#t", value: "ab" });
+		expect(input.value).toBe("ba");
+	});
+
+	it("sends legacy character codes a keypress filter reads", () => {
+		const Native = window.KeyboardEvent;
+		class Legacy extends Native {
+			constructor(type: string, init: { charCode?: number; keyCode?: number }) {
+				super(type, init as never);
+				Object.defineProperty(this, "charCode", { value: init.charCode ?? 0 });
+				Object.defineProperty(this, "keyCode", { value: init.keyCode ?? 0 });
+			}
+		}
+		(window as unknown as { KeyboardEvent: unknown }).KeyboardEvent = Legacy;
+		page(`<input id="t" aria-label="T">`);
+		const input = el<HTMLInputElement>("#t");
+		const downs: number[] = [];
+		input.addEventListener("keydown", (event) => downs.push((event as KeyboardEvent).keyCode));
+		input.addEventListener("keypress", (event) => {
+			const code = (event as KeyboardEvent).charCode;
+			if (code < 48 || code > 57) event.preventDefault();
+		});
+		expect(pwExtPageAction({ kind: "fill", target: "#t", value: "1a2" })).toEqual({ error: 'textbox "T" took 1 of 3 characters.' });
+		expect(input.value).toBe("1");
+		expect(downs).toEqual([49, 65]);
+	});
+
 	it("stops at maxlength and reports the count without the text", () => {
 		page(`<input id="t" aria-label="T" maxlength="3">`);
 		const result = pwExtPageAction({ kind: "fill", target: "#t", value: "abcde" });

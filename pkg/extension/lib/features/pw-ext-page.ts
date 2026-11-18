@@ -592,8 +592,29 @@ export function pwExtPageAction(
 
 	const LOW_SURROGATE = /[\uDC00-\uDFFF]/;
 
-	const keyInit = (name: string, char: string | undefined, held: Set<string>) => ({
+	const LEGACY_KEYS: Record<string, number> = {
+		Backspace: 8,
+		Tab: 9,
+		Enter: 13,
+		Escape: 27,
+		" ": 32,
+		ArrowLeft: 37,
+		ArrowUp: 38,
+		ArrowRight: 39,
+		ArrowDown: 40,
+		Delete: 46,
+	};
+
+	const legacyCode = (kind: string, name: string, char: string | undefined): number => {
+		if (kind === "keypress") return name === "Enter" ? 13 : (char?.codePointAt(0) ?? 0);
+		return LEGACY_KEYS[name] ?? (/^[a-z\d]$/i.test(name) ? name.toUpperCase().charCodeAt(0) : 0);
+	};
+
+	const keyInit = (kind: string, name: string, char: string | undefined, held: Set<string>) => ({
 		key: name,
+		keyCode: legacyCode(kind, name, char),
+		which: legacyCode(kind, name, char),
+		charCode: kind === "keypress" ? legacyCode(kind, name, char) : 0,
 		code: /^[a-z]$/i.test(name) ? `Key${name.toUpperCase()}` : /^\d$/.test(name) ? `Digit${name}` : name === " " ? "Space" : char ? "" : name,
 		bubbles: true,
 		cancelable: true,
@@ -604,9 +625,10 @@ export function pwExtPageAction(
 		metaKey: held.has("Meta"),
 	});
 
-	const edit = (input: HTMLInputElement, text: string, inputType: string, range?: [number, number]): boolean => {
+	const edit = (input: HTMLInputElement, text: string, inputType: string): boolean => {
 		const value = input.value;
-		const [start, end] = range ?? [input.selectionStart ?? value.length, input.selectionEnd ?? value.length];
+		const start = input.selectionStart ?? value.length;
+		const end = input.selectionEnd ?? value.length;
 		let from = start;
 		let to = end;
 		if (text === "" && start === end) {
@@ -639,25 +661,20 @@ export function pwExtPageAction(
 
 	const typeText = (input: HTMLInputElement, chars: string[]): number => {
 		const scope = win as unknown as typeof globalThis;
-		let range: [number, number] = [0, input.value.length];
-		if (chars.length === 0) return range[1] === 0 || edit(input, "", "deleteContentBackward", range) ? 0 : -1;
-		const caret = (): [number, number] => {
-			try {
-				const start = input.selectionStart;
-				if (start !== null) return [start, input.selectionEnd ?? start];
-			} catch {}
-			return [input.value.length, input.value.length];
-		};
+		try {
+			input.setSelectionRange(0, input.value.length);
+		} catch {}
+		if (chars.length === 0) return input.value === "" || edit(input, "", "deleteContentBackward") ? 0 : -1;
 		let typed = 0;
 		for (const char of chars) {
 			const line = char === "\n";
-			const init = keyInit(line ? "Enter" : char, line ? undefined : char, new Set());
-			const send = (kind: string): boolean => input.dispatchEvent(new scope.KeyboardEvent(kind, init));
-			const landed = send("keydown") && send("keypress") && input.isConnected && edit(input, char, line ? "insertLineBreak" : "insertText", range);
+			const name = line ? "Enter" : char;
+			const send = (kind: string): boolean =>
+				input.dispatchEvent(new scope.KeyboardEvent(kind, keyInit(kind, name, line ? undefined : char, new Set())));
+			const landed = send("keydown") && send("keypress") && input.isConnected && edit(input, char, line ? "insertLineBreak" : "insertText");
 			if (input.isConnected) send("keyup");
 			if (!landed) break;
 			typed++;
-			range = caret();
 		}
 		return typed;
 	};
@@ -705,8 +722,8 @@ export function pwExtPageAction(
 			return { error: `pw --ext press cannot edit ${describe(target)}: the browser hides its caret. Use pw --ext fill to set its value.` };
 		if (typing && (isSecret(target) || insideSecret(target)))
 			return { error: "pw --ext press does not type into a password or secret field. Use pw --ext fill <target> --value-env NAME." };
-		const init = keyInit(name, char, held);
-		const send = (type: string, to: Element = target): boolean => to.dispatchEvent(new scope.KeyboardEvent(type, init));
+		const send = (type: string, to: Element = target): boolean =>
+			to.dispatchEvent(new scope.KeyboardEvent(type, keyInit(type, name, char, held)));
 		const edited = (win[EDITED] ??= new WeakSet<Element>()) as WeakSet<Element>;
 		const commit = (): void => {
 			if (!edited.delete(target)) return;

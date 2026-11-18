@@ -248,9 +248,10 @@ Rules:
   exposes no WebMCP tools." Tool discovery and a tool call each have a timeout;
   the site's own tool code can keep running after it.
 - `click`, `fill` and `press` send synthetic events. A page that checks for
-  trusted input ignores them. `press` sets `key` and `code` on its keyboard
-  events but not the legacy `keyCode`, because the page script runs in the
-  extension's isolated world. When the page does not cancel the key, `press`
+  trusted input ignores them. `press` and `fill` set `key`, `code` and the
+  legacy `keyCode`, `which` and `charCode` through the event constructor. The
+  page script runs in the extension's isolated world, so it cannot patch
+  those fields after the event exists. When the page does not cancel the key, `press`
   does the browser's default for Enter in a form field (it clicks the form's
   submit button, or submits the form), Enter or Space on a button, Tab and
   Shift+Tab, a plain character, Backspace and Delete in a text field. Other
