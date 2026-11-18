@@ -123,13 +123,21 @@ describe("validatePwExtResponse", () => {
 	it.each([
 		{},
 		{ text: 1 },
-		{ text: "x".repeat(PW_EXT_MAX_TEXT_CHARS + 1) },
 		{ text: "ok", image: "https://example.com/a.png" },
 		{ text: "ok", image: "data:text/html;base64,AAAA" },
-		{ text: "ok", image: `data:image/png;base64,${"A".repeat(PW_EXT_MAX_IMAGE_CHARS)}` },
 		{ text: "ok", cookies: "a=b" },
 	])("rejects %p", (value) => {
 		expect(() => validatePwExtResponse(value)).toThrow();
+	});
+
+	it("rejects text over the text cap", () => {
+		expect(() => validatePwExtResponse({ text: "x".repeat(PW_EXT_MAX_TEXT_CHARS + 1) })).toThrow();
+	});
+
+	it("rejects an image at the image cap", () => {
+		const image = `data:image/png;base64,${"A".repeat(PW_EXT_MAX_IMAGE_CHARS)}`;
+
+		expect(() => validatePwExtResponse({ text: "ok", image })).toThrow();
 	});
 });
 
@@ -266,8 +274,13 @@ describe("pw --ext round 3 verbs", () => {
 		{ verb: "call", tool: "x" },
 		{ verb: "call", tool: "x", args: [] },
 		{ verb: "call", tool: "x", args: "{}" },
-		{ verb: "call", tool: "x", args: { big: "y".repeat(20_000) } },
 	])("rejects %p", (request) => {
+		expect(() => validatePwExtRequest(request)).toThrow();
+	});
+
+	it("rejects call args over the size cap", () => {
+		const request = { verb: "call", tool: "x", args: { big: "y".repeat(20_000) } };
+
 		expect(() => validatePwExtRequest(request)).toThrow();
 	});
 });
