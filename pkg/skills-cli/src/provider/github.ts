@@ -243,6 +243,7 @@ async function tryGetCurrentPrNumber(tag: ShellTag, repo?: RepoRef): Promise<num
 function normalizeGhThread(node: {
 	id: string;
 	isResolved?: boolean;
+	resolvedBy?: { login?: string } | null;
 	path?: string | null;
 	line?: number | null;
 	originalLine?: number | null;
@@ -269,6 +270,7 @@ function normalizeGhThread(node: {
 	return {
 		threadId: node.id,
 		resolved: Boolean(node.isResolved),
+		resolvedBy: node.resolvedBy?.login,
 		comments,
 		commentId: comments[0]?.id,
 		path: node.path ?? "",
@@ -281,7 +283,7 @@ function normalizeGhThread(node: {
 
 const LIST_THREADS_QUERY =
 	"query($owner:String!,$repo:String!,$number:Int!,$after:String){repository(owner:$owner,name:$repo){" +
-	"pullRequest(number:$number){reviewThreads(first:100,after:$after){nodes{id isResolved isOutdated diffSide path line originalLine " +
+	"pullRequest(number:$number){reviewThreads(first:100,after:$after){nodes{id isResolved resolvedBy{login} isOutdated diffSide path line originalLine " +
 	"comments(first:50){nodes{databaseId author{login} body createdAt diffHunk} pageInfo{hasNextPage}}} pageInfo{hasNextPage endCursor}}}}}";
 
 async function listUnresolvedThreads(
@@ -804,5 +806,6 @@ export function createGithubProvider(): Provider {
 		ensureLabel: (name, repo) => ensureLabel(tag, name, repo),
 		getFileAtRef: (ref, path, sha) => getFileAtRef(tag, ref, path, sha),
 		checkAuth: () => checkAuthStatus(tag),
+		currentUser: async () => JSON.parse((await tag`api user`).stdout.toString()).login,
 	};
 }

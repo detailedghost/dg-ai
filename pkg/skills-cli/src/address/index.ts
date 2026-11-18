@@ -107,13 +107,34 @@ async function cmdGather(args: string[]): Promise<void> {
 	process.stdout.write(JSON.stringify({ pr, threads }) + "\n");
 }
 
-async function cmdGatherUnresolved(args: string[]): Promise<void> {
+async function currentUserOrNull(provider: Awaited<ReturnType<typeof getProvider>>): Promise<string | null> {
+	try {
+		return await provider.currentUser();
+	} catch {
+		return null;
+	}
+}
+
+const INCLUDE_RESOLVED_UNREPLIED = "--include-resolved-unreplied";
+
+async function cmdGatherUnresolved(rawArgs: string[]): Promise<void> {
+	const includeResolvedUnreplied = rawArgs.includes(INCLUDE_RESOLVED_UNREPLIED);
+	const args = rawArgs.filter((a) => a !== INCLUDE_RESOLVED_UNREPLIED);
 	const ref = toThreadRef(args[0]);
 	const provider = await getProvider();
-	const threads = await provider.listUnresolvedThreads({}, ref);
+	const threads = await provider.listUnresolvedThreads({ includeResolved: includeResolvedUnreplied }, ref);
+	const me = includeResolvedUnreplied && threads.some((t) => t.resolved) ? await currentUserOrNull(provider) : null;
 
 	const result = threads
 		.filter((t) => !t.comments.some((c) => c.body.toLowerCase().includes("#ignore")))
+		.filter(
+			(t) =>
+				!t.resolved ||
+				(me !== null &&
+					!t.comments.some((c) => c.body.toLowerCase().includes("#explain")) &&
+					!t.comments.some((c) => hasBotPrefix(c.body)) &&
+					t.resolvedBy?.toLowerCase() !== me.toLowerCase()),
+		)
 		.filter((t) => {
 			const isExplain = t.comments.some((c) => c.body.toLowerCase().includes("#explain"));
 			const lastFromBot = hasBotPrefix(t.comments.at(-1)?.body ?? "");
@@ -130,7 +151,10 @@ async function cmdGatherUnresolved(args: string[]): Promise<void> {
 				body: first?.body ?? "",
 				diffHunk: first?.diffHunk ?? "",
 				author: first?.author ?? "",
-				mode: isExplain ? "explain" : "fix",
+				mode: t.resolved ? "reply-only" : isExplain ? "explain" : "fix",
+				...(t.resolved
+					? { resolvedBy: t.resolvedBy ?? null, isOutdated: t.outdated ?? false, createdAt: first?.createdAt ?? "" }
+					: {}),
 			};
 		});
 
@@ -954,8 +978,9 @@ export const commandSpec = {
 			},
 		},
 		"gather-unresolved": {
-			description: "compact array of unresolved, non-ignored threads",
-			args: ["pr_number?"],
+			description:
+				"compact array of unresolved, non-ignored threads; --include-resolved-unreplied adds reply-only threads",
+			args: ["pr_number?", "--include-resolved-unreplied?"],
 			run: async (args) => {
 				await cmdGatherUnresolved(args);
 			},

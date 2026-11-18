@@ -291,6 +291,7 @@ interface RawDiscussionNote {
 	created_at?: string;
 	resolvable?: boolean;
 	resolved?: boolean;
+	resolved_by?: { username?: string } | null;
 	position?: {
 		new_path?: string | null;
 		old_path?: string | null;
@@ -324,6 +325,7 @@ function normalizeGlThread(raw: RawDiscussion): ReviewThread {
 	return {
 		threadId: raw.id,
 		resolved: isResolvedDiscussion(raw),
+		resolvedBy: raw.notes?.find((n) => n.resolved_by)?.resolved_by?.username,
 		comments,
 		commentId: comments[0]?.id,
 		path: position?.new_path ?? position?.old_path ?? "",
@@ -719,5 +721,6 @@ export function createGitlabProvider(): Provider {
 		ensureLabel: (name, repo) => ensureLabel(tag, name, repo),
 		getFileAtRef: (ref, path, sha) => getFileAtRef(tag, ref, path, sha),
 		checkAuth: () => checkAuthStatus(tag),
+		currentUser: async () => JSON.parse((await tag`api user`).stdout.toString()).username,
 	};
 }

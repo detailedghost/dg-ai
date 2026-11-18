@@ -167,13 +167,20 @@ function ghThread(
 		body: string;
 		diffHunk?: string;
 	}>,
-	meta: { path?: string; line?: number } = {},
+	meta: {
+		path?: string;
+		line?: number;
+		resolvedBy?: string;
+		isOutdated?: boolean;
+	} = {},
 ) {
 	return {
 		id,
 		isResolved,
 		path: meta.path,
 		line: meta.line,
+		isOutdated: meta.isOutdated,
+		resolvedBy: meta.resolvedBy ? { login: meta.resolvedBy } : null,
 		comments: {
 			nodes: comments.map((c) => ({
 				databaseId: c.databaseId,
@@ -209,6 +216,7 @@ function glDiscussion(
 		body: string;
 		resolvable?: boolean;
 		resolved?: boolean;
+		resolvedBy?: string;
 		created_at?: string;
 		position?: {
 			new_path?: string;
@@ -227,6 +235,7 @@ function glDiscussion(
 			created_at: n.created_at ?? "2026-02-01T10:00:00Z",
 			resolvable: n.resolvable ?? true,
 			resolved: n.resolved ?? false,
+			resolved_by: n.resolvedBy ? { username: n.resolvedBy } : null,
 			position: n.position,
 		})),
 	};
@@ -247,6 +256,10 @@ case "$ARGS" in
     ;;
   *"--json number"*)
     echo '{"number":9001}'
+    exit 0
+    ;;
+  *"api user"*)
+    echo '{"login":"me"}'
     exit 0
     ;;
   *graphql*)
@@ -271,6 +284,10 @@ case "$ARGS" in
     ;;
   *"mr view"*)
     cat "${mrPath}"
+    exit 0
+    ;;
+  *"api user"*)
+    echo '{"username":"me"}'
     exit 0
     ;;
   *"/discussions"*)
@@ -594,6 +611,215 @@ describe("gather-unresolved — filtering and derivation semantics", () => {
 			author: "erin",
 			mode: "explain",
 		});
+	});
+});
+
+describe("gather-unresolved --include-resolved-unreplied", () => {
+	const FLAG = "--include-resolved-unreplied";
+
+	test("gathers a thread another user resolved with no bot reply as a reply-only item, on GitHub", async () => {
+		const prPath = writeJson("gh-ru-pr.json", rawPr(9001, "OPEN"));
+		const threadsPath = writeJson(
+			"gh-ru-threads.json",
+			ghThreadsResponse([
+				ghThread(
+					"RT-OUTDATED",
+					true,
+					[{ databaseId: 7101, author: "copilot", body: "docs promise approve" }],
+					{ path: "docs/a.md", resolvedBy: "copilot", isOutdated: true },
+				),
+				ghThread("RT-OPEN", false, [
+					{ databaseId: 7102, author: "alice", body: "fix this" },
+				]),
+			]),
+		);
+		const ghBin = fakeGh(ghListScript(prPath, threadsPath));
+
+		const { stdout, exitCode } = await runCli(["gather-unresolved", FLAG], {
+			env: { AI_VCS_PROVIDER: "github", GH_BIN: ghBin },
+		});
+
+		expect(exitCode).toBe(0);
+		const parsed = JSON.parse(stdout) as Array<Record<string, unknown>>;
+		expect(parsed.map((t) => t.threadId)).toEqual(["RT-OUTDATED", "RT-OPEN"]);
+		expect(parsed[0]).toMatchObject({
+			commentId: 7101,
+			mode: "reply-only",
+			resolvedBy: "copilot",
+			isOutdated: true,
+			createdAt: "2026-02-01T10:00:00Z",
+			path: "docs/a.md",
+		});
+	});
+
+	test("does not gather a resolved thread that already has a bot reply", async () => {
+		const prPath = writeJson("gh-ru2-pr.json", rawPr(9001, "OPEN"));
+		const threadsPath = writeJson(
+			"gh-ru2-threads.json",
+			ghThreadsResponse([
+				ghThread(
+					"RT-REPLIED",
+					true,
+					[
+						{ databaseId: 7201, author: "copilot", body: "docs promise approve" },
+						{ databaseId: 7202, author: "me", body: "🤖 fixed in abc1234" },
+					],
+					{ resolvedBy: "copilot", isOutdated: true },
+				),
+				ghThread(
+					"RT-REPLIED-ASCII",
+					true,
+					[
+						{ databaseId: 7203, author: "copilot", body: "nit" },
+						{ databaseId: 7204, author: "me", body: "[bot] fixed in abc1234" },
+					],
+					{ resolvedBy: "copilot" },
+				),
+			]),
+		);
+		const ghBin = fakeGh(ghListScript(prPath, threadsPath));
+
+		const { stdout, exitCode } = await runCli(["gather-unresolved", FLAG], {
+			env: { AI_VCS_PROVIDER: "github", GH_BIN: ghBin },
+		});
+
+		expect(exitCode).toBe(0);
+		expect(JSON.parse(stdout)).toEqual([]);
+	});
+
+	test("does not gather a resolved thread the current user resolved with no reply", async () => {
+		const prPath = writeJson("gh-ru3-pr.json", rawPr(9001, "OPEN"));
+		const threadsPath = writeJson(
+			"gh-ru3-threads.json",
+			ghThreadsResponse([
+				ghThread(
+					"RT-DISMISSED",
+					true,
+					[{ databaseId: 7301, author: "alice", body: "nit" }],
+					{ resolvedBy: "me" },
+				),
+				ghThread(
+					"RT-EXPLAIN",
+					true,
+					[{ databaseId: 7303, author: "alice", body: "#explain why" }],
+					{ resolvedBy: "bob" },
+				),
+				ghThread(
+					"RT-IGNORED",
+					true,
+					[{ databaseId: 7302, author: "alice", body: "#ignore" }],
+					{ resolvedBy: "bob" },
+				),
+			]),
+		);
+		const ghBin = fakeGh(ghListScript(prPath, threadsPath));
+
+		const { stdout, exitCode } = await runCli(["gather-unresolved", FLAG], {
+			env: { AI_VCS_PROVIDER: "github", GH_BIN: ghBin },
+		});
+
+		expect(exitCode).toBe(0);
+		expect(JSON.parse(stdout)).toEqual([]);
+	});
+
+	test("leaves resolved threads out when the flag is absent", async () => {
+		const prPath = writeJson("gh-ru4-pr.json", rawPr(9001, "OPEN"));
+		const threadsPath = writeJson(
+			"gh-ru4-threads.json",
+			ghThreadsResponse([
+				ghThread("RT-OUTDATED", true, [
+					{ databaseId: 7401, author: "copilot", body: "x" },
+				], { resolvedBy: "copilot" }),
+			]),
+		);
+		const ghBin = fakeGh(ghListScript(prPath, threadsPath));
+
+		const { stdout } = await runCli(["gather-unresolved"], {
+			env: { AI_VCS_PROVIDER: "github", GH_BIN: ghBin },
+		});
+
+		expect(JSON.parse(stdout)).toEqual([]);
+	});
+
+	test("keeps unresolved threads and drops resolved ones when the current user cannot be read", async () => {
+		const prPath = writeJson("gh-ru5-pr.json", rawPr(9001, "OPEN"));
+		const threadsPath = writeJson(
+			"gh-ru5-threads.json",
+			ghThreadsResponse([
+				ghThread("RT-OPEN", false, [
+					{ databaseId: 7501, author: "alice", body: "fix this" },
+				]),
+				ghThread(
+					"RT-DONE",
+					true,
+					[{ databaseId: 7502, author: "copilot", body: "x" }],
+					{ resolvedBy: "copilot" },
+				),
+			]),
+		);
+		const script = ghListScript(prPath, threadsPath).replace(
+			`echo '{"login":"me"}'
+    exit 0`,
+			"echo 'Resource not accessible' >&2\n    exit 1",
+		);
+		const ghBin = fakeGh(script);
+
+		const { stdout, exitCode } = await runCli(["gather-unresolved", FLAG], {
+			env: { AI_VCS_PROVIDER: "github", GH_BIN: ghBin },
+		});
+
+		expect(exitCode).toBe(0);
+		const parsed = JSON.parse(stdout) as Array<Record<string, unknown>>;
+		expect(parsed.map((t) => t.threadId)).toEqual(["RT-OPEN"]);
+	});
+
+	test("gathers the same reply-only item on GitLab from resolved_by", async () => {
+		const mrPath = writeJson("gl-ru-mr.json", rawMr(1, "opened"));
+		const discussionsPath = writeJson("gl-ru-discussions.json", [
+			glDiscussion("disc-other", [
+				{ id: 8101, author: "reviewer", body: "rename", resolved: true, resolvedBy: "teammate" },
+			]),
+			glDiscussion("disc-mine", [
+				{ id: 8102, author: "reviewer", body: "nit", resolved: true, resolvedBy: "me" },
+			]),
+			glDiscussion("disc-replied", [
+				{ id: 8103, author: "reviewer", body: "nit", resolved: true, resolvedBy: "teammate" },
+				{ id: 8104, author: "me", body: "🤖 done", resolved: true },
+			]),
+		]);
+		const glabBin = fakeGlab(glListScript(mrPath, discussionsPath));
+
+		const { stdout, exitCode } = await runCli(["gather-unresolved", FLAG], {
+			env: { AI_VCS_PROVIDER: "gitlab", GLAB_BIN: glabBin },
+		});
+
+		expect(exitCode).toBe(0);
+		const parsed = JSON.parse(stdout) as Array<Record<string, unknown>>;
+		expect(parsed).toHaveLength(1);
+		expect(parsed[0]).toMatchObject({
+			threadId: "disc-other",
+			commentId: 8101,
+			mode: "reply-only",
+			resolvedBy: "teammate",
+			isOutdated: false,
+		});
+	});
+});
+
+describe("references/workflow.md — reply-only items", () => {
+	const workflow = readFileSync(
+		join(import.meta.dir, "../../../plugins/dg/skills/address/references/workflow.md"),
+		"utf8",
+	);
+
+	test("Phase 1 gathers reply-only items with the flag", () => {
+		expect(workflow).toContain("--include-resolved-unreplied");
+		expect(workflow).toContain("reply-only");
+	});
+
+	test("Phase 6 replies once with the fixing sha and never resolves again", () => {
+		expect(workflow).toMatch(/reply-only[^\n]*never resolve/i);
+		expect(workflow).toMatch(/no fixing commit[^\n]*mode="fix"/i);
 	});
 });
 

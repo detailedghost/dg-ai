@@ -777,7 +777,7 @@
 				},
 				{
 					"name": "gather-unresolved",
-					"description": "compact array of unresolved, non-ignored threads"
+					"description": "compact array of unresolved, non-ignored threads; --include-resolved-unreplied adds reply-only threads"
 				},
 				{
 					"name": "gather-overview",

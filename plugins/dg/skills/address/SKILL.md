@@ -48,6 +48,7 @@ The plugin ships its personas in `agents/` (Claude Code loads them as
 - Phase 0.25: worktree merge-detection + cleanup
 - Phase 0.5: permissions probe
 - Phase 1: gather: local code-review file (resolved to PR's worktree dir, always) + PR threads + CI checks + Wiz findings (via the Wiz MCP, when a Wiz bot comment or `Wiz *` check exists)
+- Phase 1a: reply-only items (a thread someone else resolved with no bot reply) get one inline reply with the fixing sha and are never resolved again; with no fixing commit they become fix items
 - Phase 1e: Copilot overview (`gather-overview`) items join triage and fix; no thread to reply to, so after the push run `request-copilot` once if any was fixed
 - Phase 1.45: apply `#explain` threads (reply + resolve, no fix)
 - Phase 1.5: antagonist triage (skip if `--verdicts` supplied)
@@ -60,7 +61,7 @@ The plugin ships its personas in `agents/` (Claude Code loads them as
 - Phase 6: reply + resolve (PR/MR comment items only — GitHub or GitLab, CI and local skip this)
 - Phase 7: local review cleanup — delete each local code-review file once all its findings are accomplished (fixed+committed or rejected); keep files with blocked/skipped findings
 
-**Review reply invariant:** reply inline to the gathered review comment, then resolve that same thread. Never use a
+**Review reply invariant:** reply inline to the gathered review comment, then resolve that same thread. A reply-only item gets the reply and no resolve. Never use a
 top-level PR/MR comment as the response. A reply must be confirmed published before resolution; if replying fails,
 leave the thread open.
 

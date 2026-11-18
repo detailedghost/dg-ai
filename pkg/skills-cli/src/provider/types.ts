@@ -190,6 +190,8 @@ export interface ReviewThread {
 	/** Opaque, provider-owned token used to resolve the thread. */
 	threadId: string;
 	resolved: boolean;
+	/** Login of whoever resolved the thread; unset when open or when the provider does not say. */
+	resolvedBy?: string;
 	comments: ReviewComment[];
 	commentId?: string;
 	/** Empty for a thread not anchored to a file (a GitLab non-diff discussion, an outdated GitHub thread). */
@@ -419,6 +421,8 @@ export interface Provider {
 	getFileAtRef(ref: PrRef, path: string, sha: string): Promise<string | null>;
 	/** Return false for CLI authentication failure; startup/setup failures may reject. */
 	checkAuth(): Promise<boolean>;
+	/** Login the CLI authenticates as, which is the identity replies are posted under. */
+	currentUser(): Promise<string>;
 }
 
 /** Every code a provider adapter can raise. */
