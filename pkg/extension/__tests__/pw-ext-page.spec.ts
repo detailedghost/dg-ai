@@ -258,12 +258,17 @@ describe("fill", () => {
 		expect(searches).toEqual(["dglive"]);
 	});
 
-	it("replaces an existing value, also in a field without a caret", () => {
-		page(`<input id="t" aria-label="T" value="old"><input id="e" type="email" aria-label="E" value="old@example.test">`);
+	it("replaces an existing value", () => {
+		page(`<input id="t" aria-label="T" value="old">`);
 		pwExtPageAction({ kind: "fill", target: "#t", value: "new" });
-		pwExtPageAction({ kind: "fill", target: "#e", value: "ada@example.test" });
 		expect(el<HTMLInputElement>("#t").value).toBe("new");
-		expect(el<HTMLInputElement>("#e").value).toBe("ada@example.test");
+	});
+
+	it("sets an email field in one step so whitespace inside the list survives", () => {
+		page(`<input id="e" type="email" multiple aria-label="E" value="old@example.test">`);
+		pwExtPageAction({ kind: "fill", target: "#e", value: "ada@example.test, bo@example.test" });
+		expect(el<HTMLInputElement>("#e").value).not.toBe("ada@example.test,");
+		expect(el<HTMLInputElement>("#e").value).toContain("bo@example.test");
 	});
 
 	it("clears the field for an empty value", () => {
@@ -684,11 +689,14 @@ describe("unmask grant", () => {
 		expect(el<HTMLInputElement>("#p").value).toBe("Temp-Pass-123");
 	});
 
-	it("never echoes a secret when a fill stops early", () => {
-		page(`<label>Password <input id="p" type="password" maxlength="4"></label>`);
-		const result = pwExtPageAction({ kind: "fill", target: "#p", value: "Temp-Pass-123", secret: true }, undefined, true);
-		expect(result).toEqual({ error: expect.stringContaining("took 4 of 13") });
-		expect(JSON.stringify(result)).not.toContain("Temp");
+	it("sets a secret in one step so no prefix of it reaches the page", () => {
+		page(`<label>Password <input id="p" type="password"></label>`);
+		const input = el<HTMLInputElement>("#p");
+		const seen: string[] = [];
+		input.addEventListener("keydown", () => seen.push("keydown"));
+		input.addEventListener("input", () => seen.push(input.value));
+		pwExtPageAction({ kind: "fill", target: "#p", value: "Temp-Pass-123", secret: true }, undefined, true);
+		expect(seen).toEqual(["Temp-Pass-123"]);
 	});
 });
 

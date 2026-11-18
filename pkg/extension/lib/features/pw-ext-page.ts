@@ -52,6 +52,7 @@ export function pwExtPageAction(
 		"tel",
 		"number",
 	]);
+	const ATOMIC_INPUTS = new Set(["number", "email", "url"]);
 	const DATE_INPUTS: Record<string, [RegExp, string]> = {
 		date: [/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD"],
 		time: [/^\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?$/, "HH:MM (24-hour)"],
@@ -533,7 +534,7 @@ export function pwExtPageAction(
 			return { error: `${describe(el)} cannot be filled.` };
 		input.focus?.();
 		(win[EDITED] as WeakSet<Element> | undefined)?.delete(el);
-		if (editable || input.type.toLowerCase() === "number") {
+		if (editable || secret || ATOMIC_INPUTS.has(input.type.toLowerCase())) {
 			if (editable) el.textContent = value;
 			else setValue(el, value);
 			fire(el);

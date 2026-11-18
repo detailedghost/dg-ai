@@ -54,9 +54,9 @@ popup.
 | `select <tabId>` | write | Makes a tab of the group the selected tab |
 | `close [tabId]` | write | Closes a tab of the group; the selected tab by default |
 | `click <ref or selector>` | write | Clicks one element |
-| `fill <ref or selector> <text>` | write | Types into one text field key by key, so pages built on React and similar frameworks see each change. It replaces the old value and stops at `maxlength`. Or it sets a number field in one step, or a date or time field (`date` as `YYYY-MM-DD`, `time` as `HH:MM`, plus `datetime-local`, `month` and `week`), or picks one `<select>` option by value, then label, then case-insensitive label. A multi-select is refused |
+| `fill <ref or selector> <text>` | write | Types into one text field key by key, so pages built on React and similar frameworks see each change. It replaces the old value and stops at `maxlength`. It sets a number, email or URL field in one step, or a date or time field (`date` as `YYYY-MM-DD`, `time` as `HH:MM`, plus `datetime-local`, `month` and `week`), or picks one `<select>` option by value, then label, then case-insensitive label. A multi-select is refused |
 | `press <key>` | write | Presses a key on the focused element, or on the page when nothing has focus: `Enter`, `Escape`, `Tab`, `ArrowDown`, `Backspace`, a plain character such as `a`, or a chord such as `Shift+Tab` or `Control+a`. Enter in a form field submits the form when the page does not handle the key |
-| `fill <ref or selector> --value-env NAME` | write | Sets a password or secret field from the CLI environment variable `NAME`. Needs `unmask` |
+| `fill <ref or selector> --value-env NAME` | write | Sets a password or secret field in one step from the CLI environment variable `NAME`. Needs `unmask` |
 | `fill <ref or selector> --value-stdin` | write | Same, but reads the value from stdin. Needs `unmask` |
 | `unmask [--minutes N]` | write | Asks you for a time-boxed unmask of the selected tab's origin. `N` is 1 to 60, default 15. `unmask --off` ends it |
 | `upload <ref or selector> <file>` | write | Sets one file on a file input |
