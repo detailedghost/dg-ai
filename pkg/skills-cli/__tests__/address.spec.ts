@@ -699,6 +699,12 @@ describe("gather-unresolved --include-resolved-unreplied", () => {
 					{ resolvedBy: "me" },
 				),
 				ghThread(
+					"RT-EXPLAIN",
+					true,
+					[{ databaseId: 7303, author: "alice", body: "#explain why" }],
+					{ resolvedBy: "bob" },
+				),
+				ghThread(
 					"RT-IGNORED",
 					true,
 					[{ databaseId: 7302, author: "alice", body: "#ignore" }],

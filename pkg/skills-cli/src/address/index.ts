@@ -131,6 +131,7 @@ async function cmdGatherUnresolved(rawArgs: string[]): Promise<void> {
 			(t) =>
 				!t.resolved ||
 				(me !== null &&
+					!t.comments.some((c) => c.body.toLowerCase().includes("#explain")) &&
 					!t.comments.some((c) => hasBotPrefix(c.body)) &&
 					t.resolvedBy?.toLowerCase() !== me.toLowerCase()),
 		)

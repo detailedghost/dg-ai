@@ -232,7 +232,7 @@ Skip unless `docs/**`, `*.md`, or public API signatures changed. Launch `dg:lore
 
 ## Phase 5 — Commit + Push
 
-Skip when the work tree has no changes, as in a run with only reply-only items. Go to Phase 6.
+Work tree clean and `git log @{u}..HEAD` empty, as in a run with only reply-only items: skip to Phase 6. Work tree clean but commits ahead of upstream: run `git push` and gate on success, then go to Phase 6.
 
 Commit subject:
 
