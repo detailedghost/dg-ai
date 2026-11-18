@@ -141,7 +141,9 @@ async function cmdGatherUnresolved(rawArgs: string[]): Promise<void> {
 				diffHunk: first?.diffHunk ?? "",
 				author: first?.author ?? "",
 				mode: t.resolved ? "reply-only" : isExplain ? "explain" : "fix",
-				...(t.resolved ? { resolvedBy: t.resolvedBy ?? null, isOutdated: t.outdated ?? false } : {}),
+				...(t.resolved
+					? { resolvedBy: t.resolvedBy ?? null, isOutdated: t.outdated ?? false, createdAt: first?.createdAt ?? "" }
+					: {}),
 			};
 		});
 

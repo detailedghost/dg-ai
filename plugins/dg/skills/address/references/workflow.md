@@ -77,11 +77,11 @@ De-duplicate: if `reviewDir == $PWD`, glob only once.
 ### 1a. Comment items (skip when `localOnly=true`)
 
 - `verdictsPath` set: read `{commentId, threadId, verdict, reason, source?}[]`; fetch context via `gather-unresolved`; merge by `commentId`. Tag `source:"comment"`. Entries with `source:"copilot-overview"` are not comments: 1e handles them.
-- Otherwise: `dg-skills address gather-unresolved --include-resolved-unreplied` → `{threadId, commentId, path, line, body, diffHunk, author, mode, resolvedBy?, isOutdated?}[]`. Same shape on GitHub and GitLab; `diffHunk` is always `""` on GitLab, whose discussions API exposes a note's position but no hunk text. `mode="explain"` if thread contains `#explain`, else `"fix"`. Tag `source:"comment"`. On GitHub, only a thread's first 50 comments are fetched, so an `#ignore`/`#explain` marker or a bot reply landing past comment 50 is not seen.
+- Otherwise: `dg-skills address gather-unresolved --include-resolved-unreplied` → `{threadId, commentId, path, line, body, diffHunk, author, mode, resolvedBy?, isOutdated?, createdAt?}[]`. Same shape on GitHub and GitLab; `diffHunk` is always `""` on GitLab, whose discussions API exposes a note's position but no hunk text. `mode="explain"` if thread contains `#explain`, else `"fix"`. Tag `source:"comment"`. On GitHub, only a thread's first 50 comments are fetched, so an `#ignore`/`#explain` marker or a bot reply landing past comment 50 is not seen.
 
-Reply-only items: the flag also returns a resolved thread when no comment starts with a bot marker and `resolvedBy` is not the current user. Such an item has `mode="reply-only"`, plus `resolvedBy` and `isOutdated`. A thread the current user resolved with no reply is not returned. GitLab returns them the same way, from `resolved_by`. `isOutdated` is always `false` on GitLab.
+Reply-only items: the flag also returns a resolved thread when no comment starts with a bot marker and `resolvedBy` is not the current user. Such an item has `mode="reply-only"`, plus `resolvedBy`, `isOutdated`, and `createdAt`. A thread the current user resolved with no reply is not returned. GitLab returns them the same way, from `resolved_by`. `isOutdated` is always `false` on GitLab.
 
-For each reply-only item, find the fixing commit: `git log -L <line>,<line>:<path> -n 1 --format=%h`, using the comment's original line. A reply-only item has no fix to make.
+For each reply-only item, find the fixing commit: `git log -L <line>,<line>:<path> --after=<createdAt> --format=%h`, using the comment's original line and its `createdAt`. Take the oldest hit, then read its patch. It counts only when it changes the code the comment names. A commit that merely touches the line is not a fix. A reply-only item has no fix to make.
 
 - Commit found: keep `mode="reply-only"` and set `fixSha`.
 - No fixing commit: set `mode="fix"`. It is now a normal fix item.
@@ -231,6 +231,8 @@ GATE: 3 failures → stop, report, do not commit.
 Skip unless `docs/**`, `*.md`, or public API signatures changed. Launch `dg:lore` on affected files only.
 
 ## Phase 5 — Commit + Push
+
+Skip when the work tree has no changes, as in a run with only reply-only items. Go to Phase 6.
 
 Commit subject:
 

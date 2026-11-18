@@ -647,6 +647,7 @@ describe("gather-unresolved --include-resolved-unreplied", () => {
 			mode: "reply-only",
 			resolvedBy: "copilot",
 			isOutdated: true,
+			createdAt: "2026-02-01T10:00:00Z",
 			path: "docs/a.md",
 		});
 	});
