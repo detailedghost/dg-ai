@@ -276,6 +276,34 @@ describe("fill", () => {
 		expect(kinds).toEqual(["deleteContentBackward"]);
 	});
 
+	it("reports a clear the page cancels", () => {
+		page(`<input id="t" aria-label="T" value="old">`);
+		const input = el<HTMLInputElement>("#t");
+		input.addEventListener("beforeinput", (event) => event.preventDefault());
+		expect(pwExtPageAction({ kind: "fill", target: "#t", value: "" })).toEqual({ error: 'textbox "T" kept its old value.' });
+		expect(input.value).toBe("old");
+	});
+
+	it("keeps CRLF lines in a textarea and drops line breaks in an input", () => {
+		page(`<textarea id="a" aria-label="A"></textarea><input id="t" aria-label="T">`);
+		pwExtPageAction({ kind: "fill", target: "#a", value: "first\r\nsecond" });
+		pwExtPageAction({ kind: "fill", target: "#t", value: "one\ntwo" });
+		expect(el<HTMLTextAreaElement>("#a").value).toBe("first\nsecond");
+		expect(el<HTMLInputElement>("#t").value).toBe("onetwo");
+	});
+
+	it("types at the caret a page handler leaves", () => {
+		page(`<input id="t" aria-label="T">`);
+		const input = el<HTMLInputElement>("#t");
+		input.addEventListener("input", () => {
+			if (input.value.includes(")")) return;
+			input.value += ")";
+			input.setSelectionRange(input.value.length - 1, input.value.length - 1);
+		});
+		pwExtPageAction({ kind: "fill", target: "#t", value: "ab" });
+		expect(input.value).toBe("ab)");
+	});
+
 	it("stops at maxlength and reports the count without the text", () => {
 		page(`<input id="t" aria-label="T" maxlength="3">`);
 		const result = pwExtPageAction({ kind: "fill", target: "#t", value: "abcde" });

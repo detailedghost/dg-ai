@@ -539,10 +539,11 @@ export function pwExtPageAction(
 			fire(el);
 			return { detail: `filled ${describe(el)}` };
 		}
-		const typed = typeText(input, value);
+		const chars = [...(el.tagName === "TEXTAREA" ? value.replace(/\r\n?/g, "\n") : value.replace(/[\r\n]/g, ""))];
+		const typed = typeText(input, chars);
+		if (typed < 0) return { error: `${describe(el)} kept its old value.` };
 		input.dispatchEvent(new (win as unknown as typeof globalThis).Event("change", { bubbles: true }));
-		const total = [...value].length;
-		if (typed < total) return { error: `${describe(el)} took ${typed} of ${total} characters.` };
+		if (typed < chars.length) return { error: `${describe(el)} took ${typed} of ${chars.length} characters.` };
 		return { detail: `filled ${describe(el)}` };
 	};
 
@@ -635,23 +636,27 @@ export function pwExtPageAction(
 		return true;
 	};
 
-	const typeText = (input: HTMLInputElement, value: string): number => {
+	const typeText = (input: HTMLInputElement, chars: string[]): number => {
 		const scope = win as unknown as typeof globalThis;
-		const chars = [...value];
 		let range: [number, number] = [0, input.value.length];
-		if (chars.length === 0) {
-			if (range[1] > 0) edit(input, "", "deleteContentBackward", range);
-			return 0;
-		}
+		if (chars.length === 0) return range[1] === 0 || edit(input, "", "deleteContentBackward", range) ? 0 : -1;
+		const caret = (): [number, number] => {
+			try {
+				const start = input.selectionStart;
+				if (start !== null) return [start, input.selectionEnd ?? start];
+			} catch {}
+			return [input.value.length, input.value.length];
+		};
 		let typed = 0;
 		for (const char of chars) {
-			const init = keyInit(char, char, new Set());
+			const line = char === "\n";
+			const init = keyInit(line ? "Enter" : char, line ? undefined : char, new Set());
 			const send = (kind: string): boolean => input.dispatchEvent(new scope.KeyboardEvent(kind, init));
-			const landed = send("keydown") && send("keypress") && input.isConnected && edit(input, char, "insertText", range);
+			const landed = send("keydown") && send("keypress") && input.isConnected && edit(input, char, line ? "insertLineBreak" : "insertText", range);
 			if (input.isConnected) send("keyup");
 			if (!landed) break;
 			typed++;
-			range = [input.value.length, input.value.length];
+			range = caret();
 		}
 		return typed;
 	};
