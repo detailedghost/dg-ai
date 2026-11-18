@@ -3,7 +3,7 @@ feature: "service install"
 feature_snake_case: service_install
 date: "2026-11-14"
 version: "1.0"
-status: draft
+status: abandoned
 current_slice: 0
 pr_strategy: single
 slices:
@@ -126,6 +126,13 @@ slices:
       qa: [dg:qa-code]
 execution:
   profile: balance
+permissions:
+  run_commands: true
+  git_push: true
+  gh_pr_create: true
+  auto_cleanup_worktree: true
+  slice_commits: true
+  housekeeping_commit: true
 ---
 
 # service install
