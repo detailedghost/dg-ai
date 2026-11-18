@@ -77,7 +77,16 @@ De-duplicate: if `reviewDir == $PWD`, glob only once.
 ### 1a. Comment items (skip when `localOnly=true`)
 
 - `verdictsPath` set: read `{commentId, threadId, verdict, reason, source?}[]`; fetch context via `gather-unresolved`; merge by `commentId`. Tag `source:"comment"`. Entries with `source:"copilot-overview"` are not comments: 1e handles them.
-- Otherwise: `dg-skills address gather-unresolved` → `{threadId, commentId, path, line, body, diffHunk, author, mode}[]`. Same shape on GitHub and GitLab; `diffHunk` is always `""` on GitLab, whose discussions API exposes a note's position but no hunk text. `mode="explain"` if thread contains `#explain`, else `"fix"`. Tag `source:"comment"`. On GitHub, only a thread's first 50 comments are fetched, so an `#ignore`/`#explain` marker or a bot reply landing past comment 50 is not seen.
+- Otherwise: `dg-skills address gather-unresolved --include-resolved-unreplied` → `{threadId, commentId, path, line, body, diffHunk, author, mode, resolvedBy?, isOutdated?}[]`. Same shape on GitHub and GitLab; `diffHunk` is always `""` on GitLab, whose discussions API exposes a note's position but no hunk text. `mode="explain"` if thread contains `#explain`, else `"fix"`. Tag `source:"comment"`. On GitHub, only a thread's first 50 comments are fetched, so an `#ignore`/`#explain` marker or a bot reply landing past comment 50 is not seen.
+
+Reply-only items: the flag also returns a resolved thread when no comment starts with a bot marker and `resolvedBy` is not the current user. Such an item has `mode="reply-only"`, plus `resolvedBy` and `isOutdated`. A thread the current user resolved with no reply is not returned. GitLab returns them the same way, from `resolved_by`. `isOutdated` is always `false` on GitLab.
+
+For each reply-only item, find the fixing commit: `git log -L <line>,<line>:<path> -n 1 --format=%h`, using the comment's original line. A reply-only item has no fix to make.
+
+- Commit found: keep `mode="reply-only"` and set `fixSha`.
+- No fixing commit: set `mode="fix"`. It is now a normal fix item.
+
+Reply-only items skip Phase 1.5, 1.6, and 2. Phase 1.5 already ignores them, because it takes only `mode=="fix"` items.
 
 ### 1b. CI items (skip when `localOnly=true` or `includeCi=false`)
 
@@ -248,7 +257,9 @@ GATE: non-zero → stop.
 
 Skip for CI-only and local-only runs.
 
-Filter `workList` to `source=="comment"`. Build batch-close payload from `fixResults` (blocked items → reply-only, leave open):
+Reply-only items (`mode=="reply-only"`): post one inline reply with `dg-skills address reply <commentId> <threadId> "Fixed in <fixSha>."`. Never resolve a reply-only thread again. Do not put it in the batch-close payload. A reply failure is a GATE failure.
+
+Filter `workList` to `source=="comment"` and `mode!="reply-only"`. Build batch-close payload from `fixResults` (blocked items → reply-only, leave open):
 
 ```
 for item in workList where source=="comment":
@@ -307,7 +318,7 @@ host approval rules.
 | Subcommand | Purpose |
 |---|---|
 | `probe` | Verify provider + git access |
-| `gather-unresolved` | Unresolved, non-ignored threads as JSON |
+| `gather-unresolved [--include-resolved-unreplied]` | Unresolved, non-ignored threads as JSON. The flag adds `reply-only` threads |
 | `gather-ci-failures` | Failing CI checks as JSON |
 | `gather` | Full PR metadata (prefer `gather-unresolved` for Phase 1) |
 | `view-pr [<number\|url>]` | PR/MR metadata only — `state`, `merged`, `headRefName`. Both providers. Omit the arg for the current branch's PR |
