@@ -16,6 +16,7 @@ import {
 	stopServe,
 	subprocessEnv,
 } from "../utils/daemon-harness";
+import { trackChild } from "../utils/child-registry";
 
 const EXTENSION_ORIGIN = DG_CHROME_EXTENSION_ORIGIN;
 
@@ -168,11 +169,11 @@ describe("GET/POST /services", () => {
 	it("drives the same routes from the service CLI", async () => {
 		const { dgHome } = await boot(botDecl);
 		const run = async (...args: string[]) => {
-			const proc = Bun.spawn([process.execPath, ENTRY, "service", ...args], {
+			const proc = trackChild(Bun.spawn([process.execPath, ENTRY, "service", ...args], {
 				env: subprocessEnv(dgHome, 0),
 				stdout: "pipe",
 				stderr: "pipe",
-			});
+			}));
 			const [stdout, exitCode] = await Promise.all([
 				new Response(proc.stdout).text(),
 				proc.exited,

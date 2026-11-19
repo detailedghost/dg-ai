@@ -8,15 +8,16 @@ import {
 	freshDgHome,
 	subprocessEnv,
 } from "../utils/daemon-harness";
+import { trackChild } from "../utils/child-registry";
 
 type RunResult = { code: number; stdout: string; stderr: string };
 
 async function dg(dgHome: string, ...args: string[]): Promise<RunResult> {
-	const proc = Bun.spawn([process.execPath, ENTRY, ...args], {
+	const proc = trackChild(Bun.spawn([process.execPath, ENTRY, ...args], {
 		env: subprocessEnv(dgHome, 0),
 		stdout: "pipe",
 		stderr: "pipe",
-	});
+	}));
 	const [stdout, stderr, code] = await Promise.all([
 		new Response(proc.stdout).text(),
 		new Response(proc.stderr).text(),

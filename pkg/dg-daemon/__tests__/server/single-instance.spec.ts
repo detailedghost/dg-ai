@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type AutostartDeps, type DgPaths, resolveDgPaths } from "@dg/common/node";
 import {
 	type ActiveDaemon,
 	activeDaemonPath,
 	readActiveDaemon,
+	claimSingleInstance,
 	removeActiveDaemon,
 	stopOtherDaemon,
 	type SingleInstanceSeams,
@@ -18,6 +19,7 @@ import {
 	spawnServe,
 	waitForHealth,
 	waitForPidFile,
+	waitForValue,
 } from "../utils/daemon-harness";
 
 const homes: string[] = [];
@@ -52,6 +54,8 @@ const recordOf = (dgHome: string, overrides: Partial<ActiveDaemon> = {}): Active
 	version: "1.0.0",
 	...overrides,
 });
+
+const liveUntil = (stopped: () => boolean) => async (): Promise<boolean> => !stopped();
 
 const plant = (path: string, record: ActiveDaemon): void => {
 	mkdirSync(dirname(path), { recursive: true });
@@ -116,7 +120,7 @@ describe("stopOtherDaemon", () => {
 		const lines: string[] = [];
 		await stopOtherDaemon(mine, {
 			...seams,
-			isLive: async () => true,
+			isLive: liveUntil(() => stopped.length > 0),
 			stop: async (paths) => void stopped.push(paths.stateDir),
 			autostart: noUnit,
 			warn: (line) => lines.push(line),
@@ -175,6 +179,60 @@ describe("stopOtherDaemon", () => {
 		expect(lines[0]).toContain("systemd login unit");
 	});
 
+	it("says it could not stop a daemon that still answers and does not throw", async () => {
+		const root = home();
+		const other = home();
+		const seams = unfenced(root);
+		plant(seams.recordPath as string, recordOf(other));
+		const lines: string[] = [];
+		await stopOtherDaemon(pathsOf(home()), {
+			...seams,
+			isLive: async () => true,
+			stop: async () => {
+				throw new Error("did not stop in time");
+			},
+			autostart: noUnit,
+			warn: (line) => lines.push(line),
+		});
+		expect(lines).toEqual([
+			`dg-daemon: could not stop the daemon of ${other} (pid 4242, port 47001): did not stop in time`,
+		]);
+	});
+
+	it("does not claim a stop when the other home's pid file is gone but the daemon still answers", async () => {
+		const root = home();
+		const other = home();
+		const seams = unfenced(root);
+		plant(seams.recordPath as string, recordOf(other));
+		const lines: string[] = [];
+		await stopOtherDaemon(pathsOf(home()), {
+			...seams,
+			isLive: async () => true,
+			stop: async () => {},
+			autostart: noUnit,
+			warn: (line) => lines.push(line),
+		});
+		expect(lines).toHaveLength(1);
+		expect(lines[0]).toContain("could not stop");
+	});
+
+	it("treats a symlinked state dir as the same home", async () => {
+		const root = home();
+		const same = home();
+		const link = join(home(), "link");
+		mkdirSync(pathsOf(same).stateDir, { recursive: true });
+		symlinkSync(same, link);
+		const seams = unfenced(root);
+		plant(seams.recordPath as string, recordOf(link));
+		await stopOtherDaemon(pathsOf(same), {
+			...seams,
+			isLive: async () => true,
+			stop: async () => {
+				throw new Error("must not stop the same home");
+			},
+		});
+	});
+
 	it("never reads, writes or stops anything while the test fence is set", async () => {
 		const seams: SingleInstanceSeams = { env: { DG_PATH_FENCE: "/tmp" }, recordPath: join(home(), "active-daemon.json") };
 		const planted = recordOf(home());
@@ -192,10 +250,54 @@ describe("stopOtherDaemon", () => {
 		removeActiveDaemon({ pid: planted.pid, instanceId: planted.instanceId }, seams);
 		expect(readFileSync(seams.recordPath as string, "utf8")).toBe(before);
 	});
+});
 
-	it("resolves the default record path under the fenced HOME, never a real user directory", () => {
+describe("claimSingleInstance", () => {
+	it("stops the other daemon, then records this one", async () => {
 		const root = home();
-		expect(activeDaemonPath({ DG_PATH_FENCE: "/tmp" }, "linux", root).startsWith(root)).toBe(true);
+		const other = home();
+		const seams = unfenced(root);
+		plant(seams.recordPath as string, recordOf(other));
+		const order: string[] = [];
+		await claimSingleInstance(pathsOf(home()), { pid: 7, port: 47003, instanceId: "new", version: "2.0.0" }, {
+			...seams,
+			isLive: liveUntil(() => order.includes("stop")),
+			stop: async () => void order.push("stop"),
+			autostart: noUnit,
+			warn: () => {},
+		});
+		expect(order).toEqual(["stop"]);
+		expect(readActiveDaemon(seams)?.instanceId).toBe("new");
+	});
+
+	it("serializes concurrent claims so each sees the record the earlier one wrote", async () => {
+		const root = home();
+		const other = home();
+		const seams = unfenced(root);
+		plant(seams.recordPath as string, recordOf(other));
+		const stopped: string[] = [];
+		const alive = new Set<string>(["other-instance"]);
+		const claim = (id: string) =>
+			claimSingleInstance(pathsOf(home()), { pid: 7, port: 47003, instanceId: id, version: "2.0.0" }, {
+				...seams,
+				isLive: async (record) => alive.has(record.instanceId),
+				stop: async () => {
+					await Bun.sleep(50);
+					const record = readActiveDaemon(seams);
+					if (record) {
+						stopped.push(record.instanceId);
+						alive.delete(record.instanceId);
+					}
+				},
+				autostart: noUnit,
+				warn: () => {},
+			});
+		alive.add("first");
+		alive.add("second");
+		await Promise.all([claim("first"), claim("second")]);
+		expect(stopped).toHaveLength(2);
+		expect(stopped[0]).toBe("other-instance");
+		expect(stopped[1]).toMatch(/^(first|second)$/);
 	});
 });
 
@@ -218,7 +320,10 @@ describe("two real daemons of different homes", () => {
 		const handleB = await waitForPidFile(homeB);
 
 		const userSeams: SingleInstanceSeams = { recordPath: activeDaemonPath({}, process.platform, userHome) };
-		const record = readActiveDaemon(userSeams);
+		const record = await waitForValue(() => {
+			const current = readActiveDaemon(userSeams);
+			return current?.instanceId === handleB.instanceId ? current : undefined;
+		}, 10_000, "the record of the second daemon");
 		expect(record).toMatchObject({ pid: handleB.pid, instanceId: handleB.instanceId, home: homeB });
 
 		b.kill("SIGTERM");
