@@ -96,6 +96,18 @@ export function pickFun(
 	return matching[Math.floor(random() * matching.length)];
 }
 
+function gifCard(entry: { url: string; alt: string }): AdaptiveCard {
+	return {
+		type: "AdaptiveCard",
+		version: "1.4",
+		body: [{ type: "Image", url: entry.url, altText: entry.alt }],
+	};
+}
+
+export function funOnlyReply(entry: FunEntry): { text: string; card?: AdaptiveCard } {
+	return entry.kind === "emoji" ? { text: entry.text } : { text: "", card: gifCard(entry) };
+}
+
 export function decorateReply({
 	text,
 	entry,
@@ -107,14 +119,7 @@ export function decorateReply({
 }): { text: string; card?: AdaptiveCard } {
 	if (entry.kind === "emoji")
 		return { text: html ? `${text}<p>${escapeHtml(entry.text)}</p>` : `${text}\n${entry.text}` };
-	return {
-		text,
-		card: {
-			type: "AdaptiveCard",
-			version: "1.4",
-			body: [{ type: "Image", url: entry.url, altText: entry.alt }],
-		},
-	};
+	return { text, card: gifCard(entry) };
 }
 
 const FUN_BY_OUTCOME: Record<

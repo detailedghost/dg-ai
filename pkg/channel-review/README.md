@@ -122,7 +122,7 @@ timeout, and closes it. A 404 there reports that the bot is not in the chat.
 | Body field | Value |
 | --- | --- |
 | `To` | `[owner.email]` |
-| `Body` | Message text. |
+| `Body` | Message text. Omitted when a reply is only an `AdaptiveCard` (a `~fun` GIF). |
 | `ChatId` | Target chat id. Omit for a direct message to the owner. |
 | `Mode` | `group`, or `direct` for a direct message to the owner (`To` is `[owner.email]`, no `ChatId`). |
 | `TextFormat` | `plain`, or `xml` for an HTML body (help replies) |

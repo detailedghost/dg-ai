@@ -1270,6 +1270,19 @@ describe("createTeamsRelayProvider reply", () => {
 		});
 	});
 
+	test("omits Body for a card-only reply", async () => {
+		const harness = createHarness({ handlers: [created(["sent-1"])] });
+		const card: AdaptiveCard = {
+			type: "AdaptiveCard",
+			version: "1.4",
+			body: [{ type: "Image", url: "https://example.com/a.gif", altText: "a" }],
+		};
+		await harness.provider.reply({ chatId: CHAT_ID, text: "", card });
+		const sent = JSON.parse(harness.requests[0]?.body ?? "null");
+		expect(sent).not.toHaveProperty("Body");
+		expect(sent.AdaptiveCard.Content).toEqual(card);
+	});
+
 	test("posts a direct message to the owner without a ChatId", async () => {
 		const harness = createHarness({ handlers: [created(["dm-1"])] });
 		await expect(harness.provider.dm({ text: "heads up" })).resolves.toEqual({ messageIds: ["dm-1"] });
