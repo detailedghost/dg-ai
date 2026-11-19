@@ -225,8 +225,8 @@ Code Structure: not applicable, this slice is text only.
 ## Slice Summaries
 
 - Slice 1 (adr-cli-core, 8b878d51): added dg-skills adr with init, new, index, relevant, find and a lint stub; hoisted frontmatter helpers to src/utils/frontmatter.ts with spec re-exports. adr new slugs with dashes, takes one glob per --covers flag, and fills placeholders in one pass.
-- Slice 3 (adr-skill-and-rules, 5ce53984): added the /dg:adr skill (write and ask modes, levels, three gates) and pointed grill-me, spec grill, agent-seed, spring-break and contributing.md to it; added the adr doctor item.
 - Slice 2 (adr-lint-readability, 0532f51a): adr lint --all, --changed and --grade with a built-in Flesch-Kincaid grade, every rule id, GitHub-style heading anchors, and a shared indexTail for stale-index.
+- Slice 3 (adr-skill-and-rules, 5ce53984): added the /dg:adr skill (write and ask modes, levels, three gates) and pointed grill-me, spec grill, agent-seed, spring-break and contributing.md to it; added the adr doctor item.
 - Slice 4 (build-wiring, 40842414): slice templates read adr relevant decisions; lore updates pairs, reindexes, lints and emits RATIFY for a new pair; land lints opted-in repos after green CI and stops with adr-cli-missing, adr-lint-repeat or adr-lint-failed.
 
 ## Agent Notes
@@ -236,6 +236,7 @@ Code Structure: not applicable, this slice is text only.
 - (slice 3, dg:lore) grill-me/references/protocol.md also carried <adr-root> and was fixed outside the slice files list; the adr doctor item landed with slice 3 because doctor-coverage needs one per registered command.
 - (slice 2, dg:qa-code) lint reads the covers key and the README level with parseYaml itself, because the record API cannot tell a missing covers key from covers: [] or report an invalid level.
 - (slice 4, dg:lore) adr-lint-repeat means the same file and rule in two lint runs in a row.
+- (final review) land also stops with adr-lint-failed when adr lint exits with a code other than 0 or 1, so a usage or init error never routes to /dg:address.
 
 ## Issues Remediation
 

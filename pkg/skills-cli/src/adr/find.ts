@@ -1,7 +1,7 @@
 import { say } from "../spec/shared";
+import { type Hit, hitOf, splitJson } from "./args";
 import { repoRoot, requireInitialized } from "./paths";
 import { type AdrRecord, loadRecords } from "./records";
-import { type Hit, hitOf, splitJson } from "./relevant";
 
 const TITLE_WEIGHT = 3;
 

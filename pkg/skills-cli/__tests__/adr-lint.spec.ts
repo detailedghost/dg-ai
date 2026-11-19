@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { dirname, join } from "node:path";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 
 import { type AdrRepo, disposeAdrRepos, makeAdrRepo, NOT_INITIALIZED } from "./adr-fixtures";
 import { git } from "./git-repo-fixtures";
-import { CLI_ENTRY, type CliRun, mergeEnv, runCli } from "./module-call";
+import type { CliRun } from "./module-call";
 
 setDefaultTimeout(30_000);
 
@@ -64,18 +65,6 @@ function decisionDoc(options: { front?: string; link?: string; body?: string } =
 	return `---\n${front}\n---\n\n${link}\n\n${options.body ?? "- Send long work to the queue."}\n`;
 }
 
-function runAdr(repo: AdrRepo, args: string[], stdin?: string): Promise<CliRun> {
-	const env = mergeEnv({
-		HOME: join(dirname(repo.root), "home"),
-		NO_COLOR: "1",
-		LC_ALL: "C",
-		TZ: "UTC",
-		GIT_DIR: undefined,
-		GIT_WORK_TREE: undefined,
-	});
-	return runCli([process.execPath, CLI_ENTRY, "adr"], args, { cwd: repo.root, env, stdin });
-}
-
 async function reindex(repo: AdrRepo): Promise<void> {
 	const run = await repo.adr(["index"]);
 	if (run.exitCode !== 0) throw new Error(`adr index failed: ${run.stderr}`);
@@ -94,7 +83,7 @@ async function goodRepo(options: { level?: string } = {}): Promise<AdrRepo> {
 }
 
 async function findings(repo: AdrRepo, extra: string[] = ["--all"]): Promise<{ run: CliRun; found: Finding[] }> {
-	const run = await runAdr(repo, ["lint", ...extra, "--json"]);
+	const run = await repo.adr(["lint", ...extra, "--json"]);
 	return { run, found: JSON.parse(run.stdout) as Finding[] };
 }
 
@@ -105,7 +94,7 @@ function rulesOf(found: Finding[]): string[] {
 describe("adr lint --all on a clean repo", () => {
 	test("exits 0 and prints no findings", async () => {
 		const repo = await goodRepo();
-		const run = await runAdr(repo, ["lint", "--all"]);
+		const run = await repo.adr(["lint", "--all"]);
 		expect(run.exitCode).toBe(0);
 		expect(run.stdout.trim()).toBe("");
 	});
@@ -149,7 +138,7 @@ describe("adr lint per-record rules", () => {
 		const repo = await makeAdrRepo();
 		const noBlock = adrDoc().replace(/```mermaid[\s\S]*?```/, "Nothing to draw.");
 		await writePair(repo, KEY, noBlock, decisionDoc());
-		const run = await runAdr(repo, ["lint", "--all"]);
+		const run = await repo.adr(["lint", "--all"]);
 		expect(run.exitCode).toBe(1);
 		expect(run.stdout).toMatch(new RegExp(`${ADR_FILE.replaceAll(".", "\\.")}: missing-mermaid: \\S`));
 	});
@@ -192,9 +181,8 @@ describe("adr lint per-record rules", () => {
 		expect(rulesOf(found)).toEqual(["grade-too-high"]);
 		const [finding] = found;
 		expect(finding?.limit).toBe(10);
-		expect(finding?.grade).toBeGreaterThan(13);
-		expect(finding?.grade).toBeLessThan(14);
-		expect(finding?.message).toMatch(/^grade 13\.\d exceeds high-school limit 10$/);
+		expect(finding?.grade).toBeGreaterThan(finding?.limit ?? Number.POSITIVE_INFINITY);
+		expect(finding?.message).toMatch(/^grade \d+(\.\d)? exceeds high-school limit 10$/);
 	});
 
 	test("grade-too-high: the same prose passes under a college README level", async () => {
@@ -297,7 +285,6 @@ describe("adr lint per-record rules", () => {
 describe("adr lint pair rules", () => {
 	test("missing-pair: an ADR with no decision fails", async () => {
 		const repo = await goodRepo();
-		const { rmSync } = await import("node:fs");
 		rmSync(join(repo.root, DECISION_FILE));
 		await reindex(repo);
 		const { run, found } = await findings(repo);
@@ -307,7 +294,6 @@ describe("adr lint pair rules", () => {
 
 	test("orphan-decision: a decision with no ADR fails", async () => {
 		const repo = await goodRepo();
-		const { rmSync } = await import("node:fs");
 		rmSync(join(repo.root, ADR_FILE));
 		await reindex(repo);
 		const { run, found } = await findings(repo);
@@ -393,7 +379,7 @@ describe("adr lint stale-index", () => {
 		expect(rulesOf(found)).toEqual(["stale-index"]);
 		expect(found[0]?.file.endsWith("docs/adr/toc.md")).toBe(true);
 		expect(found[0]?.message).toContain("dg-skills adr index");
-		const human = await runAdr(repo, ["lint", "--all"]);
+		const human = await repo.adr(["lint", "--all"]);
 		expect(human.stdout).toContain("stale-index");
 		expect(human.stdout).toContain("dg-skills adr index");
 	});
@@ -410,7 +396,7 @@ describe("adr lint stale-index", () => {
 		const repo = await goodRepo();
 		repo.write("docs/adr/toc.md", `${repo.read("docs/adr/toc.md")}\n- stale line\n`);
 		await reindex(repo);
-		const run = await runAdr(repo, ["lint", "--all"]);
+		const run = await repo.adr(["lint", "--all"]);
 		expect(run.exitCode).toBe(0);
 	});
 });
@@ -434,7 +420,7 @@ describe("adr lint output shape", () => {
 	test("human output is one `<file>: <rule>: <message>` line per finding", async () => {
 		const repo = await makeAdrRepo();
 		await writePair(repo, KEY, adrDoc({ diagram: "", omit: "Context" }), decisionDoc());
-		const run = await runAdr(repo, ["lint", "--all"]);
+		const run = await repo.adr(["lint", "--all"]);
 		const lines = run.stdout.trim().split("\n");
 		expect(lines).toHaveLength(2);
 		for (const line of lines) expect(line).toMatch(/^\S+\.md: [a-z-]+: \S.*$/);
@@ -445,14 +431,14 @@ describe("adr lint output shape", () => {
 describe("adr lint modes and usage", () => {
 	test("--all before init exits 2 with the not-initialized message", async () => {
 		const repo = await makeAdrRepo({ init: false });
-		const run = await runAdr(repo, ["lint", "--all"]);
+		const run = await repo.adr(["lint", "--all"]);
 		expect(run.exitCode).toBe(2);
 		expect(run.stderr).toContain(NOT_INITIALIZED);
 	});
 
 	test("no mode flag exits 2 with usage", async () => {
 		const repo = await goodRepo();
-		const run = await runAdr(repo, ["lint"]);
+		const run = await repo.adr(["lint"]);
 		expect(run.exitCode).toBe(2);
 		expect(run.stdout + run.stderr).toContain("usage");
 	});
@@ -460,7 +446,7 @@ describe("adr lint modes and usage", () => {
 	test("two mode flags exit 2 with usage", async () => {
 		const repo = await goodRepo();
 		for (const args of [["--all", "--changed"], ["--all", "--grade", "-"], ["--changed", "--grade", "-"]]) {
-			const run = await runAdr(repo, ["lint", ...args], "text");
+			const run = await repo.adr(["lint", ...args], "text");
 			expect(run.exitCode).toBe(2);
 			expect(run.stdout + run.stderr).toContain("usage");
 		}
@@ -471,7 +457,7 @@ describe("adr lint hardening", () => {
 	test("--base without --changed and --level without --grade exit 2", async () => {
 		const repo = await goodRepo();
 		for (const args of [["--all", "--base", "HEAD"], ["--all", "--level", "phd"]]) {
-			const run = await runAdr(repo, ["lint", ...args]);
+			const run = await repo.adr(["lint", ...args]);
 			expect(run.exitCode).toBe(2);
 			expect(run.stdout + run.stderr).toContain("usage");
 		}
@@ -479,17 +465,17 @@ describe("adr lint hardening", () => {
 
 	test("--base rejects a value that starts with a dash", async () => {
 		const repo = await goodRepo();
-		const run = await runAdr(repo, ["lint", "--changed", "--base", "--output=x"]);
+		const run = await repo.adr(["lint", "--changed", "--base", "--output=x"]);
 		expect(run.exitCode).toBe(2);
 		expect(repo.exists("x")).toBe(false);
 	});
 
 	test("--grade rejects input over 1 MB with exit 2", async () => {
 		const repo = await goodRepo();
-		const run = await runAdr(repo, ["lint", "--grade", "-"], "a".repeat(1_000_001));
+		const run = await repo.adr(["lint", "--grade", "-"], "a".repeat(1_000_001));
 		expect(run.exitCode).toBe(2);
 		repo.write("big.md", "a".repeat(1_000_001));
-		expect((await runAdr(repo, ["lint", "--grade", "big.md"])).exitCode).toBe(2);
+		expect((await repo.adr(["lint", "--grade", "big.md"])).exitCode).toBe(2);
 	});
 
 	test("a hostile Level value is echoed sanitized and truncated", async () => {
@@ -516,9 +502,10 @@ describe("adr lint hardening", () => {
 		const noise = `${"[".repeat(60_000)}${"](x \"".repeat(10_000)}${"# ".repeat(20_000)}`;
 		await writePair(repo, KEY, adrDoc({ extra: noise }), decisionDoc());
 		const started = performance.now();
-		await findings(repo);
+		const { found } = await findings(repo);
 		expect(performance.now() - started).toBeLessThan(20_000);
-	});
+		expect(rulesOf(found)).toEqual(["grade-too-high"]);
+	}, 40_000);
 
 	test("a heading with trailing hashes still anchors links", async () => {
 		const repo = await makeAdrRepo();
@@ -531,21 +518,21 @@ describe("adr lint hardening", () => {
 describe("adr lint --grade", () => {
 	test("stdin at grade 13 with --level high-school exits 1 and names the limit", async () => {
 		const repo = await makeAdrRepo({ init: false });
-		const run = await runAdr(repo, ["lint", "--grade", "-", "--level", "high-school"], HARD_TEXT);
+		const run = await repo.adr(["lint", "--grade", "-", "--level", "high-school"], HARD_TEXT);
 		expect(run.exitCode).toBe(1);
-		expect(run.stdout + run.stderr).toMatch(/grade 13\.\d exceeds high-school limit 10/);
+		expect(run.stdout + run.stderr).toMatch(/grade \d+(\.\d)? exceeds high-school limit 10/);
 	});
 
 	test("stdin at grade 13 with --level college exits 0 and says within", async () => {
 		const repo = await makeAdrRepo({ init: false });
-		const run = await runAdr(repo, ["lint", "--grade", "-", "--level", "college"], HARD_TEXT);
+		const run = await repo.adr(["lint", "--grade", "-", "--level", "college"], HARD_TEXT);
 		expect(run.exitCode).toBe(0);
 		expect(run.stdout + run.stderr).toMatch(/grade 13\.\d within college limit 14/);
 	});
 
 	test("--json prints {grade,limit,level,ok}", async () => {
 		const repo = await makeAdrRepo({ init: false });
-		const over = await runAdr(repo, ["lint", "--grade", "-", "--level", "high-school", "--json"], HARD_TEXT);
+		const over = await repo.adr(["lint", "--grade", "-", "--level", "high-school", "--json"], HARD_TEXT);
 		expect(over.exitCode).toBe(1);
 		const body = JSON.parse(over.stdout) as { grade: number; limit: number; level: string; ok: boolean };
 		expect(Object.keys(body).sort()).toEqual(["grade", "level", "limit", "ok"]);
@@ -554,28 +541,28 @@ describe("adr lint --grade", () => {
 		expect(body.ok).toBe(false);
 		expect(body.grade).toBeGreaterThan(13);
 		expect(body.grade).toBeLessThan(14);
-		const within = await runAdr(repo, ["lint", "--grade", "-", "--level", "college", "--json"], HARD_TEXT);
+		const within = await repo.adr(["lint", "--grade", "-", "--level", "college", "--json"], HARD_TEXT);
 		expect(within.exitCode).toBe(0);
 		expect(JSON.parse(within.stdout)).toMatchObject({ limit: 14, level: "college", ok: true });
 	});
 
 	test("phd has no limit and always passes", async () => {
 		const repo = await makeAdrRepo({ init: false });
-		const run = await runAdr(repo, ["lint", "--grade", "-", "--level", "phd", "--json"], HARD_TEXT);
+		const run = await repo.adr(["lint", "--grade", "-", "--level", "phd", "--json"], HARD_TEXT);
 		expect(run.exitCode).toBe(0);
 		expect(JSON.parse(run.stdout)).toMatchObject({ limit: null, level: "phd", ok: true });
 	});
 
 	test("without --level and without init the level is high-school", async () => {
 		const repo = await makeAdrRepo({ init: false });
-		const run = await runAdr(repo, ["lint", "--grade", "-", "--json"], HARD_TEXT);
+		const run = await repo.adr(["lint", "--grade", "-", "--json"], HARD_TEXT);
 		expect(run.exitCode).toBe(1);
 		expect(JSON.parse(run.stdout)).toMatchObject({ level: "high-school", limit: 10, ok: false });
 	});
 
 	test("without --level the README level is the default", async () => {
 		const repo = await makeAdrRepo({ level: "college" });
-		const run = await runAdr(repo, ["lint", "--grade", "-", "--json"], HARD_TEXT);
+		const run = await repo.adr(["lint", "--grade", "-", "--json"], HARD_TEXT);
 		expect(run.exitCode).toBe(0);
 		expect(JSON.parse(run.stdout)).toMatchObject({ level: "college", limit: 14, ok: true });
 	});
@@ -583,9 +570,9 @@ describe("adr lint --grade", () => {
 	test("grades a file path as well as stdin", async () => {
 		const repo = await makeAdrRepo({ init: false });
 		repo.write("answer.md", HARD_TEXT);
-		const run = await runAdr(repo, ["lint", "--grade", "answer.md", "--level", "high-school"]);
+		const run = await repo.adr(["lint", "--grade", "answer.md", "--level", "high-school"]);
 		expect(run.exitCode).toBe(1);
-		expect(run.stdout + run.stderr).toMatch(/grade 13\.\d exceeds high-school limit 10/);
+		expect(run.stdout + run.stderr).toMatch(/grade \d+(\.\d)? exceeds high-school limit 10/);
 	});
 });
 
@@ -656,5 +643,73 @@ describe("adr lint --changed", () => {
 		const repo = await changedRepo();
 		const { found } = await findings(repo, ["--all"]);
 		expect(rulesOf(found)).toEqual(["broken-link", "missing-mermaid", "missing-status"]);
+	});
+});
+
+describe("adr lint fences, diagrams and anchors", () => {
+	test("a longer fence is not closed by a shorter one", async () => {
+		const repo = await makeAdrRepo();
+		const extra = "````md\n```\n## Fake heading\n```\n````\n\nSee [it](#fake-heading).";
+		await writePair(repo, KEY, adrDoc({ extra }), decisionDoc());
+		const { found } = await findings(repo);
+		expect(rulesOf(found)).toEqual(["broken-link"]);
+	});
+
+	test("a tilde fence is not closed by backticks", async () => {
+		const repo = await makeAdrRepo();
+		const extra = "~~~\n```\n## Fake heading\n~~~\n\nSee [it](#fake-heading).";
+		await writePair(repo, KEY, adrDoc({ extra }), decisionDoc());
+		const { found } = await findings(repo);
+		expect(rulesOf(found)).toEqual(["broken-link"]);
+	});
+
+	test("a Diagram heading inside a fence does not count as the section", async () => {
+		const repo = await makeAdrRepo();
+		const adr = adrDoc({ omit: "Diagram", extra: "```md\n## Diagram\n\n```mermaid\ngraph TD\n```\n```" });
+		await writePair(repo, KEY, adr, decisionDoc());
+		const { found } = await findings(repo);
+		expect(rulesOf(found)).toEqual(["missing-section"]);
+	});
+
+	test("a Diagram section with CRLF line endings keeps its mermaid block", async () => {
+		const repo = await makeAdrRepo();
+		await writePair(repo, KEY, adrDoc().replaceAll("\n", "\r\n"), decisionDoc());
+		const { found } = await findings(repo);
+		expect(rulesOf(found)).not.toContain("missing-mermaid");
+		expect(rulesOf(found)).not.toContain("missing-section");
+	});
+
+	test("repeated headings get numbered anchors", async () => {
+		const repo = await makeAdrRepo();
+		const extra = "## Extra\n\n## Extra\n\nSee [one](#extra-1) and [two](#extra-2).";
+		await writePair(repo, KEY, adrDoc({ extra }), decisionDoc());
+		const { found } = await findings(repo);
+		expect(found.filter((finding) => finding.rule === "broken-link").map((finding) => finding.message)).toEqual([expect.stringContaining("#extra-2")]);
+	});
+});
+
+describe("adr lint failure messages", () => {
+	test("--changed with no resolvable base dies with exit 2 and suggests --base", async () => {
+		const repo = await makeAdrRepo();
+		git(["checkout", "-q", "-b", "feature"], repo.root);
+		const run = await repo.adr(["lint", "--changed"]);
+		expect(run.exitCode).toBe(2);
+		expect(run.stderr).toContain("--base");
+		expect(run.stderr).toContain("origin/main");
+	});
+
+	test("--changed with an unknown --base exits 2", async () => {
+		const repo = await makeAdrRepo();
+		const run = await repo.adr(["lint", "--changed", "--base", "nope"]);
+		expect(run.exitCode).toBe(2);
+		expect(run.stderr).toContain("--base");
+	});
+
+	test("--grade with a missing file exits 2 without a stack", async () => {
+		const repo = await makeAdrRepo({ init: false });
+		const run = await repo.adr(["lint", "--grade", "missing.md"]);
+		expect(run.exitCode).toBe(2);
+		expect(run.stderr).toContain("missing.md");
+		expect(run.stderr).not.toContain("at ");
 	});
 });

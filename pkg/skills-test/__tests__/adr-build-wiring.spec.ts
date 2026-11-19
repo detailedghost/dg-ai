@@ -44,7 +44,11 @@ describe("adr build wiring: lore template", () => {
 
 describe("adr build wiring: finish and execute", () => {
 	test("finish step 6 points at the lore template without repeating commands", () => {
-		const step6 = FINISH.slice(FINISH.indexOf("## Step 6"), FINISH.indexOf("## Step 7"));
+		const from = FINISH.indexOf("## Step 6");
+		const to = FINISH.indexOf("## Step 7");
+		expect(from).toBeGreaterThanOrEqual(0);
+		expect(to).toBeGreaterThan(from);
+		const step6 = FINISH.slice(from, to);
 		expect(step6).toContain("templates/lore.md");
 		expect(step6).toContain(OPT_IN);
 		expect(step6).not.toContain("adr relevant");
@@ -81,7 +85,11 @@ describe("adr build wiring: land", () => {
 	});
 
 	test("the Flow table and step 3 mention the adr lint", () => {
-		const flow = LAND_SKILL.slice(LAND_SKILL.indexOf("## Flow"), LAND_SKILL.indexOf("Read [references/workflow.md]"));
+		const from = LAND_SKILL.indexOf("## Flow");
+		const to = LAND_SKILL.indexOf("Read [references/workflow.md]");
+		expect(from).toBeGreaterThanOrEqual(0);
+		expect(to).toBeGreaterThan(from);
+		const flow = LAND_SKILL.slice(from, to);
 		expect(flow).toContain("adr lint");
 		expect(flow).toContain("adr-lint-repeat");
 	});

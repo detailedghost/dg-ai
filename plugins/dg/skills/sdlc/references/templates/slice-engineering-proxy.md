@@ -8,7 +8,7 @@
 > 4. Once `/dg:proxy` reports the delegated work complete, verify it yourself: run this project's actual test command against `{CHANGED_FILES}`-relevant scope (whole suite if scope is unclear) and confirm it passes. Don't trust a green claim from the backend — check it.
 > 5. Run `git status` / `git diff --name-only` in the working directory to determine what actually changed — the external backend's own report of touched files may be incomplete or wrong.
 >
-> **Decisions:** when `.agents/decisions/README.md` exists, run `dg-skills adr relevant {CHANGED_FILES} --json` and inline every decision file it lists into the task prompt. Skip this when the file is absent.
+> **Decisions:** when `.agents/decisions/README.md` exists, run `dg-skills adr relevant {CHANGED_FILES} --json` and inline every decision file it lists into the task prompt. Single-quote each path and write an embedded single quote as `'\''`. Skip this when the file is absent.
 >
 > Findings: {FINDINGS}
 > Spec: {SPEC_PATH}

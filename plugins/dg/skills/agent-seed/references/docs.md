@@ -129,5 +129,5 @@ covers: ["<path glob>"]
 - <agent rule that follows from the decision, one line each>
 ```
 
-A decision with no agent rules keeps the one line `No agent rules.` in place of the bullets. The generated
+A decision with no agent rules keeps the `covers:` frontmatter and the ADR link line. The one line `No agent rules.` replaces the rules list. The generated
 `.agents/decisions/README.md` indexes it. Do not repeat the ADR's context or alternatives. Cite a decision by number and do not argue it again.

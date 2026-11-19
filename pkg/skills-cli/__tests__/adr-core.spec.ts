@@ -287,12 +287,12 @@ describe("adr hardening", () => {
 		expect(repo.list("docs/adr").some((name) => name.endsWith(".tmp"))).toBe(false);
 	});
 
-	test("a failed write leaves no temp files behind", async () => {
+	test.skipIf(process.getuid?.() === 0)("a failed write leaves no temp files behind", async () => {
 		const repo = await makeAdrRepo();
 		chmodSync(`${repo.root}/.agents/decisions`, 0o555);
 		const run = await repo.create("Use X", "Tooling");
 		chmodSync(`${repo.root}/.agents/decisions`, 0o755);
-		if (process.getuid?.() !== 0) expect(run.exitCode).not.toBe(0);
+		expect(run.exitCode).not.toBe(0);
 		expect(repo.list("docs/adr").filter((name) => name !== "toc.md")).toEqual([]);
 		expect(repo.list(".agents/decisions").filter((name) => name !== "README.md")).toEqual([]);
 	});
@@ -551,7 +551,8 @@ describe("adr find", () => {
 	test("has no --level flag", async () => {
 		const repo = await ranked();
 		const run = await repo.adr(["find", "cache", "--level", "college"]);
-		expect(run.exitCode).not.toBe(0);
+		expect(run.exitCode).toBe(2);
+		expect(run.stderr).toContain("find <words...>");
 	});
 });
 
@@ -578,5 +579,34 @@ describe("adr before init", () => {
 		const run = await repo.adr(["relevant", "pkg/a/x.ts"]);
 		expect(run.exitCode).toBe(2);
 		expect(run.stderr).toContain(NOT_INITIALIZED);
+	});
+});
+
+describe("adr flag hardening", () => {
+	test.each([
+		[["--topic", "--level", "--covers", "x"]],
+		[["--topic", "a", "--topic", "b"]],
+		[["--topic", "a", "--level", "college", "--level", "phd"]],
+		[["--topic", "a", "--covers", "--level"]],
+	])("new rejects %j with exit 2 and writes nothing", async (flags) => {
+		const repo = await makeAdrRepo();
+		const run = await repo.adr(["new", "Use X", ...flags]);
+		expect(run.exitCode).toBe(2);
+		expect(repo.list("docs/adr")).toEqual(["toc.md"]);
+	});
+
+	test("init keeps an existing README level and says so on stderr", async () => {
+		const repo = await makeAdrRepo({ level: "college" });
+		const run = await repo.adr(["init", "--level", "phd"]);
+		expect(run.exitCode).toBe(0);
+		expect(run.stderr).toContain("college");
+		expect(repo.read(".agents/decisions/README.md")).toContain("level: college");
+	});
+
+	test("index escapes a backslash in a title before the pipe", async () => {
+		const repo = await makeAdrRepo();
+		await repo.create("Use a\\b | c", "Tooling");
+		const readme = repo.read(".agents/decisions/README.md");
+		expect(readme).toContain("a\\\\b \\| c");
 	});
 });

@@ -5,8 +5,8 @@ import { frontOf } from "../utils/frontmatter";
 import { git, remoteDefaultBranch } from "../utils/git";
 import { indexTail, renderIndexes } from "./index-gen";
 import { gradeLimit, isLevel, LEVELS, parseLevel, type Level } from "./levels";
-import { README_FILE, repoRoot, requireInitialized, TOC_FILE } from "./paths";
-import { outsideFences, gradeOf } from "./readability";
+import { ADR_DIR, DECISION_DIR, README_FILE, repoRoot, requireInitialized, TOC_FILE } from "./paths";
+import { gradeOf, outsideFences, scanFences } from "./readability";
 import { type AdrRecord, loadRecords, matchCovers, normalizePath, repoLevel } from "./records";
 import { HUMAN_SECTIONS, TOC_MARKER } from "./templates";
 
@@ -32,6 +32,7 @@ interface Options {
 
 interface Context {
 	root: string;
+	level: Level;
 	adrCount: Map<string, number>;
 	decisionCount: Map<string, number>;
 }
@@ -62,10 +63,6 @@ function round1(value: number): number {
 	return Math.round(value * 10) / 10;
 }
 
-function rel(path: string, root: string): string {
-	return normalizePath(path, root);
-}
-
 function headingsOf(text: string): string[] {
 	return outsideFences(text)
 		.map((line) => line.match(/^#{1,6}\s+(.*)$/)?.[1]?.trim().replace(/#+$/, "").trim())
@@ -81,9 +78,21 @@ function anchorOf(heading: string): string {
 	return heading.toLowerCase().replace(/[^\p{L}\p{N}_\s-]/gu, "").trim().replaceAll(" ", "-");
 }
 
+function anchorsOf(text: string): Set<string> {
+	const seen = new Map<string, number>();
+	const anchors = new Set<string>();
+	for (const heading of headingsOf(text)) {
+		const base = anchorOf(heading);
+		const count = seen.get(base) ?? 0;
+		seen.set(base, count + 1);
+		anchors.add(count === 0 ? base : `${base}-${count}`);
+	}
+	return anchors;
+}
+
 function brokenLinks(path: string, text: string, root: string): Finding[] {
-	const anchors = new Set(headingsOf(text).map(anchorOf));
-	const file = rel(path, root);
+	const anchors = anchorsOf(text);
+	const file = normalizePath(path, root);
 	const found: Finding[] = [];
 	for (const target of linkTargets(text)) {
 		if (/^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
@@ -98,16 +107,21 @@ function brokenLinks(path: string, text: string, root: string): Finding[] {
 }
 
 function diagramHasMermaid(text: string): boolean {
-	const start = text.search(/^## Diagram[ \t]*$/m);
-	const section = text.slice(start).split(/^## /m)[1] ?? "";
-	const open = section.indexOf("```mermaid");
-	const bodyStart = open < 0 ? -1 : section.indexOf("\n", open);
-	const close = bodyStart < 0 ? -1 : section.indexOf("```", bodyStart + 1);
-	return close >= 0 && section.slice(bodyStart + 1, close).trim() !== "";
+	const lines = scanFences(text);
+	const start = lines.findIndex((entry) => entry.kind === "text" && /^## Diagram[ \t]*$/.test(entry.line));
+	if (start < 0) return false;
+	const rest = lines.slice(start + 1);
+	const end = rest.findIndex((entry) => entry.kind === "text" && entry.line.startsWith("## "));
+	const section = end < 0 ? rest : rest.slice(0, end);
+	const open = section.findIndex((entry) => entry.kind === "open" && /^\s*(?:`{3,}|~{3,})\s*mermaid\b/.test(entry.line));
+	if (open < 0) return false;
+	const body = section.slice(open + 1);
+	const close = body.findIndex((entry) => entry.kind === "close");
+	return close >= 0 && body.slice(0, close).some((entry) => entry.line.trim() !== "");
 }
 
 function lintAdr(record: AdrRecord, text: string, context: Context): Finding[] {
-	const file = rel(record.adrPath, context.root);
+	const file = normalizePath(record.adrPath, context.root);
 	const found: Finding[] = [];
 	const add = (rule: string, message: string, extra: Partial<Finding> = {}): void => void found.push({ file, rule, message, ...extra });
 	const present = new Set(outsideFences(text).map((line) => line.match(/^## (.*)$/)?.[1]?.trim()));
@@ -118,7 +132,7 @@ function lintAdr(record: AdrRecord, text: string, context: Context): Finding[] {
 	if (record.topic === "") add("missing-topic", "missing Topic line");
 	if (record.level !== "" && !isLevel(record.level)) add("bad-level", `Level ${echo(record.level)} is not one of ${LEVELS.join(", ")}`);
 	else {
-		const level = isLevel(record.level) ? record.level : repoLevel(context.root);
+		const level = isLevel(record.level) ? record.level : context.level;
 		const limit = gradeLimit(level);
 		const grade = round1(gradeOf(text));
 		if (limit !== null && grade > limit) add("grade-too-high", `grade ${grade} exceeds ${level} limit ${limit}`, { grade, limit });
@@ -129,12 +143,12 @@ function lintAdr(record: AdrRecord, text: string, context: Context): Finding[] {
 }
 
 function lintDecision(record: AdrRecord, text: string, context: Context): Finding[] {
-	const file = rel(record.decisionPath, context.root);
+	const file = normalizePath(record.decisionPath, context.root);
 	const found: Finding[] = [];
 	const add = (rule: string, message: string): void => void found.push({ file, rule, message });
 	if (!("covers" in frontOf(text))) add("missing-covers", "front matter has no covers key");
 	const pair = resolve(record.adrPath);
-	if (!linkTargets(text).some((target) => resolve(dirname(record.decisionPath), target.split(/[#?]/)[0] ?? "") === pair)) add("broken-link", `does not link its ADR docs/adr/${record.key}.md`);
+	if (!linkTargets(text).some((target) => resolve(dirname(record.decisionPath), target.split(/[#?]/)[0] ?? "") === pair)) add("broken-link", `does not link its ADR ${ADR_DIR}/${record.key}.md`);
 	if ((context.decisionCount.get(record.number) ?? 0) > 1) add("duplicate-number", `number ${record.number} is used by more than one decision`);
 	found.push(...brokenLinks(record.decisionPath, text, context.root));
 	return found;
@@ -142,9 +156,9 @@ function lintDecision(record: AdrRecord, text: string, context: Context): Findin
 
 function lintRecord(record: AdrRecord, context: Context): Finding[] {
 	const found: Finding[] = [];
-	if (record.adrText === null) found.push({ file: rel(record.decisionPath, context.root), rule: "orphan-decision", message: `no ADR docs/adr/${record.key}.md for this decision` });
+	if (record.adrText === null) found.push({ file: normalizePath(record.decisionPath, context.root), rule: "orphan-decision", message: `no ADR ${ADR_DIR}/${record.key}.md for this decision` });
 	else found.push(...lintAdr(record, record.adrText, context));
-	if (record.decisionText === null) found.push({ file: rel(record.adrPath, context.root), rule: "missing-pair", message: `no decision .agents/decisions/${record.key}.md for this ADR` });
+	if (record.decisionText === null) found.push({ file: normalizePath(record.adrPath, context.root), rule: "missing-pair", message: `no decision ${DECISION_DIR}/${record.key}.md for this ADR` });
 	else found.push(...lintDecision(record, record.decisionText, context));
 	return found;
 }
@@ -176,17 +190,14 @@ async function mergeBaseIn(root: string, ref: string): Promise<string> {
 }
 
 async function changedPaths(root: string, base: string | undefined): Promise<string[]> {
-	let from: string;
-	if (base !== undefined) {
-		from = await mergeBaseIn(root, base);
-		if (from === "") die(`no merge base between HEAD and ${echo(base)}`);
-	} else {
-		const branch = await remoteDefaultBranch();
-		from = await mergeBaseIn(root, `origin/${branch}`)
-			.catch(() => mergeBaseIn(root, branch))
-			.catch(() => "HEAD");
-		if (from === "") from = "HEAD";
+	const branch = base === undefined ? await remoteDefaultBranch() : "";
+	const refs = base === undefined ? [`origin/${branch}`, branch] : [base];
+	let from = "";
+	for (const ref of refs) {
+		from = await mergeBaseIn(root, ref).catch(() => "");
+		if (from !== "") break;
 	}
+	if (from === "") die(`no merge base between HEAD and ${refs.map(echo).join(" or ")}. Pass --base <ref>.`);
 	const tracked = (await git`-C ${root} diff --name-only --no-renames ${from}`).text();
 	const untracked = (await git`-C ${root} ls-files --others --exclude-standard`).text();
 	return `${tracked}\n${untracked}`.split("\n").filter((line) => line !== "");
@@ -200,7 +211,11 @@ function report(found: Finding[], json: boolean): number {
 
 async function gradeCommand(options: Options): Promise<number> {
 	const source = options.grade as string;
-	if (source !== "-" && statSync(source).size > MAX_GRADE_BYTES) die(`${echo(source)} is larger than ${MAX_GRADE_BYTES} bytes`);
+	if (source !== "-") {
+		const stat = statSync(source, { throwIfNoEntry: false });
+		if (stat === undefined) die(`cannot read ${echo(source)}: no such file`);
+		if (stat.size > MAX_GRADE_BYTES) die(`${echo(source)} is larger than ${MAX_GRADE_BYTES} bytes`);
+	}
 	const text = source === "-" ? await Bun.stdin.text() : readFileSync(source, "utf8");
 	if (Buffer.byteLength(text) > MAX_GRADE_BYTES) die(`input is larger than ${MAX_GRADE_BYTES} bytes`);
 	const level: Level = options.level === undefined ? repoLevel(repoRoot()) : parseLevel(options.level);
@@ -221,6 +236,7 @@ export async function lintCommand(args: string[]): Promise<number> {
 	const records = loadRecords(root);
 	const context: Context = {
 		root,
+		level: repoLevel(root),
 		adrCount: countBy(records, (record) => record.adrText !== null),
 		decisionCount: countBy(records, (record) => record.decisionText !== null),
 	};
@@ -229,7 +245,7 @@ export async function lintCommand(args: string[]): Promise<number> {
 		const paths = await changedPaths(root, options.base);
 		const touched = new Set(paths.map((path) => normalizePath(path, root)));
 		const covered = new Set(matchCovers(records, paths, root));
-		scope = records.filter((record) => covered.has(record) || touched.has(rel(record.adrPath, root)) || touched.has(rel(record.decisionPath, root)));
+		scope = records.filter((record) => covered.has(record) || touched.has(normalizePath(record.adrPath, root)) || touched.has(normalizePath(record.decisionPath, root)));
 	}
 	return report([...scope.flatMap((record) => lintRecord(record, context)), ...lintRepo(root, records)], options.json);
 }

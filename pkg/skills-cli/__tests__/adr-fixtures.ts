@@ -9,7 +9,7 @@ export const TOC_MARKER = "<!-- adr:index -->";
 
 export interface AdrRepo {
 	root: string;
-	adr(args: string[]): Promise<CliRun>;
+	adr(args: string[], stdin?: string): Promise<CliRun>;
 	read(path: string): string;
 	write(path: string, content: string): void;
 	exists(path: string): boolean;
@@ -52,7 +52,7 @@ export async function makeAdrRepo(options: { init?: boolean; level?: string } = 
 	});
 	const repo: AdrRepo = {
 		root,
-		adr: (args) => runCli([process.execPath, CLI_ENTRY, "adr"], args, { cwd: root, env }),
+		adr: (args, stdin) => runCli([process.execPath, CLI_ENTRY, "adr"], args, { cwd: root, env, stdin }),
 		read: (path) => readFileSync(join(root, path), "utf8"),
 		write: (path, content) => {
 			mkdirSync(dirname(join(root, path)), { recursive: true });

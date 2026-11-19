@@ -13,12 +13,24 @@ export interface RenderedIndexes {
 	readme: string;
 }
 
-function cell(text: string): string {
+function pipes(text: string): string {
 	return text.replaceAll("|", "\\|");
 }
 
-function linkText(text: string): string {
+function backslashes(text: string): string {
+	return text.replaceAll("\\", "\\\\");
+}
+
+function brackets(text: string): string {
 	return text.replace(/[[\]]/g, "\\$&");
+}
+
+function cell(text: string): string {
+	return pipes(backslashes(text));
+}
+
+function linkText(text: string): string {
+	return brackets(backslashes(text));
 }
 
 function ruleSummary(record: AdrRecord): string {
@@ -42,7 +54,7 @@ function renderToc(records: AdrRecord[]): string {
 function renderReadme(records: AdrRecord[]): string {
 	const rows = records.map(
 		(record) =>
-			`| ${record.number} | [${cell(linkText(record.title))}](${record.key}.md) | ${cell(record.topic)} | ${cell(ruleSummary(record))} | ${cell(record.covers.map((glob) => `\`${glob}\``).join(", "))} |`,
+			`| ${record.number} | [${brackets(cell(record.title))}](${record.key}.md) | ${cell(record.topic)} | ${cell(ruleSummary(record))} | ${pipes(record.covers.map((glob) => `\`${glob}\``).join(", "))} |`,
 	);
 	return ["| Number | Title | Topic | Rule summary | Covers |", "| --- | --- | --- | --- | --- |", ...rows, ""].join("\n");
 }

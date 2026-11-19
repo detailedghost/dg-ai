@@ -8,8 +8,9 @@ import { writeIndexes } from "./index-gen";
 import { DEFAULT_LEVEL, type Level, parseLevel } from "./levels";
 import { lintCommand } from "./lint";
 import { ADR_DIR, DECISION_DIR, nextNumber, README_FILE, refuseSymlink, repoRoot, requireInitialized, TOC_FILE } from "./paths";
+import { repoLevel } from "./records";
 import { relevantCommand } from "./relevant";
-import { AGENT_TEMPLATE, HUMAN_TEMPLATE, missingMarkerMessage, README_INTRO, TOC_INTRO, TOC_MARKER } from "./templates";
+import { AGENT_TEMPLATE, fill, missingMarkerMessage, README_INTRO, renderHuman, TOC_INTRO, TOC_MARKER } from "./templates";
 
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
@@ -30,7 +31,7 @@ interface Flags {
 	values: Map<string, string[]>;
 }
 
-function parseFlags(args: string[], allowed: readonly string[], usage: string): Flags {
+function parseFlags(args: string[], allowed: readonly string[], usage: string, repeatable: readonly string[] = []): Flags {
 	const flags: Flags = { positional: [], values: new Map() };
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i] ?? "";
@@ -39,7 +40,8 @@ function parseFlags(args: string[], allowed: readonly string[], usage: string): 
 			continue;
 		}
 		const value = args[i + 1];
-		if (!allowed.includes(arg) || value === undefined) die(`usage: dg-skills adr ${usage}`);
+		const repeated = flags.values.has(arg) && !repeatable.includes(arg);
+		if (!allowed.includes(arg) || value === undefined || value.startsWith("--") || repeated) die(`usage: dg-skills adr ${usage}`);
 		flags.values.set(arg, [...(flags.values.get(arg) ?? []), value]);
 		i++;
 	}
@@ -62,10 +64,14 @@ function writeIfAbsent(path: string, text: string): void {
 
 function initCommand(args: string[]): number {
 	const flags = parseFlags(args, ["--level"], "init [--level <l>]");
-	const level = levelFlag(flags) ?? DEFAULT_LEVEL;
+	const requested = levelFlag(flags);
+	const level = requested ?? DEFAULT_LEVEL;
 	const root = repoRoot();
 	for (const file of [TOC_FILE, README_FILE]) {
 		if (existsSync(join(root, file))) ensureMarker(join(root, file));
+	}
+	if (requested !== undefined && existsSync(join(root, README_FILE)) && repoLevel(root) !== requested) {
+		process.stderr.write(`adr: ${README_FILE} already sets level ${repoLevel(root)}. Kept it.\n`);
 	}
 	mkdirSync(join(root, ADR_DIR), { recursive: true });
 	mkdirSync(join(root, DECISION_DIR), { recursive: true });
@@ -93,7 +99,13 @@ function writePair(adr: { path: string; text: string }, decision: { path: string
 			}
 		}
 		for (const file of files) {
-			linkSync(file.temp, file.path);
+			try {
+				linkSync(file.temp, file.path);
+			} catch (error) {
+				const code = (error as NodeJS.ErrnoException).code;
+				if (code === "EEXIST" || code === "EPERM" || code === "ENOTSUP") die(`cannot create ${basename(file.path)} (${code}). Refusing to overwrite a record.`);
+				throw error;
+			}
 			linked.push(file.path);
 		}
 	} catch (error) {
@@ -108,7 +120,7 @@ function newCommand(args: string[]): number {
 	const usage = "new <title> --topic <t> [--covers <glob>]... [--level <l>]";
 	const root = repoRoot();
 	requireInitialized(root);
-	const flags = parseFlags(args, ["--topic", "--covers", "--level"], usage);
+	const flags = parseFlags(args, ["--topic", "--covers", "--level"], usage, ["--covers"]);
 	const rawTitle = flags.positional.join(" ");
 	const title = rawTitle.trim();
 	const [topic] = flags.values.get("--topic") ?? [];
@@ -121,9 +133,8 @@ function newCommand(args: string[]): number {
 	const key = `${nextNumber(root)}-${slug}`;
 	const covers = flags.values.get("--covers") ?? [];
 	const values: Record<string, string> = { title, date: localDate(), topic: topic.trim(), number: key.slice(0, 4), link: `../../${ADR_DIR}/${key}.md` };
-	const fill = (template: string): string => template.replace(/\{\{(\w+)\}\}/g, (_, name: string) => values[name] ?? "");
-	const adr = fill(level === undefined ? HUMAN_TEMPLATE.replace("Level: {{level}}\n", "") : HUMAN_TEMPLATE.replace("{{level}}", level));
-	const decision = fill(AGENT_TEMPLATE).replace("covers: []", () => `covers: ${JSON.stringify(covers)}`);
+	const adr = renderHuman(values, level);
+	const decision = fill(AGENT_TEMPLATE, values).replace("covers: []", () => `covers: ${JSON.stringify(covers)}`);
 	writePair({ path: join(root, ADR_DIR, `${key}.md`), text: adr }, { path: join(root, DECISION_DIR, `${key}.md`), text: decision });
 	writeIndexes(root);
 	return 0;

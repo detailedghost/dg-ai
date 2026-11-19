@@ -63,6 +63,9 @@ slices:
       - "pkg/common/__tests__/installed-skill-files.ts"
       - "pkg/skills-test/__tests__/skill-index-docs.spec.ts"
       - "pkg/skills-test/__tests__/adr-skill.spec.ts"
+      - "plugins/dg/skills/grill-me/references/protocol.md"
+      - "pkg/skills-cli/src/adr/doctor.ts"
+      - "pkg/skills-cli/src/doctor/registry.ts"
     agents:
       primary: "dg:lore"
       complexity: "medium"

@@ -1,4 +1,4 @@
-const FENCE = /^\s*(```|~~~)/;
+const FENCE = /^\s*(`{3,}|~{3,})/;
 const HEADING = /^\s{0,3}#{1,6}\s/;
 const HEADER_LINE = /^\s*(Status|Date|Topic|Level):/;
 const TABLE_ROW = /^\s*\|/;
@@ -7,15 +7,32 @@ const TOKEN = /[A-Za-z]+(?:['’][A-Za-z]+)*|\d+(?:[.,]\d+)*/g;
 const SENTENCE_END = /[.!?]+(?:\s+|$)/;
 const GROUPS = /[aeiouy]+/g;
 
-export function outsideFences(text: string): string[] {
-	let inFence = false;
-	return text.split("\n").filter((line) => {
-		if (FENCE.test(line)) {
-			inFence = !inFence;
-			return false;
+export interface ScannedLine {
+	line: string;
+	kind: "text" | "open" | "body" | "close";
+}
+
+export function scanFences(text: string): ScannedLine[] {
+	let open: string | null = null;
+	return text.split(/\r?\n/).map((line) => {
+		const run = line.match(FENCE)?.[1];
+		if (open === null) {
+			if (run === undefined) return { line, kind: "text" };
+			open = run;
+			return { line, kind: "open" };
 		}
-		return !inFence;
+		if (run !== undefined && run[0] === open[0] && run.length >= open.length && line.trim() === run) {
+			open = null;
+			return { line, kind: "close" };
+		}
+		return { line, kind: "body" };
 	});
+}
+
+export function outsideFences(text: string): string[] {
+	return scanFences(text)
+		.filter((entry) => entry.kind === "text")
+		.map((entry) => entry.line);
 }
 
 const TRAILING_PUNCTUATION = ".,;:!?)";
