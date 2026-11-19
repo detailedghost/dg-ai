@@ -47,6 +47,7 @@ const GOLDEN_COMMANDS = [
 	"worktree",
 	"spec",
 	"assign",
+	"adr",
 	"monolith",
 	"jot",
 	"bg",

@@ -1,0 +1,30 @@
+import { say } from "../spec/shared";
+import { repoRoot, requireInitialized } from "./paths";
+import { type AdrRecord, loadRecords } from "./records";
+import { type Hit, hitOf, splitJson } from "./relevant";
+
+const TITLE_WEIGHT = 3;
+
+function occurrences(text: string, word: string): number {
+	return text.split(word).length - 1;
+}
+
+function scoreOf(record: AdrRecord, words: string[]): number {
+	const title = record.title.toLowerCase();
+	const body = `${record.adrText ?? ""}\n${record.decisionText ?? ""}`.toLowerCase();
+	return words.reduce((sum, word) => sum + TITLE_WEIGHT * occurrences(title, word) + occurrences(body, word), 0);
+}
+
+export async function findCommand(args: string[]): Promise<number> {
+	const root = repoRoot();
+	requireInitialized(root);
+	const { json, rest } = splitJson(args, "find <words...> [--json]");
+	const words = rest.map((word) => word.toLowerCase()).filter((word) => word !== "");
+	const hits: Array<Hit & { score: number }> = (await loadRecords(root))
+		.map((record) => ({ ...hitOf(record), score: scoreOf(record, words) }))
+		.filter((hit) => hit.score > 0)
+		.sort((a, b) => b.score - a.score || a.number.localeCompare(b.number));
+	if (json) say(`${JSON.stringify(hits)}\n`);
+	else for (const hit of hits) say(`${hit.number}\t${hit.title}\t${hit.path}\n`);
+	return 0;
+}
