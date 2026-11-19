@@ -50,7 +50,7 @@ export function readSchemaVersion(db: Database): number {
 
 const snapshotPrefix = (version: number): string => `pre-migration-v${version}-`;
 
-/** Removes each pre-migration snapshot of `version`, with its -wal, -shm and -journal files; returns the removed names. */
+/** Removes the pre-migration snapshots of `version` and their sidecar files; returns the names. */
 export function removeSchemaSnapshots(dir: string, version: number): string[] {
 	const prefix = snapshotPrefix(version);
 	const names = readdirSync(dir).filter(
