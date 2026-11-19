@@ -21,7 +21,7 @@ const stubbornService =
 		setTimeout(() => process.exit(0), 120000);`,
 		],
 		cwd,
-		autostart: true,
+		enabled: true,
 		stopTimeoutMs,
 	});
 

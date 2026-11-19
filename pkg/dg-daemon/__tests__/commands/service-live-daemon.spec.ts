@@ -10,6 +10,7 @@ import {
 	waitForPidFile,
 } from "../utils/daemon-harness";
 import { configPathOf, writeConfigFile } from "../utils/service-daemon";
+import { asContinuous } from "../utils/job-table";
 import { lines, runCli } from "./service-cli-helpers";
 
 const cleanupSlot = createCleanupSlot();
@@ -27,7 +28,11 @@ async function boot(services: (dgHome: string) => Record<string, unknown>) {
 		cleanupDgHome(dgHome);
 	});
 	await waitForPidFile(dgHome);
-	writeConfigFile(dgHome, { pinnedOrigin: "p", services: services(dgHome) });
+	writeConfigFile(dgHome, {
+		pinnedOrigin: "p",
+		jobsVersion: 1,
+		jobs: asContinuous(services(dgHome)),
+	});
 	return { dgHome, port };
 }
 
@@ -76,7 +81,8 @@ describe("service commands against a live daemon", () => {
 		expect(result.code).toBe(0);
 		expect(JSON.parse(readFileSync(configPathOf(dgHome), "utf8"))).toEqual({
 			pinnedOrigin: "p",
-			services: {},
+			jobsVersion: 1,
+			jobs: {},
 		});
 	});
 

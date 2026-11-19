@@ -8,6 +8,7 @@ import {
 	type Supervisor,
 	type SupervisorDeps,
 } from "../../src/services/supervisor";
+import { asContinuous } from "../utils/job-table";
 
 export const SLEEPER = "setTimeout(() => process.exit(0), 120000);";
 export const IGNORE_SIGTERM = `process.on("SIGTERM", () => {}); ${SLEEPER}`;
@@ -89,7 +90,7 @@ export function rig(
 			jobStateRoot,
 		},
 		daemonUrl: () => "http://127.0.0.1:1",
-		loadConfig: () => ({ services: build(kit) }),
+		loadConfig: () => ({ jobs: asContinuous(build(kit)) }),
 		logger: {
 			info: (message: string) => {
 				infos.push(message);

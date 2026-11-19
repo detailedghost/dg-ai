@@ -1,26 +1,32 @@
+import { dirname } from "node:path";
 import {
 	CHAT_PROTOCOL_VERSION,
 	DgCliError,
+	describeError,
 	EXIT_NO_PORT_AVAILABLE,
 	wait,
 } from "@dg/common";
 import { exitAfterDrain } from "@dg/common/async";
-import { assertNotBlocked } from "@dg/common/node/layout";
 import {
 	checkWslNetworking,
 	type DgPaths,
 	ensureDaemonId,
 	ensureOwnerToken,
+	ensurePrivateDir,
 	isDaemonLive,
 	loopbackHostHeader,
 	readPidFile,
 	removePidFile,
 	resolveDgPaths,
 	resolveLiveDaemon,
+	withInstallLockSync,
 	writePidFileAtomic,
 } from "@dg/common/node";
+import { assertNotBlocked } from "@dg/common/node/layout";
 import { DispatchScheduler } from "../dispatch";
+import { createJobControl } from "../jobs/control";
 import { isDaemonIdle } from "../jobs/idle";
+import { migrateServicesKey, servicesBackupPath } from "../jobs/migrate";
 import { JOB_TICK_INTERVAL_MS, startJobRunner } from "../jobs/runner";
 import { createSupervisor } from "../services/supervisor";
 import {
@@ -60,6 +66,7 @@ import { DG_DAEMON_PACKAGE_VERSION } from "./status";
 /** How often the row-cap prunes run, independent of the much faster session reap tick. */
 export const ROW_PRUNE_INTERVAL_MS = 3_600_000;
 
+const CONFIG_LOCK = { tries: 40, waitMs: 50 };
 const BIND_RIVAL_BUDGET_MS = 500;
 const BIND_RIVAL_POLL_MS = 20;
 
@@ -93,6 +100,33 @@ export async function cmdStatus(): Promise<void> {
 	console.log(JSON.stringify(await resp.json(), null, 2));
 }
 
+function migrateJobsConfig(
+	paths: DgPaths,
+	logger: ReturnType<typeof createLogger>,
+): void {
+	const file = paths.daemonConfigPath;
+	try {
+		ensurePrivateDir(dirname(file));
+		const { moved } = withInstallLockSync(
+			dirname(file),
+			() => migrateServicesKey(paths),
+			CONFIG_LOCK,
+		);
+		if (moved.length > 0) {
+			logger.info(
+				`moved ${moved.length} service(s) to "jobs"; backup ${servicesBackupPath(paths)}`,
+			);
+		}
+		if (Object.hasOwn(readConfig(paths), "services")) {
+			logger.warn(
+				`${file}: "services" is not an object, so it stays in the file and nothing moved`,
+			);
+		}
+	} catch (err) {
+		logger.warn(`${describeError(err)}; the jobs config was not migrated`);
+	}
+}
+
 export async function cmdServe(): Promise<"serving" | "deferred"> {
 	const paths = resolveDgPaths();
 	const wslNetworkingMode = await checkWslNetworking();
@@ -109,6 +143,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 	const connections = new ConnectionManager();
 	const dispatchScheduler = new DispatchScheduler();
 	let boundPort: number | undefined;
+	migrateJobsConfig(paths, logger);
 	const supervisor = createSupervisor({
 		paths,
 		daemonUrl: () => {
@@ -146,7 +181,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 				store,
 				credentials,
 				dispatchScheduler,
-				supervisor,
+				jobs: createJobControl(supervisor),
 			});
 			boundPort = candidate;
 			break;

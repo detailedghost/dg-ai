@@ -10,6 +10,7 @@ import {
 	waitForDaemonExit,
 	waitForHealth,
 } from "./daemon-harness";
+import { asContinuous } from "./job-table";
 
 const DISPOSE_GRACE_MS = 10_000;
 
@@ -38,7 +39,7 @@ export function writeServiceConfig(
 	dgHome: string,
 	services: Record<string, unknown>,
 ): void {
-	writeConfigFile(dgHome, { services });
+	writeConfigFile(dgHome, { jobs: asContinuous(services) });
 }
 
 /** Writes the config before the daemon boots, so autostart sees it. */

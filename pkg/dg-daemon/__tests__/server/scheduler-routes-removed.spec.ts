@@ -24,7 +24,6 @@ async function boot(): Promise<number> {
 
 describe("retired scheduler routes", () => {
 	it.each([
-		["GET", "/jobs"],
 		["POST", "/jobs/job-1/run"],
 		["GET", "/feed"],
 		["POST", "/feed/read-all"],

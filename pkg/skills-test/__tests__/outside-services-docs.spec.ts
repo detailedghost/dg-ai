@@ -193,7 +193,7 @@ describe("docs/jobs-and-services.md", () => {
 	});
 
 	test("documents defaults and limits from config source", () => {
-		const cfg = source("dg-daemon", "src", "services", "config.ts").replaceAll(
+		const cfg = source("dg-daemon", "src", "jobs", "config.ts").replaceAll(
 			"_",
 			"",
 		);
@@ -207,7 +207,7 @@ describe("docs/jobs-and-services.md", () => {
 	});
 
 	test("names the injected DG keys from supervisor source", () => {
-		const sup = source("dg-daemon", "src", "services", "supervisor.ts");
+		const sup = source("dg-daemon", "src", "jobs", "launcher.ts");
 		for (const k of [
 			"DG_SERVICE_API",
 			"DG_SERVICE_LABEL",

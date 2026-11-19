@@ -8,6 +8,7 @@ import {
 	isRecord,
 	OWNER_TOKEN_HEADER,
 	parseEvery,
+	wait,
 } from "@dg/common";
 import {
 	checkExecutableResolves,
@@ -21,15 +22,83 @@ import {
 	withInstallLock,
 } from "@dg/common/node";
 import type { Command } from "commander";
-import { readConfigStrict, writeServiceEntry } from "../server/config-store";
-import { parseServiceEntry, SERVICES_CONFIG_KEY } from "../services/config";
+import {
+	isContinuousEntry,
+	JOBS_CONFIG_KEY,
+	parseJobEntry,
+} from "../jobs/config";
+import { isMigrated } from "../jobs/migrate";
+import { readConfigStrict, writeJobEntry } from "../server/config-store";
+import { DG_DAEMON_PACKAGE_VERSION } from "../server/status";
 import { type ServiceStatus, servicePidFile } from "../services/supervisor";
+import { type DaemonStartSeams, startDaemon } from "./start";
 
-function withConfigLock<T>(
+const MARK_POLL_MS = 100;
+const LIVE_DAEMON_MARK_WAIT_MS = 10_000;
+const STARTED_DAEMON_MARK_WAIT_MS = 2_000;
+const NOT_MIGRATED =
+	"the daemon config is not migrated — run dg daemon start, then run this command again";
+const RENAME_NOTE =
+	'note: "dg-daemon service" is now "dg job"; this form goes away in the next major release';
+
+export function withConfigLock<T>(
 	paths: ReturnType<typeof resolveDgPaths>,
 	fn: () => T | Promise<T>,
 ): Promise<T> {
 	return withInstallLock(dirname(paths.daemonConfigPath), fn);
+}
+
+function requireMigrated(config: Record<string, unknown>): void {
+	if (!isMigrated(config)) {
+		throw new DgCliError(NOT_MIGRATED, EXIT_GENERAL_FAILURE);
+	}
+}
+
+async function waitForMark(
+	paths: ReturnType<typeof resolveDgPaths>,
+	waitMs: number,
+): Promise<boolean> {
+	const deadline = Date.now() + waitMs;
+	for (;;) {
+		if (isMigrated(guardConfig(() => readConfigStrict(paths)))) return true;
+		if (Date.now() >= deadline) return false;
+		await wait(MARK_POLL_MS);
+	}
+}
+
+/** Runs before the config lock: the daemon needs that lock to write the mark. */
+export async function ensureMigrated(
+	paths: ReturnType<typeof resolveDgPaths>,
+	seams: DaemonStartSeams = {},
+): Promise<void> {
+	if (isMigrated(guardConfig(() => readConfigStrict(paths)))) return;
+	const live = await findLiveDaemon(paths);
+	if (live) {
+		if (await waitForMark(paths, LIVE_DAEMON_MARK_WAIT_MS)) return;
+		throw markMissing(live);
+	}
+	let started: Awaited<ReturnType<typeof startDaemon>>;
+	try {
+		started = await startDaemon(paths, seams);
+	} catch {
+		throw new DgCliError(NOT_MIGRATED, EXIT_GENERAL_FAILURE);
+	}
+	if (!(await waitForMark(paths, STARTED_DAEMON_MARK_WAIT_MS))) {
+		throw markMissing(started.handle);
+	}
+}
+
+function markMissing(handle: { pid: number; versions: { package: string } }) {
+	if (handle.versions.package === DG_DAEMON_PACKAGE_VERSION) {
+		return new DgCliError(
+			`the daemon config is not migrated — the dg-daemon (pid ${handle.pid}) did not write the mark; see the daemon log`,
+			EXIT_GENERAL_FAILURE,
+		);
+	}
+	return new DgCliError(
+		`the daemon config is not migrated — a dg-daemon from before this release runs (pid ${handle.pid}); run dg daemon restart, then run this command again`,
+		EXIT_GENERAL_FAILURE,
+	);
 }
 
 function readInstancePid(file: string): number | undefined {
@@ -73,9 +142,18 @@ async function callDaemon(
 	return resp.json();
 }
 
-function isDeclared(config: Record<string, unknown>, label: string): boolean {
-	const table = config[SERVICES_CONFIG_KEY];
-	return isRecord(table) && Object.hasOwn(table, label);
+function isInTable(config: Record<string, unknown>, name: string): boolean {
+	const table = config[JOBS_CONFIG_KEY];
+	return isRecord(table) && Object.hasOwn(table, name);
+}
+
+function isDeclared(config: Record<string, unknown>, name: string): boolean {
+	const table = config[JOBS_CONFIG_KEY];
+	return (
+		isRecord(table) &&
+		Object.hasOwn(table, name) &&
+		isContinuousEntry(table[name])
+	);
 }
 
 function resolveExecutable(command: string): string {
@@ -142,7 +220,10 @@ export function registerServiceCommands(program: Command): void {
 		.command("service")
 		.description(
 			"run the long-lived scripts declared under `services` in the daemon config",
-		);
+		)
+		.hook("preAction", () => {
+			console.error(RENAME_NOTE);
+		});
 
 	service
 		.command("add")
@@ -179,37 +260,40 @@ export function registerServiceCommands(program: Command): void {
 					fail("service add: no command given — put it after a bare --");
 				}
 				const paths = resolveDgPaths();
+				const cwd = resolve(options.cwd);
+				if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
+					fail(`--cwd: no such directory: ${options.cwd}`);
+				}
+				const stopTimeoutMs =
+					options.stopTimeout === undefined
+						? undefined
+						: parseEvery(options.stopTimeout, "--stop-timeout");
+				const [command, ...rest] = argv;
+				const executable = resolveExecutable(command);
+				const entry = {
+					argv: [executable, ...rest],
+					cwd,
+					continuous: true,
+					...(options.autostart ? { enabled: true } : {}),
+					...(options.envFile === undefined
+						? {}
+						: { envFile: resolve(options.envFile) }),
+					...(options.passEnv === undefined
+						? {}
+						: { passEnv: options.passEnv }),
+					...(stopTimeoutMs === undefined ? {} : { stopTimeoutMs }),
+					...(options.grant === undefined ? {} : { grant: options.grant }),
+				};
+				const parsed = parseJobEntry(label, entry);
+				if (!parsed.ok) fail(`service add: ${parsed.error}`);
+				await ensureMigrated(paths);
 				await withConfigLock(paths, () => {
 					const config = guardConfig(() => readConfigStrict(paths));
-					if (isDeclared(config, label)) {
+					requireMigrated(config);
+					if (isInTable(config, label)) {
 						fail(`a service labelled "${label}" already exists`);
 					}
-					const cwd = resolve(options.cwd);
-					if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
-						fail(`--cwd: no such directory: ${options.cwd}`);
-					}
-					const stopTimeoutMs =
-						options.stopTimeout === undefined
-							? undefined
-							: parseEvery(options.stopTimeout, "--stop-timeout");
-					const [command, ...rest] = argv;
-					const executable = resolveExecutable(command);
-					const entry = {
-						argv: [executable, ...rest],
-						cwd,
-						...(options.autostart ? { autostart: true } : {}),
-						...(options.envFile === undefined
-							? {}
-							: { envFile: resolve(options.envFile) }),
-						...(options.passEnv === undefined
-							? {}
-							: { passEnv: options.passEnv }),
-						...(stopTimeoutMs === undefined ? {} : { stopTimeoutMs }),
-						...(options.grant === undefined ? {} : { grant: options.grant }),
-					};
-					const parsed = parseServiceEntry(label, entry);
-					if (!parsed.ok) fail(`service add: ${parsed.error}`);
-					guardConfig(() => writeServiceEntry(paths, label, entry));
+					guardConfig(() => writeJobEntry(paths, label, entry));
 				});
 				console.log(`added service "${label}"`);
 				console.log(
@@ -230,6 +314,7 @@ export function registerServiceCommands(program: Command): void {
 			const paths = resolveDgPaths();
 			const requireDeclared = () => {
 				const config = guardConfig(() => readConfigStrict(paths));
+				requireMigrated(config);
 				if (!isDeclared(config, label)) {
 					throw new DgCliError(
 						`no service labelled "${label}"`,
@@ -237,6 +322,13 @@ export function registerServiceCommands(program: Command): void {
 					);
 				}
 			};
+			if (!existsSync(paths.daemonConfigPath)) {
+				throw new DgCliError(
+					`no service labelled "${label}"`,
+					EXIT_GENERAL_FAILURE,
+				);
+			}
+			await ensureMigrated(paths);
 			requireDeclared();
 			const pidHandle = readPidFile(paths);
 			const live = await findLiveDaemon(paths);
@@ -268,7 +360,7 @@ export function registerServiceCommands(program: Command): void {
 						EXIT_GENERAL_FAILURE,
 					);
 				}
-				guardConfig(() => writeServiceEntry(paths, label, undefined));
+				guardConfig(() => writeJobEntry(paths, label, undefined));
 			});
 			console.log(`removed service "${label}"`);
 		});

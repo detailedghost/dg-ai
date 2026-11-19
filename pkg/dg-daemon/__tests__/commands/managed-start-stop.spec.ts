@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
 	CHAT_PROTOCOL_VERSION,
+	CHAT_JOBS_PATH,
 	CHAT_SERVICES_PATH,
 	type DaemonHandle,
 	DgCliError,
@@ -91,6 +92,7 @@ function newHandle(pid: number): DaemonHandle {
 		port: 0,
 		fetch(req) {
 			const path = new URL(req.url).pathname;
+			if (path === CHAT_JOBS_PATH) return Response.json({ instanceId, jobs: [] });
 			if (path === CHAT_SERVICES_PATH) return Response.json({ instanceId, services: [] });
 			return Response.json({ instanceId });
 		},

@@ -49,22 +49,22 @@ describe("config-store strict reader", () => {
 	});
 });
 
-describe("config-store services writer", () => {
+describe("config-store jobs writer", () => {
 	it("sets an entry and keeps pinnedOrigin and other entries", () => {
 		const paths = setup(
-			JSON.stringify({ pinnedOrigin: "https://x", services: { one: entry } }),
+			JSON.stringify({ pinnedOrigin: "https://x", jobs: { one: entry } }),
 		);
-		store.writeServiceEntry(paths, "two", { ...entry, autostart: true });
+		store.writeJobEntry(paths, "two", { ...entry, enabled: true });
 		expect(JSON.parse(readFileSync(paths.daemonConfigPath, "utf8"))).toEqual({
 			pinnedOrigin: "https://x",
-			services: { one: entry, two: { ...entry, autostart: true } },
+			jobs: { one: entry, two: { ...entry, enabled: true } },
 		});
 	});
 
 	it("creates the file with mode 0600 when absent", () => {
 		if (process.platform === "win32") return;
 		const paths = setup();
-		store.writeServiceEntry(paths, "one", entry);
+		store.writeJobEntry(paths, "one", entry);
 		expect(statSync(paths.daemonConfigPath).mode & 0o777).toBe(0o600);
 	});
 
@@ -72,7 +72,7 @@ describe("config-store services writer", () => {
 		if (process.platform === "win32") return;
 		const paths = setup("{}");
 		chmodSync(paths.daemonConfigPath, 0o640);
-		store.writeServiceEntry(paths, "one", entry);
+		store.writeJobEntry(paths, "one", entry);
 		expect(statSync(paths.daemonConfigPath).mode & 0o777).toBe(0o640);
 	});
 
@@ -82,44 +82,53 @@ describe("config-store services writer", () => {
 		mkdirSync(dirname(paths.daemonConfigPath), { recursive: true });
 		writeFileSync(target, "{}");
 		symlinkSync(target, paths.daemonConfigPath);
-		store.writeServiceEntry(paths, "one", entry);
+		store.writeJobEntry(paths, "one", entry);
 		expect(lstatSync(paths.daemonConfigPath).isSymbolicLink()).toBe(true);
-		expect(JSON.parse(readFileSync(target, "utf8")).services.one).toEqual(
+		expect(JSON.parse(readFileSync(target, "utf8")).jobs.one).toEqual(
 			entry,
 		);
 	});
 
-	it("leaves services as {} after the last entry is deleted", () => {
+	it("leaves jobs as {} after the last entry is deleted", () => {
 		const paths = setup(
-			JSON.stringify({ pinnedOrigin: "p", services: { one: entry } }),
+			JSON.stringify({ pinnedOrigin: "p", jobs: { one: entry } }),
 		);
-		store.writeServiceEntry(paths, "one", undefined);
+		store.writeJobEntry(paths, "one", undefined);
 		expect(JSON.parse(readFileSync(paths.daemonConfigPath, "utf8"))).toEqual({
 			pinnedOrigin: "p",
-			services: {},
+			jobs: {},
 		});
 	});
 
-	it("throws and leaves the bytes alone when services is not an object", () => {
-		const body = '{"services":[1]}';
+	it("throws and leaves the bytes alone when jobs is not an object", () => {
+		const body = '{"jobs":[1]}';
 		const paths = setup(body);
-		expect(() => store.writeServiceEntry(paths, "one", entry)).toThrow(
-			`${paths.daemonConfigPath}: "services" must be an object`,
+		expect(() => store.writeJobEntry(paths, "one", entry)).toThrow(
+			`${paths.daemonConfigPath}: "jobs" must be an object`,
 		);
 		expect(readFileSync(paths.daemonConfigPath, "utf8")).toBe(body);
 	});
 
+	it("writes jobs.one and keeps a services value that is not an object", () => {
+		const paths = setup('{"services":[1]}');
+		store.writeJobEntry(paths, "one", entry);
+		expect(JSON.parse(readFileSync(paths.daemonConfigPath, "utf8"))).toEqual({
+			services: [1],
+			jobs: { one: entry },
+		});
+	});
+
 	it("stores a __proto__ label as an own key without touching prototypes", () => {
 		const paths = setup();
-		store.writeServiceEntry(paths, "__proto__", entry);
+		store.writeJobEntry(paths, "__proto__", entry);
 		const written = JSON.parse(readFileSync(paths.daemonConfigPath, "utf8"));
-		expect(Object.hasOwn(written.services, "__proto__")).toBe(true);
+		expect(Object.hasOwn(written.jobs, "__proto__")).toBe(true);
 		expect(({} as Record<string, unknown>).argv).toBeUndefined();
 	});
 
 	it("throws on invalid JSON and leaves the bytes alone", () => {
 		const paths = setup('{"a":');
-		expect(() => store.writeServiceEntry(paths, "one", entry)).toThrow(
+		expect(() => store.writeJobEntry(paths, "one", entry)).toThrow(
 			paths.daemonConfigPath,
 		);
 		expect(readFileSync(paths.daemonConfigPath, "utf8")).toBe('{"a":');
@@ -130,12 +139,12 @@ const HOLD_MS = 400;
 const holderScript = (storePath: string, dgHome: string) => `
 import { dirname } from "node:path";
 import { resolveDgPaths, withInstallLock } from "@dg/common/node";
-import { writeServiceEntry } from ${JSON.stringify(storePath)};
+import { writeJobEntry } from ${JSON.stringify(storePath)};
 const paths = resolveDgPaths({ env: { DG_HOME: ${JSON.stringify(dgHome)} } });
 await withInstallLock(dirname(paths.daemonConfigPath), async () => {
 	console.log("held");
 	await Bun.sleep(${HOLD_MS});
-	writeServiceEntry(paths, "svc", { argv: ["/bin/x"], cwd: "/srv" });
+	writeJobEntry(paths, "svc", { argv: ["/bin/x"], cwd: "/srv" });
 });
 `;
 
@@ -173,7 +182,7 @@ describe("config-store writeConfig locking", () => {
 		expect(waited).toBeGreaterThanOrEqual(HOLD_MS / 2);
 		const config = JSON.parse(readFileSync(paths.daemonConfigPath, "utf8"));
 		expect(config.pinnedOrigin).toBe("chrome-extension://x");
-		expect(config.services.svc).toEqual(entry);
+		expect(config.jobs.svc).toEqual(entry);
 	});
 
 	it("throws instead of skipping the write when the config lock stays held", () => {
@@ -211,10 +220,10 @@ describe("config-store with two used daemon folders", () => {
 		expect(exitCodeOf(() => store.readConfigStrict(paths))).toBe(78);
 	});
 
-	it("writeServiceEntry throws exit code 78 and writes no config file", async () => {
+	it("writeJobEntry throws exit code 78 and writes no config file", async () => {
 		const paths = await twoUsed();
 
-		expect(exitCodeOf(() => store.writeServiceEntry(paths, "one", entry))).toBe(78);
+		expect(exitCodeOf(() => store.writeJobEntry(paths, "one", entry))).toBe(78);
 		expect(existsSync(paths.daemonConfigPath)).toBe(false);
 	});
 });

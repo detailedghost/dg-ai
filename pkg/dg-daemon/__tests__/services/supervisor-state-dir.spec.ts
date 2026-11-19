@@ -399,7 +399,7 @@ describe("state folder against a live daemon", () => {
 
 	it("answers HTTP 400 with the create text and starts no process", async () => {
 		const { dgHome, port, paths } = await boot();
-		writeConfigFile(dgHome, { services: { bot: sleeper(dgHome) } });
+		writeConfigFile(dgHome, { jobs: { bot: { ...sleeper(dgHome), continuous: true } } });
 		rmSync(paths.jobStateRoot, { recursive: true, force: true });
 		mkdirSync(paths.stateDir, { recursive: true });
 		writeFileSync(paths.jobStateRoot, "not a folder");
@@ -433,7 +433,7 @@ describe("state folder against a live daemon", () => {
 			script,
 			`require("node:fs").writeFileSync(${JSON.stringify(dump)}, JSON.stringify({ env: process.env })); setTimeout(() => {}, 600000);`,
 		);
-		writeConfigFile(dgHome, { pinnedOrigin: "p", services: {} });
+		writeConfigFile(dgHome, { pinnedOrigin: "p", jobsVersion: 1, jobs: {} });
 
 		const added = await runCli(
 			dgHome,

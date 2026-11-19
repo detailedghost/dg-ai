@@ -19,6 +19,7 @@ import {
 	type Supervisor,
 	type SupervisorDeps,
 } from "../../src/services/supervisor";
+import { asContinuous } from "../utils/job-table";
 
 const roots: string[] = [];
 const supervisors: Supervisor[] = [];
@@ -70,7 +71,7 @@ function fixture(
 			grantsDir: join(root, "grants"),
 			jobStateRoot: join(root, "state", "jobs"),
 		},
-		loadConfig: () => ({ services }),
+		loadConfig: () => ({ jobs: asContinuous(services) }),
 		logger: { info: () => {}, warn: () => {} },
 		backoffMs: () => 25,
 		daemonUrl: () => "http://127.0.0.1:1",
@@ -336,7 +337,7 @@ describe("createSupervisor", () => {
 		const f = fixture(({ root, script }) => {
 			const argv = script(SLEEPER);
 			return {
-				bot: { argv, cwd: root, autostart: true },
+				bot: { argv, cwd: root, enabled: true },
 				other: { argv, cwd: root },
 			};
 		});

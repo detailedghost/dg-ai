@@ -37,7 +37,7 @@ describe("daemon boot with an autostart service", () => {
 				bot: {
 					argv: [process.execPath, "-e", markerWriter(marker, pidPath)],
 					cwd: dgHome,
-					autostart: true,
+					enabled: true,
 				},
 			};
 		});
