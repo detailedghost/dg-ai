@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { LEGACY_PROGRAMS } from "../../skills-cli/__tests__/bootstrap-fixtures";
 import { REPO_ROOT, makeTempDir, readRepoFile, removeTempDirs, runInHarness } from "./test-support";
 
 afterEach(removeTempDirs);
@@ -79,7 +80,7 @@ describe("install retires the pre-rename daemon binary", () => {
 });
 
 describe("install retires the compiled dg-skills, dg-agent and dg-daemon version stamps", () => {
-	const PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon"];
+	const PROGRAMS = LEGACY_PROGRAMS;
 
 	test("each stamp goes and each shim stays", async () => {
 		const home = makeTempDir("dg-retired-stamps-test-");

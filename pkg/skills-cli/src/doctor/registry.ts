@@ -41,10 +41,11 @@ import { thrashChecks } from "../thrash/doctor";
 import { vcsProviderChecks } from "../vcs-provider/doctor";
 import { worktreeChecks } from "../worktree/doctor";
 import type { DoctorRegistry } from "./runner";
-import { SHARED_ITEM, sharedChecks } from "./shared";
+import { isCliOnly } from "./checks";
+import { dgLauncherCheck, SHARED_ITEM, sharedChecks } from "./shared";
 
 export const DOCTOR_REGISTRY: DoctorRegistry = {
-	[SHARED_ITEM]: sharedChecks,
+	[SHARED_ITEM]: [...sharedChecks, dgLauncherCheck(isCliOnly)],
 	inbox: inboxChecks,
 	"channel-review": channelReviewChecks,
 	credentials: credentialsChecks,

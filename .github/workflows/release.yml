@@ -205,7 +205,7 @@ jobs:
           mkdir lib
           tar -xzf dg-lib-*.tar.gz -C lib
 
-      - name: Run --version for all three programs
+      - name: Run --version for all four programs
         shell: bash
         run: |
           set -euo pipefail
@@ -213,11 +213,12 @@ jobs:
           if [ -f "${bun}.exe" ]; then
             bun="${bun}.exe"
           fi
+          dg="$("$bun" lib/dg.js dg --version)"
           skills="$("$bun" lib/dg.js dg-skills --version)"
           agent="$("$bun" lib/dg.js dg-agent --version)"
           daemon="$("$bun" lib/dg.js dg-daemon --version)"
-          echo "dg-skills ${skills}, dg-agent ${agent}, dg-daemon ${daemon}"
-          for out in "$skills" "$agent" "$daemon"; do
+          echo "dg ${dg}, dg-skills ${skills}, dg-agent ${agent}, dg-daemon ${daemon}"
+          for out in "$dg" "$skills" "$agent" "$daemon"; do
             if [ "$out" != "$VERSION" ]; then
               echo "::error::--version printed '${out}', expected ${VERSION}"
               exit 1

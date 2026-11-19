@@ -11,7 +11,7 @@ import {
 import { join } from "node:path";
 import type { DgPaths } from "@dg/common/node/dg-paths";
 import { versionGte } from "../utils/lib";
-import { PROGRAMS } from "./shims";
+import { LEGACY_PROGRAMS } from "./shims";
 
 const RELEASE_IN_TEXT = /this path is removed in (\d+\.\d+\.\d+)/;
 
@@ -85,7 +85,7 @@ export function syncCompatLaunchers(
 	const legacyBin = join(paths.legacyHome, "bin");
 	if (legacyBin === paths.binDir || !existsSync(legacyBin)) return;
 	const windows = platform === "win32";
-	for (const name of PROGRAMS) {
+	for (const name of LEGACY_PROGRAMS) {
 		const file = windows ? `${name}.cmd` : name;
 		const path = join(legacyBin, file);
 		const existing = existsSync(path) ? readFileSync(path, "utf8") : "";

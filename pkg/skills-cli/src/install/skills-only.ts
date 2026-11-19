@@ -70,6 +70,6 @@ export function skillsOnlyReport(result: SkillsOnlyResult): string {
 		...(result.personasDir
 			? [`Installed ${result.personas.length} personas at ${result.personasDir}.`]
 			: []),
-		"Skills-only install: no skill content was executed. Fetching the dg bundle with the dg-skills, dg-agent and dg-daemon launchers (no extension).",
+		"Skills-only install: no skill content was executed. Fetching the dg bundle with the dg, dg-skills, dg-agent and dg-daemon launchers (no extension).",
 	].join("\n");
 }

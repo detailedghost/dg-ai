@@ -10,8 +10,8 @@
 #   ... | sh -s -- --version <x.y.z> (also --version=<x.y.z>, or DG_VERSION=<x.y.z>): install that release.
 #
 # Layout: runtime/bun-v<bun>, lib/<release>, runtime/current and lib/current links in the data dir
-# (~/.local/share/dg on Linux, ~/Library/Application Support/dg on macOS, $DG_HOME/data), and the
-# dg-skills, dg-agent, dg-daemon shims in ~/.local/bin (or $DG_HOME/bin). Every download is verified against
+# (~/.local/share/dg on Linux, ~/Library/Application Support/dg on macOS, $DG_HOME/data), and the dg, dg-skills,
+# dg-agent and dg-daemon launchers in ~/.local/bin (or $DG_HOME/bin). Every download is verified against
 # SHA256SUMS or runtime.json before anything is installed. Re-running upgrades in place.
 # Windows: use bootstrap.ps1 instead.
 set -eu
@@ -169,7 +169,7 @@ copy_skill_tree() {
   count=$(wc -l <"$manifest" | tr -d " ")
   echo "Installed ${count} skill files at ${dest}."
   copy_personas "$src" "$dest"
-  echo "Skills-only install: no skill content was executed. Fetching the dg bundle with the dg-skills, dg-agent and dg-daemon launchers (no extension)."
+  echo "Skills-only install: no skill content was executed. Fetching the dg bundle with the dg, dg-skills, dg-agent and dg-daemon launchers (no extension)."
   rm -f "$manifest"
 }
 
@@ -444,14 +444,24 @@ fi
 link_current "${ROOT}/runtime/current" "bun-v${BUN_VERSION}"
 link_current "${ROOT}/lib/current" "${VERSION}"
 
-for program in dg-skills dg-agent dg-daemon; do
+for program in dg-skills dg-agent dg-daemon dg; do
+  if [ "${program}" = "dg" ] && { [ -e "${BIN}/dg" ] || [ -L "${BIN}/dg" ]; }; then
+    if [ -L "${BIN}/dg" ] && [ ! -e "${BIN}/dg" ]; then
+      :
+    elif [ -d "${BIN}/dg" ] || [ ! -f "${BIN}/dg" ] || [ ! -r "${BIN}/dg" ] ||
+      [ "$(head -c 4096 "${BIN}/dg" | tr -d '\000' | wc -c)" != "$(head -c 4096 "${BIN}/dg" | wc -c)" ] ||
+      ! head -c 4096 "${BIN}/dg" | grep -qF 'lib/current/dg.js'; then
+      echo "dg: kept ${BIN}/dg; it is not a dg launcher. Remove it or rename it, then run dg-skills install again" >&2
+      continue
+    fi
+  fi
   shim=$(mktemp "${BIN}/.${program}.XXXXXX")
   track_tmp "${shim}"
   printf '#!/bin/sh\nexec "%s/runtime/current/bun" "%s/lib/current/dg.js" %s "$@"\n' \
     "${ROOT}" "${ROOT}" "${program}" >"${shim}"
   chmod 755 "${shim}"
   mv -f "${shim}" "${BIN}/${program}"
-  rm -f "${BIN}/.${program}.version"
+  [ "${program}" = "dg" ] || rm -f "${BIN}/.${program}.version"
 done
 
 echo "dg runtime ${BUN_VERSION} and bundle ${VERSION} installed at ${ROOT}"

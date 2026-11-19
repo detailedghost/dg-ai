@@ -18,7 +18,7 @@ export const completionChecks: DoctorCheck[] = [
 	{
 		id: "files",
 		run(ctx): CheckResult {
-			const files = completionFiles({ env: ctx.env, home: ctx.home });
+			const files = completionFiles({ env: ctx.env, home: ctx.home, binDir: ctx.paths.binDir });
 			if (files.length === 0) return ok("shell completion is not used on Windows");
 			const missing = files.filter((file) => completionState(file) === "missing");
 			const stale = files.filter((file) => completionState(file) === "stale");
@@ -30,7 +30,7 @@ export const completionChecks: DoctorCheck[] = [
 	{
 		id: "zsh-fpath",
 		run(ctx): CheckResult {
-			const zsh = completionFiles({ env: ctx.env, home: ctx.home }).find((file) => file.shell === "zsh");
+			const zsh = completionFiles({ env: ctx.env, home: ctx.home, binDir: ctx.paths.binDir }).find((file) => file.shell === "zsh");
 			const dir = zsh && dirname(zsh.path);
 			const hint = dir && zshHint(dir, ctx.env);
 			const rc = join(ctx.env.ZDOTDIR || ctx.home, ".zshrc");

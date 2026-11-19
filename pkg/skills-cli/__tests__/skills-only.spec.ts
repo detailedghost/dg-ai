@@ -44,7 +44,7 @@ const PERSONAS = [
 ].map((name) => `${name}.md`).sort();
 
 const SUMMARY =
-	"Skills-only install: no skill content was executed. Fetching the dg bundle with the dg-skills, dg-agent and dg-daemon launchers (no extension).";
+	"Skills-only install: no skill content was executed. Fetching the dg bundle with the dg, dg-skills, dg-agent and dg-daemon launchers (no extension).";
 
 describe("skills-only helpers", () => {
 	test("rejects flags that would fetch binaries or build the extension", () => {
@@ -174,5 +174,25 @@ describe("skills-only helpers", () => {
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("the skills-only launcher sentence", () => {
+	const read = (...parts: string[]): string => readFileSync(join(import.meta.dir, ...parts), "utf8");
+
+	test("is the same in skills-only.ts, bootstrap.sh and skills-only-install.spec.ts as in this spec", () => {
+		for (const text of [
+			read("..", "src", "install", "skills-only.ts"),
+			read("..", "bootstrap.sh"),
+			read("skills-only-install.spec.ts"),
+		]) {
+			expect(text).toContain(SUMMARY);
+		}
+	});
+
+	test("skills-only.ts writes no launcher itself", () => {
+		const source = read("..", "src", "install", "skills-only.ts");
+
+		expect(source).not.toMatch(/writeShims|isDgLauncher|\.cmd|chmodSync/);
 	});
 });

@@ -14,7 +14,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export const BOOTSTRAP = join(import.meta.dir, "..", "bootstrap.sh");
-export const PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon"] as const;
+export const LEGACY_PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon"] as const;
+export const PROGRAMS = ["dg", ...LEGACY_PROGRAMS] as const;
 export const RELEASE_VERSION = "1.27.0";
 
 export type RuntimeAsset = { file: string; sha256: string };
@@ -66,6 +67,10 @@ esac
 `;
 
 export const FAKE_BUN = `#!/bin/sh
+if [ "$#" -eq 3 ] && [ "$3" = "--version" ]; then
+  basename "$(readlink "$(dirname "$1")")"
+  exit 0
+fi
 printf 'FAKE_BUN %s\\n' "$*"
 for arg in "$@"; do printf 'FAKE_ARG %s\\n' "$arg"; done
 `;

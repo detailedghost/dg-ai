@@ -13,7 +13,7 @@ import {
 } from "@dg/common/node/layout";
 import { folderUnused } from "@dg/common/node/sqlite-unused";
 import { isCompatLauncher } from "./compat-launchers";
-import { PROGRAMS } from "./shims";
+import { LEGACY_PROGRAMS } from "./shims";
 
 type Table = readonly MoveEntry[];
 
@@ -58,7 +58,7 @@ const defaultSeams: CleanSeams = {
 
 const SET_ASIDE_SUFFIX = String.raw`\.empty-\d+$`;
 const launcherFiles = (platform: NodeJS.Platform): string[] =>
-	PROGRAMS.map((name) => (platform === "win32" ? `${name}.cmd` : name));
+	LEGACY_PROGRAMS.map((name) => (platform === "win32" ? `${name}.cmd` : name));
 const joinNames = (items: readonly string[]): string =>
 	items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
 const asideEntries = (table: Table): MoveEntry[] => table.filter((entry) => entry.unused !== undefined);

@@ -3,12 +3,15 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { COMPLETION_SHELLS, type CompletionShell, completionScript } from "@dg/common/completion";
 import { writeFileAtomic } from "@dg/common/node";
+import { resolveDgPaths } from "@dg/common/node/dg-paths";
 import { PROGRAM_NAMES } from "@dg/common/node/program";
+import { holdsOtherFile } from "../install/dg-launcher";
 
 export type CompletionSeams = {
 	env?: Record<string, string | undefined>;
 	home?: string;
 	platform?: NodeJS.Platform;
+	binDir?: string;
 };
 
 export type CompletionFile = { program: string; shell: CompletionShell; path: string };
@@ -34,11 +37,14 @@ function shellDirs({ env = process.env, home = homedir() }: CompletionSeams): Di
 const fileName = (shell: CompletionShell, program: string): string =>
 	shell === "zsh" ? `_${program}` : shell === "fish" ? `${program}.fish` : program;
 
-/** Every completion file dg writes; none on Windows. */
+/** Every completion file dg writes; none on Windows. `dg` is left out when `<bin>/dg` is a file of another tool. */
 export function completionFiles(seams: CompletionSeams = {}): CompletionFile[] {
-	if ((seams.platform ?? process.platform) === "win32") return [];
+	const platform = seams.platform ?? process.platform;
+	if (platform === "win32") return [];
 	const dirs = shellDirs(seams);
-	return PROGRAM_NAMES.flatMap((program) =>
+	const dgLauncher = join(seams.binDir ?? resolveDgPaths().binDir, "dg");
+	const names = holdsOtherFile(dgLauncher, platform) ? PROGRAM_NAMES : (["dg", ...PROGRAM_NAMES] as const);
+	return names.flatMap((program) =>
 		COMPLETION_SHELLS.map((shell) => ({ program, shell, path: join(dirs[shell], fileName(shell, program)) })),
 	);
 }
