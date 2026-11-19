@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.16.0 (2026-11-19)
+
+### Features
+
+- feat(dg-daemon): run only one daemon per user and stop test leaks ([#233](https://github.com/detailedghost/dg-ai/pull/233))
+
 ## v5.15.0 (2026-11-19)
 
 ### Features
