@@ -36,7 +36,7 @@ describe("test home fence reach", () => {
 	it("finds the packages whose test script runs bun test", () => {
 		const names = packagesRunningBunTest();
 
-		for (const expected of ["common", "dg-daemon", "dg-agent", "skills-test", "skills-cli"]) {
+		for (const expected of ["common", "dg", "dg-daemon", "dg-agent", "skills-test", "skills-cli"]) {
 			expect(names).toContain(expected);
 		}
 	});

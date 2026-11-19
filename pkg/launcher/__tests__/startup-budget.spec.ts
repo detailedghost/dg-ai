@@ -8,7 +8,7 @@ setDefaultTimeout(120_000);
 
 const OVERHEAD_BUDGET_MS = 20;
 const RUNS = 7;
-const PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon"];
+const PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon", "dg"];
 
 function warmMedian(bun: string, entry: string, args: string[]): number {
 	const spawn = () => run(bun, entry, args);

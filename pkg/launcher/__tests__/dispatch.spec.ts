@@ -7,7 +7,8 @@ function headRevision(): string {
 	return Bun.spawnSync(["git", "rev-parse", "HEAD"], { stdout: "pipe" }).stdout.toString().trim();
 }
 
-const PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon"];
+const PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon", "dg"];
+const EXPECTED_LIST = "expected dg-skills, dg-agent, dg-daemon, dg";
 
 describe("dg.js dispatcher", () => {
 	const { bun, entry, lib } = buildBundle();
@@ -27,18 +28,22 @@ describe("dg.js dispatcher", () => {
 		expect(stamps[0]).not.toBe("dev");
 	});
 
-	test("an unknown program exits 64 and names the three programs", () => {
+	test("an unknown program exits 64 and names the four programs", () => {
 		const result = run(bun, entry, ["nope"]);
 		expect(result.exitCode).toBe(64);
 		const output = result.stdout + result.stderr;
-		for (const name of PROGRAMS) expect(output).toContain(name);
+		expect(output).toContain(EXPECTED_LIST);
 	});
 
-	test("no program name exits 64 and names the three programs", () => {
+	test("no program name exits 64 and names the four programs", () => {
 		const result = run(bun, entry, []);
 		expect(result.exitCode).toBe(64);
 		const output = result.stdout + result.stderr;
-		for (const name of PROGRAMS) expect(output).toContain(name);
+		expect(output).toContain(EXPECTED_LIST);
+	});
+
+	test("dg --version prints the same line as dg-skills --version", () => {
+		expect(run(bun, entry, ["dg", "--version"]).stdout).toBe(run(bun, entry, ["dg-skills", "--version"]).stdout);
 	});
 
 	test("arguments after the program name reach that program", () => {

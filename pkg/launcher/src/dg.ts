@@ -6,6 +6,7 @@ const PROGRAMS: Record<ProgramName, () => Promise<Program>> = {
 	"dg-skills": () => import("./programs/skills"),
 	"dg-agent": () => import("./programs/agent"),
 	"dg-daemon": () => import("./programs/daemon"),
+	dg: () => import("./programs/dg"),
 };
 
 const EX_USAGE = 64;
