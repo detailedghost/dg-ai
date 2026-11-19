@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { REPO_ROOT, readRepoFile } from "./test-support";
 
 const SKILLS = join(REPO_ROOT, "plugins", "dg", "skills");
@@ -10,7 +10,7 @@ const OLD_NAMES = /dg:browser|dg-skills (batch-open|launch)\b/;
 
 function section(heading: string): string {
 	const lines = SKILL.split("\n");
-	const start = lines.findIndex((line) => line === heading);
+	const start = lines.findIndex((line) => line.trimEnd() === heading);
 	if (start === -1) return "";
 	const end = lines.findIndex((line, i) => i > start && line.startsWith("## "));
 	return lines.slice(start, end === -1 ? undefined : end).join("\n");
@@ -47,6 +47,8 @@ describe("pw tab batches replace the browser skill", () => {
 	test("references/tabs.md covers refs, markers, group color, Load unpacked and every OS folder", () => {
 		const tabs = readFileSync(TABS_PATH, "utf8");
 		for (const needle of [
+			"Without `--ext`, it opens plain tabs and needs no extension.",
+			"`launch` always needs `--ext`.",
 			"owner/repo#num",
 			"alias#num",
 			"#_tab_group=<name>",
@@ -63,7 +65,7 @@ describe("pw tab batches replace the browser skill", () => {
 	test("no skill or user doc names the browser skill or the old top-level commands", () => {
 		const files = [
 			...markdownFiles(SKILLS),
-			...markdownFiles(join(REPO_ROOT, "docs")).filter((file) => !file.includes(join("docs", "adr"))),
+			...markdownFiles(join(REPO_ROOT, "docs")).filter((file) => !file.startsWith(join(REPO_ROOT, "docs", "adr") + sep)),
 			join(REPO_ROOT, "README.md"),
 			join(REPO_ROOT, "pkg", "extension", "README.md"),
 		];
