@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.13.1 (2026-11-19)
+
+### Fixes
+
+- fix(dg-daemon): close the follow-ups of the dg program PR ([#228](https://github.com/detailedghost/dg-ai/pull/228))
+
 ## v5.13.0 (2026-11-19)
 
 ### Features
