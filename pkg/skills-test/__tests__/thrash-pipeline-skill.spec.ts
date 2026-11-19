@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fenceEnv } from "../../skills-cli/__tests__/fence-env";
 import { BUNDLE_TARGET_LINES, TINY_DIFF_LINES } from "../../skills-cli/src/thrash/bundles";
 import { MAX_CHUNKS } from "../../skills-cli/src/thrash/core";
 import { VERIFY_TASK_CAP } from "../../skills-cli/src/thrash/triage";
@@ -232,7 +233,7 @@ describe("dg-skills thrash probe", () => {
 		const home = makeTempDir("thrash-help-home-");
 		const proc = Bun.spawnSync(["bun", "run", "src/index.ts", "thrash", "--help"], {
 			cwd: CLI_DIR,
-			env: { PATH: process.env.PATH ?? "", HOME: home },
+			env: { PATH: process.env.PATH ?? "", HOME: home, ...fenceEnv() },
 		});
 		expect(proc.exitCode, proc.stderr.toString()).toBe(0);
 		const help = proc.stdout.toString();
@@ -252,7 +253,7 @@ describe("dg-skills thrash probe", () => {
 		chmodSync(join(bin, "dg-skills"), 0o755);
 		chmodSync(join(bin, "curl"), 0o755);
 		const proc = Bun.spawnSync(["sh", "-c", block as string], {
-			env: { PATH: `${bin}:/usr/bin:/bin`, HOME: join(root, "home") },
+			env: { PATH: `${bin}:/usr/bin:/bin`, HOME: join(root, "home"), ...fenceEnv() },
 		});
 		expect(proc.exitCode, proc.stderr.toString()).toBe(0);
 		expect(existsSync(log)).toBe(true);

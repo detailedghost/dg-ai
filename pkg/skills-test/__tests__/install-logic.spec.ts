@@ -3,6 +3,8 @@
  * logic that broke install (per-part release tags).
  */
 import { describe, expect, test } from "bun:test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	cliBinDir,
 	expectedSha256,
@@ -122,17 +124,15 @@ describe("install paths and checksum parsing", () => {
 	});
 
 	test("cliDest lands in the DG_HOME bin directory, one shim per program", () => {
-		const saved = { home: process.env.DG_HOME, fence: process.env.DG_PATH_FENCE };
-		process.env.DG_HOME = "/opt/dg-home";
-		delete process.env.DG_PATH_FENCE;
+		const saved = process.env.DG_HOME;
+		const home = join(tmpdir(), "dg-install-logic-home");
+		process.env.DG_HOME = home;
 		try {
-			expect(cliDest("dg-agent")).toStartWith("/opt/dg-home/bin/dg-agent");
+			expect(cliDest("dg-agent")).toStartWith(join(home, "bin", "dg-agent"));
 			expect(cliDest("dg-agent")).not.toBe(cliDest("dg-daemon"));
 		} finally {
-			if (saved.home === undefined) delete process.env.DG_HOME;
-			else process.env.DG_HOME = saved.home;
-			if (saved.fence === undefined) delete process.env.DG_PATH_FENCE;
-			else process.env.DG_PATH_FENCE = saved.fence;
+			if (saved === undefined) delete process.env.DG_HOME;
+			else process.env.DG_HOME = saved;
 		}
 	});
 
