@@ -20,7 +20,6 @@
 Status: Accepted
 Date: <YYYY-MM-DD>
 Topic: <topic>
-Level: <level>
 
 ## Context
 

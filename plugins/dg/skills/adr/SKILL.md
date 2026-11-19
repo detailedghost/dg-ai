@@ -21,7 +21,7 @@ If a step fails, run dg-skills doctor adr.
 
 ## Usage
 
-**Usage:** `/dg:adr [new "<title>" --topic <t> [--covers <glob>...] [--level <l>] | ask "<question>" [--level <l>]]`
+**Usage:** `/dg:adr [new '<title>' --topic '<t>' [--covers '<glob>']... [--level <l>] | ask '<question>' [--level <l>]]`
 
 ## Flags
 
@@ -47,10 +47,10 @@ Grade limits: `eli5` 4, `high-school` 10, `college` 14, `phd` and `technical` no
 ## Write mode
 
 1. Apply the three gates. Any "no" stops here: the decision needs no record.
-2. Run `dg-skills adr new "<title>" --topic <t> [--covers <glob>...] [--level <l>]`. A repo without `.agents/decisions/README.md` needs `dg-skills adr init` first; ask before you run it.
+2. Run `dg-skills adr new '<title>' --topic '<t>' [--covers '<glob>']... [--level <l>]`. Single-quote every user-derived argument and write an embedded single quote as `'\''`. Never pass a title that holds a newline. Repeat `--covers` once per glob. A repo without `.agents/decisions/README.md` needs `dg-skills adr init` first; ask before you run it.
 3. Fill the ADR and the decision file.
-4. Run `dg-skills adr lint --changed`. Fix every finding. Repeat until it exits 0.
+4. Run `dg-skills adr index`, then `dg-skills adr lint --changed`. Fix every finding. Repeat until lint exits 0.
 
 ## Ask mode
 
-Answer from the ADRs only. Cite ADR numbers. Check the answer with `dg-skills adr lint --grade - --level <l>` before you reply. Details: [ask.md](references/ask.md).
+Answer from the ADRs only. Cite ADR numbers. Quote each word and path as in [ask.md](references/ask.md). Check the answer with `dg-skills adr lint --grade - --level <l>` before you reply. Details: [ask.md](references/ask.md).
