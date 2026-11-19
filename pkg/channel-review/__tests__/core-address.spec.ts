@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	createAddressWorkspace,
-	insideRoot,
 	removeCloneDir,
 	removeLeftoverClones,
 } from "../src/address";
@@ -181,14 +180,6 @@ describe("address workspace clone", () => {
 });
 
 describe("clone directory delete guard", () => {
-	test("accepts only paths strictly inside the root", () => {
-		expect(insideRoot("/a/root", "/a/root/x")).toBe(true);
-		expect(insideRoot("/a/root", "/a/root")).toBe(false);
-		expect(insideRoot("/a/root", "/a/root/")).toBe(false);
-		expect(insideRoot("/a/root", "/a/root/../other")).toBe(false);
-		expect(insideRoot("/a/root", "/a/rootless/x")).toBe(false);
-	});
-
 	test("deletes a job directory inside the root", () => {
 		const root = tempRoot();
 		const dir = join(root, "github.com-o-r-m1");

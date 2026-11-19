@@ -12,6 +12,37 @@ import {
 	truncateSync,
 	writeFileSync,
 } from "node:fs";
+import { dirname, resolve, sep } from "node:path";
+
+export function insideRoot(root: string, dir: string): boolean {
+	const base = resolve(root);
+	const target = resolve(dir);
+	return (
+		target !== base &&
+		target.startsWith(base.endsWith(sep) ? base : `${base}${sep}`)
+	);
+}
+
+function realParentInsideRoot(root: string, target: string): boolean {
+	let realRoot: string;
+	let realParent: string;
+	try {
+		realRoot = realpathSync(root);
+		realParent = realpathSync(dirname(target));
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "ENOENT";
+	}
+	return realParent === realRoot || insideRoot(realRoot, realParent);
+}
+
+/** Deletes `dir` only when it lies strictly inside `root`, also after links resolve; throws otherwise. */
+export function removeInside(root: string, dir: string): void {
+	const target = resolve(dir);
+	if (!insideRoot(root, target) || !realParentInsideRoot(root, target)) {
+		throw new Error(`refused to delete ${dir}: it is not inside ${root}`);
+	}
+	rmSync(target, { recursive: true, force: true });
+}
 
 export function ensurePrivateDir(path: string): void {
 	mkdirSync(path, { recursive: true, mode: 0o700 });

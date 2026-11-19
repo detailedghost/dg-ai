@@ -40,6 +40,9 @@ export type DgPaths = DgRoots & {
 	grantsDir: string;
 	phoneRoot: string;
 	phoneFriendRoot: string;
+	jobsDir: string;
+	jobSourcesPath: string;
+	jobStateRoot: string;
 	legacyHome: string;
 };
 
@@ -184,6 +187,7 @@ function computeDgPaths(platform: NodeJS.Platform, home: string, env: Env): DgPa
 	const r = roots(platform, home, env);
 	const daemonDir = path.join(r.stateDir, "daemon");
 	const agentsDir = path.join(r.stateDir, "agents");
+	const jobsDir = path.join(r.dataDir, "jobs");
 	return {
 		...r,
 		configPath: path.join(r.configDir, "config.json"),
@@ -207,6 +211,9 @@ function computeDgPaths(platform: NodeJS.Platform, home: string, env: Env): DgPa
 		grantsDir: path.join(r.stateDir, "grants"),
 		phoneRoot: path.join(r.stateDir, "phone"),
 		phoneFriendRoot: path.join(r.stateDir, "phone-friend"),
+		jobsDir,
+		jobSourcesPath: path.join(jobsDir, "sources.json"),
+		jobStateRoot: path.join(r.stateDir, "jobs"),
 		legacyHome: legacyHome(platform, home, env),
 	};
 }
@@ -233,4 +240,26 @@ export function withBinOnPath(
 ): string {
 	const parts = (path ?? "").split(delimiter).filter(Boolean);
 	return [binDir, ...parts.filter((part) => part !== binDir)].join(delimiter);
+}
+
+const JOB_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+export function isJobName(name: string): boolean {
+	return JOB_NAME.test(name);
+}
+
+function underRoot(root: string, name: string): string {
+	if (!isJobName(name)) {
+		throw new Error(`dg paths: "${name}" is not a valid job or source name`);
+	}
+	const path = /^[A-Za-z]:[\\/]|^\\\\/.test(root) ? win32 : posix;
+	return path.join(root, name);
+}
+
+export function jobSourceDir(paths: Pick<DgPaths, "jobsDir">, source: string): string {
+	return underRoot(paths.jobsDir, source);
+}
+
+export function jobStateDir(paths: Pick<DgPaths, "jobStateRoot">, name: string): string {
+	return underRoot(paths.jobStateRoot, name);
 }

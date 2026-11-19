@@ -7,7 +7,14 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { disposeRigs, type Rig, rig, SLEEPER, until } from "./supervisor-kit";
+import {
+	disposeRigs,
+	type Rig,
+	rig,
+	SLEEPER,
+	until,
+	withDaemonEnv,
+} from "./supervisor-kit";
 
 afterEach(disposeRigs);
 
@@ -30,24 +37,6 @@ function writeEnvFile(root: string, content: string): string {
 	const path = join(root, "secrets.env");
 	writeFileSync(path, content, { mode: 0o600 });
 	return path;
-}
-
-async function withDaemonEnv<T>(
-	vars: Record<string, string>,
-	run: () => Promise<T>,
-): Promise<T> {
-	const saved = Object.keys(vars).map(
-		(key) => [key, process.env[key]] as const,
-	);
-	for (const [key, value] of Object.entries(vars)) process.env[key] = value;
-	try {
-		return await run();
-	} finally {
-		for (const [key, value] of saved) {
-			if (value === undefined) delete process.env[key];
-			else process.env[key] = value;
-		}
-	}
 }
 
 async function dumpedEnv(
@@ -83,7 +72,7 @@ async function dumpedEnv(
 }
 
 describe("supervisor service API environment", () => {
-	it("gives a service without grant the three keys and neither grant key", async () => {
+	it("gives a service without grant the base keys and neither grant key", async () => {
 		const { env } = await dumpedEnv({});
 		expect(env.DG_SERVICE_API).toBe("1");
 		expect(env.DG_SERVICE_LABEL).toBe("bot");
@@ -91,7 +80,7 @@ describe("supervisor service API environment", () => {
 		for (const key of GRANT_KEYS) expect(env[key]).toBeUndefined();
 	});
 
-	it("gives a service with grant the five keys and no token value", async () => {
+	it("gives a service with grant the base and grant keys and no token value", async () => {
 		const { env, tokenPath } = await dumpedEnv(
 			{ grant: "bot" },
 			{ token: true },
@@ -124,12 +113,23 @@ describe("supervisor service API environment", () => {
 			"DG_DAEMON_URL=http://evil.example",
 			"DG_CREDENTIAL_GRANT_PREFIX=other",
 			"DG_CREDENTIAL_GRANT_FILE=/etc/passwd",
+			"DG_SERVICE_STATE_DIR=/from/envfile",
 		];
-		const { env, tokenPath } = await withDaemonEnv(
-			{ DG_SERVICE_LABEL: "from-daemon" },
+		const {
+			env,
+			tokenPath,
+			rig: r,
+		} = await withDaemonEnv(
+			{
+				DG_SERVICE_LABEL: "from-daemon",
+				DG_SERVICE_STATE_DIR: "/from/daemon",
+			},
 			() =>
 				dumpedEnv(
-					{ grant: "bot", passEnv: ["DG_SERVICE_LABEL"] },
+					{
+						grant: "bot",
+						passEnv: ["DG_SERVICE_LABEL", "DG_SERVICE_STATE_DIR"],
+					},
 					{
 						token: true,
 						prepare: (root) => ({
@@ -141,6 +141,7 @@ describe("supervisor service API environment", () => {
 		expect(env.DG_SERVICE_LABEL).toBe("bot");
 		expect(env.DG_SERVICE_API).toBe("1");
 		expect(env.DG_DAEMON_URL).toBe(DAEMON_URL);
+		expect(env.DG_SERVICE_STATE_DIR).toBe(join(r.jobStateRoot, "bot"));
 		expect(env.DG_CREDENTIAL_GRANT_PREFIX).toBe("bot");
 		expect(env.DG_CREDENTIAL_GRANT_FILE).toBe(tokenPath as string);
 	});

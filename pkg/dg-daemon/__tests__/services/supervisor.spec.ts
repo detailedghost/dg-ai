@@ -68,6 +68,7 @@ function fixture(
 			daemonDir: join(root, "daemon"),
 			logDir: join(root, "logs"),
 			grantsDir: join(root, "grants"),
+			jobStateRoot: join(root, "state", "jobs"),
 		},
 		loadConfig: () => ({ services }),
 		logger: { info: () => {}, warn: () => {} },

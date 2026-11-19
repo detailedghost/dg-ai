@@ -14,6 +14,7 @@ export const IGNORE_SIGTERM = `process.on("SIGTERM", () => {}); ${SLEEPER}`;
 
 export type Kit = {
 	root: string;
+	jobStateRoot: string;
 	script: (source: string) => string[];
 };
 
@@ -36,6 +37,24 @@ export async function disposeRigs(): Promise<void> {
 	}
 }
 
+export async function withDaemonEnv<T>(
+	vars: Record<string, string>,
+	run: () => Promise<T>,
+): Promise<T> {
+	const saved = Object.keys(vars).map(
+		(key) => [key, process.env[key]] as const,
+	);
+	for (const [key, value] of Object.entries(vars)) process.env[key] = value;
+	try {
+		return await run();
+	} finally {
+		for (const [key, value] of saved) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
+	}
+}
+
 export function scratchDir(prefix: string): string {
 	const dir = mkdtempSync(join(tmpdir(), prefix));
 	roots.push(dir);
@@ -49,8 +68,10 @@ export function rig(
 ): Rig {
 	const root = scratchDir("dg-svc-kit-");
 	let scripts = 0;
+	const jobStateRoot = join(root, "state", "jobs");
 	const kit: Kit = {
 		root,
+		jobStateRoot,
 		script: (source) => {
 			const path = join(root, `script-${scripts++}.js`);
 			writeFileSync(path, source);
@@ -65,6 +86,7 @@ export function rig(
 			daemonDir: join(root, "daemon"),
 			logDir: join(root, "logs"),
 			grantsDir: join(root, "grants"),
+			jobStateRoot,
 		},
 		daemonUrl: () => "http://127.0.0.1:1",
 		loadConfig: () => ({ services: build(kit) }),
