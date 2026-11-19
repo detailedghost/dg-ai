@@ -313,6 +313,17 @@ describe("dg-daemon start with a login unit", () => {
 		expect(error.message).toBe(`${TIMEOUT_TEXT} (schtasks /End /TN dg-daemon failed: not running)`);
 	});
 
+	it("names the failed /Run, not the earlier failed /End, in the timeout text", async () => {
+		const scenario = await withUnit("task");
+		onManagerStart = () => false;
+		replies = (argv) =>
+			argv[1] === "/End" ? { code: 1, stderr: "not running" } : { code: 1, stderr: "access denied" };
+
+		const error = await failure(cmdStart({}, startSeams(scenario.deps, 300)));
+
+		expect(error.message).toBe(`${TIMEOUT_TEXT} (schtasks /Run /TN dg-daemon failed: access denied)`);
+	});
+
 	it("exits 3 with no manager command in WSL NAT mode", async () => {
 		const scenario = await withUnit("systemd");
 		setEnv("WSL_DISTRO_NAME", "Ubuntu");

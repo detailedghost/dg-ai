@@ -1,11 +1,13 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import {
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -96,26 +98,6 @@ describe("bootstrap.ps1 program loop", () => {
 		expect(loop).toContain(check);
 		expect(loop).not.toContain("Select-String -LiteralPath $item.FullName");
 		expect(loop.indexOf(check)).toBeLessThan(loop.indexOf("WriteAllText"));
-	});
-
-	test("skips the keep check for a link whose target is missing, because Test-Path is true for it", () => {
-		const loop = ps1Loop();
-		const resolve = loop.indexOf("ResolveLinkTarget($true)");
-
-		expect(resolve).toBeGreaterThan(-1);
-		expect(loop).toContain("-not $dangling -and (Test-Path -LiteralPath $cmd)");
-		expect(resolve).toBeLessThan(loop.indexOf("-not $dangling"));
-	});
-
-	test("removes a link at the launcher path before WriteAllText so the write cannot follow it", () => {
-		const loop = ps1Loop();
-		const remove = loop.indexOf("[System.IO.FileInfo]::new($cmd).LinkTarget");
-
-		expect(remove).toBeGreaterThan(-1);
-		expect(loop.slice(remove)).toContain("LinkType");
-		expect(loop).toContain("[System.IO.FileInfo]::new($cmd).LinkTarget");
-		expect(loop).toContain("[System.IO.File]::Delete($cmd)");
-		expect(remove).toBeLessThan(loop.indexOf("WriteAllText"));
 	});
 
 	test("holds the kept sentence as its own literal", () => {
@@ -275,8 +257,9 @@ describe.skipIf(Bun.which("pwsh") === null)(
 						const bin = join(area, "bin");
 						mkdirSync(bin, { recursive: true });
 						const dest = join(bin, "dg.cmd");
-						fixture.setup(dest, join(area, "fixture-area"));
+						const untouched = fixture.setup(dest, join(area, "fixture-area"));
 						const before = snapshot(dest);
+						const targets = untouched.map((path) => snapshot(path));
 						const script = join(area, "run.ps1");
 						writeFileSync(
 							script,
@@ -290,6 +273,7 @@ describe.skipIf(Bun.which("pwsh") === null)(
 						const output = run.stdout.toString() + run.stderr.toString();
 
 						expect(run.exitCode, output).toBe(0);
+						expect(untouched.map((path) => snapshot(path))).toEqual(targets);
 						for (const name of LEGACY_PROGRAMS)
 							expect(existsSync(join(bin, `${name}.cmd`))).toBe(true);
 						if (fixture.outcome === "kept") {
@@ -305,6 +289,43 @@ describe.skipIf(Bun.which("pwsh") === null)(
 				PWSH_TIMEOUT_MS,
 			);
 		}
+
+		test("replaces a legacy launcher that is a link and leaves the file or folder it pointed at alone", () => {
+			const area = mkdtempSync(join(tmpdir(), "dg-ps1-legacy-link-"));
+			try {
+				const bin = join(area, "bin");
+				mkdirSync(bin, { recursive: true });
+				const targetFile = join(area, "other-tool.cmd");
+				writeFileSync(targetFile, "@echo other tool\r\n");
+				const targetDir = join(area, "other-dir");
+				mkdirSync(targetDir);
+				writeFileSync(join(targetDir, "keep.txt"), "keep");
+				symlinkSync(targetFile, join(bin, "dg-skills.cmd"));
+				symlinkSync(targetDir, join(bin, "dg-agent.cmd"), "dir");
+				const script = join(area, "run.ps1");
+				writeFileSync(
+					script,
+					`$dgHome = '${join(area, "data")}'\n$binDir = '${bin}'\n${ps1Loop()}\n`,
+				);
+
+				const run = Bun.spawnSync(["pwsh", "-NoProfile", "-File", script], {
+					stdout: "pipe",
+					stderr: "pipe",
+				});
+				const output = run.stdout.toString() + run.stderr.toString();
+
+				expect(run.exitCode, output).toBe(0);
+				expect(readFileSync(targetFile, "utf8")).toBe("@echo other tool\r\n");
+				expect(readFileSync(join(targetDir, "keep.txt"), "utf8")).toBe("keep");
+				for (const name of ["dg-skills", "dg-agent"]) {
+					const launcher = join(bin, `${name}.cmd`);
+					expect(lstatSync(launcher).isSymbolicLink()).toBe(false);
+					expect(lstatSync(launcher).isFile()).toBe(true);
+				}
+			} finally {
+				rmSync(area, { recursive: true, force: true });
+			}
+		}, PWSH_TIMEOUT_MS);
 
 		test("leaves a dg.exe with the same bytes and removes the exe of the three legacy names", () => {
 			const area = mkdtempSync(join(tmpdir(), "dg-ps1-exe-"));

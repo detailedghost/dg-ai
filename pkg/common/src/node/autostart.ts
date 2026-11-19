@@ -43,6 +43,8 @@ export function firstLine(text: string): string {
 	return text.split("\n")[0]?.trim() ?? "";
 }
 
+const stdoutDetail = (name: AutostartName, stdout: string): string => (name === "dg-phone" ? stdout : firstLine(stdout));
+
 const CONTROL_CHARACTER = /[\x00-\x1f\x7f]/;
 
 function environmentEscape(value: string): string {
@@ -221,7 +223,7 @@ async function installSystemd(deps: AutostartDeps, name: AutostartName, path: st
 	const enable = await deps.run(["systemctl", "--user", "enable", "--now", unit]);
 	if (enable.code !== 0) {
 		deps.removeFile(path);
-		throw new DgCliError(`systemctl --user enable --now ${unit} failed: ${firstLine(enable.stderr) || firstLine(enable.stdout)}`);
+		throw new DgCliError(`systemctl --user enable --now ${unit} failed: ${firstLine(enable.stderr) || stdoutDetail(name, enable.stdout)}`);
 	}
 	return { ok: true, kind: "systemd" };
 }
@@ -247,7 +249,7 @@ async function installTask(deps: AutostartDeps, name: AutostartName, path: strin
 	if (run.code !== 0) {
 		const deleted = await deps.run(["schtasks", "/Delete", "/TN", name, "/F"]);
 		if (deleted.code === 0) deps.removeFile(path);
-		throw new DgCliError(`schtasks /Run /TN ${name} failed: ${firstLine(run.stderr) || firstLine(run.stdout)}`);
+		throw new DgCliError(`schtasks /Run /TN ${name} failed: ${firstLine(run.stderr) || stdoutDetail(name, run.stdout)}`);
 	}
 	return { ok: true, kind: "task" };
 }

@@ -16,6 +16,7 @@ on:
       - pkg/dg-daemon/**
       - pkg/dg-agent/**
       - pkg/dg/**
+      - pkg/launcher/**
       - pkg/extension/**
       - .github/workflows/skills-blt.yml
       - .github/workflows/blt-gate.yml
@@ -162,6 +163,14 @@ jobs:
       - name: Build (skills-cli)
         working-directory: pkg/skills-cli
         run: bun run build
+
+      - name: Lint (launcher)
+        working-directory: pkg/launcher
+        run: bun run lint
+
+      - name: Test (launcher)
+        working-directory: pkg/launcher
+        run: bun test
 
       - name: Lint (skills-test)
         working-directory: pkg/skills-test

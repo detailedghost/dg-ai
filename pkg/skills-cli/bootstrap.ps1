@@ -315,7 +315,9 @@ try {
 				continue
 			}
 		}
-		if ([System.IO.FileInfo]::new($cmd).LinkTarget -or (Get-Item -LiteralPath $cmd -Force -ErrorAction SilentlyContinue).LinkType) { [System.IO.File]::Delete($cmd) }
+		if ([System.IO.FileInfo]::new($cmd).LinkTarget -or (Get-Item -LiteralPath $cmd -Force -ErrorAction SilentlyContinue).LinkType) {
+			if ((Get-Item -LiteralPath $cmd -Force).PSIsContainer) { [System.IO.Directory]::Delete($cmd) } else { [System.IO.File]::Delete($cmd) }
+		}
 		$shim = "@echo off`r`n`"$dgHome\runtime\current\bun.exe`" `"$dgHome\lib\current\dg.js`" $program %*`r`n"
 		[System.IO.File]::WriteAllText($cmd, $shim)
 	}

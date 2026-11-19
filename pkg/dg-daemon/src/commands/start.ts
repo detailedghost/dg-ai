@@ -54,7 +54,7 @@ export async function startDaemon(
 	for (const argv of managedRestartCommands(kind, deps.uid, NAME, unitPath)) {
 		const result = await deps.run(argv);
 		if (result.code !== 0) {
-			failure ??= `${argv.join(" ")} failed: ${firstLine(result.stderr)}`;
+			failure = `${argv.join(" ")} failed: ${firstLine(result.stderr)}`;
 		}
 	}
 	try {

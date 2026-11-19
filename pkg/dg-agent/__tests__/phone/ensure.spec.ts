@@ -429,7 +429,7 @@ describe("ensure cron line", () => {
 		expect(cronShellCommand("nospace")).toBe("");
 	});
 
-	it("runs the command cron keeps, under dash -n and for real", () => {
+	it.skipIf(!Bun.which("dash"))("runs the command cron keeps, under dash -n and for real", () => {
 		const dir = tempHome();
 		const bin = join(dir, "bin");
 		mkdirSync(bin);
