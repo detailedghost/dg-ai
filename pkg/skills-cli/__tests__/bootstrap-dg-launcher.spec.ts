@@ -98,6 +98,15 @@ describe("bootstrap.ps1 program loop", () => {
 		expect(loop.indexOf(check)).toBeLessThan(loop.indexOf("WriteAllText"));
 	});
 
+	test("skips the keep check for a link whose target is missing, because Test-Path is true for it", () => {
+		const loop = ps1Loop();
+		const resolve = loop.indexOf("ResolveLinkTarget($true)");
+
+		expect(resolve).toBeGreaterThan(-1);
+		expect(loop).toContain("-not $dangling -and (Test-Path -LiteralPath $cmd)");
+		expect(resolve).toBeLessThan(loop.indexOf("-not $dangling"));
+	});
+
 	test("removes a link at the launcher path before WriteAllText so the write cannot follow it", () => {
 		const loop = ps1Loop();
 		const remove = loop.indexOf("[System.IO.FileInfo]::new($cmd).LinkTarget");

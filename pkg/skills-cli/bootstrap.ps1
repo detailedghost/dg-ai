@@ -296,7 +296,9 @@ try {
 			}
 			Remove-Item -LiteralPath (Join-Path $binDir ".$program.version") -Force -ErrorAction SilentlyContinue
 		}
-		if ($program -eq "dg" -and (Test-Path -LiteralPath $cmd)) {
+		$dangling = $false
+		try { $final = [System.IO.FileInfo]::new($cmd).ResolveLinkTarget($true); $dangling = $null -ne $final -and -not $final.Exists } catch { $dangling = $false }
+		if ($program -eq "dg" -and -not $dangling -and (Test-Path -LiteralPath $cmd)) {
 			$item = Get-Item -LiteralPath $cmd -Force
 			$isLauncher = $false
 			if (-not $item.PSIsContainer) {
