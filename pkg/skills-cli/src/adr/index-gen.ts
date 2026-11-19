@@ -48,11 +48,15 @@ export function renderIndexes(records: AdrRecord[]): RenderedIndexes {
 	return { toc: renderToc(sorted), readme: renderReadme(sorted) };
 }
 
+export function indexTail(body: string): string {
+	return `\n${body === "" ? "" : `\n${body}`}`;
+}
+
 function replaceBelowMarker(path: string, body: string): void {
 	const text = readFileSync(path, "utf8");
 	const at = text.indexOf(TOC_MARKER);
 	if (at < 0) die(`${path} has no ${TOC_MARKER} marker. Add the marker line where the index should start.`);
-	const next = `${text.slice(0, at + TOC_MARKER.length)}\n${body === "" ? "" : `\n${body}`}`;
+	const next = `${text.slice(0, at + TOC_MARKER.length)}${indexTail(body)}`;
 	if (next !== text) writeFileSync(path, next);
 }
 
