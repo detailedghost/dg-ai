@@ -310,6 +310,8 @@ describe("startJobRun", () => {
 			const result = await startJobRun(decl, deps).done;
 
 			expect(result.readError).toBe("pipe broke");
+			await child.exited;
+			expect(child.signalCode).toBe("SIGTERM");
 		} finally {
 			spawn.mockRestore();
 			child.kill("SIGKILL");

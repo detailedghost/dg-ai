@@ -1,9 +1,10 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import { resolveDgPaths } from "@dg/common/node";
 import { DispatchScheduler } from "../../src/dispatch";
 import type { ExecResult } from "../../src/dispatch/exec";
 import { createJobControl } from "../../src/jobs/control";
 import { isDaemonIdle } from "../../src/jobs/idle";
+import * as launcher from "../../src/jobs/launcher";
 import {
 	createJobRunner,
 	type JobRunnerDeps,
@@ -394,6 +395,35 @@ describe("runDueJobs", () => {
 			expect(store.listFeedItems({ jobId: job.id })[0].title).toBe(
 				"From a real process",
 			);
+		});
+	});
+});
+
+describe("the default run of a job", () => {
+	it("fails a run whose output cannot be read and names the read error", async () => {
+		await withStore(async (store) => {
+			const job = addJob(store, { argv: ["printf", ""] });
+			const start = spyOn(launcher, "startJobRun").mockReturnValue({
+				pid: 0,
+				done: Promise.resolve({
+					exitCode: 0,
+					timedOut: false,
+					outputCapped: false,
+					stdout: "",
+					readError: "pipe broke",
+				}),
+			});
+			try {
+				const { exec: _unused, ...rest } = deps(store, succeeds(""));
+				const outcomes = await runDueJobs(rest);
+
+				expect(outcomes[0]).toMatchObject({
+					jobId: job.id,
+					error: "could not read the output: pipe broke",
+				});
+			} finally {
+				start.mockRestore();
+			}
 		});
 	});
 });
