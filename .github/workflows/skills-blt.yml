@@ -143,6 +143,10 @@ jobs:
         working-directory: pkg/tour-ui
         run: bun test
 
+      - name: Build (pages)
+        working-directory: pkg/pages
+        run: bun build.ts
+
       - name: Lint (dg)
         working-directory: pkg/dg
         run: bun run lint
