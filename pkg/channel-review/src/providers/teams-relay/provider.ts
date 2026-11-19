@@ -3,6 +3,7 @@ import type { ChatProvider } from "../types";
 import { resolveChat } from "./chats";
 import { createRelayClient } from "./client";
 import { createReactions } from "./reactions";
+import { createRegistrar } from "./register";
 import { dm, reply } from "./reply";
 import { abortableSleep } from "./sleep";
 import { createSubscribe } from "./subscribe";
@@ -43,6 +44,7 @@ export function createTeamsRelayProvider(
 			botName: env.botName,
 			idleMs: config.relay.streamIdleSeconds * 1000,
 		}),
+		registerChat: createRegistrar({ client, log, botName: env.botName }),
 		react: reactions.react,
 		unreact: reactions.unreact,
 		reply: (request) => reply(client, config.owner.email, request),

@@ -42,7 +42,7 @@ Deploy compatible `dg-daemon` and `dg-skills` binaries together: central schema
 ## Relay contract
 
 Every path is relative to `envs.<name>.baseUrl`, such as
-`https://relay.example.test/api`. A `{chatId}` or `{reactionId}` in a path is
+`https://relay.example.test/api/orion-belt`. A `{chatId}` or `{reactionId}` in a path is
 URL-encoded. The daemon refuses redirects.
 
 ### Authentication
@@ -155,6 +155,15 @@ not a custom id, and every emoji in the fun pool, against this list.
 The daemon uses it only for a `chats` entry without an `id`: it matches the
 topic case-insensitively after trimming and needs exactly one match. The list
 holds only chats that the relay's service mailbox is a member of.
+
+### Chat registration
+
+`PUT /chat/{chatId}/register` with a JSON body of `service`, `env`,
+`version`, and `repo`. The daemon sends it for each watched chat at startup and
+every 24 hours. While the registration is live, the bot Artie sends no
+free-text replies, emotes, or typing in that chat. A `200` or `201` is success.
+A `400` is logged as an error, and any other failure as a warning; none of them
+stops the daemon.
 
 ### Status codes
 

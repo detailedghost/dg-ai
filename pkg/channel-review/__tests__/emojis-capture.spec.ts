@@ -88,6 +88,7 @@ function setup(
 
 	const provider: ChatProvider = {
 		resolveChat: async ({ chatId }) => ({ id: chatId ?? CHAT_ID }),
+		registerChat: async () => undefined,
 		subscribe: (request) => {
 			subscribeRequests.push(request);
 			return (async function* () {

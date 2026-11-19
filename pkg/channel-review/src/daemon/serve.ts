@@ -15,6 +15,7 @@ import {
 	RelayAuthError,
 	validateReactionIds,
 } from "../providers/teams-relay";
+import { abortableSleep } from "../providers/teams-relay/sleep";
 import type { ChatEvent, ChatProvider } from "../providers/types";
 import { createAddressWorkspace } from "../address";
 import { startAutomation } from "../automation/start";
@@ -25,6 +26,7 @@ import { createStateStore } from "../state";
 import { createStackReader, createVerdictReader } from "../verdict";
 import type { VerdictReader } from "../verdict/types";
 import { authRemedy, connect } from "./connect";
+import { startChatRegistration } from "./register";
 import { isOurDaemon, readPidRecord } from "./pid";
 import { type PlatformSeam, processSeam } from "./platform";
 import {
@@ -44,6 +46,7 @@ function switchable(initial: ChatProvider) {
 	const provider: ChatProvider = {
 		resolveChat: (query) => current.resolveChat(query),
 		subscribe: (request) => current.subscribe(request),
+		registerChat: (request) => current.registerChat(request),
 		react: (request) => current.react(request),
 		unreact: (request) => current.unreact(request),
 		reply: (request) => current.reply(request),
@@ -194,6 +197,7 @@ export async function serve({
 	seams,
 	platform,
 	signal,
+	version,
 }: {
 	config: ChannelConfig;
 	env: ResolvedEnv;
@@ -203,6 +207,7 @@ export async function serve({
 	seams: DaemonSeams;
 	platform: PlatformSeam;
 	signal: AbortSignal;
+	version: string;
 }): Promise<number> {
 	log.info(
 		`channel-review daemon env ${env.name} (${env.baseUrl}, AWS profile ${env.awsProfile})`,
@@ -375,6 +380,16 @@ export async function serve({
 		signal.addEventListener("abort", stopStreams, { once: true });
 		if (signal.aborted) streams.abort();
 		stopStreamsOnSaveError = stopStreams;
+		const registration = startChatRegistration({
+			provider: switcher.provider,
+			chats,
+			env: env.name,
+			version,
+			sleep: seams.sleep ?? abortableSleep,
+			signal: streams.signal,
+		}).catch((error: unknown) => {
+			log.warn(`chat registration stopped: ${describeError(error)}`);
+		});
 
 		async function pump(chatId: string): Promise<number> {
 			const streamSignal = streams.signal;
@@ -441,6 +456,8 @@ export async function serve({
 			code = saveFailed || codes.some((status) => status !== 0) ? 1 : 0;
 		} finally {
 			signal.removeEventListener("abort", stopStreams);
+			streams.abort();
+			await withTimeout(registration, seams.stopTimeoutMs ?? SERVE_STOP_TIMEOUT_MS);
 			stopMaintenance();
 			await automation.stop();
 			await withTimeout(

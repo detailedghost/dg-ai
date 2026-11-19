@@ -383,6 +383,29 @@ describe("serve shutdown", () => {
 		expect(existsSync(h.paths.pidPath)).toBe(false);
 		gate.resolve({ status: 0, signal: null, timedOut: false, aborted: false });
 	});
+
+	test("a registration call that never answers cannot hold the exit forever", async () => {
+		const h = setup({ registerChat: () => new Promise<void>(() => undefined) });
+		h.seams.stopTimeoutMs = 50;
+		const { controller, done } = h.startServe();
+		await started(h);
+		controller.abort();
+		expect(await done).toBe(0);
+		expect(existsSync(h.paths.pidPath)).toBe(false);
+	});
+
+	test("a registration that throws still lets serve clean up and exit 0", async () => {
+		const h = setup({
+			registerChat: async () => {
+				throw new Error("boom");
+			},
+		});
+		const { controller, done } = h.startServe();
+		await started(h);
+		controller.abort();
+		expect(await done).toBe(0);
+		expect(existsSync(h.paths.pidPath)).toBe(false);
+	});
 });
 
 describe("serve multiple chats", () => {
@@ -722,7 +745,7 @@ describe("serve automation", () => {
 	function gate(h: DaemonHarness) {
 		const sleeps: number[] = [];
 		h.seams.sleep = async (ms, signal) => {
-			sleeps.push(ms);
+			if (ms !== 24 * 3_600_000) sleeps.push(ms);
 			if (signal) await untilAbort(signal);
 		};
 		return sleeps;

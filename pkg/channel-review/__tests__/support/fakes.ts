@@ -170,6 +170,7 @@ export function createFakeProvider(
 					call.op === "reply",
 			),
 		resolveChat: async ({ chatId }) => ({ id: chatId ?? CHAT_ID }),
+		registerChat: async () => undefined,
 		subscribe: async function* () {
 			for (const event of options.events ?? []) yield event;
 		},

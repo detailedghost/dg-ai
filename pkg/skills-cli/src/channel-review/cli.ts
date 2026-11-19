@@ -17,6 +17,7 @@ import {
 	stop,
 } from "@dg/channel-review";
 import { describeError, isRecord } from "@dg/common";
+import pkg from "../../package.json" with { type: "json" };
 import { assertNotBlocked } from "@dg/common/node/layout";
 import { Argument, type Command, Option } from "commander";
 import { runSubtree } from "../utils/lazy-command";
@@ -119,6 +120,7 @@ async function runDaemon(flags: RunFlags): Promise<void> {
 		seams: {},
 		platform: createSystemPlatform(),
 		signal: controller.signal,
+		version: pkg.version,
 	});
 }
 
