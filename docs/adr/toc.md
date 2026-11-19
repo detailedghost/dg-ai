@@ -86,7 +86,7 @@ flowchart LR
 
 - [0028 — Run every skill locally and make the extension opt-in with `--ext`](0028-local-default-extension-opt-in.md) — Accepted: skills run locally unless
   the caller passes `--ext`, and a repo test enforces it. The `PENDING_LOCAL_MODE`
-  allowlist (`chat`, `overwatch`) is gone: ADR 0031 ends it. Amended 2026-11-19: `batch-open` and `launch` are now `pw batch-open` and `pw launch`, and the browser skill is gone (0049).
+  allowlist (`chat`, `overwatch`) is gone: ADR 0031 ends it. Amended 2026-11-19: `batch-open` and `launch` are now `pw batch-open` and `pw launch`, and the browser skill is gone (0050).
 - [0029 — Accept the WSL remote-debugging port for the local demo player](0029-local-demo-player-wsl-debug-port.md) — Accepted:
   a default local `demo` on WSL opens an unauthenticated 127.0.0.1 debug port for the run.
 - [0030 — Share the tour UI and play demos in a local player](0030-shared-tour-ui-and-local-player.md) — Accepted:
@@ -128,7 +128,7 @@ flowchart LR
 - [0048 — Outlook mail Web MCP tools over OWA service calls](0048-outlook-mail-webmcp-tools.md) — Proposed:
   the Outlook built-in ships ten tools that call `service.svc` from the signed-in page with the headers of the tab's own account endpoint; list and search mask subject and preview; write tools report each id apart; the tools are an extra path next to full pw --ext control of Outlook pages.
 
-- [0049 — Fold browser skill into pw](0049-fold-browser-skill-into-pw.md) — Accepted:
+- [0050 — Fold browser skill into pw](0050-fold-browser-skill-into-pw.md) — Accepted:
   `batch-open` and `launch` are pw verbs routed before the `--ext` relay; the top-level commands and the browser skill are gone with no aliases, and a skills-only install prunes a stale dg `browser` skill. Amends 0028.
 
 ## Adding an ADR

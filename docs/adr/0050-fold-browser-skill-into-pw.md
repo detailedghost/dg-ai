@@ -1,4 +1,4 @@
-# 0049 — Fold browser skill into pw
+# 0050 — Fold browser skill into pw
 
 Status: Accepted
 Date: 2026-11-19
