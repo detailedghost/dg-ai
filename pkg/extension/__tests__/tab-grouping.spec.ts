@@ -15,6 +15,7 @@ const state = {
 	nextGroupId: 1,
 	session: new Map<string, unknown>(),
 	sessionListFails: false,
+	joinAt: "end" as "end" | "start",
 };
 
 function indexOf(tabId: number): { windowId: number; index: number } {
@@ -52,7 +53,9 @@ mock.module("wxt/browser", () => ({
 						if (state.sessionListFails) throw new Error("storage unavailable");
 						return Object.fromEntries(state.session);
 					}
-					return state.session.has(key) ? { [key]: state.session.get(key) } : {};
+					return state.session.has(key)
+						? { [key]: state.session.get(key) }
+						: {};
 				}),
 				set: mock(async (items: Record<string, unknown>) => {
 					for (const [k, v] of Object.entries(items)) state.session.set(k, v);
@@ -93,7 +96,14 @@ mock.module("wxt/browser", () => ({
 					const last = siblings?.length
 						? Math.max(...siblings.map((t) => indexOf(t).index))
 						: (state.windows.get(tab.windowId)?.length ?? 0) - 1;
-					insert(tab.id, tab.windowId, last + 1);
+					const first = siblings?.length
+						? Math.min(...siblings.map((t) => indexOf(t).index))
+						: last + 1;
+					insert(
+						tab.id,
+						tab.windowId,
+						state.joinAt === "start" ? first : last + 1,
+					);
 					tab.groupId = id;
 					return id;
 				},
@@ -180,9 +190,46 @@ beforeEach(() => {
 	state.nextGroupId = 1;
 	state.session.clear();
 	state.sessionListFails = false;
+	state.joinAt = "end";
 });
 
 describe("onTabComplete", () => {
+	it("keeps pos order when a tab joins at the group start and moves right", async () => {
+		for (const [id, pos] of [
+			[10, 1],
+			[11, 0],
+			[12, 2],
+			[13, 3],
+		]) {
+			markedTab(id, 1, pos);
+		}
+		for (const id of [11, 12, 13]) await onTabComplete(id);
+		state.joinAt = "start";
+		await onTabComplete(10);
+
+		expect(groupOrder(state.groups[0].id)).toEqual([11, 10, 12, 13]);
+	});
+
+	const orders = [
+		[3, 0, 6, 1, 5, 2, 4],
+		[6, 5, 4, 3, 2, 1, 0],
+		[0, 1, 2, 3, 4, 5, 6],
+	];
+	for (const joinAt of ["end", "start"] as const) {
+		for (const order of orders) {
+			it(`orders 7 tabs by pos joining at group ${joinAt}, completing ${order.join(",")}`, async () => {
+				for (let pos = 0; pos < 7; pos++) markedTab(100 + pos, 1, pos);
+				state.joinAt = joinAt;
+				for (const pos of order) await onTabComplete(100 + pos);
+
+				expect(state.groups).toHaveLength(1);
+				expect(groupOrder(state.groups[0].id)).toEqual([
+					100, 101, 102, 103, 104, 105, 106,
+				]);
+			});
+		}
+	}
+
 	it("puts concurrently arriving tabs into one group in pos order", async () => {
 		for (const [id, pos] of [
 			[11, 0],
@@ -431,8 +478,11 @@ describe("onTabComplete with an agent group", () => {
 		color: "blue",
 	});
 	const groupCalls = () =>
-		(browser.tabs.group as unknown as { mock: { calls: unknown[][] } }).mock
-			.calls.map(([args]) => args as { tabIds: number[]; groupId?: number });
+		(
+			browser.tabs.group as unknown as { mock: { calls: unknown[][] } }
+		).mock.calls.map(
+			([args]) => args as { tabIds: number[]; groupId?: number },
+		);
 
 	beforeEach(() => {
 		(browser.tabs.group as unknown as { mockClear(): void }).mockClear();
