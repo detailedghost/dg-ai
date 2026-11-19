@@ -378,6 +378,11 @@ function createV13DropAwaitingAgent(db: Database): void {
 	dropColumn(db, "sessions", "awaiting_agent");
 }
 
+function createV14ScheduledMove(db: Database): void {
+	addColumn(db, "scheduled_jobs", "moved_at", "TEXT");
+	addColumn(db, "scheduled_jobs", "renamed_from", "TEXT");
+}
+
 function createV11ChatSessions(db: Database): void {
 	addColumn(db, "sessions", "cwd", "TEXT");
 	addColumn(db, "sessions", "agent_identity", "TEXT");
@@ -471,6 +476,7 @@ export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 11, run: createV11ChatSessions },
 	{ version: CHANNEL_REVIEW_SCHEMA_VERSION, run: createV12ChannelReview },
 	{ version: 13, run: createV13DropAwaitingAgent },
+	{ version: 14, run: createV14ScheduledMove },
 ];
 
 export const CURRENT_SCHEMA_VERSION =

@@ -163,7 +163,7 @@ describe("a declared grant with no token file", () => {
 				argv: [process.execPath, FIXTURE],
 				cwd: home,
 				grant: "bot",
-				autostart: true,
+				enabled: true,
 			},
 		}));
 		const { dgHome: home, paths } = booted;

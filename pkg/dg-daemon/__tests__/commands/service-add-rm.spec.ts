@@ -6,6 +6,7 @@ import {
 	mkdirSync,
 	readFileSync,
 	readlinkSync,
+	rmSync,
 	statSync,
 	symlinkSync,
 	writeFileSync,
@@ -13,7 +14,7 @@ import {
 import { join, resolve } from "node:path";
 import { CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { resolveDgPaths, writePidFileAtomic } from "@dg/common/node";
-import { parseServices } from "../../src/services/config";
+import { parseJobs } from "../../src/jobs/config";
 import {
 	allocatePort,
 	cleanupDgHome,
@@ -25,7 +26,8 @@ import { lines, readConfigFile, runCli } from "./service-cli-helpers";
 
 type StoredConfig = {
 	pinnedOrigin?: string;
-	services: Record<
+	jobsVersion?: number;
+	jobs: Record<
 		string,
 		{
 			argv: string[];
@@ -33,7 +35,8 @@ type StoredConfig = {
 			envFile?: string;
 			passEnv?: string[];
 			stopTimeoutMs?: number;
-			autostart?: boolean;
+			continuous?: boolean;
+			enabled?: boolean;
 		}
 	>;
 };
@@ -44,9 +47,12 @@ afterEach(() => {
 	for (const home of homes.splice(0)) cleanupDgHome(home);
 });
 
+const SEED = JSON.stringify({ jobsVersion: 2 });
+
 function setup() {
 	const dgHome = freshDgHome();
 	homes.push(dgHome);
+	writeConfigFile(dgHome, SEED);
 	return { dgHome, cwd: freshTempDir("svc-cwd") };
 }
 
@@ -68,10 +74,10 @@ describe("service add", () => {
 			labels.map((label) => add(dgHome, label, ["--cwd", cwd])),
 		);
 		expect(results.map((result) => result.code)).toEqual(labels.map(() => 0));
-		expect(Object.keys(storedConfig(dgHome).services).sort()).toEqual(labels);
+		expect(Object.keys(storedConfig(dgHome).jobs).sort()).toEqual(labels);
 	}, 30_000);
 
-	it("stores an absolute argv[0] and autostart, then prints the next line for no daemon", async () => {
+	it("stores an absolute argv[0] and enabled, then prints the next line for no daemon", async () => {
 		const { dgHome, cwd } = setup();
 		const result = await add(dgHome, "bot", ["--cwd", cwd, "--autostart"]);
 		expect(result.code).toBe(0);
@@ -79,27 +85,26 @@ describe("service add", () => {
 			'added service "bot"',
 			"next: dg-daemon start",
 		]);
-		const entry = storedConfig(dgHome).services.bot;
+		const entry = storedConfig(dgHome).jobs.bot;
 		expect(entry).toEqual({
 			argv: [BUN, "run", "bot.ts"],
 			cwd,
-			autostart: true,
+			continuous: true,
+			enabled: true,
 		});
 	});
 
-	it("prints the two-step next line with no --autostart and writes no autostart key", async () => {
+	it("prints the two-step next line with no --autostart and writes no enabled key", async () => {
 		const { dgHome, cwd } = setup();
 		const result = await add(dgHome, "bot", ["--cwd", cwd]);
 		expect(lines(result.stdout)).toEqual([
 			'added service "bot"',
 			"next: dg-daemon start, then dg-daemon service start bot",
 		]);
-		expect(Object.hasOwn(storedConfig(dgHome).services.bot, "autostart")).toBe(
-			false,
-		);
+		expect(Object.hasOwn(storedConfig(dgHome).jobs.bot, "enabled")).toBe(false);
 	});
 
-	it("writes an entry that parseServices accepts, with every option", async () => {
+	it("writes an entry that parseJobs accepts, with every option", async () => {
 		const { dgHome, cwd } = setup();
 		const envFile = join(cwd, ".env");
 		writeFileSync(envFile, "A=1\n");
@@ -120,7 +125,7 @@ describe("service add", () => {
 		]);
 		expect(result.code).toBe(0);
 		const config = storedConfig(dgHome);
-		const [parsed] = parseServices(config);
+		const [parsed] = parseJobs(config);
 		expect(parsed).toMatchObject({
 			ok: true,
 			argv: [BUN, "run", "bot.ts"],
@@ -128,7 +133,7 @@ describe("service add", () => {
 			stopTimeoutMs: 30_000,
 			grant: "bot",
 			envFile,
-			autostart: true,
+			enabled: true,
 		});
 	});
 
@@ -142,7 +147,7 @@ describe("service add", () => {
 			"--pass-env",
 			"A",
 		]);
-		expect(storedConfig(dgHome).services.bot.passEnv).toEqual(["A", "A"]);
+		expect(storedConfig(dgHome).jobs.bot.passEnv).toEqual(["A", "A"]);
 	});
 
 	it("resolves a relative --cwd and --env-file from the caller's directory", async () => {
@@ -157,7 +162,7 @@ describe("service add", () => {
 			{ cwd },
 		);
 		expect(result.code).toBe(0);
-		const entry = storedConfig(dgHome).services.bot;
+		const entry = storedConfig(dgHome).jobs.bot;
 		expect(entry.cwd).toBe(resolve(cwd, "app"));
 		expect(entry.envFile).toBe(resolve(cwd, "env.txt"));
 	});
@@ -172,7 +177,7 @@ describe("service add", () => {
 			cwd,
 		});
 		expect(result.code).toBe(0);
-		const stored = storedConfig(dgHome).services.bot.argv[0];
+		const stored = storedConfig(dgHome).jobs.bot.argv[0];
 		expect(stored).toBe(join(cwd, "run.sh"));
 		expect(lstatSync(stored).isSymbolicLink()).toBe(true);
 		expect(readlinkSync(stored)).toBe(real);
@@ -189,7 +194,7 @@ describe("service add", () => {
 		expect(result.stderr).toContain(
 			`service add: file is not executable: ${join(cwd, "run.sh")}`,
 		);
-		expect(existsSync(configPathOf(dgHome))).toBe(false);
+		expect(readFileSync(configPathOf(dgHome), "utf8")).toBe(SEED);
 	});
 
 	it("refuses a path that is not a file", async () => {
@@ -201,7 +206,7 @@ describe("service add", () => {
 		expect(result.stderr).toContain(
 			`service add: executable not found: ${join(cwd, "missing.sh")}`,
 		);
-		expect(existsSync(configPathOf(dgHome))).toBe(false);
+		expect(readFileSync(configPathOf(dgHome), "utf8")).toBe(SEED);
 	});
 
 	it("refuses a bare name that does not resolve on PATH", async () => {
@@ -216,7 +221,7 @@ describe("service add", () => {
 		expect(result.stderr).toContain(
 			'service add: executable "no-such-binary-xyz" does not resolve on PATH',
 		);
-		expect(existsSync(configPathOf(dgHome))).toBe(false);
+		expect(readFileSync(configPathOf(dgHome), "utf8")).toBe(SEED);
 	});
 
 	it("refuses a missing --cwd directory", async () => {
@@ -225,7 +230,7 @@ describe("service add", () => {
 		const result = await add(dgHome, "bot", ["--cwd", missing]);
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(`--cwd: no such directory: ${missing}`);
-		expect(existsSync(configPathOf(dgHome))).toBe(false);
+		expect(readFileSync(configPathOf(dgHome), "utf8")).toBe(SEED);
 	});
 
 	it("refuses an empty command", async () => {
@@ -241,7 +246,7 @@ describe("service add", () => {
 		expect(result.stderr).toContain(
 			"service add: no command given — put it after a bare --",
 		);
-		expect(existsSync(configPathOf(dgHome))).toBe(false);
+		expect(readFileSync(configPathOf(dgHome), "utf8")).toBe(SEED);
 	});
 
 	it("refuses an invalid label with the label rule", async () => {
@@ -251,7 +256,7 @@ describe("service add", () => {
 		expect(result.stderr).toContain(
 			"label must be 1-64 lowercase letters, digits or hyphens",
 		);
-		expect(existsSync(configPathOf(dgHome))).toBe(false);
+		expect(readFileSync(configPathOf(dgHome), "utf8")).toBe(SEED);
 	});
 
 	it("refuses a label that already exists and leaves the entry alone", async () => {
@@ -282,7 +287,7 @@ describe("service add", () => {
 			const result = await add(dgHome, "bot", ["--cwd", cwd, ...flags]);
 			expect(result.code).toBe(1);
 			expect(result.stderr).toContain(`service add: ${message}`);
-			expect(existsSync(configPathOf(dgHome))).toBe(false);
+			expect(readFileSync(configPathOf(dgHome), "utf8")).toBe(SEED);
 		},
 	);
 
@@ -291,7 +296,7 @@ describe("service add", () => {
 		expect(
 			(await add(dgHome, "ok", ["--cwd", cwd, "--stop-timeout", "30s"])).code,
 		).toBe(0);
-		expect(storedConfig(dgHome).services.ok.stopTimeoutMs).toBe(30_000);
+		expect(storedConfig(dgHome).jobs.ok.stopTimeoutMs).toBe(30_000);
 		const five = await add(dgHome, "five", [
 			"--cwd",
 			cwd,
@@ -320,19 +325,23 @@ describe("service add", () => {
 		expect(zero.stderr).toContain(
 			'--stop-timeout: interval must be greater than zero, got "0s"',
 		);
-		expect(Object.keys(storedConfig(dgHome).services)).toEqual(["ok"]);
+		expect(Object.keys(storedConfig(dgHome).jobs)).toEqual(["ok"]);
 	});
 
 	it("keeps pinnedOrigin and the first service when it adds a second", async () => {
 		const { dgHome, cwd } = setup();
-		const first = { argv: ["/bin/x"], cwd: "/srv" };
-		writeConfigFile(dgHome, { pinnedOrigin: "https://x", services: { first } });
+		const first = { argv: ["/bin/x"], cwd: "/srv", continuous: true };
+		writeConfigFile(dgHome, {
+			pinnedOrigin: "https://x",
+			jobsVersion: 2,
+			jobs: { first },
+		});
 		const result = await add(dgHome, "second", ["--cwd", cwd]);
 		expect(result.code).toBe(0);
 		const config = storedConfig(dgHome);
 		expect(config.pinnedOrigin).toBe("https://x");
-		expect(config.services.first).toEqual(first);
-		expect(config.services.second).toBeDefined();
+		expect(config.jobs.first).toEqual(first);
+		expect(config.jobs.second).toBeDefined();
 	});
 
 	it("exits 1, names the file and leaves invalid JSON untouched", async () => {
@@ -349,9 +358,10 @@ describe("service add", () => {
 		}
 	});
 
-	it("exits 1 and leaves the file alone when services is not an object", async () => {
+	it("writes jobs.x and keeps a services value that is not an object", async () => {
 		const { dgHome, cwd } = setup();
-		const file = writeConfigFile(dgHome, '{"services":[1]}');
+		const body = '{"jobsVersion":2,"services":[1]}';
+		const file = writeConfigFile(dgHome, body);
 		const added = await runCli(dgHome, [
 			"service",
 			"add",
@@ -362,33 +372,33 @@ describe("service add", () => {
 			"bun",
 			"x",
 		]);
-		expect(added.code).toBe(1);
-		expect(added.stderr).toContain('"services" must be an object');
+		expect(added.code).toBe(0);
+		expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({
+			services: [1],
+			jobs: { bot: { continuous: true } },
+		});
 		const removed = await runCli(dgHome, ["service", "rm", "0"]);
 		expect(removed.code).toBe(1);
 		expect(removed.stderr).toContain('no service labelled "0"');
-		expect(readFileSync(file, "utf8")).toBe('{"services":[1]}');
+		expect(JSON.parse(readFileSync(file, "utf8")).services).toEqual([1]);
 	});
 
 	it("writes through a symlinked config and keeps the link", async () => {
 		const { dgHome, cwd } = setup();
 		const file = configPathOf(dgHome);
 		const target = join(cwd, "real-config.json");
-		writeFileSync(target, "{}");
-		mkdirSync(join(file, ".."), { recursive: true });
+		writeFileSync(target, SEED);
+		rmSync(file);
 		symlinkSync(target, file);
 		await add(dgHome, "bot", ["--cwd", cwd]);
 		expect(lstatSync(file).isSymbolicLink()).toBe(true);
-		expect(JSON.parse(readFileSync(target, "utf8")).services.bot).toBeDefined();
+		expect(JSON.parse(readFileSync(target, "utf8")).jobs.bot).toBeDefined();
 	});
 
-	it("gives a new config file mode 0600 and keeps the mode of an existing one", async () => {
+	it("keeps the mode of an existing config file", async () => {
 		if (process.platform === "win32") return;
-		const fresh = setup();
-		await add(fresh.dgHome, "bot", ["--cwd", fresh.cwd]);
-		expect(statSync(configPathOf(fresh.dgHome)).mode & 0o777).toBe(0o600);
 		const existing = setup();
-		const file = writeConfigFile(existing.dgHome, {});
+		const file = configPathOf(existing.dgHome);
 		chmodSync(file, 0o640);
 		await add(existing.dgHome, "bot", ["--cwd", existing.cwd]);
 		expect(statSync(file).mode & 0o777).toBe(0o640);
@@ -420,26 +430,35 @@ describe("service rm", () => {
 		const { dgHome } = setup();
 		writeConfigFile(dgHome, {
 			pinnedOrigin: "p",
-			services: { bot: { argv: ["/bin/x"], cwd: "/srv" } },
+			jobsVersion: 2,
+			jobs: { bot: { argv: ["/bin/x"], cwd: "/srv", continuous: true } },
 		});
 		const result = await runCli(dgHome, ["service", "rm", "bot"]);
 		expect(result.code).toBe(0);
 		expect(lines(result.stdout)).toEqual(['removed service "bot"']);
-		expect(readConfigFile(dgHome)).toEqual({ pinnedOrigin: "p", services: {} });
+		expect(readConfigFile(dgHome)).toEqual({
+			pinnedOrigin: "p",
+			jobsVersion: 2,
+			jobs: {},
+		});
 	});
 
 	it("removes an entry whose declaration is invalid", async () => {
 		const { dgHome } = setup();
-		writeConfigFile(dgHome, { services: { bot: { argv: [] } } });
+		writeConfigFile(dgHome, {
+			jobsVersion: 2,
+			jobs: { bot: { argv: [], continuous: true } },
+		});
 		const result = await runCli(dgHome, ["service", "rm", "bot"]);
 		expect(result.code).toBe(0);
-		expect(storedConfig(dgHome).services).toEqual({});
+		expect(storedConfig(dgHome).jobs).toEqual({});
 	});
 
 	it("refuses and keeps the entry when the daemon pid runs but does not answer", async () => {
 		const { dgHome } = setup();
 		writeConfigFile(dgHome, {
-			services: { bot: { argv: ["/bin/x"], cwd: "/srv" } },
+			jobsVersion: 2,
+			jobs: { bot: { argv: ["/bin/x"], cwd: "/srv", continuous: true } },
 		});
 		const silent = Bun.spawn(
 			[process.execPath, "-e", "setInterval(()=>{},1000)"],
@@ -457,7 +476,7 @@ describe("service rm", () => {
 			expect(result.stderr).toContain(
 				`dg-daemon (pid ${silent.pid}) does not answer, so the state of service "bot" is unknown`,
 			);
-			expect(Object.keys(storedConfig(dgHome).services)).toEqual(["bot"]);
+			expect(Object.keys(storedConfig(dgHome).jobs)).toEqual(["bot"]);
 		} finally {
 			silent.kill("SIGKILL");
 		}
@@ -466,7 +485,8 @@ describe("service rm", () => {
 	it("refuses while an earlier instance of the service still runs with no daemon", async () => {
 		const { dgHome } = setup();
 		writeConfigFile(dgHome, {
-			services: { bot: { argv: ["/bin/x"], cwd: "/srv" } },
+			jobsVersion: 2,
+			jobs: { bot: { argv: ["/bin/x"], cwd: "/srv", continuous: true } },
 		});
 		const orphan = Bun.spawn(
 			[process.execPath, "-e", "setInterval(()=>{},1000)"],
@@ -481,7 +501,7 @@ describe("service rm", () => {
 			expect(result.stderr).toContain(
 				`service "bot" still runs as pid ${orphan.pid}`,
 			);
-			expect(Object.keys(storedConfig(dgHome).services)).toEqual(["bot"]);
+			expect(Object.keys(storedConfig(dgHome).jobs)).toEqual(["bot"]);
 		} finally {
 			orphan.kill("SIGKILL");
 		}
@@ -489,24 +509,25 @@ describe("service rm", () => {
 
 	it("refuses an unknown label", async () => {
 		const { dgHome } = setup();
-		writeConfigFile(dgHome, { services: {} });
+		writeConfigFile(dgHome, { jobsVersion: 2, jobs: {} });
 		const result = await runCli(dgHome, ["service", "rm", "ghost"]);
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain('no service labelled "ghost"');
 	});
 
-	it("refuses with no config file and creates none", async () => {
+	it("refuses with an empty config and leaves it as it was", async () => {
 		const { dgHome } = setup();
 		const result = await runCli(dgHome, ["service", "rm", "ghost"]);
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain('no service labelled "ghost"');
-		expect(existsSync(configPathOf(dgHome))).toBe(false);
+		expect(readFileSync(configPathOf(dgHome), "utf8")).toBe(SEED);
 	});
 
 	it("removes the entry when the pid file is of a dead daemon", async () => {
 		const { dgHome } = setup();
 		writeConfigFile(dgHome, {
-			services: { bot: { argv: ["/bin/x"], cwd: "/srv" } },
+			jobsVersion: 2,
+			jobs: { bot: { argv: ["/bin/x"], cwd: "/srv", continuous: true } },
 		});
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		mkdirSync(join(paths.pidPath, ".."), { recursive: true });
@@ -521,17 +542,130 @@ describe("service rm", () => {
 		);
 		const result = await runCli(dgHome, ["service", "rm", "bot"]);
 		expect(result.code).toBe(0);
-		expect(storedConfig(dgHome).services).toEqual({});
+		expect(storedConfig(dgHome).jobs).toEqual({});
 	});
 });
 
 describe("service add then service rm", () => {
-	it("leaves the first config plus an empty services table", async () => {
+	it("leaves the first config plus an empty jobs table", async () => {
 		const { dgHome, cwd } = setup();
-		writeConfigFile(dgHome, { pinnedOrigin: "p" });
+		writeConfigFile(dgHome, { pinnedOrigin: "p", jobsVersion: 2 });
 		await add(dgHome, "bot", ["--cwd", cwd]);
 		await runCli(dgHome, ["service", "rm", "bot"]);
-		expect(readConfigFile(dgHome)).toEqual({ pinnedOrigin: "p", services: {} });
+		expect(readConfigFile(dgHome)).toEqual({
+			pinnedOrigin: "p",
+			jobsVersion: 2,
+			jobs: {},
+		});
+	});
+});
+
+function bareHome() {
+	const dgHome = freshDgHome();
+	homes.push(dgHome);
+	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+	return { dgHome, paths, cwd: freshTempDir("svc-cwd") };
+}
+
+const noDaemonStarted = (paths: ReturnType<typeof resolveDgPaths>) => {
+	expect(existsSync(paths.daemonConfigPath)).toBe(false);
+	expect(existsSync(paths.pidPath)).toBe(false);
+};
+
+describe("service commands on a home with no config file", () => {
+	it("rm refuses, starts no daemon and creates no file", async () => {
+		const { dgHome, paths } = bareHome();
+		const result = await runCli(dgHome, ["service", "rm", "ghost"]);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain('no service labelled "ghost"');
+		noDaemonStarted(paths);
+	});
+
+	it.each([["start"], ["stop"]])(
+		"%s refuses, starts no daemon and creates no file",
+		async (verb) => {
+			const { dgHome, paths } = bareHome();
+			const result = await runCli(dgHome, ["service", verb, "ghost"]);
+			expect(result.code).toBe(1);
+			expect(result.stdout).toBe("");
+			noDaemonStarted(paths);
+		},
+	);
+});
+
+describe("service add argument checks run before the migration step", () => {
+	const unmarked = (dgHome: string) => {
+		const body = JSON.stringify({
+			services: { old: { argv: ["/b"], cwd: "/c" } },
+		});
+		writeConfigFile(dgHome, body);
+		return body;
+	};
+
+	it.each([
+		[
+			"a missing --cwd directory",
+			(cwd: string) => ({
+				flags: ["--cwd", join(cwd, "nope")],
+				command: ["bun", "x.ts"],
+			}),
+			"--cwd: no such directory",
+		],
+		[
+			"a bad label",
+			(cwd: string) => ({
+				flags: ["--cwd", cwd],
+				command: ["bun", "x.ts"],
+				label: "Bad_Label",
+			}),
+			"label must be 1-64 lowercase letters, digits or hyphens",
+		],
+		[
+			"an executable that does not resolve",
+			(cwd: string) => ({
+				flags: ["--cwd", cwd],
+				command: ["no-such-binary-xyz"],
+			}),
+			'executable "no-such-binary-xyz" does not resolve on PATH',
+		],
+		[
+			"a bad --stop-timeout",
+			(cwd: string) => ({
+				flags: ["--cwd", cwd, "--stop-timeout", "0s"],
+				command: ["bun", "x.ts"],
+			}),
+			"--stop-timeout: interval must be greater than zero",
+		],
+	])(
+		"refuses %s on an unmarked config and starts no daemon",
+		async (_name, build, message) => {
+			const { dgHome, paths, cwd } = bareHome();
+			const body = unmarked(dgHome);
+			const { flags, command, label } = build(cwd) as {
+				flags: string[];
+				command: string[];
+				label?: string;
+			};
+			const result = await add(dgHome, label ?? "bot", flags, command);
+			expect(result.code).toBe(1);
+			expect(result.stderr).toContain(message);
+			expect(readFileSync(paths.daemonConfigPath, "utf8")).toBe(body);
+			expect(existsSync(paths.pidPath)).toBe(false);
+		},
+	);
+
+	it("refuses an empty command on a home with no config file and starts no daemon", async () => {
+		const { dgHome, paths, cwd } = bareHome();
+		const result = await runCli(dgHome, [
+			"service",
+			"add",
+			"bot",
+			"--cwd",
+			cwd,
+		]);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("service add: no command given");
+		noDaemonStarted(paths);
 	});
 });
 

@@ -99,83 +99,20 @@ describe("ChatStore — scheduled jobs", () => {
 		}
 	});
 
-	it("counts only enabled jobs", async () => {
-		const dgHome = freshDgHome();
-		try {
-			const store = await openStore(dgHome);
-			const first = store.insertJob(jobInput({ label: "a" }));
-			store.insertJob(jobInput({ label: "b" }));
-			store.insertJob(jobInput({ label: "c", enabled: false }));
-
-			expect(store.countEnabledJobs()).toBe(2);
-			store.setJobEnabled(first.id, false);
-			expect(store.countEnabledJobs()).toBe(1);
-			store.close();
-		} finally {
-			cleanupDgHome(dgHome);
-		}
-	});
-
-	it("returns only enabled jobs whose next run has arrived", async () => {
-		const dgHome = freshDgHome();
-		try {
-			const store = await openStore(dgHome);
-			const now = new Date("2026-09-03T12:00:00.000Z");
-			const due = store.insertJob(
-				jobInput({
-					label: "due",
-					nextRunAt: new Date(now.getTime() - 1000).toISOString(),
-				}),
-			);
-			store.insertJob(
-				jobInput({
-					label: "later",
-					nextRunAt: new Date(now.getTime() + HOUR_MS).toISOString(),
-				}),
-			);
-			store.insertJob(
-				jobInput({
-					label: "disabled-but-due",
-					enabled: false,
-					nextRunAt: new Date(now.getTime() - 1000).toISOString(),
-				}),
-			);
-
-			expect(store.dueJobs(now).map((job) => job.id)).toEqual([due.id]);
-			store.close();
-		} finally {
-			cleanupDgHome(dgHome);
-		}
-	});
-
-	it("treats a job due exactly now as due", async () => {
-		const dgHome = freshDgHome();
-		try {
-			const store = await openStore(dgHome);
-			const now = new Date("2026-09-03T12:00:00.000Z");
-			store.insertJob(jobInput({ nextRunAt: now.toISOString() }));
-
-			expect(store.dueJobs(now)).toHaveLength(1);
-			store.close();
-		} finally {
-			cleanupDgHome(dgHome);
-		}
-	});
-
-	it("records a successful run and schedules the next one an interval later", async () => {
+	it("records a successful run and stores the next run time the caller gives", async () => {
 		const dgHome = freshDgHome();
 		try {
 			const store = await openStore(dgHome);
 			const job = store.insertJob(jobInput({ intervalMs: HOUR_MS }));
 			const ranAt = new Date("2026-09-03T12:00:00.000Z");
 
-			store.recordJobRun({ jobId: job.id, ranAt, exitCode: 0 });
+			const nextRunAt = new Date(ranAt.getTime() + HOUR_MS);
+
+			store.recordJobRun({ jobId: job.id, ranAt, exitCode: 0, nextRunAt });
 
 			const read = store.getJob(job.id);
 			expect(read?.lastRunAt).toBe(ranAt.toISOString());
-			expect(read?.nextRunAt).toBe(
-				new Date(ranAt.getTime() + HOUR_MS).toISOString(),
-			);
+			expect(read?.nextRunAt).toBe(nextRunAt.toISOString());
 			expect(read?.lastExitCode).toBe(0);
 			expect(read?.lastError).toBeUndefined();
 			store.close();
@@ -265,7 +202,7 @@ describe("ChatStore — cron jobs", () => {
 		}
 	});
 
-	it("computes next_run_at from the cron expression when a run is recorded", async () => {
+	it("keeps next_run_at when a run is recorded with no next run time", async () => {
 		const dgHome = freshDgHome();
 		try {
 			const store = await openStore(dgHome);
@@ -273,18 +210,19 @@ describe("ChatStore — cron jobs", () => {
 				jobInput({ intervalMs: undefined, cronExpr: CRON_EXPR }),
 			);
 			const ranAt = new Date("2026-09-03T12:00:00.000Z");
+			const before = store.getJob(job.id)?.nextRunAt;
 
 			store.recordJobRun({ jobId: job.id, ranAt, exitCode: 0 });
 
-			const expected = new Cron(CRON_EXPR).nextRun(ranAt);
-			expect(store.getJob(job.id)?.nextRunAt).toBe(expected?.toISOString());
+			expect(store.getJob(job.id)?.nextRunAt).toBe(before);
+			expect(store.getJob(job.id)?.lastRunAt).toBe(ranAt.toISOString());
 			store.close();
 		} finally {
 			cleanupDgHome(dgHome);
 		}
 	});
 
-	it("advances next_run_at on a failed run too, so a bad cron job cannot spin", async () => {
+	it("stores the next run time of a failed run too", async () => {
 		const dgHome = freshDgHome();
 		try {
 			const store = await openStore(dgHome);
@@ -292,46 +230,18 @@ describe("ChatStore — cron jobs", () => {
 				jobInput({ intervalMs: undefined, cronExpr: CRON_EXPR }),
 			);
 			const ranAt = new Date("2026-09-03T12:00:00.000Z");
+			const nextRunAt = new Cron(CRON_EXPR).nextRun(ranAt) as Date;
 
 			store.recordJobRun({
 				jobId: job.id,
 				ranAt,
 				exitCode: 1,
 				error: "boom",
+				nextRunAt,
 			});
 
-			const expected = new Cron(CRON_EXPR).nextRun(ranAt);
-			expect(store.getJob(job.id)?.nextRunAt).toBe(expected?.toISOString());
+			expect(store.getJob(job.id)?.nextRunAt).toBe(nextRunAt.toISOString());
 			expect(store.getJob(job.id)?.lastError).toBe("boom");
-			store.close();
-		} finally {
-			cleanupDgHome(dgHome);
-		}
-	});
-
-	it("picks up a cron job whose time has come", async () => {
-		const dgHome = freshDgHome();
-		try {
-			const store = await openStore(dgHome);
-			const now = new Date("2026-09-03T12:00:00.000Z");
-			const due = store.insertJob(
-				jobInput({
-					label: "due-cron",
-					intervalMs: undefined,
-					cronExpr: CRON_EXPR,
-					nextRunAt: new Date(now.getTime() - 1000).toISOString(),
-				}),
-			);
-			store.insertJob(
-				jobInput({
-					label: "later-cron",
-					intervalMs: undefined,
-					cronExpr: CRON_EXPR,
-					nextRunAt: new Date(now.getTime() + HOUR_MS).toISOString(),
-				}),
-			);
-
-			expect(store.dueJobs(now).map((job) => job.id)).toEqual([due.id]);
 			store.close();
 		} finally {
 			cleanupDgHome(dgHome);

@@ -1,11 +1,12 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, it } from "bun:test";
-import { readdirSync } from "node:fs";
+import { readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	applyConnectionPragmas,
 	ForwardOnlyVersionError,
 	type MigrationStep,
+	removeSchemaSnapshots,
 	runMigrations,
 } from "@dg/common/node";
 import { makeTempDir, removeTempDirs } from "./utils/temp-dirs";
@@ -152,5 +153,31 @@ describe("applyConnectionPragmas", () => {
 			(db.query("PRAGMA busy_timeout").get() as { timeout: number }).timeout,
 		).toBeGreaterThan(0);
 		db.close(true);
+	});
+});
+
+describe("removeSchemaSnapshots", () => {
+	it("removes the snapshots of one version with their sidecar files and keeps the rest", () => {
+		const dir = makeTempDir("dg-snapshots-");
+		const names = [
+			"pre-migration-v14-1-a.db",
+			"pre-migration-v14-1-a.db-wal",
+			"pre-migration-v14-1-a.db-shm",
+			"pre-migration-v14-1-a.db-journal",
+			"pre-migration-v1-1-a.db",
+			"pre-migration-v140-1-a.db",
+			"pre-migration-v14-notes.txt",
+			"daemon.db",
+		];
+		for (const name of names) writeFileSync(join(dir, name), "x");
+
+		const removed = removeSchemaSnapshots(dir, 14);
+
+		expect(removed.sort()).toEqual(names.slice(0, 4).sort());
+		expect(readdirSync(dir).sort()).toEqual(names.slice(4).sort());
+	});
+
+	it("throws for a folder that does not exist", () => {
+		expect(() => removeSchemaSnapshots(join(makeTempDir("dg-snapshots-"), "gone"), 14)).toThrow(/ENOENT/);
 	});
 });

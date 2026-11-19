@@ -1,223 +1,744 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 import {
+	CHAT_JOBS_PATH,
 	DgCliError,
-	deriveJobState,
 	describeError,
 	EXIT_GENERAL_FAILURE,
 	formatSchedule,
+	isRecord,
 	parseEvery,
 } from "@dg/common";
-import { checkExecutableResolves, resolveDgPaths } from "@dg/common/node";
-import type { Command } from "commander";
-import { DispatchScheduler } from "../dispatch";
-import { nextCronRun } from "../jobs/cron";
-import { runJobNow } from "../jobs/runner";
-import { ChatStore, type ScheduledJob } from "../store";
+import {
+	autostartManages,
+	credentialGrantTokenPath,
+	type DgPaths,
+	isJobName,
+	jobStateDir,
+	resolveDgPaths,
+} from "@dg/common/node";
+import { assertNotBlocked } from "@dg/common/node/layout";
+import { type Command, Option } from "commander";
+import {
+	JOB_NAME_RULE,
+	JOBS_CONFIG_KEY,
+	parseJobEntry,
+} from "../jobs/config";
+import { jobLogFile } from "../jobs/launcher";
+import { readConfig, readConfigStrict, writeConfig, writeJobEntry } from "../server/config-store";
+import type { ServiceStatus } from "../services/supervisor";
+import {
+	addScheduled,
+	findScheduled,
+	listScheduled,
+	removeScheduled,
+	runScheduledNow,
+	type ScheduledRow,
+	setScheduledEnabled,
+} from "./job-schedule";
+import {
+	assertDaemonAnswers,
+	assertNoLiveInstance,
+	callJobRoute,
+	DaemonCallError,
+	defaultJobVerbDeps,
+	ensureMigrated,
+	findLiveDaemon,
+	formatStatus,
+	guardConfig,
+	isInTable,
+	type JobVerbDeps,
+	liveJobRows,
+	liveJobStates,
+	requireMigrated,
+	resolveExecutable,
+	withConfigLock,
+} from "./job-support";
+import { startDaemon } from "./start";
 
-const EVERY_OR_CRON_ERROR =
-	"job add: give exactly one of --every or --cron, not both or neither";
+const MODE_KEYS = ["continuous", "schedule", "every"] as const;
+const LOGIN_QUESTION =
+	"Start dg at login, so this job runs after a restart of the machine? [Y/n]";
+const LOGIN_HINT =
+	"hint: dg does not start at login — run dg autostart install";
 
-type Schedule =
-	| { intervalMs: number; cronExpr?: never; nextRunAt?: never }
-	| { intervalMs?: never; cronExpr: string; nextRunAt: string };
+type Paths = DgPaths;
+type Mode = (typeof MODE_KEYS)[number];
+type Row = Record<string, unknown>;
 
-function resolveSchedule(
-	every: string | undefined,
-	cron: string | undefined,
-): Schedule {
-	if (every !== undefined && cron !== undefined) {
-		throw new DgCliError(EVERY_OR_CRON_ERROR, EXIT_GENERAL_FAILURE);
+const fail = (message: string): never => {
+	throw new DgCliError(message, EXIT_GENERAL_FAILURE);
+};
+
+const notFound = (name: string) => fail(`no job named "${name}"`);
+
+const aliasNote = (oldForm: string, newForm: string): void => {
+	console.error(
+		`note: "${oldForm}" is now "${newForm}"; this form goes away in the next major release`,
+	);
+};
+
+const collect = (value: string, previous: string[] = []): string[] => [
+	...previous,
+	value,
+];
+
+const jobPath = (name: string, verb: "start" | "stop") =>
+	`${CHAT_JOBS_PATH}/${encodeURIComponent(name)}/${verb}`;
+
+const isActive = (state: string | undefined): boolean =>
+	state === "running" || state === "backoff";
+
+function duration(value: string, flag: string, prefix: string): number {
+	try {
+		return parseEvery(value, flag);
+	} catch (err) {
+		return fail(`${prefix}: ${describeError(err)}`);
 	}
-	if (cron !== undefined) {
-		try {
-			return {
-				cronExpr: cron,
-				nextRunAt: nextCronRun(cron, new Date()).toISOString(),
-			};
-		} catch (err) {
-			throw new DgCliError(
-				`--cron: ${describeError(err)}`,
-				EXIT_GENERAL_FAILURE,
+}
+
+function tableEntries(
+	config: Record<string, unknown>,
+): [string, unknown][] {
+	const table = config[JOBS_CONFIG_KEY];
+	return isRecord(table) ? Object.entries(table) : [];
+}
+
+function modeOf(raw: unknown): Mode | "invalid" {
+	if (!isRecord(raw)) return "invalid";
+	const present = MODE_KEYS.filter((key) => Object.hasOwn(raw, key));
+	return present.length === 1 ? present[0] : "invalid";
+}
+
+function tableEntry(
+	paths: Paths,
+	config: Record<string, unknown>,
+	name: string,
+): Record<string, unknown> {
+	if (!isInTable(config, name)) return notFound(name);
+	const entry = (config[JOBS_CONFIG_KEY] as Record<string, unknown>)[name];
+	if (!isRecord(entry)) {
+		return fail(`job "${name}" in ${paths.daemonConfigPath} is not an object`);
+	}
+	return entry;
+}
+
+function readTable(paths: Paths): Record<string, unknown> {
+	return guardConfig(() => readConfigStrict(paths));
+}
+
+async function locate(
+	paths: Paths,
+	name: string,
+	options: { migrate: boolean; scheduled: boolean },
+): Promise<"table" | "scheduled"> {
+	const inTable = () => isInTable(readTable(paths), name);
+	const kindOfEntry = (): "table" | "scheduled" => {
+		const mode = modeOf(tableEntries(readTable(paths)).find(([key]) => key === name)?.[1]);
+		return mode === "every" || mode === "schedule" ? "scheduled" : "table";
+	};
+	if (inTable()) {
+		if (options.migrate) await ensureMigrated(paths);
+		return kindOfEntry();
+	}
+	if (options.scheduled && (await findScheduled(name))) return "scheduled";
+	if (options.migrate && existsSync(paths.daemonConfigPath)) {
+		await ensureMigrated(paths);
+		if (inTable()) return kindOfEntry();
+	}
+	return notFound(name);
+}
+
+async function homeLine(): Promise<string> {
+	const home = process.env.DG_HOME || "default";
+	let daemon = "not running";
+	try {
+		const live = await findLiveDaemon(resolveDgPaths());
+		if (live) daemon = `http://127.0.0.1:${live.port}`;
+	} catch {
+		daemon = "not running";
+	}
+	return `dg home: ${home}; daemon: ${daemon}`;
+}
+
+type AddOptions = {
+	name?: string;
+	label?: string;
+	cwd: string;
+	continuous?: boolean;
+	schedule?: string;
+	cron?: string;
+	every?: string;
+	timeout?: string;
+	feed?: boolean;
+	notify?: string;
+	envFile?: string;
+	env?: string[];
+	passEnv?: string[];
+	stopTimeout?: string;
+};
+
+async function addVerb(
+	argv: string[],
+	options: AddOptions,
+	deps: JobVerbDeps,
+): Promise<void> {
+	const stop = (message: string): never => fail(`job add: ${message}`);
+	if (options.label !== undefined) aliasNote("--label", "--name");
+	if (options.cron !== undefined) aliasNote("--cron", "--schedule");
+	if (options.passEnv !== undefined) aliasNote("--pass-env", "--env");
+	const flag = options.name === undefined ? "--label" : "--name";
+	const name = options.name ?? options.label ?? stop("--name is required");
+	const cronText = options.schedule ?? options.cron;
+	const modeCount =
+		Number(options.continuous === true) +
+		Number(options.every !== undefined) +
+		Number(options.schedule !== undefined) +
+		Number(options.cron !== undefined);
+	if (modeCount !== 1) {
+		stop("give one of --continuous, --schedule or --every");
+	}
+	if (!isJobName(name)) stop(`"${flag}" ${JOB_NAME_RULE}`);
+	const names = [
+		...new Set([...(options.env ?? []), ...(options.passEnv ?? [])]),
+	];
+	if (names.some((entry) => entry.includes("="))) {
+		stop(
+			"--env takes a variable name — put a value in the file of --env-file",
+		);
+	}
+	if (argv.length === 0) stop("no command given — put it after a bare --");
+	const cwd = resolve(options.cwd);
+	if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
+		stop(`--cwd: no such directory: ${options.cwd}`);
+	}
+	const stopTimeoutMs =
+		options.stopTimeout === undefined
+			? undefined
+			: duration(options.stopTimeout, "--stop-timeout", "job add");
+	const timeoutMs =
+		options.timeout === undefined
+			? undefined
+			: duration(options.timeout, "--timeout", "job add");
+	const paths = resolveDgPaths();
+	let command = argv;
+	if (options.continuous) {
+		const [first, ...rest] = argv;
+		command = [resolveExecutable(first, "job add:", deps.which), ...rest];
+	}
+	const entry: Row = {
+		argv: command,
+		cwd,
+		...(options.continuous ? { continuous: true } : {}),
+		...(cronText === undefined ? {} : { schedule: cronText }),
+		...(options.every === undefined ? {} : { every: options.every }),
+		...(options.envFile === undefined
+			? {}
+			: { envFile: resolve(options.envFile) }),
+		...(names.length === 0 ? {} : { passEnv: names }),
+		...(stopTimeoutMs === undefined ? {} : { stopTimeoutMs }),
+		...(options.feed ? { feed: true } : {}),
+		...(options.notify === undefined ? {} : { notify: options.notify }),
+		...(timeoutMs === undefined ? {} : { timeoutMs }),
+	};
+	const legacy = options.label !== undefined || options.cron !== undefined;
+	const legacyScheduled = legacy && !options.continuous;
+	const probe: Row = legacyScheduled
+		? {
+				...entry,
+				argv: command.map((part) => part || "-"),
+				...(options.notify === undefined ? {} : { feed: true }),
+			}
+		: entry;
+	const parsed = parseJobEntry(name, probe);
+	if (!parsed.ok) stop(parsed.error);
+	if (existsSync(paths.daemonConfigPath) || options.continuous) {
+		await ensureMigrated(paths);
+	}
+	const exists = () =>
+		fail(`a job named "${name}" already exists`);
+	if (!options.continuous) {
+		const created = await addScheduled({
+			name,
+			argv,
+			cwd,
+			every: options.every,
+			schedule: cronText,
+			notify: options.notify,
+			enabled: legacy,
+			feed: options.feed,
+			timeoutMs,
+			envFile: options.envFile === undefined ? undefined : resolve(options.envFile),
+			passEnv: names,
+		}, deps.which);
+		if (legacy) {
+			console.log(
+				`added "${created.label}" — ${formatSchedule(created)}, first run ${created.nextRunAt}`,
 			);
+			return;
+		}
+		console.log(`added job "${name}"`);
+		console.log(`next: dg job enable ${name}`);
+		return;
+	}
+	if (await findScheduled(name)) exists();
+	await withConfigLock(paths, () => {
+		const config = readTable(paths);
+		requireMigrated(config);
+		if (isInTable(config, name)) exists();
+		guardConfig(() => writeJobEntry(paths, name, entry));
+	});
+	console.log(`added job "${name}"`);
+	console.log(`next: dg job enable ${name}`);
+}
+
+type Rows = { rows: Row[]; scheduled: ScheduledRow[] };
+
+function grantFileOf(paths: Paths, grant: unknown): string | null {
+	if (typeof grant !== "string") return null;
+	try {
+		return credentialGrantTokenPath(paths, grant);
+	} catch {
+		return null;
+	}
+}
+
+function stateDirOf(paths: Paths, name: string): string | null {
+	try {
+		return jobStateDir(paths, name);
+	} catch {
+		return null;
+	}
+}
+
+async function collectRows(paths: Paths): Promise<Rows> {
+	const config = readTable(paths);
+	const live = await findLiveDaemon(paths);
+	const daemon = live
+		? ((await callJobRoute(CHAT_JOBS_PATH, "GET")) as { jobs: ServiceStatus[] })
+				.jobs
+		: undefined;
+	const daemonUrl = live ? `http://127.0.0.1:${live.port}` : null;
+	const continuous = tableEntries(config).filter(([, raw]) => {
+		const mode = modeOf(raw);
+		return mode !== "every" && mode !== "schedule";
+	});
+	const rows = continuous.map(([name, raw]): Row => {
+		const entry = isRecord(raw) ? raw : {};
+		const known = daemon?.find((row) => row.label === name);
+		return {
+			name,
+			mode: modeOf(raw),
+			enabled: entry.enabled === true,
+			state: daemon ? (known?.state ?? "stopped") : "daemon not running",
+			pid: known?.pid ?? null,
+			restarts: known?.restarts ?? 0,
+			logFile: known?.logFile ?? jobLogFile(paths.logDir, name),
+			stateDir: stateDirOf(paths, name),
+			cwd: typeof entry.cwd === "string" ? entry.cwd : null,
+			daemonUrl,
+			grantFile: grantFileOf(paths, entry.grant),
+		};
+	});
+	return { rows, scheduled: await listScheduled() };
+}
+
+function rowLine(row: Row): string {
+	return [
+		row.name,
+		row.mode,
+		row.enabled ? "enabled" : "disabled",
+		row.state,
+		row.pid === null ? "" : `pid ${row.pid}`,
+		`restarts ${row.restarts}`,
+	]
+		.filter((part) => part !== "")
+		.join("  ");
+}
+
+function scheduledLine(row: ScheduledRow): string {
+	return [
+		row.name,
+		row.renamedFrom ? `was "${row.renamedFrom}"` : "",
+		row.mode === "schedule" ? `cron "${row.schedule}"` : `every ${row.schedule}`,
+		row.enabled ? "enabled" : "disabled",
+		`last ${row.lastRunAt ?? "never"}`,
+		`next ${row.nextRunAt ?? "-"}`,
+		row.invalid ? `invalid: ${row.invalid}` : "",
+	]
+		.filter((part) => part !== "")
+		.join("  ");
+}
+
+async function listVerb(
+	name: string | undefined,
+	options: { json?: boolean },
+): Promise<void> {
+	const paths = resolveDgPaths();
+	const all = await collectRows(paths);
+	const rows = all.rows.filter((row) => name === undefined || row.name === name);
+	const scheduled = all.scheduled.filter(
+		(row) => name === undefined || row.name === name,
+	);
+	if (name !== undefined && rows.length + scheduled.length === 0) {
+		notFound(name);
+	}
+	if (options.json) {
+		console.log(JSON.stringify({ jobs: [...rows, ...scheduled] }));
+		return;
+	}
+	if (rows.length + scheduled.length === 0) {
+		console.log("no jobs — add one with `dg job add`");
+		return;
+	}
+	for (const row of rows) console.log(rowLine(row));
+	for (const row of scheduled) console.log(scheduledLine(row));
+}
+
+async function startVerb(name: string): Promise<void> {
+	const paths = resolveDgPaths();
+	const kind = await locate(paths, name, { migrate: false, scheduled: true });
+	if (kind === "scheduled") {
+		const status = await runScheduledNow(name);
+		console.log(`${status.label}  ${status.state}`);
+		return;
+	}
+	console.log(
+		formatStatus(
+			(await callJobRoute(jobPath(name, "start"), "POST")) as ServiceStatus,
+		),
+	);
+}
+
+async function stopVerb(name: string): Promise<void> {
+	await locate(resolveDgPaths(), name, { migrate: false, scheduled: false });
+	console.log(
+		formatStatus(
+			(await callJobRoute(jobPath(name, "stop"), "POST")) as ServiceStatus,
+		),
+	);
+}
+
+async function restartVerb(name: string): Promise<void> {
+	await locate(resolveDgPaths(), name, { migrate: false, scheduled: false });
+	await callJobRoute(jobPath(name, "stop"), "POST");
+	console.log(
+		formatStatus(
+			(await callJobRoute(jobPath(name, "start"), "POST")) as ServiceStatus,
+		),
+	);
+}
+
+async function offerLoginUnit(paths: Paths, deps: JobVerbDeps): Promise<void> {
+	if (autostartManages(deps.autostart, paths, "dg-daemon")) return;
+	if (!deps.isTerminal()) {
+		console.error(LOGIN_HINT);
+		return;
+	}
+	if (readConfig(paths).loginUnitAsked === true) return;
+	if (await deps.confirm(LOGIN_QUESTION)) {
+		try {
+			assertNotBlocked(paths, "daemon");
+			const { installDaemonAutostart } = await import("./autostart");
+			const { kind } = await installDaemonAutostart(deps.autostart, paths);
+			console.log(`autostart installed (${kind}): dg-daemon starts at login`);
+		} catch (err) {
+			console.error(`warning: ${describeError(err)}`);
+			return;
 		}
 	}
-	if (every === undefined) {
-		throw new DgCliError(EVERY_OR_CRON_ERROR, EXIT_GENERAL_FAILURE);
-	}
-	return { intervalMs: parseEvery(every) };
-}
-
-async function withStore<T>(run: (store: ChatStore) => Promise<T>): Promise<T> {
-	const store = await ChatStore.open(resolveDgPaths());
 	try {
-		return await run(store);
-	} finally {
-		store.close();
+		writeConfig(paths, { loginUnitAsked: true });
+	} catch (err) {
+		console.error(`warning: could not record the answer: ${describeError(err)}`);
 	}
 }
 
-async function requireJob(
-	store: ChatStore,
-	label: string,
-): Promise<ScheduledJob> {
-	const job = store.getJobByLabel(label);
-	if (!job) {
-		throw new DgCliError(`no job labelled "${label}"`, EXIT_GENERAL_FAILURE);
+async function enableVerb(name: string, deps: JobVerbDeps): Promise<void> {
+	const paths = resolveDgPaths();
+	await locate(paths, name, { migrate: true, scheduled: false });
+	await assertDaemonAnswers(paths, name, "job");
+	await withConfigLock(paths, () => {
+		const config = readTable(paths);
+		requireMigrated(config);
+		const entry = tableEntry(paths, config, name);
+		if (entry.enabled !== true) {
+			guardConfig(() => writeJobEntry(paths, name, { ...entry, enabled: true }));
+		}
+	});
+	console.log(`enabled job "${name}"`);
+	await offerLoginUnit(paths, deps);
+	if (!(await findLiveDaemon(paths))) {
+		try {
+			await startDaemon(paths, { autostart: deps.autostart });
+		} catch (err) {
+			if (err instanceof DgCliError) throw err;
+			fail(describeError(err));
+		}
 	}
-	return job;
+	const rowOf = async () =>
+		(await liveJobRows(paths))?.find((row) => row.label === name);
+	let status = await rowOf();
+	if (status?.state === "stopped") {
+		try {
+			status = (await callJobRoute(jobPath(name, "start"), "POST")) as ServiceStatus;
+		} catch (err) {
+			if (!(err instanceof DaemonCallError && err.status === 409)) throw err;
+			status = await rowOf();
+		}
+	}
+	if (!status) return fail(`job "${name}" is not loaded by the daemon — see the daemon log`);
+	console.log(formatStatus(status));
 }
 
-export function registerJobCommands(program: Command): void {
+async function disableVerb(name: string): Promise<void> {
+	const paths = resolveDgPaths();
+	const kind = await locate(paths, name, { migrate: true, scheduled: false });
+	const live = await assertDaemonAnswers(paths, name, "job");
+	if (kind === "scheduled") {
+		await setScheduledEnabled(name, false);
+	} else {
+		await withConfigLock(paths, () => {
+			const config = readTable(paths);
+			requireMigrated(config);
+			const entry = tableEntry(paths, config, name);
+			if (Object.hasOwn(entry, "enabled")) {
+				const rest = Object.fromEntries(
+					Object.entries(entry).filter(([key]) => key !== "enabled"),
+				);
+				guardConfig(() => writeJobEntry(paths, name, rest));
+			}
+		});
+	}
+	console.log(`disabled job "${name}"`);
+	if (!live) return;
+	const states = await liveJobStates(paths);
+	if (isActive(states?.get(name))) {
+		console.log(
+			formatStatus(
+				(await callJobRoute(jobPath(name, "stop"), "POST")) as ServiceStatus,
+			),
+		);
+	}
+}
+
+async function removeVerb(name: string): Promise<void> {
+	const paths = resolveDgPaths();
+	const kind = await locate(paths, name, { migrate: true, scheduled: true });
+	const live = await assertDaemonAnswers(paths, name, "job");
+	if (live) {
+		const state = (await liveJobStates(paths))?.get(name);
+		if (isActive(state)) {
+			fail(`job "${name}" is ${state} — stop it first with dg job stop ${name}`);
+		}
+	}
+	if (kind === "scheduled") {
+		await removeScheduled(name);
+		console.log(`removed job "${name}"`);
+		return;
+	}
+	await withConfigLock(paths, () => {
+		const config = readTable(paths);
+		requireMigrated(config);
+		if (!isInTable(config, name)) notFound(name);
+		assertNoLiveInstance(paths, name, "job");
+		guardConfig(() => writeJobEntry(paths, name, undefined));
+	});
+	console.log(`removed job "${name}"`);
+}
+
+type UpdateOptions = {
+	continuous?: boolean;
+	schedule?: string;
+	every?: string;
+	timeout?: string;
+	feed?: boolean;
+	notify?: string;
+};
+
+async function updateVerb(name: string, options: UpdateOptions): Promise<void> {
+	const stop = (message: string): never => fail(`job update: ${message}`);
+	const modes: [Mode, unknown][] = [
+		["continuous", options.continuous ? true : undefined],
+		["schedule", options.schedule],
+		["every", options.every],
+	];
+	const given = modes.filter(([, value]) => value !== undefined);
+	if (given.length > 1) stop("give one of --continuous, --schedule or --every");
+	const changes: [string, unknown][] = [
+		...given,
+		["feed", options.feed ? true : undefined],
+		["notify", options.notify],
+		[
+			"timeoutMs",
+			options.timeout === undefined
+				? undefined
+				: duration(options.timeout, "--timeout", "job update"),
+		],
+	].filter(([, value]) => value !== undefined) as [string, unknown][];
+	if (changes.length === 0) stop("give a flag to change");
+	const paths = resolveDgPaths();
+	if (existsSync(paths.daemonConfigPath)) await ensureMigrated(paths);
+	if (!isInTable(readTable(paths), name)) {
+		notFound(name);
+	}
+	await withConfigLock(paths, () => {
+		const config = readTable(paths);
+		requireMigrated(config);
+		const entry = tableEntry(paths, config, name);
+		const base =
+			given.length === 0
+				? entry
+				: Object.fromEntries(
+						Object.entries(entry).filter(
+							([key]) => !(MODE_KEYS as readonly string[]).includes(key),
+						),
+					);
+		const next = { ...base, ...Object.fromEntries(changes) };
+		const parsed = parseJobEntry(name, next);
+		if (!parsed.ok) stop(parsed.error);
+		guardConfig(() => writeJobEntry(paths, name, next));
+	});
+	console.log(`updated job "${name}"`);
+	console.log(`changed ${changes.map(([key]) => key).join(", ")}`);
+	const states = await liveJobStates(paths).catch(() => undefined);
+	if (isActive(states?.get(name))) {
+		console.log(`next: dg job restart ${name}`);
+	}
+}
+
+async function logsVerb(
+	name: string,
+	options: { lines?: string; follow?: boolean },
+): Promise<void> {
+	const paths = resolveDgPaths();
+	await locate(paths, name, { migrate: false, scheduled: false });
+	const { runJobLogs } = await import("./job-logs");
+	await runJobLogs(paths, name, options);
+}
+
+export function registerJobCommands(
+	program: Command,
+	given: Partial<JobVerbDeps> = {},
+): void {
+	const deps = (): JobVerbDeps => ({ ...defaultJobVerbDeps(), ...given });
 	const job = program
 		.command("job")
-		.description("manage the background jobs the daemon runs on a schedule");
+		.description("run and manage the jobs the daemon runs")
+		.hook("preAction", async () => {
+			console.error(await homeLine());
+		});
 
 	job
 		.command("add")
-		.description("schedule a command that prints one JSON object per item")
-		.requiredOption("--label <label>", "unique name for the job")
-		.option("--every <interval>", "how often to run it, e.g. 15m")
-		.option("--cron <expression>", 'a cron expression, e.g. "0 9 * * 1-5"')
+		.description("add a job: continuous, on a cron schedule, or at an interval")
+		.option("--name <name>", "unique name for the job")
+		.addOption(new Option("--label <name>").hideHelp())
 		.requiredOption("--cwd <path>", "working directory for the command")
+		.option("--continuous", "keep the job running")
+		.option("--schedule <cron>", 'a cron expression, e.g. "0 9 * * 1-5"')
+		.addOption(new Option("--cron <cron>").hideHelp())
+		.option("--every <duration>", "how often to run it, e.g. 15m")
+		.option("--timeout <duration>", "stop a run that takes longer, e.g. 5m")
+		.option("--feed", "read one JSON object per item from the output")
 		.option("--notify <identity>", "agent identity to queue new items to")
+		.option("--env-file <path>", "env file to load")
+		.option(
+			"--env <NAME>",
+			"environment variable to pass through (repeatable)",
+			collect,
+		)
+		.addOption(new Option("--pass-env <NAME>").argParser(collect).hideHelp())
+		.option("--stop-timeout <duration>", "grace period on stop, e.g. 30s")
 		.argument("[command...]", "the command to run, after a bare --")
-		.action(
-			async (
-				argv: string[],
-				options: {
-					label: string;
-					every?: string;
-					cron?: string;
-					cwd: string;
-					notify?: string;
-				},
-			) => {
-				const schedule = resolveSchedule(options.every, options.cron);
-				if (argv.length === 0) {
-					throw new DgCliError(
-						"job add: no command given — put it after a bare --",
-						EXIT_GENERAL_FAILURE,
-					);
-				}
-				if (!existsSync(options.cwd)) {
-					throw new DgCliError(
-						`--cwd: no such directory: ${options.cwd}`,
-						EXIT_GENERAL_FAILURE,
-					);
-				}
-				const stale = checkExecutableResolves(argv[0]);
-				if (stale) {
-					throw new DgCliError(`job add: ${stale}`, EXIT_GENERAL_FAILURE);
-				}
-
-				await withStore(async (store) => {
-					if (store.getJobByLabel(options.label)) {
-						throw new DgCliError(
-							`a job labelled "${options.label}" already exists`,
-							EXIT_GENERAL_FAILURE,
-						);
-					}
-					const created = store.insertJob({
-						label: options.label,
-						argv,
-						cwd: options.cwd,
-						...schedule,
-						notifyIdentity: options.notify,
-					});
-					console.log(
-						`added "${created.label}" — ${formatSchedule(created)}, first run ${created.nextRunAt}`,
-					);
-				});
-			},
-		);
+		.action(async (argv: string[], options: AddOptions) => {
+			await addVerb(argv, options, deps());
+		});
 
 	job
 		.command("list")
-		.description("show every scheduled job and its last result")
-		.action(async () => {
-			await withStore(async (store) => {
-				const jobs = store.listJobs();
-				if (jobs.length === 0) {
-					console.log("no scheduled jobs — add one with `dg-daemon job add`");
-					return;
-				}
-				const unread = store.countUnreadByJob();
-				for (const entry of jobs) {
-					const parts = [
-						entry.label,
-						formatSchedule(entry),
-						deriveJobState(entry.enabled, entry.lastExitCode),
-						`last ${entry.lastRunAt ?? "never"}`,
-						`next ${entry.enabled ? entry.nextRunAt : "-"}`,
-						`unread ${unread[entry.id] ?? 0}`,
-					];
-					console.log(parts.join("  "));
-					if (entry.lastError) console.log(`    ${entry.lastError}`);
-					if (entry.lastStderr) console.log(`    ${entry.lastStderr}`);
-				}
-			});
-		});
+		.description("show every job")
+		.option("--json", "print one JSON line")
+		.action((options: { json?: boolean }) => listVerb(undefined, options));
 
 	job
-		.command("rm")
-		.description("remove a job and everything it collected")
-		.argument("<label>")
-		.action(async (label: string) => {
-			await withStore(async (store) => {
-				const found = await requireJob(store, label);
-				store.deleteJob(found.id);
-				console.log(`removed "${label}"`);
-			});
-		});
+		.command("status")
+		.description("show every job, or one by name")
+		.argument("[name]")
+		.option("--json", "print one JSON line")
+		.action(listVerb);
 
-	for (const [verb, enabled] of [
-		["enable", true],
-		["disable", false],
-	] as const) {
+	job
+		.command("enable")
+		.description("start the job now and at each daemon start")
+		.argument("<name>")
+		.action((name: string) => enableVerb(name, deps()));
+
+	job
+		.command("disable")
+		.description("stop the job and keep it from starting at daemon start")
+		.argument("<name>")
+		.action(disableVerb);
+
+	job
+		.command("start")
+		.description("run the job now")
+		.argument("<name>")
+		.action(startVerb);
+
+	for (const alias of ["run", "exec"]) {
 		job
-			.command(verb)
-			.description(`${verb} a job without removing it`)
-			.argument("<label>")
-			.action(async (label: string) => {
-				await withStore(async (store) => {
-					const found = await requireJob(store, label);
-					store.setJobEnabled(found.id, enabled);
-					console.log(`${verb}d "${label}"`);
-				});
+			.command(alias, { hidden: true })
+			.argument("<name>")
+			.action(async (name: string) => {
+				aliasNote(`job ${alias}`, "job start");
+				await startVerb(name);
 			});
 	}
 
 	job
-		.command("run")
-		.alias("exec")
-		.description("run a job now, without waiting for its schedule")
-		.argument("<label>")
-		.action(async (label: string) => {
-			await withStore(async (store) => {
-				const found = await requireJob(store, label);
-				const outcome = await runJobNow(found.id, {
-					store,
-					scheduler: new DispatchScheduler(),
-					logger: {
-						info: (message: string) => console.log(message),
-						warn: (message: string) => console.error(message),
-					},
-				});
-				if (!outcome) {
-					throw new DgCliError(
-						`job "${label}" was not admitted to run`,
-						EXIT_GENERAL_FAILURE,
-					);
-				}
-				if (outcome.error) {
-					throw new DgCliError(
-						`job "${label}" failed: ${outcome.error}`,
-						EXIT_GENERAL_FAILURE,
-					);
-				}
-				console.log(
-					`ran "${label}" — ${outcome.inserted} new, ${outcome.duplicates} already seen`,
-				);
-			});
+		.command("stop")
+		.description("stop the job now")
+		.argument("<name>")
+		.action(stopVerb);
+
+	job
+		.command("restart")
+		.description("stop the job, then start it again")
+		.argument("<name>")
+		.action(restartVerb);
+
+	job
+		.command("update")
+		.description("change the mode or the settings of a job")
+		.argument("<name>")
+		.option("--continuous", "keep the job running")
+		.option("--schedule <cron>", "a cron expression")
+		.option("--every <duration>", "how often to run it, e.g. 15m")
+		.option("--timeout <duration>", "stop a run that takes longer")
+		.option("--feed", "read one JSON object per item from the output")
+		.option("--notify <identity>", "agent identity to queue new items to")
+		.action(updateVerb);
+
+	job
+		.command("remove")
+		.description("remove a job")
+		.argument("<name>")
+		.action(removeVerb);
+
+	job
+		.command("rm", { hidden: true })
+		.argument("<name>")
+		.action(async (name: string) => {
+			aliasNote("job rm", "job remove");
+			await removeVerb(name);
 		});
+
+	job
+		.command("logs")
+		.description("print the last lines of the job log")
+		.argument("<name>")
+		.option("-n, --lines <n>", "how many lines to print", "40")
+		.option("-f, --follow", "keep printing new lines")
+		.action(logsVerb);
 }

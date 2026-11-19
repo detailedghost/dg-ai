@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 export const DEFAULT_BUSY_TIMEOUT_MS = 5000;
@@ -48,6 +48,18 @@ export function readSchemaVersion(db: Database): number {
 		.user_version;
 }
 
+const snapshotPrefix = (version: number): string => `pre-migration-v${version}-`;
+
+/** Removes the pre-migration snapshots of `version` and their sidecar files; returns the names. */
+export function removeSchemaSnapshots(dir: string, version: number): string[] {
+	const prefix = snapshotPrefix(version);
+	const names = readdirSync(dir).filter(
+		(name) => name.startsWith(prefix) && /\.db(-wal|-shm|-journal)?$/.test(name),
+	);
+	for (const name of names) rmSync(join(dir, name), { force: true });
+	return names;
+}
+
 function takeSnapshot(
 	db: Database,
 	snapshotDir: string,
@@ -56,7 +68,7 @@ function takeSnapshot(
 	mkdirSync(snapshotDir, { recursive: true });
 	const target = join(
 		snapshotDir,
-		`pre-migration-v${version}-${Date.now()}-${Math.random().toString(36).slice(2)}.db`,
+		`${snapshotPrefix(version)}${Date.now()}-${Math.random().toString(36).slice(2)}.db`,
 	);
 	db.run(`VACUUM INTO '${target.replace(/'/g, "''")}'`);
 }

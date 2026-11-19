@@ -2,14 +2,14 @@ import { describe, expect, it } from "bun:test";
 import {
 	DEFAULT_STOP_TIMEOUT_MS,
 	MAX_STOP_TIMEOUT_MS,
-	parseServiceEntry,
-	parseServices,
-} from "../../src/services/config";
+	parseJobEntry,
+	parseJobs,
+} from "../../src/jobs/config";
 import { ENV_KEY } from "../../src/services/env-file";
 
-const base = { argv: ["bot"], cwd: "/srv" };
+const base = { argv: ["bot"], cwd: "/srv", continuous: true };
 const declared = (entry: unknown) =>
-	parseServices({ services: { bot: entry } });
+	parseJobs({ jobs: { bot: entry } });
 
 const PASS_ENV_ERROR =
 	'"passEnv" must be an array of environment variable names';
@@ -30,7 +30,7 @@ describe("service timeout constants", () => {
 	});
 });
 
-describe("parseServices passEnv, stopTimeoutMs and grant", () => {
+describe("parseJobs passEnv, stopTimeoutMs and grant", () => {
 	it("defaults passEnv to [] and stopTimeoutMs to 5000, with no grant key", () => {
 		const [entry] = declared(base);
 		expect(entry).toMatchObject({
@@ -83,10 +83,10 @@ describe("parseServices passEnv, stopTimeoutMs and grant", () => {
 	])(
 		"rejects %s with the exact error and leaves other entries valid",
 		(_n, extra, error) => {
-			const results = parseServices({
-				services: { bad: { ...base, ...extra }, good: base },
+			const results = parseJobs({
+				jobs: { bad: { ...base, ...extra }, good: base },
 			});
-			expect(results[0]).toEqual({ ok: false, label: "bad", error });
+			expect(results[0]).toEqual({ ok: false, name: "bad", error });
 			expect(results[1].ok).toBe(true);
 		},
 	);
@@ -102,27 +102,27 @@ describe("parseServices passEnv, stopTimeoutMs and grant", () => {
 	);
 });
 
-describe("parseServiceEntry", () => {
+describe("parseJobEntry", () => {
 	it.each([
 		{ ...base, passEnv: ["1BAD"] },
 		{ ...base, stopTimeoutMs: 0 },
 		{ ...base, grant: "UPPER" },
-		{ argv: [], cwd: "/srv" },
+		{ argv: [], cwd: "/srv", continuous: true },
 		"nope",
-	])("gives the same result as parseServices for %p", (entry) => {
-		expect(parseServiceEntry("bot", entry)).toEqual(declared(entry)[0]);
+	])("gives the same result as parseJobs for %p", (entry) => {
+		expect(parseJobEntry("bot", entry)).toEqual(declared(entry)[0]);
 	});
 
 	it("reports the label rule for an invalid label", () => {
-		const result = parseServiceEntry("Bad Label", base);
+		const result = parseJobEntry("Bad Label", base);
 		expect(result.ok).toBe(false);
 		expect(result.ok === false && result.error).toContain("label must be 1-64");
 	});
 
 	it("accepts a valid entry", () => {
-		expect(parseServiceEntry("bot", base)).toMatchObject({
+		expect(parseJobEntry("bot", base)).toMatchObject({
 			ok: true,
-			label: "bot",
+			name: "bot",
 		});
 	});
 });

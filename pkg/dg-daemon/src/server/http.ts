@@ -8,6 +8,7 @@ import {
 	CHAT_CODE_PATH,
 	CHAT_EXCHANGE_PATH,
 	CHAT_HEALTH_PATH,
+	CHAT_JOBS_PATH,
 	CHAT_LEGACY_HEALTH_PATH,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
@@ -43,7 +44,7 @@ import { registerAsset } from "../assets/register";
 import { assertFlatSegment } from "../assets/safe-path";
 import { type AssetServeResult, resolveAssetForServing } from "../assets/serve";
 import type { DispatchScheduler } from "../dispatch";
-import type { Supervisor } from "../services/supervisor";
+import type { JobControl } from "../jobs/control";
 import {
 	DEFAULT_ARCHIVE_MAX_ROWS,
 	DEFAULT_ARCHIVE_TTL_MS,
@@ -99,7 +100,7 @@ export type HttpServerDeps = {
 	store: ChatStore;
 	credentials: CredentialStore;
 	dispatchScheduler: DispatchScheduler;
-	supervisor: Supervisor;
+	jobs: JobControl;
 };
 
 export const WS_PAYLOAD_HEADROOM_BYTES = 4096;
@@ -400,11 +401,10 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				return handleServiceApiCredentials(req, deps.credentials, deps.logger);
 			}
 
-			if (
-				url.pathname === CHAT_SERVICES_PATH ||
-				url.pathname.startsWith(`${CHAT_SERVICES_PATH}/`)
-			) {
-				return handleServiceRoute(req, url, deps);
+			for (const base of [CHAT_SERVICES_PATH, CHAT_JOBS_PATH] as const) {
+				if (url.pathname === base || url.pathname.startsWith(`${base}/`)) {
+					return handleJobRoute(req, url, deps, base);
+				}
 			}
 
 			return new Response("not found", { status: 404 });
@@ -853,10 +853,11 @@ function decodeSegment(segment: string): string | undefined {
 
 const SERVICE_ACTION_STATUS = { unknown: 404, invalid: 400, conflict: 409 };
 
-async function handleServiceRoute(
+async function handleJobRoute(
 	req: Request,
 	url: URL,
 	deps: HttpServerDeps,
+	base: typeof CHAT_SERVICES_PATH | typeof CHAT_JOBS_PATH,
 ): Promise<Response> {
 	const refusal =
 		requireLoopbackHost(req, deps.port) ??
@@ -864,9 +865,9 @@ async function handleServiceRoute(
 			hasOwnerCredential(req, deps.paths),
 		);
 	if (refusal) return refusal;
-	const { supervisor } = deps;
+	const { jobs } = deps;
 	const segments = url.pathname
-		.slice(CHAT_SERVICES_PATH.length)
+		.slice(base.length)
 		.split("/")
 		.filter((segment) => segment.length > 0)
 		.map(decodeSegment);
@@ -879,7 +880,8 @@ async function handleServiceRoute(
 	const [label, verb, ...extra] = segments as string[];
 
 	if (label === undefined && req.method === "GET") {
-		return json({ instanceId: deps.instanceId, services: supervisor.status() });
+		const key = base === CHAT_JOBS_PATH ? "jobs" : "services";
+		return json({ instanceId: deps.instanceId, [key]: jobs.status() });
 	}
 
 	const isAction =
@@ -889,11 +891,16 @@ async function handleServiceRoute(
 		(verb === "start" || verb === "stop");
 	if (!isAction) return new Response("not found", { status: 404 });
 
-	const result =
-		verb === "start" ? supervisor.start(label) : await supervisor.stop(label);
+	const result = verb === "start" ? jobs.start(label) : await jobs.stop(label);
+	const failure =
+		!result.ok && result.kind === "unknown" && base === CHAT_JOBS_PATH
+			? `no job named "${label}"`
+			: !result.ok
+				? result.error
+				: undefined;
 	return result.ok
 		? json(result.status)
-		: new Response(result.error, {
+		: new Response(failure, {
 				status: SERVICE_ACTION_STATUS[result.kind],
 				headers: NOSNIFF_HEADERS,
 			});

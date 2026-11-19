@@ -98,7 +98,7 @@ describe("chat sessions in the daemon database", () => {
 
 			const reopened = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 			try {
-				expect(reopened.userVersion()).toBe(13);
+				expect(reopened.userVersion()).toBe(14);
 				const loaded = reopened.loadSessions();
 				expect(loaded.map((session) => session.sessionId)).toEqual(["pre-drop"]);
 				expect(Object.hasOwn(loaded[0] ?? {}, "awaitingAgent")).toBe(false);

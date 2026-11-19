@@ -3,6 +3,7 @@ import {
 	type AnyRelayFeature,
 	authorizeFrame,
 	CHAT_FRAME_TYPES,
+	CHAT_JOBS_PATH,
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
 	CHAT_SERVICES_PATH,
@@ -1154,5 +1155,13 @@ describe("SERVICE_API_CREDENTIALS_PATH", () => {
 		expect(SERVICE_API_CREDENTIALS_PATH.startsWith(CHAT_SERVICES_PATH)).toBe(
 			false,
 		);
+	});
+});
+
+describe("CHAT_JOBS_PATH", () => {
+	it("names the /jobs route beside /services and outside the service-api tree", () => {
+		expect(CHAT_JOBS_PATH).toBe("/jobs");
+		expect(CHAT_JOBS_PATH).not.toBe(CHAT_SERVICES_PATH);
+		expect(SERVICE_API_CREDENTIALS_PATH.startsWith(CHAT_JOBS_PATH)).toBe(false);
 	});
 });

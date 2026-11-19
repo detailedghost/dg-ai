@@ -58,8 +58,10 @@ output above is enough.
 
 None of these three run with no argument. The target is either a channel-review
 env, written `channel-review-dev` or `channel-review-prod`, or a service label
-from `dg-daemon service status` (for example `teams-bot`). There is no default
+from `dg-daemon service status` (for example `bot`). There is no default
 target and no "restart everything."
+
+For each job verb, see [Job verbs](#job-verbs).
 
 | Action | Channel-review target | Service target |
 | --- | --- | --- |
@@ -122,6 +124,45 @@ A `channel-review-<env>` restart must not drop a review in progress:
    (`current.startedAt`), and ask whether to restart anyway and drop that job,
    or wait longer. Do not stop or start until they answer.
 
+## Job verbs
+
+`dg-daemon job` manages each job, continuous or scheduled, with these verbs:
+
+```sh
+dg-daemon job list
+dg-daemon job status [<name>] [--json]
+dg-daemon job add --name <name> --cwd <absolute-path> --continuous -- <command> [args...]
+dg-daemon job add --name <name> --cwd <absolute-path> --every <duration> [--feed] -- <command> [args...]
+dg-daemon job add --name <name> --cwd <absolute-path> --schedule "<cron>" [--feed] -- <command> [args...]
+dg-daemon job update <name> --every <duration>
+dg-daemon job enable <name>
+dg-daemon job disable <name>
+dg-daemon job start <name>
+dg-daemon job stop <name>
+dg-daemon job restart <name>
+dg-daemon job remove <name>
+dg-daemon job logs <name> [-n <lines>] [-f]
+```
+
+`list`, `status` and `logs` are read-only. Run each other verb only on a
+request from the human that names the job. An `add` request also needs the
+argv and `--cwd` from the human; never invent them. `add` also takes
+`--timeout <duration>`, `--notify <identity>`, `--env-file <path>`,
+`--env <NAME>` and `--stop-timeout <duration>`; pass one only when the human
+names it. `update` takes one mode flag (`--continuous`, `--schedule` or
+`--every`) and `--timeout`, `--feed` and `--notify`.
+
+`add` writes a job that is not enabled. `enable` turns it on and starts the
+daemon when none runs. `start`, `stop` and `restart` act now only and need a
+live daemon. `remove`, `disable` and `autostart install|remove` need a request
+from the human that names the job or the login unit.
+
+The first `job enable` at a terminal asks whether to start dg at login. This
+skill does not answer the login unit question of `job enable`: the human
+answers it. `enable` with no terminal only prints the hint
+`hint: dg does not start at login — run dg autostart install`; report the hint
+and do not run `autostart install` on your own.
+
 ## Autostart
 
 This skill never edits `~/.claude/settings.json` or any other file outside
@@ -152,5 +193,5 @@ before you print the block, because each session starts in its own folder:
 `channel-review start` already refuses a second start against a pid it finds
 running and exits nonzero without starting a duplicate, so this hook is safe
 to run on every session start; the redirect only keeps that expected
-already-running case quiet. There is no autostart for `dg-daemon` itself: `dg-agent start` and
+already-running case quiet. There is no autostart for `dg-daemon` itself until the human runs `dg-daemon autostart install`: `dg-agent start` and
 `dg-daemon start` start it, and `dg-skills` does not.

@@ -56,32 +56,27 @@ export function readConfigStrict(paths: DgPaths): Record<string, unknown> {
 	return parsed as Record<string, unknown>;
 }
 
-/** Sets or deletes one `services` entry; the caller must hold the config lock. */
-export function writeServiceEntry(
+/** Sets or deletes one `jobs` entry; the caller must hold the config lock. */
+export function writeJobEntry(
 	paths: DgPaths,
-	label: string,
+	name: string,
 	entry: Record<string, unknown> | undefined,
 ): void {
 	assertNotBlocked(paths, "daemon");
 	const file = paths.daemonConfigPath;
 	const config = readConfigStrict(paths);
-	const current = config.services;
-	if (
-		current !== undefined &&
-		(typeof current !== "object" || current === null || Array.isArray(current))
-	) {
-		throw new Error(`${file}: "services" must be an object`);
+	const current = config.jobs;
+	if (current !== undefined && !isRecord(current)) {
+		throw new Error(`${file}: "jobs" must be an object`);
 	}
-	const kept = Object.entries(
-		(current as Record<string, unknown>) ?? {},
-	).filter(([key]) => key !== label);
-	const services = Object.fromEntries(
-		entry === undefined ? kept : [...kept, [label, entry]],
+	const kept = Object.entries(current ?? {}).filter(([key]) => key !== name);
+	const jobs = Object.fromEntries(
+		entry === undefined ? kept : [...kept, [name, entry]],
 	);
 	ensurePrivateDir(dirname(file));
 	writeFilePreserving(
 		file,
-		JSON.stringify({ ...config, services }, null, 2),
+		JSON.stringify({ ...config, jobs }, null, 2),
 		0o600,
 	);
 }

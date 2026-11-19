@@ -16,6 +16,7 @@ import {
 	stopServe,
 	subprocessEnv,
 } from "../utils/daemon-harness";
+import { asContinuous } from "../utils/job-table";
 import { trackChild } from "../utils/child-registry";
 
 const EXTENSION_ORIGIN = DG_CHROME_EXTENSION_ORIGIN;
@@ -35,7 +36,7 @@ async function boot(declare: (dgHome: string) => unknown = () => ({})) {
 		env: { DG_HOME: dgHome },
 	});
 	mkdirSync(join(configPath, ".."), { recursive: true });
-	writeFileSync(configPath, JSON.stringify({ services: declare(dgHome) }));
+	writeFileSync(configPath, JSON.stringify({ jobs: asContinuous(declare(dgHome) as Record<string, unknown>) }));
 	return { dgHome, port };
 }
 

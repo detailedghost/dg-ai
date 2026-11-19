@@ -64,6 +64,7 @@ export const CHAT_WS_PATH = "/ws";
 export const CHAT_CLI_PATH = "/cli";
 export const CHAT_ASSETS_PATH = "/assets";
 export const CHAT_SERVICES_PATH = "/services";
+export const CHAT_JOBS_PATH = "/jobs";
 export const SERVICE_API_CREDENTIALS_PATH = "/service-api/v1/credentials";
 
 export type JobState = "ok" | "failed" | "paused";
@@ -95,6 +96,13 @@ export function formatIntervalMs(intervalMs: number): string {
 		return `${intervalMs / MS_PER_MINUTE}m`;
 	}
 	return `${Math.max(1, Math.round(intervalMs / MS_PER_SECOND))}s`;
+}
+
+/** Render a timeout: whole seconds as `30s`, `5m`, `1h`, anything finer in milliseconds. */
+export function formatDurationMs(durationMs: number): string {
+	return durationMs >= MS_PER_SECOND && durationMs % MS_PER_SECOND === 0
+		? formatIntervalMs(durationMs)
+		: `${durationMs}ms`;
 }
 
 /** Render a job's schedule the way `job add` accepts one, for a cron job or an interval. */

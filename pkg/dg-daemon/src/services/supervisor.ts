@@ -22,10 +22,14 @@ import {
 	writeFileAtomic,
 } from "@dg/common/node";
 import type { Subprocess } from "bun";
-import { buildAllowedEnv } from "../dispatch/env-allowlist";
 import { killProcessGroup } from "../dispatch/exec";
+import {
+	type JobDecl,
+	type ParsedJob,
+	parseContinuousJobs,
+} from "../jobs/config";
+import { jobLogFile, launchJob } from "../jobs/launcher";
 import type { Logger } from "../server/log";
-import { type ParsedService, parseServices, type ServiceDecl } from "./config";
 import { loadEnvFile } from "./env-file";
 
 export const BACKOFF_BASE_MS = 1_000;
@@ -73,7 +77,7 @@ export type SupervisorDeps = {
 type LiveState = Exclude<ServiceState, "invalid">;
 
 type Entry = {
-	decl: ServiceDecl;
+	decl: JobDecl;
 	state: LiveState;
 	proc?: Subprocess;
 	pid?: number;
@@ -123,12 +127,6 @@ function describeExit(proc: Subprocess): string {
 		: `exit ${proc.exitCode}`;
 }
 
-function openLog(logDir: string, logFile: string, maxBytes: number): number {
-	ensurePrivateDir(logDir);
-	rotateLogIfLarge(logFile, maxBytes);
-	return openSync(logFile, "a", 0o600);
-}
-
 /** Pid file the supervisor writes for a running service. */
 export function servicePidFile(daemonDir: string, label: string): string {
 	return join(daemonDir, "services", `${label}.pid`);
@@ -142,89 +140,40 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 	const pidDir = join(deps.paths.daemonDir, "services");
 	const entries = new Map<string, Entry>();
 
-	const logFileFor = (label: string) =>
-		join(deps.paths.logDir, `service-${label}.log`);
+	const logFileFor = (label: string) => jobLogFile(deps.paths.logDir, label);
 	const pidFileFor = (label: string) =>
 		servicePidFile(deps.paths.daemonDir, label);
 
-	function passedEnv(decl: ServiceDecl): Record<string, string> {
-		return Object.fromEntries(
-			decl.passEnv.flatMap((name) => {
-				const value = process.env[name];
-				if (value === undefined) {
-					logger.warn(
-						`service ${decl.label}: passEnv name ${name} is not set in the daemon environment`,
-					);
-					return [];
-				}
-				return [[name, value]];
-			}),
-		);
-	}
-
-	function serviceEnv(decl: ServiceDecl): Record<string, string> {
-		const env: Record<string, string> = {
-			...buildAllowedEnv(),
-			...passedEnv(decl),
-			...(decl.envFile ? loadEnvFile(decl.envFile) : {}),
-			DG_SERVICE_API: "1",
-			DG_SERVICE_LABEL: decl.label,
-			DG_DAEMON_URL: deps.daemonUrl(),
-			DG_SERVICE_STATE_DIR: jobStateDir(deps.paths, decl.label),
-		};
-		if (process.env.DG_HOME) env.DG_HOME = process.env.DG_HOME;
-		if (decl.grant) {
-			env.DG_CREDENTIAL_GRANT_PREFIX = decl.grant;
-			env.DG_CREDENTIAL_GRANT_FILE = credentialGrantTokenPath(
-				deps.paths,
-				decl.grant,
-			);
-		} else {
-			delete env.DG_CREDENTIAL_GRANT_PREFIX;
-			delete env.DG_CREDENTIAL_GRANT_FILE;
-		}
-		return env;
-	}
-
-	function launch(decl: ServiceDecl): Subprocess {
-		const fd = openLog(deps.paths.logDir, logFileFor(decl.label), maxLogBytes);
-		try {
-			return Bun.spawn(decl.argv, {
-				cwd: decl.cwd,
-				env: serviceEnv(decl),
-				stdin: "ignore",
-				stdout: fd,
-				stderr: fd,
-				detached: true,
-			});
-		} finally {
-			closeSync(fd);
-		}
-	}
+	const launcherDeps = {
+		paths: deps.paths,
+		daemonUrl: deps.daemonUrl,
+		logger,
+		maxLogBytes,
+	};
 
 	async function runOnce(entry: Entry): Promise<number | undefined> {
 		const { decl } = entry;
 		let proc: Subprocess;
 		entry.termination = undefined;
 		try {
-			proc = launch(decl);
+			proc = launchJob(decl, launcherDeps);
 		} catch (err) {
 			entry.lastExit = `failed to start: ${describeError(err)}`;
 			return undefined;
 		}
 		ensurePrivateDir(pidDir);
-		writeFileAtomic(pidFileFor(decl.label), String(proc.pid));
+		writeFileAtomic(pidFileFor(decl.name), String(proc.pid));
 		entry.proc = proc;
 		entry.pid = proc.pid;
 		entry.state = "running";
 		entry.startedAt = new Date();
-		logger.info(`service ${decl.label} started (pid ${proc.pid})`);
+		logger.info(`service ${decl.name} started (pid ${proc.pid})`);
 		const rotation = setInterval(() => {
 			try {
-				rotateLogIfLarge(logFileFor(decl.label), maxLogBytes);
+				rotateLogIfLarge(logFileFor(decl.name), maxLogBytes);
 			} catch (err) {
 				logger.warn(
-					`service ${decl.label}: log rotation failed: ${describeError(err)}`,
+					`service ${decl.name}: log rotation failed: ${describeError(err)}`,
 				);
 			}
 		}, logCheckMs);
@@ -236,7 +185,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 		await entry.termination;
 		entry.proc = undefined;
 		entry.pid = undefined;
-		rmSync(pidFileFor(decl.label), { force: true });
+		rmSync(pidFileFor(decl.name), { force: true });
 		return code;
 	}
 
@@ -251,14 +200,14 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 			const delay = backoffMs(failures);
 			entry.state = "backoff";
 			logger.warn(
-				`service ${entry.decl.label}: ${entry.lastExit}; restarting in ${delay}ms`,
+				`service ${entry.decl.name}: ${entry.lastExit}; restarting in ${delay}ms`,
 			);
 			await sleepUnlessAborted(delay, signal);
 			if (!signal.aborted) entry.restarts += 1;
 		}
 		entry.state = "stopped";
 		logger.info(
-			`service ${entry.decl.label} stopped (${entry.lastExit ?? "stopped"})`,
+			`service ${entry.decl.name} stopped (${entry.lastExit ?? "stopped"})`,
 		);
 	}
 
@@ -273,7 +222,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 		return `an earlier instance (pid ${pid}) is still running; stop it, or delete ${file} if that pid is not the service`;
 	}
 
-	function preflight(decl: ServiceDecl): string | undefined {
+	function preflight(decl: JobDecl): string | undefined {
 		try {
 			if (!statSync(decl.cwd).isDirectory())
 				return `cwd is not a directory: ${decl.cwd}`;
@@ -294,9 +243,9 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 				return `grant token file not found: ${tokenPath} — create it with dg-skills credentials grant ${decl.grant}`;
 			}
 		}
-		let stateDir = `<jobStateRoot>/${decl.label}`;
+		let stateDir = `<jobStateRoot>/${decl.name}`;
 		try {
-			stateDir = jobStateDir(deps.paths, decl.label);
+			stateDir = jobStateDir(deps.paths, decl.name);
 			ensureRealPrivateDir(stateDir);
 		} catch (err) {
 			return `cannot create the state folder ${stateDir}: ${describeError(err)}`;
@@ -304,7 +253,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 		return checkExecutableResolves(decl.argv[0]);
 	}
 
-	function statusOf(label: string, parsed?: ParsedService): ServiceStatus {
+	function statusOf(label: string, parsed?: ParsedJob): ServiceStatus {
 		const entry = entries.get(label);
 		const base = {
 			label,
@@ -321,10 +270,10 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 		return { ...base, state: "stopped", error: null };
 	}
 
-	const declared = () => parseServices(deps.loadConfig());
+	const declared = () => parseContinuousJobs(deps.loadConfig());
 
 	function start(label: string): ServiceAction {
-		const parsed = declared().find((service) => service.label === label);
+		const parsed = declared().find((job) => job.name === label);
 		if (!parsed) {
 			return {
 				ok: false,
@@ -365,7 +314,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 	async function stop(label: string): Promise<ServiceAction> {
 		const entry = entries.get(label);
 		if (!entry) {
-			const known = declared().some((service) => service.label === label);
+			const known = declared().some((job) => job.name === label);
 			return known
 				? { ok: true, status: statusOf(label) }
 				: {
@@ -392,20 +341,18 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 			await Promise.all([...entries.keys()].map(stop));
 		},
 		autostart: () => {
-			for (const service of declared()) {
-				if (!service.ok || !service.autostart) continue;
-				const result = start(service.label);
+			for (const job of declared()) {
+				if (!job.ok || !job.enabled) continue;
+				const result = start(job.name);
 				if (!result.ok) {
-					logger.warn(
-						`service ${service.label} not autostarted: ${result.error}`,
-					);
+					logger.warn(`service ${job.name} not autostarted: ${result.error}`);
 				}
 			}
 		},
 		status: () => {
 			const parsed = declared();
 			const labels = new Set([
-				...parsed.map((service) => service.label),
+				...parsed.map((job) => job.name),
 				...[...entries]
 					.filter(([, entry]) => entry.state !== "stopped")
 					.map(([label]) => label),
@@ -413,7 +360,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 			return [...labels].map((label) =>
 				statusOf(
 					label,
-					parsed.find((service) => service.label === label),
+					parsed.find((job) => job.name === label),
 				),
 			);
 		},

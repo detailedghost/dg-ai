@@ -18,6 +18,7 @@ import {
 	writePidFileAtomic,
 } from "@dg/common/node";
 import { cmdRestart, cmdStop } from "../../src/commands/stop";
+import { asContinuous } from "../utils/job-table";
 import {
 	allocatePort,
 	bootServe,
@@ -138,7 +139,7 @@ const LONG_SERVICE = (stopTimeoutMs: number, autostart: boolean) => ({
 	],
 	cwd: process.cwd(),
 	stopTimeoutMs,
-	...(autostart ? { autostart: true } : {}),
+	...(autostart ? { enabled: true } : {}),
 });
 
 function declareServices(
@@ -146,7 +147,7 @@ function declareServices(
 	services: Record<string, unknown>,
 ): void {
 	mkdirSync(dirname(paths.daemonConfigPath), { recursive: true });
-	writeFileSync(paths.daemonConfigPath, JSON.stringify({ services }));
+	writeFileSync(paths.daemonConfigPath, JSON.stringify({ jobs: asContinuous(services) }));
 }
 
 type Listed = { label: string; state: string; pid: number | null };
@@ -445,7 +446,7 @@ describe("dg-daemon stop seams", () => {
 		expect(existsSync(paths.pidPath)).toBe(true);
 	});
 
-	it("kills the daemon before the first service, and calls only /healthz and GET /services", async () => {
+	it("kills the daemon before the first service, and calls /healthz, GET /jobs and, after its 404, GET /services", async () => {
 		const { paths } = seamHome();
 		const table = fakeProcessTable([424242, 424243, 424244]);
 		const fake = fakeDaemonWithServices(paths, 424242, [424243, 424244]);
@@ -469,7 +470,7 @@ describe("dg-daemon stop seams", () => {
 			true,
 		);
 		expect(new Set(fake.requests)).toEqual(
-			new Set(["GET /healthz", "GET /services"]),
+			new Set(["GET /healthz", "GET /jobs", "GET /services"]),
 		);
 		expect(existsSync(paths.pidPath)).toBe(false);
 		expect(lines()).toEqual([`dg-daemon stopped (pid 424242, forced)`]);

@@ -29,3 +29,5 @@ export * from "./tree-copy";
 export * from "./wsl-guard";
 export * from "./credential-scrub";
 export * from "./exec-allowlist";
+export * from "./log-tail";
+export * from "./prompt";

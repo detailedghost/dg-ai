@@ -74,31 +74,17 @@
 		},
 		{
 			"name": "job",
-			"description": "manage the background jobs the daemon runs on a schedule",
+			"description": "run and manage the jobs the daemon runs",
 			"commands": [
 				{
 					"name": "add",
-					"description": "schedule a command that prints one JSON object per item",
+					"description": "add a job: continuous, on a cron schedule, or at an interval",
 					"options": [
 						{
 							"flags": [
-								"--label"
+								"--name"
 							],
 							"description": "unique name for the job",
-							"value": "any"
-						},
-						{
-							"flags": [
-								"--every"
-							],
-							"description": "how often to run it, e.g. 15m",
-							"value": "any"
-						},
-						{
-							"flags": [
-								"--cron"
-							],
-							"description": "a cron expression, e.g. \"0 9 * * 1-5\"",
 							"value": "any"
 						},
 						{
@@ -110,6 +96,150 @@
 						},
 						{
 							"flags": [
+								"--continuous"
+							],
+							"description": "keep the job running"
+						},
+						{
+							"flags": [
+								"--schedule"
+							],
+							"description": "a cron expression, e.g. \"0 9 * * 1-5\"",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--every"
+							],
+							"description": "how often to run it, e.g. 15m",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--timeout"
+							],
+							"description": "stop a run that takes longer, e.g. 5m",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--feed"
+							],
+							"description": "read one JSON object per item from the output"
+						},
+						{
+							"flags": [
+								"--notify"
+							],
+							"description": "agent identity to queue new items to",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--env-file"
+							],
+							"description": "env file to load",
+							"value": "path"
+						},
+						{
+							"flags": [
+								"--env"
+							],
+							"description": "environment variable to pass through (repeatable)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--stop-timeout"
+							],
+							"description": "grace period on stop, e.g. 30s",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "list",
+					"description": "show every job",
+					"options": [
+						{
+							"flags": [
+								"--json"
+							],
+							"description": "print one JSON line"
+						}
+					]
+				},
+				{
+					"name": "status",
+					"description": "show every job, or one by name",
+					"options": [
+						{
+							"flags": [
+								"--json"
+							],
+							"description": "print one JSON line"
+						}
+					]
+				},
+				{
+					"name": "enable",
+					"description": "start the job now and at each daemon start"
+				},
+				{
+					"name": "disable",
+					"description": "stop the job and keep it from starting at daemon start"
+				},
+				{
+					"name": "start",
+					"description": "run the job now"
+				},
+				{
+					"name": "stop",
+					"description": "stop the job now"
+				},
+				{
+					"name": "restart",
+					"description": "stop the job, then start it again"
+				},
+				{
+					"name": "update",
+					"description": "change the mode or the settings of a job",
+					"options": [
+						{
+							"flags": [
+								"--continuous"
+							],
+							"description": "keep the job running"
+						},
+						{
+							"flags": [
+								"--schedule"
+							],
+							"description": "a cron expression",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--every"
+							],
+							"description": "how often to run it, e.g. 15m",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--timeout"
+							],
+							"description": "stop a run that takes longer",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--feed"
+							],
+							"description": "read one JSON object per item from the output"
+						},
+						{
+							"flags": [
 								"--notify"
 							],
 							"description": "agent identity to queue new items to",
@@ -118,24 +248,29 @@
 					]
 				},
 				{
-					"name": "list",
-					"description": "show every scheduled job and its last result"
+					"name": "remove",
+					"description": "remove a job"
 				},
 				{
-					"name": "rm",
-					"description": "remove a job and everything it collected"
-				},
-				{
-					"name": "enable",
-					"description": "enable a job without removing it"
-				},
-				{
-					"name": "disable",
-					"description": "disable a job without removing it"
-				},
-				{
-					"name": "run",
-					"description": "run a job now, without waiting for its schedule"
+					"name": "logs",
+					"description": "print the last lines of the job log",
+					"options": [
+						{
+							"flags": [
+								"--lines",
+								"-n"
+							],
+							"description": "how many lines to print",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--follow",
+								"-f"
+							],
+							"description": "keep printing new lines"
+						}
+					]
 				}
 			]
 		},

@@ -16,6 +16,7 @@ const CHANGED_DOCS = [
 	JOBS,
 	"docs/service-api.md",
 	"docs/adr/0043-outside-services.md",
+	"docs/adr/0049-jobs.md",
 	TOC_PATH,
 ];
 const ROUTE_NAMES = Object.keys(ROUTES);
@@ -148,10 +149,10 @@ describe("ADR 0020 amendment", () => {
 		expect(flatText).toMatch(/`dg autostart`[^.]*mount of `dg-daemon autostart`/);
 	});
 
-	test("does not supersede, deprecate or link a record above 0048", () => {
+	test("does not supersede, deprecate or link a record above 0049", () => {
 		expect(text).not.toMatch(/supersede/i);
 		expect(text).not.toMatch(/Deprecated/);
-		for (const m of text.matchAll(/\((?:\.\/)?(\d{4})-[^)]*\.md\)/g)) expect(Number(m[1])).toBeLessThanOrEqual(48);
+		for (const m of text.matchAll(/\((?:\.\/)?(\d{4})-[^)]*\.md\)/g)) expect(Number(m[1])).toBeLessThanOrEqual(49);
 	});
 
 	test("code spans show only dg names of ROUTES, apart from the retired names it corrects", () => {
@@ -283,11 +284,11 @@ describe("docs/jobs-and-services.md front door", () => {
 
 describe("docs/service-api.md injected keys", () => {
 	const doc = read("docs/service-api.md");
-	const sup = source("dg-daemon", "src", "services", "supervisor.ts");
-	const body = functionBody(sup, "serviceEnv");
+	const launcher = source("dg-daemon", "src", "jobs", "launcher.ts");
+	const body = functionBody(launcher, "buildJobEnv");
 	const keys = [...new Set([...body.matchAll(/\b(DG_[A-Z_]+)\b/g)].map((m) => m[1]))];
 
-	test("finds the keys that serviceEnv assigns", () => {
+	test("finds the keys that buildJobEnv assigns", () => {
 		expect(keys.length).toBeGreaterThanOrEqual(6);
 		expect(keys).toContain("DG_CREDENTIAL_GRANT_FILE");
 		expect(keys).toContain("DG_SERVICE_STATE_DIR");

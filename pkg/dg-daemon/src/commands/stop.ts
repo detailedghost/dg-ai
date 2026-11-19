@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import {
+	CHAT_JOBS_PATH,
 	CHAT_SERVICES_PATH,
 	type DaemonHandle,
 	DgCliError,
@@ -73,22 +74,39 @@ async function waitUntilGone(
 	}
 }
 
+const pidsOf = (entries: unknown[]): number[] =>
+	entries.flatMap((entry) =>
+		isRecord(entry) && typeof entry.pid === "number" && isSignalablePid(entry.pid)
+			? [entry.pid]
+			: [],
+	);
+
 async function listServicePids(
 	paths: DgPaths,
 	handle: DaemonHandle,
 	seams: StopSeams,
 ): Promise<number[]> {
 	const owner = readOwnerToken(paths);
-	const resp = await fetch(
-		`http://127.0.0.1:${handle.port}${CHAT_SERVICES_PATH}`,
-		{
+	const list = (path: string) =>
+		fetch(`http://127.0.0.1:${handle.port}${path}`, {
 			headers: {
 				...loopbackHostHeader(handle.port),
 				...(owner === undefined ? {} : { [OWNER_TOKEN_HEADER]: owner }),
 			},
 			signal: AbortSignal.timeout(seams.listTimeoutMs ?? LIST_TIMEOUT_MS),
-		},
-	);
+		});
+	const jobsResp = await list(CHAT_JOBS_PATH);
+	const jobsBody: unknown = jobsResp.ok
+		? await jobsResp.json().catch(() => undefined)
+		: undefined;
+	if (
+		isRecord(jobsBody) &&
+		jobsBody.instanceId === handle.instanceId &&
+		Array.isArray(jobsBody.jobs)
+	) {
+		return pidsOf(jobsBody.jobs);
+	}
+	const resp = await list(CHAT_SERVICES_PATH);
 	if (!resp.ok) throw new Error(`${resp.status} ${(await resp.text()).trim()}`);
 	const body: unknown = await resp.json();
 	if (
@@ -98,13 +116,7 @@ async function listServicePids(
 	) {
 		throw new Error("the answer is not from this daemon instance");
 	}
-	return body.services.flatMap((service: unknown) =>
-		isRecord(service) &&
-		typeof service.pid === "number" &&
-		isSignalablePid(service.pid)
-			? [service.pid]
-			: [],
-	);
+	return pidsOf(body.services);
 }
 
 function killDaemonOnly(pid: number, seams: StopSeams): void {
