@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.13.2 (2026-11-19)
+
+### Fixes
+
+- fix(extension): put batch tabs in pos order when a tab moves right ([#230](https://github.com/detailedghost/dg-ai/pull/230))
+
 ## v5.13.1 (2026-11-19)
 
 ### Fixes
