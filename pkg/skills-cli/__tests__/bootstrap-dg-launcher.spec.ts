@@ -100,10 +100,12 @@ describe("bootstrap.ps1 program loop", () => {
 
 	test("removes a link at the launcher path before WriteAllText so the write cannot follow it", () => {
 		const loop = ps1Loop();
-		const remove = loop.indexOf("Get-Item -LiteralPath $cmd -Force");
+		const remove = loop.indexOf("[System.IO.FileInfo]::new($cmd).LinkTarget");
 
 		expect(remove).toBeGreaterThan(-1);
 		expect(loop.slice(remove)).toContain("LinkType");
+		expect(loop).toContain("[System.IO.FileInfo]::new($cmd).LinkTarget");
+		expect(loop).toContain("[System.IO.File]::Delete($cmd)");
 		expect(remove).toBeLessThan(loop.indexOf("WriteAllText"));
 	});
 
