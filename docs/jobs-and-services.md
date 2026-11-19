@@ -102,6 +102,12 @@ only when the daemon boots. `service status` prints one line for each service,
 or one JSON line with `--json`. Stop one service with
 `dg-daemon service stop teams-bot`.
 
+One daemon runs for each user, whatever `DG_HOME` says. A daemon that starts
+for another `DG_HOME` stops the old one first and prints `dg-daemon: stopped
+the daemon of <home> (pid N, port P) so only one runs`. The same home keeps
+the "already running" answer. A daemon that a login unit manages stays running,
+and the line says so, because its manager would restart it.
+
 ### Environment
 
 The child gets, in this order: the allowlist (`PATH`, `HOME`, `LANG`, `TZ`),
