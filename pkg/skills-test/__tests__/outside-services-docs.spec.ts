@@ -214,6 +214,8 @@ describe("docs/jobs-and-services.md", () => {
 			"DG_DAEMON_URL",
 			"DG_CREDENTIAL_GRANT_PREFIX",
 			"DG_CREDENTIAL_GRANT_FILE",
+			"DG_SERVICE_STATE_DIR",
+			"DG_HOME",
 		]) {
 			expect(sup).toContain(k);
 			expect(doc).toContain(k);

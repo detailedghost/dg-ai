@@ -122,3 +122,31 @@ flowchart LR
 - `pkg/channel-review/src/paths.ts`
 - `pkg/channel-review/src/runners/index.ts`
 - `pkg/skills-test/__tests__/release-triggers.spec.ts`
+
+## Amendment (2026-11-18)
+
+This amendment changes the plan. The accepted text above stays as written. Where that text disagrees with this
+section, this section holds.
+
+- Channel review leaves dg in a later major release, so there is no `dg review` group. A job that the review bot
+  runs from its own repository replaces the step that registers `review-<env>`. The sentence `dg review start`
+  and the review group in the Decision are no longer true.
+- `dg` is a fourth program name over the three command trees: `dg-skills`, `dg-agent` and `dg-daemon`. Each
+  tree keeps its own program. `dg` mounts a tree and does not replace it.
+- The single binary and the `dg-v<x>` tag are not built. The install keeps one bundle for the three programs and
+  writes `dg` as a fourth launcher beside the other three.
+- The statement `dg-daemon has no command tree of its own` is not true. `dg-daemon` keeps its command tree, and
+  `dg daemon` runs it.
+- The statement that every command lives in pkg/skills-cli is not true. Each program keeps its commands in its
+  own package, and `dg` is a package of its own.
+- The count of packages is not five. `dg` adds one package, so the count of packages grows by one.
+- The Mermaid diagram below no longer shows the design. It shows `dg review run`, `dg review start` and one
+  binary, and none of them exists.
+- The `review-<env>` step is not part of install or of the daemon. No step registers that service.
+- The `dg service` group is not built. The service commands stay under `dg-daemon service`.
+- The form `dg daemon run` is not built. `dg daemon` runs `dg-daemon`, and `dg-daemon serve` starts the long
+  running process.
+- The sentence ``a service or job is a stored `dg <command>` `` is not true. A job and a service store the
+  argument list of one program that the job or service names.
+- `dg autostart` is the mount of `dg-daemon autostart`. It installs, removes and reports the login unit of the
+  daemon, as the accepted text describes.

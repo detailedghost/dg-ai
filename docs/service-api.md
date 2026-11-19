@@ -29,10 +29,16 @@ The daemon sets these keys for each service. They win over `envFile` and
 | `DG_SERVICE_API` | `1` |
 | `DG_SERVICE_LABEL` | The service label. It is information, not a proof of identity. |
 | `DG_DAEMON_URL` | `http://127.0.0.1:<port>` |
+| `DG_SERVICE_STATE_DIR` | The absolute path of `<state>/jobs/<label>/`. The daemon makes the folder (mode 0700 on POSIX) before the service starts, and `service rm` does not remove it. |
+| `DG_HOME` | The dg home of the daemon. The daemon injects this key only when it has one. |
 | `DG_CREDENTIAL_GRANT_PREFIX` | The grant prefix. Set only when the service has `grant`. |
 | `DG_CREDENTIAL_GRANT_FILE` | The absolute path of the token file. Set only when the service has `grant`. |
 
 The environment holds no token. Read the file.
+
+The daemon gives its own `DG_HOME` to each service when it has one, so a
+`dg-skills` or `dg-agent` call of the service uses the same dg home. The state
+folder is yours to keep files in: the daemon does not read it.
 
 A later transport arrives as a new environment key. It does not change v1.
 

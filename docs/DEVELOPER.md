@@ -5,6 +5,7 @@
 ```text
 pkg/
   common/      @dg/common — shared types + pure functions
+  dg/          @dg/dg — the `dg` command; mounts the three command trees
   extension/   WXT MV3 browser extension (was extension-src/)
   dg-daemon/   loopback HTTP+WS chat daemon — runs from the shared launcher bundle
   dg-agent/    agent-facing CLI for the daemon — runs from the shared launcher bundle
@@ -65,7 +66,7 @@ binaries. From the repo root, `mise run install:skills` runs
 
 ### pkg/launcher (runtime bundle)
 
-`dg-skills`, `dg-agent` and `dg-daemon` ship as one minified, code-split bundle
+`dg`, `dg-skills`, `dg-agent` and `dg-daemon` ship as one minified, code-split bundle
 that runs on a pinned Bun. See [ADR 0032](adr/0032-shared-runtime-bundle.md).
 
 ```bash
@@ -295,6 +296,21 @@ The real-git suite is `pkg/skills-cli/__tests__/meaningful.spec.ts`. It
 preserves the ten legacy history/backup/rollback cases and checks CLI status,
 plan schemas, literal paths/messages, attribution and inert imports in disposable
 repositories with local bare remotes and isolated durable state.
+Tests that start a program set `DG_PATH_FENCE` to the temp folder, so a program
+refuses a dg folder outside it.
+
+### pkg/dg (the dg command)
+
+`dg` mounts the three command trees: `dg job` and `dg autostart` run commands of
+`dg-daemon`, `dg skills`, `dg install`, `dg upgrade` and `dg doctor` run
+commands of `dg-skills`, and `dg agent` runs `dg-agent`. `ROUTES` in
+`pkg/dg/src/main.ts` holds the nine names.
+
+```bash
+cd pkg/dg
+bun run lint   # tsc --noEmit
+bun test       # routes, help and parity with the mounted programs
+```
 
 ### pkg/dg-daemon (chat daemon)
 
@@ -398,7 +414,7 @@ bun test       # install logic + skill manifests + CLI smoke
 | Workflow | Trigger (paths) | Result |
 | ------------------- | ------------------------------------------- | --------------------------------------- |
 | `ext-blt` | PR: extension, common | required on master |
-| `skills-blt` | PR: skills-cli, inbox, ssms, channel-review, dg-agent, dg-daemon, extension, common, skills, skills-test, bun.lock | required |
+| `skills-blt` | PR: skills-cli, dg, inbox, ssms, channel-review, dg-agent, dg-daemon, extension, common, skills, skills-test, bun.lock | required |
 | `dg-daemon-blt` | PR: dg-daemon, common | required |
 | `dg-agent-blt` | PR: dg-agent, dg-daemon, common | required |
 | `release` | push master, no path filter; manual dispatch | one `vX.Y.Z` release: `dg-lib-<v>.tar.gz`, `runtime.json`, the demo narration zip, 2 extension zips, both bootstraps, `SHA256SUMS` |
@@ -419,7 +435,7 @@ PRs to `master` require `ext-blt`, `skills-blt` (including channel-review), `dg-
 
 ## Matched release versions
 
-The extension zip and the bundle that holds `dg-skills`, `dg-daemon` and `dg-agent` ship as one matched set.
+The extension zip and the bundle that holds `dg`, `dg-skills`, `dg-daemon` and `dg-agent` ship as one matched set.
 The `release` workflow stamps one version into every file below and tags the release commit `vX.Y.Z`.
 Do not bump a version by hand.
 
@@ -434,6 +450,7 @@ Do not bump a version by hand.
 | skill tree | the repository itself, tracked in `master` |
 
 `@dg/common` stays at 1.0.0; it is not part of this matched release set.
+`dg` reports the stamp of the launcher, and pkg/dg stays at `1.0.0`.
 
 ## Releases
 
@@ -459,7 +476,7 @@ To recover from a failed run, run **Release** again from `master`. If the tag ex
 If a draft exists, the job deletes the draft and uploads again. No step deletes a tag.
 
 The builds are `build-bundle` (one job: the bundle and `runtime.json`), `build-ext` and `build-narration`.
-`smoke-bundle` installs the pinned runtime on six native runners, one per supported platform, and runs `--version` for all three programs from the bundle.
+`smoke-bundle` installs the pinned runtime on six native runners, one per supported platform, and runs `--version` for all four program names from the bundle.
 
 `dg-skills install` refreshes the runtime, the bundle and the extension zip from one release in one pass, skipping any part that is already current.
 

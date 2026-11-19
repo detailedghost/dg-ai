@@ -75,7 +75,7 @@ the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills
   `launch` always needs it. `chat` and
   `overwatch` open a page that `dg-daemon` serves on loopback, which needs
   `dg-agent` and `dg-daemon` but no extension. A CLI-only install has both,
-  because one bundle holds all three programs. `browser` runs locally by
+  because one bundle holds all four program names. `browser` runs locally by
   default: `dg-skills batch-open` opens plain tabs and needs the extension only
   with `--ext`. `launch` is `--ext`-only. In a CLI-only install,
   `batch-open --ext`, `launch`, `demo --ext`, `rerun --ext`, `proto --ext`,
@@ -243,8 +243,8 @@ the `/dg:*` skills are available.
 
 ## Step 2 — Install the CLI + extension (agent-runnable + one manual step)
 
-The skills run `dg-skills`, `dg-agent` and `dg-daemon` from one bundle on a
-pinned Bun runtime. Bootstrap once — this installs the runtime, the bundle and the three launchers in
+The skills run `dg-skills`, `dg-agent` and `dg-daemon`, and `dg` runs any of them, from one bundle on a
+pinned Bun runtime. Bootstrap once — this installs the runtime, the bundle and the four launchers in
 the per-OS folders ([install layout](install.md#where-dg-keeps-its-files)), **then runs `dg-skills install`**,
 which stages the extension and prints the exact **Load unpacked** path:
 
@@ -340,8 +340,8 @@ ______________________________________________________________________
 
 ### Shell completion
 
-The install also writes bash, zsh and fish completion files for the three
-programs to the per-user shell folders. It does not edit a shell startup file.
+The install also writes bash, zsh and fish completion files for `dg` and the
+three other programs to the per-user shell folders. It does not edit a shell startup file.
 `dg-skills doctor completion` reports their state. zsh needs one `fpath` line
 in `~/.zshrc`; the installer prints it, and an agent must not add it without
 the human's yes. See [Shell completion](install.md#shell-completion).
@@ -381,7 +381,7 @@ those. See [SMS providers](ssms.md).
 ## Inbox cleanup
 
 The shared inbox-cleanup skill runs the dg-skills inbox command. Update
-dg-skills, dg-agent, dg-daemon, and the extension together with dg-skills install.
+`dg`, `dg-skills`, `dg-agent`, `dg-daemon`, and the extension together with `dg-skills install`.
 Start a dg session before configuring encrypted inbox profiles. Proton also
 requires one connected extension and a signed-in Proton mail tab. A headless
 agent cannot rely on `dg-agent start --open`. Run `dg-agent start

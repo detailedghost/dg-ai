@@ -2,6 +2,7 @@
 
 Status: Accepted
 Date: 2026-11-12
+Amended 2026-11-18: the daemon also injects DG_SERVICE_STATE_DIR and, when it has one, DG_HOME; see docs/service-api.md.
 
 ## Context
 
