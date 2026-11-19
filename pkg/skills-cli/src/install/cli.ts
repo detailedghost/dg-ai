@@ -49,7 +49,6 @@ import { removeLegacyExtensions, syncDirInPlace } from "../utils/extension-files
 import { installPackagedPersonas } from "../proxy/packaged-personas";
 import { setCliOnly } from "../utils/cli-only";
 import { prunePluginCache } from "../install/prune-plugin-cache";
-import { VERSION } from "../main";
 import {
 	bundleChangedTo,
 	installRecommendedForClaude,
@@ -405,7 +404,7 @@ async function install(
 }
 
 function withCurrentPins(step: () => void): void {
-	const moved = bundleChangedTo(VERSION, readCurrentVersion());
+	const moved = bundleChangedTo(process.env.DG_BUILD_VERSION ?? "dev", readCurrentVersion());
 	if (!moved) return step();
 	console.log(
 		`⚠ recommended plugins skipped: dg-skills is now v${moved}. Run the same dg-skills install command again to install them at its pins.`,
