@@ -154,7 +154,7 @@ describe("unknown input", () => {
 		expect(run.loads).toEqual([]);
 	});
 
-	test.each(["nope", "help", "completion", "service", "toString"])("dg help %p names an unknown word", async (word) => {
+	test.each(["nope", "service", "toString"])("dg help %p names an unknown word", async (word) => {
 		const run = await runDg(["help", word]);
 		expect(run.code).toBe(1);
 		expect(run.stderr).toBe(UNKNOWN(word));

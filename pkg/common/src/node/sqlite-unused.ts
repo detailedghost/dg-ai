@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { isMissingPath } from "../errors";
 
 const JOURNAL_MODE_BYTES = { start: 18, end: 20, rollback: 1 } as const;
 const UNUSED_DB_MAX_BYTES = 1024 * 1024;
@@ -52,7 +53,7 @@ export function daemonFolderUnused(dir: string): boolean {
 	try {
 		if (!lstatSync(dir).isDirectory()) return true;
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "ENOENT" || (error as NodeJS.ErrnoException).code === "ENOTDIR";
+		return isMissingPath(error);
 	}
 	try {
 		const names = readdirSync(dir);

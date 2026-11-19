@@ -12,15 +12,27 @@ import {
 	truncateSync,
 	writeFileSync,
 } from "node:fs";
-import { dirname, resolve, sep } from "node:path";
+import { dirname, posix, resolve, win32 } from "node:path";
 
-export function insideRoot(root: string, dir: string): boolean {
-	const base = resolve(root);
-	const target = resolve(dir);
-	return (
-		target !== base &&
-		target.startsWith(base.endsWith(sep) ? base : `${base}${sep}`)
-	);
+function relativeUnder(root: string, target: string, platform: NodeJS.Platform): string | undefined {
+	const path = platform === "win32" ? win32 : posix;
+	const norm = (value: string) => {
+		const resolved = path.resolve(value);
+		return platform === "win32" ? resolved.toLowerCase() : resolved;
+	};
+	const rel = path.relative(norm(root), norm(target));
+	return rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel) ? undefined : rel;
+}
+
+/** True when `dir` is `root` or lies under it, comparing case-insensitively on win32. */
+export function withinRoot(root: string, dir: string, platform: NodeJS.Platform = process.platform): boolean {
+	return relativeUnder(root, dir, platform) !== undefined;
+}
+
+/** True when `dir` lies strictly under `root`, comparing case-insensitively on win32. */
+export function insideRoot(root: string, dir: string, platform: NodeJS.Platform = process.platform): boolean {
+	const rel = relativeUnder(root, dir, platform);
+	return rel !== undefined && rel !== "";
 }
 
 function realParentInsideRoot(root: string, target: string): boolean {

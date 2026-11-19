@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 describe("dg usage", () => {
-	test.each([[[]], [["--help"]], [["-h"]], [["help"]]] as const)("dg %j prints usage and exits 0", async (argv) => {
+	test.each([[[]], [["--help"]], [["-h"]], [["help"]], [["help", "help"]], [["help", "completion"]]] as const)("dg %j prints usage and exits 0", async (argv) => {
 		const run = await runDg([...argv]);
 		expect(run.code).toBe(0);
 		expect(run.stderr).toBe("");
@@ -23,7 +23,7 @@ describe("dg usage", () => {
 	});
 
 	test("every spelling of help prints the same text", async () => {
-		const texts = await Promise.all([[], ["--help"], ["-h"], ["help"]].map((argv) => runDg(argv)));
+		const texts = await Promise.all([[], ["--help"], ["-h"], ["help"], ["help", "help"], ["help", "completion"]].map((argv) => runDg(argv)));
 		for (const run of texts) expect(run.stdout).toBe(texts[0]?.stdout as string);
 	});
 

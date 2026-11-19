@@ -1,6 +1,7 @@
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, posix, win32 } from "node:path";
+import { withinRoot } from "./fs";
 
 export type SystemSeams = {
 	platform?: NodeJS.Platform;
@@ -158,21 +159,10 @@ function realOrGiven(value: string): string {
 function assertInsideFence(platform: NodeJS.Platform, fence: string, paths: DgPaths): void {
 	const path = platform === "win32" ? win32 : posix;
 	if (!path.isAbsolute(fence)) throw new Error(`dg path fence: ${fence} is not absolute`);
-	const norm = (value: string) => {
-		const resolved = path.resolve(value);
-		return platform === "win32" ? resolved.toLowerCase() : resolved;
-	};
-	const bases = [...new Set([norm(fence), norm(realOrGiven(fence))])];
-	const inside = (target: string) =>
-		bases.some((base) => {
-			const rel = path.relative(base, target);
-			return (
-				rel === "" ||
-				(rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
-			);
-		});
+	const bases = [...new Set([fence, realOrGiven(fence)])];
+	const inside = (target: string) => bases.some((base) => withinRoot(base, target, platform));
 	for (const role of FENCE_ROLES) {
-		if (!inside(norm(paths[role]))) {
+		if (!inside(paths[role])) {
 			throw new Error(
 				`dg path fence: ${role} ${paths[role]} is outside ${fence} (unset DG_PATH_FENCE to turn the fence off)`,
 			);

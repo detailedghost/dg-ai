@@ -7,8 +7,8 @@ const markerOf = (platform: NodeJS.Platform): string => (platform === "win32" ? 
 /** True for a regular file, or a link that ends in one, whose first bytes are text that runs the current dg bundle. */
 export function isDgLauncher(path: string, platform: NodeJS.Platform = process.platform): boolean {
 	try {
-		const kind = lstatSync(path).isSymbolicLink() ? statSync(path) : lstatSync(path);
-		if (!kind.isFile()) return false;
+		const stat = statSync(path);
+		if (!stat.isFile()) return false;
 		const fd = openSync(path, "r");
 		try {
 			const buffer = Buffer.alloc(SNIFF_BYTES);

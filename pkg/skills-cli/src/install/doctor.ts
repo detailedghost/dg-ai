@@ -44,23 +44,22 @@ function stepLines(step: PlanStep): string[] {
 	}
 }
 
+function layoutFix(steps: LayoutPlan["steps"]): string {
+	if (steps.some(({ action }) => action.kind === "block" && action.reason === "two-used")) return TWO_USED_RENAME;
+	if (process.platform === "win32") {
+		const windowsBlock = steps.find(({ action }) => action.kind === "block" && action.reason === "live-writer");
+		if (windowsBlock) return blockedText({ reason: "live-writer", from: windowsBlock.from, to: windowsBlock.to, refused: true });
+	}
+	return "dg-skills install";
+}
+
 async function layoutCheck(ctx: DoctorContext): Promise<CheckResult> {
 	const { planLayout, snapshot } = await import("@dg/common/node/layout-work");
 	const plan = planLayout(LAYOUT_TABLE, snapshot(ctx.paths, {}), {});
 	const lines = [...new Set(plan.steps.flatMap(stepLines))];
 	if (plan.steps.every(({ action }) => action.kind === "skip" || action.kind === "absent"))
 		return ok("every dg file is in its per-OS folder");
-	const windowsBlock =
-		process.platform === "win32"
-			? plan.steps.find(({ action }) => action.kind === "block" && action.reason === "live-writer")
-			: undefined;
-	const twoUsed = plan.steps.some(({ action }) => action.kind === "block" && action.reason === "two-used");
-	const fix = twoUsed
-		? TWO_USED_RENAME
-		: windowsBlock
-		? blockedText({ reason: "live-writer", from: windowsBlock.from, to: windowsBlock.to, refused: true })
-		: "dg-skills install";
-	return warn(lines.join("\n"), fix);
+	return warn(lines.join("\n"), layoutFix(plan.steps));
 }
 
 export const installChecks: DoctorCheck[] = [

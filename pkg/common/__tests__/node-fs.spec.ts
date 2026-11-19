@@ -133,6 +133,12 @@ describe("insideRoot", () => {
 		expect(insideRoot("/a/root", "/a/root/../other")).toBe(false);
 		expect(insideRoot("/a/root", "/a/rootless/x")).toBe(false);
 	});
+
+	it("folds case on win32 only", () => {
+		expect(insideRoot("C:\\Root", "c:\\root\\x", "win32")).toBe(true);
+		expect(insideRoot("C:\\Root", "c:\\root", "win32")).toBe(false);
+		expect(insideRoot("/a/Root", "/a/root/x", "linux")).toBe(false);
+	});
 });
 
 describe("removeInside", () => {

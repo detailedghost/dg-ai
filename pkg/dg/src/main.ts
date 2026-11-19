@@ -92,7 +92,8 @@ async function completion(words: readonly string[], mounts: Mounts): Promise<num
 
 export async function main(argv: readonly string[], mounts: Mounts): Promise<number> {
 	const [first, ...rest] = argv;
-	if (first === undefined || first === "--help" || first === "-h" || (first === "help" && rest.length === 0)) {
+	const helpTopic = first === "help" && (rest.length === 0 || rest[0] === "help" || rest[0] === "completion");
+	if (first === undefined || first === "--help" || first === "-h" || helpTopic) {
 		process.stdout.write(usage());
 		return 0;
 	}

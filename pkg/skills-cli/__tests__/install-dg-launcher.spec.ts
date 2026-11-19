@@ -4,9 +4,11 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { holdsOtherFile } from "../src/install/dg-launcher";
 import { isDgLauncher, writeShims } from "../src/install/shims";
 import {
 	generatedLauncher,
@@ -100,6 +102,30 @@ describe("writeShims", () => {
 		writeShims(bin, root, "linux", () => {});
 
 		expect(isDgLauncher(join(bin, "dg"), "linux")).toBe(true);
+	});
+});
+
+describe("holdsOtherFile", () => {
+	test("is false for a missing path and for a launcher that writeShims wrote", () => {
+		expect(holdsOtherFile(join(bin, "dg"), "linux")).toBe(false);
+
+		writeShims(bin, root, "linux", () => {});
+
+		expect(holdsOtherFile(join(bin, "dg"), "linux")).toBe(false);
+	});
+
+	test("is true for a file that is not a dg launcher", () => {
+		mkdirSync(bin, { recursive: true });
+		writeFileSync(join(bin, "dg"), "#!/bin/sh\necho other\n");
+
+		expect(holdsOtherFile(join(bin, "dg"), "linux")).toBe(true);
+	});
+
+	test.skipIf(process.platform === "win32")("is false for a dg link with no target", () => {
+		mkdirSync(bin, { recursive: true });
+		symlinkSync(join(area, "missing-target"), join(bin, "dg"));
+
+		expect(holdsOtherFile(join(bin, "dg"), "linux")).toBe(false);
 	});
 });
 
