@@ -4,7 +4,7 @@ feature_snake_case: adr_decision_records
 date: "2026-11-19"
 version: "1.0"
 status: draft
-current_slice: 3
+current_slice: 4
 pr_strategy: single
 slices:
   - id: 1
@@ -131,37 +131,37 @@ Split decision records into two paired files: a simple human ADR in docs/adr wit
 ### Slice 2 — adr-lint-readability
 
 #### Engineering
-- [ ] Replace the slice 1 stub in `src/adr/lint.ts`; register no verbs; import `LEVELS`, `gradeLimit`, `HUMAN_SECTIONS`, `TOC_MARKER`, `loadRecords`, `renderIndexes`, `matchCovers` and `repoLevel` from the slice 1 modules; add no local slug, glob or git helper
-- [ ] `src/adr/readability.ts`: Flesch-Kincaid grade on prose only; strip headings, the `Status:`, `Date:`, `Topic:` and `Level:` lines, fenced code and Mermaid blocks, tables, inline code, link targets (keep link text) and file paths; each list item and each paragraph line ends a sentence; a word is letters plus apostrophes; a number counts one syllable; hyphen parts count separately; minimum one syllable per word; silent `e` and `-ed`/`-es` rules; empty prose is grade 0
-- [ ] No new dependency: the syllable counter is built in and stays private to `readability.ts`
-- [ ] Per-ADR rules: `missing-mermaid` (a fenced ```mermaid block with a non-empty body under `## Diagram`), `missing-section` (every `## <name>` in `HUMAN_SECTIONS`, case-sensitive, any order), `grade-too-high` (grade above `gradeLimit(level)`), `missing-status`, `missing-date`, `missing-topic`, `bad-level` (ADR `Level:` not in `LEVELS`)
-- [ ] Level resolution: the ADR `Level:` line, else README `level:`; a missing or invalid README `level:` reports `bad-level` on the README; `phd` and `technical` skip only the grade rule
-- [ ] Per-pair rules: `missing-pair` (no decision with the same `NNNN-slug`), `orphan-decision` (a decision with no ADR), `missing-covers` (no `covers` key; `covers: []` passes), `broken-link` (the decision does not link its paired ADR), `duplicate-number` (two ADRs or two decisions share an NNNN)
-- [ ] Repo rules: `stale-index` (`renderIndexes` output differs from the text below `TOC_MARKER` in either index; the message names `dg-skills adr index`); `broken-link` for relative `[text](path)` and `#anchor` links in both files; backticked paths are not links; http(s) links are not fetched
-- [ ] `adr lint --all [--json]` lints every pair
-- [ ] `adr lint --changed [--base <ref>] [--json]` lints records changed against the base (staged and untracked included) plus decisions whose covers match a changed path, and always lints both halves of a touched pair; the default base is the merge base with `remoteDefaultBranch()` from `src/utils/git.ts`
-- [ ] `adr lint --grade <file|-> [--level <l>] [--json]` grades one file or stdin against a level; the default level is README `level:` when present, else `high-school`; it needs no `adr init`; exits 0 within the limit and 1 above it
-- [ ] Exactly one of `--all`, `--changed`, `--grade` is required; none or more than one exits 2 with usage
-- [ ] Output: one human line per finding `<file>: <rule>: <message>`; the grade message is `grade 13.2 exceeds high-school limit 10` (or `within`); `--json` prints `[{file,rule,message,grade?,limit?}]`, and for `--grade` prints `{grade,limit,level,ok}`; exit 1 with findings, 0 when clean
+- [x] Replace the slice 1 stub in `src/adr/lint.ts`; register no verbs; import `LEVELS`, `gradeLimit`, `HUMAN_SECTIONS`, `TOC_MARKER`, `loadRecords`, `renderIndexes`, `matchCovers` and `repoLevel` from the slice 1 modules; add no local slug, glob or git helper
+- [x] `src/adr/readability.ts`: Flesch-Kincaid grade on prose only; strip headings, the `Status:`, `Date:`, `Topic:` and `Level:` lines, fenced code and Mermaid blocks, tables, inline code, link targets (keep link text) and file paths; each list item and each paragraph line ends a sentence; a word is letters plus apostrophes; a number counts one syllable; hyphen parts count separately; minimum one syllable per word; silent `e` and `-ed`/`-es` rules; empty prose is grade 0
+- [x] No new dependency: the syllable counter is built in and stays private to `readability.ts`
+- [x] Per-ADR rules: `missing-mermaid` (a fenced ```mermaid block with a non-empty body under `## Diagram`), `missing-section` (every `## <name>` in `HUMAN_SECTIONS`, case-sensitive, any order), `grade-too-high` (grade above `gradeLimit(level)`), `missing-status`, `missing-date`, `missing-topic`, `bad-level` (ADR `Level:` not in `LEVELS`)
+- [x] Level resolution: the ADR `Level:` line, else README `level:`; a missing or invalid README `level:` reports `bad-level` on the README; `phd` and `technical` skip only the grade rule
+- [x] Per-pair rules: `missing-pair` (no decision with the same `NNNN-slug`), `orphan-decision` (a decision with no ADR), `missing-covers` (no `covers` key; `covers: []` passes), `broken-link` (the decision does not link its paired ADR), `duplicate-number` (two ADRs or two decisions share an NNNN)
+- [x] Repo rules: `stale-index` (`renderIndexes` output differs from the text below `TOC_MARKER` in either index; the message names `dg-skills adr index`); `broken-link` for relative `[text](path)` and `#anchor` links in both files; backticked paths are not links; http(s) links are not fetched
+- [x] `adr lint --all [--json]` lints every pair
+- [x] `adr lint --changed [--base <ref>] [--json]` lints records changed against the base (staged and untracked included) plus decisions whose covers match a changed path, and always lints both halves of a touched pair; the default base is the merge base with `remoteDefaultBranch()` from `src/utils/git.ts`
+- [x] `adr lint --grade <file|-> [--level <l>] [--json]` grades one file or stdin against a level; the default level is README `level:` when present, else `high-school`; it needs no `adr init`; exits 0 within the limit and 1 above it
+- [x] Exactly one of `--all`, `--changed`, `--grade` is required; none or more than one exits 2 with usage
+- [x] Output: one human line per finding `<file>: <rule>: <message>`; the grade message is `grade 13.2 exceeds high-school limit 10` (or `within`); `--json` prints `[{file,rule,message,grade?,limit?}]`, and for `--grade` prints `{grade,limit,level,ok}`; exit 1 with findings, 0 when clean
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: the grade of three hand-counted sample paragraphs (word, sentence and syllable counts written into the test) is within 0.5 of the computed Flesch-Kincaid value
-- [ ] Contract: adding code fences, a Mermaid block, a table or header lines to a sample does not change its grade
-- [ ] Contract: a bullet-only ADR grades on items as sentences and does not report one giant sentence
-- [ ] Contract: every rule id fails on a minimal bad fixture and passes on a good one: `missing-mermaid`, `missing-section`, `grade-too-high`, `missing-status`, `missing-date`, `missing-topic`, `bad-level`, `missing-pair`, `orphan-decision`, `missing-covers`, `broken-link`, `duplicate-number`, `stale-index`
-- [ ] Contract: `--json` shape is `[{file,rule,message,grade?,limit?}]` and rule ids are the exact strings above
-- [ ] `Level: technical` skips the grade rule but still fails on a missing Mermaid block or section
-- [ ] A decision with no `covers` key fails `missing-covers`; `covers: []` passes
-- [ ] `--changed` in a temp git repo lints only the touched records, their pairs and covered decisions, and ignores an untouched failing record
-- [ ] `--grade -` on stdin at grade 13 with `--level high-school` exits 1 with `grade 13.x exceeds high-school limit 10`; with `--level college` it exits 0
-- [ ] `adr lint --all` before `adr init` exits 2 with the not-initialized message; `--grade` works without init
-- [ ] No test runs `adr lint` against the real `docs/adr`
+- [x] Contract: the grade of three hand-counted sample paragraphs (word, sentence and syllable counts written into the test) is within 0.5 of the computed Flesch-Kincaid value
+- [x] Contract: adding code fences, a Mermaid block, a table or header lines to a sample does not change its grade
+- [x] Contract: a bullet-only ADR grades on items as sentences and does not report one giant sentence
+- [x] Contract: every rule id fails on a minimal bad fixture and passes on a good one: `missing-mermaid`, `missing-section`, `grade-too-high`, `missing-status`, `missing-date`, `missing-topic`, `bad-level`, `missing-pair`, `orphan-decision`, `missing-covers`, `broken-link`, `duplicate-number`, `stale-index`
+- [x] Contract: `--json` shape is `[{file,rule,message,grade?,limit?}]` and rule ids are the exact strings above
+- [x] `Level: technical` skips the grade rule but still fails on a missing Mermaid block or section
+- [x] A decision with no `covers` key fails `missing-covers`; `covers: []` passes
+- [x] `--changed` in a temp git repo lints only the touched records, their pairs and covered decisions, and ignores an untouched failing record
+- [x] `--grade -` on stdin at grade 13 with `--level high-school` exits 1 with `grade 13.x exceeds high-school limit 10`; with `--level college` it exits 0
+- [x] `adr lint --all` before `adr init` exits 2 with the not-initialized message; `--grade` works without init
+- [x] No test runs `adr lint` against the real `docs/adr`
 
 #### Acceptance Criteria
-- [ ] Given an ADR with no Mermaid block, when I run `adr lint --all`, then it exits 1 and prints `<file>: missing-mermaid: ...`
-- [ ] Given a repo set to high-school and an ADR at grade 13, when I lint it, then it prints `grade 13.x exceeds high-school limit 10` and exits 1
-- [ ] Given a stale toc, when I run `adr lint --all`, then it prints `stale-index` and names `dg-skills adr index`
+- [x] Given an ADR with no Mermaid block, when I run `adr lint --all`, then it exits 1 and prints `<file>: missing-mermaid: ...`
+- [x] Given a repo set to high-school and an ADR at grade 13, when I lint it, then it prints `grade 13.x exceeds high-school limit 10` and exits 1
+- [x] Given a stale toc, when I run `adr lint --all`, then it prints `stale-index` and names `dg-skills adr index`
 
 ### Slice 3 — adr-skill-and-rules
 
@@ -198,40 +198,44 @@ Split decision records into two paired files: a simple human ADR in docs/adr wit
 #### Engineering
 Code Structure: not applicable, this slice is text only.
 
-- [ ] `sdlc/references/templates/slice-engineering.md` and `slice-engineering-proxy.md`: one directive: when `.agents/decisions/README.md` exists, run `dg-skills adr relevant <slice files> --json` and read every decision file it lists before building; skip when the file is absent; no CLI or `slice-wave.workflow.js` change
-- [ ] `sdlc/references/templates/lore.md`: when `.agents/decisions/README.md` exists, run `dg-skills adr relevant` on the changed files, update the matching ADR and decision when behavior changed, run `dg-skills adr index`, then `dg-skills adr lint --changed`, which must exit 0 before the docs commit
-- [ ] `lore.md` never writes a new pair: for a decision that passes the three gates and has no record it emits `⚑ RATIFY: new ADR "<title>" — write it now | skip — <recommendation>` for the main loop to relay
-- [ ] `sdlc/references/finish.md` step 6 references `templates/lore.md` for the adr items and does not repeat the command list
-- [ ] spec `references/execute.md`: one-line pointer to the sdlc steps; no change to `fast.md` or `plan.md` (they inherit through finish.md)
-- [ ] land `SKILL.md` and `references/workflow.md`: inside the step 3 loop, after green CI and before step 4: when `.agents/decisions/README.md` exists, probe `dg-skills adr --help`; when the probe fails stop with `land: adr-cli-missing`; else `git fetch` and run `dg-skills adr lint --changed --base origin/<PR base branch>` (never land's `-b` value)
-- [ ] land lint failure: write the lint output to `.agents/code-review/<YYYY-MM-DD-HHMMSS-NNN>.md`, run `/dg:address -l`, count it as one CI-fix cycle toward `-c`, run the review loop on the fix, re-run lint; the same finding twice stops with `land: adr-lint-repeat`; update the Flow table
-- [ ] All adr steps in sdlc, lore and land skip quietly when `.agents/decisions/README.md` is absent; that file is the only opt-in check
-- [ ] Run `pkg/skills-cli/__tests__/assign-resolve.spec.ts` after the template edits and fix any assertion on template text in this slice
+- [x] `sdlc/references/templates/slice-engineering.md` and `slice-engineering-proxy.md`: one directive: when `.agents/decisions/README.md` exists, run `dg-skills adr relevant <slice files> --json` and read every decision file it lists before building; skip when the file is absent; no CLI or `slice-wave.workflow.js` change
+- [x] `sdlc/references/templates/lore.md`: when `.agents/decisions/README.md` exists, run `dg-skills adr relevant` on the changed files, update the matching ADR and decision when behavior changed, run `dg-skills adr index`, then `dg-skills adr lint --changed`, which must exit 0 before the docs commit
+- [x] `lore.md` never writes a new pair: for a decision that passes the three gates and has no record it emits `⚑ RATIFY: new ADR "<title>" — write it now | skip — <recommendation>` for the main loop to relay
+- [x] `sdlc/references/finish.md` step 6 references `templates/lore.md` for the adr items and does not repeat the command list
+- [x] spec `references/execute.md`: one-line pointer to the sdlc steps; no change to `fast.md` or `plan.md` (they inherit through finish.md)
+- [x] land `SKILL.md` and `references/workflow.md`: inside the step 3 loop, after green CI and before step 4: when `.agents/decisions/README.md` exists, probe `dg-skills adr --help`; when the probe fails stop with `land: adr-cli-missing`; else `git fetch` and run `dg-skills adr lint --changed --base origin/<PR base branch>` (never land's `-b` value)
+- [x] land lint failure: write the lint output to `.agents/code-review/<YYYY-MM-DD-HHMMSS-NNN>.md`, run `/dg:address -l`, count it as one CI-fix cycle toward `-c`, run the review loop on the fix, re-run lint; the same finding twice stops with `land: adr-lint-repeat`; update the Flow table
+- [x] All adr steps in sdlc, lore and land skip quietly when `.agents/decisions/README.md` is absent; that file is the only opt-in check
+- [x] Run `pkg/skills-cli/__tests__/assign-resolve.spec.ts` after the template edits and fix any assertion on template text in this slice
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: `pkg/skills-test/__tests__/adr-build-wiring.spec.ts` asserts that `adr relevant`, `adr lint --changed`, `adr index`, `.agents/decisions/README.md`, `adr-cli-missing` and `adr-lint-repeat` appear in the sdlc templates and land files
-- [ ] Contract: `lore.md` contains `⚑ RATIFY` for a new pair and no `adr new` call
-- [ ] `assign-resolve.spec.ts`, the skill lint suites and the markdown link tests pass
+- [x] Contract: `pkg/skills-test/__tests__/adr-build-wiring.spec.ts` asserts that `adr relevant`, `adr lint --changed`, `adr index`, `.agents/decisions/README.md`, `adr-cli-missing` and `adr-lint-repeat` appear in the sdlc templates and land files
+- [x] Contract: `lore.md` contains `⚑ RATIFY` for a new pair and no `adr new` call
+- [x] `assign-resolve.spec.ts`, the skill lint suites and the markdown link tests pass
 
 #### Acceptance Criteria
-- [ ] Given a repo after `adr init` and a branch whose change breaks a covered decision's ADR rules, when `/dg:land` runs, then it stops before the merge, writes the findings to `.agents/code-review/`, and runs `/dg:address -l`
-- [ ] Given a repo without `adr init`, when `/dg:land` runs, then no adr step runs
-- [ ] Given an opted-in repo and a slice whose files match a covers glob, when the slice agent starts, then its template tells it to run `adr relevant` and read the listed decision file
-- [ ] Given the finish step in an opted-in repo with changed behavior, then lore updates the matching ADR and decision and runs `adr index` plus `adr lint --changed` before the docs commit
-- [ ] Given the finish step finds a new decision with no record, then lore emits `⚑ RATIFY` and writes no new pair
-- [ ] Given an opted-in repo with an installed CLI that has no `adr` verb, when `/dg:land` runs, then it stops with `land: adr-cli-missing`
+- [x] Given a repo after `adr init` and a branch whose change breaks a covered decision's ADR rules, when `/dg:land` runs, then it stops before the merge, writes the findings to `.agents/code-review/`, and runs `/dg:address -l`
+- [x] Given a repo without `adr init`, when `/dg:land` runs, then no adr step runs
+- [x] Given an opted-in repo and a slice whose files match a covers glob, when the slice agent starts, then its template tells it to run `adr relevant` and read the listed decision file
+- [x] Given the finish step in an opted-in repo with changed behavior, then lore updates the matching ADR and decision and runs `adr index` plus `adr lint --changed` before the docs commit
+- [x] Given the finish step finds a new decision with no record, then lore emits `⚑ RATIFY` and writes no new pair
+- [x] Given an opted-in repo with an installed CLI that has no `adr` verb, when `/dg:land` runs, then it stops with `land: adr-cli-missing`
 
 ## Slice Summaries
 
 - Slice 1 (adr-cli-core, 8b878d51): added dg-skills adr with init, new, index, relevant, find and a lint stub; hoisted frontmatter helpers to src/utils/frontmatter.ts with spec re-exports. adr new slugs with dashes, takes one glob per --covers flag, and fills placeholders in one pass.
 - Slice 3 (adr-skill-and-rules, 5ce53984): added the /dg:adr skill (write and ask modes, levels, three gates) and pointed grill-me, spec grill, agent-seed, spring-break and contributing.md to it; added the adr doctor item.
+- Slice 2 (adr-lint-readability, 0532f51a): adr lint --all, --changed and --grade with a built-in Flesch-Kincaid grade, every rule id, GitHub-style heading anchors, and a shared indexTail for stale-index.
+- Slice 4 (build-wiring, 40842414): slice templates read adr relevant decisions; lore updates pairs, reindexes, lints and emits RATIFY for a new pair; land lints opted-in repos after green CI and stops with adr-cli-missing, adr-lint-repeat or adr-lint-failed.
 
 ## Agent Notes
 
 - (slice 1, dg:js) matchCovers takes root as a third argument; init and new handlers live in src/adr/index.ts; writeIndexes lives in index-gen.ts.
 - (slice 1, dg:qa-code) an empty Topic: line renders an unnamed toc group; slice 2 lint treats an empty Topic as missing-topic.
 - (slice 3, dg:lore) grill-me/references/protocol.md also carried <adr-root> and was fixed outside the slice files list; the adr doctor item landed with slice 3 because doctor-coverage needs one per registered command.
+- (slice 2, dg:qa-code) lint reads the covers key and the README level with parseYaml itself, because the record API cannot tell a missing covers key from covers: [] or report an invalid level.
+- (slice 4, dg:lore) adr-lint-repeat means the same file and rule in two lint runs in a row.
 
 ## Issues Remediation
 
