@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.15.0 (2026-11-19)
+
+### Features
+
+- feat(channel-review): send only the GIF for a ~fun reply ([#232](https://github.com/detailedghost/dg-ai/pull/232))
+
 ## v5.14.0 (2026-11-19)
 
 ### Features
