@@ -24,7 +24,7 @@ describe("daemon harness under the test fence", () => {
 		const env = subprocessEnv(freshDgHome(), allocatePort());
 
 		expect(process.env.DG_PATH_FENCE).toBeTruthy();
-		expect(env.DG_PATH_FENCE).toBe(process.env.DG_PATH_FENCE);
+		expect(env.DG_PATH_FENCE).toBe(process.env.DG_PATH_FENCE ?? "");
 	});
 
 	it("boots a daemon in a fresh DG_HOME with the inherited DG_PATH_FENCE", async () => {
