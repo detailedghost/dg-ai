@@ -1,5 +1,5 @@
 const FENCE = /^\s*(`{3,}|~{3,})/;
-const HEADING = /^\s{0,3}#{1,6}\s/;
+export const HEADING = /^\s{0,3}#{1,6}\s+(.*)$/;
 const HEADER_LINE = /^\s*(Status|Date|Topic|Level):/;
 const TABLE_ROW = /^\s*\|/;
 const LIST_MARKER = /^\s*(?:[-*+]|\d+[.)])\s+/;
@@ -37,10 +37,15 @@ export function outsideFences(text: string): string[] {
 
 const TRAILING_PUNCTUATION = ".,;:!?)";
 
+function looksLikePath(core: string): boolean {
+	if (!core.includes("/")) return false;
+	return core.includes(".") || /^[~/]/.test(core) || core.split("/").length > 2;
+}
+
 function pathToSpace(token: string): string {
 	let end = token.length;
 	while (end > 0 && TRAILING_PUNCTUATION.includes(token[end - 1] ?? "")) end -= 1;
-	return token.slice(0, end).includes("/") ? ` ${token.slice(end)}` : token;
+	return looksLikePath(token.slice(0, end)) ? ` ${token.slice(end)}` : token;
 }
 
 function proseOf(line: string): string {

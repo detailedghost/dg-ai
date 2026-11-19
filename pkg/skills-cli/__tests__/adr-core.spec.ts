@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { chmodSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, mkdirSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 
 import { frontmatterBlock, makeAdrRepo, NOT_INITIALIZED, disposeAdrRepos, TOC_MARKER } from "./adr-fixtures";
 
@@ -38,7 +38,7 @@ describe("adr templates", () => {
 		for (const line of ["Status:", "Date:", "Topic:", "Level:"]) expect(templates.HUMAN_TEMPLATE).toContain(line);
 		for (const section of templates.HUMAN_SECTIONS) expect(templates.HUMAN_TEMPLATE).toContain(section);
 		expect(templates.HUMAN_TEMPLATE).toContain("```mermaid");
-		expect(templates.AGENT_TEMPLATE).toContain("covers: []");
+		expect(templates.AGENT_TEMPLATE).toContain("covers: {{covers}}");
 		expect(templates.AGENT_TEMPLATE).toContain("No agent rules.");
 	});
 });
@@ -215,7 +215,7 @@ describe("adr new", () => {
 		expect(repo.list(".agents/decisions")).toEqual(["README.md"]);
 	});
 
-	test.skipIf(process.getuid?.() === 0)("a failing decision write leaves no ADR file behind", async () => {
+	test.skipIf(process.getuid?.() === 0)("a failing decision write leaves no ADR, decision or temp file behind", async () => {
 		const repo = await makeAdrRepo();
 		chmodSync(`${repo.root}/.agents/decisions`, 0o555);
 		try {
@@ -226,6 +226,14 @@ describe("adr new", () => {
 		}
 		expect(repo.list("docs/adr")).toEqual(["toc.md"]);
 		expect(repo.list(".agents/decisions")).toEqual(["README.md"]);
+	});
+
+	test("init rejects positional arguments", async () => {
+		const repo = await makeAdrRepo({ init: false });
+		const run = await repo.adr(["init", "extra"]);
+		expect(run.exitCode).toBe(2);
+		expect(run.stderr).toContain("usage:");
+		expect(repo.exists(".agents/decisions")).toBe(false);
 	});
 
 	test("keeps placeholder-looking text in the title and covers literal", async () => {
@@ -250,6 +258,12 @@ describe("adr new", () => {
 		await repo.create("Use X", "Tooling");
 		expect(repo.read("docs/adr/toc.md")).toContain("[0001 — Use X](0001-use-x.md)");
 		expect(repo.read(".agents/decisions/README.md")).toContain("Use X");
+	});
+
+	test("a glob with a backtick gets a longer code fence in the README table", async () => {
+		const repo = await makeAdrRepo();
+		await repo.create("Use X", "Tooling", ["--covers", "a`b/**"]);
+		expect(repo.read(".agents/decisions/README.md")).toContain("``a`b/**``");
 	});
 
 	test("acceptance: new with --covers lists the record under Tooling in both indexes", async () => {
@@ -285,16 +299,6 @@ describe("adr hardening", () => {
 		expect(repo.read(".agents/decisions/0001-use-x.md")).toBe("KEEP TOO\n");
 		expect(run.exitCode).toBe(0);
 		expect(repo.list("docs/adr").some((name) => name.endsWith(".tmp"))).toBe(false);
-	});
-
-	test.skipIf(process.getuid?.() === 0)("a failed write leaves no temp files behind", async () => {
-		const repo = await makeAdrRepo();
-		chmodSync(`${repo.root}/.agents/decisions`, 0o555);
-		const run = await repo.create("Use X", "Tooling");
-		chmodSync(`${repo.root}/.agents/decisions`, 0o755);
-		expect(run.exitCode).not.toBe(0);
-		expect(repo.list("docs/adr").filter((name) => name !== "toc.md")).toEqual([]);
-		expect(repo.list(".agents/decisions").filter((name) => name !== "README.md")).toEqual([]);
 	});
 
 	test("index refuses to write through a symlinked index file", async () => {
@@ -435,7 +439,7 @@ describe("adr relevant", () => {
 
 	test("never matches covers: []", async () => {
 		const repo = await covered();
-		const run = await repo.adr(["relevant", "anything/at/all.ts", "0002-no-coverage.md"]);
+		const run = await repo.adr(["relevant", "anything/at/all.ts"]);
 		expect(run.exitCode).toBe(0);
 		expect(run.stdout).not.toContain("No coverage");
 	});
@@ -449,7 +453,7 @@ describe("adr relevant", () => {
 
 	test("normalizes ./ prefixes, absolute repo paths and backslashes", async () => {
 		const repo = await covered();
-		for (const path of ["./pkg/a/x.ts", `${repo.root}/pkg/a/x.ts`, "pkg\\a\\x.ts"]) {
+		for (const path of ["./pkg/a/x.ts", "src/../pkg/a/x.ts", `${realpathSync(repo.root)}/pkg/a/x.ts`, "pkg\\a\\x.ts"]) {
 			const run = await repo.adr(["relevant", path]);
 			expect(run.stdout).toContain("0001\tUse X\t");
 		}

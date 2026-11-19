@@ -14,19 +14,23 @@ export interface DocumentSplit {
 	body: string;
 }
 
+function stripCr(line: string): string {
+	return line.replace(/\r$/, "");
+}
+
 /** Split on a first-line `---` fence; an unclosed fence makes the rest frontmatter. */
 export function splitDocument(text: string): DocumentSplit {
 	const lines = text.split("\n");
-	if (lines[0] !== "---") return { front: "", body: text };
+	if (lines[0]?.trimEnd() !== "---") return { front: "", body: text };
 	const phantom = lines[lines.length - 1] === "" ? 1 : 0;
-	const close = lines.indexOf("---", 1);
+	const close = lines.findIndex((line, index) => index > 0 && line.trimEnd() === "---");
 	if (close < 0)
 		return {
-			front: lines.slice(1, lines.length - phantom).join("\n"),
+			front: lines.slice(1, lines.length - phantom).map(stripCr).join("\n"),
 			body: "",
 		};
 	return {
-		front: lines.slice(1, close).join("\n"),
+		front: lines.slice(1, close).map(stripCr).join("\n"),
 		body: lines.slice(close + 1).join("\n"),
 	};
 }

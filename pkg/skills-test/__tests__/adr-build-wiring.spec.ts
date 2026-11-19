@@ -58,7 +58,7 @@ describe("adr build wiring: finish and execute", () => {
 
 	test("spec execute.md points at the sdlc adr steps", () => {
 		expect(EXECUTE).toContain("finish.md");
-		expect(EXECUTE).toContain("adr");
+		expect(EXECUTE).toContain("Opted-in repos (`.agents/decisions/README.md` exists)");
 	});
 });
 
@@ -72,7 +72,7 @@ describe("adr build wiring: land", () => {
 
 	test("lints against the PR base branch, never the -b value", () => {
 		expect(LAND_WORKFLOW).toContain("git fetch");
-		expect(LAND_WORKFLOW).toContain("dg-skills adr lint --changed --base origin/<baseRefName>");
+		expect(LAND_WORKFLOW).toContain("dg-skills adr lint --changed --base 'origin/<baseRefName>'");
 		expect(LAND_WORKFLOW).toMatch(/never[^\n]*`-b`/i);
 	});
 

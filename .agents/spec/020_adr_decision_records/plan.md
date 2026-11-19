@@ -10,7 +10,7 @@ slices:
   - id: 1
     name: "adr-cli-core"
     depends_on: []
-    files: ["pkg/skills-cli/src/adr/**", "pkg/skills-cli/src/commands/adr.ts", "pkg/skills-cli/src/register-all.ts", "pkg/skills-cli/src/utils/frontmatter.ts", "pkg/skills-cli/src/spec/frontmatter.ts", "pkg/skills-cli/src/spec/shared.ts", "pkg/skills-cli/src/completion/**", "pkg/skills-cli/__tests__/adr-core.spec.ts", "pkg/skills-cli/__tests__/adr-fixtures.ts", "pkg/skills-cli/__tests__/completion.spec.ts", "pkg/skills-cli/__tests__/lazy-commands.spec.ts"]
+    files: ["pkg/skills-cli/src/adr/**", "pkg/skills-cli/src/commands/adr.ts", "pkg/skills-cli/src/register-all.ts", "pkg/skills-cli/src/utils/frontmatter.ts", "pkg/skills-cli/src/spec/frontmatter.ts", "pkg/skills-cli/src/spec/shared.ts", "pkg/skills-cli/src/completion/**", "pkg/skills-cli/__tests__/adr-core.spec.ts", "pkg/skills-cli/__tests__/adr-fixtures.ts", "pkg/skills-cli/__tests__/utils-frontmatter.spec.ts", "pkg/skills-cli/__tests__/completion.spec.ts", "pkg/skills-cli/__tests__/lazy-commands.spec.ts"]
     agents:
       primary: dg:js
       confidence: high
@@ -28,7 +28,7 @@ slices:
   - id: 3
     name: "adr-skill-and-rules"
     depends_on: [1]
-    files: ["plugins/dg/skills/adr/**", "plugins/dg/skills/grill-me/SKILL.md", "plugins/dg/skills/grill-me/references/decisions.md", "plugins/dg/skills/spec/references/grill.md", "plugins/dg/skills/agent-seed/**", "plugins/dg/skills/spring-break/**", "docs/contributing.md", "plugins/dg/skills/README.md", "README.md", "docs/install.md", "pkg/common/__tests__/installed-skill-files.ts", "pkg/skills-test/__tests__/skill-index-docs.spec.ts", "pkg/skills-test/__tests__/adr-skill.spec.ts"]
+    files: ["plugins/dg/skills/adr/**", "plugins/dg/skills/grill-me/SKILL.md", "plugins/dg/skills/grill-me/references/decisions.md", "plugins/dg/skills/spec/references/grill.md", "plugins/dg/skills/agent-seed/**", "plugins/dg/skills/spring-break/**", "docs/contributing.md", "plugins/dg/skills/README.md", "README.md", "docs/install.md", "pkg/common/__tests__/installed-skill-files.ts", "pkg/skills-test/__tests__/skill-index-docs.spec.ts", "pkg/skills-test/__tests__/adr-skill.spec.ts", "plugins/dg/skills/grill-me/references/protocol.md", "pkg/skills-cli/src/adr/doctor.ts", "pkg/skills-cli/src/doctor/registry.ts"]
     agents:
       primary: dg:lore
       confidence: high
@@ -278,7 +278,7 @@ Code Structure: not applicable, this slice is text only.
 - **Applies to:** slices 1, 2, 3, 4
 
 ### Opt-in predicate
-- **Decision:** a repo is opted in when `.agents/decisions/README.md` exists; every CLI verb except `init` exits 2 with `adr: not initialized. Run dg-skills adr init first.` otherwise.
+- **Decision:** a repo is opted in when `.agents/decisions/README.md` exists; every CLI verb except `init` and `lint --grade` exits 2 with `adr: not initialized. Run dg-skills adr init first.` otherwise.
 - **Home:** `.agents/decisions/README.md`
 - **Rationale:** `adr init` writes it, it carries the level, and skill text can test for a file without running the CLI.
 - **Alternatives:** test for `.agents/decisions/` (dg-ai has that directory today and must stay opted out until bundle 021).

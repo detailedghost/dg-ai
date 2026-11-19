@@ -36,14 +36,18 @@ What gets easier and what gets harder.
 What we did not choose, and why.
 `;
 
-export const HUMAN_TEMPLATE = `${HUMAN_HEAD}Level: {{level}}\n${HUMAN_BODY}`;
-
 function levelLine(level: string | undefined): string {
 	return level === undefined ? "" : `Level: ${level}\n`;
 }
 
+export const HUMAN_TEMPLATE = humanTemplate("{{level}}");
+
+function humanTemplate(level: string | undefined): string {
+	return `${HUMAN_HEAD}${levelLine(level)}${HUMAN_BODY}`;
+}
+
 export function renderHuman(values: Record<string, string>, level: string | undefined): string {
-	return fill(`${HUMAN_HEAD}${levelLine(level)}${HUMAN_BODY}`, values);
+	return fill(humanTemplate(level), values);
 }
 
 export function fill(template: string, values: Record<string, string>): string {
@@ -55,7 +59,7 @@ export function fill(template: string, values: Record<string, string>): string {
 }
 
 export const AGENT_TEMPLATE = `---
-covers: []
+covers: {{covers}}
 ---
 
 [ADR {{number}}]({{link}})

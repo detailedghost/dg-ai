@@ -6,7 +6,7 @@ import { git, remoteDefaultBranch } from "../utils/git";
 import { indexTail, renderIndexes } from "./index-gen";
 import { gradeLimit, isLevel, LEVELS, parseLevel, type Level } from "./levels";
 import { ADR_DIR, DECISION_DIR, README_FILE, repoRoot, requireInitialized, TOC_FILE } from "./paths";
-import { gradeOf, outsideFences, scanFences } from "./readability";
+import { gradeOf, HEADING, outsideFences, scanFences } from "./readability";
 import { type AdrRecord, loadRecords, matchCovers, normalizePath, repoLevel } from "./records";
 import { HUMAN_SECTIONS, TOC_MARKER } from "./templates";
 
@@ -65,7 +65,7 @@ function round1(value: number): number {
 
 function headingsOf(text: string): string[] {
 	return outsideFences(text)
-		.map((line) => line.match(/^#{1,6}\s+(.*)$/)?.[1]?.trim().replace(/#+$/, "").trim())
+		.map((line) => line.match(HEADING)?.[1]?.trim().replace(/#+$/, "").trim())
 		.filter((heading): heading is string => heading !== undefined && heading !== "");
 }
 
@@ -90,6 +90,14 @@ function anchorsOf(text: string): Set<string> {
 	return anchors;
 }
 
+function decodePart(part: string): string {
+	try {
+		return decodeURIComponent(part);
+	} catch {
+		return part;
+	}
+}
+
 function brokenLinks(path: string, text: string, root: string): Finding[] {
 	const anchors = anchorsOf(text);
 	const file = normalizePath(path, root);
@@ -100,8 +108,9 @@ function brokenLinks(path: string, text: string, root: string): Finding[] {
 			if (!anchors.has(target.slice(1))) found.push({ file, rule: "broken-link", message: `anchor ${echo(target)} matches no heading` });
 			continue;
 		}
-		const filePart = target.split(/[#?]/)[0] ?? "";
-		if (filePart !== "" && !existsSync(resolve(dirname(path), filePart))) found.push({ file, rule: "broken-link", message: `link target ${echo(target)} does not exist` });
+		const filePart = decodePart(target.split(/[#?]/)[0] ?? "");
+		const base = filePart.startsWith("/") ? root : dirname(path);
+		if (filePart !== "" && !existsSync(resolve(base, filePart.replace(/^\/+/, "")))) found.push({ file, rule: "broken-link", message: `link target ${echo(target)} does not exist` });
 	}
 	return found;
 }
@@ -198,9 +207,9 @@ async function changedPaths(root: string, base: string | undefined): Promise<str
 		if (from !== "") break;
 	}
 	if (from === "") die(`no merge base between HEAD and ${refs.map(echo).join(" or ")}. Pass --base <ref>.`);
-	const tracked = (await git`-C ${root} diff --name-only --no-renames ${from}`).text();
-	const untracked = (await git`-C ${root} ls-files --others --exclude-standard`).text();
-	return `${tracked}\n${untracked}`.split("\n").filter((line) => line !== "");
+	const tracked = (await git`-C ${root} diff --name-only -z --no-renames ${from}`).text();
+	const untracked = (await git`-C ${root} ls-files --others --exclude-standard -z`).text();
+	return `${tracked}\0${untracked}`.split("\0").filter((line) => line !== "");
 }
 
 function report(found: Finding[], json: boolean): number {
@@ -209,15 +218,25 @@ function report(found: Finding[], json: boolean): number {
 	return found.length === 0 ? 0 : 1;
 }
 
+async function readStdin(): Promise<string> {
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	for await (const chunk of Bun.stdin.stream()) {
+		size += chunk.byteLength;
+		if (size > MAX_GRADE_BYTES) die(`input is larger than ${MAX_GRADE_BYTES} bytes`);
+		chunks.push(chunk);
+	}
+	return Buffer.concat(chunks).toString("utf8");
+}
+
 async function gradeCommand(options: Options): Promise<number> {
 	const source = options.grade as string;
 	if (source !== "-") {
 		const stat = statSync(source, { throwIfNoEntry: false });
-		if (stat === undefined) die(`cannot read ${echo(source)}: no such file`);
+		if (stat === undefined || !stat.isFile()) die(`cannot read ${echo(source)}: not a file`);
 		if (stat.size > MAX_GRADE_BYTES) die(`${echo(source)} is larger than ${MAX_GRADE_BYTES} bytes`);
 	}
-	const text = source === "-" ? await Bun.stdin.text() : readFileSync(source, "utf8");
-	if (Buffer.byteLength(text) > MAX_GRADE_BYTES) die(`input is larger than ${MAX_GRADE_BYTES} bytes`);
+	const text = source === "-" ? await readStdin() : readFileSync(source, "utf8");
 	const level: Level = options.level === undefined ? repoLevel(repoRoot()) : parseLevel(options.level);
 	const limit = gradeLimit(level);
 	const grade = round1(gradeOf(text));

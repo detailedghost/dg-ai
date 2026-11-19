@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { frontOf } from "../utils/frontmatter";
 import { DEFAULT_LEVEL, isLevel, type Level } from "./levels";
 import { ADR_DIR, DECISION_DIR, README_FILE, recordFiles } from "./paths";
@@ -69,11 +69,7 @@ export function repoLevel(root: string): Level {
 }
 
 export function normalizePath(path: string, root: string): string {
-	let out = path.replaceAll("\\", "/");
-	const prefix = `${root.replaceAll("\\", "/")}/`;
-	if (out.startsWith(prefix)) out = out.slice(prefix.length);
-	while (out.startsWith("./")) out = out.slice(2);
-	return out;
+	return relative(root, resolve(root, path.replaceAll("\\", "/"))).replaceAll("\\", "/");
 }
 
 export function matchCovers(records: AdrRecord[], paths: string[], root: string): AdrRecord[] {

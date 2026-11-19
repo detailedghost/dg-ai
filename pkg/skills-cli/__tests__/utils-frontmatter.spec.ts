@@ -41,3 +41,11 @@ describe("src/utils/frontmatter", () => {
 		}
 	});
 });
+
+describe("splitDocument with CRLF", () => {
+	test("accepts CRLF fences and keeps front matter parseable", () => {
+		const split = utils.splitDocument("---\r\ncovers: [a]\r\n---\r\nBody\r\n");
+		expect(utils.frontOf("---\r\ncovers: [a]\r\n---\r\nBody\r\n")).toEqual({ covers: ["a"] });
+		expect(split.body).toBe("Body\r\n");
+	});
+});

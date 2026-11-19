@@ -111,6 +111,14 @@ describe("adr readability gradeOf", () => {
 		expect(gradeOf(withPath)).toBeCloseTo(gradeOf(BASE), 5);
 	});
 
+	test("treats and/or as prose but a slash path as a path", () => {
+		const slashed = "We chose a small database. It stores all records on disk and/or tape. Backups run each night.";
+		const plain = "We chose a small database. It stores all records on disk and or tape. Backups run each night.";
+		expect(gradeOf(slashed)).toBeCloseTo(gradeOf(plain), 5);
+		const rooted = "We chose a small database. It stores all records on disk /var/internationalization. Backups run each night.";
+		expect(gradeOf(rooted)).toBeCloseTo(gradeOf(BASE), 5);
+	});
+
 	test("ignores heading and Status, Date, Topic and Level header lines", () => {
 		const withHeader = `# Internationalization architecture\n\nStatus: Accepted\nDate: 2026-01-01\nTopic: infrastructure\nLevel: college\n\n## Context\n\n${BASE}\n`;
 		expect(gradeOf(withHeader)).toBeCloseTo(gradeOf(BASE), 5);

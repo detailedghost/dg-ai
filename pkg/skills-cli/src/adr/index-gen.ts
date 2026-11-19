@@ -13,6 +13,11 @@ export interface RenderedIndexes {
 	readme: string;
 }
 
+function compare(a: string, b: string): number {
+	if (a < b) return -1;
+	return a > b ? 1 : 0;
+}
+
 function pipes(text: string): string {
 	return text.replaceAll("|", "\\|");
 }
@@ -33,6 +38,13 @@ function linkText(text: string): string {
 	return brackets(backslashes(text));
 }
 
+function codeSpan(text: string): string {
+	const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+	const fence = "`".repeat(longest + 1);
+	const pad = text.startsWith("`") || text.endsWith("`") ? " " : "";
+	return `${fence}${pad}${text}${pad}${fence}`;
+}
+
 function ruleSummary(record: AdrRecord): string {
 	const body = splitDocument(record.decisionText ?? "").body;
 	const rule = body.split("\n").find((line) => /^\s*[-*] \S/.test(line));
@@ -40,7 +52,7 @@ function ruleSummary(record: AdrRecord): string {
 }
 
 function renderToc(records: AdrRecord[]): string {
-	const topics = [...new Set(records.map((record) => record.topic))].sort((a, b) => a.localeCompare(b));
+	const topics = [...new Set(records.map((record) => record.topic))].sort(compare);
 	return topics
 		.map((topic) => {
 			const lines = records
@@ -54,13 +66,13 @@ function renderToc(records: AdrRecord[]): string {
 function renderReadme(records: AdrRecord[]): string {
 	const rows = records.map(
 		(record) =>
-			`| ${record.number} | [${brackets(cell(record.title))}](${record.key}.md) | ${cell(record.topic)} | ${cell(ruleSummary(record))} | ${pipes(record.covers.map((glob) => `\`${glob}\``).join(", "))} |`,
+			`| ${record.number} | [${brackets(cell(record.title))}](${record.key}.md) | ${cell(record.topic)} | ${cell(ruleSummary(record))} | ${pipes(record.covers.map(codeSpan).join(", "))} |`,
 	);
 	return ["| Number | Title | Topic | Rule summary | Covers |", "| --- | --- | --- | --- | --- |", ...rows, ""].join("\n");
 }
 
 export function renderIndexes(records: AdrRecord[]): RenderedIndexes {
-	const sorted = [...records].sort((a, b) => a.number.localeCompare(b.number) || a.key.localeCompare(b.key));
+	const sorted = [...records].sort((a, b) => compare(a.number, b.number) || compare(a.key, b.key));
 	return { toc: renderToc(sorted), readme: renderReadme(sorted) };
 }
 

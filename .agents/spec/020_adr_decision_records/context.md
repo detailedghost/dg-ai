@@ -24,6 +24,7 @@ slices:
       - "pkg/skills-cli/src/completion/**"
       - "pkg/skills-cli/__tests__/adr-core.spec.ts"
       - "pkg/skills-cli/__tests__/adr-fixtures.ts"
+      - "pkg/skills-cli/__tests__/utils-frontmatter.spec.ts"
       - "pkg/skills-cli/__tests__/completion.spec.ts"
       - "pkg/skills-cli/__tests__/lazy-commands.spec.ts"
     agents:

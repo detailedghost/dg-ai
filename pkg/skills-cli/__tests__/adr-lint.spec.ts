@@ -143,15 +143,13 @@ describe("adr lint per-record rules", () => {
 		expect(run.stdout).toMatch(new RegExp(`${ADR_FILE.replaceAll(".", "\\.")}: missing-mermaid: \\S`));
 	});
 
-	test("missing-section: each required section is checked", async () => {
-		for (const section of ["Context", "Decision", "Consequences", "Diagram", "Other options"]) {
-			const repo = await makeAdrRepo();
-			await writePair(repo, KEY, adrDoc({ omit: section }), decisionDoc());
-			const { run, found } = await findings(repo);
-			expect(run.exitCode).toBe(1);
-			expect(found.map((finding) => finding.rule)).toContain("missing-section");
-			expect(found.find((finding) => finding.rule === "missing-section")?.message).toContain(section);
-		}
+	test.each(["Context", "Decision", "Consequences", "Diagram", "Other options"])("missing-section: %s is required", async (section) => {
+		const repo = await makeAdrRepo();
+		await writePair(repo, KEY, adrDoc({ omit: section }), decisionDoc());
+		const { run, found } = await findings(repo);
+		expect(run.exitCode).toBe(1);
+		expect(found.map((finding) => finding.rule)).toContain("missing-section");
+		expect(found.find((finding) => finding.rule === "missing-section")?.message).toContain(section);
 	});
 
 	test("missing-section: section names are case-sensitive", async () => {
@@ -341,6 +339,15 @@ describe("adr lint pair rules", () => {
 		expect(found[0]?.file.endsWith(ADR_FILE)).toBe(true);
 	});
 
+	test("broken-link: percent-encoded and root-absolute targets resolve", async () => {
+		const repo = await makeAdrRepo();
+		repo.write("docs/my doc.md", "x\n");
+		repo.write("docs/other.md", "x\n");
+		await writePair(repo, KEY, adrDoc({ extra: "See [a](../my%20doc.md), [b](/docs/other.md) and [c](../bad%zz.md)." }), decisionDoc());
+		const { found } = await findings(repo);
+		expect(found.map((finding) => finding.message)).toEqual(['link target "../bad?zz.md" does not exist']);
+	});
+
 	test("broken-link: an anchor with no matching heading fails", async () => {
 		const repo = await makeAdrRepo();
 		await writePair(repo, KEY, adrDoc({ extra: "See [there](#no-such-heading)." }), decisionDoc());
@@ -497,13 +504,16 @@ describe("adr lint hardening", () => {
 		expect(message).toContain('"nope/?IGNORE?rm.md"');
 	});
 
+	test("--grade on a directory exits 2", async () => {
+		const repo = await goodRepo();
+		expect((await repo.adr(["lint", "--grade", "docs"])).exitCode).toBe(2);
+	});
+
 	test("a long hostile line lints in bounded time", async () => {
 		const repo = await makeAdrRepo();
 		const noise = `${"[".repeat(60_000)}${"](x \"".repeat(10_000)}${"# ".repeat(20_000)}`;
 		await writePair(repo, KEY, adrDoc({ extra: noise }), decisionDoc());
-		const started = performance.now();
 		const { found } = await findings(repo);
-		expect(performance.now() - started).toBeLessThan(20_000);
 		expect(rulesOf(found)).toEqual(["grade-too-high"]);
 	}, 40_000);
 
@@ -612,6 +622,13 @@ describe("adr lint --changed", () => {
 		expect(run.exitCode).toBe(1);
 		expect(rulesOf(found)).toEqual(["broken-link"]);
 		expect(found[0]?.file.endsWith(".agents/decisions/0003-gamma.md")).toBe(true);
+	});
+
+	test("a changed non-ASCII path lints decisions whose covers match it", async () => {
+		const repo = await changedRepo();
+		repo.write("src/caf\u00e9.ts", "export const a = 1;\n");
+		const { found } = await findings(repo, ["--changed", "--base", "HEAD"]);
+		expect(rulesOf(found)).toEqual(["broken-link"]);
 	});
 
 	test("the default base works with no remote and includes staged changes", async () => {

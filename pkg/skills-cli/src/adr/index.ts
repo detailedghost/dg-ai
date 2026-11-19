@@ -63,7 +63,9 @@ function writeIfAbsent(path: string, text: string): void {
 }
 
 function initCommand(args: string[]): number {
-	const flags = parseFlags(args, ["--level"], "init [--level <l>]");
+	const usage = "init [--level <l>]";
+	const flags = parseFlags(args, ["--level"], usage);
+	if (flags.positional.length > 0) die(`usage: dg-skills adr ${usage}`);
 	const requested = levelFlag(flags);
 	const level = requested ?? DEFAULT_LEVEL;
 	const root = repoRoot();
@@ -132,9 +134,9 @@ function newCommand(args: string[]): number {
 	const level = levelFlag(flags);
 	const key = `${nextNumber(root)}-${slug}`;
 	const covers = flags.values.get("--covers") ?? [];
-	const values: Record<string, string> = { title, date: localDate(), topic: topic.trim(), number: key.slice(0, 4), link: `../../${ADR_DIR}/${key}.md` };
+	const values: Record<string, string> = { title, date: localDate(), topic: topic.trim(), number: key.slice(0, 4), covers: JSON.stringify(covers), link: `../../${ADR_DIR}/${key}.md` };
 	const adr = renderHuman(values, level);
-	const decision = fill(AGENT_TEMPLATE, values).replace("covers: []", () => `covers: ${JSON.stringify(covers)}`);
+	const decision = fill(AGENT_TEMPLATE, values);
 	writePair({ path: join(root, ADR_DIR, `${key}.md`), text: adr }, { path: join(root, DECISION_DIR, `${key}.md`), text: decision });
 	writeIndexes(root);
 	return 0;
