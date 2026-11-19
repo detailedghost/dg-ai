@@ -117,9 +117,11 @@ async function positionInBatch(
 	slot: BatchSlot,
 ): Promise<void> {
 	const groupTabs = await browser.tabs.query({ groupId } as never);
+	let currentIndex = -1;
 	let lowerEnd = -1;
 	let higherStart = Number.POSITIVE_INFINITY;
 	for (const t of groupTabs) {
+		if (t.id === tabId && t.index !== undefined) currentIndex = t.index;
 		if (t.id === undefined || t.id === tabId || t.index === undefined) continue;
 		const other = batchSlots.get(t.id);
 		if (other?.batch !== slot.batch) continue;
@@ -133,7 +135,9 @@ async function positionInBatch(
 				? higherStart
 				: undefined;
 	if (target === undefined) return;
-	await browser.tabs.move(tabId, { index: target }).catch(() => {});
+	const finalIndex =
+		currentIndex >= 0 && currentIndex < target ? target - 1 : target;
+	await browser.tabs.move(tabId, { index: finalIndex }).catch(() => {});
 }
 
 /** Group a marked tab into its named group, then strip the marker from its URL. */
