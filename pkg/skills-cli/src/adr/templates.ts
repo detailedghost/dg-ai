@@ -1,5 +1,9 @@
 export const TOC_MARKER = "<!-- adr:index -->";
 
+export function missingMarkerMessage(path: string): string {
+	return `${path} has no ${TOC_MARKER} marker. Add the marker line where the index should start.`;
+}
+
 export const HUMAN_SECTIONS = ["Context", "Decision", "Consequences", "Diagram", "Other options"] as const;
 
 export const HUMAN_TEMPLATE = `# {{title}}

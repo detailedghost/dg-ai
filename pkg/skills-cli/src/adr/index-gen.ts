@@ -2,9 +2,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { die } from "../spec/shared";
 import { splitDocument } from "../utils/frontmatter";
-import { README_FILE, TOC_FILE } from "./paths";
+import { README_FILE, refuseSymlink, TOC_FILE } from "./paths";
 import { type AdrRecord, loadRecords } from "./records";
-import { TOC_MARKER } from "./templates";
+import { missingMarkerMessage, TOC_MARKER } from "./templates";
 
 export const NO_RULES = "No agent rules.";
 
@@ -15,6 +15,10 @@ export interface RenderedIndexes {
 
 function cell(text: string): string {
 	return text.replaceAll("|", "\\|");
+}
+
+function linkText(text: string): string {
+	return text.replace(/[[\]]/g, "\\$&");
 }
 
 function ruleSummary(record: AdrRecord): string {
@@ -29,7 +33,7 @@ function renderToc(records: AdrRecord[]): string {
 		.map((topic) => {
 			const lines = records
 				.filter((record) => record.topic === topic)
-				.map((record) => `- [${record.number} — ${record.title}](${record.key}.md)`);
+				.map((record) => `- [${record.number} — ${linkText(record.title)}](${record.key}.md)`);
 			return `### ${topic}\n\n${lines.join("\n")}\n`;
 		})
 		.join("\n");
@@ -38,7 +42,7 @@ function renderToc(records: AdrRecord[]): string {
 function renderReadme(records: AdrRecord[]): string {
 	const rows = records.map(
 		(record) =>
-			`| ${record.number} | [${cell(record.title)}](${record.key}.md) | ${cell(record.topic)} | ${cell(ruleSummary(record))} | ${cell(record.covers.map((glob) => `\`${glob}\``).join(", "))} |`,
+			`| ${record.number} | [${cell(linkText(record.title))}](${record.key}.md) | ${cell(record.topic)} | ${cell(ruleSummary(record))} | ${cell(record.covers.map((glob) => `\`${glob}\``).join(", "))} |`,
 	);
 	return ["| Number | Title | Topic | Rule summary | Covers |", "| --- | --- | --- | --- | --- |", ...rows, ""].join("\n");
 }
@@ -53,15 +57,16 @@ export function indexTail(body: string): string {
 }
 
 function replaceBelowMarker(path: string, body: string): void {
+	refuseSymlink(path);
 	const text = readFileSync(path, "utf8");
 	const at = text.indexOf(TOC_MARKER);
-	if (at < 0) die(`${path} has no ${TOC_MARKER} marker. Add the marker line where the index should start.`);
+	if (at < 0) die(missingMarkerMessage(path));
 	const next = `${text.slice(0, at + TOC_MARKER.length)}${indexTail(body)}`;
 	if (next !== text) writeFileSync(path, next);
 }
 
-export async function writeIndexes(root: string): Promise<void> {
-	const { toc, readme } = renderIndexes(await loadRecords(root));
+export function writeIndexes(root: string): void {
+	const { toc, readme } = renderIndexes(loadRecords(root));
 	replaceBelowMarker(join(root, TOC_FILE), toc);
 	replaceBelowMarker(join(root, README_FILE), readme);
 }

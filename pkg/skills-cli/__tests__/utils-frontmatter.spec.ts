@@ -33,4 +33,11 @@ describe("src/utils/frontmatter", () => {
 		const source = readFileSync(join(import.meta.dir, "../src/skill/audit.ts"), "utf8");
 		expect(source).toMatch(/from\s+["']\.\.\/spec\/frontmatter["']/);
 	});
+
+	test("frontOf returns the front matter mapping, or an empty record", () => {
+		expect(utils.frontOf("---\nlevel: phd\ncovers: [a]\n---\nbody\n")).toEqual({ level: "phd", covers: ["a"] });
+		for (const text of ["no front", "---\n- a\n- b\n---\n", "---\n: : [\n---\n", ""]) {
+			expect(utils.frontOf(text)).toEqual({});
+		}
+	});
 });

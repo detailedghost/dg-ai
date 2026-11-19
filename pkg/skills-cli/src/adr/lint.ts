@@ -1,14 +1,16 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { die, say } from "../spec/shared";
-import { parseYaml, splitDocument } from "../utils/frontmatter";
-import { git, mergeBase, remoteDefaultBranch } from "../utils/git";
+import { frontOf } from "../utils/frontmatter";
+import { git, remoteDefaultBranch } from "../utils/git";
 import { indexTail, renderIndexes } from "./index-gen";
 import { gradeLimit, isLevel, LEVELS, parseLevel, type Level } from "./levels";
 import { README_FILE, repoRoot, requireInitialized, TOC_FILE } from "./paths";
 import { outsideFences, gradeOf } from "./readability";
 import { type AdrRecord, loadRecords, matchCovers, normalizePath, repoLevel } from "./records";
 import { HUMAN_SECTIONS, TOC_MARKER } from "./templates";
+
+const MAX_GRADE_BYTES = 1_000_000;
 
 const USAGE = "usage: dg-skills adr lint (--all | --changed [--base <ref>] | --grade <file|->) [--level <l>] [--json]";
 
@@ -47,7 +49,13 @@ function parseOptions(args: string[]): Options {
 			options[arg.slice(2) as "base" | "grade" | "level"] = value;
 		} else die(USAGE);
 	}
+	if (options.base !== undefined && (!options.modes.includes("--changed") || options.base.startsWith("-"))) die(USAGE);
+	if (options.level !== undefined && !options.modes.includes("--grade")) die(USAGE);
 	return options;
+}
+
+function echo(value: string): string {
+	return JSON.stringify(value.slice(0, 40).replace(/[^\w./#-]/g, "?"));
 }
 
 function round1(value: number): number {
@@ -60,13 +68,13 @@ function rel(path: string, root: string): string {
 
 function headingsOf(text: string): string[] {
 	return outsideFences(text)
-		.map((line) => line.match(/^#{1,6}\s+(.+?)\s*#*\s*$/)?.[1])
-		.filter((heading): heading is string => heading !== undefined);
+		.map((line) => line.match(/^#{1,6}\s+(.*)$/)?.[1]?.trim().replace(/#+$/, "").trim())
+		.filter((heading): heading is string => heading !== undefined && heading !== "");
 }
 
 function linkTargets(text: string): string[] {
 	const prose = outsideFences(text).join("\n").replace(/`[^`]*`/g, " ");
-	return [...prose.matchAll(/\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)].map((match) => match[1] ?? "");
+	return [...prose.matchAll(/\[[^\][]{0,500}\]\(([^)\s]{1,500})(?:\s+"[^")]{0,500}")?\)/g)].map((match) => match[1] ?? "");
 }
 
 function anchorOf(heading: string): string {
@@ -80,11 +88,11 @@ function brokenLinks(path: string, text: string, root: string): Finding[] {
 	for (const target of linkTargets(text)) {
 		if (/^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
 		if (target.startsWith("#")) {
-			if (!anchors.has(target.slice(1))) found.push({ file, rule: "broken-link", message: `anchor ${target} matches no heading` });
+			if (!anchors.has(target.slice(1))) found.push({ file, rule: "broken-link", message: `anchor ${echo(target)} matches no heading` });
 			continue;
 		}
 		const filePart = target.split(/[#?]/)[0] ?? "";
-		if (filePart !== "" && !existsSync(resolve(dirname(path), filePart))) found.push({ file, rule: "broken-link", message: `link target ${target} does not exist` });
+		if (filePart !== "" && !existsSync(resolve(dirname(path), filePart))) found.push({ file, rule: "broken-link", message: `link target ${echo(target)} does not exist` });
 	}
 	return found;
 }
@@ -92,20 +100,23 @@ function brokenLinks(path: string, text: string, root: string): Finding[] {
 function diagramHasMermaid(text: string): boolean {
 	const start = text.search(/^## Diagram[ \t]*$/m);
 	const section = text.slice(start).split(/^## /m)[1] ?? "";
-	return (section.match(/```mermaid[^\n]*\n([\s\S]*?)```/)?.[1] ?? "").trim() !== "";
+	const open = section.indexOf("```mermaid");
+	const bodyStart = open < 0 ? -1 : section.indexOf("\n", open);
+	const close = bodyStart < 0 ? -1 : section.indexOf("```", bodyStart + 1);
+	return close >= 0 && section.slice(bodyStart + 1, close).trim() !== "";
 }
 
 function lintAdr(record: AdrRecord, text: string, context: Context): Finding[] {
 	const file = rel(record.adrPath, context.root);
 	const found: Finding[] = [];
 	const add = (rule: string, message: string, extra: Partial<Finding> = {}): void => void found.push({ file, rule, message, ...extra });
-	const present = new Set(outsideFences(text).map((line) => line.match(/^## (.+?)\s*$/)?.[1]));
+	const present = new Set(outsideFences(text).map((line) => line.match(/^## (.*)$/)?.[1]?.trim()));
 	for (const section of HUMAN_SECTIONS) if (!present.has(section)) add("missing-section", `missing section "## ${section}"`);
 	if (present.has("Diagram") && !diagramHasMermaid(text)) add("missing-mermaid", "the Diagram section has no non-empty mermaid block");
 	if (record.status === "") add("missing-status", "missing Status line");
 	if (record.date === "") add("missing-date", "missing Date line");
 	if (record.topic === "") add("missing-topic", "missing Topic line");
-	if (record.level !== "" && !isLevel(record.level)) add("bad-level", `Level "${record.level}" is not one of ${LEVELS.join(", ")}`);
+	if (record.level !== "" && !isLevel(record.level)) add("bad-level", `Level ${echo(record.level)} is not one of ${LEVELS.join(", ")}`);
 	else {
 		const level = isLevel(record.level) ? record.level : repoLevel(context.root);
 		const limit = gradeLimit(level);
@@ -121,9 +132,7 @@ function lintDecision(record: AdrRecord, text: string, context: Context): Findin
 	const file = rel(record.decisionPath, context.root);
 	const found: Finding[] = [];
 	const add = (rule: string, message: string): void => void found.push({ file, rule, message });
-	const parsed = parseYaml(splitDocument(text).front);
-	const front = parsed.ok && typeof parsed.value === "object" && parsed.value !== null ? parsed.value : {};
-	if (!("covers" in front)) add("missing-covers", "front matter has no covers key");
+	if (!("covers" in frontOf(text))) add("missing-covers", "front matter has no covers key");
 	const pair = resolve(record.adrPath);
 	if (!linkTargets(text).some((target) => resolve(dirname(record.decisionPath), target.split(/[#?]/)[0] ?? "") === pair)) add("broken-link", `does not link its ADR docs/adr/${record.key}.md`);
 	if ((context.decisionCount.get(record.number) ?? 0) > 1) add("duplicate-number", `number ${record.number} is used by more than one decision`);
@@ -143,9 +152,8 @@ function lintRecord(record: AdrRecord, context: Context): Finding[] {
 function lintRepo(root: string, records: AdrRecord[]): Finding[] {
 	const found: Finding[] = [];
 	const readme = join(root, README_FILE);
-	const parsed = parseYaml(splitDocument(readFileSync(readme, "utf8")).front);
-	const level = parsed.ok && typeof parsed.value === "object" && parsed.value !== null ? (parsed.value as { level?: unknown }).level : undefined;
-	if (typeof level !== "string" || !isLevel(level)) found.push({ file: README_FILE, rule: "bad-level", message: `README level ${typeof level === "string" ? `"${level}"` : "is missing"}; use one of ${LEVELS.join(", ")}` });
+	const { level } = frontOf(readFileSync(readme, "utf8"));
+	if (typeof level !== "string" || !isLevel(level)) found.push({ file: README_FILE, rule: "bad-level", message: `README level ${typeof level === "string" ? echo(level) : "is missing"}; use one of ${LEVELS.join(", ")}` });
 	const expected = renderIndexes(records);
 	for (const [file, body] of [[TOC_FILE, expected.toc], [README_FILE, expected.readme]] as const) {
 		const path = join(root, file);
@@ -163,14 +171,21 @@ function countBy(records: AdrRecord[], has: (record: AdrRecord) => boolean): Map
 	return counts;
 }
 
+async function mergeBaseIn(root: string, ref: string): Promise<string> {
+	return (await git`-C ${root} merge-base HEAD ${ref}`).text().trim();
+}
+
 async function changedPaths(root: string, base: string | undefined): Promise<string[]> {
 	let from: string;
-	if (base !== undefined) from = await mergeBase(base);
-	else {
+	if (base !== undefined) {
+		from = await mergeBaseIn(root, base);
+		if (from === "") die(`no merge base between HEAD and ${echo(base)}`);
+	} else {
 		const branch = await remoteDefaultBranch();
-		from = await mergeBase(`origin/${branch}`)
-			.catch(() => mergeBase(branch))
+		from = await mergeBaseIn(root, `origin/${branch}`)
+			.catch(() => mergeBaseIn(root, branch))
 			.catch(() => "HEAD");
+		if (from === "") from = "HEAD";
 	}
 	const tracked = (await git`-C ${root} diff --name-only --no-renames ${from}`).text();
 	const untracked = (await git`-C ${root} ls-files --others --exclude-standard`).text();
@@ -185,7 +200,9 @@ function report(found: Finding[], json: boolean): number {
 
 async function gradeCommand(options: Options): Promise<number> {
 	const source = options.grade as string;
+	if (source !== "-" && statSync(source).size > MAX_GRADE_BYTES) die(`${echo(source)} is larger than ${MAX_GRADE_BYTES} bytes`);
 	const text = source === "-" ? await Bun.stdin.text() : readFileSync(source, "utf8");
+	if (Buffer.byteLength(text) > MAX_GRADE_BYTES) die(`input is larger than ${MAX_GRADE_BYTES} bytes`);
 	const level: Level = options.level === undefined ? repoLevel(repoRoot()) : parseLevel(options.level);
 	const limit = gradeLimit(level);
 	const grade = round1(gradeOf(text));
@@ -201,7 +218,7 @@ export async function lintCommand(args: string[]): Promise<number> {
 	const root = repoRoot();
 	requireInitialized(root);
 	if (options.modes.length !== 1) die(USAGE);
-	const records = await loadRecords(root);
+	const records = loadRecords(root);
 	const context: Context = {
 		root,
 		adrCount: countBy(records, (record) => record.adrText !== null),

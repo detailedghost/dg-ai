@@ -1,4 +1,4 @@
-import { escapeRegExp } from "@dg/common";
+import { escapeRegExp, isRecord } from "@dg/common";
 import { parseDocument } from "yaml";
 
 /** Split text into awk records: no phantom record after a final newline. */
@@ -41,6 +41,12 @@ export function parseYaml(text: string): YamlResult {
 	return first === undefined
 		? { ok: true, value: doc.toJS() }
 		: { ok: false, error: first.message };
+}
+
+/** Parsed front matter as a record; empty when absent, malformed, or not a mapping. */
+export function frontOf(text: string): Record<string, unknown> {
+	const parsed = parseYaml(splitDocument(text).front);
+	return parsed.ok && isRecord(parsed.value) ? parsed.value : {};
 }
 
 const QUOTES = /^["']|["']$/g;

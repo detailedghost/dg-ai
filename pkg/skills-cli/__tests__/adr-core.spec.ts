@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync } from "node:fs";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { chmodSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 
 import { frontmatterBlock, makeAdrRepo, NOT_INITIALIZED, disposeAdrRepos, TOC_MARKER } from "./adr-fixtures";
+
+setDefaultTimeout(30_000);
 
 afterEach(disposeAdrRepos);
 
@@ -264,6 +266,77 @@ describe("adr new", () => {
 	});
 });
 
+describe("adr hardening", () => {
+	test("new rejects control characters in the title and topic", async () => {
+		const repo = await makeAdrRepo();
+		for (const [title, topic] of [["Use\nX", "Tooling"], ["Use X", "Tool\u0007ing"]]) {
+			const run = await repo.create(title as string, topic as string);
+			expect(run.exitCode).toBe(2);
+		}
+		expect(repo.list("docs/adr").filter((name) => name !== "toc.md")).toEqual([]);
+	});
+
+	test("new numbers past an existing record and leaves it intact", async () => {
+		const repo = await makeAdrRepo();
+		repo.write("docs/adr/0001-use-x.md", "KEEP ME\n");
+		repo.write(".agents/decisions/0001-use-x.md", "KEEP TOO\n");
+		const run = await repo.create("Use X", "Tooling");
+		expect(repo.read("docs/adr/0001-use-x.md")).toBe("KEEP ME\n");
+		expect(repo.read(".agents/decisions/0001-use-x.md")).toBe("KEEP TOO\n");
+		expect(run.exitCode).toBe(0);
+		expect(repo.list("docs/adr").some((name) => name.endsWith(".tmp"))).toBe(false);
+	});
+
+	test("a failed write leaves no temp files behind", async () => {
+		const repo = await makeAdrRepo();
+		chmodSync(`${repo.root}/.agents/decisions`, 0o555);
+		const run = await repo.create("Use X", "Tooling");
+		chmodSync(`${repo.root}/.agents/decisions`, 0o755);
+		if (process.getuid?.() !== 0) expect(run.exitCode).not.toBe(0);
+		expect(repo.list("docs/adr").filter((name) => name !== "toc.md")).toEqual([]);
+		expect(repo.list(".agents/decisions").filter((name) => name !== "README.md")).toEqual([]);
+	});
+
+	test("index refuses to write through a symlinked index file", async () => {
+		const repo = await makeAdrRepo();
+		repo.write("elsewhere.md", `${TOC_MARKER}\n`);
+		rmSync(`${repo.root}/docs/adr/toc.md`);
+		symlinkSync(`${repo.root}/elsewhere.md`, `${repo.root}/docs/adr/toc.md`);
+		const run = await repo.adr(["index"]);
+		expect(run.exitCode).toBe(2);
+		expect(repo.read("elsewhere.md")).toBe(`${TOC_MARKER}\n`);
+	});
+
+	test("init refuses to write through a dangling symlink", async () => {
+		const repo = await makeAdrRepo({ init: false });
+		mkdirSync(`${repo.root}/docs/adr`, { recursive: true });
+		symlinkSync(`${repo.root}/target.md`, `${repo.root}/docs/adr/toc.md`);
+		const run = await repo.adr(["init"]);
+		expect(run.exitCode).toBe(2);
+		expect(repo.exists("target.md")).toBe(false);
+	});
+
+	test("the missing-marker message is identical for init and index", async () => {
+		const repo = await makeAdrRepo();
+		repo.write("docs/adr/toc.md", "# no marker\n");
+		const index = await repo.adr(["index"]);
+		const init = await repo.adr(["init"]);
+		expect(index.stderr).toContain("has no <!-- adr:index --> marker");
+		expect(init.stderr).toBe(index.stderr);
+	});
+
+	test("brackets in a title are escaped in toc link text", async () => {
+		const repo = await makeAdrRepo();
+		await repo.create("Use [x](http://evil) here", "Tooling");
+		expect(repo.read("docs/adr/toc.md")).toContain("[0001 — Use \\[x\\](http://evil) here](0001-use-x-http-evil-here.md)");
+	});
+
+	test("usage text shows --covers as a repeatable flag", async () => {
+		const repo = await makeAdrRepo();
+		expect((await repo.adr(["--help"])).stdout).toContain("[--covers <glob>]...");
+	});
+});
+
 describe("adr index", () => {
 	async function seeded() {
 		const repo = await makeAdrRepo({ level: "college" });
@@ -334,7 +407,7 @@ describe("adr index", () => {
 		const { loadRecords } = await import("../src/adr/records");
 		const { renderIndexes } = await import("../src/adr/index-gen");
 		const repo = await seeded();
-		const records = await loadRecords(repo.root);
+		const records = loadRecords(repo.root);
 		expect(renderIndexes(records)).toEqual(renderIndexes(records));
 	});
 });

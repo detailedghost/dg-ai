@@ -18,14 +18,22 @@ export function outsideFences(text: string): string[] {
 	});
 }
 
+const TRAILING_PUNCTUATION = ".,;:!?)";
+
+function pathToSpace(token: string): string {
+	let end = token.length;
+	while (end > 0 && TRAILING_PUNCTUATION.includes(token[end - 1] ?? "")) end -= 1;
+	return token.slice(0, end).includes("/") ? ` ${token.slice(end)}` : token;
+}
+
 function proseOf(line: string): string {
 	return line
 		.replace(LIST_MARKER, "")
 		.replace(/^\s*>\s?/, "")
 		.replace(/`[^`]*`/g, " ")
-		.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+		.replace(/!?\[([^\][]{0,500})\]\([^)]{0,500}\)/g, "$1")
 		.replace(/https?:\/\/\S+/g, " ")
-		.replace(/\S*\/\S*?(?=[.,;:!?)]*(?:\s|$))/g, " ");
+		.replace(/\S+/g, pathToSpace);
 }
 
 function syllablesOf(token: string): number {

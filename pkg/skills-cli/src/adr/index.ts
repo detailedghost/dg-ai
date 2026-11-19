@@ -1,20 +1,23 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { randomBytes } from "node:crypto";
+import { closeSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { die, type Handler, localDate, SpecError } from "../spec/shared";
 import { slugify } from "../worktree/core";
 import { findCommand } from "./find";
 import { writeIndexes } from "./index-gen";
 import { DEFAULT_LEVEL, type Level, parseLevel } from "./levels";
 import { lintCommand } from "./lint";
-import { ADR_DIR, DECISION_DIR, nextNumber, README_FILE, repoRoot, requireInitialized, TOC_FILE } from "./paths";
+import { ADR_DIR, DECISION_DIR, nextNumber, README_FILE, refuseSymlink, repoRoot, requireInitialized, TOC_FILE } from "./paths";
 import { relevantCommand } from "./relevant";
-import { AGENT_TEMPLATE, HUMAN_TEMPLATE, README_INTRO, TOC_INTRO, TOC_MARKER } from "./templates";
+import { AGENT_TEMPLATE, HUMAN_TEMPLATE, missingMarkerMessage, README_INTRO, TOC_INTRO, TOC_MARKER } from "./templates";
+
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 const USAGE = `usage: dg-skills adr <subcommand> [args]
 
 Subcommands:
   init [--level <l>]      create docs/adr and .agents/decisions with their indexes
-  new <title> --topic <t> [--covers <glob>...] [--level <l>]
+  new <title> --topic <t> [--covers <glob>]... [--level <l>]
                           write a paired ADR and decision, then refresh the indexes
   index                   rewrite both indexes below the marker
   lint                    check records against the rules
@@ -49,15 +52,15 @@ function levelFlag(flags: Flags): Level | undefined {
 }
 
 function ensureMarker(path: string): void {
-	if (!readFileSync(path, "utf8").includes(TOC_MARKER)) die(`${path} has no ${TOC_MARKER} marker. Add the marker line where the index should start.`);
+	if (!readFileSync(path, "utf8").includes(TOC_MARKER)) die(missingMarkerMessage(path));
 }
 
 function writeIfAbsent(path: string, text: string): void {
-	if (existsSync(path)) ensureMarker(path);
-	else writeFileSync(path, text);
+	refuseSymlink(path);
+	if (!existsSync(path)) writeFileSync(path, text, { flag: "wx" });
 }
 
-async function initCommand(args: string[]): Promise<number> {
+function initCommand(args: string[]): number {
 	const flags = parseFlags(args, ["--level"], "init [--level <l>]");
 	const level = levelFlag(flags) ?? DEFAULT_LEVEL;
 	const root = repoRoot();
@@ -72,32 +75,46 @@ async function initCommand(args: string[]): Promise<number> {
 }
 
 function writePair(adr: { path: string; text: string }, decision: { path: string; text: string }): void {
-	const tmp = (path: string): string => `${path}.tmp`;
+	const files = [adr, decision].map((file) => ({
+		...file,
+		temp: join(dirname(file.path), `.${basename(file.path, ".md")}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`),
+	}));
+	if (files.some((file) => existsSync(file.path))) die(`${basename(adr.path)} already exists. Refusing to overwrite a record.`);
+	const temps: string[] = [];
+	const linked: string[] = [];
 	try {
-		writeFileSync(tmp(adr.path), adr.text);
-		writeFileSync(tmp(decision.path), decision.text);
+		for (const file of files) {
+			const fd = openSync(file.temp, "wx");
+			temps.push(file.temp);
+			try {
+				writeFileSync(fd, file.text);
+			} finally {
+				closeSync(fd);
+			}
+		}
+		for (const file of files) {
+			linkSync(file.temp, file.path);
+			linked.push(file.path);
+		}
 	} catch (error) {
-		for (const path of [tmp(adr.path), tmp(decision.path)]) rmSync(path, { force: true });
+		for (const path of linked) rmSync(path, { force: true });
 		throw error;
-	}
-	try {
-		renameSync(tmp(adr.path), adr.path);
-		renameSync(tmp(decision.path), decision.path);
-	} catch (error) {
-		for (const path of [adr.path, tmp(adr.path), tmp(decision.path)]) rmSync(path, { force: true });
-		throw error;
+	} finally {
+		for (const path of temps) rmSync(path, { force: true });
 	}
 }
 
-async function newCommand(args: string[]): Promise<number> {
-	const usage = "new <title> --topic <t> [--covers <glob>...] [--level <l>]";
+function newCommand(args: string[]): number {
+	const usage = "new <title> --topic <t> [--covers <glob>]... [--level <l>]";
 	const root = repoRoot();
 	requireInitialized(root);
 	const flags = parseFlags(args, ["--topic", "--covers", "--level"], usage);
-	const title = flags.positional.join(" ").trim();
+	const rawTitle = flags.positional.join(" ");
+	const title = rawTitle.trim();
 	const [topic] = flags.values.get("--topic") ?? [];
 	if (topic === undefined || topic.trim() === "") die(`--topic is required. usage: dg-skills adr ${usage}`);
 	if (title === "") die("title is empty");
+	if (CONTROL_CHARS.test(rawTitle) || CONTROL_CHARS.test(topic)) die("title and topic must not contain control characters");
 	const slug = slugify(title).replaceAll("_", "-");
 	if (slug === "") die("title has no letters or digits to build a file name from");
 	const level = levelFlag(flags);
@@ -108,15 +125,15 @@ async function newCommand(args: string[]): Promise<number> {
 	const adr = fill(level === undefined ? HUMAN_TEMPLATE.replace("Level: {{level}}\n", "") : HUMAN_TEMPLATE.replace("{{level}}", level));
 	const decision = fill(AGENT_TEMPLATE).replace("covers: []", () => `covers: ${JSON.stringify(covers)}`);
 	writePair({ path: join(root, ADR_DIR, `${key}.md`), text: adr }, { path: join(root, DECISION_DIR, `${key}.md`), text: decision });
-	await writeIndexes(root);
+	writeIndexes(root);
 	return 0;
 }
 
-async function indexCommand(args: string[]): Promise<number> {
+function indexCommand(args: string[]): number {
 	const root = repoRoot();
 	requireInitialized(root);
 	if (args.length > 0) die("usage: dg-skills adr index");
-	await writeIndexes(root);
+	writeIndexes(root);
 	return 0;
 }
 

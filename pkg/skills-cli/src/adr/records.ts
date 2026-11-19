@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseYaml, splitDocument } from "../utils/frontmatter";
+import { frontOf } from "../utils/frontmatter";
 import { DEFAULT_LEVEL, isLevel, type Level } from "./levels";
 import { ADR_DIR, DECISION_DIR, README_FILE, recordFiles } from "./paths";
 
@@ -30,13 +30,11 @@ function headerLine(text: string, key: string): string {
 
 function coversOf(text: string | null): string[] {
 	if (text === null) return [];
-	const parsed = parseYaml(splitDocument(text).front);
-	if (!parsed.ok || typeof parsed.value !== "object" || parsed.value === null) return [];
-	const covers = (parsed.value as { covers?: unknown }).covers;
+	const { covers } = frontOf(text);
 	return Array.isArray(covers) ? covers.filter((entry): entry is string => typeof entry === "string") : [];
 }
 
-export async function loadRecords(root: string): Promise<AdrRecord[]> {
+export function loadRecords(root: string): AdrRecord[] {
 	const keys = new Set(
 		[ADR_DIR, DECISION_DIR].flatMap((dir) => recordFiles(root, dir).map((name) => name.slice(0, -3))),
 	);
@@ -66,8 +64,7 @@ export async function loadRecords(root: string): Promise<AdrRecord[]> {
 export function repoLevel(root: string): Level {
 	const text = readOrNull(join(root, README_FILE));
 	if (text === null) return DEFAULT_LEVEL;
-	const parsed = parseYaml(splitDocument(text).front);
-	const level = parsed.ok && typeof parsed.value === "object" && parsed.value !== null ? (parsed.value as { level?: unknown }).level : undefined;
+	const { level } = frontOf(text);
 	return typeof level === "string" && isLevel(level) ? level : DEFAULT_LEVEL;
 }
 

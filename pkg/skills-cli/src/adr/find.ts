@@ -15,12 +15,12 @@ function scoreOf(record: AdrRecord, words: string[]): number {
 	return words.reduce((sum, word) => sum + TITLE_WEIGHT * occurrences(title, word) + occurrences(body, word), 0);
 }
 
-export async function findCommand(args: string[]): Promise<number> {
+export function findCommand(args: string[]): number {
 	const root = repoRoot();
 	requireInitialized(root);
 	const { json, rest } = splitJson(args, "find <words...> [--json]");
 	const words = rest.map((word) => word.toLowerCase()).filter((word) => word !== "");
-	const hits: Array<Hit & { score: number }> = (await loadRecords(root))
+	const hits: Array<Hit & { score: number }> = loadRecords(root)
 		.map((record) => ({ ...hitOf(record), score: scoreOf(record, words) }))
 		.filter((hit) => hit.score > 0)
 		.sort((a, b) => b.score - a.score || a.number.localeCompare(b.number));

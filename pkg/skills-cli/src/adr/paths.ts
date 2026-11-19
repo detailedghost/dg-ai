@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { die } from "../spec/shared";
 
@@ -18,6 +18,10 @@ export function repoRoot(): string {
 
 export function requireInitialized(root: string): void {
 	if (!existsSync(join(root, README_FILE))) die(NOT_INITIALIZED);
+}
+
+export function refuseSymlink(path: string): void {
+	if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) die(`${path} is a symbolic link. Refusing to write through it.`);
 }
 
 export function recordFiles(root: string, dir: string): string[] {
