@@ -1,5 +1,11 @@
 # Changelog
 
+## v6.0.0 (2026-11-19)
+
+### Breaking
+
+- feat(pw)!: fold the browser skill into pw ([#236](https://github.com/detailedghost/dg-ai/pull/236))
+
 ## v5.18.0 (2026-11-19)
 
 ### Features
