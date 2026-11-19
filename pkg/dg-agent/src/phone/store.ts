@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { DgCliError } from "@dg/common";
 import { nip19 } from "nostr-tools";
-import type { AutostartState } from "./autostart";
+import type { AutostartState } from "@dg/common/node";
 import type { Gate } from "./chat";
 import { PHONE_SYSTEM_SENDER, type ContactRow, type InviteRow, type PhoneDb } from "./db";
 

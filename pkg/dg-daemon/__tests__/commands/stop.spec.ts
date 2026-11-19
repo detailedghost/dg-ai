@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import {
 	CHAT_PROTOCOL_VERSION,
 	CHAT_SERVICES_PATH,
@@ -9,6 +10,7 @@ import {
 	OWNER_TOKEN_HEADER,
 } from "@dg/common";
 import {
+	type AutostartDeps,
 	type DgPaths,
 	ensureOwnerToken,
 	readPidFile as readHandle,
@@ -52,6 +54,18 @@ async function dg(
 }
 
 const cleanups: (() => Promise<void> | void)[] = [];
+const inertAutostart: AutostartDeps = {
+	platform: "linux",
+	homeDir: join(tmpdir(), "dg-stop-spec-no-unit"),
+	env: {},
+	uid: 1000,
+	writeFile: () => {},
+	removeFile: () => {},
+	fileExists: () => false,
+	run: async (argv) => {
+		throw new Error(`unexpected manager command: ${argv.join(" ")}`);
+	},
+};
 const savedEnv: Record<string, string | undefined> = {};
 
 afterEach(async () => {
@@ -370,7 +384,13 @@ describe("dg-daemon stop seams", () => {
 
 		await cmdStop(
 			{},
-			{ platform: "linux", kill: table.kill, exec: table.exec, waitMs: 2000 },
+			{
+				platform: "linux",
+				kill: table.kill,
+				exec: table.exec,
+				autostart: inertAutostart,
+				waitMs: 2000,
+			},
 		);
 
 		expect(table.signals()).toEqual([{ pid: 424242, signal: "SIGTERM" }]);
@@ -406,9 +426,10 @@ describe("dg-daemon stop seams", () => {
 			process.kill(pid, signal);
 		};
 
-		const failure = await cmdStop({}, { kill, waitMs: 300 }).catch(
-			(err: unknown) => err,
-		);
+		const failure = await cmdStop(
+			{},
+			{ kill, autostart: inertAutostart, waitMs: 300 },
+		).catch((err: unknown) => err);
 
 		expect(failure).toBeInstanceOf(DgCliError);
 		expect((failure as DgCliError).exitCode).toBe(1);
@@ -431,7 +452,13 @@ describe("dg-daemon stop seams", () => {
 
 		await cmdStop(
 			{ force: true },
-			{ platform: "linux", kill: table.kill, exec: table.exec, waitMs: 2000 },
+			{
+				platform: "linux",
+				kill: table.kill,
+				exec: table.exec,
+				autostart: inertAutostart,
+				waitMs: 2000,
+			},
 		);
 
 		const killed = table.signals().map((call) => Math.abs(call.pid));
@@ -458,7 +485,13 @@ describe("dg-daemon stop seams", () => {
 
 		const failure = await cmdStop(
 			{},
-			{ platform: "linux", kill: table.kill, exec: table.exec, waitMs: 100 },
+			{
+				platform: "linux",
+				kill: table.kill,
+				exec: table.exec,
+				autostart: inertAutostart,
+				waitMs: 100,
+			},
 		).catch((err: unknown) => err);
 
 		expect(failure).toBeInstanceOf(DgCliError);
@@ -482,6 +515,7 @@ describe("dg-daemon stop seams", () => {
 				platform: "linux",
 				kill: table.kill,
 				exec: table.exec,
+				autostart: inertAutostart,
 				waitMs: 2000,
 				identify: () => "ours",
 			},
@@ -511,6 +545,7 @@ describe("dg-daemon stop seams", () => {
 					platform: "linux",
 					kill: table.kill,
 					exec: table.exec,
+					autostart: inertAutostart,
 					waitMs: 100,
 					identify: () => identity,
 				},
@@ -552,6 +587,7 @@ describe("dg-daemon stop seams", () => {
 				platform: "linux",
 				kill: table.kill,
 				exec: table.exec,
+				autostart: inertAutostart,
 				waitMs: 2000,
 				listTimeoutMs: 200,
 			},
@@ -571,7 +607,13 @@ describe("dg-daemon stop seams", () => {
 
 		const failure = await cmdStop(
 			{ force: true },
-			{ platform: "linux", kill: table.kill, exec: table.exec, waitMs: 2000 },
+			{
+				platform: "linux",
+				kill: table.kill,
+				exec: table.exec,
+				autostart: inertAutostart,
+				waitMs: 2000,
+			},
 		).catch((err: unknown) => err);
 
 		expect(failure).toBeInstanceOf(DgCliError);
@@ -589,7 +631,13 @@ describe("dg-daemon stop seams", () => {
 
 		await cmdStop(
 			{ force: true },
-			{ platform: "linux", kill: table.kill, exec: table.exec, waitMs: 2000 },
+			{
+				platform: "linux",
+				kill: table.kill,
+				exec: table.exec,
+				autostart: inertAutostart,
+				waitMs: 2000,
+			},
 		);
 
 		expect(new Set(table.calls.map((call) => Math.abs(call.pid)))).toEqual(
@@ -605,7 +653,13 @@ describe("dg-daemon stop seams", () => {
 
 		await cmdStop(
 			{},
-			{ platform: "win32", kill: table.kill, exec: table.exec, waitMs: 2000 },
+			{
+				platform: "win32",
+				kill: table.kill,
+				exec: table.exec,
+				autostart: inertAutostart,
+				waitMs: 2000,
+			},
 		);
 
 		expect(table.execs).toEqual([
@@ -627,7 +681,13 @@ describe("dg-daemon stop seams", () => {
 
 		await cmdStop(
 			{ force: true },
-			{ platform: "linux", kill: table.kill, exec: table.exec, waitMs: 2000 },
+			{
+				platform: "linux",
+				kill: table.kill,
+				exec: table.exec,
+				autostart: inertAutostart,
+				waitMs: 2000,
+			},
 		);
 
 		expect(new Set(table.calls.map((call) => Math.abs(call.pid)))).toEqual(
@@ -649,6 +709,7 @@ describe("dg-daemon stop seams", () => {
 					platform: "linux",
 					kill: table.kill,
 					exec: table.exec,
+					autostart: inertAutostart,
 					waitMs: 100,
 					identify: () => "ours",
 				},
@@ -676,7 +737,13 @@ describe("dg-daemon stop seams", () => {
 
 		await cmdStop(
 			{ force: true },
-			{ platform: "linux", kill, exec: table.exec, waitMs: 2000 },
+			{
+				platform: "linux",
+				kill,
+				exec: table.exec,
+				autostart: inertAutostart,
+				waitMs: 2000,
+			},
 		);
 
 		expect(readHandle(paths)?.instanceId).toBe(replacement.instanceId);
@@ -689,7 +756,13 @@ describe("dg-daemon stop seams", () => {
 
 		await cmdStop(
 			{},
-			{ platform: "linux", kill: table.kill, exec: table.exec, waitMs: 100 },
+			{
+				platform: "linux",
+				kill: table.kill,
+				exec: table.exec,
+				autostart: inertAutostart,
+				waitMs: 100,
+			},
 		);
 
 		expect(table.calls).toEqual([]);
@@ -721,9 +794,10 @@ describe("dg-daemon stop seams", () => {
 		await Bun.sleep(300);
 		const lines = captureStdout();
 
-		const failure = await cmdRestart({}, { waitMs: 300 }).catch(
-			(err: unknown) => err,
-		);
+		const failure = await cmdRestart(
+			{},
+			{ autostart: inertAutostart, waitMs: 300 },
+		).catch((err: unknown) => err);
 
 		expect(failure).toBeInstanceOf(DgCliError);
 		expect((failure as DgCliError).exitCode).toBe(1);

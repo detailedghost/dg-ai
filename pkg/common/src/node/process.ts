@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { constants as osConstants } from "node:os";
+import { describeError } from "../errors";
 
 /** Detect WSL from its environment marker or Linux kernel version; unreadable kernel metadata returns false. */
 export function isWSL(): boolean {
@@ -346,4 +347,35 @@ export function killProcessTree(
 			return;
 		}
 	}
+}
+
+export type RunResult = { code: number; stdout: string; stderr: string };
+
+function envRecord(env: NodeJS.ProcessEnv): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const [key, value] of Object.entries(env)) {
+		if (value !== undefined) out[key] = value;
+	}
+	return out;
+}
+
+/** Run an argv with captured output and no shell; a spawn failure gives code 1. */
+export async function runArgv(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<RunResult> {
+	let proc: Bun.Subprocess<"ignore", "pipe", "pipe">;
+	try {
+		proc = Bun.spawn(argv, {
+			stdout: "pipe",
+			stderr: "pipe",
+			stdin: "ignore",
+			env: envRecord(env),
+		});
+	} catch (err) {
+		return { code: 1, stdout: "", stderr: describeError(err) };
+	}
+	const [stdout, stderr, code] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	return { code: code ?? 1, stdout, stderr };
 }

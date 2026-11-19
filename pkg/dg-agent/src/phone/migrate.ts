@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, renameSync, rmSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { DgCliError, describeError } from "@dg/common";
-import { type DgPaths, ensurePrivateDir, isAlive, realSubdirectories } from "@dg/common/node";
+import { type DgPaths, ensurePrivateDir, isAlive, realSubdirectories, type RunResult, runArgv } from "@dg/common/node";
 import { programCommand } from "@dg/common/node/program";
 import { SECRET_BYTES } from "./card";
 import { type Direction, PhoneDb } from "./db";
@@ -29,7 +29,7 @@ import {
 	writeNumberKeyId,
 } from "./store";
 
-export type JobCliResult = { code: number; stdout: string; stderr: string };
+export type JobCliResult = RunResult;
 export type JobCli = (args: string[]) => Promise<JobCliResult>;
 
 export type MigrationResult =
@@ -624,35 +624,6 @@ export function readOnlyLegacyView(paths: DgPaths, alive: (pid: number) => boole
 		contactRows,
 		messages,
 	};
-}
-
-function envRecord(env: NodeJS.ProcessEnv): Record<string, string> {
-	const out: Record<string, string> = {};
-	for (const [key, value] of Object.entries(env)) {
-		if (value !== undefined) out[key] = value;
-	}
-	return out;
-}
-
-/** Run an argv with inherited env and captured output. No shell. */
-export async function runArgv(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<JobCliResult> {
-	let proc: Bun.Subprocess<"ignore", "pipe", "pipe">;
-	try {
-		proc = Bun.spawn(argv, {
-			stdout: "pipe",
-			stderr: "pipe",
-			stdin: "ignore",
-			env: envRecord(env),
-		});
-	} catch (err) {
-		return { code: 1, stdout: "", stderr: describeError(err) };
-	}
-	const [stdout, stderr, code] = await Promise.all([
-		new Response(proc.stdout).text(),
-		new Response(proc.stderr).text(),
-		proc.exited,
-	]);
-	return { code: code ?? 1, stdout, stderr };
 }
 
 /** `dg-daemon job …` on this runtime and bundle. Slice 5 uses this to disable each

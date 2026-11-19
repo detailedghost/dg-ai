@@ -205,3 +205,38 @@ describe("ensureDaemonRunning", () => {
 		expect(result.started).toBe(false);
 	});
 });
+
+describe("waitForFreshDaemon", () => {
+	it("is exported, and gives the startup timeout error when no live daemon appears", async () => {
+		const { waitForFreshDaemon } = await import("../src/node/daemon-start");
+		const dgHome = mkdtempSync(join(tmpdir(), "dg-wait-fresh-"));
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+
+			const error = await waitForFreshDaemon(paths, 250).catch((err: unknown) => err);
+
+			expect(error).toBeInstanceOf(DgCliError);
+			expect((error as DgCliError).message).toBe(TIMEOUT_TEXT);
+			expect((error as DgCliError).exitCode).toBe(EXIT_GENERAL_FAILURE);
+		} finally {
+			rmSync(dgHome, { recursive: true, force: true });
+		}
+	});
+
+	it("returns the live handle that appears while it polls", async () => {
+		const { waitForFreshDaemon } = await import("../src/node/daemon-start");
+		const dgHome = mkdtempSync(join(tmpdir(), "dg-wait-fresh-"));
+		const fake = fakeDaemon();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			const waiting = waitForFreshDaemon(paths, 5000);
+			await Bun.sleep(150);
+			writePidFileAtomic(paths, fake.handle);
+
+			expect(await waiting).toEqual(fake.handle);
+		} finally {
+			fake.stop();
+			rmSync(dgHome, { recursive: true, force: true });
+		}
+	});
+});

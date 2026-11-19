@@ -1,4 +1,5 @@
 export * from "./assets";
+export * from "./autostart";
 export * from "./bun-path";
 export * from "./cli-client";
 export * from "./credential-grants";

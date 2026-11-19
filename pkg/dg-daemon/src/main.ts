@@ -2,7 +2,7 @@ import type { CompletionNode } from "@dg/common/completion";
 import type { LayoutHooks } from "@dg/common/node/layout";
 import type { Command } from "commander";
 
-const SKIP = new Set(["status", "completion"]);
+export const SKIP = new Set(["status", "completion", "autostart status"]);
 
 type HookSeams = { platform?: NodeJS.Platform };
 
@@ -98,6 +98,32 @@ export async function buildProgram(): Promise<Command> {
 		.action(async (options: { force?: boolean }) => {
 			const { cmdRestart } = await import("./commands/stop");
 			await cmdRestart(options);
+		});
+
+	const autostart = program
+		.command("autostart")
+		.description("start the daemon at login through the service manager");
+	autostart
+		.command("install")
+		.description("install and start the login unit")
+		.action(async () => {
+			const { cmdAutostartInstall } = await import("./commands/autostart");
+			await cmdAutostartInstall();
+		});
+	autostart
+		.command("remove")
+		.description("disable and remove the login unit")
+		.action(async () => {
+			const { cmdAutostartRemove } = await import("./commands/autostart");
+			await cmdAutostartRemove();
+		});
+	autostart
+		.command("status")
+		.description("report whether the login unit is installed")
+		.option("--json", "print one JSON line")
+		.action(async (options: { json?: boolean }) => {
+			const { cmdAutostartStatus } = await import("./commands/autostart");
+			await cmdAutostartStatus(options);
 		});
 
 	registerJobCommands(program);

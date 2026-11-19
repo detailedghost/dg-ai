@@ -1,6 +1,5 @@
-import { describe, expect, it, spyOn } from "bun:test";
-import { Command } from "commander";
 import { Database } from "bun:sqlite";
+import { describe, expect, it, spyOn } from "bun:test";
 import { spawn } from "node:child_process";
 import {
 	existsSync,
@@ -15,8 +14,11 @@ import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, isAlive, resolveDgPaths } from "@dg/common/node";
 import { setProgramName } from "@dg/common/node/program";
+import { Command } from "commander";
 import { generateSecretKey, getPublicKey, nip17, nip19 } from "nostr-tools";
 import {
+	type OpenCloseDeps,
+	type PhoneDeps,
 	phoneClose,
 	phoneContacts,
 	phoneInbox,
@@ -25,28 +27,37 @@ import {
 	phoneSay,
 	phoneStatus,
 	phoneVoicemail,
-	registerPhoneCommands,
-	type OpenCloseDeps,
-	type PhoneDeps,
 	type RunDeps,
+	registerPhoneCommands,
 } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
 import { listenerPidPath } from "../../src/phone/listener";
-import { DG_AGENT_PACKAGE_VERSION } from "../../src/version";
 import {
 	disableLegacyDaemonJobs,
+	type JobCli,
 	legacyRoot,
 	legacyRootPresent,
 	linesAwaitConversion,
-	type JobCli,
 	type MigrateDeps,
 	migrateIfNeeded,
 	migrationLockPath,
-	runArgv,
 	runDaemonJobCli,
 } from "../../src/phone/migrate";
-import { DEFAULT_RELAYS, findContactByHandle, numberKeyId, readCursor, readNumber } from "../../src/phone/store";
-import { blockingSleep, createFakePool, freshNpub, makePhoneDeps, makeTempHome } from "./fake-pool";
+import {
+	DEFAULT_RELAYS,
+	findContactByHandle,
+	numberKeyId,
+	readCursor,
+	readNumber,
+} from "../../src/phone/store";
+import { DG_AGENT_PACKAGE_VERSION } from "../../src/version";
+import {
+	blockingSleep,
+	createFakePool,
+	freshNpub,
+	makePhoneDeps,
+	makeTempHome,
+} from "./fake-pool";
 import { writeLegacyLine } from "./legacy-line-fixture";
 
 const NOW = 1_800_000_000;
@@ -94,7 +105,10 @@ describe("legacyRoot / migrateIfNeeded", () => {
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: home } });
 			mkdirSync(join(paths.phoneFriendRoot, "default"), { recursive: true });
-			writeFileSync(join(paths.phoneFriendRoot, "default", "phone-friend.db"), "");
+			writeFileSync(
+				join(paths.phoneFriendRoot, "default", "phone-friend.db"),
+				"",
+			);
 
 			expect(legacyRoot(paths)).toBe(paths.phoneFriendRoot);
 
@@ -140,7 +154,10 @@ describe("legacyRootPresent", () => {
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: home } });
 			mkdirSync(join(paths.phoneFriendRoot, "default"), { recursive: true });
-			writeFileSync(join(paths.phoneFriendRoot, "default", "phone-friend.db"), "");
+			writeFileSync(
+				join(paths.phoneFriendRoot, "default", "phone-friend.db"),
+				"",
+			);
 
 			const db = PhoneDb.open(paths);
 			db.close();
@@ -149,33 +166,6 @@ describe("legacyRootPresent", () => {
 		} finally {
 			rmSync(home, { recursive: true, force: true });
 		}
-	});
-});
-
-describe("runArgv", () => {
-	it("captures stdout and the env it was given", async () => {
-		const ran = await runArgv([process.execPath, "-e", "console.log(process.env.MARKER ?? '')"], {
-			...process.env,
-			MARKER: "dg-phone-migrate",
-		});
-
-		expect(ran.code).toBe(0);
-		expect(ran.stdout).toBe("dg-phone-migrate\n");
-	});
-
-	it("captures a non-zero exit and stderr", async () => {
-		const ran = await runArgv([process.execPath, "-e", "console.error('nope'); process.exit(3)"], process.env);
-
-		expect(ran.code).toBe(3);
-		expect(ran.stderr).toContain("nope");
-	});
-
-	it("returns a failure when the executable cannot be spawned", async () => {
-		const ran = await runArgv(["/no/such/dg-daemon-binary"], process.env);
-
-		expect(ran.code).not.toBe(0);
-		expect(ran.stdout).toBe("");
-		expect(ran.stderr.length).toBeGreaterThan(0);
 	});
 });
 
@@ -189,7 +179,9 @@ describe("runDaemonJobCli", () => {
 				return { code: 0, stdout: "listed", stderr: "" };
 			});
 			expect(ran).toEqual({ code: 0, stdout: "listed", stderr: "" });
-			expect(seen).toEqual([[process.execPath, Bun.main, "dg-daemon", "job", "list"]]);
+			expect(seen).toEqual([
+				[process.execPath, Bun.main, "dg-daemon", "job", "list"],
+			]);
 		} finally {
 			setProgramName(undefined);
 		}
@@ -208,10 +200,42 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 				nsec: nip19.nsecEncode(generateSecretKey()),
 				cursor: 500,
 				messages: [
-					{ id: "d1", direction: "in", ts: NOW - 500, sender: defaultContact, contact: defaultContact, text: "hi1", readAt: NOW - 490 },
-					{ id: "d2", direction: "in", ts: NOW - 400, sender: defaultContact, contact: defaultContact, text: "hi2", readAt: NOW - 390 },
-					{ id: "d3", direction: "in", ts: NOW - 300, sender: defaultContact, contact: defaultContact, text: "hi3", readAt: null },
-					{ id: "d4", direction: "out", ts: NOW - 250, sender: "npub1us", contact: defaultContact, text: "reply", readAt: NOW - 240 },
+					{
+						id: "d1",
+						direction: "in",
+						ts: NOW - 500,
+						sender: defaultContact,
+						contact: defaultContact,
+						text: "hi1",
+						readAt: NOW - 490,
+					},
+					{
+						id: "d2",
+						direction: "in",
+						ts: NOW - 400,
+						sender: defaultContact,
+						contact: defaultContact,
+						text: "hi2",
+						readAt: NOW - 390,
+					},
+					{
+						id: "d3",
+						direction: "in",
+						ts: NOW - 300,
+						sender: defaultContact,
+						contact: defaultContact,
+						text: "hi3",
+						readAt: null,
+					},
+					{
+						id: "d4",
+						direction: "out",
+						ts: NOW - 250,
+						sender: "npub1us",
+						contact: defaultContact,
+						text: "reply",
+						readAt: NOW - 240,
+					},
 				],
 			});
 			writeLegacyLine(paths, "work", {
@@ -220,8 +244,24 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 				nsec: nip19.nsecEncode(generateSecretKey()),
 				cursor: 50,
 				messages: [
-					{ id: "w1", direction: "in", ts: NOW - 480, sender: workContact, contact: workContact, text: "yo1", readAt: NOW - 470 },
-					{ id: "w2", direction: "in", ts: NOW - 460, sender: workContact, contact: workContact, text: "yo2", readAt: NOW - 450 },
+					{
+						id: "w1",
+						direction: "in",
+						ts: NOW - 480,
+						sender: workContact,
+						contact: workContact,
+						text: "yo1",
+						readAt: NOW - 470,
+					},
+					{
+						id: "w2",
+						direction: "in",
+						ts: NOW - 460,
+						sender: workContact,
+						contact: workContact,
+						text: "yo2",
+						readAt: NOW - 450,
+					},
 				],
 			});
 
@@ -256,12 +296,18 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 					},
 				} as PhoneDeps;
 				phoneInbox({ handle: "+velora" }, inboxDeps);
-				const velora = inboxOut.map((line) => JSON.parse(line) as { id: string; direction: string });
+				const velora = inboxOut.map(
+					(line) => JSON.parse(line) as { id: string; direction: string },
+				);
 				expect(velora.map((row) => row.id)).toEqual(["w1", "w2"]);
 				expect(velora.every((row) => row.direction === "in")).toBe(true);
 				inboxOut.length = 0;
 				phoneInbox({ handle: "+default" }, inboxDeps);
-				expect(inboxOut.map((line) => JSON.parse(line) as { id: string }).map((row) => row.id)).toEqual(["d1", "d2", "d3", "d4"]);
+				expect(
+					inboxOut
+						.map((line) => JSON.parse(line) as { id: string })
+						.map((row) => row.id),
+				).toEqual(["d1", "d2", "d3", "d4"]);
 				expect(numberKeyId(db)).toBe("default");
 				expect(readCursor(db)).toBe(50);
 			} finally {
@@ -280,8 +326,14 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
-			writeLegacyLine(paths, "zara", { contact: freshNpub(), nsec: nip19.nsecEncode(generateSecretKey()) });
-			writeLegacyLine(paths, "alice", { contact: freshNpub(), nsec: nip19.nsecEncode(generateSecretKey()) });
+			writeLegacyLine(paths, "zara", {
+				contact: freshNpub(),
+				nsec: nip19.nsecEncode(generateSecretKey()),
+			});
+			writeLegacyLine(paths, "alice", {
+				contact: freshNpub(),
+				nsec: nip19.nsecEncode(generateSecretKey()),
+			});
 
 			const result = migrateIfNeeded(paths, fakeMigrateDeps());
 			if (result.migrated !== true) throw new Error("expected a migration");
@@ -297,7 +349,10 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
 			const aliceNsec = nip19.nsecEncode(generateSecretKey());
 			writeLegacyLine(paths, "default", {});
-			writeLegacyLine(paths, "alice", { contact: freshNpub(), nsec: aliceNsec });
+			writeLegacyLine(paths, "alice", {
+				contact: freshNpub(),
+				nsec: aliceNsec,
+			});
 
 			const result = migrateIfNeeded(paths, fakeMigrateDeps());
 			if (result.migrated !== true) throw new Error("expected a migration");
@@ -324,7 +379,16 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 			writeLegacyLine(paths, "default", {
 				contact,
 				listenerPid: 4242,
-				messages: [{ id: "out1", direction: "out", ts: NOW, sender: "npub1us", contact, text: "sent" }],
+				messages: [
+					{
+						id: "out1",
+						direction: "out",
+						ts: NOW,
+						sender: "npub1us",
+						contact,
+						text: "sent",
+					},
+				],
 			});
 			const killed: number[] = [];
 
@@ -354,8 +418,16 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
 			const firstContact = freshNpub();
 			const secondContact = freshNpub();
-			writeLegacyLine(paths, "line-a", { contact: firstContact, name: "shared", nsec: nip19.nsecEncode(generateSecretKey()) });
-			writeLegacyLine(paths, "line-b", { contact: secondContact, name: "shared", nsec: nip19.nsecEncode(generateSecretKey()) });
+			writeLegacyLine(paths, "line-a", {
+				contact: firstContact,
+				name: "shared",
+				nsec: nip19.nsecEncode(generateSecretKey()),
+			});
+			writeLegacyLine(paths, "line-b", {
+				contact: secondContact,
+				name: "shared",
+				nsec: nip19.nsecEncode(generateSecretKey()),
+			});
 
 			migrateIfNeeded(paths, fakeMigrateDeps());
 
@@ -375,7 +447,9 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
-			writeLegacyLine(paths, "lonely", { nsec: nip19.nsecEncode(generateSecretKey()) });
+			writeLegacyLine(paths, "lonely", {
+				nsec: nip19.nsecEncode(generateSecretKey()),
+			});
 
 			const result = migrateIfNeeded(paths, fakeMigrateDeps());
 			if (result.migrated !== true) throw new Error("expected a migration");
@@ -396,7 +470,10 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
-			writeLegacyLine(paths, "default", { contact: freshNpub(), nsec: nip19.nsecEncode(generateSecretKey()) });
+			writeLegacyLine(paths, "default", {
+				contact: freshNpub(),
+				nsec: nip19.nsecEncode(generateSecretKey()),
+			});
 			writeWhoami(paths, "dante");
 
 			migrateIfNeeded(paths, fakeMigrateDeps());
@@ -416,7 +493,10 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
-			writeLegacyLine(paths, "default", { contact: freshNpub(), nsec: nip19.nsecEncode(generateSecretKey()) });
+			writeLegacyLine(paths, "default", {
+				contact: freshNpub(),
+				nsec: nip19.nsecEncode(generateSecretKey()),
+			});
 
 			migrateIfNeeded(paths, fakeMigrateDeps());
 
@@ -435,7 +515,10 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
-			writeLegacyLine(paths, "default", { contact: freshNpub(), keyInStore: true });
+			writeLegacyLine(paths, "default", {
+				contact: freshNpub(),
+				keyInStore: true,
+			});
 
 			migrateIfNeeded(paths, fakeMigrateDeps());
 
@@ -457,10 +540,19 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
-			writeLegacyLine(paths, "default", { contact: freshNpub(), nsec: nip19.nsecEncode(generateSecretKey()) });
+			writeLegacyLine(paths, "default", {
+				contact: freshNpub(),
+				nsec: nip19.nsecEncode(generateSecretKey()),
+			});
 			mkdirSync(join(paths.phoneFriendRoot, "broken"), { recursive: true });
-			writeFileSync(join(paths.phoneFriendRoot, "broken", "phone-friend.db"), "not a sqlite file");
-			writeFileSync(join(paths.phoneFriendRoot, "default", "listener.pid"), "4242\n");
+			writeFileSync(
+				join(paths.phoneFriendRoot, "broken", "phone-friend.db"),
+				"not a sqlite file",
+			);
+			writeFileSync(
+				join(paths.phoneFriendRoot, "default", "listener.pid"),
+				"4242\n",
+			);
 			const killed: number[] = [];
 
 			expect(() =>
@@ -479,7 +571,9 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 			expect(killed).toEqual([]);
 			expect(existsSync(PhoneDb.path(paths))).toBe(false);
 			expect(existsSync(paths.phoneFriendRoot)).toBe(true);
-			expect(existsSync(join(paths.phoneFriendRoot, "default", "phone-friend.db"))).toBe(true);
+			expect(
+				existsSync(join(paths.phoneFriendRoot, "default", "phone-friend.db")),
+			).toBe(true);
 			expect(existsSync(migrationLockPath(paths))).toBe(false);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
@@ -490,7 +584,10 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
-			writeLegacyLine(paths, "default", { contact: freshNpub(), nsec: nip19.nsecEncode(generateSecretKey()) });
+			writeLegacyLine(paths, "default", {
+				contact: freshNpub(),
+				nsec: nip19.nsecEncode(generateSecretKey()),
+			});
 
 			const result = migrateIfNeeded(
 				paths,
@@ -506,7 +603,9 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 			expect(existsSync(paths.phoneFriendRoot)).toBe(true);
 			expect(legacyRootPresent(paths)).toBe(true);
 
-			expect(migrateIfNeeded(paths, fakeMigrateDeps())).toEqual({ migrated: false });
+			expect(migrateIfNeeded(paths, fakeMigrateDeps())).toEqual({
+				migrated: false,
+			});
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -519,13 +618,22 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 			const workSecret = generateSecretKey();
 			const contactSk = generateSecretKey();
 			const contactNpub = nip19.npubEncode(getPublicKey(contactSk));
-			writeLegacyLine(paths, "work", { contact: contactNpub, name: "velora", nsec: nip19.nsecEncode(workSecret) });
+			writeLegacyLine(paths, "work", {
+				contact: contactNpub,
+				name: "velora",
+				nsec: nip19.nsecEncode(workSecret),
+			});
 
 			migrateIfNeeded(paths, fakeMigrateDeps());
 
 			const pool = createFakePool();
 			const out: string[] = [];
-			const deps = makePhoneDeps({ home: dir, pool, write: (text) => out.push(text), now: NOW });
+			const deps = makePhoneDeps({
+				home: dir,
+				pool,
+				write: (text) => out.push(text),
+				now: NOW,
+			});
 			try {
 				await phoneSay("+velora", "hi", deps);
 			} finally {
@@ -546,13 +654,19 @@ describe("migrateIfNeeded: the migration lock", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
-			writeLegacyLine(paths, "default", { contact: freshNpub(), nsec: nip19.nsecEncode(generateSecretKey()) });
+			writeLegacyLine(paths, "default", {
+				contact: freshNpub(),
+				nsec: nip19.nsecEncode(generateSecretKey()),
+			});
 			mkdirSync(paths.phoneRoot, { recursive: true });
 			writeFileSync(migrationLockPath(paths), "4242");
 
-			expect(() => migrateIfNeeded(paths, fakeMigrateDeps({ isAlive: (pid) => pid === 4242 }))).toThrow(
-				"another phone command is migrating (pid 4242)",
-			);
+			expect(() =>
+				migrateIfNeeded(
+					paths,
+					fakeMigrateDeps({ isAlive: (pid) => pid === 4242 }),
+				),
+			).toThrow("another phone command is migrating (pid 4242)");
 			expect(existsSync(PhoneDb.path(paths))).toBe(false);
 			expect(existsSync(migrationLockPath(paths))).toBe(true);
 		} finally {
@@ -564,11 +678,17 @@ describe("migrateIfNeeded: the migration lock", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
-			writeLegacyLine(paths, "default", { contact: freshNpub(), nsec: nip19.nsecEncode(generateSecretKey()) });
+			writeLegacyLine(paths, "default", {
+				contact: freshNpub(),
+				nsec: nip19.nsecEncode(generateSecretKey()),
+			});
 			mkdirSync(paths.phoneRoot, { recursive: true });
 			writeFileSync(migrationLockPath(paths), "4242");
 
-			const result = migrateIfNeeded(paths, fakeMigrateDeps({ isAlive: () => false }));
+			const result = migrateIfNeeded(
+				paths,
+				fakeMigrateDeps({ isAlive: () => false }),
+			);
 
 			expect(result.migrated).toBe(true);
 			expect(existsSync(migrationLockPath(paths))).toBe(false);
@@ -582,7 +702,10 @@ describe("migrateIfNeeded: the migration lock", () => {
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
 			mkdirSync(join(paths.phoneFriendRoot, "default"), { recursive: true });
-			writeFileSync(join(paths.phoneFriendRoot, "default", "phone-friend.db"), "not a sqlite file");
+			writeFileSync(
+				join(paths.phoneFriendRoot, "default", "phone-friend.db"),
+				"not a sqlite file",
+			);
 
 			expect(() => migrateIfNeeded(paths, fakeMigrateDeps())).toThrow();
 			expect(existsSync(migrationLockPath(paths))).toBe(false);
@@ -602,7 +725,16 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 				contact,
 				nsec: nip19.nsecEncode(generateSecretKey()),
 				listenerPid: 4242,
-				messages: [{ id: "stored", direction: "in", ts: NOW, sender: contact, contact, text: "stored" }],
+				messages: [
+					{
+						id: "stored",
+						direction: "in",
+						ts: NOW,
+						sender: contact,
+						contact,
+						text: "stored",
+					},
+				],
 			});
 			let alive = true;
 			const killed: number[] = [];
@@ -619,7 +751,15 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 					},
 					startListener: (migratedPaths) => {
 						const phone = PhoneDb.open(migratedPaths, () => NOW);
-						phone.addMessage({ id: "arrived", direction: "in", ts: NOW, sender: contact, contact, text: "arrived", call: 0 });
+						phone.addMessage({
+							id: "arrived",
+							direction: "in",
+							ts: NOW,
+							sender: contact,
+							contact,
+							text: "arrived",
+							call: 0,
+						});
 						phone.close();
 						return 9001;
 					},
@@ -643,9 +783,13 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 				relays: DEFAULT_RELAYS,
 				version: DG_AGENT_PACKAGE_VERSION,
 			});
-			expect(JSON.parse(printed[0] ?? "{}")).toMatchObject({ listener: "replaced" });
+			expect(JSON.parse(printed[0] ?? "{}")).toMatchObject({
+				listener: "replaced",
+			});
 
-			const oldDb = new Database(join(paths.phoneFriendRoot, "default", "phone-friend.db"));
+			const oldDb = new Database(
+				join(paths.phoneFriendRoot, "default", "phone-friend.db"),
+			);
 			oldDb
 				.query(
 					`INSERT INTO messages (id, direction, ts, sender, contact, text, call, read_at)
@@ -674,7 +818,9 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 			} finally {
 				db.close();
 			}
-			const texts = out.map((line) => (JSON.parse(line) as { text: string }).text);
+			const texts = out.map(
+				(line) => (JSON.parse(line) as { text: string }).text,
+			);
 			expect(texts).toEqual(["arrived", "stored"]);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
@@ -706,7 +852,9 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 			);
 
 			expect(started).toEqual([9001]);
-			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(9001);
+			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(
+				9001,
+			);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -726,7 +874,8 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 			migrateIfNeeded(
 				paths,
 				fakeMigrateDeps({
-					classifyListener: (pid) => (pid === process.pid ? "current" : undefined),
+					classifyListener: (pid) =>
+						pid === process.pid ? "current" : undefined,
 					isAlive: (pid) => pid === process.pid,
 					startListener: () => {
 						started.push("start");
@@ -737,7 +886,9 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 			);
 
 			expect(started).toEqual([]);
-			const recorded = JSON.parse(readFileSync(listenerPidPath(paths), "utf8")) as { pid: number; adopted?: string };
+			const recorded = JSON.parse(
+				readFileSync(listenerPidPath(paths), "utf8"),
+			) as { pid: number; adopted?: string };
 			expect(recorded.pid).toBe(process.pid);
 			expect(recorded.adopted).toBeUndefined();
 		} finally {
@@ -775,7 +926,9 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 			expect(killed).toEqual([]);
 			expect(started).toEqual([]);
 			if (result.migrated) expect(result.listener).toBe("none");
-			expect(existsSync(join(paths.phoneFriendRoot, "default", "listener.pid"))).toBe(true);
+			expect(
+				existsSync(join(paths.phoneFriendRoot, "default", "listener.pid")),
+			).toBe(true);
 			expect(existsSync(listenerPidPath(paths))).toBe(false);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
@@ -804,7 +957,10 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 			const result = migrateIfNeeded(
 				paths,
 				fakeMigrateDeps({
-					classifyListener: (pid) => (alive.has(pid) || pid === 4242 || pid === 4243 ? "legacy" : undefined),
+					classifyListener: (pid) =>
+						alive.has(pid) || pid === 4242 || pid === 4243
+							? "legacy"
+							: undefined,
 					isAlive: (pid) => alive.has(pid) || pid === 5150,
 					kill: (pid) => {
 						order.push(`kill:${pid}`);
@@ -821,7 +977,9 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 
 			expect(order).toEqual(["kill:4242", "kill:4243", "start"]);
 			if (result.migrated) expect(result.listener).toBe("replaced");
-			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(5150);
+			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(
+				5150,
+			);
 			expect(existsSync(PhoneDb.path(paths))).toBe(true);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
@@ -861,8 +1019,12 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 
 			expect(started).toEqual([]);
 			expect(existsSync(PhoneDb.path(paths))).toBe(false);
-			expect(existsSync(join(paths.phoneFriendRoot, "default", "listener.pid"))).toBe(true);
-			expect(existsSync(join(paths.phoneFriendRoot, "work", "listener.pid"))).toBe(true);
+			expect(
+				existsSync(join(paths.phoneFriendRoot, "default", "listener.pid")),
+			).toBe(true);
+			expect(
+				existsSync(join(paths.phoneFriendRoot, "work", "listener.pid")),
+			).toBe(true);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -889,14 +1051,21 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 				migrateIfNeeded(
 					paths,
 					fakeMigrateDeps({
-						classifyListener: (pid) => (pid === 4242 || pid === 4243 ? "legacy" : undefined),
+						classifyListener: (pid) =>
+							pid === 4242 || pid === 4243 ? "legacy" : undefined,
 						isAlive: (pid) => alive.has(pid) || pid === 8888,
 						kill: (pid) => {
 							alive.delete(pid);
 						},
 						commandArgs: (pid) =>
 							pid === 4242
-								? ["/old/dg-agent", "phone-friend", "--line", "default", "__run"]
+								? [
+										"/old/dg-agent",
+										"phone-friend",
+										"--line",
+										"default",
+										"__run",
+									]
 								: ["/old/dg-agent", "phone-friend", "--line", "work", "__run"],
 						startListener: () => {
 							throw new Error("spawn failed");
@@ -911,14 +1080,18 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 						},
 					}),
 				),
-			).toThrow("A phone listen listener (pid 8888) stayed up against phone.db. The old per-line listeners were not restarted.");
+			).toThrow(
+				"A phone listen listener (pid 8888) stayed up against phone.db. The old per-line listeners were not restarted.",
+			);
 
 			expect(restored).toHaveLength(1);
 			expect(restored[0]).toContain("phone");
 			expect(restored[0]).toContain("listen");
 			expect(restored[0]?.includes("phone-friend")).toBe(false);
 			expect(restored[0]?.includes("--line")).toBe(false);
-			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(8888);
+			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(
+				8888,
+			);
 			expect(existsSync(PhoneDb.path(paths))).toBe(true);
 			expect(existsSync(paths.phoneFriendRoot)).toBe(true);
 		} finally {
@@ -988,7 +1161,8 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 					paths,
 					fakeMigrateDeps({
 						classifyListener: (pid) => (pid === 4242 ? "legacy" : undefined),
-						isAlive: (pid) => (pid === restoredPid ? isAlive(pid) : alive.has(pid)),
+						isAlive: (pid) =>
+							pid === restoredPid ? isAlive(pid) : alive.has(pid),
 						kill: (pid) => {
 							alive.delete(pid);
 						},
@@ -998,9 +1172,12 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 							throw new Error("spawn failed");
 						},
 						restoreListener: () => {
-							const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+							const child = spawn(process.execPath, ["-e", "process.exit(0)"], {
+								stdio: "ignore",
+							});
 							restoredPid = child.pid;
-							if (restoredPid === undefined) throw new Error("helper did not start");
+							if (restoredPid === undefined)
+								throw new Error("helper did not start");
 							return restoredPid;
 						},
 						renameLegacyRoot: () => {},
@@ -1034,7 +1211,10 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 			const result = migrateIfNeeded(
 				paths,
 				fakeMigrateDeps({
-					classifyListener: (pid) => (alive.has(pid) || pid === 4242 || pid === 4243 ? "legacy" : undefined),
+					classifyListener: (pid) =>
+						alive.has(pid) || pid === 4242 || pid === 4243
+							? "legacy"
+							: undefined,
 					isAlive: (pid) => alive.has(pid) || pid === process.pid,
 					kill: (pid) => {
 						alive.delete(pid);
@@ -1045,15 +1225,22 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 			);
 			if (!result.migrated) throw new Error("expected a migration");
 			expect(result.listener).toBe("replaced");
-			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(process.pid);
+			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(
+				process.pid,
+			);
 
 			const db = PhoneDb.open(paths, () => NOW);
 			const killed: number[] = [];
 			const ran: string[][] = [];
 			const printed: string[] = [];
-			const service = spawn(process.execPath, ["-e", "setInterval(() => {}, 1e9)"], { stdio: "ignore" });
+			const service = spawn(
+				process.execPath,
+				["-e", "setInterval(() => {}, 1e9)"],
+				{ stdio: "ignore" },
+			);
 			const servicePid = service.pid;
-			if (servicePid === undefined) throw new Error("service listener did not start");
+			if (servicePid === undefined)
+				throw new Error("service listener did not start");
 			const deps = {
 				paths,
 				db,
@@ -1081,7 +1268,12 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 					return { code: 0, stdout: "", stderr: "" };
 				},
 				which: () => "/resolved/bin",
-				listenerArgv: (extra: string[]) => ["/fake/execPath", "phone", "listen", ...extra],
+				listenerArgv: (extra: string[]) => [
+					"/fake/execPath",
+					"phone",
+					"listen",
+					...extra,
+				],
 				spawnListener: () => {
 					spawned.push(1);
 					return 1;
@@ -1090,7 +1282,8 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 					killed.push(pid);
 					rmSync(listenerPidPath(paths), { force: true });
 				},
-				isOurListener: (pid: number) => pid === process.pid || pid === servicePid,
+				isOurListener: (pid: number) =>
+					pid === process.pid || pid === servicePid,
 				sleep: async () => {},
 			} as OpenCloseDeps;
 
@@ -1102,8 +1295,15 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 					["systemctl", "--user", "daemon-reload"],
 					["systemctl", "--user", "enable", "--now", "dg-phone.service"],
 				]);
-				expect(JSON.parse(printed[0] ?? "{}")).toMatchObject({ status: "restarted", autostart: "systemd", pid: null });
-				writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: servicePid, since: NOW, hook: null }));
+				expect(JSON.parse(printed[0] ?? "{}")).toMatchObject({
+					status: "restarted",
+					autostart: "systemd",
+					pid: null,
+				});
+				writeFileSync(
+					listenerPidPath(paths),
+					JSON.stringify({ pid: servicePid, since: NOW, hook: null }),
+				);
 				await phoneClose(deps);
 				expect(killed).toEqual([process.pid, servicePid]);
 				expect(existsSync(listenerPidPath(paths))).toBe(false);
@@ -1123,11 +1323,15 @@ describe("disableLegacyDaemonJobs", () => {
 		const calls: string[][] = [];
 		const jobCli: JobCli = async (args) => {
 			calls.push(args);
-			if (args[2] === "phone-friend:broken") return { code: 1, stdout: "", stderr: "no job labelled" };
+			if (args[2] === "phone-friend:broken")
+				return { code: 1, stdout: "", stderr: "no job labelled" };
 			return { code: 0, stdout: "", stderr: "" };
 		};
 
-		const disabled = await disableLegacyDaemonJobs(["default", "broken", "work"], jobCli);
+		const disabled = await disableLegacyDaemonJobs(
+			["default", "broken", "work"],
+			jobCli,
+		);
 
 		expect(calls).toEqual([
 			["job", "disable", "phone-friend:default"],
@@ -1142,7 +1346,9 @@ describe("disableLegacyDaemonJobs", () => {
 			throw new Error("dg-daemon not found");
 		};
 
-		await expect(disableLegacyDaemonJobs(["default"], jobCli)).resolves.toEqual([]);
+		await expect(disableLegacyDaemonJobs(["default"], jobCli)).resolves.toEqual(
+			[],
+		);
 	});
 });
 
@@ -1151,7 +1357,10 @@ describe("migrateIfNeeded: the one-time stderr summary", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
-			writeLegacyLine(paths, "default", { contact: freshNpub(), nsec: nip19.nsecEncode(generateSecretKey()) });
+			writeLegacyLine(paths, "default", {
+				contact: freshNpub(),
+				nsec: nip19.nsecEncode(generateSecretKey()),
+			});
 			const printed: string[] = [];
 
 			const result = migrateIfNeeded(
@@ -1188,7 +1397,9 @@ describe("read-only phone commands", () => {
 		const dir = freshHome();
 		const previousHome = process.env.DG_HOME;
 		process.env.DG_HOME = dir;
-		const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+		const stderr = spyOn(process.stderr, "write").mockImplementation(
+			() => true,
+		);
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
 			const contact = freshNpub();
@@ -1198,7 +1409,16 @@ describe("read-only phone commands", () => {
 				name: "velora",
 				nsec: nip19.nsecEncode(generateSecretKey()),
 				listenerPid: process.pid,
-				messages: [{ id: "m1", direction: "in", ts: NOW, sender: contact, contact, text: "unread" }],
+				messages: [
+					{
+						id: "m1",
+						direction: "in",
+						ts: NOW,
+						sender: contact,
+						contact,
+						text: "unread",
+					},
+				],
 			});
 			const pidFile = join(paths.phoneFriendRoot, "default", "listener.pid");
 			const out: string[] = [];
@@ -1233,7 +1453,12 @@ describe("read-only phone commands", () => {
 					as: "dg",
 					contacts: 1,
 					pending_voicemail: 1,
-					listener: { pid: process.pid, since: null, stale: true, reason: "listener binary version differs" },
+					listener: {
+						pid: process.pid,
+						since: null,
+						stale: true,
+						reason: "listener binary version differs",
+					},
 					hook: null,
 					legacy_root_present: false,
 					migration_pending: true,
@@ -1265,15 +1490,17 @@ describe("read-only phone commands", () => {
 			expect(existsSync(PhoneDb.path(paths))).toBe(false);
 			expect(readFileSync(pidFile, "utf8")).toBe(`${process.pid}\n`);
 
-			const stdout = spyOn(process.stdout, "write").mockImplementation((
-				_chunk: string | Uint8Array,
-				encoding?: BufferEncoding | ((error?: Error | null) => void),
-				callback?: (error?: Error | null) => void,
-			) => {
-				const done = typeof encoding === "function" ? encoding : callback;
-				done?.();
-				return true;
-			});
+			const stdout = spyOn(process.stdout, "write").mockImplementation(
+				(
+					_chunk: string | Uint8Array,
+					encoding?: BufferEncoding | ((error?: Error | null) => void),
+					callback?: (error?: Error | null) => void,
+				) => {
+					const done = typeof encoding === "function" ? encoding : callback;
+					done?.();
+					return true;
+				},
+			);
 			const program = new Command();
 			program.exitOverride();
 			registerPhoneCommands(program);
@@ -1301,7 +1528,9 @@ describe("migrateIfNeeded: no legacy phone-friend root", () => {
 			const paths = resolveDgPaths({ env: { DG_HOME: home } });
 			const before = readdirSync(home, { recursive: true });
 
-			expect(migrateIfNeeded(paths, fakeMigrateDeps())).toEqual({ migrated: false });
+			expect(migrateIfNeeded(paths, fakeMigrateDeps())).toEqual({
+				migrated: false,
+			});
 
 			expect(readdirSync(home, { recursive: true })).toEqual(before);
 			expect(existsSync(migrationLockPath(paths))).toBe(false);
@@ -1315,7 +1544,11 @@ describe("the migration lock and the install lock", () => {
 	it("use different files", () => {
 		const home = freshHome();
 		try {
-			const paths = resolveDgPaths({ platform: "linux", homeDir: home, env: {} });
+			const paths = resolveDgPaths({
+				platform: "linux",
+				homeDir: home,
+				env: {},
+			});
 			const installLock = join(paths.dataDir, ".install.lock");
 
 			expect(migrationLockPath(paths)).not.toBe(installLock);
@@ -1340,7 +1573,10 @@ describe("phoneRun: unconverted phone-friend lines", () => {
 		const home = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: home } });
-			writeLegacyLine(paths, "default", { contact: freshNpub(), nsec: nip19.nsecEncode(generateSecretKey()) });
+			writeLegacyLine(paths, "default", {
+				contact: freshNpub(),
+				nsec: nip19.nsecEncode(generateSecretKey()),
+			});
 
 			const failure = await phoneRun({}, lazyRunDeps(paths)).then(
 				() => undefined,
@@ -1349,7 +1585,9 @@ describe("phoneRun: unconverted phone-friend lines", () => {
 
 			expect(failure).toBeInstanceOf(DgCliError);
 			expect((failure as DgCliError).exitCode).toBe(1);
-			expect((failure as DgCliError).message).toBe("dg: phone-friend lines wait for conversion; run dg-agent phone status");
+			expect((failure as DgCliError).message).toBe(
+				"dg: phone-friend lines wait for conversion; run dg-agent phone status",
+			);
 			expect(existsSync(PhoneDb.path(paths))).toBe(false);
 			expect(existsSync(migrationLockPath(paths))).toBe(false);
 		} finally {
@@ -1360,10 +1598,20 @@ describe("phoneRun: unconverted phone-friend lines", () => {
 	it("also fails for lines in a legacy home no program has moved, and creates no phone.db", async () => {
 		const home = freshHome();
 		try {
-			const paths = resolveDgPaths({ platform: "linux", homeDir: home, env: {} });
-			writeLegacyLine({ phoneFriendRoot: join(paths.legacyHome, "phone-friend") }, "default", { nsec: nip19.nsecEncode(generateSecretKey()) });
+			const paths = resolveDgPaths({
+				platform: "linux",
+				homeDir: home,
+				env: {},
+			});
+			writeLegacyLine(
+				{ phoneFriendRoot: join(paths.legacyHome, "phone-friend") },
+				"default",
+				{ nsec: nip19.nsecEncode(generateSecretKey()) },
+			);
 
-			await expect(phoneRun({}, lazyRunDeps(paths))).rejects.toThrow("phone-friend lines wait for conversion");
+			await expect(phoneRun({}, lazyRunDeps(paths))).rejects.toThrow(
+				"phone-friend lines wait for conversion",
+			);
 			expect(existsSync(PhoneDb.path(paths))).toBe(false);
 		} finally {
 			rmSync(home, { recursive: true, force: true });
@@ -1375,10 +1623,18 @@ describe("linesAwaitConversion", () => {
 	it("is false with no lines anywhere and once phone.db exists beside a legacy home", () => {
 		const home = freshHome();
 		try {
-			const paths = resolveDgPaths({ platform: "linux", homeDir: home, env: {} });
+			const paths = resolveDgPaths({
+				platform: "linux",
+				homeDir: home,
+				env: {},
+			});
 			expect(linesAwaitConversion(paths)).toBe(false);
 
-			writeLegacyLine({ phoneFriendRoot: join(paths.legacyHome, "phone-friend") }, "default", {});
+			writeLegacyLine(
+				{ phoneFriendRoot: join(paths.legacyHome, "phone-friend") },
+				"default",
+				{},
+			);
 			expect(linesAwaitConversion(paths)).toBe(true);
 
 			PhoneDb.open(paths).close();
