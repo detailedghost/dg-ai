@@ -1043,19 +1043,15 @@ describe("engine re-review", () => {
 describe("engine fun", () => {
 	const gif = gifEntry("approved");
 	const emoji = emojiEntry("approved");
-	const baseText = (verdict: "approved" | "changes_requested", n = 12) =>
-		`${VERDICT_LABELS[verdict].emoji} ${VERDICT_LABELS[verdict].word} #${n} ${pr(n)}`;
 
-	test("posts one reply starting with the verdict emoji decorated with a gif entry", async () => {
+	test("posts one reply with only the card for a gif entry", async () => {
 		const h = setup({ funPool: [gif] });
 		await h.engine.handle(reviewMessage("m1", PR_URL, "~fun"));
 		await h.engine.idle();
 		expect(h.replies()).toHaveLength(1);
 		const reply = h.replies()[0];
-		expect(reply?.text.startsWith(VERDICT_LABELS.approved.emoji)).toBe(true);
-		const expected = decorateReply({ text: baseText("approved"), entry: gif });
-		expect(reply?.text).toBe(expected.text);
-		expect(reply?.card).toEqual(expected.card);
+		expect(reply?.text).toBe("");
+		expect(reply?.card).toEqual(decorateReply({ text: "", entry: gif }).card);
 		expect(reply?.card?.body).toHaveLength(1);
 	});
 
@@ -1076,12 +1072,12 @@ describe("engine fun", () => {
 		expect(others).toEqual([]);
 	});
 
-	test("decorates the reply with an extra line for an emoji entry", async () => {
+	test("posts only the emoji text for an emoji entry", async () => {
 		const h = setup({ funPool: [emoji] });
 		await h.engine.handle(reviewMessage("m1", PR_URL, "~fun"));
 		await h.engine.idle();
-		const expected = decorateReply({ text: baseText("approved"), entry: emoji });
-		expect(h.replies()[0]?.text).toBe(expected.text);
+		expect(h.replies()).toHaveLength(1);
+		expect(h.replies()[0]?.text).toBe((emoji as { text: string }).text);
 		expect(h.replies()[0]?.card).toBeUndefined();
 	});
 
@@ -1103,9 +1099,7 @@ describe("engine fun", () => {
 		});
 		await h.engine.handle(reviewMessage("m1", PR_URL, "~fun"));
 		await h.engine.idle();
-		expect(h.replies()[0]?.text).toBe(
-			decorateReply({ text: baseText("changes_requested"), entry }).text,
-		);
+		expect(h.replies()[0]?.text).toBe("");
 		expect(h.replies()[0]?.card?.body[0]?.url).toBe(
 			(entry as { url: string }).url,
 		);
@@ -1156,21 +1150,18 @@ describe("engine fun", () => {
 		);
 	});
 
-	test("sends the reply undecorated when the pool has no entry for the verdict", async () => {
+	test("posts no reply when the pool has no entry for the verdict", async () => {
 		const h = setup({ funPool: [gifEntry("failed")] });
 		await h.engine.handle(reviewMessage("m1", PR_URL, "~fun"));
 		await h.engine.idle();
-		expect(h.replies()).toHaveLength(1);
-		expect(h.replies()[0]?.text).toBe(baseText("approved"));
-		expect(h.replies()[0]?.card).toBeUndefined();
+		expect(h.replies()).toEqual([]);
 	});
 
-	test("sends the reply undecorated when the pool is empty", async () => {
+	test("posts no reply when the pool is empty", async () => {
 		const h = setup({ funPool: [] });
 		await h.engine.handle(reviewMessage("m1", PR_URL, "~fun"));
 		await h.engine.idle();
-		expect(h.replies()[0]?.text).toBe(baseText("approved"));
-		expect(h.replies()[0]?.card).toBeUndefined();
+		expect(h.replies()).toEqual([]);
 	});
 });
 

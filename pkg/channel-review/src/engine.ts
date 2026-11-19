@@ -14,7 +14,7 @@ import { createNotifier } from "./automation/notify";
 import { sweepCloneRoot } from "./automation/repo-job";
 import { DEPS_RUNNING } from "./automation/types";
 import { type CrCode, ownerName, replyText } from "./errors";
-import { type FunEntry, decorateReply, funVerdictFor, pickFun } from "./fun";
+import { type FunEntry, decorateReply, funOnlyReply, funVerdictFor, pickFun } from "./fun";
 import { EMOJI_WAIT_MINUTES, helpText } from "./help";
 import { pruneJobLogs } from "./job-logs";
 import type { ChannelReviewPaths } from "./paths";
@@ -25,7 +25,6 @@ import { type Effort, RUNNER_NAMES, type RunTask, type Runner, type RunnerName }
 import { type BlockedOptions, type StateStore, prKey } from "./state";
 import {
 	type StackRow,
-	VERDICT_LABELS,
 	aggregateOutcome,
 	formatStackSummary,
 	outcomeOf,
@@ -253,6 +252,14 @@ export function createEngine(deps: EngineDeps): Engine {
 		const entry = fun ? pickFun(funPool, funVerdictFor(outcome), random) : undefined;
 		const body = entry ? decorateReply({ text, entry, html }) : { text };
 		await attempt("reply", () => provider.reply({ chatId, ...body, ...(html && { html }) }));
+	}
+
+	async function postFunOnly(
+		chatId: string,
+		outcome: ReturnType<typeof outcomeOf>,
+	): Promise<void> {
+		const entry = pickFun(funPool, funVerdictFor(outcome), random);
+		if (entry) await attempt("reply", () => provider.reply({ chatId, ...funOnlyReply(entry) }));
 	}
 
 	async function fail(job: Job, code: CrCode, agent: string): Promise<void> {
@@ -484,13 +491,10 @@ export function createEngine(deps: EngineDeps): Engine {
 		if (typeof outcome !== "string")
 			return fail(job, outcome.code, selection.runner.name);
 
-		const label = VERDICT_LABELS[outcome];
 		log.info(`message ${job.messageId} done: ${outcome} ${job.url}`);
 		state.markHandled(job.messageId, "done", job.chatId);
 		await move(job.chatId, job.messageId, outcomeOf(outcome));
-		if (job.fun) {
-			await post(job.chatId, `${label.emoji} ${label.word} #${job.number} ${job.url}`, outcomeOf(outcome), true);
-		}
+		if (job.fun) await postFunOnly(job.chatId, outcomeOf(outcome));
 	}
 
 	async function reviewStack(

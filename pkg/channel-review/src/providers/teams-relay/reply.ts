@@ -35,7 +35,7 @@ export async function reply(
 	if (request.chatId === "") throw new Error("reply needs a chat id");
 	return await send(client, "reply", {
 		To: [ownerEmail],
-		Body: request.text,
+		...(request.text !== "" && { Body: request.text }),
 		ChatId: request.chatId,
 		Mode: "group",
 		TextFormat: request.html ? "xml" : "plain",
