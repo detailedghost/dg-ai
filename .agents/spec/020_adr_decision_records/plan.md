@@ -4,7 +4,7 @@ feature_snake_case: adr_decision_records
 date: "2026-11-19"
 version: "1.0"
 status: draft
-current_slice: 0
+current_slice: 1
 pr_strategy: single
 slices:
   - id: 1
@@ -83,50 +83,50 @@ Split decision records into two paired files: a simple human ADR in docs/adr wit
 ### Slice 1 — adr-cli-core
 
 #### Engineering
-- [ ] Move `splitDocument`, `parseYaml`, `scalarField`, `nestedScalar` (from `src/spec/frontmatter.ts`) and `records` (from `src/spec/shared.ts`) to `src/utils/frontmatter.ts`
-- [ ] `src/spec/frontmatter.ts` re-exports the four helpers and keeps `frontmatterOf` and `withPermission`; `src/spec/shared.ts` re-exports `records`; no importer changes (`src/skill/audit.ts`, `src/spec/*`, `src/assign/*`, existing tests)
-- [ ] No new dependency: the hoisted code uses only `yaml` and `@dg/common`
-- [ ] Add `src/adr/` split by concern: `index.ts` (exports `HANDLERS`), `levels.ts`, `templates.ts`, `paths.ts`, `records.ts`, `index-gen.ts`, `relevant.ts`, `find.ts`, `lint.ts` (stub)
-- [ ] `src/commands/adr.ts` registers `adr` with `registerLazyRaw` like spec; `registerAdr(program)` is called from `src/register-all.ts`; add `"adr"` to the allowlist in `__tests__/lazy-commands.spec.ts`
-- [ ] `HANDLERS` lists all six verbs (`init`, `new`, `index`, `lint`, `relevant`, `find`); add `adr: names(adr.HANDLERS.keys())` to `src/completion/describe.ts`
-- [ ] Ship `src/adr/lint.ts` as a stub that exits 2 with `adr lint: not implemented`; slice 2 replaces it before the PR opens
-- [ ] `src/adr/levels.ts`: `LEVELS = ["eli5","high-school","college","phd","technical"]`; `gradeLimit(level)` returns 4, 10, 14, null, null; `parseLevel(text)` matches exact lowercase and throws a usage error that lists the five allowed values
-- [ ] The level is stored as typed (`phd` and `technical` both have no limit); README frontmatter key is `level:`; the ADR header line is `Level: <l>` beside `Status:`, `Date:` and `Topic:`
-- [ ] `src/adr/templates.ts`: string constants `HUMAN_TEMPLATE` (header lines Status, Date, Topic and Level, where `adr new` writes the Level line only when `--level` is given; sections Context, Decision, Consequences, Diagram with an empty ```mermaid fence, Other options), `AGENT_TEMPLATE` (frontmatter `covers: []`, a relative link line to the ADR, a rules list, the one-line `No agent rules.` form), `HUMAN_SECTIONS = ["Context","Decision","Consequences","Diagram","Other options"]`, `TOC_MARKER = "<!-- adr:index -->"`
-- [ ] `adr init [--level <l>]`: creates `docs/adr/` and `.agents/decisions/`; writes `docs/adr/toc.md` (one-paragraph intro, then `TOC_MARKER`) and `.agents/decisions/README.md` (frontmatter `level: <l>`, default `high-school`, one-paragraph intro, then `TOC_MARKER`); writes no `template.md`
-- [ ] `adr init` is idempotent: existing files are never rewritten; an existing `toc.md` or `README.md` with no `TOC_MARKER` exits 2 with a message that names the marker to add
-- [ ] `adr new <title> --topic <t> [--covers <glob>...] [--level <l>]`: `--topic` is required (exit 2 without it, because lint requires the `Topic:` line); slug from `slugify` in `src/worktree/core.ts`; number = max over `docs/adr/NNNN-*.md` and `.agents/decisions/NNNN-*.md` plus 1, 4 digits, first `0001`; files that do not start with `NNNN-` are ignored
-- [ ] `adr new` writes both files or neither (write to temp names, rename both, remove the first on a failed second write); an empty title or a title that slugifies to empty exits 2; then runs `index`
-- [ ] `src/adr/records.ts` exports `loadRecords(root)` (pairs ADR and decision by `NNNN-slug`; reads the `Status`, `Date`, `Topic`, `Level` lines and `covers` through `parseYaml`), `repoLevel(root)` (README `level:` or `high-school`) and `matchCovers(records, paths)` (Bun.Glob; paths normalized to repo-relative POSIX by stripping `./`, the absolute repo prefix and `\`)
-- [ ] `src/adr/index-gen.ts` exports pure `renderIndexes(records)` that returns the toc body and the README body; `adr index` writes each below `TOC_MARKER`, keeps everything above the marker and keeps the README frontmatter byte for byte
-- [ ] toc body: one `### <Topic>` group per topic, topics sorted alphabetically, ADRs sorted by number inside each group, one line per ADR `- [NNNN — Title](NNNN-slug.md)`; README body: one table with the columns Number, Title (link), Topic, Rule summary (first rule line or `No agent rules.`), Covers
-- [ ] `adr relevant <files...> [--json]`: prints matching decisions as `NNNN<TAB>title<TAB>path`; `covers: []` never matches; no match exits 0 with empty output; `--json` prints `[{number,title,path,adrPath}]`
-- [ ] `adr find <words...> [--json]`: score = 3 x title hits + 1 x body hits over ADR and decision text, case-insensitive; tie-break by number ascending; zero-score records are omitted; `--json` prints `[{number,title,path,adrPath,score}]`; no `--level` flag (the skill answers at the level)
-- [ ] Every verb except `init` checks that `.agents/decisions/README.md` exists; when it is absent the verb exits 2 with `adr: not initialized. Run dg-skills adr init first.`
-- [ ] Exit codes: 0 success, 1 lint findings (slice 2), 2 usage, bad input or not initialized (the spec `die` convention)
-- [ ] Run `bun scripts/completion-trees.ts`, then `bun scripts/completion-trees.ts --check`
-- [ ] `__tests__/adr-fixtures.ts` builds a temp repo with `adr init` output (style of `cli-fixtures.ts`); every adr test uses it and never reads the real `docs/adr`
+- [x] Move `splitDocument`, `parseYaml`, `scalarField`, `nestedScalar` (from `src/spec/frontmatter.ts`) and `records` (from `src/spec/shared.ts`) to `src/utils/frontmatter.ts`
+- [x] `src/spec/frontmatter.ts` re-exports the four helpers and keeps `frontmatterOf` and `withPermission`; `src/spec/shared.ts` re-exports `records`; no importer changes (`src/skill/audit.ts`, `src/spec/*`, `src/assign/*`, existing tests)
+- [x] No new dependency: the hoisted code uses only `yaml` and `@dg/common`
+- [x] Add `src/adr/` split by concern: `index.ts` (exports `HANDLERS`), `levels.ts`, `templates.ts`, `paths.ts`, `records.ts`, `index-gen.ts`, `relevant.ts`, `find.ts`, `lint.ts` (stub)
+- [x] `src/commands/adr.ts` registers `adr` with `registerLazyRaw` like spec; `registerAdr(program)` is called from `src/register-all.ts`; add `"adr"` to the allowlist in `__tests__/lazy-commands.spec.ts`
+- [x] `HANDLERS` lists all six verbs (`init`, `new`, `index`, `lint`, `relevant`, `find`); add `adr: names(adr.HANDLERS.keys())` to `src/completion/describe.ts`
+- [x] Ship `src/adr/lint.ts` as a stub that exits 2 with `adr lint: not implemented`; slice 2 replaces it before the PR opens
+- [x] `src/adr/levels.ts`: `LEVELS = ["eli5","high-school","college","phd","technical"]`; `gradeLimit(level)` returns 4, 10, 14, null, null; `parseLevel(text)` matches exact lowercase and throws a usage error that lists the five allowed values
+- [x] The level is stored as typed (`phd` and `technical` both have no limit); README frontmatter key is `level:`; the ADR header line is `Level: <l>` beside `Status:`, `Date:` and `Topic:`
+- [x] `src/adr/templates.ts`: string constants `HUMAN_TEMPLATE` (header lines Status, Date, Topic and Level, where `adr new` writes the Level line only when `--level` is given; sections Context, Decision, Consequences, Diagram with an empty ```mermaid fence, Other options), `AGENT_TEMPLATE` (frontmatter `covers: []`, a relative link line to the ADR, a rules list, the one-line `No agent rules.` form), `HUMAN_SECTIONS = ["Context","Decision","Consequences","Diagram","Other options"]`, `TOC_MARKER = "<!-- adr:index -->"`
+- [x] `adr init [--level <l>]`: creates `docs/adr/` and `.agents/decisions/`; writes `docs/adr/toc.md` (one-paragraph intro, then `TOC_MARKER`) and `.agents/decisions/README.md` (frontmatter `level: <l>`, default `high-school`, one-paragraph intro, then `TOC_MARKER`); writes no `template.md`
+- [x] `adr init` is idempotent: existing files are never rewritten; an existing `toc.md` or `README.md` with no `TOC_MARKER` exits 2 with a message that names the marker to add
+- [x] `adr new <title> --topic <t> [--covers <glob>...] [--level <l>]`: `--topic` is required (exit 2 without it, because lint requires the `Topic:` line); slug from `slugify` in `src/worktree/core.ts`; number = max over `docs/adr/NNNN-*.md` and `.agents/decisions/NNNN-*.md` plus 1, 4 digits, first `0001`; files that do not start with `NNNN-` are ignored
+- [x] `adr new` writes both files or neither (write to temp names, rename both, remove the first on a failed second write); an empty title or a title that slugifies to empty exits 2; then runs `index`
+- [x] `src/adr/records.ts` exports `loadRecords(root)` (pairs ADR and decision by `NNNN-slug`; reads the `Status`, `Date`, `Topic`, `Level` lines and `covers` through `parseYaml`), `repoLevel(root)` (README `level:` or `high-school`) and `matchCovers(records, paths)` (Bun.Glob; paths normalized to repo-relative POSIX by stripping `./`, the absolute repo prefix and `\`)
+- [x] `src/adr/index-gen.ts` exports pure `renderIndexes(records)` that returns the toc body and the README body; `adr index` writes each below `TOC_MARKER`, keeps everything above the marker and keeps the README frontmatter byte for byte
+- [x] toc body: one `### <Topic>` group per topic, topics sorted alphabetically, ADRs sorted by number inside each group, one line per ADR `- [NNNN — Title](NNNN-slug.md)`; README body: one table with the columns Number, Title (link), Topic, Rule summary (first rule line or `No agent rules.`), Covers
+- [x] `adr relevant <files...> [--json]`: prints matching decisions as `NNNN<TAB>title<TAB>path`; `covers: []` never matches; no match exits 0 with empty output; `--json` prints `[{number,title,path,adrPath}]`
+- [x] `adr find <words...> [--json]`: score = 3 x title hits + 1 x body hits over ADR and decision text, case-insensitive; tie-break by number ascending; zero-score records are omitted; `--json` prints `[{number,title,path,adrPath,score}]`; no `--level` flag (the skill answers at the level)
+- [x] Every verb except `init` checks that `.agents/decisions/README.md` exists; when it is absent the verb exits 2 with `adr: not initialized. Run dg-skills adr init first.`
+- [x] Exit codes: 0 success, 1 lint findings (slice 2), 2 usage, bad input or not initialized (the spec `die` convention)
+- [x] Run `bun scripts/completion-trees.ts`, then `bun scripts/completion-trees.ts --check`
+- [x] `__tests__/adr-fixtures.ts` builds a temp repo with `adr init` output (style of `cli-fixtures.ts`); every adr test uses it and never reads the real `docs/adr`
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: `adr new "Use X" --topic Tooling` writes `docs/adr/NNNN-use-x.md` and `.agents/decisions/NNNN-use-x.md` with the same NNNN and slug; the ADR has `Topic: Tooling`; the decision links the ADR
-- [ ] Contract: numbering is max+1 over both directories, zero-padded to 4 digits, first is `0001`; `toc.md`, `README.md` and any `template.md` do not count
-- [ ] Contract: `adr index` is stable (same input, same bytes), keeps text above `TOC_MARKER`, keeps the README frontmatter, groups the toc by Topic alphabetically with numbers ascending inside each group, and the README table has a Topic column
-- [ ] Contract: `adr relevant` matches covers globs, ignores `covers: []`, exits 0 with empty output on no match, and `--json` is `[{number,title,path,adrPath}]`
-- [ ] Contract: `adr find` on a fixed fixture returns the known order (one title hit beats two body hits; equal scores order by number) and `--json` carries `score`
-- [ ] Contract: every verb except `init` exits 2 with `adr: not initialized. Run dg-skills adr init first.` before `adr init`
-- [ ] `adr init` twice leaves every file unchanged; `adr init --level college` lands as `level: college` in the README frontmatter
-- [ ] `adr init` over a `toc.md` with no marker exits 2 and names `<!-- adr:index -->`
-- [ ] `adr new` with no `--topic`, an empty title, a title that slugifies to empty, or `--level grad` exits 2; the level message lists the five allowed values
-- [ ] `adr new --level phd` and `adr new --level technical` both succeed and store the typed value; `adr new` with no `--level` writes no `Level:` line
-- [ ] `adr new` with a failing decision write leaves no ADR file behind
-- [ ] Spec tests pass unchanged after the frontmatter hoist, and `src/skill/audit.ts` still imports from `../spec/frontmatter`
-- [ ] `completion.spec.ts` lists `adr` with all six verbs; `lazy-commands.spec.ts` passes with `adr` in the allowlist
+- [x] Contract: `adr new "Use X" --topic Tooling` writes `docs/adr/NNNN-use-x.md` and `.agents/decisions/NNNN-use-x.md` with the same NNNN and slug; the ADR has `Topic: Tooling`; the decision links the ADR
+- [x] Contract: numbering is max+1 over both directories, zero-padded to 4 digits, first is `0001`; `toc.md`, `README.md` and any `template.md` do not count
+- [x] Contract: `adr index` is stable (same input, same bytes), keeps text above `TOC_MARKER`, keeps the README frontmatter, groups the toc by Topic alphabetically with numbers ascending inside each group, and the README table has a Topic column
+- [x] Contract: `adr relevant` matches covers globs, ignores `covers: []`, exits 0 with empty output on no match, and `--json` is `[{number,title,path,adrPath}]`
+- [x] Contract: `adr find` on a fixed fixture returns the known order (one title hit beats two body hits; equal scores order by number) and `--json` carries `score`
+- [x] Contract: every verb except `init` exits 2 with `adr: not initialized. Run dg-skills adr init first.` before `adr init`
+- [x] `adr init` twice leaves every file unchanged; `adr init --level college` lands as `level: college` in the README frontmatter
+- [x] `adr init` over a `toc.md` with no marker exits 2 and names `<!-- adr:index -->`
+- [x] `adr new` with no `--topic`, an empty title, a title that slugifies to empty, or `--level grad` exits 2; the level message lists the five allowed values
+- [x] `adr new --level phd` and `adr new --level technical` both succeed and store the typed value; `adr new` with no `--level` writes no `Level:` line
+- [x] `adr new` with a failing decision write leaves no ADR file behind
+- [x] Spec tests pass unchanged after the frontmatter hoist, and `src/skill/audit.ts` still imports from `../spec/frontmatter`
+- [x] `completion.spec.ts` lists `adr` with all six verbs; `lazy-commands.spec.ts` passes with `adr` in the allowlist
 
 #### Acceptance Criteria
-- [ ] Given a repo after `adr init`, when I run `adr new "Use X" --topic Tooling --covers 'pkg/a/**'`, then both files exist with the next number and both indexes list them under Tooling
-- [ ] Given changed files under `pkg/a`, when I run `adr relevant pkg/a/x.ts`, then it prints that decision
-- [ ] Given a repo without `adr init`, when I run `adr relevant pkg/a/x.ts`, then it exits 2 with the not-initialized message
+- [x] Given a repo after `adr init`, when I run `adr new "Use X" --topic Tooling --covers 'pkg/a/**'`, then both files exist with the next number and both indexes list them under Tooling
+- [x] Given changed files under `pkg/a`, when I run `adr relevant pkg/a/x.ts`, then it prints that decision
+- [x] Given a repo without `adr init`, when I run `adr relevant pkg/a/x.ts`, then it exits 2 with the not-initialized message
 
 ### Slice 2 — adr-lint-readability
 
@@ -224,7 +224,12 @@ Code Structure: not applicable, this slice is text only.
 
 ## Slice Summaries
 
+- Slice 1 (adr-cli-core, 8b878d51): added dg-skills adr with init, new, index, relevant, find and a lint stub; hoisted frontmatter helpers to src/utils/frontmatter.ts with spec re-exports. adr new slugs with dashes, takes one glob per --covers flag, and fills placeholders in one pass.
+
 ## Agent Notes
+
+- (slice 1, dg:js) matchCovers takes root as a third argument; init and new handlers live in src/adr/index.ts; writeIndexes lives in index-gen.ts.
+- (slice 1, dg:qa-code) an empty Topic: line renders an unnamed toc group; slice 2 lint treats an empty Topic as missing-topic.
 
 ## Issues Remediation
 
