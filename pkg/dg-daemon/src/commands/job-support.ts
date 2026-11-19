@@ -118,8 +118,11 @@ export async function ensureMigrated(
 	let started: Awaited<ReturnType<typeof startDaemon>>;
 	try {
 		started = await startDaemon(paths, seams);
-	} catch {
-		throw new DgCliError(NOT_MIGRATED, EXIT_GENERAL_FAILURE);
+	} catch (err) {
+		throw new DgCliError(
+			`${NOT_MIGRATED} (${describeError(err)})`,
+			EXIT_GENERAL_FAILURE,
+		);
 	}
 	if (!(await waitForMark(paths, STARTED_DAEMON_MARK_WAIT_MS))) {
 		throw markMissing(started.handle);

@@ -18,6 +18,7 @@ import {
 	readConfigFile,
 	seedJobs,
 } from "./job-cli-helpers";
+import { until } from "../jobs/scheduled-fixtures";
 import { trackChild } from "../utils/child-registry";
 
 type RunResult = { code: number; stdout: string; stderr: string };
@@ -465,6 +466,17 @@ describe("dg-daemon job enable, disable, rm and run", () => {
 		await withDaemonHome(async (dgHome) => {
 			await addOne(dgHome);
 			await dg(dgHome, "job", "run", "j");
+			const stored = await openStore(dgHome);
+			try {
+				await until(
+					() => stored.listFeedItems().length,
+					(count) => count > 0,
+					"stored the first feed item",
+					15_000,
+				);
+			} finally {
+				stored.close();
+			}
 
 			expect((await dg(dgHome, "job", "rm", "j")).code).toBe(0);
 

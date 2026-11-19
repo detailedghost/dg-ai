@@ -66,8 +66,8 @@ describe("ADR 0043 outside services", () => {
 	test("toc entry is in Platform, within 160 columns, with the Accepted form", () => {
 		const platform = heading(toc, "Platform");
 		const entries = platform.split("\n").filter((l) => l.startsWith("- ["));
-		const last = entries.find((l) => /^- \[0043 — /.test(l)) ?? "";
-		expect(last).toMatch(
+		const entry0043 = entries.find((l) => /^- \[0043 — /.test(l)) ?? "";
+		expect(entry0043).toMatch(
 			/^- \[0043 — .+\]\(0043-outside-services\.md\) — Accepted:/,
 		);
 		for (const line of platform.split("\n"))

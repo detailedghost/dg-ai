@@ -164,7 +164,7 @@ export function startJobRun(decl: JobDecl, deps: LauncherDeps): JobRun {
 					timedOut = true;
 					void killProcessGroup(pid);
 				}, timeoutMs);
-	const drained = drain();
+	const drained = drain().catch(() => undefined);
 
 	const done = (async (): Promise<JobRunResult> => {
 		const code = await proc.exited;

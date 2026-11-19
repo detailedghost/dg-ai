@@ -56,7 +56,8 @@ const move = async (store: ChatStore, paths: ReturnType<typeof pathsOf>) => {
 	await Promise.resolve(migrateScheduledRows(store, paths));
 };
 
-const posix = process.platform === "win32" ? it.skip : it;
+const asRoot = process.getuid?.() === 0;
+const posix = process.platform === "win32" || asRoot ? it.skip : it;
 
 describe("migrateScheduledRows mapping", () => {
 	it("turns a row into a jobs entry and keeps its id, next run and feed items", async () => {
@@ -304,7 +305,6 @@ describe("migrateScheduledRows restart between steps", () => {
 	posix(
 		"finishes after a failed config write and writes one entry",
 		async () => {
-			if (process.getuid?.() === 0) return;
 			const argv = ["jira", "issue", "list"];
 			const { dgHome, store, ids, paths } = await setup([
 				{ label: "resume", argv },

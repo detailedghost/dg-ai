@@ -55,7 +55,7 @@ export function readTail(path: string, count: number): LogTail {
 		const text = Buffer.concat(blocks).subarray(0, end - from).toString("utf8");
 		const lines = text.split("\n");
 		lines.pop();
-		return { lines: lines.slice(-count), size: end, ino: stat.ino };
+		return { lines: count > 0 ? lines.slice(-count) : [], size: end, ino: stat.ino };
 	} finally {
 		closeSync(fd);
 	}
@@ -68,8 +68,9 @@ function readNew(
 	let fd: number;
 	try {
 		fd = openSync(path, "r");
-	} catch {
-		return undefined;
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw err;
 	}
 	try {
 		const stat = fstatSync(fd);

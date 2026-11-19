@@ -60,11 +60,17 @@ function declOf(root: string, extra: Record<string, unknown> = {}) {
 }
 
 function withProcessEnv<T>(vars: Record<string, string>, run: () => T): T {
+	const earlier = Object.keys(vars).map(
+		(key) => [key, process.env[key]] as const,
+	);
 	for (const [key, value] of Object.entries(vars)) process.env[key] = value;
 	try {
 		return run();
 	} finally {
-		for (const key of Object.keys(vars)) delete process.env[key];
+		for (const [key, value] of earlier) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
 	}
 }
 

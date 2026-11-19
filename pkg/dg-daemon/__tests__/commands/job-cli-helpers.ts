@@ -155,6 +155,13 @@ export async function runCliWithoutDgHome(
 ): Promise<RunResult> {
 	const env = subprocessEnv(dgHome, 0);
 	delete env.DG_HOME;
+	for (const key of Object.keys(env)) {
+		if (key.startsWith("XDG_") && key.endsWith("_HOME")) delete env[key];
+	}
+	delete env.LOCALAPPDATA;
+	delete env.APPDATA;
+	env.HOME = dgHome;
+	env.USERPROFILE = dgHome;
 	const proc = Bun.spawn([process.execPath, ENTRY, ...args], {
 		env,
 		stdout: "pipe",

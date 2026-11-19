@@ -125,7 +125,13 @@ export async function bootSeeded(
 		DG_JOB_TICK_MS: String(tickMs),
 		...seed.env,
 	});
-	await waitForHealth(port, 8000);
+	try {
+		await waitForHealth(port, 8000);
+	} catch (error) {
+		await stopServe(proc);
+		cleanupDgHome(dgHome);
+		throw error;
+	}
 	return {
 		dgHome,
 		port,

@@ -120,7 +120,20 @@ describe("docs/jobs-and-services.md job model", () => {
 		const header = section.split("\n").find((l) => l.startsWith("|")) ?? "";
 		expect(header.toLowerCase()).toContain("needs a live daemon");
 		const rows = Object.fromEntries(tableRows(section).map((r) => [spans(r[0])[0] ?? "", r.slice(1).join(" | ")]));
-		const verbs = ["add", "update", "remove", "enable", "disable", "start", "run", "stop", "restart", "list", "status", "logs"];
+		const verbs = [
+			"add",
+			"update",
+			"remove",
+			"enable",
+			"disable",
+			"start",
+			"run",
+			"stop",
+			"restart",
+			"list",
+			"status",
+			"logs",
+		];
 		const names = Object.keys(rows).map((k) => commandWords(k)[2]);
 		expect(names).toEqual(verbs);
 		const byVerb = Object.fromEntries(Object.entries(rows).map(([k, v]) => [commandWords(k)[2], v]));
@@ -280,7 +293,8 @@ describe("record links", () => {
 describe("README.md and docs/install.md", () => {
 	test("hold no command of the dg-daemon service group", () => {
 		for (const f of ["README.md", "docs/install.md"])
-			for (const code of codeRegions(read(f))) expect([f, /dg-daemon service (add|rm|status|start|stop)\b/.test(code)]).toEqual([f, false]);
+			for (const code of codeRegions(read(f)))
+				expect([f, /dg-daemon service (add|rm|status|start|stop)\b/.test(code)]).toEqual([f, false]);
 		expect(read("docs/install.md")).toContain(
 			"`dg: kept <from>; stop the dg-daemon service, then run dg-skills install again`",
 		);
@@ -290,7 +304,7 @@ describe("README.md and docs/install.md", () => {
 		const line = read("README.md")
 			.split("\n")
 			.find((l) => l.endsWith("](docs/jobs-and-services.md)"));
-		expect(line).toBe("- [Jobs and dashboard](docs/jobs-and-services.md)");
+		expect(line).toBe("- [Jobs](docs/jobs-and-services.md)");
 	});
 });
 
@@ -321,7 +335,19 @@ describe("jobs SKILL.md", () => {
 	test("has a Job verbs section with the new verbs in the dg-daemon form", () => {
 		const section = heading(skill, "Job verbs");
 		expect(skill).toMatch(/^## Job verbs$/m);
-		for (const verb of ["add", "list", "status", "enable", "disable", "start", "stop", "restart", "update", "remove", "logs"])
+		for (const verb of [
+			"add",
+			"list",
+			"status",
+			"enable",
+			"disable",
+			"start",
+			"stop",
+			"restart",
+			"update",
+			"remove",
+			"logs",
+		])
 			expect([verb, section.includes(`dg-daemon job ${verb}`)]).toEqual([verb, true]);
 		for (const flag of ["--name", "--continuous", "--schedule", "--every", "--timeout", "--feed", "--env"])
 			expect([flag, section.includes(flag)]).toEqual([flag, true]);
@@ -337,7 +363,9 @@ describe("jobs SKILL.md", () => {
 
 	test("states the gating and the login unit rules", () => {
 		const text = flat(skill);
-		expect(text).toMatch(/`remove`, `disable` and `autostart install\|remove` need a request from the human that names the job or the login unit/);
+		expect(text).toMatch(
+			/`remove`, `disable` and `autostart install\|remove` need a request from the human that names the job or the login unit/,
+		);
 		expect(text).toMatch(/does not answer the login unit question of `job enable`/);
 		expect(text).toContain("`enable` with no terminal only prints the hint");
 		expect(text).toMatch(/There is no autostart for `dg-daemon` itself[^.]*`dg-daemon autostart install`/);

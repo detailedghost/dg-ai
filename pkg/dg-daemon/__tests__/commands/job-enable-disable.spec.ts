@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { chmodSync, existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { CHAT_JOBS_PATH, CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { writePidFileAtomic } from "@dg/common/node";
 import { freshTempDir } from "../utils/daemon-harness";
@@ -251,7 +252,16 @@ describe("job enable", () => {
 			x: sleeperEntry(cwd),
 		}));
 
-		const result = await runCli(dgHome, ["job", "enable", "x"], { port });
+		const emptyHome = freshTempDir("job-login-home");
+
+		const result = await runCli(dgHome, ["job", "enable", "x"], {
+			port,
+			env: {
+				HOME: emptyHome,
+				USERPROFILE: emptyHome,
+				XDG_CONFIG_HOME: join(emptyHome, ".config"),
+			},
+		});
 
 		expect(result.code).toBe(0);
 		expect(result.stderr).toContain(

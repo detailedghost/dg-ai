@@ -57,7 +57,7 @@ describe("daemon boot after enable and disable", () => {
 		const enable = await runCli(dgHome, ["job", "enable", "x"], { port });
 		expect(enable.code).toBe(0);
 		await stopServe(proc);
-		await waitForDaemonExit(dgHome).catch(() => {});
+		await waitForDaemonExit(dgHome);
 
 		const next = await bootAgain(dgHome);
 
@@ -169,14 +169,17 @@ describe("a config with no jobsVersion", () => {
 			legacy(dgHome);
 			expect(existsSync(pathsOf(dgHome).pidPath)).toBe(false);
 
-			const result = await runCli(dgHome, args(dgHome));
+			try {
+				const result = await runCli(dgHome, args(dgHome));
 
-			expect(result.code).toBe(0);
-			expect(existsSync(pathsOf(dgHome).pidPath)).toBe(true);
-			const config = readConfigFile(dgHome) as Record<string, unknown>;
-			expect(config.jobsVersion).toBe(2);
-			expectTable(jobsTable(config));
-			killDaemonByPidFile(dgHome);
+				expect(result.code).toBe(0);
+				expect(existsSync(pathsOf(dgHome).pidPath)).toBe(true);
+				const config = readConfigFile(dgHome) as Record<string, unknown>;
+				expect(config.jobsVersion).toBe(2);
+				expectTable(jobsTable(config));
+			} finally {
+				killDaemonByPidFile(dgHome);
+			}
 		});
 	}
 });

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
 	appendFileSync,
+	chmodSync,
 	mkdtempSync,
 	renameSync,
 	rmSync,
@@ -156,6 +157,12 @@ describe("readTail", () => {
 		expect(readTail(file, 1).size).toBe(Buffer.byteLength("café\n"));
 		expect(readTail(file, 1).lines).toEqual(["café"]);
 	});
+
+	it("returns no lines for a count of 0", () => {
+		writeFileSync(file, body(numbered(3)));
+
+		expect(readTail(file, 0).lines).toEqual([]);
+	});
 });
 
 describe("follow", () => {
@@ -169,6 +176,20 @@ describe("follow", () => {
 		await done;
 
 		expect(out).toEqual(["three", "four"]);
+	});
+
+	const posixUser = process.platform === "win32" || process.getuid?.() === 0 ? it.skip : it;
+
+	posixUser("rejects when the file cannot be read for a reason other than a missing file", async () => {
+		writeFileSync(file, "one\n");
+		const start = readTail(file, 1);
+		chmodSync(file, 0o000);
+		const controller = new AbortController();
+		stops.push(controller);
+
+		await expect(
+			follow(file, { out: () => {}, signal: controller.signal, pollMs: 5, start }),
+		).rejects.toThrow(/EACCES/);
 	});
 
 	it("resolves when the signal is aborted", async () => {

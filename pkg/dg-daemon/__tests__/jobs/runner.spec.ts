@@ -15,6 +15,7 @@ import {
 	FILE_ONLY_SEAMS,
 	freshDgHome,
 } from "../utils/daemon-harness";
+import { until } from "./scheduled-fixtures";
 
 const QUARTER_HOUR_MS = 15 * 60 * 1000;
 
@@ -534,7 +535,11 @@ describe("createJobRunner", () => {
 			const runner = createJobRunner(deps(store, succeeds("")));
 
 			expect(runner.runNow("fresh").ok).toBe(true);
-			await Bun.sleep(20);
+			await until(
+				() => store.getJobByLabel("fresh")?.lastExitCode,
+				(code) => code === 0,
+				"recorded the manual run",
+			);
 
 			expect(runner.tick()).toHaveLength(0);
 			expect(store.getJobByLabel("fresh")?.nextRunAt).toBe(
@@ -562,7 +567,7 @@ describe("createJobRunner", () => {
 		});
 	});
 
-	it("ends a run through JobControl.stop even when its entry left the config", async () => {
+	it("ends a run through runner.stop even when its entry left the config", async () => {
 		await withStore(async (store) => {
 			table.long = entry({
 				argv: [process.execPath, "-e", "setTimeout(() => {}, 60000)"],
@@ -594,7 +599,11 @@ describe("createJobRunner", () => {
 			const runner = createJobRunner(deps(store, succeeds("")));
 
 			const started = runner.runNow("jira-sprint");
-			await Bun.sleep(20);
+			await until(
+				() => store.getJob(job.id)?.lastExitCode,
+				(code) => code === 0,
+				"recorded the manual run",
+			);
 
 			expect(started.ok).toBe(true);
 			expect(store.getJob(job.id)?.lastExitCode).toBe(0);

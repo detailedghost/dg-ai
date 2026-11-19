@@ -132,6 +132,9 @@ the noun.
 
 ## Job verbs
 
+The first write verb on a home that the new daemon has not moved yet starts the
+daemon one time; see below the table.
+
 | Verb | What it changes | Needs a live daemon |
 | --- | --- | --- |
 | `dg job add` | the definition of a job | no |
@@ -267,7 +270,8 @@ job model.
 `dg autostart install` starts the daemon each time you log in. `dg autostart
 status` reports the unit and `dg autostart remove` takes it away. `status --json`
 prints one JSON line. The first `dg job enable` at a terminal asks one time to
-install the login unit, and dg also keeps the answer `n`.
+install the login unit. dg stores the answer, `y` or `n`, so the question does not
+come back.
 
 The unit depends on the OS:
 
@@ -312,7 +316,7 @@ A login unit has a minimal environment, and these rules follow from it:
 
 The first start of the new daemon moves each service and each scheduled job to
 the `jobs` table, and keeps the copy `config.json.pre-jobs` of the config file
-from before, next to it. A service keeps its keys, and `autostart` becomes
+from before, next to it, with mode 0600. A service keeps its keys, and `autostart` becomes
 `enabled`. A scheduled job keeps its next run time and its feed items, and gets
 `feed: true`.
 

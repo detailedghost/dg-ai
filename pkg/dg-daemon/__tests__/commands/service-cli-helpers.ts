@@ -8,10 +8,10 @@ export type RunResult = { code: number; stdout: string; stderr: string };
 export async function runCli(
 	dgHome: string,
 	args: string[],
-	options: { port?: number; cwd?: string } = {},
+	options: { port?: number; cwd?: string; env?: Record<string, string> } = {},
 ): Promise<RunResult> {
 	const proc = trackChild(Bun.spawn([process.execPath, ENTRY, ...args], {
-		env: subprocessEnv(dgHome, options.port ?? 0),
+		env: subprocessEnv(dgHome, options.port ?? 0, options.env),
 		cwd: options.cwd,
 		stdout: "pipe",
 		stderr: "pipe",

@@ -186,7 +186,7 @@ describe("ensureMigrated", () => {
 		},
 	};
 
-	it("fails with the not migrated text and exit code 1 when the daemon start throws", async () => {
+	it("fails with the not migrated text, the start error and exit code 1 when the daemon start throws", async () => {
 		const { dgHome } = setup();
 		writeConfigFile(dgHome, { services: {} });
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
@@ -197,7 +197,7 @@ describe("ensureMigrated", () => {
 			}) as never,
 		}).catch((error: unknown) => error);
 		expect(failure).toBeInstanceOf(DgCliError);
-		expect((failure as DgCliError).message).toBe(NOT_MIGRATED);
+		expect((failure as DgCliError).message).toBe(`${NOT_MIGRATED} (spawn refused)`);
 		expect((failure as DgCliError).exitCode).toBe(1);
 	});
 
