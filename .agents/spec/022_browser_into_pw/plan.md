@@ -3,7 +3,7 @@ feature: "Fold /dg:browser into /dg:pw"
 feature_snake_case: browser_into_pw
 date: "2026-11-19"
 version: "1.0"
-status: draft
+status: in-progress
 current_slice: 2
 pr_strategy: single
 slices:
@@ -34,6 +34,8 @@ permissions:
   auto_cleanup_worktree: true
   slice_commits: true
   housekeeping_commit: true
+worktree:
+  pr_url: https://github.com/detailedghost/dg-ai/pull/236
 ---
 
 # Fold /dg:browser into /dg:pw
