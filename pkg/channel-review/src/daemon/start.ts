@@ -11,6 +11,7 @@ import { dirname } from "node:path";
 import { describeError, wait } from "@dg/common";
 import { ensurePrivateDir, type SystemSeams } from "@dg/common/node";
 import { assertNotBlocked } from "@dg/common/node/layout";
+import { programCommand } from "@dg/common/node/program";
 import { type ChannelConfig, loadConfig, resolveEnv } from "../config";
 import { channelReviewPaths } from "../paths";
 import type { RunnerName } from "../runners/types";
@@ -47,8 +48,6 @@ type StartSeams = {
 	io: DaemonIo;
 	system?: SystemSeams;
 	spawn?: SpawnFn;
-	execPath?: string;
-	argv?: string[];
 	runArgv?: string[];
 	startTimeoutMs?: number;
 	killEscalationMs?: number;
@@ -58,7 +57,6 @@ type StartSeams = {
 const START_TIMEOUT_MS = 20_000;
 const KILL_ESCALATION_MS = 5_000;
 const LOG_TAIL_LINES = 20;
-const COMPILED_ENTRY = /^(?:\/\$bunfs\/|[A-Za-z]:[\\/]~BUN[\\/])/;
 
 function tailLines(path: string): string {
 	try {
@@ -70,10 +68,6 @@ function tailLines(path: string): string {
 	} catch {
 		return "";
 	}
-}
-
-function isCompiled(entry: string | undefined): boolean {
-	return !entry || COMPILED_ENTRY.test(entry) || !existsSync(entry);
 }
 
 export async function start(
@@ -106,14 +100,7 @@ export async function start(
 	if (existsSync(paths.logPath))
 		renameSync(paths.logPath, `${paths.logPath}.1`);
 
-	const execPath = seams.execPath ?? process.execPath;
-	const argv = seams.argv ?? process.argv;
-	const base =
-		seams.runArgv ??
-		(isCompiled(argv[1]) ? [execPath] : [execPath, argv[1] as string]);
-	const [command, ...lead] = base as [string, ...string[]];
-	const args = [
-		...lead,
+	const runArgs = [
 		"channel-review",
 		"run",
 		"--env",
@@ -121,6 +108,9 @@ export async function start(
 		...(options.runner ? ["--runner", options.runner] : []),
 		...(options.chatId ? ["--chat-id", options.chatId] : []),
 	];
+	const [command, ...args] = seams.runArgv
+		? [...seams.runArgv, ...runArgs]
+		: programCommand("dg-skills", runArgs);
 
 	const logFd = openSync(paths.logPath, "a", 0o600);
 	let child: ChildLike;
