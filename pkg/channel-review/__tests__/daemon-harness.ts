@@ -184,6 +184,7 @@ export type DaemonHarnessOptions = {
 	platform?: NodeJS.Platform;
 	resolveError?: Error;
 	listedReactions?: string[];
+	registerChat?: ScriptedProvider["registerChat"];
 };
 
 export function createDaemonHarness(options: DaemonHarnessOptions = {}) {
@@ -261,6 +262,7 @@ export function createDaemonHarness(options: DaemonHarnessOptions = {}) {
 				paths.pidPath,
 			);
 			provider.resolveError = options.resolveError;
+			if (options.registerChat) provider.registerChat = options.registerChat;
 			providers.push(provider);
 			return provider;
 		},

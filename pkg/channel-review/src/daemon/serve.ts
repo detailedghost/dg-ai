@@ -387,6 +387,8 @@ export async function serve({
 			version,
 			sleep: seams.sleep ?? abortableSleep,
 			signal: streams.signal,
+		}).catch((error: unknown) => {
+			log.warn(`chat registration stopped: ${describeError(error)}`);
 		});
 
 		async function pump(chatId: string): Promise<number> {
@@ -455,7 +457,7 @@ export async function serve({
 		} finally {
 			signal.removeEventListener("abort", stopStreams);
 			streams.abort();
-			await registration;
+			await withTimeout(registration, seams.stopTimeoutMs ?? SERVE_STOP_TIMEOUT_MS);
 			stopMaintenance();
 			await automation.stop();
 			await withTimeout(
