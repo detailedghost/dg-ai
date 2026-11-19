@@ -19,7 +19,7 @@ dg-skills spec --help >/dev/null 2>&1 ||
 
 Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
-If a step fails, run dg-skills doctor monolith spec.
+If a step fails, run dg-skills doctor monolith spec adr.
 
 Before starting, read [references/structure.md](references/structure.md) for the target layout, file format, and old-to-new mapping.
 
@@ -41,4 +41,4 @@ Before starting, read [references/structure.md](references/structure.md) for the
 | 5 | **Write & Clean** | Write topic files, delete old files and empty subdirs. |
 | 6 | **Report** | Summarize: files migrated, entries merged/pruned, files deleted, spec bundles migrated, any unresolved `plan.md` validation violations from Step 2. |
 | 7 | **Monolith health check** | If `.agents/monolith.md` exists, run `dg-skills monolith prune .agents/monolith.md --dry-run` to list entries whose `_src:_` path no longer exists. If `.agents/school/monolith-conflicts.md` exists, count its entries. Surface both in the report and suggest the user run `/dg:monolith --prune` and review the conflicts log. Do NOT auto-modify monolith.md. |
-| 8 | **Context diet** | Measure the always-loaded files against the budgets in structure.md's "Agent Context Budgets". First find the repo tests that read CLAUDE.md, AGENTS.md, or doc files. List the moves: feature detail to `.agents/references/<pkg>-<topic>.md`, style rules to `docs/code_standards.md`, ADR-linked agent rules to `.agents/decisions/`. Delete empty files and empty folders under `.agents/`. Show the list and ask before you move text out of CLAUDE.md, AGENTS.md, or `docs/`. Run the doc-reading tests after. |
+| 8 | **Context diet** | Measure the always-loaded files against the budgets in structure.md's "Agent Context Budgets". First find the repo tests that read CLAUDE.md, AGENTS.md, or doc files. List the moves: feature detail to `.agents/references/<pkg>-<topic>.md`, style rules to `docs/code_standards.md`, ADR-linked agent rules to `.agents/decisions/` (format: `/dg:adr`). Delete empty files and empty folders under `.agents/`. Show the list and ask before you move text out of CLAUDE.md, AGENTS.md, or `docs/`. Run the doc-reading tests after. ADR check: run it only when `.agents/decisions/README.md` exists, else skip quietly. Run `dg-skills adr lint --all --json`. Write each missing decision file per `/dg:adr`. Never rewrite an ADR body without a diff the human approves. |

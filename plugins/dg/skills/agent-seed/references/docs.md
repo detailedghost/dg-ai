@@ -117,14 +117,17 @@ own style rules.
 
 ## .agents/decisions/
 
-One file for each ADR that changes how an agent works, with the same number and slug as the ADR:
+One file for each ADR, with the same number and slug as the ADR. `/dg:adr` owns the format. The shape:
 
 ```markdown
-# <NNNN> — <ADR title>
+---
+covers: ["<path glob>"]
+---
 
-ADR: [docs/adr/<NNNN>-<slug>.md](../../docs/adr/<NNNN>-<slug>.md)
+[ADR <NNNN>](../../docs/adr/<NNNN>-<slug>.md)
 
 - <agent rule that follows from the decision, one line each>
 ```
 
-Do not repeat the ADR's context or alternatives. Cite a decision by number and do not argue it again.
+A decision with no agent rules keeps the `covers:` frontmatter and the ADR link line. The one line `No agent rules.` replaces the rules list. The generated
+`.agents/decisions/README.md` indexes it. Do not repeat the ADR's context or alternatives. Cite a decision by number and do not argue it again.

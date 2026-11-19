@@ -23,9 +23,9 @@ No findings → step 6. Before routing, read Issues Remediation. Exact duplicate
 
 **Test-name gate** (`/dg:standard-test` rules 7-8). Scan committed test files for TDD-scaffolding markers — fail the gate if any test **filename** or `describe`/suite label still carries `red`/`green`/`slice-N`/plan markers (e.g. `*.red.*`, `*.green.*`, `red_*`, `green_*`). Rename/consolidate to a name that mirrors the code under test (red+green pairs merge into one committed file). A committed test that still says "red"/"green" is a review red flag — fix it before anything ships.
 
-**Docs.** Launch **dg:lore** (template: `templates/lore.md`) on the changed-file list. Gate: no public API/function without a doc comment; README updated if the public interface changed. Commit (`docs(<scope>): …`, silent if `permissions.housekeeping_commit`). Docs run right before the human gate so the reviewer sees them in the diff.
+**Docs.** Launch **dg:lore** (template: `templates/lore.md`) on the changed-file list. Gate: no public API/function without a doc comment; README updated if the public interface changed. Commit (`docs(<scope>): …`, silent if `permissions.housekeeping_commit`). Docs run right before the human gate so the reviewer sees them in the diff. When `.agents/decisions/README.md` exists, dg:lore also handles the decision records as `templates/lore.md` says; otherwise skip quietly.
 
-> **GATE:** test names clean, docs committed.
+> **GATE:** test names clean, docs committed, and the decision records clean when opted in.
 
 ## Step 7 — Human review moves to the PR/MR
 

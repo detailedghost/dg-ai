@@ -59,7 +59,7 @@ function fromPw(specs: readonly PwSpecLike[]): Shape {
 
 /** Subcommands and flags of the commands that parse their own arguments, read from each feature's own tables. */
 export async function shapes(): Promise<Record<string, Shape>> {
-	const [stat, credentials, channelReview, bg, db, jot, testLive, vcs, address, worktree, spec, hooks, pw] = await Promise.all([
+	const [stat, credentials, channelReview, bg, db, jot, testLive, vcs, address, worktree, spec, adr, hooks, pw] = await Promise.all([
 		import("../stat/cli"),
 		import("../credentials/cli"),
 		import("../channel-review/cli"),
@@ -71,6 +71,7 @@ export async function shapes(): Promise<Record<string, Shape>> {
 		import("../address"),
 		import("../worktree"),
 		import("../spec"),
+		import("../adr"),
 		import("../hooks/cli"),
 		import("../pw/commands"),
 	]);
@@ -86,6 +87,7 @@ export async function shapes(): Promise<Record<string, Shape>> {
 		address: fromSpec(address.commandSpec),
 		worktree: names(worktree.SUBCOMMANDS.keys()),
 		spec: names(spec.HANDLERS.keys()),
+		adr: names(adr.HANDLERS.keys()),
 		hooks: names([...hooks.COMMANDS, "run"]),
 		pw: fromPw(pw.COMMANDS.map((entry) => entry.spec)),
 	};

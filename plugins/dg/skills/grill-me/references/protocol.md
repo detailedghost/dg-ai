@@ -113,7 +113,7 @@ At convergence, before writing the Final Summary, walk every `[DECIDED]` item an
 1. Will future readers be confused without the context behind it?
 1. Did it resolve a genuine trade-off among real alternatives?
 
-All three "yes" → write `<adr-root>/NNNN-slug.md` using the template in `decisions.md`. Any "no" → skip; the Final Summary covers it.
+All three "yes" → run `/dg:adr new`; see `decisions.md`. Any "no" → skip; the Final Summary covers it.
 
 ## Convergence
 

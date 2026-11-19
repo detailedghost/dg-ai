@@ -31,7 +31,7 @@ Execute steps in order. Do not skip steps. Report progress after each.
 - Create `.agents/references/` if missing
 - Create `.agents/spec/` if missing
 - Create `.agents/school/` if missing
-- Create `.agents/decisions/` only when an ADR in `docs/adr/` changes how an agent works. Never leave an empty file or an empty folder under `.agents/`
+- Create `.agents/decisions/` only once the repo ran `adr init` (see `/dg:adr`). Every ADR in `docs/adr/` gets a paired decision file there; a decision with no agent rules carries `No agent rules.`. `/dg:adr` owns the format. Never leave an empty file or an empty folder under `.agents/`
 - For each of these 7 school files, create with stub if not present:
   - `engineering.md`, `quality.md`, `performance.md`, `infrastructure.md`, `security.md`, `product.md`, `tooling.md`
   - Stub format (3 lines):

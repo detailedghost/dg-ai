@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { registerAdr } from "./commands/adr";
 import { registerAddress } from "./commands/address";
 import { registerAssign } from "./commands/assign";
 import { registerBatchOpen } from "./commands/batch-open";
@@ -79,6 +80,7 @@ export function registerAll(program: Command): void {
 	registerWorktree(program);
 	registerSpec(program);
 	registerAssign(program);
+	registerAdr(program);
 	registerMonolith(program);
 	registerJot(program);
 	registerBg(program);

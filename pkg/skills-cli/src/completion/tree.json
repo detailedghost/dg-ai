@@ -1851,6 +1851,30 @@
 			"description": "Resolve agent tiers for a plan's slice layer"
 		},
 		{
+			"name": "adr",
+			"description": "Create, index, search and lint architecture decision records",
+			"commands": [
+				{
+					"name": "init"
+				},
+				{
+					"name": "new"
+				},
+				{
+					"name": "index"
+				},
+				{
+					"name": "lint"
+				},
+				{
+					"name": "relevant"
+				},
+				{
+					"name": "find"
+				}
+			]
+		},
+		{
 			"name": "monolith",
 			"description": "Vocabulary helper and worktree scan generator for the monolith skill"
 		},

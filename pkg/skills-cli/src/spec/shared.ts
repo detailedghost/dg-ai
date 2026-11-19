@@ -3,6 +3,8 @@ import { isAbsolute } from "node:path";
 import { isRecord } from "@dg/common";
 import { writeFileAtomic } from "@dg/common/node";
 
+export { records } from "../utils/frontmatter";
+
 export const PROGRAM = "dg-skills spec";
 
 /** A failure the dispatcher reports as `dg-skills spec: <message>` with its own exit status. */
@@ -68,14 +70,6 @@ export function jqText(value: unknown): string {
 /** Drop trailing newlines the way shell command substitution does. */
 export function stripNewlines(text: string): string {
 	return text.replace(/\n+$/, "");
-}
-
-/** Split text into awk records: no phantom record after a final newline. */
-export function records(text: string): string[] {
-	if (text === "") return [];
-	const lines = text.split("\n");
-	if (lines[lines.length - 1] === "") lines.pop();
-	return lines;
 }
 
 export function joinRecords(lines: string[]): string {

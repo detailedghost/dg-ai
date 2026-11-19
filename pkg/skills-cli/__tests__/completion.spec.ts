@@ -70,6 +70,11 @@ describe("dg-skills __complete", () => {
 		expect(complete("completion", "f")).toEqual(["fish"]);
 	});
 
+	test("completes the adr verbs", () => {
+		expect(complete("adr", "").sort()).toEqual(["find", "index", "init", "lint", "new", "relevant"]);
+		expect(complete("adr", "re")).toEqual(["relevant"]);
+	});
+
 	test("is not a registered command, so help does not list it", () => {
 		const run = Bun.spawnSync([process.execPath, ENTRY, "--help"], { stdout: "pipe" });
 		expect(run.stdout.toString()).not.toContain("__complete");

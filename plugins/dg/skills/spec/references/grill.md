@@ -73,8 +73,8 @@ shape is LOCKED and must not grow a `code_structure` key, so they persist as `pl
 [templates/structure-grill.md](templates/structure-grill.md) § *Output*.
 
 Apply the protocol's three-gate ADR test at final convergence (after pass 3) exactly as documented
-in [decisions.md](../../grill-me/references/decisions.md) — durable architectural decisions still get persisted to
-`.agents/decisions/`, `/dg:spec` doesn't change that behavior.
+in [decisions.md](../../grill-me/references/decisions.md) — `/dg:adr new` writes the pair (human ADR and agent decision)
+for each decision that passes; `/dg:spec` doesn't change that behavior.
 
 ## Prototype escape hatch
 

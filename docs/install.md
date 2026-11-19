@@ -772,6 +772,7 @@ to copy only the CLI skills into `$CODEX_HOME/skills`.
 | `jot`, `bg`, `cls`, `stat`, `sniff`, `find-work`, `doctor` | Yes — they call other skills and tools that must be available |
 | `db`, `erd` | Yes |
 | `pw` | Yes — needs Bun 1.4.0 or later and Chrome, Edge, or a Chromium from `install-browser` |
+| `adr` | Yes — `dg-skills adr`; `ask` mode needs a repo that ran `dg-skills adr init` |
 | `eli5` | Yes for `-v`/`-p` (stash) or `--erd`; a plain `/dg:eli5 <thing>` needs no CLI |
 | `ticket` | Yes — needs a stored `ticket/jira` credential |
 | `test-live` | Yes — needs Git and an authenticated `gh` (GitHub only) |

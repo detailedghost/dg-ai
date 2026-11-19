@@ -58,6 +58,12 @@ const WAVE_6_SKILLS = ["pw"] as const;
 
 const MERGE_SKILLS = ["land"] as const;
 
+const ADR_SKILLS = ["adr"] as const;
+
+describe("skill indexes list every ADR skill", () => {
+	indexTests("ADR", ADR_SKILLS);
+});
+
 describe("skill indexes list every merge skill", () => {
 	indexTests("merge", MERGE_SKILLS);
 });

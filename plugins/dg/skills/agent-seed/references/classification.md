@@ -40,7 +40,7 @@ Rewrite text into the style of its destination when you move it.
 
 ## What Goes in .agents/decisions/
 
-Agent rules that follow from an ADR. Each file links its ADR in `docs/adr/` and does not repeat the ADR.
+Agent rules that follow from an ADR. Each file links its ADR in `docs/adr/` and does not repeat the ADR. `/dg:adr` owns the format.
 
 ## What Moves to .agents/references/
 
