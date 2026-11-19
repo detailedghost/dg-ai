@@ -11,6 +11,8 @@ import {
 	waitForHealth,
 } from "./daemon-harness";
 
+const DISPOSE_GRACE_MS = 10_000;
+
 export type ServiceDaemon = {
 	dgHome: string;
 	port: number;
@@ -55,8 +57,9 @@ export async function bootWithServices(
 		paths: resolveDgPaths({ env: { DG_HOME: dgHome } }),
 		dispose: async () => {
 			killDaemonByPidFile(dgHome);
-			proc.kill("SIGKILL");
+			const hardKill = setTimeout(() => proc.kill("SIGKILL"), DISPOSE_GRACE_MS);
 			await proc.exited;
+			clearTimeout(hardKill);
 			await waitForDaemonExit(dgHome).catch(() => {});
 			cleanupDgHome(dgHome);
 		},

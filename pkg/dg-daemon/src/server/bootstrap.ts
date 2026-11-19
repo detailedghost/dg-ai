@@ -51,6 +51,10 @@ import { createHttpServer, type HttpServerDeps, newInstanceId } from "./http";
 import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
 import { createLogger } from "./log";
 import { candidatePorts } from "./ports";
+import {
+	claimSingleInstance,
+	removeActiveDaemon,
+} from "./single-instance";
 import { DG_DAEMON_PACKAGE_VERSION } from "./status";
 
 /** How often the row-cap prunes run, independent of the much faster session reap tick. */
@@ -330,6 +334,12 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 			protocol: CHAT_PROTOCOL_VERSION,
 		},
 	});
+	await claimSingleInstance(paths, {
+		pid: process.pid,
+		port: boundPortNumber,
+		instanceId,
+		version: DG_DAEMON_PACKAGE_VERSION,
+	});
 
 	let shuttingDown = false;
 	async function shutdown(reason: "daemon-shutdown"): Promise<void> {
@@ -342,6 +352,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		registry.closeAll(reason);
 		await Promise.all(pendingCloseSends);
 		removePidFile(paths);
+		removeActiveDaemon({ pid: process.pid, instanceId });
 		boundServer.stop(true);
 		store.close();
 		credentials.close();

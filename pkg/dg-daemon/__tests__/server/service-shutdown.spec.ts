@@ -18,7 +18,7 @@ const stubbornService =
 			"-e",
 			`process.on("SIGTERM", () => {});
 		require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
-		setInterval(() => {}, 1000);`,
+		setTimeout(() => process.exit(0), 120000);`,
 		],
 		cwd,
 		autostart: true,

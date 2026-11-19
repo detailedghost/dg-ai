@@ -30,7 +30,9 @@ import {
 	resolveDgPaths,
 } from "@dg/common/node";
 import type { Subprocess } from "bun";
+import { trackChild } from "./child-registry";
 
+export { killTrackedChildren, settleChildren, trackChild } from "./child-registry";
 export { getConfiguredAssetDirectory } from "../../src/assets/config";
 export { ChatStore } from "../../src/store";
 
@@ -126,6 +128,8 @@ export function cleanupDgHome(dgHome: string): void {
 	rmSync(dgHome, { recursive: true, force: true });
 }
 
+const LEAK_IDLE_TTL_MS = 120_000;
+
 export function subprocessEnv(
 	dgHome: string,
 	port: number,
@@ -136,6 +140,7 @@ export function subprocessEnv(
 		if (v !== undefined) env[k] = v;
 	}
 	env.DG_HOME = dgHome;
+	env.DG_IDLE_TTL_MS = String(LEAK_IDLE_TTL_MS);
 	env.DG_PORT = String(port);
 	env.DG_KEY_SOURCE = "file";
 	Object.assign(env, extraEnv);
@@ -150,11 +155,13 @@ export function spawnServe(
 	extraEnv: Record<string, string> = {},
 ) {
 	dgHomeByPort.set(port, dgHome);
-	return Bun.spawn([process.execPath, ENTRY, "serve"], {
-		env: subprocessEnv(dgHome, port, extraEnv),
-		stdout: "pipe",
-		stderr: "pipe",
-	});
+	return trackChild(
+		Bun.spawn([process.execPath, ENTRY, "serve"], {
+			env: subprocessEnv(dgHome, port, extraEnv),
+			stdout: "pipe",
+			stderr: "pipe",
+		}),
+	);
 }
 
 export type ServeBoot = {
@@ -213,11 +220,11 @@ export async function runDaemonCommand(
 	dgHome: string,
 	...args: string[]
 ): Promise<StartResult> {
-	const proc = Bun.spawn([process.execPath, ENTRY, ...args], {
+	const proc = trackChild(Bun.spawn([process.execPath, ENTRY, ...args], {
 		env: subprocessEnv(dgHome, 0),
 		stdout: "pipe",
 		stderr: "pipe",
-	});
+	}));
 	const [stdout, stderr, exitCode] = await Promise.all([
 		new Response(proc.stdout).text(),
 		new Response(proc.stderr).text(),
@@ -230,11 +237,11 @@ export async function runStatus(
 	dgHome: string,
 	extraEnv: Record<string, string> = {},
 ): Promise<StartResult> {
-	const proc = Bun.spawn([process.execPath, ENTRY, "status"], {
+	const proc = trackChild(Bun.spawn([process.execPath, ENTRY, "status"], {
 		env: subprocessEnv(dgHome, 0, extraEnv),
 		stdout: "pipe",
 		stderr: "pipe",
-	});
+	}));
 	const [stdout, stderr, exitCode] = await Promise.all([
 		new Response(proc.stdout).text(),
 		new Response(proc.stderr).text(),

@@ -215,7 +215,7 @@ function removeOwnPidFile(paths: DgPaths, handle: DaemonHandle): void {
 		removePidFile(paths);
 }
 
-async function stopDaemon(
+export async function stopDaemon(
 	paths: DgPaths,
 	options: StopOptions,
 	seams: StopSeams,

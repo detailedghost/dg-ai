@@ -176,7 +176,7 @@ describe("killProcessGroup", () => {
 			[
 				process.execPath,
 				"-e",
-				'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);',
+				'process.on("SIGTERM", () => {}); setTimeout(() => process.exit(0), 120000);',
 			],
 			{ detached: true, stdout: "ignore", stderr: "ignore" },
 		);

@@ -393,7 +393,7 @@ describe("state folder against a live daemon", () => {
 		});
 
 	const sleeper = (cwd: string) => ({
-		argv: [process.execPath, "-e", "setTimeout(() => {}, 600000)"],
+		argv: [process.execPath, "-e", "setTimeout(() => process.exit(0), 120000)"],
 		cwd,
 	});
 

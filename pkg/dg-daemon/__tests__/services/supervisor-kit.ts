@@ -9,7 +9,7 @@ import {
 	type SupervisorDeps,
 } from "../../src/services/supervisor";
 
-export const SLEEPER = "setInterval(() => {}, 1000);";
+export const SLEEPER = "setTimeout(() => process.exit(0), 120000);";
 export const IGNORE_SIGTERM = `process.on("SIGTERM", () => {}); ${SLEEPER}`;
 
 export type Kit = {
