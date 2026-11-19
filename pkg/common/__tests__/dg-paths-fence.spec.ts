@@ -141,7 +141,7 @@ describe("resolveDgPaths fence", () => {
 		expect(resolveDgPaths(linuxCall(env))).toBe(unfenced);
 	});
 
-	it("throws again on a repeat call because a throwing call caches nothing", () => {
+	it("throws on every repeat call, so a cached result never skips the fence", () => {
 		const call = linuxCall({ DG_PATH_FENCE: "/f", DG_HOME: "/repeat/g" });
 
 		expect(() => resolveDgPaths(call)).toThrow(/dg path fence:/);

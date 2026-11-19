@@ -81,7 +81,7 @@ describe("DgPaths job paths", () => {
 });
 
 describe("isJobName", () => {
-	it.each(["a", "0", "bot", "bot-dev", "a-", "9lives", "a".repeat(64)])(
+	it.each(["a", "0", "bot", "bot-dev", "a-", "9lives", "console", "com10", "lpt0", "a".repeat(64)])(
 		"accepts %p",
 		(name) => {
 			expect(isJobName(name)).toBe(true);
@@ -102,6 +102,14 @@ describe("isJobName", () => {
 		"a".repeat(65),
 		"bot\n",
 		"\nbot",
+		"con",
+		"prn",
+		"aux",
+		"nul",
+		"com1",
+		"com9",
+		"lpt1",
+		"lpt9",
 	])("rejects %p", (name) => {
 		expect(isJobName(name)).toBe(false);
 	});

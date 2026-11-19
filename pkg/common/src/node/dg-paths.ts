@@ -234,8 +234,10 @@ export function withBinOnPath(
 
 const JOB_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
+
 export function isJobName(name: string): boolean {
-	return JOB_NAME.test(name);
+	return JOB_NAME.test(name) && !WINDOWS_RESERVED.test(name);
 }
 
 function underRoot(root: string, name: string): string {
