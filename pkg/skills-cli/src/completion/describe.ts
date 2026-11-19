@@ -34,7 +34,7 @@ function pwFlag(flag: FlagLike): CompletionOption {
 	return { flags: [`--${flag.name}`], ...(description ? { description } : {}), ...(value ? { value } : {}) };
 }
 
-function fromPw(specs: readonly PwSpecLike[]): Shape {
+function fromPw(specs: readonly PwSpecLike[], tabVerbs: readonly Command[]): Shape {
 	const ext: Shape = {
 		...names([...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS]),
 		options: [
@@ -47,7 +47,7 @@ function fromPw(specs: readonly PwSpecLike[]): Shape {
 			...described(spec.name, spec.help.split("\n")[0]),
 			...(spec.flags.length ? { options: spec.flags.map(pwFlag) } : {}),
 			...(spec.positionals.some((positional) => PATH_WORD.test(positional.name)) ? { path: true } : {}),
-		})),
+		})).concat(tabVerbs.map((command) => treeOf(command))),
 		options: [
 			{ flags: ["--session", "-s"], description: "the browser session to use", value: "any" },
 			{ flags: ["--raw"], description: "print only the result" },
@@ -59,7 +59,7 @@ function fromPw(specs: readonly PwSpecLike[]): Shape {
 
 /** Subcommands and flags of the commands that parse their own arguments, read from each feature's own tables. */
 export async function shapes(): Promise<Record<string, Shape>> {
-	const [stat, credentials, channelReview, bg, db, jot, testLive, vcs, address, worktree, spec, adr, hooks, pw] = await Promise.all([
+	const [stat, credentials, channelReview, bg, db, jot, testLive, vcs, address, worktree, spec, adr, hooks, pw, tabVerbs] = await Promise.all([
 		import("../stat/cli"),
 		import("../credentials/cli"),
 		import("../channel-review/cli"),
@@ -74,6 +74,7 @@ export async function shapes(): Promise<Record<string, Shape>> {
 		import("../adr"),
 		import("../hooks/cli"),
 		import("../pw/commands"),
+		import("../pw/tab-verbs"),
 	]);
 	return {
 		stat: fromSubtree(stat.registerStat),
@@ -89,7 +90,7 @@ export async function shapes(): Promise<Record<string, Shape>> {
 		spec: names(spec.HANDLERS.keys()),
 		adr: names(adr.HANDLERS.keys()),
 		hooks: names([...hooks.COMMANDS, "run"]),
-		pw: fromPw(pw.COMMANDS.map((entry) => entry.spec)),
+		pw: fromPw(pw.COMMANDS.map((entry) => entry.spec), tabVerbs.tabVerbsProgram().commands),
 	};
 }
 

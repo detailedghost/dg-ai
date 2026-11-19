@@ -64,6 +64,12 @@ export function indexHelp(specs: readonly CommandSpec[]): string {
 				`  ${usageLine(spec).padEnd(width)}${spec.help.split("\n")[0]}`,
 			);
 	}
+	lines.push(
+		"",
+		"tab batches:",
+		`  ${"batch-open <refs...>".padEnd(width)}Open PR or URL tabs; --ext groups them`,
+		`  ${"launch [refs...]".padEnd(width)}Cold-start Chromium with the extension (needs --ext)`,
+	);
 	lines.push("", "internal:", `  ${"daemon".padEnd(width)}Run the pw daemon; dg starts this for you`);
 	return lines.join("\n");
 }

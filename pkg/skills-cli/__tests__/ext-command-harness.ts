@@ -35,7 +35,6 @@ export function extCommandWorld(options: {
 import { mock } from "bun:test";
 import * as node from "@dg/common/node";
 import * as detect from ${JSON.stringify(SRC("utils/detect.ts"))};
-import { Command } from "commander";
 const opened = [];
 let detectCalls = 0;
 mock.module("@dg/common/node", () => ({
@@ -53,19 +52,11 @@ mock.module(${JSON.stringify(SRC("utils/detect.ts"))}, () => ({
 }));
 class ExitSignal extends Error { constructor(code) { super("exit " + code); this.code = code; } }
 process.exit = (code) => { throw new ExitSignal(code ?? 0); };
-const { guardExtensionCommands } = await import(${JSON.stringify(SRC("utils/cli-only.ts"))});
-const { registerBatchOpen } = await import(${JSON.stringify(SRC("commands/batch-open.ts"))});
-const { registerLaunch } = await import(${JSON.stringify(SRC("commands/launch.ts"))});
-const program = new Command().exitOverride();
-program.enablePositionalOptions();
-guardExtensionCommands(program);
-registerBatchOpen(program);
-registerLaunch(program);
+const { main } = await import(${JSON.stringify(SRC("pw/cli.ts"))});
 let exitCode = 0;
 let error = null;
 try {
-  await program.parseAsync(${JSON.stringify(args)}, { from: "user" });
-  exitCode = Number(process.exitCode ?? 0);
+  exitCode = await main(${JSON.stringify(args)});
 } catch (e) {
   if (e instanceof ExitSignal) exitCode = e.code;
   else { error = e instanceof Error ? e.message : String(e); exitCode = 1; }

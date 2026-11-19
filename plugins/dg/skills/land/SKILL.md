@@ -53,7 +53,7 @@ dg-skills address --help >/dev/null 2>&1 ||
 
 Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
-If a step fails, run dg-skills doctor adr address batch-open proxy vcs-provider.
+If a step fails, run dg-skills doctor adr address batch-open pw proxy vcs-provider.
 
 Repeat this resolution in every fresh shell, including delegated execution and
 resumed commands; shell variables do not persist between tool calls. Use the

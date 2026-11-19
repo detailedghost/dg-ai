@@ -16,7 +16,6 @@ import { removeBootstrapDirs, removeBootstrapFixtures, runBootstrap } from "./bo
 import {
 	assertExtensionInstalled,
 	cliOnlyMarker,
-	EXT_ONLY_COMMANDS,
 	extensionRequiredMessage,
 	guardExtensionCommands,
 	isCliOnly,
@@ -68,8 +67,6 @@ describe("extension guard", () => {
 		guardExtensionCommands(program);
 		registerRequireExtension(program);
 		for (const name of [
-			...EXT_ONLY_COMMANDS,
-			"batch-open",
 			"demo",
 			"rerun",
 			"inbox",
@@ -93,11 +90,8 @@ describe("extension guard", () => {
 		setCliOnly(true);
 		const { program, calls } = buildProgram();
 		await expect(
-			program.parseAsync(["launch"], { from: "user" }),
-		).rejects.toThrow(extensionRequiredMessage("dg-skills launch"));
-		await expect(
-			program.parseAsync(["batch-open", "--ext"], { from: "user" }),
-		).rejects.toThrow(extensionRequiredMessage("dg-skills batch-open"));
+			program.parseAsync(["demo", "--ext"], { from: "user" }),
+		).rejects.toThrow(extensionRequiredMessage("dg-skills demo"));
 		await expect(
 			program.parseAsync(["rerun", "--ext"], { from: "user" }),
 		).rejects.toThrow("dg-skills rerun needs the dg-ai-extension");
@@ -144,10 +138,9 @@ describe("extension guard", () => {
 	test("lets commands without --ext run in a CLI-only install", async () => {
 		setCliOnly(true);
 		const { program, calls } = buildProgram();
-		await program.parseAsync(["batch-open"], { from: "user" });
 		await program.parseAsync(["demo"], { from: "user" });
 		await program.parseAsync(["rerun"], { from: "user" });
-		expect(calls).toEqual(["batch-open", "demo", "rerun"]);
+		expect(calls).toEqual(["demo", "rerun"]);
 	});
 
 	test("does not trip on an --ext that is a positional argument after the separator", async () => {
@@ -205,10 +198,6 @@ describe("skill metadata", () => {
 			existsSync(join(skillsDir, entry, "SKILL.md")),
 		);
 		expect(names.filter(requiresExtension).sort()).toEqual([]);
-	});
-
-	test("guards a dg-skills command for every extension skill that runs one", () => {
-		expect([...EXT_ONLY_COMMANDS]).toEqual(["launch"]);
 	});
 
 	test("google-sms-cleanup ships with the CLI skills and does not require the extension", () => {

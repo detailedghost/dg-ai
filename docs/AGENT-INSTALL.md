@@ -20,8 +20,8 @@ codex plugin add dg@detailedghost
 ```
 
 Start a new Codex thread so it discovers the plugin's skills. On first use, a
-skill downloads the `dg-skills` CLI if needed. Run the browser skill's `install`
-command to stage the companion extension and print the browser's manual
+skill downloads the `dg-skills` CLI if needed. Run `dg-skills install`
+to stage the companion extension and print the browser's manual
 **Load unpacked** steps.
 
 ### Standalone Codex skill installation
@@ -71,14 +71,14 @@ the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills
   `--data-path` fixtures, `proto` and `demo`, whose default local modes need no
   extension. Only `proto --ext` and `demo --ext` need the dg-ai-extension.
 - Extension use: no SKILL.md declares `requires: [extension]`. Every skill runs
-  locally by default, and `--ext` opts in to the extension. Only `browser`
-  `launch` always needs it. `chat` and
+  locally by default, and `--ext` opts in to the extension. Only `pw launch`
+  always needs it. `chat` and
   `overwatch` open a page that `dg-daemon` serves on loopback, which needs
   `dg-agent` and `dg-daemon` but no extension. A CLI-only install has both,
-  because one bundle holds all four program names. `browser` runs locally by
-  default: `dg-skills batch-open` opens plain tabs and needs the extension only
-  with `--ext`. `launch` is `--ext`-only. In a CLI-only install,
-  `batch-open --ext`, `launch`, `demo --ext`, `rerun --ext`, `proto --ext`,
+  because one bundle holds all four program names. `pw batch-open` runs locally by
+  default: `dg-skills pw batch-open` opens plain tabs and needs the extension only
+  with `--ext`. `pw launch` is `--ext`-only. In a CLI-only install,
+  `pw batch-open --ext`, `pw launch`, `demo --ext`, `rerun --ext`, `proto --ext`,
   `chat --ext` and `overwatch --ext` stop with: the command needs the
   dg-ai-extension, and `dg-skills install` adds it.
 - The extension stays required for every `--ext` command. Each one starts with
@@ -278,7 +278,7 @@ bundled script, the snippet downloads `bootstrap.sh` from the repository.
   Brave/Edge/Vivaldi).
 - The chat skill runs `dg-agent`, and `dg-agent start` starts
   `dg-daemon` from the same bundle and runtime. Its own bootstrap gate tests for `dg-agent`, not `dg-skills` — a
-  machine that already used `browser`, `demo` or `proto` has `dg-skills`
+  machine that already used `pw`, `demo` or `proto` has `dg-skills`
   already, so gating on that would skip the download the gate exists for.
 - On **WSL**, the daemon needs **mirrored** networking mode. Under NAT the
   Windows-side browser cannot reach the loopback port; `dg-daemon` exits with
@@ -299,7 +299,7 @@ bundled script, the snippet downloads `bootstrap.sh` from the repository.
   1. Click **Load unpacked** and select the printed path.
 
 Full per-OS detail (WSL → Windows profile paths, native Windows, macOS/Linux):
-`plugins/dg/skills/browser/references/install.md`.
+`plugins/dg/skills/pw/references/tabs.md`.
 
 ### Alternative: cold-start with the extension pre-loaded
 
@@ -308,7 +308,7 @@ manual `chrome://extensions` step entirely — the browser must be fully closed
 first:
 
 ```bash
-dg-skills launch --ext --browser brave --group "PRs" <refs...>
+dg-skills pw --ext launch --browser brave --group "PRs" <refs...>
 ```
 
 ## Step 3 — Verify
@@ -317,8 +317,9 @@ dg-skills launch --ext --browser brave --group "PRs" <refs...>
 dg-skills --help
 ```
 
-Should list `install`, `batch-open`, `launch`, `demo`, `rerun`, and `channel-review`. Then confirm
-grouping/tours work with the browser or demo skill. For the chat harness:
+Should list `install`, `pw`, `demo`, `rerun`, and `channel-review`, and
+`dg-skills pw --help` should list `batch-open` and `launch`. Then confirm
+grouping/tours work with the pw or demo skill. For the chat harness:
 
 ```bash
 dg-agent --help
@@ -362,10 +363,10 @@ the human's yes. See [Shell completion](install.md#shell-completion).
 | Switch WSL to mirrored networking mode | No — manual host config |
 | Add `dg-daemon-blt` and `dg-agent-blt` to branch protection | No — repo admin |
 | Load unpacked in the browser (the only routine human step) | No — manual browser UI |
-| `launch` cold-start with extension (`--ext` only) | Yes (browser fully closed) |
-| `batch-open --ext` / `demo --ext` / `rerun --ext` | Yes (extension loaded) |
+| `pw launch` cold-start with extension (`--ext` only) | Yes (browser fully closed) |
+| `pw batch-open --ext` / `demo --ext` / `rerun --ext` | Yes (extension loaded) |
 | `demo` / `rerun` without `--ext` | Yes (local browser; it records an MP4 with no start screen, and `ffmpeg` is needed for MP4 output) |
-| `batch-open` without `--ext` | No (plain tabs) |
+| `pw batch-open` without `--ext` | No (plain tabs) |
 
 ## Google SMS cleanup
 

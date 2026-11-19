@@ -140,7 +140,7 @@ function manifestVersion(dir: string): string {
 function printSteps(target: Target, path: string): void {
 	if (target === "firefox") {
 		console.log(
-			"Firefox (temporary add-on — reloads each session; use `launch` to automate):",
+			"Firefox (temporary add-on — reloads each session; use `dg-skills pw --ext launch` to automate):",
 		);
 		console.log("  1. Open about:debugging#/runtime/this-firefox");
 		console.log('  2. Click "Load Temporary Add-on…"');

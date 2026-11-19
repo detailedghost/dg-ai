@@ -61,7 +61,6 @@ describe("packaged skills call the CLI by its literal path", () => {
 
 	test("every bootstrap block gates on the installed binary and passes --cli-only unless the skill needs dg-agent or the extension", () => {
 		const needsFullInstall = [
-			"browser",
 			"chat",
 			"demo",
 			"inbox-cleanup",

@@ -20,7 +20,7 @@ bun run zip:firefox  # build + package for Firefox
 
 ## Loading in Chrome
 
-1. Run `bun run build` (or `bun skills/browser ... install`)
+1. Run `bun run build` (or `dg-skills install --local`)
 1. Open `chrome://extensions` → Enable Developer Mode
 1. Load Unpacked → select `.output/chrome-mv3/`
 

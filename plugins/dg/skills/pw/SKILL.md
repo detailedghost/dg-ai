@@ -15,7 +15,7 @@ dg-skills pw --help >/dev/null 2>&1 ||
 
 Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
-If a step fails, run dg-skills doctor pw pw-code stash credentials.
+If a step fails, run dg-skills doctor pw pw-code batch-open launch install stash credentials.
 
 `/dg:pw` drives a browser through `playwright-core`. It needs Bun >= 1.4.0 and Google Chrome or Microsoft Edge. Below, `pw <command>` means `dg-skills pw <command>`.
 
@@ -87,6 +87,10 @@ Snapshots, screenshots, downloads, traces, and videos land in `dg-skills stash p
 Use `--ext` only when the human asks you to look at or act on a page in their real browser. You act only on tabs in your own tab group, until the human hands you one from the extension popup. Plain `pw` stays the default for tests, recording, mocking and isolated runs.
 Passing `--ext` gives you the agent's tab group; the browser asks the human once per site in a session, and a Stop click on the page ends your control, so act only on what the human asked for. `tools` and `call` are the Web MCP bridge and use Web MCP approvals, not that site question. To save tokens, run `pw --ext tools` first and prefer a WebMCP tool; else use refs from one snapshot. Verbs, tabs, refs, uploads and blocked pages: `references/real-browser.md`.
 
+## Tab batches
+
+`pw batch-open [--ext] [-g <name>] [-R owner/repo] [--print] <refs>` opens PR or URL tabs in the default browser, grouped only with `--ext`. `pw --ext launch [-b <key>] [-g <name>] [--list] [--dry-run] <refs>` cold-starts Chromium with the extension side-loaded. Refs, markers and the extension install: `references/tabs.md`.
+
 ## Security
 
 A target is a ref, a CSS selector, or a `getBy...(...)` string. `getBy` strings pass a guard that allows only locator calls. `pw eval` runs JavaScript in the page, so run only code you wrote or checked.
@@ -104,3 +108,4 @@ A target is a ref, a CSS selector, or a `getBy...(...)` string. `getBy` strings 
 | Cookies, storage, state files | `references/storage-state.md` |
 | Tracing and video | `references/tracing.md`, `references/video-recording.md` |
 | Real browser with `--ext` | `references/real-browser.md` |
+| Tab batches, refs, extension install | `references/tabs.md` |

@@ -29,7 +29,7 @@ Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also
 
 ## Items
 
-An item is a command name of the CLI, such as `jot`, `bg`, `sniff`, `worktree`, `spec`, `proxy`, `thrash`, `channel-review`, `demo`, `proto`, `launch`, `batch-open`, `credentials` or `install`. Without items the report covers every item. An unknown item exits 2 and prints the item list. The `shared` item always runs first: the CLI version against the dg plugin, the plugin itself, and the scratch and state roots.
+An item is a command name of the CLI, such as `jot`, `bg`, `sniff`, `worktree`, `spec`, `proxy`, `thrash`, `channel-review`, `demo`, `proto`, `credentials` or `install`, or one of the pw verbs with their own checks, `batch-open` and `launch`. Without items the report covers every item. An unknown item exits 2 and prints the item list. The `shared` item always runs first: the CLI version against the dg plugin, the plugin itself, and the scratch and state roots.
 
 ## Run
 

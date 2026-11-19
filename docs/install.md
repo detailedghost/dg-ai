@@ -770,7 +770,7 @@ to copy only the CLI skills into `$CODEX_HOME/skills`.
 | `land` | Yes — needs Git, an authenticated `gh` (GitHub only), and the selected review backend |
 | `jot`, `bg`, `cls`, `stat`, `sniff`, `find-work`, `doctor` | Yes — they call other skills and tools that must be available |
 | `db`, `erd` | Yes |
-| `pw` | Yes — needs Bun 1.4.0 or later and Chrome, Edge, or a Chromium from `install-browser` |
+| `pw` | Yes — needs Bun 1.4.0 or later and Chrome, Edge, or a Chromium from `install-browser`; `pw launch` and `pw batch-open --ext` need the extension |
 | `adr` | Yes — `dg-skills adr`; `ask` mode needs a repo that ran `dg-skills adr init` |
 | `eli5` | Yes for `-v`/`-p` (stash) or `--erd`; a plain `/dg:eli5 <thing>` needs no CLI |
 | `ticket` | Yes — needs a stored `ticket/jira` credential |
@@ -778,7 +778,7 @@ to copy only the CLI skills into `$CODEX_HOME/skills`.
 | `nope` | No CLI needed — it calls no CLI and no other skill |
 | `google-sms-cleanup` | Yes — `dg-skills ssms`; live Google needs a CDP browser, live Signal needs `signal-cli` |
 | `inbox-cleanup` | Yes for explicit `--data-path` fixtures; live profiles need `dg-daemon` |
-| `browser`, `proto`, `demo` | No — local by default; `--ext` needs the extension |
+| `proto`, `demo` | No — local by default; `--ext` needs the extension |
 | `chat`, `overwatch` | No — needs `dg-agent` and `dg-daemon`, which serve the local page on loopback; `--ext` also needs the extension |
 
 On WSL, the default `demo` uses the Windows browser. The CLI controls it through a
@@ -793,7 +793,7 @@ Any local process can attach to that port during the run. See
 without an extension dependency also install; their own tools and referenced
 skills still need to be available.
 
-Every skill runs locally by default; only `browser launch` always needs the
+Every skill runs locally by default; only `pw launch` always needs the
 extension. A skill run with `--ext` stops with a message that names the fix
 when the extension is missing. To add the extension later, run
 `dg-skills install` (or the full bootstrap command above). That removes the

@@ -151,12 +151,12 @@ The history commit lands before Step 10, so `push-pr` publishes it.
 1. Open the PR in the default browser:
 
    ```bash
-   dg-skills batch-open "<pr-url>"
+   dg-skills pw batch-open "<pr-url>"
    ```
 
-   With `--ext`, group it: `dg-skills batch-open --ext --group "Deps" "<pr-url>"`. Grouping needs the `dg-ai-extension` loaded in that browser profile.
+   With `--ext`, group it: `dg-skills pw batch-open --ext --group "Deps" "<pr-url>"`. Grouping needs the `dg-ai-extension` loaded in that browser profile.
 
-   Browser setup is documented in the installed [browser skill](../../browser/SKILL.md); use configured personal skill roots if absent.
+   Browser setup is documented in the installed [pw tab batch reference](../../pw/references/tabs.md); use configured personal skill roots if absent.
 
    **Best-effort — never fails the run.** The PR already exists by this point. If the binary is missing, the bootstrap fails, or nothing opens, say so in the Step 12 summary and move on. Do not retry or troubleshoot.
 

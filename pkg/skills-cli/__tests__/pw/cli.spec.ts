@@ -86,3 +86,19 @@ describe("pw and the -- terminator", () => {
 		expect(env.stdout.join("\n")).not.toMatch(/^pw \d/);
 	});
 });
+
+describe("pw tab batch verbs", () => {
+	test("the command index lists batch-open and launch", async () => {
+		const env = clientEnv();
+		expect(await main(["--help"], env)).toBe(0);
+		const help = env.stdout.join("\n");
+		expect(help).toMatch(/^ {2}batch-open <refs\.\.\.> +Open PR or URL tabs/m);
+		expect(help).toMatch(/^ {2}launch \[refs\.\.\.\] +Cold-start Chromium/m);
+	});
+
+	test("a missing batch-open ref is a usage error", async () => {
+		const env = clientEnv();
+		expect(await main(["batch-open"], env)).toBe(2);
+		expect(env.stderr.join("\n")).toContain("missing required argument 'refs'");
+	});
+});

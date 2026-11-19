@@ -6,7 +6,7 @@ import {
 import type { DoctorCheck } from "../doctor/types";
 
 export const launchChecks: DoctorCheck[] = [
-	skillFilesCheck(["browser"]),
+	skillFilesCheck(["pw"]),
 	...extensionChecks,
-	allowRuleCheck("launch"),
+	allowRuleCheck("pw"),
 ];

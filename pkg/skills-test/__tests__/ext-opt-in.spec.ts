@@ -9,7 +9,7 @@ import {
 } from "./test-support";
 
 const SKILLS_DIR = join(REPO_ROOT, "plugins", "dg", "skills");
-const FLAG_TABLE_SKILLS = ["browser", "proto", "demo", "chat", "overwatch"];
+const FLAG_TABLE_SKILLS = ["pw", "proto", "demo", "chat", "overwatch"];
 const EXT_FLAG = /(^|[\s`(])--ext($|[\s`:,.;)])/;
 const REQUIRES_EXTENSION = /^requires:(?:[^\n]|\n[ \t]+-)*?extension/m;
 const AGENT_INSTALL = join(REPO_ROOT, "docs", "AGENT-INSTALL.md");
@@ -86,7 +86,7 @@ function groupWithoutExtLines(text: string): string[] {
 function plainBatchOpenLines(text: string): string[] {
 	return text
 		.split("\n")
-		.filter((line) => /dg-skills batch-open (?!--)["<]/.test(line))
+		.filter((line) => /dg-skills pw batch-open (?!--)["<]/.test(line))
 		.filter((line) => !line.includes("--group"));
 }
 
@@ -214,12 +214,12 @@ describe("ext opt-in rule C: Flags tables document --ext with the local default"
 describe("ext opt-in user docs: launch and grouped batch-open examples carry --ext", () => {
 	const USER_DOCS = ["docs/browser.md", "docs/AGENT-INSTALL.md"];
 	const needsExt = (line: string) =>
-		/dg-skills launch\b|dg:browser launch\b|batch-open.*--group/.test(line);
+		/pw launch\b|pw batch-open.*--group/.test(line);
 
 	test("the line check flags launch and grouped batch-open without --ext", () => {
-		expect(needsExt("dg-skills launch --browser brave <refs>")).toBe(true);
-		expect(needsExt("/dg:browser batch-open --group x a")).toBe(true);
-		expect(needsExt("/dg:browser batch-open a")).toBe(false);
+		expect(needsExt("dg-skills pw launch --browser brave <refs>")).toBe(true);
+		expect(needsExt("dg-skills pw batch-open --group x a")).toBe(true);
+		expect(needsExt("dg-skills pw batch-open a")).toBe(false);
 	});
 
 	for (const file of USER_DOCS) {
@@ -243,32 +243,32 @@ describe("ext opt-in doc grep gate: batch-open callers never group without --ext
 
 	test("the line check flags --group without --ext and accepts the other forms", () => {
 		expect(
-			groupWithoutExtLines("dg-skills batch-open --group pr <url>"),
+			groupWithoutExtLines("dg-skills pw batch-open --group pr <url>"),
 		).toHaveLength(1);
 		expect(
-			groupWithoutExtLines("dg-skills batch-open --ext --group pr <url>"),
+			groupWithoutExtLines("dg-skills pw batch-open --ext --group pr <url>"),
 		).toEqual([]);
-		expect(groupWithoutExtLines("dg-skills batch-open <url>")).toEqual([]);
+		expect(groupWithoutExtLines("dg-skills pw batch-open <url>")).toEqual([]);
 	});
 
 	test("a --group wrapped onto the next line without --ext is flagged", () => {
 		expect(
-			groupWithoutExtLines("dg-skills batch-open <url>\n  --group pr"),
+			groupWithoutExtLines("dg-skills pw batch-open <url>\n  --group pr"),
 		).toHaveLength(1);
 		expect(
-			groupWithoutExtLines("dg-skills batch-open --ext\n  --group pr <url>"),
+			groupWithoutExtLines("dg-skills pw batch-open --ext\n  --group pr <url>"),
 		).toEqual([]);
 	});
 
 	test("an --ext on the next, separate command does not cover a grouped batch-open", () => {
 		expect(
 			groupWithoutExtLines(
-				"dg-skills batch-open --group pr <url>\ndg-skills launch --ext <url>",
+				"dg-skills pw batch-open --group pr <url>\ndg-skills pw launch --ext <url>",
 			),
 		).toHaveLength(1);
 		expect(
 			groupWithoutExtLines(
-				"  dg-skills batch-open --group pr <url>\n  dg-skills launch --ext <url>",
+				"  dg-skills pw batch-open --group pr <url>\n  dg-skills pw launch --ext <url>",
 			),
 		).toHaveLength(1);
 	});
@@ -285,9 +285,9 @@ describe("ext opt-in doc grep gate: batch-open callers never group without --ext
 			[],
 		);
 		expect(plainBatchOpenLines("batch-open opens tabs")).toEqual([]);
-		expect(plainBatchOpenLines("dg-skills batch-open <url>")).toHaveLength(1);
+		expect(plainBatchOpenLines("dg-skills pw batch-open <url>")).toHaveLength(1);
 		expect(
-			plainBatchOpenLines("dg-skills batch-open --ext --group pr <url>"),
+			plainBatchOpenLines("dg-skills pw batch-open --ext --group pr <url>"),
 		).toEqual([]);
 	});
 

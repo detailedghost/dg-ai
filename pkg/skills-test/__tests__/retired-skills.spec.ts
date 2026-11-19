@@ -6,7 +6,7 @@ import { RETIRED_SKILL_HASHES, RETIRED_SKILLS } from "../../common/src/node/inst
 import { runSkillsOnlyInstall } from "../../skills-cli/src/install/skills-only";
 import { REPO_ROOT, makeTempDir, readRepoFile, removeTempDirs } from "./test-support";
 
-const RETIRED = ["teach", "wait-what"];
+const RETIRED = ["browser", "teach", "wait-what"];
 const SKILLS = join(REPO_ROOT, "plugins", "dg", "skills");
 const DG_COPIES = join(import.meta.dir, "fixtures", "retired-skills");
 const sha256 = (path: string) => createHash("sha256").update(readFileSync(path)).digest("hex");

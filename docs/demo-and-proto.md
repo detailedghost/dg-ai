@@ -47,7 +47,7 @@ Codex:      $dg:proto --ext
 
 The extension workflow asks for a page and design question, samples the page's
 visual styles, presents the proposed comparison, and plants the approved set in
-the browser. Run the browser skill's `install` command first to load the
+the browser. Run `dg-skills install` first to load the
 companion extension. For authenticated or private pages, review the privacy
 warning before allowing the style scrape. The CLI writes approved answers under
 `.agents/prototype/<slug>/` and removes temporary Downloads and scratch files

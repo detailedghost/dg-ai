@@ -55,7 +55,6 @@ Claude Code uses `/dg:<skill>`; Codex uses `$dg:<skill>`.
 
 | Skill | Use | Guide |
 | --- | --- | --- |
-| `browser` | Open and group tabs; launch a browser | [Browser](docs/browser.md) |
 | `demo` | Play and record a guided tour | [Tours and prototypes](docs/demo-and-proto.md) |
 | `proto` | Prototype locally, or compare designs inside a live page with `--ext` | [Tours and prototypes](docs/demo-and-proto.md) |
 | `verify` | Review a finished change, before and after, and approve or send it back | [Verify](docs/verify.md) |
@@ -94,7 +93,7 @@ Claude Code also accepts the bare `/<name>`.
 | `monolith` | Consolidate a codebase's domain vocabulary into `.agents/monolith.md` |
 | `nope` | Reset to the correct file-search defaults and record a feedback note |
 | `polish` | Clean up a diff for reuse, simplification, and hygiene, then apply the fixes |
-| `pw` | Drive a browser with `dg-skills pw`; `pw-code` always needs approval. See [Pw](docs/pw.md) |
+| `pw` | Drive a browser with `dg-skills pw`, and open or group PR tab batches; `pw-code` always needs approval. See [Pw](docs/pw.md) and [Browser tabs](docs/browser.md) |
 | `proxy` | Delegate to one of five external CLI agents with persona and background support |
 | `pushup` | Push the branch, open its PR, and open the PR in a tab group |
 | `refactor` | Find refactor candidates, verify each against the code, and discuss the chosen one |
