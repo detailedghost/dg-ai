@@ -52,9 +52,8 @@ import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
 import { createLogger } from "./log";
 import { candidatePorts } from "./ports";
 import {
+	claimSingleInstance,
 	removeActiveDaemon,
-	stopOtherDaemon,
-	writeActiveDaemon,
 } from "./single-instance";
 import { DG_DAEMON_PACKAGE_VERSION } from "./status";
 
@@ -97,7 +96,6 @@ export async function cmdStatus(): Promise<void> {
 export async function cmdServe(): Promise<"serving" | "deferred"> {
 	const paths = resolveDgPaths();
 	const wslNetworkingMode = await checkWslNetworking();
-	await stopOtherDaemon(paths);
 
 	const logger = createLogger(paths);
 	ensureOwnerToken(paths);
@@ -336,7 +334,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 			protocol: CHAT_PROTOCOL_VERSION,
 		},
 	});
-	writeActiveDaemon(paths, {
+	await claimSingleInstance(paths, {
 		pid: process.pid,
 		port: boundPortNumber,
 		instanceId,
