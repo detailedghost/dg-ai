@@ -41,6 +41,7 @@ export type ChatProvider = {
 		resumeId?: string;
 		signal: AbortSignal;
 	}): AsyncIterable<ChatEvent>;
+	registerChat(request: { chatId: string; env: string; version: string }): Promise<void>;
 	react(request: ReactionRequest): Promise<void>;
 	unreact(request: ReactionRequest): Promise<void>;
 	reply(request: {

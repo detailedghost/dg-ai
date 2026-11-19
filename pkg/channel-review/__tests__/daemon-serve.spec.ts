@@ -722,7 +722,7 @@ describe("serve automation", () => {
 	function gate(h: DaemonHarness) {
 		const sleeps: number[] = [];
 		h.seams.sleep = async (ms, signal) => {
-			sleeps.push(ms);
+			if (ms !== 24 * 3_600_000) sleeps.push(ms);
 			if (signal) await untilAbort(signal);
 		};
 		return sleeps;

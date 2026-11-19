@@ -331,6 +331,7 @@ export function createDaemonHarness(options: DaemonHarnessOptions = {}) {
 				seams,
 				platform,
 				signal: controller.signal,
+				version: "1.2.3",
 			});
 			running.push(done);
 			return { controller, done };
