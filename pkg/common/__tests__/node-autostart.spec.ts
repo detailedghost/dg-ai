@@ -25,6 +25,7 @@ import {
 	launchdPlistPath,
 	launchdPlistText,
 	managedRestartCommands,
+	managedStopCommands,
 	removeAutostart,
 	resolveDgPaths,
 	systemdUnitPath,
@@ -175,6 +176,13 @@ describe("systemdUnitText", () => {
 		});
 
 		expect(text).toContain('ExecStart="/exe" "100%%" "$$HOME"');
+	});
+
+	it("keeps a dollar literal in Environment lines because systemd expands no variables there", () => {
+		const text = systemdUnitText({ ...spec, dgHome: "/h/$x" }, { XDG_DATA_HOME: "/d/$y" });
+
+		expect(text).toContain('Environment="DG_HOME=/h/$x"');
+		expect(text).toContain('Environment="XDG_DATA_HOME=/d/$y"');
 	});
 });
 
@@ -491,6 +499,35 @@ describe("installAutostart", () => {
 		});
 		expect(written).toEqual([]);
 	});
+
+	it.each(["\n", "\r", "\t", "\x00", "\x7f"])("refuses a DG_HOME holding control character %j before writing", async (control) => {
+		const { deps, written, ran } = fakeDeps();
+
+		await expect(installAutostart(deps, paths, { ...spec, dgHome: `/h${control}Exec=/bin/evil` })).rejects.toBeInstanceOf(DgCliError);
+
+		expect(written).toEqual([]);
+		expect(ran).toEqual([]);
+	});
+
+	it("refuses an XDG_*_HOME value holding a newline before writing", async () => {
+		const { deps, written, ran } = fakeDeps({ env: { XDG_DATA_HOME: "/x\nExecStartPre=/bin/evil" } });
+
+		await expect(installAutostart(deps, paths, { ...spec, name: "dg-daemon" })).rejects.toBeInstanceOf(DgCliError);
+
+		expect(written).toEqual([]);
+		expect(ran).toEqual([]);
+	});
+
+	it("refuses an argv element holding a carriage return on every platform before writing", async () => {
+		for (const platform of ["linux", "darwin", "win32"] as const) {
+			const { deps, written, ran } = fakeDeps({ platform });
+
+			await expect(installAutostart(deps, paths, { ...spec, argv: [...spec.argv, "a\rb"] })).rejects.toBeInstanceOf(DgCliError);
+
+			expect(written).toEqual([]);
+			expect(ran).toEqual([]);
+		}
+	});
 });
 
 describe("removeAutostart", () => {
@@ -536,6 +573,14 @@ describe("managedRestartCommands", () => {
 			["schtasks", "/End", "/TN", "dg-phone"],
 			["schtasks", "/Run", "/TN", "dg-phone"],
 		]);
+	});
+});
+
+describe("managedStopCommands", () => {
+	it("stops each manager for good", () => {
+		expect(managedStopCommands("systemd", 501, "dg-daemon")).toEqual([["systemctl", "--user", "stop", "dg-daemon.service"]]);
+		expect(managedStopCommands("launchd", 501, "dg-daemon")).toEqual([["launchctl", "bootout", "gui/501/com.detailedghost.dg-daemon"]]);
+		expect(managedStopCommands("task", 0, "dg-daemon")).toEqual([["schtasks", "/End", "/TN", "dg-daemon"]]);
 	});
 });
 
@@ -600,7 +645,7 @@ const GOLDEN_SYSTEMD: string = [
 	'ExecStart="/fake/execPath" "/fake/src/index.ts" "phone" "listen" "--on-message" "/usr/bin/notify" "a b"',
 	"Restart=on-failure",
 	"RestartSec=5",
-	'Environment="DG_HOME=/custom dg/\\"h\\"&%%$$x"',
+	'Environment="DG_HOME=/custom dg/\\"h\\"&%%$x"',
 	"",
 	"[Install]",
 	"WantedBy=default.target",

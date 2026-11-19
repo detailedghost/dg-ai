@@ -2,6 +2,7 @@ import type { spawn } from "node:child_process";
 import { type DaemonHandle, DgCliError } from "@dg/common";
 import {
 	type AutostartDeps,
+	type AutostartName,
 	autostartManages,
 	autostartUnitPath,
 	checkWslNetworking,
@@ -18,7 +19,9 @@ import {
 } from "@dg/common/node";
 import { assertNotBlocked } from "@dg/common/node/layout";
 
-const NAME = "dg-daemon";
+const NAME: AutostartName = "dg-daemon";
+const SCHTASKS_END = "/End";
+const LAUNCHCTL_BOOTSTRAP = "bootstrap";
 
 export type DaemonStartSeams = {
 	autostart?: AutostartDeps;
@@ -31,7 +34,7 @@ export function startedLine(handle: DaemonHandle, started: boolean): string {
 	return `dg-daemon ${state} 127.0.0.1:${handle.port} (pid ${handle.pid}, version ${handle.versions.package})`;
 }
 
-const isTolerated = (argv: string[]): boolean => argv[1] === "/End" || argv[1] === "bootstrap";
+const isTolerated = (argv: string[]): boolean => argv[1] === SCHTASKS_END || argv[1] === LAUNCHCTL_BOOTSTRAP;
 
 /** Returns the live daemon; starts one through the login unit when the unit is for this home, else detached. */
 export async function startDaemon(
@@ -50,6 +53,7 @@ export async function startDaemon(
 	}
 	await checkWslNetworking();
 	const unitPath = autostartUnitPath(deps, paths, NAME);
+	const deadline = Date.now() + (seams.timeoutMs ?? STARTUP_TIMEOUT_MS);
 	let failure: string | undefined;
 	for (const argv of managedRestartCommands(kind, deps.uid, NAME, unitPath)) {
 		const result = await deps.run(argv);
@@ -58,7 +62,7 @@ export async function startDaemon(
 		}
 	}
 	try {
-		const handle = await waitForFreshDaemon(paths, seams.timeoutMs ?? STARTUP_TIMEOUT_MS);
+		const handle = await waitForFreshDaemon(paths, Math.max(0, deadline - Date.now()));
 		return { handle, started: true };
 	} catch (err) {
 		if (failure && err instanceof DgCliError) throw new DgCliError(`${err.message} (${failure})`, err.exitCode);

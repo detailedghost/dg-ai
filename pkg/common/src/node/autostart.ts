@@ -31,7 +31,6 @@ export type AutostartSpec = {
 	dgHome?: string;
 	logPath: string;
 	restartPreventExitStatus?: number[];
-	xdgEnv?: Record<string, string>;
 };
 
 const XDG_KEYS = ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"] as const;
@@ -44,12 +43,18 @@ export function firstLine(text: string): string {
 	return text.split("\n")[0]?.trim() ?? "";
 }
 
-function systemdEscape(value: string): string {
-	return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%").replace(/\$/g, "$$$$");
+const CONTROL_CHARACTER = /[\x00-\x1f\x7f]/;
+
+function environmentEscape(value: string): string {
+	return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%");
+}
+
+function execStartEscape(value: string): string {
+	return environmentEscape(value).replace(/\$/g, "$$$$");
 }
 
 function systemdQuoted(args: string[]): string {
-	return args.map((arg) => `"${systemdEscape(arg)}"`).join(" ");
+	return args.map((arg) => `"${execStartEscape(arg)}"`).join(" ");
 }
 
 export function systemdUnitPath(homeDir: string, env: Record<string, string | undefined>, name: AutostartName): string {
@@ -57,7 +62,7 @@ export function systemdUnitPath(homeDir: string, env: Record<string, string | un
 	return join(configHome, "systemd", "user", systemdUnitName(name));
 }
 
-export function systemdUnitText(spec: AutostartSpec): string {
+export function systemdUnitText(spec: AutostartSpec, xdgEnv: Record<string, string> = {}): string {
 	const lines = [
 		"[Unit]",
 		`Description=${DESCRIPTIONS[spec.name]}`,
@@ -68,8 +73,8 @@ export function systemdUnitText(spec: AutostartSpec): string {
 		"RestartSec=5",
 	];
 	if (spec.restartPreventExitStatus?.length) lines.push(`RestartPreventExitStatus=${spec.restartPreventExitStatus.join(" ")}`);
-	if (spec.dgHome) lines.push(`Environment="DG_HOME=${systemdEscape(spec.dgHome)}"`);
-	for (const [key, value] of Object.entries(spec.xdgEnv ?? {})) lines.push(`Environment="${key}=${systemdEscape(value)}"`);
+	if (spec.dgHome) lines.push(`Environment="DG_HOME=${environmentEscape(spec.dgHome)}"`);
+	for (const [key, value] of Object.entries(xdgEnv)) lines.push(`Environment="${key}=${environmentEscape(value)}"`);
 	lines.push("", "[Install]", "WantedBy=default.target", "");
 	return lines.join("\n");
 }
@@ -200,8 +205,8 @@ function locationFor(deps: AutostartDeps, paths: DgPaths, name: AutostartName): 
 	return undefined;
 }
 
-function unitTextFor(kind: AutostartKind, spec: AutostartSpec): string {
-	if (kind === "systemd") return systemdUnitText(spec);
+function unitTextFor(kind: AutostartKind, spec: AutostartSpec, xdgEnv: Record<string, string>): string {
+	if (kind === "systemd") return systemdUnitText(spec, xdgEnv);
 	if (kind === "launchd") return launchdPlistText(spec);
 	return windowsTaskXml(spec);
 }
@@ -270,17 +275,21 @@ export function managedStopCommands(kind: AutostartKind, uid: number, name: Auto
 	return [["schtasks", "/End", "/TN", name]];
 }
 
-/**
- * Writes the service manager's own file, then runs its install commands. The first command's
- * failure means the manager itself is unavailable here (no systemd user bus, e.g. WSL without
- * systemd, or a container): the file is removed and the caller falls back to a detached spawn. A
- * later command's failure means something is actually broken, not merely unavailable, and throws.
- */
+function assertNoControlCharacters(spec: AutostartSpec, xdgEnv: Record<string, string>): void {
+	const named = { ...(spec.dgHome ? { DG_HOME: spec.dgHome } : {}), ...xdgEnv };
+	const values = [...Object.entries(named), ...spec.argv.map((arg, index) => [`argument ${index}`, arg] as const)];
+	for (const [label, value] of values) {
+		if (CONTROL_CHARACTER.test(value)) throw new DgCliError(`${label} holds a control character; fix it and run the command again`);
+	}
+}
+
+/** Writes the manager's file and runs its install commands; a failed first command removes the file and reports the manager unavailable, a later one throws. */
 export async function installAutostart(deps: AutostartDeps, paths: DgPaths, spec: AutostartSpec): Promise<AutostartOutcome> {
 	const location = locationFor(deps, paths, spec.name);
 	if (!location) return { ok: false, reason: `unsupported platform "${deps.platform}"` };
-	const unitSpec = spec.name === "dg-phone" ? spec : { ...spec, xdgEnv: setXdgEnv(deps.env) };
-	const payload = location.kind === "task" ? windowsTaskXmlBytes(unitSpec) : unitTextFor(location.kind, unitSpec);
+	const xdgEnv = spec.name === "dg-phone" ? {} : setXdgEnv(deps.env);
+	assertNoControlCharacters(spec, xdgEnv);
+	const payload = location.kind === "task" ? windowsTaskXmlBytes(spec) : unitTextFor(location.kind, spec, xdgEnv);
 	deps.writeFile(location.path, payload, 0o600);
 	if (location.kind === "systemd") return installSystemd(deps, spec.name, location.path);
 	if (location.kind === "launchd") return installLaunchd(deps, spec.name, location.path);
@@ -296,8 +305,7 @@ function removeCommandsFor(kind: AutostartKind, deps: AutostartDeps, name: Autos
 	];
 }
 
-/** Best-effort: every manager command runs regardless of the others' results, since the file is
- * being removed either way. Reports `"absent"` without touching anything when nothing is installed. */
+/** Best-effort: runs every manager command, removes the file, and reports "absent" when nothing is installed. */
 export async function removeAutostart(deps: AutostartDeps, paths: DgPaths, name: AutostartName): Promise<"removed" | "absent"> {
 	const location = locationFor(deps, paths, name);
 	if (!location || !deps.fileExists(location.path)) return "absent";
@@ -332,8 +340,8 @@ export function autostartUnitPath(deps: AutostartDeps, paths: DgPaths, name: Aut
 	return locationFor(deps, paths, name)?.path;
 }
 
-function unescapeSystemd(value: string): string {
-	return value.replace(/\\([\\"])|%%|\$\$/g, (match, escaped: string | undefined) => escaped ?? match[0] ?? "");
+function unescapeEnvironment(value: string): string {
+	return value.replace(/\\([\\"])|%%/g, (match, escaped: string | undefined) => escaped ?? "%");
 }
 
 function unescapeXml(value: string): string {
@@ -343,7 +351,7 @@ function unescapeXml(value: string): string {
 function systemdRecorded(text: string): Record<string, string> {
 	const recorded: Record<string, string> = {};
 	for (const match of text.matchAll(/^Environment="([A-Z_]+)=(.*)"$/gm)) {
-		recorded[match[1] as string] = unescapeSystemd(match[2] as string);
+		recorded[match[1] as string] = unescapeEnvironment(match[2] as string);
 	}
 	return recorded;
 }

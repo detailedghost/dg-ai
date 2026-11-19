@@ -377,5 +377,5 @@ export async function runArgv(argv: string[], env: NodeJS.ProcessEnv = process.e
 		new Response(proc.stderr).text(),
 		proc.exited,
 	]);
-	return { code: code ?? 1, stdout, stderr };
+	return { code, stdout, stderr };
 }
