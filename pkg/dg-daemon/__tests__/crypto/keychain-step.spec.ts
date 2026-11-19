@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
@@ -535,5 +535,75 @@ describe("decideKeychainMove", () => {
 		["differs after setAside", found(OTHER_SECRET), found(SECRET), "setAside", { kind: "copy", key: SECRET }],
 	] as const)("picks the action for %s", (_name, current, legacy, daemonOutcome, expected) => {
 		expect(decideKeychainMove({ current, legacy, daemonOutcome })).toEqual(expected);
+	});
+});
+
+describe("keychainMove with two used daemon folders", () => {
+	const seedTwoUsed = (paths: DgPaths): void => {
+		for (const [folder, key] of [
+			[join(paths.legacyHome, "daemon"), "legacy-key"],
+			[paths.daemonDir, "target-key"],
+		] as const) {
+			mkdirSync(folder, { recursive: true });
+			writeFileSync(join(folder, "key"), key);
+		}
+	};
+
+	const layoutHooks = (pair: Pair, env?: Record<string, string | undefined>) => {
+		const { step } = stepOf(pair, env ? { env } : {});
+		return { step, hooks: { ...(step as object), log: () => {}, launchers: true as const } };
+	};
+
+	it("moves no secret while the block holds", async () => {
+		const pair = pairOf(OTHER_SECRET, SECRET);
+		const paths = freshPaths();
+		seedTwoUsed(paths);
+		const { step, hooks } = layoutHooks(pair);
+		const result = await ensureLayout(paths, hooks);
+		expect(result.daemon).toMatchObject({ kind: "blocked", reason: "two-used" });
+
+		expect(await step.keychainMove(paths)).toBe("kept");
+
+		expect(pair.current.calls).toEqual([]);
+		expect(pair.legacy.calls).toEqual([]);
+		expect(pair.current.value).toBe(OTHER_SECRET);
+		expect(pair.legacy.value).toBe(SECRET);
+	});
+
+	it("keeps the differing key in keychain mode after the owner renames the target, and warns", async () => {
+		const pair = pairOf(OTHER_SECRET, SECRET);
+		const paths = freshPaths();
+		seedTwoUsed(paths);
+		const first = layoutHooks(pair);
+		await ensureLayout(paths, first.hooks);
+		renameSync(paths.daemonDir, `${paths.daemonDir}-old`);
+
+		const next = { ...paths };
+		const second = layoutHooks(pair);
+		const result = await ensureLayout(next, second.hooks);
+
+		expect(result.daemon.kind).toBe("moved");
+		expect(await second.step.keychainMove(next)).toBe("kept");
+		expect(pair.current.value).toBe(OTHER_SECRET);
+		expect(pair.legacy.value).toBe(SECRET);
+		expect(warnings).toEqual([differsText(keychainAccountsForPaths(paths).current)]);
+	});
+
+	it("uses the legacy key file in file mode after the owner renames the target", async () => {
+		const pair = pairOf(undefined, undefined);
+		const paths = freshPaths();
+		seedTwoUsed(paths);
+		const env = { DG_KEY_SOURCE: "file" };
+		await ensureLayout(paths, layoutHooks(pair, env).hooks);
+		renameSync(paths.daemonDir, `${paths.daemonDir}-old`);
+
+		const next = { ...paths };
+		const second = layoutHooks(pair, env);
+		const result = await ensureLayout(next, second.hooks);
+
+		expect(result.daemon.kind).toBe("moved");
+		expect(await second.step.keychainMove(next)).toBe("absent");
+		expect(readFileSync(join(paths.daemonDir, "key"), "utf8")).toBe("legacy-key");
+		expect(pair.current.calls).toEqual([]);
 	});
 });

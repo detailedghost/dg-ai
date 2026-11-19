@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { dirname, join } from "node:path";
 import {
 	dgDir,
 	extensionDest,
@@ -9,11 +9,7 @@ import {
 	markerFiles,
 	windowsUserProfile,
 } from "../src/utils/lib";
-
-function isUnder(root: string, path: string): boolean {
-	const rel = relative(root, path);
-	return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
-}
+import { isUnder } from "./path-under";
 
 describe("test home fence", () => {
 	test("keeps every extension path resolver under the temp dir", () => {

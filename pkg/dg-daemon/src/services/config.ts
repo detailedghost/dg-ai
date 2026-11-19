@@ -1,10 +1,10 @@
 import { isAbsolute } from "node:path";
 import { CREDENTIAL_GRANT_PREFIX_PATTERN, isRecord } from "@dg/common";
+import { isJobName } from "@dg/common/node";
 import { ENV_KEY } from "./env-file";
 
 export const SERVICES_CONFIG_KEY = "services";
 
-const SERVICE_LABEL = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const SERVICE_KEYS = new Set([
 	"argv",
 	"cwd",
@@ -47,7 +47,7 @@ const isArgv = (value: unknown): value is string[] =>
 	);
 
 export function parseServiceEntry(label: string, raw: unknown): ParsedService {
-	if (!SERVICE_LABEL.test(label)) {
+	if (!isJobName(label)) {
 		return invalid(
 			label,
 			"label must be 1-64 lowercase letters, digits or hyphens, starting with a letter or digit",

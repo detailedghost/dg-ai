@@ -1,6 +1,7 @@
 import {
 	closeSync,
 	existsSync,
+	lstatSync,
 	openSync,
 	readFileSync,
 	rmSync,
@@ -14,6 +15,7 @@ import {
 	type DgPaths,
 	ensurePrivateDir,
 	isAlive,
+	jobStateDir,
 	rotateLogIfLarge,
 	writeFileAtomic,
 } from "@dg/common/node";
@@ -57,7 +59,7 @@ export type Supervisor = {
 };
 
 export type SupervisorDeps = {
-	paths: Pick<DgPaths, "daemonDir" | "logDir" | "grantsDir">;
+	paths: Pick<DgPaths, "daemonDir" | "logDir" | "grantsDir" | "jobStateRoot">;
 	daemonUrl: () => string;
 	loadConfig: () => Record<string, unknown>;
 	logger: Pick<Logger, "info" | "warn">;
@@ -83,6 +85,14 @@ type Entry = {
 
 export const exponentialBackoffMs = (failures: number): number =>
 	Math.min(BACKOFF_BASE_MS * 2 ** (failures - 1), BACKOFF_MAX_MS);
+
+function isSymbolicLink(path: string): boolean {
+	try {
+		return lstatSync(path).isSymbolicLink();
+	} catch {
+		return false;
+	}
+}
 
 function sleepUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
 	return new Promise((resolve) => {
@@ -149,7 +159,9 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 			DG_SERVICE_API: "1",
 			DG_SERVICE_LABEL: decl.label,
 			DG_DAEMON_URL: deps.daemonUrl(),
+			DG_SERVICE_STATE_DIR: jobStateDir(deps.paths, decl.label),
 		};
+		if (process.env.DG_HOME) env.DG_HOME = process.env.DG_HOME;
 		if (decl.grant) {
 			env.DG_CREDENTIAL_GRANT_PREFIX = decl.grant;
 			env.DG_CREDENTIAL_GRANT_FILE = credentialGrantTokenPath(
@@ -270,6 +282,16 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 			} catch {
 				return `grant token file not found: ${tokenPath} — create it with dg-skills credentials grant ${decl.grant}`;
 			}
+		}
+		let stateDir = `<jobStateRoot>/${decl.label}`;
+		try {
+			stateDir = jobStateDir(deps.paths, decl.label);
+			if (isSymbolicLink(stateDir)) {
+				throw new Error("it is a symbolic link");
+			}
+			ensurePrivateDir(stateDir);
+		} catch (err) {
+			return `cannot create the state folder ${stateDir}: ${describeError(err)}`;
 		}
 		return checkExecutableResolves(decl.argv[0]);
 	}

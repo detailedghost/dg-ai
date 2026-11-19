@@ -146,9 +146,9 @@ describe("the bootstrap scripts install the runtime pin and the bundle, then del
 		expect(rename).toBeGreaterThan(remove);
 	});
 
-	test("bootstrap.ps1 writes .cmd shims for the three programs and appends the bin dir to the user PATH once", () => {
+	test("bootstrap.ps1 writes .cmd shims for the four programs and appends the bin dir to the user PATH once", () => {
 		expect(ps1).toContain(".cmd");
-		for (const program of ["dg-skills", "dg-agent", "dg-daemon"]) {
+		for (const program of ["dg", "dg-skills", "dg-agent", "dg-daemon"]) {
 			expect(ps1).toContain(program);
 		}
 		expect(ps1).toMatch(/SetEnvironmentVariable\([^)]*"?User"?\)/);
@@ -204,5 +204,45 @@ describe("the skills build gives the verify harness what it needs", () => {
 
 		expect(harness).toContain("env.DG_VERIFY_NO_SANDBOX");
 		expect(harness).toContain('"--no-sandbox"');
+	});
+});
+
+describe("the release smoke step compares all four programs", () => {
+	const id = Object.keys(release.jobs).find((job) => job.startsWith("smoke")) ?? "";
+	const step = (release.jobs[id]?.steps ?? []).find((entry) => /^Run --version for all .* programs$/.test(entry.name ?? ""));
+	const script = step?.run ?? "";
+
+	test("the step is named for four programs", () => {
+		expect(step?.name).toBe("Run --version for all four programs");
+	});
+
+	test("starts dg from the bundle and keeps its output in $dg", () => {
+		expect(script).toContain('dg="$("$bun" lib/dg.js dg --version)"');
+	});
+
+	test("holds $dg first in the comparison loop, and checks each output against VERSION", () => {
+		expect(script).toContain('for out in "$dg" "$skills" "$agent" "$daemon"; do');
+		expect(script).toMatch(/if \[ "\$out" != "\$VERSION" \]; then/);
+	});
+
+	test("echoes the dg output with the others", () => {
+		expect(script).toMatch(/echo "[^"]*\$\{?dg\}?[^"]*"/);
+	});
+});
+
+describe("the skills build covers the dg package", () => {
+	const blt = parseWorkflow("skills-blt.yml");
+	const steps = Object.values(blt.jobs).flatMap((job) => job.steps ?? []);
+
+	test("lists pkg/dg/** in its path filter", () => {
+		expect(blt.on.pull_request).toMatchObject({ paths: expect.arrayContaining(["pkg/dg/**"]) });
+	});
+
+	test("lints and tests pkg/dg in its own steps", () => {
+		const lint = steps.find((entry) => entry.name === "Lint (dg)");
+		const test_ = steps.find((entry) => entry.name === "Test (dg)");
+
+		expect(lint).toMatchObject({ "working-directory": "pkg/dg", run: "bun run lint" });
+		expect(test_).toMatchObject({ "working-directory": "pkg/dg", run: "bun test" });
 	});
 });

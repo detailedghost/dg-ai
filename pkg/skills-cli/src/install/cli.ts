@@ -5,7 +5,7 @@
  * this stages the built extension to a stable per-OS path and prints guided
  * Load-unpacked steps. Assets come from the CI-built GitHub Release; in a source
  * checkout (dev) it falls back to a local `wxt build`. It also installs the pinned Bun
- * runtime and the dg-lib bundle, and writes the dg-skills, dg-agent and dg-daemon shims.
+ * runtime and the dg-lib bundle, and writes the dg, dg-skills, dg-agent and dg-daemon launchers.
  */
 
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
@@ -19,7 +19,7 @@ import { fetchBundle } from "./bundle";
 import { refreshPhoneListener } from "./phone-listener";
 import { activateRuntime, fetchRuntimePin, stageRuntime } from "./runtime";
 import { finishLauncherLayout, migrateBeforeInstall } from "./layout";
-import { PROGRAMS } from "./shims";
+import { LEGACY_PROGRAMS } from "./shims";
 import {
 	assertSkillsOnlyFlags,
 	runSkillsOnlyInstall,
@@ -180,7 +180,7 @@ export function removeRetiredBinaries(): void {
 				console.log(`removed the retired ${name} binary at ${dest}.`);
 			}
 		}
-		for (const name of [...RETIRED_BINARIES, ...PROGRAMS]) {
+		for (const name of [...RETIRED_BINARIES, ...LEGACY_PROGRAMS]) {
 			rmSync(join(bin, `.${name}.version`), { force: true });
 		}
 	}
@@ -194,7 +194,7 @@ function installCompletions(): void {
 	}
 }
 
-/** Installs the pinned runtime and the bundle, then points the three shims at them. */
+/** Installs the pinned runtime and the bundle, then points the four launchers at them. */
 async function installBundle(release: PickedBundle): Promise<void> {
 	const root = installRoot();
 	const paths = resolveDgPaths();

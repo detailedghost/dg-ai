@@ -12,6 +12,7 @@ import {
 	fakeBunArgs,
 	platformKey,
 	type RuntimeAsset,
+	LEGACY_PROGRAMS,
 	PROGRAMS,
 	RUNTIME,
 	present,
@@ -335,7 +336,7 @@ describe("bootstrap.sh retires the compiled dg-skills, dg-agent and dg-daemon bi
 		const result = await runBootstrap({
 			seed: (root) => {
 				mkdirSync(join(root, "bin"), { recursive: true });
-				for (const program of PROGRAMS) {
+				for (const program of LEGACY_PROGRAMS) {
 					writeFileSync(join(root, "bin", program), OLD_BINARY);
 					chmodSync(join(root, "bin", program), 0o755);
 					writeFileSync(join(root, "bin", `.${program}.version`), "1.0.0\n");
@@ -344,7 +345,7 @@ describe("bootstrap.sh retires the compiled dg-skills, dg-agent and dg-daemon bi
 		});
 
 		expect(result.code, result.stderr).toBe(0);
-		for (const program of PROGRAMS) {
+		for (const program of LEGACY_PROGRAMS) {
 			const shim = readFileSync(join(result.root, "bin", program), "utf8");
 			expect(shim).not.toContain(OLD_BINARY);
 			expect(shim).toContain(program);

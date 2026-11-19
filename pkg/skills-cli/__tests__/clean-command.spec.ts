@@ -154,7 +154,7 @@ describe("install/clean source", () => {
 		expect(source()).not.toMatch(/"dg-skills"|"dg-agent"|"dg-daemon"/);
 	});
 
-	test("imports PROGRAMS from ./shims", () => {
-		expect(source()).toMatch(/import\s*\{[^}]*\bPROGRAMS\b[^}]*\}\s*from\s*["']\.\/shims["']/);
+	test("imports LEGACY_PROGRAMS from ./shims", () => {
+		expect(source()).toMatch(/import\s*\{[^}]*\bLEGACY_PROGRAMS\b[^}]*\}\s*from\s*["']\.\/shims["']/);
 	});
 });

@@ -212,6 +212,7 @@ specific one, or `--identity <name>` to override either outright.
 | 4 | protocol mismatch between this CLI and the daemon it found or started |
 | 5 | **reserved:** `recv --block` timed out with no message |
 | 6 | the session closed while `recv` was blocked |
+| 78 | the dg folder layout is blocked: two used dg folders exist |
 
 Code 5 is the one to branch on: it means "nothing arrived yet", not an error.
 Loop on it rather than treating it as a failure. Code 6 means the human ended

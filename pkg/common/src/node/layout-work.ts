@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { type DgPaths } from "./dg-paths";
 import { writeFileAtomic } from "./fs";
@@ -24,7 +24,7 @@ import {
 	sourcesOf,
 } from "./layout";
 import { pidAlive } from "./plugin-cache";
-import { folderUnused } from "./sqlite-unused";
+import { daemonFolderUnused, folderUnused } from "./sqlite-unused";
 import { moveVerified, removeSource, removeTree, setAsideUnusedRoot, treeContained } from "./tree-copy";
 
 type Pending = { name: string; from: string; to: string };
@@ -38,12 +38,17 @@ type Facts = {
 	live: boolean;
 	targetPresent: boolean;
 	targetUnused: boolean;
+	legacyUsed: boolean;
+	targetUsed: boolean;
+	targetDir: boolean;
+	twoUsed: boolean;
 	records: readonly Pending[];
 };
 
 export type Snapshot = {
 	legacyHome: string;
 	facts: Readonly<Record<string, Facts>>;
+	twoUsed: { from: string; to: string } | undefined;
 	detached: readonly string[];
 	pending: readonly Pending[];
 };
@@ -53,7 +58,7 @@ type Action =
 	| { kind: "skip" }
 	| { kind: "keepUsed" }
 	| { kind: "retryPending" }
-	| { kind: "block"; reason: "live-writer" | "no-hook" }
+	| { kind: "block"; reason: "live-writer" | "no-hook" | "two-used" }
 	| { kind: "move"; stop?: StopKey }
 	| { kind: "setAside"; stop?: StopKey };
 
@@ -68,6 +73,8 @@ type Step = {
 	liveDir?: string;
 	verify?: "phone.verify";
 	asideMark?: string;
+	targetUnused: boolean;
+	blockEnds?: { from: string; to: string };
 	records: readonly Pending[];
 	action: Action;
 };
@@ -158,6 +165,14 @@ function targetUnused(entry: MoveEntry, dest: string): boolean {
 	return entry.unused === "folder" ? folderUnused(dest) : folderUnused(dest, entry.unused.sqlite);
 }
 
+function isRealDir(path: string): boolean {
+	try {
+		return lstatSync(path).isDirectory();
+	} catch {
+		return false;
+	}
+}
+
 function factsOf(
 	entry: MoveEntry,
 	{ paths, hooks, seams, pending }: { paths: DgPaths; hooks: LayoutHooks; seams: LayoutSeams; pending: readonly Pending[] },
@@ -171,14 +186,21 @@ function factsOf(
 	const records = present ? named : named.filter((record) => exists(seams, record.from));
 	const base = { present: present || records.length > 0, from, sources: present ? all.filter((source) => exists(seams, source)) : [], dest, to };
 	const live = (present || records.length > 0) && entry.live !== undefined && isLive(paths.legacyHome, entry.live, seams.readdir);
-	if (!present) return { ...base, live, targetPresent: false, targetUnused: false, records };
+	const none = { targetPresent: false, targetUnused: false, legacyUsed: false, targetUsed: false, targetDir: false, twoUsed: false };
+	if (!present) return { ...base, live, ...none, records };
 	const ready = entry.needsKey === undefined || hooks[entry.needsKey] !== undefined;
 	const targetPresent = ready && exists(seams, to);
+	const legacyUsed = entry.usedBy !== undefined && !daemonFolderUnused(from);
+	const targetUsed = entry.usedBy !== undefined && targetPresent && !daemonFolderUnused(to);
 	return {
 		...base,
 		live,
 		targetPresent,
 		targetUnused: targetPresent && targetUnused(entry, dest),
+		legacyUsed,
+		targetUsed,
+		targetDir: targetPresent && isRealDir(to),
+		twoUsed: legacyUsed && targetUsed,
 		records,
 	};
 }
@@ -187,11 +209,14 @@ function factsOf(
 export function snapshot(paths: DgPaths, hooks: LayoutHooks): Snapshot {
 	const seams = resolveSeams(hooks);
 	const pending = readPending(paths, hooks);
+	const facts = Object.fromEntries(
+		LAYOUT_TABLE.filter(isMoveEntry).map((entry) => [entry.name, factsOf(entry, { paths, hooks, seams, pending })]),
+	);
+	const daemon = facts.daemon;
 	return {
 		legacyHome: paths.legacyHome,
-		facts: Object.fromEntries(
-			LAYOUT_TABLE.filter(isMoveEntry).map((entry) => [entry.name, factsOf(entry, { paths, hooks, seams, pending })]),
-		),
+		facts,
+		twoUsed: daemon?.twoUsed ? { from: daemon.from, to: daemon.to } : undefined,
 		detached: legacyNames(paths.legacyHome, seams.readdir)
 			.filter((name) => name.startsWith(DETACHED_PREFIX))
 			.map((name) => join(paths.legacyHome, name)),
@@ -203,10 +228,12 @@ const missingKey = (entry: MoveEntry, hooks: LayoutHooks): boolean =>
 	[entry.verify, entry.needsKey].some((key) => key !== undefined && hooks[key] === undefined) ||
 	(entry.launcherBound === true && hooks.launchers === undefined);
 
-function decide(entry: MoveEntry, facts: Facts, hooks: LayoutHooks): Action {
+function decide(entry: MoveEntry, facts: Facts, hooks: LayoutHooks, daemonTwoUsed: boolean): Action {
 	if (!facts.present) return { kind: "absent" };
 	if (facts.records.length > 0) return facts.live ? { kind: "block", reason: "live-writer" } : { kind: "retryPending" };
-	if (facts.targetPresent && !facts.targetUnused) return { kind: "keepUsed" };
+	if (daemonTwoUsed && (entry.usedBy !== undefined || entry.follows !== undefined)) return { kind: "block", reason: "two-used" };
+	const staleTarget = entry.usedBy !== undefined && facts.legacyUsed && !facts.targetUsed && facts.targetDir;
+	if (facts.targetPresent && !facts.targetUnused && !staleTarget) return { kind: "keepUsed" };
 	const stop = entry.stop !== undefined && hooks[entry.stop] !== undefined ? entry.stop : undefined;
 	if (facts.live && stop === undefined) return { kind: "block", reason: "live-writer" };
 	if (missingKey(entry, hooks)) return { kind: "block", reason: "no-hook" };
@@ -217,10 +244,16 @@ const nestedUnder = (rel: string, parent: string): boolean => rel.startsWith(`${
 
 function planEntry(
 	entry: MoveEntry,
-	{ facts, hooks, done, legacyHome }: { facts: Facts; hooks: LayoutHooks; done: readonly Step[]; legacyHome: string },
+	{
+		facts,
+		hooks,
+		done,
+		legacyHome,
+		twoUsed,
+	}: { facts: Facts; hooks: LayoutHooks; done: readonly Step[]; legacyHome: string; twoUsed: Snapshot["twoUsed"] },
 ): Step {
 	const rel = [entry.from].flat()[0] ?? "";
-	const decided = decide(entry, facts, hooks);
+	const decided = decide(entry, facts, hooks, twoUsed !== undefined);
 	const childKept = done.some((step) => nestedUnder(step.rel, rel) && UNMOVED_ACTIONS.has(step.action.kind));
 	return {
 		name: entry.name,
@@ -233,6 +266,8 @@ function planEntry(
 		liveDir: entry.live === undefined ? undefined : join(legacyHome, dirname(entry.live)),
 		verify: entry.verify,
 		asideMark: entry.asideMark,
+		targetUnused: facts.targetUnused,
+		blockEnds: decided.kind === "block" && decided.reason === "two-used" ? twoUsed : undefined,
 		records: facts.records,
 		action: childKept && (decided.kind === "move" || decided.kind === "setAside") ? { kind: "skip" } : decided,
 	};
@@ -242,7 +277,7 @@ function planEntry(
 export function planLayout(table: readonly LayoutEntry[], snap: Snapshot, hooks: LayoutHooks): LayoutPlan {
 	const steps = table.filter(isMoveEntry).reduce<readonly Step[]>((done, entry) => {
 		const facts = snap.facts[entry.name];
-		return facts ? [...done, planEntry(entry, { facts, hooks, done, legacyHome: snap.legacyHome })] : done;
+		return facts ? [...done, planEntry(entry, { facts, hooks, done, legacyHome: snap.legacyHome, twoUsed: snap.twoUsed })] : done;
 	}, []);
 	return { legacyHome: snap.legacyHome, steps, sweep: snap.detached, pending: snap.pending };
 }
@@ -277,7 +312,7 @@ const settled = (step: Step, detail: Detail): Applied => ({
 });
 
 function blockedOutcome(step: Step, reason: BlockedOutcome["reason"], refused = false): BlockedOutcome {
-	const facts = { ...ends(step), reason, ...(refused ? { refused: true as const } : {}) };
+	const facts = { ...(reason === "two-used" ? (step.blockEnds ?? ends(step)) : ends(step)), reason, ...(refused ? { refused: true as const } : {}) };
 	return { ...facts, kind: "blocked", fix: blockedText(facts) };
 }
 
@@ -327,10 +362,24 @@ function scheduledRecords(step: Step, seams: LayoutSeams): Pending[] {
 		.map((source) => ({ name: step.name, from: source, to: step.listed ? join(step.dest, basename(source)) : step.dest }));
 }
 
+function holdsFiles(step: Step, seams: LayoutSeams): boolean {
+	if (step.targetUnused) return false;
+	try {
+		return seams.readdir(step.dest).length > 0;
+	} catch {
+		return true;
+	}
+}
+
 function setAside(step: Step, { seams, say }: Context): { asideTo: string } | { error: string } {
 	try {
+		const kept = holdsFiles(step, seams);
 		const asideTo = setAsideUnusedRoot(step.dest, seams.now());
-		say(`dg: set aside unused ${step.dest} as ${asideTo}; dg-skills clean removes it`);
+		say(
+			kept
+				? `dg: set aside ${step.dest} as ${asideTo}; dg copied no file from it, and dg-skills clean keeps it`
+				: `dg: set aside unused ${step.dest} as ${asideTo}; dg-skills clean removes it`,
+		);
 		return { asideTo };
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error);
@@ -395,7 +444,7 @@ async function applyStep(step: Step, context: Context): Promise<Applied> {
 			return settled(step, { kind: "kept", reason: "target-used" });
 		case "block": {
 			const outcome = blockedOutcome(step, action.reason);
-			if (action.reason === "live-writer") context.say(outcome.fix);
+			if (action.reason !== "no-hook") context.say(outcome.fix);
 			return { outcome, pending: step.records };
 		}
 		case "retryPending":

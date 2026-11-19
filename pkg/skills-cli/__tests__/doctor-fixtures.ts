@@ -21,6 +21,7 @@ const CHANNEL_REVIEW_CONFIG = {
 	relay: { appName: "review-bot", secret: { id: "relay/chat", key: "RELAY__CHAT__SECRET", region: "us-east-1" } },
 };
 import type { CheckStatus } from "../src/doctor/types";
+import { fenceEnv } from "./fence-env";
 import { scratchFixtures } from "./git-repo-fixtures";
 import { CLI_ENTRY, runCli } from "./module-call";
 import { SOURCE_SKILLS } from "./spec-fixtures";
@@ -182,6 +183,7 @@ export function doctorWorld() {
 	function env(extra: Record<string, string | undefined> = {}) {
 		const merged: Record<string, string> = {
 			HOME: home,
+			...fenceEnv(),
 			PATH: bin,
 			AI_SCRATCH_DIR: scratch,
 			AI_STATE_DIR: state,

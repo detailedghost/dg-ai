@@ -5,7 +5,7 @@ export function registerInstall(program: Command): void {
 	program
 		.command("install")
 		.description(
-			"stage the dg-ai-extension for loading + install the pinned Bun runtime, the dg bundle and the dg-skills, dg-agent and dg-daemon launchers, or copy skill instruction files with --skills-only",
+			"stage the dg-ai-extension for loading + install the pinned Bun runtime, the dg bundle and the dg, dg-skills, dg-agent and dg-daemon launchers, or copy skill instruction files with --skills-only",
 		)
 		.argument(
 			"[target]",

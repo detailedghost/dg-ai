@@ -11,6 +11,8 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { resolveDgPaths, withInstallLockSync } from "@dg/common/node";
+import { ensureLayout } from "@dg/common/node/layout";
+import { DgCliError } from "@dg/common/errors";
 import * as store from "../../src/server/config-store";
 import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
 
@@ -180,5 +182,39 @@ describe("config-store writeConfig locking", () => {
 			expect(() => store.writeConfig(paths, { a: 1 })).toThrow("is held");
 		});
 		expect(readFileSync(paths.daemonConfigPath, "utf8")).toBe("{}");
+	});
+});
+
+describe("config-store with two used daemon folders", () => {
+	async function twoUsed() {
+		const paths = setup();
+		mkdirSync(join(paths.legacyHome, "daemon"), { recursive: true });
+		writeFileSync(join(paths.legacyHome, "daemon", "key"), "legacy-key");
+		mkdirSync(paths.daemonDir, { recursive: true });
+		writeFileSync(join(paths.daemonDir, "key"), "target-key");
+		await ensureLayout(paths, { log: () => {} });
+		return paths;
+	}
+
+	function exitCodeOf(run: () => unknown): unknown {
+		try {
+			run();
+		} catch (error) {
+			return error instanceof DgCliError ? error.exitCode : error;
+		}
+		return undefined;
+	}
+
+	it("readConfigStrict throws the two-used block with exit code 78 before it reads the file", async () => {
+		const paths = await twoUsed();
+
+		expect(exitCodeOf(() => store.readConfigStrict(paths))).toBe(78);
+	});
+
+	it("writeServiceEntry throws exit code 78 and writes no config file", async () => {
+		const paths = await twoUsed();
+
+		expect(exitCodeOf(() => store.writeServiceEntry(paths, "one", entry))).toBe(78);
+		expect(existsSync(paths.daemonConfigPath)).toBe(false);
 	});
 });

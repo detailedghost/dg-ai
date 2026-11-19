@@ -1,6 +1,7 @@
-import { readdirSync, rmSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describeError } from "@dg/common";
+import { removeInside } from "@dg/common/node";
 import type { Log } from "./engine";
 import type { CrCode } from "./errors";
 import { apiJson, type CaptureFn, failureCode } from "./verdict/cli";
@@ -110,22 +111,9 @@ export function createAddressWorkspace(runner: CaptureFn): AddressWorkspace {
 	};
 }
 
-export function insideRoot(root: string, dir: string): boolean {
-	const base = resolve(root);
-	const target = resolve(dir);
-	return (
-		target !== base &&
-		target.startsWith(base.endsWith(sep) ? base : `${base}${sep}`)
-	);
-}
-
 export function removeCloneDir(root: string, dir: string, log: Log): void {
-	if (!insideRoot(root, dir)) {
-		log.warn(`refused to delete ${dir}: it is not inside ${root}`);
-		return;
-	}
 	try {
-		rmSync(dir, { recursive: true, force: true });
+		removeInside(root, dir);
 	} catch (error) {
 		log.warn(`could not delete clone ${dir}: ${describeError(error)}`);
 	}

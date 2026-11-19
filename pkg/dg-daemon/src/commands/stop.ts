@@ -11,26 +11,29 @@ import {
 } from "@dg/common";
 import {
 	type DgPaths,
-	ensureDaemonRunning,
+	autostartManages,
+	defaultAutostartDeps,
 	isAlive,
 	isSignalablePid,
 	killProcessTree,
 	loopbackHostHeader,
+	managedStopCommands,
 	readOwnerToken,
 	readPidFile,
 	removePidFile,
 	resolveDgPaths,
 	resolveLiveDaemon,
 } from "@dg/common/node";
+import { assertNotBlocked } from "@dg/common/node/layout";
 import { type DaemonIdentity, isOurDaemon } from "../legacy-daemon-identity";
-import { startedLine } from "./start";
+import { type DaemonStartSeams, startDaemon, startedLine } from "./start";
 
 const POLL_MS = 100;
 const REGULAR_STOP_WAIT_MS = 255_000;
 const FORCE_WAIT_MS = 5_000;
 const LIST_TIMEOUT_MS = 3_000;
 
-export type StopSeams = {
+export type StopSeams = DaemonStartSeams & {
 	platform?: NodeJS.Platform;
 	kill?: (pid: number, signal: NodeJS.Signals | 0) => void;
 	exec?: (command: string, args: string[]) => void;
@@ -130,8 +133,16 @@ async function forceStop(
 			listFailure = describeError(err);
 		}
 	}
-	if (platform === "win32") killDaemonOnly(handle.pid, seams);
-	else signalDaemon(kill, handle.pid, "SIGKILL");
+	const deps = seams.autostart ?? defaultAutostartDeps();
+	const kind = autostartManages(deps, paths, "dg-daemon");
+	const stopCommands = kind ? managedStopCommands(kind, deps.uid, "dg-daemon") : [];
+	if (platform === "win32") {
+		for (const argv of stopCommands) await deps.run(argv);
+		killDaemonOnly(handle.pid, seams);
+	} else {
+		signalDaemon(kill, handle.pid, "SIGKILL");
+		for (const argv of stopCommands) await deps.run(argv);
+	}
 	for (const pid of servicePids) killProcessTree(pid, seams);
 	const gone = await waitUntilGone(
 		[handle.pid, ...servicePids],
@@ -242,7 +253,8 @@ export async function cmdRestart(
 	seams: StopSeams = {},
 ): Promise<void> {
 	const paths = resolveDgPaths();
+	assertNotBlocked(paths, "daemon");
 	await stopDaemon(paths, options, seams);
-	const { handle, started } = await ensureDaemonRunning(paths);
+	const { handle, started } = await startDaemon(paths, seams);
 	console.log(startedLine(handle, started));
 }

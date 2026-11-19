@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fenceEnv } from "./fence-env";
 
 const PKG_ROOT = new URL("..", import.meta.url).pathname;
 const SRC = (file: string) =>
@@ -81,6 +82,7 @@ console.log(${JSON.stringify(RESULT_TAG)} + JSON.stringify({ opened, detectCalls
 					PATH: process.env.PATH ?? "",
 					HOME: home,
 					DG_HOME: dgHome,
+					...fenceEnv(),
 					LC_ALL: "C",
 				},
 				stdin: "ignore",

@@ -1,12 +1,24 @@
 import { isAbsolute, join } from "node:path";
 
 export const PROGRAM_NAMES = ["dg-skills", "dg-agent", "dg-daemon"] as const;
-export type ProgramName = (typeof PROGRAM_NAMES)[number];
+export type ProgramName = (typeof PROGRAM_NAMES)[number] | "dg";
 
 let recorded: ProgramName | undefined;
+let mounted: Exclude<ProgramName, "dg"> | undefined;
 
 export function setProgramName(name: ProgramName | undefined): void {
 	recorded = name;
+	mounted = undefined;
+}
+
+/** Names the program that `dg` mounted, so `selfCommand` builds its argv and not that of `dg`. */
+export function mountProgram(name: Exclude<ProgramName, "dg">): void {
+	if (recorded) recorded = name;
+	else mounted = name;
+}
+
+export function mountedProgram(): Exclude<ProgramName, "dg"> | undefined {
+	return mounted;
 }
 
 export function programName(): ProgramName | undefined {
@@ -17,6 +29,7 @@ const SOURCE_PACKAGES: Record<ProgramName, string> = {
 	"dg-skills": "skills-cli",
 	"dg-agent": "dg-agent",
 	"dg-daemon": "dg-daemon",
+	dg: "dg",
 };
 
 /** argv for a program on this runtime and bundle: [bun, dg.js, name, ...args], or its source entry in a checkout. */

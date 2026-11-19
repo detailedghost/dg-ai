@@ -441,7 +441,7 @@
 		},
 		{
 			"name": "install",
-			"description": "stage the dg-ai-extension for loading + install the pinned Bun runtime, the dg bundle and the dg-skills, dg-agent and dg-daemon launchers, or copy skill instruction files with --skills-only",
+			"description": "stage the dg-ai-extension for loading + install the pinned Bun runtime, the dg bundle and the dg, dg-skills, dg-agent and dg-daemon launchers, or copy skill instruction files with --skills-only",
 			"options": [
 				{
 					"flags": [
@@ -2157,7 +2157,7 @@
 		},
 		{
 			"name": "completion",
-			"description": "print the bash, zsh or fish completion script, or write or remove the completion files of dg-skills, dg-agent and dg-daemon",
+			"description": "print the bash, zsh or fish completion script, or write or remove the completion files of dg, dg-skills, dg-agent and dg-daemon",
 			"options": [
 				{
 					"flags": [

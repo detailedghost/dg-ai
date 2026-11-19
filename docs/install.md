@@ -12,7 +12,7 @@ The `unslop` plugin is optional. It installs the upstream `theclaymethod/unslop`
 when present. To install every recommended plugin at its pinned commit, see
 [Recommended plugins](#recommended-plugins).
 
-**Standalone — one command installs `dg-skills`, `dg-daemon` and `dg-agent`
+**Standalone — one command installs `dg`, `dg-skills`, `dg-daemon` and `dg-agent`
 _and_ the browser extension** (no Bun needed; the installer brings its own pinned
 runtime):
 
@@ -33,13 +33,23 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 <!-- markdownlint-enable MD013 -->
 
 Both install the pinned Bun runtime and the release bundle into the dg data
-folder, write the `dg-skills`, `dg-agent` and `dg-daemon` launchers into the
+folder, write the `dg`, `dg-skills`, `dg-agent` and `dg-daemon` launchers into the
 launcher folder (see [Where dg keeps its files](#where-dg-keeps-its-files)),
 then run `dg-skills install`. That
 stages the extension and prints the **Load unpacked** steps. Re-run
 `dg-skills install` anytime to update. A part that is already current is
 skipped. (Building the extension from source with `--local` needs
 [Bun](https://bun.sh).)
+
+The `dg` launcher appears with the first `dg-skills install` or bootstrap of
+the new release. It runs the command tree of one program: `dg job` runs
+`dg-daemon job`, `dg upgrade` runs `dg-skills update`, and so on. See the
+[README](../README.md) for the nine names. When a `dg` file in the launcher
+folder is not a dg launcher, install keeps the file and prints
+`dg: kept <path>; it is not a dg launcher. Remove it or rename it, then run dg-skills install again`.
+The check `dg-launcher` in `dg-skills doctor` warns about the same file, and
+about a missing `dg` launcher. dg writes no `dg` file into the legacy
+`~/.dg/bin` folder.
 
 ## Where dg keeps its files
 
@@ -52,12 +62,14 @@ user-writable folder and the rest under four roots, one for each role.
 | --- | --- | --- | --- | --- |
 | Launchers | `~/.local/bin` | `~/.local/bin` | `%LOCALAPPDATA%\dg\bin` | `$DG_HOME/bin` |
 | Config: `config.json`, the CLI-only marker, channel-review config | `$XDG_CONFIG_HOME/dg` (`~/.config/dg`) | `~/Library/Application Support/dg` | `%APPDATA%\dg` | `$DG_HOME/config` |
-| Data: runtime, bundle, skills, personas, browsers | `$XDG_DATA_HOME/dg` (`~/.local/share/dg`) | `~/Library/Application Support/dg` | `%LOCALAPPDATA%\dg` | `$DG_HOME/data` |
-| State: daemon, phone, grants, agent sessions and memory | `$XDG_STATE_HOME/dg` (`~/.local/state/dg`) | `~/Library/Application Support/dg/state` | `%LOCALAPPDATA%\dg\state` | `$DG_HOME/state` |
+| Data: runtime, bundle, skills, personas, browsers, job sources | `$XDG_DATA_HOME/dg` (`~/.local/share/dg`) | `~/Library/Application Support/dg` | `%LOCALAPPDATA%\dg` | `$DG_HOME/data` |
+| State: daemon, phone, grants, agent sessions and memory, job state | `$XDG_STATE_HOME/dg` (`~/.local/state/dg`) | `~/Library/Application Support/dg/state` | `%LOCALAPPDATA%\dg\state` | `$DG_HOME/state` |
 | Cache: prototypes, demos | `$XDG_CACHE_HOME/dg` (`~/.cache/dg`) | `~/Library/Caches/dg` | `%LOCALAPPDATA%\dg\cache` | `$DG_HOME/cache` |
 | Logs | `<state>/log` | `~/Library/Logs/dg` | `%LOCALAPPDATA%\dg\log` | `$DG_HOME/log` |
 
 <!-- markdownlint-enable MD013 -->
+
+Job sources are in `<data>/jobs`, and job state is in `<state>/jobs`.
 
 For example, the phone state is in `~/.local/state/dg/phone` on Linux and in
 `~/Library/Application Support/dg/state/phone` on macOS.
@@ -99,7 +111,8 @@ The move follows these rules:
    the target, and says so. `dg-skills doctor install` then names both copies.
 3. When the target exists and is unused, dg sets it aside as
    `<name>.empty-<ts>`, then moves the old copy in. `dg-skills clean` removes
-   the set-aside copy. See [Clean up](#clean-up).
+   the set-aside copy only when it is unused, and keeps a copy that holds
+   files. See [Clean up](#clean-up).
 4. When an old folder is still in use after the copy, for example the runtime
    that runs install on Windows, dg leaves it. The next start of any dg
    program removes it and prints one line.
@@ -135,6 +148,11 @@ The move follows these rules:
     removes or renames the link.
 12. With `DG_HOME` set, the role folders under it stay in place and dg
     moves only the old files next to them.
+13. The `daemon` folder follows rule 2 with one more case. When the old
+    folder holds data and `<state>/daemon` is a real folder with no data,
+    dg sets `<state>/daemon` aside and moves the old copy in. When both hold
+    data, dg blocks the entry and stops the start of the daemon. See
+    [Two daemon folders hold data](#two-daemon-folders-hold-data).
 
 `~/.dg/bin` keeps small launchers for `dg-skills`, `dg-agent` and
 `dg-daemon`. Each prints one line on stderr that names the new launcher and
@@ -178,6 +196,8 @@ dg prints each line once for each process.
 | `dg: copied <from> to <to>; it is in use, so the next dg start removes it` | The copy is complete, but dg could not remove the old copy. The removal is scheduled. | Nothing. The next dg start removes it. |
 | `dg: removed <from>; its copy at <to> was complete` | A scheduled removal finished on a later start. | Nothing. |
 | `dg: kept <from>; its copy at <to> no longer holds every file` | A scheduled removal found the copy incomplete. | Compare the two folders before you remove either. |
+| `dg: two daemon folders hold data: <from> and <to>. dg does not choose one and does not merge them. Move the folder that you do not want to a different name, then run the command again` | The old daemon folder and `<state>/daemon` both hold data. dg blocked the entry. | See [Two daemon folders hold data](#two-daemon-folders-hold-data). |
+| `dg: set aside <dest> as <aside>; dg copied no file from it, and dg-skills clean keeps it` | The old daemon folder held data, and the target held files but no data. dg renamed the target and moved the old copy in. | Compare the set-aside copy with the new folder, then remove it by hand. `dg-skills clean` keeps it. |
 | `dg: set aside unused <to> as <to>.empty-<ts>; dg-skills clean removes it` | The target was unused, so dg renamed it and moved the old copy in. | Run `dg-skills clean` when you want the set-aside copy gone. |
 | `dg: kept <from>; <to> already exists and holds data. dg-skills doctor reports both copies` | Both copies hold data. | Run `dg-skills doctor install`, compare the copies, then remove one. |
 | `dg: kept <from>; <to> already exists` | A target existed when the copy began. | Run `dg-skills doctor install`, then compare the copies. |
@@ -187,6 +207,20 @@ dg prints each line once for each process.
 | `dg: phone-friend lines wait for conversion; run dg-agent phone status` | `dg-agent phone listen` found old phone-friend lines that no command has converted. It exits 1. | Run `dg-agent phone status`. |
 
 <!-- markdownlint-enable MD013 -->
+
+#### Two daemon folders hold data
+
+When the old daemon folder and `<state>/daemon` both hold data, two daemon
+folders with data stop the start of the daemon. The message names the two
+folders. dg does not choose one, and dg merges nothing.
+
+`dg-daemon serve` exits 78 for this block, and the systemd unit does not start
+it again. `service add` and `service rm` exit 78 too. `dg-daemon service status`
+reads no config and still exits 1 when no daemon runs.
+
+To fix it, move `<state>/daemon` to a different name when the legacy folder
+holds the sessions, then start again. When `<state>/daemon` holds the sessions,
+move the legacy folder instead. Compare the two first.
 
 #### Layout check in doctor
 
@@ -272,7 +306,7 @@ safe to run again.
 
 ## Install layout
 
-One release is one bundle. The three programs share it and one runtime. On
+One release is one bundle. The four program names share it and one runtime. On
 Linux the data folder is `~/.local/share/dg`:
 
 ```text
@@ -301,8 +335,8 @@ On Linux x64 without AVX2, the installer picks Bun's `-baseline` build.
 
 ## Shell completion
 
-Every install and update writes tab completion for `dg-skills`, `dg-agent`
-and `dg-daemon` in bash, zsh and fish. That includes a CLI-only, agent-only
+Every install and update writes tab completion for `dg`, `dg-skills`,
+`dg-agent` and `dg-daemon` in bash, zsh and fish. That includes a CLI-only, agent-only
 or skills-only install. The installer does not edit a shell startup file.
 
 | Shell | File | Loaded by |
@@ -335,8 +369,9 @@ dg-skills completion --uninstall
 
 To load a script for the current shell only, without files, run
 `source <(dg-skills completion bash)` (or `zsh`), or
-`dg-skills completion fish | source` in fish. `dg-agent completion <shell>`
-and `dg-daemon completion <shell>` print their own scripts.
+`dg-skills completion fish | source` in fish. `dg completion <shell>`,
+`dg-agent completion <shell>` and `dg-daemon completion <shell>` print their
+own scripts.
 `dg-skills doctor completion` reports missing or old files and names the fix.
 
 ## Update from a compiled-binary install
@@ -354,7 +389,7 @@ curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/boots
 ```
 
 On Windows, re-run the `bootstrap.ps1` command above. The new install replaces
-the compiled `dg-skills`, `dg-agent` and `dg-daemon` files with launchers and
+the compiled `dg-skills`, `dg-agent` and `dg-daemon` files with launchers, writes a `dg` launcher, and
 removes their `.version` stamps. After that, `dg-skills install` updates as
 usual.
 

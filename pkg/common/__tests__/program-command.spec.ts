@@ -1,12 +1,15 @@
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { selfCommand } from "../src/node/self-command";
 import {
 	launcherCommand,
+	mountProgram,
+	PROGRAM_NAMES,
 	programCommand,
 	programName,
+	type ProgramName,
 	setProgramName,
 } from "../src/node/program";
 
@@ -17,6 +20,8 @@ writeFileSync(sourceEntry, "");
 function resetProgramName(): void {
 	setProgramName(undefined);
 }
+
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 describe("selfCommand in source mode", () => {
 	it("returns [bun, index.ts, ...args] when no program name is recorded", () => {
@@ -33,10 +38,7 @@ describe("selfCommand in source mode", () => {
 });
 
 describe("selfCommand in bundle mode", () => {
-	afterAll(() => {
-		resetProgramName();
-		rmSync(scratch, { recursive: true, force: true });
-	});
+	afterAll(resetProgramName);
 
 	it("inserts the recorded program name after the entry file", () => {
 		setProgramName("dg-skills");
@@ -132,4 +134,74 @@ describe("launcherCommand", () => {
 			);
 		},
 	);
+});
+
+describe("the dg program name", () => {
+	afterAll(resetProgramName);
+
+	it("keeps PROGRAM_NAMES at the three launcher shims", () => {
+		expect([...PROGRAM_NAMES]).toEqual(["dg-skills", "dg-agent", "dg-daemon"]);
+	});
+
+	it("accepts dg as a ProgramName and runs pkg/dg source entry in a checkout", () => {
+		resetProgramName();
+		const dg: ProgramName = "dg";
+		const pkgRoot = join(import.meta.dir, "..", "..");
+		expect(programCommand(dg, ["x"])).toEqual([process.execPath, join(pkgRoot, "dg", "src", "index.ts"), "x"]);
+	});
+
+	it("builds the bundle argv for dg when a program is recorded", () => {
+		setProgramName("dg");
+		expect(programCommand("dg", ["x"])).toEqual([process.execPath, Bun.main, "dg", "x"]);
+	});
+});
+
+describe("mountProgram", () => {
+	const pkgRoot = join(import.meta.dir, "..", "..");
+
+	afterEach(resetProgramName);
+
+	it("in a checkout makes selfCommand build the mounted program source argv and leaves programName undefined", () => {
+		resetProgramName();
+		mountProgram("dg-skills");
+		expect(programName()).toBeUndefined();
+		expect(selfCommand(["x"], { entrypoint: sourceEntry })).toEqual([
+			process.execPath,
+			join(pkgRoot, "skills-cli", "src", "index.ts"),
+			"x",
+		]);
+	});
+
+	it("in a checkout does not turn on the bundle branch of programCommand", () => {
+		resetProgramName();
+		mountProgram("dg-skills");
+		expect(programCommand("dg-daemon", ["serve"])).toEqual([
+			process.execPath,
+			join(pkgRoot, "dg-daemon", "src", "index.ts"),
+			"serve",
+		]);
+	});
+
+	it("in a bundle records the mounted name and selfCommand builds the bundle argv for it", () => {
+		setProgramName("dg");
+		mountProgram("dg-skills");
+		expect(programName()).toBe("dg-skills");
+		expect(selfCommand(["x"])).toEqual([process.execPath, Bun.main, "dg-skills", "x"]);
+	});
+
+	it.each(["dg-skills", "dg-agent", "dg-daemon"] as const)("a checkout mount of %s builds its source argv", (name) => {
+		resetProgramName();
+		mountProgram(name);
+		const entry = programCommand(name, [])[1];
+		expect(selfCommand(["x"], { entrypoint: sourceEntry })[1]).toBe(entry);
+	});
+
+	it("setProgramName(undefined) clears the mounted program so selfCommand returns to the pre-mount argv", () => {
+		resetProgramName();
+		const before = selfCommand(["x"], { entrypoint: sourceEntry });
+		mountProgram("dg-skills");
+		expect(selfCommand(["x"], { entrypoint: sourceEntry })).not.toEqual(before);
+		setProgramName(undefined);
+		expect(selfCommand(["x"], { entrypoint: sourceEntry })).toEqual(before);
+	});
 });

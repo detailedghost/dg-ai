@@ -12,6 +12,49 @@ import {
 	truncateSync,
 	writeFileSync,
 } from "node:fs";
+import { dirname, posix, resolve, win32 } from "node:path";
+
+function relativeUnder(root: string, target: string, platform: NodeJS.Platform): string | undefined {
+	const path = platform === "win32" ? win32 : posix;
+	const norm = (value: string) => {
+		const resolved = path.resolve(value);
+		return platform === "win32" ? resolved.toLowerCase() : resolved;
+	};
+	const rel = path.relative(norm(root), norm(target));
+	return rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel) ? undefined : rel;
+}
+
+/** True when `dir` is `root` or lies under it, comparing case-insensitively on win32. */
+export function withinRoot(root: string, dir: string, platform: NodeJS.Platform = process.platform): boolean {
+	return relativeUnder(root, dir, platform) !== undefined;
+}
+
+/** True when `dir` lies strictly under `root`, comparing case-insensitively on win32. */
+export function insideRoot(root: string, dir: string, platform: NodeJS.Platform = process.platform): boolean {
+	const rel = relativeUnder(root, dir, platform);
+	return rel !== undefined && rel !== "";
+}
+
+function realParentInsideRoot(root: string, target: string): boolean {
+	let realRoot: string;
+	let realParent: string;
+	try {
+		realRoot = realpathSync(root);
+		realParent = realpathSync(dirname(target));
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "ENOENT";
+	}
+	return realParent === realRoot || insideRoot(realRoot, realParent);
+}
+
+/** Deletes `dir` only when it lies strictly inside `root`, also after links resolve; throws otherwise. */
+export function removeInside(root: string, dir: string): void {
+	const target = resolve(dir);
+	if (!insideRoot(root, target) || !realParentInsideRoot(root, target)) {
+		throw new Error(`refused to delete ${dir}: it is not inside ${root}`);
+	}
+	rmSync(target, { recursive: true, force: true });
+}
 
 export function ensurePrivateDir(path: string): void {
 	mkdirSync(path, { recursive: true, mode: 0o700 });

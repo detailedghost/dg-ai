@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { isVirtualBunPath } from "./bun-path";
-import { programCommand, programName } from "./program";
+import { mountedProgram, programCommand, programName } from "./program";
 
 /** Override source/compiled invocation detection, mainly for embedding and isolated tests. */
 export interface SelfCommandOptions {
@@ -19,7 +19,7 @@ export function selfCommand(
 	const entrypoint = opts.entrypoint ?? (Bun.main || process.argv[1]);
 	if (isVirtualBunPath(execPath))
 		throw new Error("Cannot execute a virtual Bun filesystem path");
-	const recorded = programName();
+	const recorded = programName() ?? mountedProgram();
 	if (recorded) return programCommand(recorded, args);
 	if (opts.compiled ?? isVirtualBunPath(entrypoint)) return [execPath, ...args];
 	if (!entrypoint || isVirtualBunPath(entrypoint))

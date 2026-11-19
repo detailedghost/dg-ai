@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
 	existsSync,
 	mkdirSync,
+	readdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
@@ -16,9 +17,10 @@ import {
 	removalRelease,
 	syncCompatLaunchers,
 } from "../src/install/compat-launchers";
+import { LEGACY_PROGRAMS } from "../src/install/shims";
 
 const posix = describe.skipIf(process.platform === "win32");
-const NAMES = ["dg-skills", "dg-agent", "dg-daemon"] as const;
+const NAMES = LEGACY_PROGRAMS;
 
 let dir: string;
 let home: string;
@@ -121,6 +123,25 @@ posix("syncCompatLaunchers", () => {
 			);
 			expect(statSync(path).mode & 0o777).toBe(0o755);
 		}
+	});
+
+	test("writes no dg file into a legacy bin folder that held none", () => {
+		const bin = seedOldBin();
+
+		syncCompatLaunchers(paths, "1.28.1");
+
+		expect(readdirSync(bin).sort()).toEqual([...NAMES].sort());
+		expect(existsSync(join(bin, "dg"))).toBe(false);
+	});
+
+	test("leaves a legacy dg file that is not from dg byte-identical", () => {
+		const bin = seedOldBin();
+		writeFileSync(join(bin, "dg"), "#!/bin/sh\necho other tool\n", { mode: 0o755 });
+
+		syncCompatLaunchers(paths, "1.28.1");
+
+		expect(readFileSync(join(bin, "dg"), "utf8")).toBe("#!/bin/sh\necho other tool\n");
+		expect(statSync(join(bin, "dg")).mode & 0o777).toBe(0o755);
 	});
 
 	test("keeps the first removal release on a later install", () => {

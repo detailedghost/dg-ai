@@ -7,7 +7,7 @@ import { writeShims } from "../src/install/shims";
 import { scratch, type Scratch } from "./runtime-bundle-fixtures";
 
 const TEMPLATE = join(import.meta.dir, "..", "..", "launcher", "shims", "dg.sh");
-const NAMES = ["dg-skills", "dg-agent", "dg-daemon"] as const;
+const NAMES = ["dg", "dg-skills", "dg-agent", "dg-daemon"] as const;
 const posix = describe.skipIf(process.platform === "win32");
 
 let sandbox: Scratch;

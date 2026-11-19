@@ -13,7 +13,8 @@
 # saved copy of this file. A leading v is accepted.
 #
 # Layout: runtime\bun-v<bun>, lib\<release>, runtime\current and lib\current junctions, and
-# bin\dg-skills.cmd, bin\dg-agent.cmd, bin\dg-daemon.cmd shims. Every download is verified
+# bin\dg.cmd, bin\dg-skills.cmd, bin\dg-agent.cmd and bin\dg-daemon.cmd launchers (the dg, dg-skills,
+# dg-agent and dg-daemon launchers). Every download is verified
 # against SHA256SUMS or runtime.json before anything is installed. Re-running upgrades in place.
 param(
 	[string]$Version
@@ -286,14 +287,37 @@ try {
 	Set-DgJunction (Join-Path $dgHome "runtime\current") $bunDir
 	Set-DgJunction (Join-Path $dgHome "lib\current") $libDir
 
-	foreach ($program in @("dg-skills", "dg-agent", "dg-daemon")) {
-		$old = Join-Path $binDir "$program.exe"
-		if (Test-Path -LiteralPath $old) {
-			try { Remove-Item -LiteralPath $old -Force } catch { Move-Item -LiteralPath $old -Destination "$old.old-$([guid]::NewGuid())" }
+	foreach ($program in @("dg-skills", "dg-agent", "dg-daemon", "dg")) {
+		$cmd = Join-Path $binDir "$program.cmd"
+		if ($program -ne "dg") {
+			$old = Join-Path $binDir "$program.exe"
+			if (Test-Path -LiteralPath $old) {
+				try { Remove-Item -LiteralPath $old -Force } catch { Move-Item -LiteralPath $old -Destination "$old.old-$([guid]::NewGuid())" }
+			}
+			Remove-Item -LiteralPath (Join-Path $binDir ".$program.version") -Force -ErrorAction SilentlyContinue
 		}
-		Remove-Item -LiteralPath (Join-Path $binDir ".$program.version") -Force -ErrorAction SilentlyContinue
+		$dangling = $false
+		try { $final = [System.IO.FileInfo]::new($cmd).ResolveLinkTarget($true); $dangling = $null -ne $final -and -not $final.Exists } catch { $dangling = $false }
+		if ($program -eq "dg" -and -not $dangling -and (Test-Path -LiteralPath $cmd)) {
+			$item = Get-Item -LiteralPath $cmd -Force
+			$isLauncher = $false
+			if (-not $item.PSIsContainer) {
+				try {
+					$bytes = [System.IO.File]::ReadAllBytes($item.FullName)
+					$head = @($bytes | Select-Object -First 4096)
+					if ($head.Count -gt 0 -and ($head -notcontains 0)) {
+						$isLauncher = [System.Text.Encoding]::UTF8.GetString([byte[]]$head).Contains('lib\current\dg.js')
+					}
+				} catch { $isLauncher = $false }
+			}
+			if (-not $isLauncher) {
+				Write-Host "dg: kept $cmd; it is not a dg launcher. Remove it or rename it, then run dg-skills install again"
+				continue
+			}
+		}
+		if ([System.IO.FileInfo]::new($cmd).LinkTarget -or (Get-Item -LiteralPath $cmd -Force -ErrorAction SilentlyContinue).LinkType) { [System.IO.File]::Delete($cmd) }
 		$shim = "@echo off`r`n`"$dgHome\runtime\current\bun.exe`" `"$dgHome\lib\current\dg.js`" $program %*`r`n"
-		[System.IO.File]::WriteAllText((Join-Path $binDir "$program.cmd"), $shim)
+		[System.IO.File]::WriteAllText($cmd, $shim)
 	}
 	Write-Host "dg runtime $bunVersion and bundle $releaseVersion installed at $dgHome"
 

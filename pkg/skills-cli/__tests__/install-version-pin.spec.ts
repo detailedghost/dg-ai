@@ -34,7 +34,7 @@ function installArgv(preload: string, ...args: string[]): string[] {
 
 function expectNothingInstalled(home: string): void {
 	for (const name of ["lib", "runtime", ".dg", "cli-only"]) expect(existsSync(join(home, name))).toBe(false);
-	for (const name of ["dg-skills", "dg-agent", "dg-daemon"]) expect(existsSync(join(home, "bin", name))).toBe(false);
+	for (const name of ["dg", "dg-skills", "dg-agent", "dg-daemon"]) expect(existsSync(join(home, "bin", name))).toBe(false);
 }
 
 describe("dg-skills install --version <x.y.z>", () => {

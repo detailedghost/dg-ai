@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { isMissingPath } from "../errors";
 
 const JOURNAL_MODE_BYTES = { start: 18, end: 20, rollback: 1 } as const;
 const UNUSED_DB_MAX_BYTES = 1024 * 1024;
@@ -40,6 +41,24 @@ export function folderUnused(dir: string, dbName?: string): boolean {
 		const names = readdirSync(dir);
 		if (names.length === 0) return true;
 		return dbName !== undefined && names.every((name) => name === dbName || SIDECAR_SUFFIXES.some((suffix) => name === `${dbName}${suffix}`)) && sqliteUnused(join(dir, dbName));
+	} catch {
+		return false;
+	}
+}
+
+const DAEMON_DATA_FILES: ReadonlySet<string> = new Set(["key", "key.dpapi", "credentials.db"]);
+
+/** False when the folder holds a `key`, a `key.dpapi`, a `credentials.db` or a used `daemon.db`; a missing path, a file and a link give true. */
+export function daemonFolderUnused(dir: string): boolean {
+	try {
+		if (!lstatSync(dir).isDirectory()) return true;
+	} catch (error) {
+		return isMissingPath(error);
+	}
+	try {
+		const names = readdirSync(dir);
+		if (names.some((name) => DAEMON_DATA_FILES.has(name))) return false;
+		return !names.includes("daemon.db") || sqliteUnused(join(dir, "daemon.db"));
 	} catch {
 		return false;
 	}

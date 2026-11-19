@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawn } from "node:child_process";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
-import { resolveDgPaths, type DgPaths } from "@dg/common/node";
+import { resolveDgPaths, systemdUnitPath, type DgPaths } from "@dg/common/node";
 import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
 import { phoneNumber, phoneOpen, phoneRefresh, phoneRun, phoneStatus, phoneVoicemail, type OpenCloseDeps } from "../../src/phone/commands";
-import { systemdUnitPath } from "../../src/phone/autostart";
 import { PhoneDb } from "../../src/phone/db";
 import { createFileKey, keyName, markKeyInStore, type KeyClient } from "../../src/phone/keys";
 import {
@@ -448,7 +447,7 @@ describe("phone refresh", () => {
 	it("replaces a systemd unit written with the old verb before it restarts the listener", async () => {
 		const h = harness();
 		const oldUnit = 'ExecStart="/fake/dg-agent" "phone" "__run"';
-		const unitPath = systemdUnitPath("/home/u", {});
+		const unitPath = systemdUnitPath("/home/u", {}, "dg-phone");
 		const written = new Map<string, string>([[unitPath, oldUnit]]);
 		h.deps.writeFile = (path, data) => {
 			written.set(path, String(data));
@@ -472,7 +471,7 @@ describe("phone refresh", () => {
 
 	it("repairs a systemd unit with the old verb when no listener runs", async () => {
 		const h = harness();
-		const unitPath = systemdUnitPath("/home/u", {});
+		const unitPath = systemdUnitPath("/home/u", {}, "dg-phone");
 		const written = new Map<string, string>([[unitPath, 'ExecStart="/fake/dg-agent" "phone" "__run"']]);
 		h.deps.writeFile = (path, data) => {
 			written.set(path, String(data));

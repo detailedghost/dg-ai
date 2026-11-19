@@ -15,6 +15,7 @@ on:
       - pkg/skills-test/**
       - pkg/dg-daemon/**
       - pkg/dg-agent/**
+      - pkg/dg/**
       - pkg/extension/**
       - .github/workflows/skills-blt.yml
       - .github/workflows/blt-gate.yml
@@ -140,6 +141,18 @@ jobs:
 
       - name: Test (tour-ui)
         working-directory: pkg/tour-ui
+        run: bun test
+
+      - name: Build (pages)
+        working-directory: pkg/pages
+        run: bun build.ts
+
+      - name: Lint (dg)
+        working-directory: pkg/dg
+        run: bun run lint
+
+      - name: Test (dg)
+        working-directory: pkg/dg
         run: bun test
 
       - name: Lint (skills-cli)

@@ -114,6 +114,7 @@ function guardConfig<T>(run: () => T): T {
 	try {
 		return run();
 	} catch (err) {
+		if (err instanceof DgCliError) throw err;
 		throw new DgCliError(describeError(err), EXIT_GENERAL_FAILURE);
 	}
 }

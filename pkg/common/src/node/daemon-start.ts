@@ -8,7 +8,7 @@ import { programCommand } from "./program";
 import { checkWslNetworking } from "./wsl-guard";
 
 const POLL_MS = 100;
-const STARTUP_TIMEOUT_MS = 15_000;
+export const STARTUP_TIMEOUT_MS = 15_000;
 
 export type EnsureDaemonSeams = {
 	daemonArgv?: () => string[];
@@ -16,7 +16,7 @@ export type EnsureDaemonSeams = {
 	timeoutMs?: number;
 };
 
-async function waitForFreshDaemon(
+export async function waitForFreshDaemon(
 	paths: DgPaths,
 	timeoutMs: number,
 ): Promise<DaemonHandle> {

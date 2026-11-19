@@ -11,6 +11,7 @@
 	},
 	"devDependencies": {
 		"@dg/common": "workspace:*",
+		"@dg/dg": "workspace:*",
 		"@dg/dg-agent": "workspace:*",
 		"@dg/dg-daemon": "workspace:*",
 		"@dg/skills-cli": "workspace:*",

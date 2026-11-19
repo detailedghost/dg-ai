@@ -1,10 +1,12 @@
 # Scheduled jobs and services
 
+To start the daemon when you log in, see [Start at login](#start-at-login).
+
 Have the daemon **poll something on a schedule** — a Jira board, a Sentry issue
 feed, a Datadog monitor — and collect what comes back:
 
 ```sh
-dg-daemon job add --label jira-sprint --every 15m --cwd ~/work \
+dg job add --label jira-sprint --every 15m --cwd ~/work \
   --notify reviewer -- jira issue list --plain --jsonlines
 ```
 
@@ -12,14 +14,16 @@ Give the job a fixed cadence with `--every` (`30s`, `15m`, `2h`), or a real
 `cron` expression with `--cron` — exactly one of the two is required:
 
 ```sh
-dg-daemon job add --label weekday-standup --cron "0 9 * * 1-5" --cwd ~/work \
+dg job add --label weekday-standup --cron "0 9 * * 1-5" --cwd ~/work \
   -- bun run ./check-standup.ts
 ```
 
 The command prints one JSON object per line — `id` and `title` required, `meta`
 and `url` optional — and each line becomes a feed item. The daemon dedupes on
 `id`, so a second run of the same query adds nothing. `--notify <identity>`
-queues one agent message when a run brings in something new. `job list`, `job run` (also `job exec`), `job enable`, `job disable` and `job rm` manage them from there.
+queues one agent message when a run brings in something new. `job list`, `job run` (also `job exec`), `job enable`, `job disable` and
+`job rm` manage them from there.
+`dg job` runs `dg-daemon job`, and the longer form still works.
 
 Phone (`dg-agent phone`) no longer delivers through a job like this: `phone
 open` keeps its own always-on listener running instead, through the OS's
@@ -91,7 +95,7 @@ dg-daemon service status --json
 ```
 
 `dg-daemon start` is idempotent: it starts the daemon in the background, or
-reports the one that runs. `dg-daemon service start <label>` is not necessary
+reports the one that runs. `dg-daemon status` reports the daemon without starting it. `dg-daemon service start <label>` is not necessary
 for an `--autostart` service when the daemon boots after the add. `service
 add --autostart` does not start the daemon: an `--autostart` service starts
 only when the daemon boots. `service status` prints one line for each service,
@@ -106,7 +110,8 @@ later source overrides an earlier one, so the injected keys win. The `passEnv`
 values come from the environment of the process that started the daemon. A name
 that is absent from that environment logs a warning at each launch.
 
-The daemon injects `DG_SERVICE_API`, `DG_SERVICE_LABEL` and `DG_DAEMON_URL`.
+The daemon injects `DG_SERVICE_API`, `DG_SERVICE_LABEL`, `DG_DAEMON_URL` and
+`DG_SERVICE_STATE_DIR`, and `DG_HOME` when it has one.
 With `grant` it also injects `DG_CREDENTIAL_GRANT_PREFIX` and
 `DG_CREDENTIAL_GRANT_FILE`, the path of the token file. The environment never
 holds the token. See [Service API v1](service-api.md) for the route that uses
@@ -143,7 +148,8 @@ not restart it. Output streams to the log file. One instance runs per label,
 guarded by the pid file. On POSIX, a stop signals the whole process group. On
 Windows, a service stop and a job timeout kill the process tree immediately.
 
-Nothing starts the daemon at login. Run `dg-daemon start`, or `dg-agent start`
+Without a login unit, nothing starts the daemon at login. See
+[Start at login](#start-at-login), or run `dg-daemon start`, or `dg-agent start`
 in an agent session. The daemon exits at its idle timeout only with no active session, no open connection, no enabled job and no running service.
 
 `dg-daemon stop` sends SIGTERM and waits for the daemon. A regular stop waits
@@ -173,18 +179,63 @@ process can still run.
 `dg-daemon restart` stops the daemon, which ends each session, then starts it
 again. The restart starts only the `autostart` services, and it prints
 `started on` or `already running on` with the port. The new daemon has the environment of the
-caller, which is the source of the `passEnv` values. Run `dg-daemon restart`
+caller, with no login unit; that environment is the source of the `passEnv` values. Run `dg-daemon restart`
 after an upgrade so that the running daemon reads the new keys. `restart` takes
 `--force` too.
 
 With no daemon, a command that needs one fails with `no live dg-daemon`.
 `job list`, `service add` and `service rm` need none.
 
-No page lists jobs or the feed. Manage jobs with `dg-daemon job list`,
-`dg-daemon job run <label>` (or `dg-daemon job exec <label>`), `dg-daemon job enable <label>`,
-`dg-daemon job disable <label>` and `dg-daemon job rm <label>`. A job started with
+No page lists jobs or the feed. Manage jobs with `dg job list`,
+`dg job run <label>` (or `dg job exec <label>`), `dg job enable <label>`,
+`dg job disable <label>` and `dg job rm <label>`. A job started with
 `--notify <identity>` queues one agent message for each new feed item.
 
 See [Service API v1](service-api.md) for how a service reads its credentials,
 the [developer guide](DEVELOPER.md) for the daemon’s configuration and
 [the architecture records](adr/toc.md) for process and storage decisions.
+
+### Start at login
+
+`dg autostart install` starts the daemon each time you log in. `dg autostart
+status` reports the unit and `dg autostart remove` takes it away. `status --json`
+prints one JSON line.
+
+The unit depends on the OS:
+
+| OS | Unit |
+| --- | --- |
+| Linux | A systemd user unit. The install also turns on linger, so the unit runs with no open session. |
+| macOS | A launchd LaunchAgent. |
+| Windows | A task in Task Scheduler. |
+| WSL | The Linux systemd unit, plus a Windows login task that keeps the distro running. |
+
+On WSL, the install writes the task file under the daemon folder, converts its
+path with `wslpath`, and registers the task with `schtasks.exe`. The task runs
+`wsl.exe -d <distro> --exec sleep infinity` at login. The task keeps the
+distribution running, because a systemd service alone does not, so the unit
+stays up. `dg autostart remove` deletes the task too. The `dg-phone`
+unit that `dg-agent phone open` installs is a different unit. The two units have
+different names.
+
+`dg autostart install` fails on win32 with `DG_HOME` set, because a scheduled
+task cannot pass it. Unset `DG_HOME`, then run the command again. On the other
+systems the unit records `DG_HOME` and each `XDG_*_HOME` that the installer had
+set. The daemon starts with them, and a job still gets `DG_HOME` only.
+
+A login unit has a minimal environment, and these rules follow from it:
+
+- A login unit has a minimal `PATH`. A service that needs more puts `PATH` in
+  its `envFile`.
+- A service under a login unit gets `envFile` values and grants, not `passEnv`
+  values, because a login unit has a minimal environment.
+- With a login unit, `dg-daemon start` and `dg-daemon restart` start the daemon
+  through the service manager. This daemon has the environment of the login
+  unit, not the environment of the shell that ran the command.
+- With a login unit, `dg-daemon stop` and `dg-daemon stop --force` leave the
+  daemon stopped until the next login or the next `dg-daemon start`.
+- systemd stops a unit after 90 s by default, so a logout or a shutdown can end
+  a job before its stop limit. This is accepted.
+- The systemd unit does not start the daemon again after exit 3 or exit 78.
+  launchd and the Windows task start the daemon again after exit 78, because
+  they cannot filter an exit code.

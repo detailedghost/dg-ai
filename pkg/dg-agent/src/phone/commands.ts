@@ -1,13 +1,28 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { DgCliError } from "@dg/common";
-import { type DgPaths, ensurePrivateDir, isAlive, readCappedStdin, readCappedStdinBytes, resolveDgPaths, writeFileAtomic, writeStdout } from "@dg/common/node";
+import {
+	type AutostartDeps,
+	defaultAutostartDeps,
+	type DgPaths,
+	ensurePrivateDir,
+	formatAutostartState,
+	installAutostart,
+	isAlive,
+	managedRestartCommands,
+	readCappedStdin,
+	readCappedStdinBytes,
+	removeAutostart,
+	resolveDgPaths,
+	runArgv,
+	writeFileAtomic,
+	writeStdout,
+} from "@dg/common/node";
 import { assertNotBlocked } from "@dg/common/node/layout";
 import type { Command } from "commander";
 import { type AcceptOpts, resolveAcceptHandle, signingKeyForAccept } from "./accept-name";
-import { type AutostartDeps, formatAutostartState, installAutostart, managedRestartCommands, removeAutostart } from "./autostart";
 import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS, NO_EXPIRY, SECRET_BYTES } from "./card";
 import { ACK_TAG, type ControlRumor, npubOf, PHI_TAG, type PhonePool, PRESENCE_KIND, type PublishReport, publish, RECEIPT_KIND, ring, shouldSaveOutgoing, subscribe, wrap, wrapTagged } from "./chat";
 import {
@@ -53,7 +68,7 @@ import {
 	type ListenerPid,
 } from "./listener";
 import { acceptControl, applyReceipt, replayGuard } from "./presence";
-import { legacyRoot, legacyRootPresent, linesAwaitConversion, readOnlyLegacyView, runArgv } from "./migrate";
+import { legacyRoot, legacyRootPresent, linesAwaitConversion, readOnlyLegacyView } from "./migrate";
 import { DG_AGENT_PACKAGE_VERSION } from "../version";
 import { watchSkipIds } from "./watch";
 import {
@@ -196,7 +211,7 @@ async function restartStaleListener(deps: PhoneDeps, opts: { spawn: boolean }): 
 	const saved = readListener(deps.db);
 	const kind = saved?.autostart?.kind;
 	if (isManagedKind(kind) && deps.run && opts.spawn) {
-		for (const argv of managedRestartCommands(kind, deps.uid ?? 0)) await deps.run(argv);
+		for (const argv of managedRestartCommands(kind, deps.uid ?? 0, "dg-phone")) await deps.run(argv);
 		return;
 	}
 	deps.kill(running.pid, "SIGTERM");
@@ -258,17 +273,7 @@ function defaultSpawnListener(argv: string[], logPath: string): number {
 
 function defaultOpenCloseDeps(session?: string): OpenCloseDeps {
 	const overrides: Omit<OpenCloseDeps, keyof PhoneDeps> & Partial<PhoneDeps> = {
-		platform: process.platform,
-		homeDir: homedir(),
-		env: process.env,
-		uid: process.getuid?.() ?? 0,
-		writeFile: (path, data, mode) => {
-			ensurePrivateDir(dirname(path));
-			writeFileAtomic(path, typeof data === "string" ? data : Buffer.from(data), mode);
-		},
-		removeFile: (path) => rmSync(path, { force: true }),
-		fileExists: existsSync,
-		run: runArgv,
+		...defaultAutostartDeps(),
 		which: (name) => Bun.which(name, { PATH: process.env.PATH ?? "" }) ?? undefined,
 		listenerArgv: (extraArgs) => listenerArgvFor(resolveDgPaths(), extraArgs),
 		spawnListener: defaultSpawnListener,
@@ -1347,7 +1352,7 @@ export async function phoneOpen(
 	let started = false;
 	try {
 		if (onMessage) writeListener(deps.db, { ...saved, onMessage });
-		const install = await installAutostart(deps, deps.paths, { argv, dgHome: deps.env.DG_HOME, logPath: listenerLogPath(deps.paths) });
+		const install = await installAutostart(deps, deps.paths, { name: "dg-phone", argv, dgHome: deps.env.DG_HOME, logPath: listenerLogPath(deps.paths) });
 		started = install.ok;
 		writeListener(deps.db, {
 			onMessage,
@@ -1384,7 +1389,7 @@ export async function phoneClose(deps: OpenCloseDeps, opts: { with?: string; cle
 	}
 	const running = liveListener(deps);
 
-	const autostart = await removeAutostart(deps, deps.paths);
+	const autostart = await removeAutostart(deps, deps.paths, "dg-phone");
 	const saved = existsSync(PhoneDb.path(deps.paths)) ? readListener(deps.db) : undefined;
 	if (saved?.autostart) writeListener(deps.db, { ...saved, autostart: undefined });
 
@@ -1396,8 +1401,8 @@ export async function phoneClose(deps: OpenCloseDeps, opts: { with?: string; cle
 /** Restarts a listener whose binary or keys drifted. No-ops when this install has never used phone. */
 async function reinstallManaged(deps: OpenCloseDeps, saved: ReturnType<typeof readListener>, kind: ManagedKind): Promise<void> {
 	const argv = deps.listenerArgv(onMessageArgvFor(saved?.onMessage));
-	await installAutostart(deps, deps.paths, { argv, dgHome: deps.env.DG_HOME, logPath: listenerLogPath(deps.paths) });
-	for (const restart of managedRestartCommands(kind, deps.uid)) await deps.run(restart);
+	await installAutostart(deps, deps.paths, { name: "dg-phone", argv, dgHome: deps.env.DG_HOME, logPath: listenerLogPath(deps.paths) });
+	for (const restart of managedRestartCommands(kind, deps.uid, "dg-phone")) await deps.run(restart);
 }
 
 export async function phoneRefresh(deps: OpenCloseDeps): Promise<void> {

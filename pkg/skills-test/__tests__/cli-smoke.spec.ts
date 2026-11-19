@@ -525,7 +525,7 @@ describe("the release smoke step", () => {
 		expect(commands.search(/tar\b[^\n]*dg-lib-/)).toBeLessThan(commands.search(/--version/));
 	});
 
-	for (const program of ["dg-skills", "dg-agent", "dg-daemon"]) {
+	for (const program of ["dg", "dg-skills", "dg-agent", "dg-daemon"]) {
 		test(`runs dg.js ${program} --version`, () => {
 			expect(commands).toMatch(new RegExp(`dg\\.js\\s+${program}\\s+--version`));
 		});

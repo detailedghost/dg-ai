@@ -3,9 +3,11 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { completionScript } from "@dg/common/completion";
+import { resolveDgPaths } from "@dg/common/node/dg-paths";
 import { completionChecks } from "../src/completion/doctor";
 import { completionFiles, completionState, removeCompletions, writeCompletions, zshHint } from "../src/completion/files";
 import type { DoctorContext } from "../src/doctor/types";
+import { fenceEnv } from "./fence-env";
 
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
 const GENERATOR = join(import.meta.dir, "..", "..", "..", "scripts", "completion-trees.ts");
@@ -39,7 +41,11 @@ function shell(command: string[], script: string): string[] {
 	const run = Bun.spawnSync([...command, file], {
 		stdout: "pipe",
 		stderr: "pipe",
-		env: { PATH: `${bin}:${process.env.PATH ?? ""}`, HOME: scratch },
+		env: {
+			PATH: `${bin}:${process.env.PATH ?? ""}`,
+			HOME: scratch,
+			...fenceEnv(),
+		},
 	});
 	expect({ stderr: run.stderr.toString(), code: run.exitCode }).toEqual({ stderr: "", code: 0 });
 	return run.stdout.toString().split("\n").filter(Boolean);
@@ -148,11 +154,11 @@ describe("completion files", () => {
 		expect(completionFiles({ env: {}, home: "/h", platform: "win32" })).toEqual([]);
 	});
 
-	test("are written for all three programs, refreshed when stale, and removed", () => {
+	test("are written for all four programs, refreshed when stale, and removed", () => {
 		const seams = { env: { PATH: "" }, home: home(), platform: "linux" as const };
 		const lines: string[] = [];
-		expect(writeCompletions(seams, (line) => lines.push(line))).toHaveLength(9);
-		expect(completionFiles(seams).map(completionState)).toEqual(Array(9).fill("current"));
+		expect(writeCompletions(seams, (line) => lines.push(line))).toHaveLength(12);
+		expect(completionFiles(seams).map(completionState)).toEqual(Array(12).fill("current"));
 		expect(writeCompletions(seams, () => undefined)).toEqual([]);
 
 		const [first] = completionFiles(seams);
@@ -160,7 +166,7 @@ describe("completion files", () => {
 		expect(completionState(first ?? completionFiles(seams)[0]!)).toBe("stale");
 		expect(writeCompletions(seams, () => undefined)).toEqual([first?.path]);
 
-		expect(removeCompletions(seams, () => undefined)).toHaveLength(9);
+		expect(removeCompletions(seams, () => undefined)).toHaveLength(12);
 		expect(completionFiles(seams).some((file) => existsSync(file.path))).toBe(false);
 	});
 
@@ -207,7 +213,7 @@ describe("dg-skills completion", () => {
 });
 
 describe("doctor completion", () => {
-	const context = (home: string): DoctorContext => ({ home, env: { PATH: "" } }) as unknown as DoctorContext;
+	const context = (home: string): DoctorContext => ({ home, env: { PATH: "" }, paths: resolveDgPaths({ homeDir: home, env: {} }) }) as unknown as DoctorContext;
 
 	test("warns about missing files with the install fix, then reports them current", async () => {
 		const home = mkdtempSync(join(scratch, "doctor-"));

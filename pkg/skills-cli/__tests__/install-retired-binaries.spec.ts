@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { removeRetiredBinaries } from "../src/install/cli";
-import { writeShims } from "../src/install/shims";
+import { LEGACY_PROGRAMS, writeShims } from "../src/install/shims";
 import { cliDest } from "../src/utils/lib";
 import { scratch, type Scratch } from "./runtime-bundle-fixtures";
 
-const NAMES = ["dg-skills", "dg-agent", "dg-daemon"] as const;
+const NAMES = LEGACY_PROGRAMS;
 const posix = describe.skipIf(process.platform === "win32");
 
 let sandbox: Scratch;
@@ -45,5 +45,24 @@ posix("retired compiled binaries", () => {
 			expect(readFileSync(join(bin, name), "utf8")).not.toContain("compiled ELF bytes");
 			expect(readFileSync(join(bin, name), "utf8")).toContain(`${name} "$@"`);
 		}
+	});
+
+	test("a .dg.version file is left alone: no compiled dg binary ever existed", () => {
+		const bin = join(sandbox.root, "bin");
+		mkdirSync(bin, { recursive: true });
+		writeFileSync(join(bin, ".dg.version"), "1.26.0\n");
+
+		removeRetiredBinaries();
+
+		expect(readFileSync(join(bin, ".dg.version"), "utf8")).toBe("1.26.0\n");
+	});
+
+	test("the shim writer gives dg no version stamp for removeRetiredBinaries to clear", () => {
+		const bin = join(sandbox.root, "bin");
+
+		writeShims(bin, join(sandbox.root, "data"));
+		removeRetiredBinaries();
+
+		expect(existsSync(join(bin, "dg"))).toBe(true);
 	});
 });

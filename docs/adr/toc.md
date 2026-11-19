@@ -36,6 +36,8 @@ flowchart LR
 
 - [0002 — The daemon owns durable sessions and work](0002-daemon-hub.md)
 - [0003 — SQLite for daemon state; JSON for channel review](0003-storage-by-writer.md)
+- [0020 — One `dg` command and binary that supervises channel review](0020-one-dg-command.md) — Accepted:
+  amended so that channel review stays out of `dg`, `dg` is a fourth program name, and `dg autostart` mounts `dg-daemon autostart`.
 - [0043 — Run outside services under the daemon with a provisional service API](0043-outside-services.md) — Accepted:
   `passEnv`, `stopTimeoutMs`, `grant`, `POST /service-api/v1/credentials`, and `dg-daemon start`, `stop` and `restart`.
 
@@ -66,7 +68,6 @@ flowchart LR
 
 - [0018 — Store channel-review state in the shared daemon database](0018-channel-review-state-in-daemon-db.md)
 - [0019 — Pass review origin and model evidence across runner attempts](0019-review-execution-context.md)
-- [0020 — One `dg` command and binary that supervises channel review](0020-one-dg-command.md)
 - [0021 — Relay `--ext` scrape and plant through the daemon instead of Downloads](0021-proto-daemon-relay.md)
 - [0022 — Keep Proton filters in one declared file](0022-proton-filter-policy.md)
 - [0023 — Review finished work on a local page with a claimed verdict](0023-verify-local-review.md)

@@ -11,6 +11,7 @@ const STATIC_IMPORT = /(?:^|[;}\n])\s*(?:import\s*(?:[\w*${"'`])|export\s*(?:\*|
 
 const STATIC_FROM = /(?:^|[;}\n])\s*(?:import|export)\s*(?:[^;"'`]*?\bfrom\s*)?["']([^"']+)["']/g;
 const PROGRAM_MARKER = "launcher root must be absolute";
+const DG_ENTRY = /\/dg-[a-z0-9]{8}\.js$/i;
 const DYNAMIC_CHUNK = /import\(["'](\.\/chunks\/[^"']+)["']\)/g;
 
 function staticSpecifiers(source: string): string[] {
@@ -28,6 +29,15 @@ function staticClosure(lib: string, start: string): string[] {
 		}
 	}
 	return [...seen];
+}
+
+function expectNoHeavyChunks(argv: string[], bun: string, requireSentinels = false): void {
+	const traced = traceChunks(/(pw|inbox|playwright)/);
+	if (requireSentinels) expect(traced.sentinels.size).toBeGreaterThan(0);
+	expect(run(bun, traced.entry, argv).exitCode).toBe(0);
+	for (const [name, sentinel] of traced.sentinels) {
+		expect({ name, loaded: existsSync(sentinel) }).toEqual({ name, loaded: false });
+	}
 }
 
 describe("size budget", () => {
@@ -69,11 +79,16 @@ describe("size budget", () => {
 
 	test("each program entry chunk imports no other chunk statically", () => {
 		const dgSource = readFileSync(join(lib, "dg.js"), "utf8");
-		const entries = [...dgSource.matchAll(DYNAMIC_CHUNK)]
-			.map((m) => m[1] as string)
-			.filter((spec) => /\/(skills|agent|daemon)-/.test(spec));
-		expect(entries).toHaveLength(3);
-		for (const entry of entries) expect({ entry, closure: staticClosure(lib, entry) }).toEqual({ entry, closure: [entry] });
+		const specs = [...dgSource.matchAll(DYNAMIC_CHUNK)].map((m) => m[1] as string);
+		const dgEntries = specs.filter((spec) => DG_ENTRY.test(spec));
+		expect(dgEntries).toHaveLength(1);
+		const entries = specs.filter(
+			(spec) => /\/(skills|agent|daemon)-/.test(spec) || DG_ENTRY.test(spec),
+		);
+		expect(entries).toHaveLength(4);
+		for (const entry of entries) {
+			expect({ entry, closure: staticClosure(lib, entry) }).toEqual({ entry, closure: [entry] });
+		}
 	});
 
 	test("dist/lib totals at most 12 MB", () => {
@@ -86,19 +101,15 @@ describe("size budget", () => {
 		expect(statSync(join(dist, tarballs[0] as string)).size).toBeLessThanOrEqual(4 * MB);
 	});
 
-	test("dg-skills stash --help reads neither the inbox nor the playwright chunk", () => {
-		const traced = traceChunks(/(pw|inbox|playwright)/);
-		expect(traced.sentinels.size).toBeGreaterThan(0);
-		const result = run(bun, traced.entry, ["dg-skills", "stash", "--help"]);
-		expect(result.exitCode).toBe(0);
-		for (const [name, sentinel] of traced.sentinels) expect({ name, loaded: existsSync(sentinel) }).toEqual({ name, loaded: false });
+	test.each([
+		["dg-skills", ["dg-skills", "stash", "--help"]],
+		["dg", ["dg", "skills", "stash", "--help"]],
+	])("%s stash --help reads neither the inbox nor the playwright chunk", (_label, argv) => {
+		expectNoHeavyChunks(argv, bun, true);
 	});
 
 	test("dg-skills --help reads neither the inbox nor the playwright chunk", () => {
-		const traced = traceChunks(/(pw|inbox|playwright)/);
-		const result = run(bun, traced.entry, ["dg-skills", "--help"]);
-		expect(result.exitCode).toBe(0);
-		for (const [name, sentinel] of traced.sentinels) expect({ name, loaded: existsSync(sentinel) }).toEqual({ name, loaded: false });
+		expectNoHeavyChunks(["dg-skills", "--help"], bun);
 	});
 
 	test("dg-agent phone status loads the nostr-tools chunk and not the inbox chunk", () => {

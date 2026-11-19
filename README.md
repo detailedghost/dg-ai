@@ -19,7 +19,7 @@ Windows (x64 or arm64), in PowerShell:
 irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
-These install a pinned Bun runtime, one bundle with `dg-skills`, `dg-agent` and
+These install a pinned Bun runtime, one bundle with `dg`, `dg-skills`, `dg-agent` and
 `dg-daemon`, and the extension; you need no Bun of your own. The extension, the
 bundle, and both plugin manifests share one release version.
 Follow the printed **Load unpacked** steps to load the extension.
@@ -33,6 +33,21 @@ browser actions that need a person.
 
 To add the optional `unslop` skill that `/dg:polish` calls when present, and other pinned third-party
 plugins, see [Recommended plugins](docs/install.md#recommended-plugins).
+
+The `dg` command is the entry to the three programs. Each name runs one program
+and command:
+
+| `dg` name | Runs |
+| --- | --- |
+| `dg job` | `dg-daemon job` |
+| `dg autostart` | `dg-daemon autostart` |
+| `dg skills` | `dg-skills` |
+| `dg agent` | `dg-agent` |
+| `dg daemon` | `dg-daemon` |
+| `dg extension` | `dg-skills install` |
+| `dg install` | `dg-skills install` |
+| `dg upgrade` | `dg-skills update` |
+| `dg doctor` | `dg-skills doctor` |
 
 ## Skills
 

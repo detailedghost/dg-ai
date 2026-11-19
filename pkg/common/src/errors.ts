@@ -16,6 +16,7 @@ export const EXIT_WSL_NAT_NETWORKING = 3;
 export const EXIT_PROTOCOL_MISMATCH = 4;
 export const EXIT_RECV_TIMEOUT = 5;
 export const EXIT_RECV_SESSION_CLOSED = 6;
+export const EXIT_LAYOUT_BLOCKED = 78;
 
 export class AssetTooLargeError extends Error {
 	constructor(byteLength: number) {

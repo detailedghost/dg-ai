@@ -1,5 +1,5 @@
 /**
- * `install --agent-only` installs the runtime, the bundle and the three shims, so a
+ * `install --agent-only` installs the runtime, the bundle and the four shims, so a
  * non-Claude agent that only needs phone has `dg-agent`. It never fetches the extension,
  * and never installs personas, which only the Claude-side CLI uses.
  */
@@ -35,7 +35,7 @@ describe("dg-skills install --agent-only", () => {
 			expect(urls.filter((url) => /extension/.test(url))).toEqual([]);
 
 			const bin = join(home, "bin");
-			expect(readdirSync(bin).sort()).toEqual(["dg-agent", "dg-daemon", "dg-skills"]);
+			expect(readdirSync(bin).sort()).toEqual(["dg", "dg-agent", "dg-daemon", "dg-skills"]);
 			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe(VERSION);
 			expect(readFileSync(join(bin, "dg-agent"), "utf8")).toContain(`dg-agent "$@"`);
 

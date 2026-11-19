@@ -1,5 +1,7 @@
+import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, posix, win32 } from "node:path";
+import { withinRoot } from "./fs";
 
 export type SystemSeams = {
 	platform?: NodeJS.Platform;
@@ -39,6 +41,9 @@ export type DgPaths = DgRoots & {
 	grantsDir: string;
 	phoneRoot: string;
 	phoneFriendRoot: string;
+	jobsDir: string;
+	jobSourcesPath: string;
+	jobStateRoot: string;
 	legacyHome: string;
 };
 
@@ -133,6 +138,38 @@ const ENV_KEYS = [
 	"USERPROFILE",
 ] as const;
 
+const FENCE_ROLES = [
+	"binDir",
+	"configDir",
+	"dataDir",
+	"stateDir",
+	"cacheDir",
+	"logDir",
+	"legacyHome",
+] as const;
+
+function realOrGiven(value: string): string {
+	try {
+		return realpathSync(value);
+	} catch {
+		return value;
+	}
+}
+
+function assertInsideFence(platform: NodeJS.Platform, fence: string, paths: DgPaths): void {
+	const path = platform === "win32" ? win32 : posix;
+	if (!path.isAbsolute(fence)) throw new Error(`dg path fence: ${fence} is not absolute`);
+	const bases = [...new Set([fence, realOrGiven(fence)])];
+	const inside = (target: string) => bases.some((base) => withinRoot(base, target, platform));
+	for (const role of FENCE_ROLES) {
+		if (!inside(paths[role])) {
+			throw new Error(
+				`dg path fence: ${role} ${paths[role]} is outside ${fence} (unset DG_PATH_FENCE to turn the fence off)`,
+			);
+		}
+	}
+}
+
 const memo = new Map<string, DgPaths>();
 
 function computeDgPaths(platform: NodeJS.Platform, home: string, env: Env): DgPaths {
@@ -140,6 +177,7 @@ function computeDgPaths(platform: NodeJS.Platform, home: string, env: Env): DgPa
 	const r = roots(platform, home, env);
 	const daemonDir = path.join(r.stateDir, "daemon");
 	const agentsDir = path.join(r.stateDir, "agents");
+	const jobsDir = path.join(r.dataDir, "jobs");
 	return {
 		...r,
 		configPath: path.join(r.configDir, "config.json"),
@@ -163,6 +201,9 @@ function computeDgPaths(platform: NodeJS.Platform, home: string, env: Env): DgPa
 		grantsDir: path.join(r.stateDir, "grants"),
 		phoneRoot: path.join(r.stateDir, "phone"),
 		phoneFriendRoot: path.join(r.stateDir, "phone-friend"),
+		jobsDir,
+		jobSourcesPath: path.join(jobsDir, "sources.json"),
+		jobStateRoot: path.join(r.stateDir, "jobs"),
 		legacyHome: legacyHome(platform, home, env),
 	};
 }
@@ -174,11 +215,12 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 	const env = seams.env ?? process.env;
 	const root = env.DG_HOME ? dgHome(platform, env.DG_HOME) : undefined;
 	const key = JSON.stringify([platform, home, root, ...ENV_KEYS.map((name) => env[name])]);
+	const fence = env.DG_PATH_FENCE;
 	const known = memo.get(key);
-	if (known) return known;
-	const created = computeDgPaths(platform, home, env);
-	memo.set(key, created);
-	return created;
+	const paths = known ?? computeDgPaths(platform, home, env);
+	if (fence) assertInsideFence(platform, fence, paths);
+	if (!known) memo.set(key, paths);
+	return paths;
 }
 
 /** `PATH` with the dg launcher folder first, so children call the launchers by name. */
@@ -188,4 +230,28 @@ export function withBinOnPath(
 ): string {
 	const parts = (path ?? "").split(delimiter).filter(Boolean);
 	return [binDir, ...parts.filter((part) => part !== binDir)].join(delimiter);
+}
+
+const JOB_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
+
+export function isJobName(name: string): boolean {
+	return JOB_NAME.test(name) && !WINDOWS_RESERVED.test(name);
+}
+
+function underRoot(root: string, name: string): string {
+	if (!isJobName(name)) {
+		throw new Error(`dg paths: "${name}" is not a valid job or source name`);
+	}
+	const path = /^[A-Za-z]:[\\/]|^\\\\/.test(root) ? win32 : posix;
+	return path.join(root, name);
+}
+
+export function jobSourceDir(paths: Pick<DgPaths, "jobsDir">, source: string): string {
+	return underRoot(paths.jobsDir, source);
+}
+
+export function jobStateDir(paths: Pick<DgPaths, "jobStateRoot">, name: string): string {
+	return underRoot(paths.jobStateRoot, name);
 }

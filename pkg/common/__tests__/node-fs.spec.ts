@@ -8,12 +8,15 @@ import {
 	readFileSync,
 	rmSync,
 	statSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	ensurePrivateDir,
+	insideRoot,
+	removeInside,
 	rotateLogIfLarge,
 	writeFileAtomic,
 } from "../src/node/fs";
@@ -119,5 +122,172 @@ describe("writeFileAtomic", () => {
 				expect(statSync(target).mode & 0o777).toBe(0o755);
 				expect(readFileSync(target, "utf8")).toBe("b");
 			}),
+	);
+});
+
+describe("insideRoot", () => {
+	it("accepts only paths strictly inside the root", () => {
+		expect(insideRoot("/a/root", "/a/root/x")).toBe(true);
+		expect(insideRoot("/a/root", "/a/root")).toBe(false);
+		expect(insideRoot("/a/root", "/a/root/")).toBe(false);
+		expect(insideRoot("/a/root", "/a/root/../other")).toBe(false);
+		expect(insideRoot("/a/root", "/a/rootless/x")).toBe(false);
+	});
+
+	it("folds case on win32 only", () => {
+		expect(insideRoot("C:\\Root", "c:\\root\\x", "win32")).toBe(true);
+		expect(insideRoot("C:\\Root", "c:\\root", "win32")).toBe(false);
+		expect(insideRoot("/a/Root", "/a/root/x", "linux")).toBe(false);
+	});
+});
+
+describe("removeInside", () => {
+	const withRoot = (body: (root: string) => void) => {
+		const root = mkdtempSync(join(tmpdir(), "dg-remove-inside-"));
+		try {
+			body(root);
+		} finally {
+			rmSync(root, { force: true, recursive: true });
+		}
+	};
+	const refusal = (root: string, dir: string) =>
+		`refused to delete ${dir}: it is not inside ${root}`;
+
+	it("throws the refusal text and deletes nothing for the root itself", () => {
+		withRoot((root) => {
+			mkdirSync(join(root, "keep"));
+			expect(() => removeInside(root, root)).toThrow(refusal(root, root));
+			expect(existsSync(join(root, "keep"))).toBe(true);
+		});
+	});
+
+	it("throws and deletes nothing for a path that climbs out of the root", () => {
+		withRoot((parent) => {
+			const root = join(parent, "root");
+			const other = join(parent, "other");
+			mkdirSync(root);
+			mkdirSync(other);
+			const dir = join(root, "..", "other");
+			expect(() => removeInside(root, dir)).toThrow(refusal(root, dir));
+			expect(existsSync(other)).toBe(true);
+		});
+	});
+
+	it("throws and deletes nothing for a sibling that shares the root name prefix", () => {
+		withRoot((parent) => {
+			const root = join(parent, "root");
+			const sibling = join(parent, "rootless", "x");
+			mkdirSync(root);
+			mkdirSync(sibling, { recursive: true });
+			expect(() => removeInside(root, sibling)).toThrow(refusal(root, sibling));
+			expect(existsSync(sibling)).toBe(true);
+		});
+	});
+
+	it("throws an Error instance", () => {
+		withRoot((root) => {
+			expect(() => removeInside(root, root)).toThrow(Error);
+		});
+	});
+
+	it("deletes a directory inside the root and keeps its siblings", () => {
+		withRoot((root) => {
+			const target = join(root, "a");
+			mkdirSync(join(target, "deep"), { recursive: true });
+			writeFileSync(join(target, "deep", "f.txt"), "x");
+			mkdirSync(join(root, "b"));
+			removeInside(root, target);
+			expect(existsSync(target)).toBe(false);
+			expect(existsSync(join(root, "b"))).toBe(true);
+			expect(existsSync(root)).toBe(true);
+		});
+	});
+
+	it("does not throw for a missing directory inside the root", () => {
+		withRoot((root) => {
+			expect(() => removeInside(root, join(root, "absent"))).not.toThrow();
+		});
+	});
+
+	it.skipIf(process.platform === "win32")(
+		"throws and deletes nothing when a link inside the root leads outside it",
+		() => {
+			withRoot((parent) => {
+				const root = join(parent, "root");
+				const outside = join(parent, "outside");
+				mkdirSync(root);
+				mkdirSync(join(outside, "sub"), { recursive: true });
+				writeFileSync(join(outside, "sub", "f.txt"), "x");
+				symlinkSync(outside, join(root, "x"));
+				const dir = join(root, "x", "sub");
+				expect(() => removeInside(root, dir)).toThrow(refusal(root, dir));
+				expect(existsSync(join(outside, "sub", "f.txt"))).toBe(true);
+			});
+		},
+	);
+
+	describe.skipIf(process.platform === "win32")(
+		"links are removed, never followed",
+		() => {
+			const withLinkedRoot = (
+				body: (root: string, outside: string) => void,
+			) => {
+				withRoot((parent) => {
+					const root = join(parent, "root");
+					const outside = join(parent, "outside");
+					mkdirSync(root);
+					mkdirSync(join(outside, "sub"), { recursive: true });
+					mkdirSync(join(outside, "victim", "sub"), { recursive: true });
+					writeFileSync(join(outside, "keep.txt"), "x");
+					writeFileSync(join(outside, "victim", "keep.txt"), "x");
+					writeFileSync(join(outside, "victim", "sub", "keep.txt"), "x");
+					symlinkSync(join(outside, "sub"), join(root, "x"));
+					body(root, outside);
+				});
+			};
+
+			it("removes a link that is the target and keeps what it points to", () => {
+				withLinkedRoot((root, outside) => {
+					symlinkSync(outside, join(root, "link"));
+					removeInside(root, join(root, "link"));
+					expect(existsSync(join(root, "link"))).toBe(false);
+					expect(existsSync(join(outside, "keep.txt"))).toBe(true);
+				});
+			});
+
+			it("removes a tree that holds a link and keeps what the link points to", () => {
+				withLinkedRoot((root, outside) => {
+					mkdirSync(join(root, "tree"));
+					symlinkSync(outside, join(root, "tree", "inner"));
+					removeInside(root, join(root, "tree"));
+					expect(existsSync(join(root, "tree"))).toBe(false);
+					expect(existsSync(join(outside, "keep.txt"))).toBe(true);
+				});
+			});
+
+			it("resolves a parent step after a link lexically and stays inside the root", () => {
+				withLinkedRoot((root, outside) => {
+					mkdirSync(join(root, "victim"));
+					writeFileSync(join(root, "victim", "f.txt"), "x");
+					removeInside(root, `${join(root, "x")}/../victim`);
+					expect(existsSync(join(root, "victim"))).toBe(false);
+					expect(existsSync(join(outside, "victim", "keep.txt"))).toBe(true);
+					expect(existsSync(join(outside, "victim", "sub", "keep.txt"))).toBe(
+						true,
+					);
+				});
+			});
+
+			it("does nothing for a parent step whose lexical target is missing", () => {
+				withLinkedRoot((root, outside) => {
+					expect(() =>
+						removeInside(root, `${join(root, "x")}/../victim/sub`),
+					).not.toThrow();
+					expect(existsSync(join(outside, "victim", "sub", "keep.txt"))).toBe(
+						true,
+					);
+				});
+			});
+		},
 	);
 });

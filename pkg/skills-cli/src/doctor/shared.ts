@@ -1,7 +1,8 @@
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { scratchRoot, shellCommand, stateRoot } from "@dg/common/node";
 import { readCurrent } from "../install/current";
+import { isDgLauncher } from "../install/dg-launcher";
 import { bootstrapCommand, PLUGIN_INSTALL, PLUGIN_UPDATE } from "./checks";
 import { cliLauncher, installedPlugins, isOlder, toolVersion, writableDirectory } from "./probes";
 import { type DoctorCheck, type DoctorContext, fail, ok, warn } from "./types";
@@ -34,6 +35,40 @@ export function launcherPathFix(binDir: string, platform: NodeJS.Platform = proc
 	if (platform !== "win32") return `export PATH="${binDir}:$PATH"`;
 	const quoted = binDir.replaceAll("'", "''");
 	return `[Environment]::SetEnvironmentVariable('Path', '${quoted};' + [Environment]::GetEnvironmentVariable('Path', 'User'), 'User')`;
+}
+
+const sameFile = (a: string, b: string): boolean => {
+	try {
+		return realpathSync(a) === realpathSync(b);
+	} catch {
+		return false;
+	}
+};
+
+export function dgLauncherCheck(
+	cliOnly: (ctx: DoctorContext) => boolean,
+	platform: NodeJS.Platform = process.platform,
+): DoctorCheck {
+	const file = platform === "win32" ? "dg.cmd" : "dg";
+	return {
+		id: "dg-launcher",
+		run(ctx) {
+			const { binDir } = ctx.paths;
+			if (!existsSync(cliLauncher(binDir, platform))) return ok(`no dg-skills launcher in ${binDir}`);
+			const launcher = join(binDir, file);
+			try {
+				lstatSync(launcher);
+			} catch {
+				return warn(`the dg launcher is missing from ${binDir}`, cliOnly(ctx) ? "dg-skills install --cli-only" : "dg-skills install");
+			}
+			if (!isDgLauncher(launcher, platform))
+				return warn(`${launcher} is not a dg launcher`, `remove or rename ${launcher}, then run dg-skills install`);
+			const onPath = Bun.which(file, { PATH: ctx.env.PATH ?? "" });
+			if (onPath && !sameFile(onPath, launcher))
+				return warn(`dg on PATH is ${onPath}, not ${launcher}`, launcherPathFix(binDir, platform));
+			return ok(`the dg launcher ${launcher} is in place`);
+		},
+	};
 }
 
 export const sharedChecks: DoctorCheck[] = [

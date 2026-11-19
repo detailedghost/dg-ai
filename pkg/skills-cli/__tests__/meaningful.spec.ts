@@ -19,6 +19,7 @@ import { isolateCliTests, runGit } from "./cli-fixtures";
 import { makeTempDir, scratchFixtures } from "./git-repo-fixtures";
 import { writeFakeCli } from "./fake-cli";
 import { stateDir } from "../../common/src/node/scratch-paths";
+import { fenceEnv } from "./fence-env";
 
 const BUN_BIN = process.execPath;
 const CLI = join(import.meta.dir, "../src/index.ts");
@@ -868,7 +869,7 @@ describe("relocated compiled meaningful and deps-upgrade", () => {
   const home = join(stage, "bootstrap home");
   for (const dir of [tools, cwd, home]) mkdirSync(dir, { recursive: true });
   for (const tool of resolveBootstrapTools()) symlinkSync(tool.path, join(tools, tool.name));
-  const installResult = Bun.spawnSync([join(tools, "sh"), bootstrap, "--skills-only"], { cwd, env: { HOME: home, PATH: tools, TMPDIR: stage, DG_SKILLS_DEST: skills, DG_SKILLS_NO_CLI: "1" } });
+  const installResult = Bun.spawnSync([join(tools, "sh"), bootstrap, "--skills-only"], { cwd, env: { HOME: home, PATH: tools, TMPDIR: stage, DG_SKILLS_DEST: skills, DG_SKILLS_NO_CLI: "1", ...fenceEnv() } });
   if (installResult.exitCode !== 0) throw new Error(`Skills-only fixture install failed: ${installResult.stderr.toString()}`);
   rmSync(stage, { recursive: true, force: true });
  }, 120_000);

@@ -403,7 +403,7 @@ describe("pw --ext credential save through the daemon", () => {
 		expect(seen.me).not.toBe(tool);
 		expect(seen.mode).toBe("500");
 		expect(seen.dir).toBe("700");
-		expect(realpathSync(seen.cwd)).toBe(realpathSync(homedir()));
+		expect(realpathSync(seen.cwd)).toBe(realpathSync(process.env.HOME ?? homedir()));
 		expect(seen.tmp).not.toBe("/tmp/fake-agent-tmp");
 		expect(seen.tmpMode).toBe("700");
 		expect(existsSync(seen.me)).toBe(false);

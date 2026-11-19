@@ -47,6 +47,32 @@
 			]
 		},
 		{
+			"name": "autostart",
+			"description": "start the daemon at login through the service manager",
+			"commands": [
+				{
+					"name": "install",
+					"description": "install and start the login unit"
+				},
+				{
+					"name": "remove",
+					"description": "disable and remove the login unit"
+				},
+				{
+					"name": "status",
+					"description": "report whether the login unit is installed",
+					"options": [
+						{
+							"flags": [
+								"--json"
+							],
+							"description": "print one JSON line"
+						}
+					]
+				}
+			]
+		},
+		{
 			"name": "job",
 			"description": "manage the background jobs the daemon runs on a schedule",
 			"commands": [

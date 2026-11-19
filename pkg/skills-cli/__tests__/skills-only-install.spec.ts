@@ -52,7 +52,7 @@ const PERSONAS = [
 	"wave",
 ].map((name) => `${name}.md`).sort();
 const SUMMARY =
-	"Skills-only install: no skill content was executed. Fetching the dg bundle with the dg-skills, dg-agent and dg-daemon launchers (no extension).";
+	"Skills-only install: no skill content was executed. Fetching the dg bundle with the dg, dg-skills, dg-agent and dg-daemon launchers (no extension).";
 
 const REPO_SKILLS = join(REPO, "plugins", "dg", "skills");
 
@@ -253,7 +253,7 @@ describe("dg-skills install --skills-only", () => {
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: `note: DG_HOME=${home}; installing there\n` });
 			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, personasPath(dest), [
 				`Add to PATH:  export PATH="${join(home, "bin")}:$PATH"`,
-				"dg: shell completion written for bash, zsh and fish (9 file(s))",
+				"dg: shell completion written for bash, zsh and fish (12 file(s))",
 				...[zshHint(join(home, "share", "zsh", "site-functions"), childEnv(home))].filter((line) => line !== undefined),
 				`dg bundle installed v9.9.9 at ${join(home, "data", "lib", "9.9.9")}`,
 			]);
@@ -265,7 +265,7 @@ describe("dg-skills install --skills-only", () => {
 			expect(existsSync(join(dest, "README.md"))).toBe(false);
 			expectOnlyBundleFetched(fetchLog);
 			expect(readFileSync(join(home, "bin", "dg-skills"), "utf8")).toContain(`dg-skills "$@"`);
-			expect(readdirSync(join(home, "bin")).sort()).toEqual(["dg-agent", "dg-daemon", "dg-skills"]);
+			expect(readdirSync(join(home, "bin")).sort()).toEqual(["dg", "dg-agent", "dg-daemon", "dg-skills"]);
 			expect(readFileSync(join(home, "config", "cli-only"), "utf8")).toBe("keep");
 			expect(filesUnder(dest).some((file) => /dg-skills|dg-daemon|dg-agent|\.zip$/.test(file))).toBe(
 				false,
