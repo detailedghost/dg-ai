@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.18.0 (2026-11-19)
+
+### Features
+
+- feat(dg-daemon): merge services and scheduled jobs into jobs ([#234](https://github.com/detailedghost/dg-ai/pull/234))
+
 ## v5.17.0 (2026-11-19)
 
 ### Features
