@@ -69,8 +69,9 @@ function readNew(
 	try {
 		fd = openSync(path, "r");
 	} catch (err) {
-		if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-		throw err;
+		const code = (err as NodeJS.ErrnoException).code;
+		if (code === "EACCES" || code === "EISDIR") throw err;
+		return undefined;
 	}
 	try {
 		const stat = fstatSync(fd);

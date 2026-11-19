@@ -287,6 +287,35 @@ describe("startJobRun", () => {
 		expect(log).not.toContain("piped");
 	});
 
+	it("reports a feed run whose stdout cannot be read as an output error", async () => {
+		const { root, deps } = kit();
+		const decl = scheduled(root, "0", { feed: true });
+		const real = Bun.spawn;
+		const child = real([process.execPath, "-e", "setTimeout(() => {}, 60000)"], {
+			detached: true,
+			stdout: "ignore",
+			stderr: "ignore",
+		});
+		const spawn = spyOn(Bun, "spawn").mockImplementation((() => ({
+			pid: child.pid,
+			signalCode: null,
+			exited: Promise.resolve(0),
+			stdout: new ReadableStream<Uint8Array>({
+				start(controller) {
+					controller.error(new Error("pipe broke"));
+				},
+			}),
+		})) as unknown as typeof Bun.spawn);
+		try {
+			const result = await startJobRun(decl, deps).done;
+
+			expect(result.readError).toBe("pipe broke");
+		} finally {
+			spawn.mockRestore();
+			child.kill("SIGKILL");
+		}
+	});
+
 	it("ends the process group at timeoutMs and reports timedOut", async () => {
 		const { root, deps } = kit();
 

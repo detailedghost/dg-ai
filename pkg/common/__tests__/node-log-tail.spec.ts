@@ -180,7 +180,7 @@ describe("follow", () => {
 
 	const posixUser = process.platform === "win32" || process.getuid?.() === 0 ? it.skip : it;
 
-	posixUser("rejects when the file cannot be read for a reason other than a missing file", async () => {
+	posixUser("rejects when the file cannot be read for lack of permission", async () => {
 		writeFileSync(file, "one\n");
 		const start = readTail(file, 1);
 		chmodSync(file, 0o000);

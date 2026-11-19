@@ -146,6 +146,13 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 				failureReason: `timed out after ${formatDurationMs(limit)}`,
 			};
 		}
+		if (result.readError !== undefined) {
+			return {
+				...base,
+				exitOk: false,
+				failureReason: `could not read the output: ${result.readError}`,
+			};
+		}
 		if (result.outputCapped) {
 			return {
 				...base,

@@ -1,5 +1,6 @@
 import { closeSync, openSync } from "node:fs";
 import { join } from "node:path";
+import { describeError } from "@dg/common";
 import {
 	credentialGrantTokenPath,
 	type DgPaths,
@@ -100,6 +101,7 @@ export type JobRunResult = {
 	timedOut: boolean;
 	outputCapped: boolean;
 	stdout: string;
+	readError?: string;
 };
 
 export type JobRun = {
@@ -164,7 +166,11 @@ export function startJobRun(decl: JobDecl, deps: LauncherDeps): JobRun {
 					timedOut = true;
 					void killProcessGroup(pid);
 				}, timeoutMs);
-	const drained = drain().catch(() => undefined);
+	let readError: string | undefined;
+	const drained = drain().catch((err: unknown) => {
+		readError = describeError(err);
+		void killProcessGroup(pid);
+	});
 
 	const done = (async (): Promise<JobRunResult> => {
 		const code = await proc.exited;
@@ -177,6 +183,7 @@ export function startJobRun(decl: JobDecl, deps: LauncherDeps): JobRun {
 			timedOut,
 			outputCapped,
 			stdout: Buffer.concat(chunks).toString("utf8"),
+			...(readError === undefined ? {} : { readError }),
 		};
 	})();
 	return { pid, done };
