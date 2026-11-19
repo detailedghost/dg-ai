@@ -7,11 +7,12 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { formatIntervalMs, isRecord } from "@dg/common";
+import { describeError, formatIntervalMs, isRecord } from "@dg/common";
 import {
 	type DgPaths,
 	ensurePrivateDir,
 	isJobName,
+	removeSchemaSnapshots,
 	writeFilePreserving,
 	writeTarget,
 } from "@dg/common/node";
@@ -197,6 +198,22 @@ type RowPlan = {
 	rename: boolean;
 };
 
+const ROW_MOVE_SCHEMA_VERSION = 14;
+
+function removeMoveSnapshot(paths: DgPaths, logger?: MigrateRowsLogger): void {
+	try {
+		if (removeSchemaSnapshots(paths.daemonDir, ROW_MOVE_SCHEMA_VERSION).length > 0) {
+			logger?.info(
+				`removed the pre-migration-v${ROW_MOVE_SCHEMA_VERSION} snapshot: it held the old encrypted argv`,
+			);
+		}
+	} catch (err) {
+		logger?.warn(
+			`could not remove the pre-migration-v${ROW_MOVE_SCHEMA_VERSION} snapshot: ${describeError(err)}`,
+		);
+	}
+}
+
 /** Moves each row that is not moved into `jobs`; the caller holds the config lock. */
 export function migrateScheduledRows(
 	store: ChatStore,
@@ -279,6 +296,7 @@ export function migrateScheduledRows(
 	}
 
 	store.markJobsMoved(plans.map((plan) => plan.job.id));
+	removeMoveSnapshot(paths, logger);
 	for (const plan of plans) result.moved.push(plan.name);
 	for (const plan of plans) {
 		const from = plan.job.renamedFrom ?? plan.job.label;

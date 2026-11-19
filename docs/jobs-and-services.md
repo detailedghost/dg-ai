@@ -333,11 +333,15 @@ config file with mode 0600, and no longer encrypted text in the database.
 Before you upgrade, look for a secret in the argv of your scheduled jobs and
 move it to an `envFile`.
 
-To roll back, stop the daemon, then copy `config.json.pre-jobs` back to
-`config.json`. A rollback also needs the database from before, because the
-release before refuses the database after the row move. Before the database
-change, the daemon writes the snapshot `pre-migration-v14-*.db` to the daemon
-folder.
+Before the database change, the daemon writes the snapshot
+`pre-migration-v14-*.db` to the daemon folder. After a good row move, the daemon
+removes that snapshot and its `-wal`, `-shm` and `-journal` files, because the
+snapshot holds the old encrypted argv. The log gets one line that says so.
+
+There is no database rollback: the release before refuses the database after
+the row move, and the daemon removes the snapshot from before. You can still
+copy `config.json.pre-jobs` back to restore the config file from before, but the
+release before does not start on the moved database.
 
 For example, the review bot repository runs its `bot` and `bot-dev` processes
 as jobs.

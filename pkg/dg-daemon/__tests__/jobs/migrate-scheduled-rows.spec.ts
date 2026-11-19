@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import {
 	chmodSync,
 	existsSync,
+	readdirSync,
 	readFileSync,
 	statSync,
 	utimesSync,
@@ -431,5 +432,66 @@ describe("migrateScheduledRows old argv scrub", () => {
 
 		expect(store.getJob(ids[0])?.argv).toEqual([]);
 		expect(found()).toBe(0);
+	});
+});
+
+describe("migrateScheduledRows pre-migration-v14 snapshot", () => {
+	const V14 = "pre-migration-v14-1700000000000-abc.db";
+	const V13 = "pre-migration-v13-1700000000000-abc.db";
+	const seedSnapshots = (paths: ReturnType<typeof pathsOf>) => {
+		for (const name of [V14, `${V14}-wal`, `${V14}-shm`, `${V14}-journal`, V13])
+			writeFileSync(join(paths.daemonDir, name), "snapshot");
+	};
+	const left = (paths: ReturnType<typeof pathsOf>) =>
+		readdirSync(paths.daemonDir).filter((name) => name.startsWith("pre-migration-"));
+
+	it("removes the v14 snapshot and its siblings after a good move, and keeps the others", async () => {
+		const { store, paths } = await setup([{ label: "jira-sprint" }]);
+		seedSnapshots(paths);
+
+		await move(store, paths);
+
+		expect(left(paths)).toEqual([V13]);
+	});
+
+	it("removes the v14 snapshot after a good move with no row to move", async () => {
+		const { store, paths } = await setup();
+		seedSnapshots(paths);
+
+		await move(store, paths);
+
+		expect(left(paths)).toEqual([V13]);
+	});
+
+	it("keeps the v14 snapshot when the move fails", async () => {
+		const { store, paths } = await setup([{ label: "jira-sprint" }]);
+		seedSnapshots(paths);
+		const marked = spyOn(store, "markJobsMoved").mockImplementation(() => {
+			throw new Error("disk full");
+		});
+		try {
+			expect(() => migrateScheduledRows(store, paths)).toThrow("disk full");
+		} finally {
+			marked.mockRestore();
+		}
+
+		expect(left(paths).sort()).toEqual(
+			[V13, V14, `${V14}-journal`, `${V14}-shm`, `${V14}-wal`].sort(),
+		);
+	});
+
+	it("logs one line when it removes the snapshot", async () => {
+		const { store, paths } = await setup();
+		seedSnapshots(paths);
+		const lines: string[] = [];
+
+		migrateScheduledRows(store, paths, {
+			info: (line) => lines.push(line),
+			warn: (line) => lines.push(line),
+		});
+
+		expect(lines).toEqual([
+			"removed the pre-migration-v14 snapshot: it held the old encrypted argv",
+		]);
 	});
 });
