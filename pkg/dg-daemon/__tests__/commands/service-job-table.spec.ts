@@ -71,7 +71,7 @@ const sleeperJob = (cwd: string) => ({
 describe("service add on a migrated config", () => {
 	it("writes jobs.x with continuous true, prints the stdout of today and the note once", async () => {
 		const { dgHome, cwd, port } = setup();
-		writeConfigFile(dgHome, { jobsVersion: 1 });
+		writeConfigFile(dgHome, { jobsVersion: 2 });
 		const result = await add(dgHome, port, "x", ["--cwd", cwd]);
 		expect(result.code).toBe(0);
 		expect(lines(result.stdout)).toEqual([
@@ -91,7 +91,7 @@ describe("service add on a migrated config", () => {
 
 	it("writes enabled true and no autostart key for --autostart", async () => {
 		const { dgHome, cwd, port } = setup();
-		writeConfigFile(dgHome, { jobsVersion: 1 });
+		writeConfigFile(dgHome, { jobsVersion: 2 });
 		const result = await add(dgHome, port, "x", ["--cwd", cwd, "--autostart"]);
 		expect(result.code).toBe(0);
 		expect(lines(result.stdout)).toEqual([
@@ -108,7 +108,7 @@ describe("service add on a migrated config", () => {
 
 	it("writes jobs.x on a config whose services value is not an object and keeps that value", async () => {
 		const { dgHome, cwd, port } = setup();
-		writeConfigFile(dgHome, { jobsVersion: 1, services: [1] });
+		writeConfigFile(dgHome, { jobsVersion: 2, services: [1] });
 		const result = await add(dgHome, port, "x", ["--cwd", cwd]);
 		expect(result.code).toBe(0);
 		expect(jobsOf(dgHome).x).toBeDefined();
@@ -120,7 +120,7 @@ describe("service add on a migrated config", () => {
 	it("refuses a name that is already a job", async () => {
 		const { dgHome, cwd, port } = setup();
 		writeConfigFile(dgHome, {
-			jobsVersion: 1,
+			jobsVersion: 2,
 			jobs: { x: sleeperJob(cwd) },
 		});
 		const result = await add(dgHome, port, "x", ["--cwd", cwd]);
@@ -139,7 +139,7 @@ describe("service add on a config with no jobsVersion", () => {
 		expect(result.code).toBe(0);
 		const config = readConfigFile(dgHome) as Record<string, unknown>;
 		expect(Object.hasOwn(config, "services")).toBe(false);
-		expect(config.jobsVersion).toBe(1);
+		expect(config.jobsVersion).toBe(2);
 		const jobs = config.jobs as Record<string, unknown>;
 		expect(Object.keys(jobs).sort()).toEqual(["old", "x"]);
 		expect(jobs.old).toEqual({
@@ -203,7 +203,7 @@ describe("ensureMigrated", () => {
 
 	it("returns at once on a config that has the mark", async () => {
 		const { dgHome } = setup();
-		writeConfigFile(dgHome, { jobsVersion: 1 });
+		writeConfigFile(dgHome, { jobsVersion: 2 });
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		await expect(
 			ensureMigrated(paths, {
@@ -299,7 +299,7 @@ describe("service verbs on the jobs table", () => {
 	it("rm of a scheduled entry exits 1 with the label text and deletes nothing", async () => {
 		const { dgHome, cwd, port } = setup();
 		const body = JSON.stringify({
-			jobsVersion: 1,
+			jobsVersion: 2,
 			jobs: { tick: { argv: ["/b"], cwd, every: "15m" } },
 		});
 		writeConfigFile(dgHome, body);
@@ -312,7 +312,7 @@ describe("service verbs on the jobs table", () => {
 	it("rm removes a continuous entry from jobs", async () => {
 		const { dgHome, cwd, port } = setup();
 		writeConfigFile(dgHome, {
-			jobsVersion: 1,
+			jobsVersion: 2,
 			jobs: { bot: { argv: ["/b"], cwd, continuous: true } },
 		});
 		const result = await runCli(dgHome, ["service", "rm", "bot"], { port });
@@ -333,7 +333,7 @@ describe("service verbs on the jobs table", () => {
 		});
 		await waitForPidFile(boot.dgHome);
 		writeConfigFile(boot.dgHome, {
-			jobsVersion: 1,
+			jobsVersion: 2,
 			jobs: { bot: sleeperJob(boot.dgHome) },
 		});
 		const run = (...args: string[]) =>

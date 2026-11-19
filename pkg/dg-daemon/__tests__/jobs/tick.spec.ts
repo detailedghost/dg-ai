@@ -3,7 +3,6 @@ import { resolveDgPaths } from "@dg/common/node";
 import type { ChatStore as Store } from "../../src/store";
 import {
 	allocatePort,
-	bootServe,
 	ChatStore,
 	cleanupDgHome,
 	createCleanupSlot,
@@ -13,6 +12,7 @@ import {
 	stopServe,
 	waitForHealth,
 } from "../utils/daemon-harness";
+import { bootSeeded } from "./scheduled-fixtures";
 
 const FAST_TICK_MS = 120;
 const PAST = "2020-01-01T00:00:00.000Z";
@@ -58,23 +58,27 @@ async function until<T>(
 
 describe("the daemon's own job tick", () => {
 	it("runs a due job without anyone asking, and records the run", async () => {
-		const { dgHome, port, proc } = await bootServe({
-			DG_JOB_TICK_MS: String(FAST_TICK_MS),
-		});
-		cleanupSlot.set(async () => {
-			await stopServe(proc);
-			cleanupDgHome(dgHome);
-		});
-
-		const job = await withStore(dgHome, (store) =>
-			store.insertJob({
-				label: "ticks",
-				argv: printsOneItem("tick-1", "Arrived on the tick"),
-				cwd: process.cwd(),
-				intervalMs: 15 * 60_000,
-				nextRunAt: PAST,
-			}),
+		const {
+			dgHome,
+			port,
+			dispose,
+			ids: [jobId],
+		} = await bootSeeded(
+			{
+				rows: [
+					{
+						label: "ticks",
+						argv: printsOneItem("tick-1", "Arrived on the tick"),
+						cwd: process.cwd(),
+						intervalMs: 15 * 60_000,
+						nextRunAt: PAST,
+					},
+				],
+			},
+			FAST_TICK_MS,
 		);
+		cleanupSlot.set(dispose);
+		const job = { id: jobId };
 
 		const items = await until(
 			() =>
@@ -93,23 +97,26 @@ describe("the daemon's own job tick", () => {
 	});
 
 	it("does not run the same job twice before its interval is up", async () => {
-		const { dgHome, proc } = await bootServe({
-			DG_JOB_TICK_MS: String(FAST_TICK_MS),
-		});
-		cleanupSlot.set(async () => {
-			await stopServe(proc);
-			cleanupDgHome(dgHome);
-		});
-
-		const job = await withStore(dgHome, (store) =>
-			store.insertJob({
-				label: "once-per-interval",
-				argv: printsOneItem("only-1", "Only once"),
-				cwd: process.cwd(),
-				intervalMs: 60 * 60_000,
-				nextRunAt: PAST,
-			}),
+		const {
+			dgHome,
+			dispose,
+			ids: [jobId],
+		} = await bootSeeded(
+			{
+				rows: [
+					{
+						label: "once-per-interval",
+						argv: printsOneItem("only-1", "Only once"),
+						cwd: process.cwd(),
+						intervalMs: 60 * 60_000,
+						nextRunAt: PAST,
+					},
+				],
+			},
+			FAST_TICK_MS,
 		);
+		cleanupSlot.set(dispose);
+		const job = { id: jobId };
 
 		const first = await until(
 			() => withStore(dgHome, (store) => store.getJob(job.id)),
@@ -129,24 +136,27 @@ describe("the daemon's own job tick", () => {
 	});
 
 	it("leaves a disabled job alone however long it ticks", async () => {
-		const { dgHome, proc } = await bootServe({
-			DG_JOB_TICK_MS: String(FAST_TICK_MS),
-		});
-		cleanupSlot.set(async () => {
-			await stopServe(proc);
-			cleanupDgHome(dgHome);
-		});
-
-		const job = await withStore(dgHome, (store) =>
-			store.insertJob({
-				label: "paused",
-				argv: printsOneItem("never", "Never"),
-				cwd: process.cwd(),
-				intervalMs: 15 * 60_000,
-				nextRunAt: PAST,
-				enabled: false,
-			}),
+		const {
+			dgHome,
+			dispose,
+			ids: [jobId],
+		} = await bootSeeded(
+			{
+				rows: [
+					{
+						label: "paused",
+						argv: printsOneItem("never", "Never"),
+						cwd: process.cwd(),
+						intervalMs: 15 * 60_000,
+						nextRunAt: PAST,
+						enabled: false,
+					},
+				],
+			},
+			FAST_TICK_MS,
 		);
+		cleanupSlot.set(dispose);
+		const job = { id: jobId };
 
 		await Bun.sleep(FAST_TICK_MS * 8);
 
@@ -160,32 +170,34 @@ describe("the daemon's own job tick", () => {
 	});
 
 	it("keeps ticking after a job fails, and records why", async () => {
-		const { dgHome, proc } = await bootServe({
-			DG_JOB_TICK_MS: String(FAST_TICK_MS),
-		});
-		cleanupSlot.set(async () => {
-			await stopServe(proc);
-			cleanupDgHome(dgHome);
-		});
-
-		const failing = await withStore(dgHome, (store) =>
-			store.insertJob({
-				label: "fails",
-				argv: ["false"],
-				cwd: process.cwd(),
-				intervalMs: 15 * 60_000,
-				nextRunAt: PAST,
-			}),
+		const {
+			dgHome,
+			dispose,
+			ids: [failingId, healthyId],
+		} = await bootSeeded(
+			{
+				rows: [
+					{
+						label: "fails",
+						argv: ["false"],
+						cwd: process.cwd(),
+						intervalMs: 15 * 60_000,
+						nextRunAt: PAST,
+					},
+					{
+						label: "healthy",
+						argv: printsOneItem("after-failure", "Still running"),
+						cwd: process.cwd(),
+						intervalMs: 15 * 60_000,
+						nextRunAt: PAST,
+					},
+				],
+			},
+			FAST_TICK_MS,
 		);
-		const healthy = await withStore(dgHome, (store) =>
-			store.insertJob({
-				label: "healthy",
-				argv: printsOneItem("after-failure", "Still running"),
-				cwd: process.cwd(),
-				intervalMs: 15 * 60_000,
-				nextRunAt: PAST,
-			}),
-		);
+		cleanupSlot.set(dispose);
+		const failing = { id: failingId };
+		const healthy = { id: healthyId };
 
 		const items = await until(
 			() =>

@@ -11,7 +11,6 @@ import {
 } from "@dg/common";
 import {
 	autostartManages,
-	checkExecutableResolves,
 	credentialGrantTokenPath,
 	type DgPaths,
 	isJobName,
@@ -134,14 +133,18 @@ async function locate(
 	options: { migrate: boolean; scheduled: boolean },
 ): Promise<"table" | "scheduled"> {
 	const inTable = () => isInTable(readTable(paths), name);
+	const kindOfEntry = (): "table" | "scheduled" => {
+		const mode = modeOf(tableEntries(readTable(paths)).find(([key]) => key === name)?.[1]);
+		return mode === "every" || mode === "schedule" ? "scheduled" : "table";
+	};
 	if (inTable()) {
 		if (options.migrate) await ensureMigrated(paths);
-		return "table";
+		return kindOfEntry();
 	}
 	if (options.scheduled && (await findScheduled(name))) return "scheduled";
 	if (options.migrate && existsSync(paths.daemonConfigPath)) {
 		await ensureMigrated(paths);
-		if (inTable()) return "table";
+		if (inTable()) return kindOfEntry();
 	}
 	return notFound(name);
 }
@@ -204,14 +207,6 @@ async function addVerb(
 			"--env takes a variable name — put a value in the file of --env-file",
 		);
 	}
-	if (
-		!options.continuous &&
-		(options.envFile !== undefined ||
-			options.env !== undefined ||
-			options.passEnv !== undefined)
-	) {
-		stop("--env and --env-file need --continuous until the jobs move");
-	}
 	if (argv.length === 0) stop("no command given — put it after a bare --");
 	const cwd = resolve(options.cwd);
 	if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
@@ -230,9 +225,6 @@ async function addVerb(
 	if (options.continuous) {
 		const [first, ...rest] = argv;
 		command = [resolveExecutable(first, "job add:", deps.which), ...rest];
-	} else {
-		const problem = checkExecutableResolves(argv[0]);
-		if (problem) stop(problem);
 	}
 	const entry: Row = {
 		argv: command,
@@ -276,7 +268,9 @@ async function addVerb(
 			enabled: legacy,
 			feed: options.feed,
 			timeoutMs,
-		});
+			envFile: options.envFile === undefined ? undefined : resolve(options.envFile),
+			passEnv: names,
+		}, deps.which);
 		if (legacy) {
 			console.log(
 				`added "${created.label}" — ${formatSchedule(created)}, first run ${created.nextRunAt}`,
@@ -325,7 +319,11 @@ async function collectRows(paths: Paths): Promise<Rows> {
 				.jobs
 		: undefined;
 	const daemonUrl = live ? `http://127.0.0.1:${live.port}` : null;
-	const rows = tableEntries(config).map(([name, raw]): Row => {
+	const continuous = tableEntries(config).filter(([, raw]) => {
+		const mode = modeOf(raw);
+		return mode !== "every" && mode !== "schedule";
+	});
+	const rows = continuous.map(([name, raw]): Row => {
 		const entry = isRecord(raw) ? raw : {};
 		const known = daemon?.find((row) => row.label === name);
 		return {
@@ -366,6 +364,7 @@ function scheduledLine(row: ScheduledRow): string {
 		row.enabled ? "enabled" : "disabled",
 		`last ${row.lastRunAt ?? "never"}`,
 		`next ${row.nextRunAt ?? "-"}`,
+		row.invalid ? `invalid: ${row.invalid}` : "",
 	]
 		.filter((part) => part !== "")
 		.join("  ");
@@ -400,10 +399,8 @@ async function startVerb(name: string): Promise<void> {
 	const paths = resolveDgPaths();
 	const kind = await locate(paths, name, { migrate: false, scheduled: true });
 	if (kind === "scheduled") {
-		const outcome = await runScheduledNow(name);
-		console.log(
-			`ran "${name}" — ${outcome.inserted} new, ${outcome.duplicates} already seen`,
-		);
+		const status = await runScheduledNow(name);
+		console.log(`${status.label}  ${status.state}`);
 		return;
 	}
 	console.log(
@@ -459,12 +456,7 @@ async function offerLoginUnit(paths: Paths, deps: JobVerbDeps): Promise<void> {
 
 async function enableVerb(name: string, deps: JobVerbDeps): Promise<void> {
 	const paths = resolveDgPaths();
-	const kind = await locate(paths, name, { migrate: true, scheduled: true });
-	if (kind === "scheduled") {
-		await setScheduledEnabled(name, true);
-		console.log(`enabled "${name}"`);
-		return;
-	}
+	await locate(paths, name, { migrate: true, scheduled: false });
 	await assertDaemonAnswers(paths, name, "job");
 	await withConfigLock(paths, () => {
 		const config = readTable(paths);
@@ -501,24 +493,23 @@ async function enableVerb(name: string, deps: JobVerbDeps): Promise<void> {
 
 async function disableVerb(name: string): Promise<void> {
 	const paths = resolveDgPaths();
-	const kind = await locate(paths, name, { migrate: true, scheduled: true });
+	const kind = await locate(paths, name, { migrate: true, scheduled: false });
+	const live = await assertDaemonAnswers(paths, name, "job");
 	if (kind === "scheduled") {
 		await setScheduledEnabled(name, false);
-		console.log(`disabled "${name}"`);
-		return;
+	} else {
+		await withConfigLock(paths, () => {
+			const config = readTable(paths);
+			requireMigrated(config);
+			const entry = tableEntry(paths, config, name);
+			if (Object.hasOwn(entry, "enabled")) {
+				const rest = Object.fromEntries(
+					Object.entries(entry).filter(([key]) => key !== "enabled"),
+				);
+				guardConfig(() => writeJobEntry(paths, name, rest));
+			}
+		});
 	}
-	const live = await assertDaemonAnswers(paths, name, "job");
-	await withConfigLock(paths, () => {
-		const config = readTable(paths);
-		requireMigrated(config);
-		const entry = tableEntry(paths, config, name);
-		if (Object.hasOwn(entry, "enabled")) {
-			const rest = Object.fromEntries(
-				Object.entries(entry).filter(([key]) => key !== "enabled"),
-			);
-			guardConfig(() => writeJobEntry(paths, name, rest));
-		}
-	});
 	console.log(`disabled job "${name}"`);
 	if (!live) return;
 	const states = await liveJobStates(paths);
@@ -534,17 +525,17 @@ async function disableVerb(name: string): Promise<void> {
 async function removeVerb(name: string): Promise<void> {
 	const paths = resolveDgPaths();
 	const kind = await locate(paths, name, { migrate: true, scheduled: true });
-	if (kind === "scheduled") {
-		await removeScheduled(name);
-		console.log(`removed "${name}"`);
-		return;
-	}
 	const live = await assertDaemonAnswers(paths, name, "job");
 	if (live) {
 		const state = (await liveJobStates(paths))?.get(name);
 		if (isActive(state)) {
 			fail(`job "${name}" is ${state} — stop it first with dg job stop ${name}`);
 		}
+	}
+	if (kind === "scheduled") {
+		await removeScheduled(name);
+		console.log(`removed job "${name}"`);
+		return;
 	}
 	await withConfigLock(paths, () => {
 		const config = readTable(paths);
@@ -589,9 +580,6 @@ async function updateVerb(name: string, options: UpdateOptions): Promise<void> {
 	const paths = resolveDgPaths();
 	if (existsSync(paths.daemonConfigPath)) await ensureMigrated(paths);
 	if (!isInTable(readTable(paths), name)) {
-		if (await findScheduled(name)) {
-			stop(`${name} is a scheduled job and is not in the jobs table yet`);
-		}
 		notFound(name);
 	}
 	await withConfigLock(paths, () => {
@@ -624,10 +612,7 @@ async function logsVerb(
 	options: { lines?: string; follow?: boolean },
 ): Promise<void> {
 	const paths = resolveDgPaths();
-	const kind = await locate(paths, name, { migrate: false, scheduled: true });
-	if (kind === "scheduled") {
-		fail(`no log for job "${name}" yet: ${jobLogFile(paths.logDir, name)}`);
-	}
+	await locate(paths, name, { migrate: false, scheduled: false });
 	const { runJobLogs } = await import("./job-logs");
 	await runJobLogs(paths, name, options);
 }

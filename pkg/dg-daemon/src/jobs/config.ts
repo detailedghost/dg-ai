@@ -59,12 +59,14 @@ export type ParsedJob =
 	| ({ ok: true } & JobDecl)
 	| { ok: false; name: string; error: string };
 
-const isArgv = (value: unknown): value is string[] =>
+const isArgv = (value: unknown, allowEmptyArgs: boolean): value is string[] =>
 	Array.isArray(value) &&
 	value.length > 0 &&
 	value.every(
-		(part) =>
-			typeof part === "string" && part.length > 0 && !part.includes("\0"),
+		(part, index) =>
+			typeof part === "string" &&
+			(part.length > 0 || (allowEmptyArgs && index > 0)) &&
+			!part.includes("\0"),
 	);
 
 const modeOf = (raw: unknown): JobMode | undefined => {
@@ -154,7 +156,7 @@ export function parseJobEntry(name: string, raw: unknown): ParsedJob {
 				? checkEvery(raw.every)
 				: undefined;
 	if (modeProblem) return invalid(modeProblem);
-	if (!isArgv(raw.argv)) {
+	if (!isArgv(raw.argv, declared !== "continuous")) {
 		return invalid('"argv" must be a non-empty array of non-empty strings');
 	}
 	if (typeof raw.cwd !== "string" || !isAbsolute(raw.cwd)) {
@@ -278,3 +280,15 @@ export function parseContinuousJobs(
 		(row) => !isRecord(table) || isContinuousEntry(table[row.name]),
 	);
 }
+
+/** The rows of `parseJobs` for the `schedule` and `every` entries, which the runner owns. */
+export function parseScheduledJobs(
+	config: Record<string, unknown>,
+): ParsedJob[] {
+	const table = config[JOBS_CONFIG_KEY];
+	if (!isRecord(table)) return [];
+	return parseJobs(config).filter((row) => !isContinuousEntry(table[row.name]));
+}
+
+export const countEnabledScheduled = (config: Record<string, unknown>): number =>
+	parseScheduledJobs(config).filter((row) => row.ok && row.enabled).length;

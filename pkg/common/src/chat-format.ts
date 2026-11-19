@@ -98,6 +98,13 @@ export function formatIntervalMs(intervalMs: number): string {
 	return `${Math.max(1, Math.round(intervalMs / MS_PER_SECOND))}s`;
 }
 
+/** Render a timeout: whole seconds as `30s`, `5m`, `1h`, anything finer in milliseconds. */
+export function formatDurationMs(durationMs: number): string {
+	return durationMs >= MS_PER_SECOND && durationMs % MS_PER_SECOND === 0
+		? formatIntervalMs(durationMs)
+		: `${durationMs}ms`;
+}
+
 /** Render a job's schedule the way `job add` accepts one, for a cron job or an interval. */
 export function formatSchedule(job: {
 	intervalMs?: number | null;

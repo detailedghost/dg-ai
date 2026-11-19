@@ -106,7 +106,7 @@ describe("daemon boot with a services table", () => {
 		const config = configOf(daemon);
 		expect(Object.hasOwn(config, "services")).toBe(false);
 		expect(config.pinnedOrigin).toBe("p");
-		expect(config.jobsVersion).toBe(1);
+		expect(config.jobsVersion).toBe(2);
 		const { autostart: _autostart, ...botRest } = before.services.bot as Record<
 			string,
 			unknown
@@ -210,7 +210,7 @@ describe("daemon boot with no services table", () => {
 		const dgHome = freshDgHome();
 		const daemon = await bootOn(dgHome);
 		const config = configOf(daemon);
-		expect(config.jobsVersion).toBe(1);
+		expect(config.jobsVersion).toBe(2);
 		expect(Object.hasOwn(config, "jobs")).toBe(false);
 		expect(
 			existsSync(join(daemon.paths.daemonDir, "config.json.pre-jobs")),
@@ -251,7 +251,7 @@ describe("daemon boot with a services value that is not an object", () => {
 			"first warning",
 		);
 		const bytes = readFileSync(file, "utf8");
-		expect(JSON.parse(bytes)).toMatchObject({ jobsVersion: 1, services: [1] });
+		expect(JSON.parse(bytes)).toMatchObject({ jobsVersion: 2, services: [1] });
 		killDaemonByPidFile(dgHome);
 		await waitForDaemonExit(dgHome);
 		await bootOn(dgHome);

@@ -48,7 +48,7 @@ describe("openDaemonDatabase", () => {
 
 	test("creates a sessions table without awaiting_agent on a fresh database", () => {
 		const db = openDaemonDatabase(freshPaths());
-		expect(CURRENT_SCHEMA_VERSION).toBe(13);
+		expect(CURRENT_SCHEMA_VERSION).toBe(14);
 		expect(sessionColumns(db)).not.toContain("awaiting_agent");
 		db.close(true);
 	});
@@ -63,7 +63,7 @@ describe("openDaemonDatabase", () => {
 		old.close(true);
 
 		const db = openDaemonDatabase(paths);
-		expect(readSchemaVersion(db)).toBe(13);
+		expect(readSchemaVersion(db)).toBe(14);
 		expect(sessionColumns(db)).not.toContain("awaiting_agent");
 		expect(db.query("SELECT count(*) AS n FROM sessions WHERE id = ?").get("session-kept")).toEqual({ n: 1 });
 		db.close(true);

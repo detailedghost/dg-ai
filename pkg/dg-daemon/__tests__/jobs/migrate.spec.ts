@@ -51,8 +51,8 @@ const posix = process.platform === "win32" ? it.skip : it;
 const entry = { argv: ["/b"], cwd: "/c" };
 
 describe("migration constants", () => {
-	it("holds the version 1 and the literal mark 1", () => {
-		expect(JOBS_VERSION).toBe(1);
+	it("holds the version 2 and the literal mark 1", () => {
+		expect(JOBS_VERSION).toBe(2);
 		expect(SERVICES_MARK).toBe(1);
 	});
 

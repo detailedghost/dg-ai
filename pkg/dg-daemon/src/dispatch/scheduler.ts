@@ -60,6 +60,21 @@ export class DispatchScheduler {
 		return { ok: true };
 	}
 
+	tryAdmitDaemonWide(): Admission {
+		if (this.daemonInFlight >= DISPATCH_MAX_CONCURRENT_DAEMON_WIDE) {
+			return {
+				ok: false,
+				reason: `daemon is at capacity (max ${DISPATCH_MAX_CONCURRENT_DAEMON_WIDE} concurrent invocations)`,
+			};
+		}
+		this.daemonInFlight += 1;
+		return { ok: true };
+	}
+
+	releaseDaemonWide(): void {
+		this.daemonInFlight = Math.max(0, this.daemonInFlight - 1);
+	}
+
 	release(sessionId: string): void {
 		const count = this.sessionInFlight.get(sessionId) ?? 0;
 		if (count <= 1) this.sessionInFlight.delete(sessionId);

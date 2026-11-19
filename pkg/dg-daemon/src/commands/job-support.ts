@@ -225,7 +225,9 @@ export function resolveExecutable(
 	);
 }
 
-export function formatStatus(service: ServiceStatus): string {
+export function formatStatus(
+	service: ServiceStatus & { nextRunAt?: string | null },
+): string {
 	const parts = [
 		service.label,
 		service.state,
@@ -233,6 +235,7 @@ export function formatStatus(service: ServiceStatus): string {
 		`restarts ${service.restarts}`,
 		service.lastExit ? `last ${service.lastExit}` : "",
 		`log ${service.logFile}`,
+		service.nextRunAt ? `next ${service.nextRunAt}` : "",
 		service.error ?? "",
 	];
 	return parts.filter((part) => part.length > 0).join("  ");

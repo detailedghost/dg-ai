@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import {
 	existsSync,
 	mkdirSync,
@@ -11,12 +11,17 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { credentialGrantTokenPath, jobStateDir } from "@dg/common/node";
+import {
+	DISPATCH_MAX_OUTPUT_BYTES,
+	DISPATCH_MAX_TIMEOUT_MS,
+} from "../../src/dispatch/limits";
 import { parseJobEntry } from "../../src/jobs/config";
 import {
 	buildBaseEnv,
 	buildJobEnv,
 	jobLogFile,
 	launchJob,
+	startJobRun,
 } from "../../src/jobs/launcher";
 
 const roots: string[] = [];
@@ -227,5 +232,114 @@ describe("launchJob without a supervisor", () => {
 		expect(() =>
 			launchJob(declOf(root, { argv: [join(root, "missing-binary")] }), deps),
 		).toThrow();
+	});
+});
+
+describe("startJobRun", () => {
+	const scheduled = (root: string, script: string, extra = {}) => {
+		const parsed = parseJobEntry("bot", {
+			argv: [process.execPath, "-e", script],
+			cwd: root,
+			every: "1h",
+			...extra,
+		});
+		if (!parsed.ok) throw new Error(parsed.error);
+		return parsed;
+	};
+
+	it("sends stdout and stderr to the log file and reports the exit code for no feed", async () => {
+		const { root, deps } = kit();
+
+		const run = startJobRun(
+			scheduled(
+				root,
+				'console.log("out");console.error("err");process.exit(3)',
+			),
+			deps,
+		);
+		const result = await run.done;
+
+		expect(result).toMatchObject({ exitCode: 3, timedOut: false, stdout: "" });
+		const log = readFileSync(jobLogFile(deps.paths.logDir, "bot"), "utf8");
+		expect(log).toContain("out");
+		expect(log).toContain("err");
+	});
+
+	it("gives stdout of a feed run through the pipe and stderr to the log file", async () => {
+		const { root, deps } = kit();
+
+		const result = await startJobRun(
+			scheduled(root, 'console.log("piped");console.error("logged")', {
+				feed: true,
+			}),
+			deps,
+		).done;
+
+		expect(result.stdout).toBe("piped\n");
+		const log = readFileSync(jobLogFile(deps.paths.logDir, "bot"), "utf8");
+		expect(log).toContain("logged");
+		expect(log).not.toContain("piped");
+	});
+
+	it("ends the process group at timeoutMs and reports timedOut", async () => {
+		const { root, deps } = kit();
+
+		const result = await startJobRun(
+			scheduled(root, "setTimeout(() => {}, 60000)", { timeoutMs: 300 }),
+			deps,
+		).done;
+
+		expect(result.timedOut).toBe(true);
+		expect(result.exitCode).not.toBe(0);
+	});
+
+	it("keeps a run with no timeoutMs and no feed unlimited", async () => {
+		const { root, deps } = kit();
+
+		const result = await startJobRun(
+			scheduled(root, "setTimeout(() => {}, 400)"),
+			deps,
+		).done;
+
+		expect(result).toMatchObject({ exitCode: 0, timedOut: false });
+	});
+
+	it("reports outputCapped and ends a feed run that passes the output limit", async () => {
+		const { root, deps } = kit();
+
+		const result = await startJobRun(
+			scheduled(
+				root,
+				`process.stdout.write("x".repeat(${DISPATCH_MAX_OUTPUT_BYTES + 1024}));setTimeout(() => {}, 60000)`,
+				{ feed: true },
+			),
+			deps,
+		).done;
+
+		expect(result.outputCapped).toBe(true);
+		expect(result.timedOut).toBe(false);
+	});
+
+	it("arms the default time limit for a feed run with no timeoutMs and none without feed", async () => {
+		const { root, deps } = kit();
+		const delays: unknown[] = [];
+		const original = globalThis.setTimeout;
+		const spy = spyOn(globalThis, "setTimeout").mockImplementation(((
+			fn: () => void,
+			delay?: number,
+			...rest: unknown[]
+		) => {
+			delays.push(delay);
+			return (original as (...args: unknown[]) => unknown)(fn, delay, ...rest);
+		}) as unknown as typeof setTimeout);
+		try {
+			await startJobRun(scheduled(root, "", { feed: true }), deps).done;
+			expect(delays).toContain(DISPATCH_MAX_TIMEOUT_MS);
+			delays.length = 0;
+			await startJobRun(scheduled(root, ""), deps).done;
+			expect(delays).not.toContain(DISPATCH_MAX_TIMEOUT_MS);
+		} finally {
+			spy.mockRestore();
+		}
 	});
 });

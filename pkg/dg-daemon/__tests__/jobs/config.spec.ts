@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+	countEnabledScheduled,
 	DEFAULT_STOP_TIMEOUT_MS,
 	JOBS_CONFIG_KEY,
 	MAX_STOP_TIMEOUT_MS,
@@ -354,5 +355,19 @@ describe("parseJobs", () => {
 	it("keeps a __proto__ name as an own row", () => {
 		const jobs = Object.fromEntries([["__proto__", continuous]]);
 		expect(parseJobs({ jobs }).map((row) => row.name)).toEqual(["__proto__"]);
+	});
+});
+
+describe("countEnabledScheduled", () => {
+	it("counts only enabled scheduled entries and not continuous or disabled ones", () => {
+		const jobs = {
+			a: { ...periodic, enabled: true },
+			b: { ...scheduled, enabled: true },
+			c: { ...periodic },
+			d: { ...continuous, enabled: true },
+		};
+
+		expect(countEnabledScheduled({ jobs })).toBe(2);
+		expect(countEnabledScheduled({})).toBe(0);
 	});
 });

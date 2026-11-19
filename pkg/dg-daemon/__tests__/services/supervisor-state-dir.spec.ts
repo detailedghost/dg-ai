@@ -433,7 +433,7 @@ describe("state folder against a live daemon", () => {
 			script,
 			`require("node:fs").writeFileSync(${JSON.stringify(dump)}, JSON.stringify({ env: process.env })); setTimeout(() => {}, 600000);`,
 		);
-		writeConfigFile(dgHome, { pinnedOrigin: "p", jobsVersion: 1, jobs: {} });
+		writeConfigFile(dgHome, { pinnedOrigin: "p", jobsVersion: 2, jobs: {} });
 
 		const added = await runCli(
 			dgHome,

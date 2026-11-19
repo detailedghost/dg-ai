@@ -174,7 +174,7 @@ describe("a config with no jobsVersion", () => {
 			expect(result.code).toBe(0);
 			expect(existsSync(pathsOf(dgHome).pidPath)).toBe(true);
 			const config = readConfigFile(dgHome) as Record<string, unknown>;
-			expect(config.jobsVersion).toBe(1);
+			expect(config.jobsVersion).toBe(2);
 			expectTable(jobsTable(config));
 			killDaemonByPidFile(dgHome);
 		});

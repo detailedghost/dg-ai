@@ -159,7 +159,7 @@ describe("POST /jobs/<name>/start and /stop", () => {
 });
 
 describe("a scheduled entry beside a continuous one", () => {
-	it("is not started by the supervisor route", async () => {
+	it("is listed by the job route as a scheduled job, which the supervisor does not start", async () => {
 		const { port } = await boot((home) => ({
 			jobs: {
 				...botDecl(home),
@@ -167,8 +167,14 @@ describe("a scheduled entry beside a continuous one", () => {
 			},
 		}));
 		const listed = await (await call(port, CHAT_JOBS_PATH, "", "GET")).json();
-		expect(listed.jobs.map((job: { label: string }) => job.label)).toEqual([
-			"bot",
+		expect(
+			listed.jobs.map((job: { label: string; state: string }) => [
+				job.label,
+				job.state,
+			]),
+		).toEqual([
+			["bot", "stopped"],
+			["tick", "disabled"],
 		]);
 	});
 });

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { parseJobEntry } from "../../src/jobs/config";
 import { freshTempDir } from "../utils/daemon-harness";
 import { configPathOf } from "../utils/service-daemon";
@@ -422,10 +422,9 @@ describe("job add name rules", () => {
 	});
 
 	it.each([
-		["--env", "PATH"],
-		["--pass-env", "PATH"],
-		["--env-file", "e.env"],
-	])("refuses %s on a scheduled add instead of dropping it", async (flag, value) => {
+		["--env", "PATH", "passEnv", ["PATH"]],
+		["--pass-env", "PATH", "passEnv", ["PATH"]],
+	])("stores %s of a scheduled add in the table entry", async (flag, value, key, stored) => {
 		const dir = freshTempDir("job-cwd");
 		const dgHome = preparedHome();
 
@@ -434,9 +433,23 @@ describe("job add name rules", () => {
 			addArgs(dir, ["--name", "s1", "--every", "15m", flag, value]),
 		);
 
-		expect(result.code).toBe(1);
-		expect(result.stderr).toContain("job add: --env and --env-file need --continuous");
-		expect(await scheduledRow(dgHome, "s1")).toBeUndefined();
+		expect(result.code).toBe(0);
+		expect((await scheduledRow(dgHome, "s1"))?.[key]).toEqual(stored);
+	});
+
+	it("stores an absolute --env-file path on a scheduled add", async () => {
+		const dir = freshTempDir("job-cwd");
+		const dgHome = preparedHome();
+
+		const result = await runCli(
+			dgHome,
+			addArgs(dir, ["--name", "s1", "--every", "15m", "--env-file", "e.env"]),
+		);
+
+		expect(result.code).toBe(0);
+		const stored = (await scheduledRow(dgHome, "s1"))?.envFile;
+		expect(typeof stored === "string" && isAbsolute(stored)).toBe(true);
+		expect(String(stored).endsWith("e.env")).toBe(true);
 	});
 
 	it("accepts --notify with --feed on a scheduled add with the new form", async () => {

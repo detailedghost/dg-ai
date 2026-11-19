@@ -47,7 +47,7 @@ afterEach(() => {
 	for (const home of homes.splice(0)) cleanupDgHome(home);
 });
 
-const SEED = JSON.stringify({ jobsVersion: 1 });
+const SEED = JSON.stringify({ jobsVersion: 2 });
 
 function setup() {
 	const dgHome = freshDgHome();
@@ -333,7 +333,7 @@ describe("service add", () => {
 		const first = { argv: ["/bin/x"], cwd: "/srv", continuous: true };
 		writeConfigFile(dgHome, {
 			pinnedOrigin: "https://x",
-			jobsVersion: 1,
+			jobsVersion: 2,
 			jobs: { first },
 		});
 		const result = await add(dgHome, "second", ["--cwd", cwd]);
@@ -360,7 +360,7 @@ describe("service add", () => {
 
 	it("writes jobs.x and keeps a services value that is not an object", async () => {
 		const { dgHome, cwd } = setup();
-		const body = '{"jobsVersion":1,"services":[1]}';
+		const body = '{"jobsVersion":2,"services":[1]}';
 		const file = writeConfigFile(dgHome, body);
 		const added = await runCli(dgHome, [
 			"service",
@@ -430,7 +430,7 @@ describe("service rm", () => {
 		const { dgHome } = setup();
 		writeConfigFile(dgHome, {
 			pinnedOrigin: "p",
-			jobsVersion: 1,
+			jobsVersion: 2,
 			jobs: { bot: { argv: ["/bin/x"], cwd: "/srv", continuous: true } },
 		});
 		const result = await runCli(dgHome, ["service", "rm", "bot"]);
@@ -438,7 +438,7 @@ describe("service rm", () => {
 		expect(lines(result.stdout)).toEqual(['removed service "bot"']);
 		expect(readConfigFile(dgHome)).toEqual({
 			pinnedOrigin: "p",
-			jobsVersion: 1,
+			jobsVersion: 2,
 			jobs: {},
 		});
 	});
@@ -446,7 +446,7 @@ describe("service rm", () => {
 	it("removes an entry whose declaration is invalid", async () => {
 		const { dgHome } = setup();
 		writeConfigFile(dgHome, {
-			jobsVersion: 1,
+			jobsVersion: 2,
 			jobs: { bot: { argv: [], continuous: true } },
 		});
 		const result = await runCli(dgHome, ["service", "rm", "bot"]);
@@ -457,7 +457,7 @@ describe("service rm", () => {
 	it("refuses and keeps the entry when the daemon pid runs but does not answer", async () => {
 		const { dgHome } = setup();
 		writeConfigFile(dgHome, {
-			jobsVersion: 1,
+			jobsVersion: 2,
 			jobs: { bot: { argv: ["/bin/x"], cwd: "/srv", continuous: true } },
 		});
 		const silent = Bun.spawn(
@@ -485,7 +485,7 @@ describe("service rm", () => {
 	it("refuses while an earlier instance of the service still runs with no daemon", async () => {
 		const { dgHome } = setup();
 		writeConfigFile(dgHome, {
-			jobsVersion: 1,
+			jobsVersion: 2,
 			jobs: { bot: { argv: ["/bin/x"], cwd: "/srv", continuous: true } },
 		});
 		const orphan = Bun.spawn(
@@ -509,7 +509,7 @@ describe("service rm", () => {
 
 	it("refuses an unknown label", async () => {
 		const { dgHome } = setup();
-		writeConfigFile(dgHome, { jobsVersion: 1, jobs: {} });
+		writeConfigFile(dgHome, { jobsVersion: 2, jobs: {} });
 		const result = await runCli(dgHome, ["service", "rm", "ghost"]);
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain('no service labelled "ghost"');
@@ -526,7 +526,7 @@ describe("service rm", () => {
 	it("removes the entry when the pid file is of a dead daemon", async () => {
 		const { dgHome } = setup();
 		writeConfigFile(dgHome, {
-			jobsVersion: 1,
+			jobsVersion: 2,
 			jobs: { bot: { argv: ["/bin/x"], cwd: "/srv", continuous: true } },
 		});
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
@@ -549,12 +549,12 @@ describe("service rm", () => {
 describe("service add then service rm", () => {
 	it("leaves the first config plus an empty jobs table", async () => {
 		const { dgHome, cwd } = setup();
-		writeConfigFile(dgHome, { pinnedOrigin: "p", jobsVersion: 1 });
+		writeConfigFile(dgHome, { pinnedOrigin: "p", jobsVersion: 2 });
 		await add(dgHome, "bot", ["--cwd", cwd]);
 		await runCli(dgHome, ["service", "rm", "bot"]);
 		expect(readConfigFile(dgHome)).toEqual({
 			pinnedOrigin: "p",
-			jobsVersion: 1,
+			jobsVersion: 2,
 			jobs: {},
 		});
 	});

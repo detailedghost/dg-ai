@@ -63,7 +63,7 @@ export function seedJobs(
 ): void {
 	writeConfigFile(dgHome, {
 		pinnedOrigin: "p",
-		jobsVersion: 1,
+		jobsVersion: 2,
 		...extra,
 		jobs,
 	});

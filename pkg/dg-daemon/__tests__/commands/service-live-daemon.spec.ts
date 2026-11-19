@@ -30,7 +30,7 @@ async function boot(services: (dgHome: string) => Record<string, unknown>) {
 	await waitForPidFile(dgHome);
 	writeConfigFile(dgHome, {
 		pinnedOrigin: "p",
-		jobsVersion: 1,
+		jobsVersion: 2,
 		jobs: asContinuous(services(dgHome)),
 	});
 	return { dgHome, port };
@@ -81,7 +81,7 @@ describe("service commands against a live daemon", () => {
 		expect(result.code).toBe(0);
 		expect(JSON.parse(readFileSync(configPathOf(dgHome), "utf8"))).toEqual({
 			pinnedOrigin: "p",
-			jobsVersion: 1,
+			jobsVersion: 2,
 			jobs: {},
 		});
 	});

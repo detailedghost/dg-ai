@@ -12,7 +12,12 @@ import {
 	freshTempDir,
 	subprocessEnv,
 } from "../utils/daemon-harness";
-import { homeTracker, jobsTable, readConfigFile, seedJobs } from "./job-cli-helpers";
+import {
+	homeTracker,
+	jobsTable,
+	readConfigFile,
+	seedJobs,
+} from "./job-cli-helpers";
 import { trackChild } from "../utils/child-registry";
 
 type RunResult = { code: number; stdout: string; stderr: string };
@@ -377,6 +382,10 @@ describe("dg-daemon job add --cron", () => {
 
 				const store = await openStore(dgHome);
 				try {
+					const deadline = Date.now() + 15_000;
+					while (store.listFeedItems().length === 0 && Date.now() < deadline) {
+						await new Promise((resolve) => setTimeout(resolve, 100));
+					}
 					const items = store.listFeedItems();
 					expect(items.map((item) => item.title)).toEqual(["From bun"]);
 				} finally {
@@ -479,6 +488,10 @@ describe("dg-daemon job enable, disable, rm and run", () => {
 
 			const store = await openStore(dgHome);
 			try {
+				const deadline = Date.now() + 15_000;
+				while (store.listFeedItems().length === 0 && Date.now() < deadline) {
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				}
 				const items = store.listFeedItems();
 				expect(items).toHaveLength(1);
 				expect(items[0].title).toBe("From the CLI");

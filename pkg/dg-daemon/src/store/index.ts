@@ -45,7 +45,6 @@ import {
 	resolveKeyMode,
 } from "../crypto/key-resolution";
 import { createKeychainBackendForPlatform } from "../crypto/keychain-backends";
-import { nextCronRun } from "../jobs/cron";
 import { pruneArchiveIds, shouldCheckpointWal } from "../session/archive";
 import { SESSION_MAX_ACTIVE_DEFAULT } from "../session/limits";
 import type {
@@ -222,6 +221,9 @@ export type ScheduledJob = {
 	lastExitCode?: number;
 	lastError?: string;
 	lastStderr?: string;
+	movedAt?: string;
+	renamedFrom?: string;
+	argvError?: string;
 };
 
 /** What `GET /jobs` returns — `ScheduledJob` minus argv and stderr, so listing jobs never decrypts either. */
@@ -247,6 +249,7 @@ export type InsertJobInput = {
 	notifyIdentity?: string;
 	enabled?: boolean;
 	nextRunAt?: string;
+	movedAt?: string;
 };
 
 export type RecordJobRunInput = {
@@ -255,7 +258,18 @@ export type RecordJobRunInput = {
 	exitCode: number;
 	error?: string;
 	stderr?: string;
+	nextRunAt?: Date;
 };
+
+export type JobStateInput = {
+	label: string;
+	cwd: string;
+	intervalMs?: number;
+	cronExpr?: string;
+	nextRunAt: string;
+};
+
+export type JobNameSave = { id: string; label: string; renamedFrom: string };
 
 export type FeedItemInput = {
 	fingerprint: string;
@@ -385,6 +399,8 @@ type RawJobRow = {
 	last_stderr_ciphertext: Uint8Array | null;
 	last_stderr_iv: Uint8Array | null;
 	last_stderr_tag: Uint8Array | null;
+	moved_at: string | null;
+	renamed_from: string | null;
 };
 
 type RawJobSummaryRow = {
@@ -531,16 +547,6 @@ export const AGENT_MESSAGE_ACK_SQL = ackSql(
 	"agent_messages",
 	"recipient_identity = $identity",
 );
-
-function computeNextRunAt(job: ScheduledJob, ranAt: Date): Date {
-	if (job.cronExpr) return nextCronRun(job.cronExpr, ranAt);
-	if (job.intervalMs === undefined) {
-		throw new Error(
-			`job ${job.id} has neither an interval nor a cron expression`,
-		);
-	}
-	return new Date(ranAt.getTime() + job.intervalMs);
-}
 
 /** Emitted after a message lands in `messages` or `agent_messages`, so a blocked `cli-recv` can wake without polling. */
 export const CHAT_STORE_MESSAGE_EVENT = "message";
@@ -1538,19 +1544,29 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 			.toString("utf8");
 	}
 
+	#readJobArgv(row: RawJobRow): { argv: string[]; argvError?: string } {
+		try {
+			const text = this.cipherBox
+				.decryptRecord(
+					Buffer.from(row.argv_ciphertext),
+					Buffer.from(row.argv_iv),
+					Buffer.from(row.argv_tag),
+					this.#schedulerAad(AAD_JOB_ARGV, row.id),
+				)
+				.toString("utf8");
+			return { argv: JSON.parse(text) as string[] };
+		} catch (err) {
+			return { argv: [], argvError: describeError(err) };
+		}
+	}
+
 	#hydrateJob(row: RawJobRow): ScheduledJob {
-		const argv = this.cipherBox
-			.decryptRecord(
-				Buffer.from(row.argv_ciphertext),
-				Buffer.from(row.argv_iv),
-				Buffer.from(row.argv_tag),
-				this.#schedulerAad(AAD_JOB_ARGV, row.id),
-			)
-			.toString("utf8");
 		return {
 			id: row.id,
 			label: row.label,
-			argv: JSON.parse(argv) as string[],
+			...this.#readJobArgv(row),
+			movedAt: row.moved_at ?? undefined,
+			renamedFrom: row.renamed_from ?? undefined,
 			cwd: row.cwd,
 			intervalMs: row.interval_ms ?? undefined,
 			cronExpr: row.cron_expr ?? undefined,
@@ -1641,8 +1657,8 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 			`INSERT INTO scheduled_jobs (
 				id, label, created_at,
 				argv_ciphertext, argv_iv, argv_tag,
-				cwd, interval_ms, cron_expr, enabled, notify_identity, next_run_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				cwd, interval_ms, cron_expr, enabled, notify_identity, next_run_at, moved_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			[
 				id,
 				input.label,
@@ -1656,6 +1672,7 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 				input.enabled === false ? 0 : 1,
 				input.notifyIdentity ?? null,
 				input.nextRunAt ?? now,
+				input.movedAt ?? null,
 			],
 		);
 		const job = this.getJob(id);
@@ -1694,24 +1711,6 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 		return rows.map((row) => this.#hydrateJobSummary(row));
 	}
 
-	dueJobs(now: Date): ScheduledJob[] {
-		const rows = this.db
-			.query(
-				`SELECT * FROM scheduled_jobs
-				 WHERE enabled = 1 AND next_run_at <= ?
-				 ORDER BY next_run_at ASC`,
-			)
-			.all(now.toISOString()) as RawJobRow[];
-		return rows.map((row) => this.#hydrateJob(row));
-	}
-
-	countEnabledJobs(): number {
-		const row = this.db
-			.query("SELECT COUNT(*) AS count FROM scheduled_jobs WHERE enabled = 1")
-			.get() as { count: number };
-		return row.count;
-	}
-
 	setJobEnabled(id: string, enabled: boolean): boolean {
 		const row = this.db
 			.query("UPDATE scheduled_jobs SET enabled = ? WHERE id = ? RETURNING id")
@@ -1727,11 +1726,9 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 	}
 
 	recordJobRun(input: RecordJobRunInput): void {
-		const job = this.getJob(input.jobId);
-		if (!job) throw new Error(`recordJobRun: unknown job ${input.jobId}`);
-
-		const ranAt = input.ranAt.toISOString();
-		const nextRunAt = computeNextRunAt(job, input.ranAt).toISOString();
+		if (!this.getJob(input.jobId)) {
+			throw new Error(`recordJobRun: unknown job ${input.jobId}`);
+		}
 		const error = input.error
 			? this.cipherBox.encryptRecord(
 					input.error,
@@ -1747,13 +1744,13 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 
 		this.db.run(
 			`UPDATE scheduled_jobs
-			 SET last_run_at = ?, next_run_at = ?, last_exit_code = ?,
+			 SET last_run_at = ?, next_run_at = COALESCE(?, next_run_at), last_exit_code = ?,
 			     last_error_ciphertext = ?, last_error_iv = ?, last_error_tag = ?,
 			     last_stderr_ciphertext = ?, last_stderr_iv = ?, last_stderr_tag = ?
 			 WHERE id = ?`,
 			[
-				ranAt,
-				nextRunAt,
+				input.ranAt.toISOString(),
+				input.nextRunAt?.toISOString() ?? null,
 				input.exitCode,
 				error?.ciphertext ?? null,
 				error?.iv ?? null,
@@ -1764,6 +1761,89 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 				input.jobId,
 			],
 		);
+	}
+
+	listUnmovedJobs(): ScheduledJob[] {
+		const rows = this.db
+			.query(
+				"SELECT * FROM scheduled_jobs WHERE moved_at IS NULL ORDER BY created_at ASC, label ASC",
+			)
+			.all() as RawJobRow[];
+		return rows.map((row) => this.#hydrateJob(row));
+	}
+
+	allJobLabels(): string[] {
+		return (
+			this.db.query("SELECT label FROM scheduled_jobs").all() as {
+				label: string;
+			}[]
+		).map((row) => row.label);
+	}
+
+	saveJobNames(saves: JobNameSave[]): void {
+		if (saves.length === 0) return;
+		this.#withImmediateTransaction(() => {
+			for (const save of saves) {
+				this.db.run(
+					"UPDATE scheduled_jobs SET label = ?, renamed_from = ? WHERE id = ? AND moved_at IS NULL",
+					[save.label, save.renamedFrom, save.id],
+				);
+			}
+		});
+	}
+
+	markJobsMoved(ids: string[]): void {
+		if (ids.length === 0) return;
+		const movedAt = new Date().toISOString();
+		this.#withImmediateTransaction(() => {
+			for (const id of ids) {
+				const argv = this.cipherBox.encryptRecord(
+					"[]",
+					this.#schedulerAad(AAD_JOB_ARGV, id),
+				);
+				this.db.run(
+					`UPDATE scheduled_jobs
+					 SET moved_at = ?, argv_ciphertext = ?, argv_iv = ?, argv_tag = ?
+					 WHERE id = ? AND moved_at IS NULL`,
+					[movedAt, argv.ciphertext, argv.iv, argv.tag, id],
+				);
+			}
+		});
+	}
+
+	insertJobState(input: JobStateInput): ScheduledJob {
+		const job = this.insertJob({
+			label: input.label,
+			argv: [],
+			cwd: input.cwd,
+			intervalMs: input.intervalMs,
+			cronExpr: input.cronExpr,
+			nextRunAt: input.nextRunAt,
+			movedAt: new Date().toISOString(),
+		});
+		return job;
+	}
+
+	setJobSchedule(
+		id: string,
+		schedule: { intervalMs?: number; cronExpr?: string; nextRunAt: string },
+	): void {
+		this.db.run(
+			"UPDATE scheduled_jobs SET interval_ms = ?, cron_expr = ?, next_run_at = ? WHERE id = ?",
+			[
+				schedule.intervalMs ?? null,
+				schedule.cronExpr ?? null,
+				schedule.nextRunAt,
+				id,
+			],
+		);
+	}
+
+	setJobNextRun(id: string, nextRunAt: string): void {
+		this.db.run("UPDATE scheduled_jobs SET next_run_at = ? WHERE id = ?", [
+			nextRunAt,
+			id,
+		]);
 	}
 
 	insertFeedItems(
@@ -2238,7 +2318,8 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 					state: "active",
 					cliAttached: row.cli_attached === 1,
 					createdAt: row.created_at_ms ?? Date.now(),
-					lastActivityAt: row.last_activity_at ?? row.created_at_ms ?? Date.now(),
+					lastActivityAt:
+						row.last_activity_at ?? row.created_at_ms ?? Date.now(),
 					...(row.cli_quiet_since !== null
 						? { cliQuietSince: row.cli_quiet_since }
 						: {}),
@@ -2323,7 +2404,11 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 	walPageCount(): number {
 		try {
 			const filename = this.db.filename;
-			if (!filename || filename === ":memory:" || !existsSync(`${filename}-wal`)) {
+			if (
+				!filename ||
+				filename === ":memory:" ||
+				!existsSync(`${filename}-wal`)
+			) {
 				return 0;
 			}
 			const page = (
@@ -2357,9 +2442,7 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 		const records = readSessionFiles(sessionsDir);
 		for (const record of records) {
 			const existing = this.db
-				.query(
-					"SELECT state, token_ciphertext FROM sessions WHERE id = ?",
-				)
+				.query("SELECT state, token_ciphertext FROM sessions WHERE id = ?")
 				.get(record.sessionId) as {
 				state: string | null;
 				token_ciphertext: Uint8Array | null;

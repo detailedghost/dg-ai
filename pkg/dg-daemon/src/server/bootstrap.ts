@@ -24,11 +24,16 @@ import {
 } from "@dg/common/node";
 import { assertNotBlocked } from "@dg/common/node/layout";
 import { DispatchScheduler } from "../dispatch";
+import { countEnabledScheduled } from "../jobs/config";
 import { createJobControl } from "../jobs/control";
 import { isDaemonIdle } from "../jobs/idle";
-import { migrateServicesKey, servicesBackupPath } from "../jobs/migrate";
-import { JOB_TICK_INTERVAL_MS, startJobRunner } from "../jobs/runner";
-import { createSupervisor } from "../services/supervisor";
+import {
+	migrateScheduledRows,
+	migrateServicesKey,
+	servicesBackupPath,
+} from "../jobs/migrate";
+import { createJobRunner, JOB_TICK_INTERVAL_MS } from "../jobs/runner";
+import { createSupervisor, MAX_LOG_BYTES } from "../services/supervisor";
 import {
 	DEFAULT_ARCHIVE_MAX_ROWS,
 	DEFAULT_ARCHIVE_TTL_MS,
@@ -102,20 +107,27 @@ export async function cmdStatus(): Promise<void> {
 
 function migrateJobsConfig(
 	paths: DgPaths,
+	store: ChatStore,
 	logger: ReturnType<typeof createLogger>,
 ): void {
 	const file = paths.daemonConfigPath;
 	try {
 		ensurePrivateDir(dirname(file));
-		const { moved } = withInstallLockSync(
+		const { moved, rows } = withInstallLockSync(
 			dirname(file),
-			() => migrateServicesKey(paths),
+			() => ({
+				...migrateServicesKey(paths),
+				rows: migrateScheduledRows(store, paths, logger),
+			}),
 			CONFIG_LOCK,
 		);
 		if (moved.length > 0) {
 			logger.info(
 				`moved ${moved.length} service(s) to "jobs"; backup ${servicesBackupPath(paths)}`,
 			);
+		}
+		if (rows.moved.length > 0) {
+			logger.info(`moved ${rows.moved.length} scheduled job(s) to "jobs"`);
 		}
 		if (Object.hasOwn(readConfig(paths), "services")) {
 			logger.warn(
@@ -143,7 +155,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 	const connections = new ConnectionManager();
 	const dispatchScheduler = new DispatchScheduler();
 	let boundPort: number | undefined;
-	migrateJobsConfig(paths, logger);
+	migrateJobsConfig(paths, store, logger);
 	const supervisor = createSupervisor({
 		paths,
 		daemonUrl: () => {
@@ -152,6 +164,23 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		},
 		loadConfig: () => readConfig(paths),
 		logger,
+	});
+	const jobRunner = createJobRunner({
+		store,
+		scheduler: dispatchScheduler,
+		logger,
+		loadConfig: () => readConfig(paths),
+		launcher: {
+			paths,
+			daemonUrl: () => {
+				if (boundPort === undefined) {
+					throw new Error("daemon port is not bound");
+				}
+				return `http://127.0.0.1:${boundPort}`;
+			},
+			logger,
+			maxLogBytes: MAX_LOG_BYTES,
+		},
 	});
 	const instanceId = newInstanceId();
 
@@ -181,7 +210,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 				store,
 				credentials,
 				dispatchScheduler,
-				jobs: createJobControl(supervisor),
+				jobs: createJobControl(supervisor, jobRunner),
 			});
 			boundPort = candidate;
 			break;
@@ -215,7 +244,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 			isDaemonIdle(
 				registry.activeCount(),
 				connections.openCount(),
-				store.countEnabledJobs(),
+				countEnabledScheduled(readConfig(paths)),
 				supervisor.runningCount(),
 			),
 		onExpire: () => {
@@ -226,8 +255,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		},
 	});
 
-	const jobRunner = startJobRunner(
-		{ store, scheduler: dispatchScheduler, logger },
+	const jobTicker = jobRunner.start(
 		readEnvNumber(process.env, "DG_JOB_TICK_MS", JOB_TICK_INTERVAL_MS),
 	);
 
@@ -381,7 +409,8 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		if (shuttingDown) return;
 		shuttingDown = true;
 		idleController?.stop();
-		jobRunner.stop();
+		jobTicker.stop();
+		await jobRunner.stopAll();
 		await supervisor.stopAll();
 		clearInterval(reapTimer);
 		registry.closeAll(reason);

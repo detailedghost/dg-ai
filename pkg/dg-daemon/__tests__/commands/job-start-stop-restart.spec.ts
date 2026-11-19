@@ -136,55 +136,45 @@ describe("job start and job stop", () => {
 		}
 	});
 
-	it("start of a scheduled row runs it one time", async () => {
+	it("start of a scheduled job needs a live daemon", async () => {
 		const dgHome = homes.fresh();
-		seedJobs(dgHome, {});
-		const add = await runCli(dgHome, [
-			"job",
-			"add",
-			"--label",
-			"nightly",
-			"--every",
-			"15m",
-			"--cwd",
-			freshTempDir("job-cwd"),
-			"--",
-			"printf",
-			'{"id":"a","title":"A"}\n',
-		]);
-		expect(add.code).toBe(0);
+		seedJobs(
+			dgHome,
+			{
+				nightly: {
+					every: "15m",
+					argv: ["printf", ""],
+					cwd: freshTempDir("job-cwd"),
+				},
+			},
+			{ jobsVersion: 2 },
+		);
 
 		const result = await runCli(dgHome, ["job", "start", "nightly"]);
 
-		expect(result.code).toBe(0);
-		expect(lines(result.stdout)).toContain(
-			'ran "nightly" — 1 new, 0 already seen',
-		);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("no live dg-daemon");
 	});
 });
 
-describe("job stop of a scheduled row", () => {
-	it("names no job, because a scheduled row has no run state to stop", async () => {
+describe("job stop of a scheduled job", () => {
+	it("needs a live daemon, like the stop of a continuous job", async () => {
 		const dgHome = homes.fresh();
-		seedJobs(dgHome, {});
-		const add = await runCli(dgHome, [
-			"job",
-			"add",
-			"--label",
-			"nightly",
-			"--every",
-			"15m",
-			"--cwd",
-			freshTempDir("job-cwd"),
-			"--",
-			"printf",
-			"",
-		]);
-		expect(add.code).toBe(0);
+		seedJobs(
+			dgHome,
+			{
+				nightly: {
+					every: "15m",
+					argv: ["printf", ""],
+					cwd: freshTempDir("job-cwd"),
+				},
+			},
+			{ jobsVersion: 2 },
+		);
 
 		const result = await runCli(dgHome, ["job", "stop", "nightly"]);
 
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain('no job named "nightly"');
+		expect(result.stderr).toContain("no live dg-daemon");
 	});
 });
