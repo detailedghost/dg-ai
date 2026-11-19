@@ -133,7 +133,7 @@ review + correction, test-name gate + docs) exactly as written.
 ## 6. Direct PR/MR launch (the last item)
 
 Run `finish.md` **steps 7–8** exactly as written, including step 8's `/dg:spec` deltas (draft
-unconditionally, a best-effort `dg-skills batch-open <url>` afterward (when `batch-open` fails, print the PR URL and continue), dependent-PR/MR `dg-skills chain plan`/`dg-skills chain apply`
+unconditionally, a best-effort `dg-skills pw batch-open <url>` afterward (when `batch-open` fails, print the PR URL and continue), dependent-PR/MR `dg-skills chain plan`/`dg-skills chain apply`
 handling). [`/dg:pushup`](../../pushup/SKILL.md) runs the same push → PR → browser-open mechanics for
 an ad-hoc branch. Do not fork to it here: it drops the PR-body template, the permission gating, and
 the worktree bookkeeping that step 8 owns.

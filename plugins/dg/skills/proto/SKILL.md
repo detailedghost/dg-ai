@@ -13,7 +13,7 @@ dg-skills prototype --help >/dev/null 2>&1 ||
 
 Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
-If a step fails, run dg-skills doctor proto prototype stash.
+If a step fails, run dg-skills doctor proto prototype install stash.
 
 `dg-skills --version` prints a sha1 of its entry file. If a flag documented here (`--selftest`, `--require-pending`, `--source=`) errors as unknown, the installed binary predates it; refresh it with the curl line above.
 
@@ -84,7 +84,7 @@ Vendor or inline every dependency, or hand-render to plain HTML and CSS.
 **The local mode never reaches the network at run time.** Never install a package or framework, and
 never fetch one from the network, to satisfy this: use what the project already has installed. If a
 dependency is genuinely missing, stop and name the one command the user should run (the same way the
-browser skill asks for `pw install chrome`) and let them run it. `--ext` mode never writes a browser
+pw skill asks before `pw install-browser`) and let them run it. `--ext` mode never writes a browser
 download either: the extension hands scrape and plant results straight to the CLI over the paired
 dg-daemon session. A `~/Downloads/dg-proto/` folder from an older `dg-skills` version is safe to
 delete; nothing reads or writes it anymore.

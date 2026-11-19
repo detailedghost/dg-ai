@@ -7,7 +7,6 @@ binaries. The skills-root README itself is not installed.
 
 | Skill | Description |
 | --- | --- |
-| `browser/` | Open PR or URL tabs in the default browser; `--ext` adds tab groups, launch, and extension installation |
 | `demo/` | Guided browser demos with optional setup and video recording; plays in a local browser by default, through the extension with `--ext` |
 | `proto/` | Compare app-native UI approaches on a live page |
 | `verify/` | Review a finished change round by round and record a verdict per round |
@@ -45,7 +44,7 @@ binaries. The skills-root README itself is not installed.
 | `spring-break/` | Consolidate `.agents/school/` into topic clusters and trim the agent context files |
 | `review-loop/` | Loop an antagonistic review over a branch and address findings |
 | `polish/` | Clean up a diff for quality, then apply the fixes |
-| `pw/` | Drive a browser with `dg-skills pw`; `pw-code` always needs approval |
+| `pw/` | Drive a browser with `dg-skills pw`, and open PR or URL tab batches with `pw batch-open` and `pw --ext launch`; `pw-code` always needs approval |
 | `jot/` | Save a short note or a session handoff (`dg-skills jot`) |
 | `bg/` | Run a task in the background and track the jobs (`dg-skills bg`) |
 | `cls/` | Close out a git worktree and return to the main repo |
@@ -69,7 +68,6 @@ binaries. The skills-root README itself is not installed.
 skills/
   adr/
   agent-seed/
-  browser/
   channel-review/
   chat/
   clipboard-img/
@@ -136,7 +134,7 @@ the adjacent dg-daemon. Most compiled helpers run through dg-skills. User termin
 check the installed binary once and call `dg-skills` from PATH, or the launcher path the block names.
 
 `dg-skills install --cli-only` skips the extension, dg-daemon and
-dg-agent. No skill declares `requires: [extension]`. `browser`, `proto`, `demo`,
+dg-agent. No skill declares `requires: [extension]`. `pw`, `proto`, `demo`,
 `chat` and `overwatch` run locally by default, and `--ext` requires the
 extension, which pairs with each session on its own. `chat` and `overwatch` still need dg-agent and dg-daemon, so their
 bootstrap block runs the full installer, which removes the CLI-only marker. The

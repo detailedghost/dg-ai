@@ -23,7 +23,7 @@ dg-skills assign resolve --help >/dev/null 2>&1 ||
 
 Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
-If a step fails, run dg-skills doctor assign batch-open chain proxy spec stash vcs-provider worktree.
+If a step fails, run dg-skills doctor assign batch-open pw chain proxy spec stash vcs-provider worktree.
 
 **Usage:** `/dg:spec [--fast [-T]] [-s <NNN>_<slug>] [--profile <profile> | --cheap | --expensive] [--proxy <backend>] [--bg] [--no-land | --auto] "<request>"`.
 
@@ -98,7 +98,7 @@ spans more than three or four slices or touches unfamiliar architecture.
 Read ONLY `context.md` + `plan.md` — never `initial.md`/`roundtable/*`. Set `SPEC_PATH`/`SCRATCH_PATH`,
 reuse `/dg:sdlc`'s worktree setup, SKIP its slice-derivation (this bundle's `slices[]` + `/dg:assign` already
 ran), then drive [sdlc engineering.md](../sdlc/references/engineering.md) 4.1–4.3 and
-[sdlc finish.md](../sdlc/references/finish.md) steps 5–8 (through the direct PR/MR launch — draft always, then a best-effort `dg-skills batch-open <url>` (when `batch-open` fails, print the URL and continue), per `finish.md` step 8's `/dg:spec` deltas).
+[sdlc finish.md](../sdlc/references/finish.md) steps 5–8 (through the direct PR/MR launch — draft always, then a best-effort `dg-skills pw batch-open <url>` (when `batch-open` fails, print the URL and continue), per `finish.md` step 8's `/dg:spec` deltas).
 [references/execute.md](references/execute.md) §6 owns the bookkeeping on top of that (persisting
 the PR/MR URL into `plan.md`, restoring cwd). Then §7 marks the PR ready and runs `/dg:land` with its defaults
 in the main loop; it stops at "ready for your review" and asks (`--auto` merges instead). `--no-land`, `--bg`, and GitLab stop at the draft.

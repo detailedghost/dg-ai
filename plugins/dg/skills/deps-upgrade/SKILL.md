@@ -36,7 +36,7 @@ dg-skills deps-upgrade --help >/dev/null 2>&1 ||
 
 Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
-If a step fails, run dg-skills doctor deps-upgrade batch-open proxy stash.
+If a step fails, run dg-skills doctor deps-upgrade batch-open pw proxy stash.
 
 Repeat this resolution in every fresh shell, resumed step and delegated command;
 shell variables do not persist between tool calls. Use the host's existing narrow
@@ -72,7 +72,7 @@ Read `.agents/school/DEPS.md` before Step 1 for past upgrade notes (recurring is
 | 7 | **Validate** — Optional qa-devops + security re-audit | `audit` again | Clean or skipped |
 | 8 | **Commit** — One commit per dependency, conventional format | covered by `bump-dep` / `bump-action`; `commit <type> <scope> "<msg>"` for one-offs | All committed, clean tree |
 | 9 | **Record History** — Update `.agents/school/DEPS.md` | `commit docs deps "…"` | History updated |
-| 10 | **Push & PR** — Push branch, **always** open combined PR **as a draft**, then open it in the browser. Put the `summary` "Held by cooldown" list in the body | `push-pr "<title>"` (body on stdin), then best-effort `dg-skills batch-open` | PR URL returned |
+| 10 | **Push & PR** — Push branch, **always** open combined PR **as a draft**, then open it in the browser. Put the `summary` "Held by cooldown" list in the body | `push-pr "<title>"` (body on stdin), then best-effort `dg-skills pw batch-open` | PR URL returned |
 | 10b | **Ready When Green** — Wait for CI, then mark the PR ready. A repo with no CI is marked ready after a 5 min grace period | `ready-when-green <pr>` | JSON `ready` (exit 0), `failed` (1) or `timeout` (2); report it |
 | 11 | **Close PRs** — After the PR URL exists, close Dependabot PRs with comment | `close-prs <n>…` | Applicable PRs closed |
 | 12 | **Summary** — Emit end-of-run report | `summary` | Markdown report printed |

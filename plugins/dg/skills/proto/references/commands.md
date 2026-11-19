@@ -2,7 +2,7 @@
 
 These commands run the `--ext` flow. Every one carries `--ext`; without it `dg-skills proto` runs the local mode.
 
-If a step fails, run dg-skills doctor proto prototype stash.
+If a step fails, run dg-skills doctor proto prototype install stash.
 
 ## Extension precondition
 
@@ -14,7 +14,7 @@ Gate this skill before scrape on the installer marker used by
 INSTALL_MARKER="$HOME/.config/dg/extension-installed"
 LEGACY_MARKER="$HOME/.config/dg/browser-batch-installed"
 if [ ! -f "$INSTALL_MARKER" ] && [ ! -f "$LEGACY_MARKER" ]; then
-  echo "dg-ai-extension is not installed; run the browser skill's install command first."
+  echo "dg-ai-extension is not installed; run dg-skills install first."
   exit 1
 fi
 ```
@@ -32,7 +32,7 @@ registered, or no extension is paired to the session, the command fails fast
 with a message naming the problem — it never falls back to a Downloads
 timeout. If scrape or plant times out anyway, report:
 
-> Prototype scrape timed out. Run the browser skill's `install` command, confirm
+> Prototype scrape timed out. Run `dg-skills install`, confirm
 > the extension is enabled in the browser that opened, confirm it is paired to
 > this session (run `dg-agent start`; it names the install step when no
 > extension is connected), and retry.

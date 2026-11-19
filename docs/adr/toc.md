@@ -128,6 +128,9 @@ flowchart LR
 - [0048 — Outlook mail Web MCP tools over OWA service calls](0048-outlook-mail-webmcp-tools.md) — Proposed:
   the Outlook built-in ships ten tools that call `service.svc` from the signed-in page with the headers of the tab's own account endpoint; list and search mask subject and preview; write tools report each id apart; the tools are an extra path next to full pw --ext control of Outlook pages.
 
+- [0049 — Fold browser skill into pw](0049-fold-browser-skill-into-pw.md) — Accepted:
+  `batch-open` and `launch` are pw verbs routed before the `--ext` relay; the top-level commands and the browser skill are gone with no aliases, and a skills-only install prunes a stale dg `browser` skill. Amends 0028.
+
 ## Adding an ADR
 
 Use [the template](template.md). Store each record in `docs/adr/NNNN-kebab-title.md`.

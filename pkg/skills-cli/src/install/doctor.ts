@@ -63,7 +63,7 @@ async function layoutCheck(ctx: DoctorContext): Promise<CheckResult> {
 }
 
 export const installChecks: DoctorCheck[] = [
-	skillFilesCheck(["browser"]),
+	skillFilesCheck(["pw"]),
 	{
 		id: "cli-binary",
 		run(ctx) {

@@ -1,6 +1,6 @@
 # Steps 5–8 — Review, Docs, Human Gate, PR/MR
 
-Sections 5–8 are the canon for `/dg:spec`'s execute mode too ([spec execute.md](../../spec/references/execute.md) delegates here for all of it, including step 8 — there is no separate PR-launch skill). `/dg:spec` runs step 8 with two deltas, both called out inline: the PR/MR always opens as a draft, and the URL is handed to `dg-skills batch-open` afterward.
+Sections 5–8 are the canon for `/dg:spec`'s execute mode too ([spec execute.md](../../spec/references/execute.md) delegates here for all of it, including step 8 — there is no separate PR-launch skill). `/dg:spec` runs step 8 with two deltas, both called out inline: the PR/MR always opens as a draft, and the URL is handed to `dg-skills pw batch-open` afterward.
 
 ## Step 5 — Final review + correction
 
@@ -54,7 +54,7 @@ Because nothing has reviewed the code when the PR/MR opens, step 8 forces `--dra
 
 - e. The ephemeral spec + scratchpad stay in `$(dg-skills stash -s sdlc)/` — `/dg:address` removes them when the PR/MR merges (Phase 0.25 step 3g), and `/cleanup`'s 30-day walker catches any that never merge. No manual cleanup, and do **not** delete them at open: step 5's reviewers and the later `/dg:address` session still read them.
 
-- f. **Open it:** run `dg-skills batch-open <url>` (resolve the CLI with the bootstrap block in [SKILL.md](../SKILL.md) first; the [browser skill](../../browser/SKILL.md) documents the command) so it lands in the browser without a separate ask. Applies to every PR/MR this step opens, `/dg:spec` included. This is also how the human gets to the review. It is best-effort: the PR already exists, so when `batch-open` fails, print the PR URL and continue.
+- f. **Open it:** run `dg-skills pw batch-open <url>` (resolve the CLI with the bootstrap block in [SKILL.md](../SKILL.md) first; the [pw skill](../../pw/references/tabs.md) documents the command) so it lands in the browser without a separate ask. Applies to every PR/MR this step opens, `/dg:spec` included. This is also how the human gets to the review. It is best-effort: the PR already exists, so when `batch-open` fails, print the PR URL and continue.
 
 - g. **Dependent PRs/MRs:** if this one depends on another that is still open (cross-slice, cross-spec, or cross-repo — the case `/dg:spec`'s multi-slice runs can produce, since unlike `/dg:sdlc`'s one-per-feature default they may open more than one across a bundle's lifetime), run `dg-skills chain plan`/`dg-skills chain apply` ([chain skill](../../chain/SKILL.md)) on the pair/chain instead of leaving them as unrelated links. The chain command resolves the provider the same way this step does. The `depends_on` data already computed in `engineering.md` §4.1 plugs straight into the chain command's layer-list input with no translation needed.
 

@@ -5,6 +5,9 @@ fill, snapshot, screenshot, mock requests, record video, and save logins as
 named states. `dg-skills pw-code` runs arbitrary Node code against the page. The
 skill is `plugins/dg/skills/pw/SKILL.md`.
 
+`dg-skills pw batch-open` and `dg-skills pw --ext launch` open a batch of PR or
+URL tabs with no pw session. See [Browser tabs and extension](browser.md).
+
 ## Browser
 
 `pw open` picks a system Chrome, then Edge, then a Chromium that

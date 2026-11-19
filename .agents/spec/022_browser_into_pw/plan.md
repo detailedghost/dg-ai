@@ -4,7 +4,7 @@ feature_snake_case: browser_into_pw
 date: "2026-11-19"
 version: "1.0"
 status: draft
-current_slice: 1
+current_slice: 2
 pr_strategy: single
 slices:
   - id: 1
@@ -77,27 +77,29 @@ The /dg:browser skill is a thin layer over the top-level batch-open and launch c
 ### Slice 2 — skills-docs-move
 
 #### Engineering
-- [ ] Delete plugins/dg/skills/browser
-- [ ] Add a Tab batches section to pw SKILL.md and the detail in pw references/tabs.md
-- [ ] Every caller changes dg-skills batch-open to dg-skills pw batch-open and dg:browser to /dg:pw
-- [ ] Rewrite docs/browser.md for pw and update install docs and the extension README
-- [ ] Confirm install prunes a stale browser skill; extend the existing prune only if it does not
-- [ ] Add ADR Fold browser skill into pw and its toc entry
+- [x] Delete plugins/dg/skills/browser
+- [x] Add a Tab batches section to pw SKILL.md and the detail in pw references/tabs.md
+- [x] Every caller changes dg-skills batch-open to dg-skills pw batch-open and dg:browser to /dg:pw
+- [x] Rewrite docs/browser.md for pw and update install docs and the extension README
+- [x] Confirm install prunes a stale browser skill; extend the existing prune only if it does not
+- [x] Add ADR Fold browser skill into pw and its toc entry
 
 #### Testing Criteria
 ##### Contracts
-- [ ] The pw tab-batch skill test replaces browser-skill.spec.ts
-- [ ] The ext-opt-in rule requires --ext for pw batch-open ... --group
-- [ ] skill-manifests and skill-cli-invocation list no browser skill
+- [x] The pw tab-batch skill test replaces browser-skill.spec.ts
+- [x] The ext-opt-in rule requires --ext for pw batch-open ... --group
+- [x] skill-manifests and skill-cli-invocation list no browser skill
 
 #### Acceptance Criteria
-- [ ] rg 'dg:browser|dg-skills (batch-open|launch)' finds nothing outside docs/adr history and CHANGELOG
-- [ ] The skills index lists no browser skill; the full test suite passes
+- [x] rg 'dg:browser|dg-skills (batch-open|launch)' finds nothing outside docs/adr history and CHANGELOG
+- [x] The skills index lists no browser skill; the full test suite passes
 
 ## Slice Summaries
 Slice 1 (pw-tab-verbs): pw/cli.ts routes batch-open and launch to the new pw/tab-verbs.ts before the --ext relay branch. The commander definitions moved there from commands/batch-open.ts and commands/launch.ts, which are deleted. A CLI-only install refuses pw launch and pw batch-open --ext. pw --help and the completion tree list both verbs under pw. EXT_ONLY_COMMANDS is gone. The batch-open and launch doctor items now check the pw skill files and the pw allow rule. Tests: pw-batch-open.spec.ts and pw-launch.spec.ts (renamed, ported to main), pw/cli.spec.ts, cli-only, lazy-commands, doctor-ext-only, cli-smoke.
+Slice 2 (skills-docs-move): deleted plugins/dg/skills/browser. pw SKILL.md has a Tab batches section and a References row, and the detail is in pw/references/tabs.md. Every caller (pushup, sdlc, spec, land, deps-upgrade, doctor, proto) now names dg-skills pw batch-open, the pw tab batch reference or dg-skills install, and their doctor lines name pw or install where the tree calls it. docs/browser.md is rewritten for pw; README, docs/install.md, docs/AGENT-INSTALL.md, docs/pw.md, docs/demo-and-proto.md and pkg/extension/README.md are updated. A skills-only install and both bootstraps prune a stale browser skill whose SKILL.md matches a shipped dg copy (38 hashes, LF and CRLF). ADR 0049 records the decision. Tests: pw-tab-batches-skill.spec.ts replaces browser-skill.spec.ts; ext-opt-in, retired-skills, skill-cli-invocation, land-skill, proto-skill, pw-skill and installed-skill-files updated.
 
 ## Agent Notes
 (slice 1) Slice 1 also touched src/batch-open/doctor.ts, src/launch/doctor.ts, src/completion/describe.ts and __tests__/doctor-ext-only.spec.ts. Under machine load, worktree.spec fails in the full suite but passes alone.
+(slice 2) The plan named pkg/skills-cli/src/utils/installed-skill-files.ts; the real fixture is pkg/common/__tests__/installed-skill-files.ts. The pw SKILL.md line budget rose from 106 to 111 for the Tab batches section.
 
 ## Issues Remediation

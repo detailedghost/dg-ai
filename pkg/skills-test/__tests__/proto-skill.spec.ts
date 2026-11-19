@@ -143,7 +143,7 @@ describe("proto skill", () => {
 		expect(commands).toContain("bootstrap.sh");
 		expect(commands).toContain("extension-installed");
 		expect(commands).toContain("browser-batch-installed");
-		expect(commands).toMatch(/browser skill.+install/i);
+		expect(commands).toContain("dg-skills install");
 		expect(commands).toMatch(/timed out|times out/i);
 		for (const command of [
 			"proto --ext scrape",
