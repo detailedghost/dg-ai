@@ -4,6 +4,7 @@ import {
 	type AutostartKind,
 	autostartInstalled,
 	defaultAutostartDeps,
+	ensurePrivateDir,
 	firstLine,
 	type DgPaths,
 	installAutostart,
@@ -39,7 +40,7 @@ async function registerWslTask(deps: AutostartDeps, paths: DgPaths, distro: stri
 	const xmlPath = wslTaskXmlPath(paths);
 	const xml = windowsTaskXmlBytes({
 		name: NAME,
-		argv: ["wsl.exe", "-d", distro, "--exec", "true"],
+		argv: ["wsl.exe", "-d", distro, "--exec", "sleep", "infinity"],
 		logPath: join(paths.logDir, "dg-daemon-autostart.log"),
 	});
 	deps.writeFile(xmlPath, xml, 0o600);
@@ -71,6 +72,7 @@ export async function installDaemonAutostart(deps: AutostartDeps, paths: DgPaths
 	if (distro !== undefined && !DISTRO_PATTERN.test(distro)) {
 		throw new DgCliError(`WSL_DISTRO_NAME "${distro}" is not valid`, EXIT_GENERAL_FAILURE);
 	}
+	ensurePrivateDir(paths.logDir);
 	const outcome = await installAutostart(deps, paths, {
 		name: NAME,
 		argv,

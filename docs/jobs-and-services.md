@@ -208,12 +208,13 @@ The unit depends on the OS:
 | Linux | A systemd user unit. The install also turns on linger, so the unit runs with no open session. |
 | macOS | A launchd LaunchAgent. |
 | Windows | A task in Task Scheduler. |
-| WSL | The Linux systemd unit, plus a Windows login task that boots the distro. |
+| WSL | The Linux systemd unit, plus a Windows login task that keeps the distro running. |
 
 On WSL, the install writes the task file under the daemon folder, converts its
 path with `wslpath`, and registers the task with `schtasks.exe`. The task runs
-`wsl.exe -d <distro> --exec true` at login, so WSL starts and the systemd unit
-starts with it. `dg autostart remove` deletes the task too. The `dg-phone`
+`wsl.exe -d <distro> --exec sleep infinity` at login. The task keeps the
+distribution running, because a systemd service alone does not, so the unit
+stays up. `dg autostart remove` deletes the task too. The `dg-phone`
 unit that `dg-agent phone open` installs is a different unit. The two units have
 different names.
 

@@ -222,6 +222,15 @@ describe("dg-daemon autostart install", () => {
 		]);
 	});
 
+	it("on darwin creates the log folder before it installs the plist", async () => {
+		const deps = makeDeps({ platform: "darwin" });
+		expect(existsSync(paths.logDir)).toBe(false);
+
+		await cmdAutostartInstall(deps);
+
+		expect(existsSync(paths.logDir)).toBe(true);
+	});
+
 	it("on win32 writes the task XML in daemonDir and prints the task kind", async () => {
 		const deps = makeDeps({ platform: "win32", env: {} });
 		const lines = captureLines();
@@ -450,7 +459,7 @@ describe("dg-daemon autostart install in WSL", () => {
 			.toString("utf16le")
 			.replace(/^\uFEFF/, "");
 		expect(text).toContain("<Command>wsl.exe</Command>");
-		expect(text).toContain(`<Arguments>-d ${DISTRO} --exec true</Arguments>`);
+		expect(text).toContain(`<Arguments>-d ${DISTRO} --exec sleep infinity</Arguments>`);
 		expect(text).not.toContain("--dg-home");
 	});
 

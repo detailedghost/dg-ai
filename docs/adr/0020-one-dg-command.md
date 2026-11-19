@@ -51,7 +51,7 @@ service only when its process exits, and CR-208 is a review result, not a proces
 
 `dg autostart install` starts `dg-daemon` at login. It writes a systemd user unit and turns on linger on Linux
 and WSL, a launchd LaunchAgent on macOS, and a scheduled task on Windows. In WSL, it also adds a Windows login
-task that runs `wsl.exe -d <distro> --exec true`, so WSL boots and its systemd unit starts. `dg autostart
+task that runs `wsl.exe -d <distro> --exec sleep infinity`. The task keeps the distribution running, so WSL stays up and its systemd unit keeps running. `dg autostart
 remove` undoes all of it.
 
 The release flow moves to one tag, `dg-v<x>`, cut from the commit that builds the single `dg` binary. For two
