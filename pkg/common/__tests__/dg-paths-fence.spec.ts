@@ -141,11 +141,33 @@ describe("resolveDgPaths fence", () => {
 		expect(resolveDgPaths(linuxCall(env))).toBe(unfenced);
 	});
 
-	it("throws on every repeat call, so a cached result never skips the fence", () => {
-		const call = linuxCall({ DG_PATH_FENCE: "/f", DG_HOME: "/repeat/g" });
+	it("adds nothing to the path cache when the call throws", () => {
+		const reads = { count: 0 };
+		const counted = (home: string): SystemSeams => ({
+			platform: "linux",
+			homeDir: "/h",
+			env: new Proxy({ DG_HOME: home } as Record<string, string>, {
+				get(target, name) {
+					reads.count += 1;
+					return target[name as string];
+				},
+			}),
+		});
+		const readsOf = (call: SystemSeams): number => {
+			reads.count = 0;
+			resolveDgPaths(call);
+			return reads.count;
+		};
+		const fenced = counted("/no-cache-on-throw/a");
+		(fenced.env as Record<string, string>).DG_PATH_FENCE = "/f";
 
-		expect(() => resolveDgPaths(call)).toThrow(/dg path fence:/);
-		expect(() => resolveDgPaths(call)).toThrow(/dg path fence:/);
+		expect(() => resolveDgPaths(fenced)).toThrow(/dg path fence:/);
+		const afterThrow = readsOf(counted("/no-cache-on-throw/a"));
+		const freshMiss = readsOf(counted("/no-cache-on-throw/b"));
+		const hit = readsOf(counted("/no-cache-on-throw/b"));
+
+		expect(afterThrow).toBe(freshMiss);
+		expect(hit).toBeLessThan(freshMiss);
 	});
 
 	it("rejects with win32 segment rules when the platform is win32", () => {
