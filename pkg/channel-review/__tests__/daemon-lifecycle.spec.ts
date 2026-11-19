@@ -8,6 +8,7 @@ import {
 	mkdirSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { programCommand, setProgramName } from "@dg/common/node/program";
 import { isOurDaemon, start, stop } from "../src/daemon";
 import type { ChildLike } from "../src/daemon";
 import {
@@ -130,8 +131,7 @@ function startSeams(h: DaemonHarness, spawn: ReturnType<typeof fakeSpawn>["spawn
 		system: h.system,
 		io: h.io,
 		spawn,
-		execPath: "/usr/bin/bun",
-		argv: ["/usr/bin/bun", import.meta.path],
+		runArgv: ["/usr/bin/bun", import.meta.path],
 		startTimeoutMs: 2000,
 		killEscalationMs: 30,
 		pollIntervalMs: 5,
@@ -287,23 +287,41 @@ describe("start", () => {
 		expect(spawned[0]!.child.killCalls).toHaveLength(0);
 	});
 
-	test("uses the compiled argv shape when argv[1] is under /$bunfs/", async () => {
+	test("starts the daemon through the dg-skills program under the shared bundle", async () => {
 		const h = setup();
 		const { spawn, spawned } = fakeSpawn(h);
-		await start({}, startSeams(h, spawn, { argv: ["/usr/bin/bun", "/$bunfs/root/dg-skills"] }));
-		expect([spawned[0]!.command, ...spawned[0]!.args.slice(0, 2)]).toEqual([
-			"/usr/bin/bun",
+		setProgramName("dg-skills");
+		try {
+			await start({ runner: "codex" }, startSeams(h, spawn, { runArgv: undefined }));
+		} finally {
+			setProgramName(undefined);
+		}
+		expect([spawned[0]!.command, ...spawned[0]!.args]).toEqual([
+			process.execPath,
+			Bun.main,
+			"dg-skills",
 			"channel-review",
 			"run",
+			"--env",
+			"dev",
+			"--runner",
+			"codex",
 		]);
 	});
 
-	test("uses the compiled argv shape when argv[1] does not exist on disk", async () => {
+	test("starts the daemon through the skills-cli source entry when no program name is recorded", async () => {
 		const h = setup();
 		const { spawn, spawned } = fakeSpawn(h);
-		const missing = join(h.home.dir, "no-such-entry.js");
-		await start({}, startSeams(h, spawn, { argv: ["/usr/bin/bun", missing] }));
-		expect(spawned[0]!.args.slice(0, 2)).toEqual(["channel-review", "run"]);
+		setProgramName(undefined);
+		await start({}, startSeams(h, spawn, { runArgv: undefined }));
+		expect([spawned[0]!.command, ...spawned[0]!.args]).toEqual([
+			...programCommand("dg-skills", []),
+			"channel-review",
+			"run",
+			"--env",
+			"dev",
+		]);
+		expect(spawned[0]!.args[0]).toMatch(/skills-cli[\\/]src[\\/]index\.ts$/);
 	});
 
 	test("replaces the leading argv with runArgv when given", async () => {
@@ -318,8 +336,7 @@ describe("start", () => {
 describe("start on win32", () => {
 	function win32Seams(h: DaemonHarness, spawn: ReturnType<typeof fakeSpawn>["spawn"], extra: Record<string, unknown> = {}) {
 		return startSeams(h, spawn, {
-			argv: ["C:\\dg-skills.exe", "B:\\~BUN\\root\\dg-skills.exe"],
-			execPath: "C:\\dg-skills.exe",
+			runArgv: ["C:\\dg-skills.exe"],
 			...extra,
 		});
 	}
