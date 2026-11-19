@@ -748,18 +748,17 @@ posix("ensureLayout targets", () => {
 		expect(lines[0]).toStartWith(`dg: kept ${legacyAt("daemon")}; setting aside ${paths.daemonDir} failed: `);
 	});
 
-	test("keeps a used target and the source, and logs one line naming both paths", async () => {
+	test("blocks two-used and keeps both folders, and logs one line naming both paths", async () => {
 		put(legacyAt("daemon", "daemon.db"), "db bytes");
 		put(join(paths.daemonDir, "key"), "k");
 
 		const result = await run();
 
-		expect(outcomeAt(result, "daemon")).toMatchObject({ kind: "kept", reason: "target-used" });
+		const fix = `dg: two daemon folders hold data: ${legacyAt("daemon")} and ${paths.daemonDir}. dg does not choose one and does not merge them. Move the folder that you do not want to a different name, then run the command again`;
+		expect(outcomeAt(result, "daemon")).toMatchObject({ kind: "blocked", reason: "two-used", fix });
 		expect(readFileSync(legacyAt("daemon", "daemon.db"), "utf8")).toBe("db bytes");
 		expect(readFileSync(join(paths.daemonDir, "key"), "utf8")).toBe("k");
-		expect(lines).toEqual([
-			`dg: kept ${legacyAt("daemon")}; ${paths.daemonDir} already exists and holds data. dg-skills doctor reports both copies`,
-		]);
+		expect(lines).toEqual([fix]);
 	});
 
 	test("never overwrites an existing target of an entry with no unused tag", async () => {
@@ -1100,8 +1099,17 @@ posix("assertNotBlocked", () => {
 		expect(readdirSync(paths.daemonDir)).toEqual([]);
 	});
 
-	test("returns for a target-used kept entry because its target exists", async () => {
+	test("throws for a two-used daemon entry whose folders both hold data", async () => {
 		put(legacyAt("daemon", "daemon.db"), "legacy");
+		put(join(paths.daemonDir, "daemon.db"), "current");
+		const result = await run();
+		expect(outcomeAt(result, "daemon")).toMatchObject({ kind: "blocked", reason: "two-used" });
+
+		expect(thrown(() => assertNotBlocked(paths, "daemon"))).toBeInstanceOf(DgCliError);
+	});
+
+	test("returns for a target-used kept entry because its target exists", async () => {
+		put(legacyAt("daemon", "config.json"), "{}");
 		put(join(paths.daemonDir, "daemon.db"), "current");
 		const result = await run();
 		expect(outcomeAt(result, "daemon")).toMatchObject({ kind: "kept", reason: "target-used" });

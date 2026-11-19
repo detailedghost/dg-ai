@@ -7,7 +7,7 @@ import {
 	shellCommand,
 	treeContained,
 } from "@dg/common/node";
-import { blockedText, LAYOUT_TABLE } from "@dg/common/node/layout";
+import { blockedText, LAYOUT_TABLE, TWO_USED_RENAME } from "@dg/common/node/layout";
 import type { LayoutPlan } from "@dg/common/node/layout-work";
 import {
 	allowRuleCheck,
@@ -25,12 +25,11 @@ function stepLines(step: PlanStep): string[] {
 		case "move":
 		case "setAside":
 			return [`${from} has not moved to ${to}; run dg-skills install`];
-		case "block":
-			return [
-				action.reason === "no-hook"
-					? `${from} has not moved to ${to}; run dg-skills install`
-					: blockedText({ reason: action.reason, from, to, refused: process.platform === "win32" }),
-			];
+		case "block": {
+			if (action.reason === "no-hook") return [`${from} has not moved to ${to}; run dg-skills install`];
+			const ends = step.blockEnds ?? { from, to };
+			return [blockedText({ reason: action.reason, ...ends, refused: process.platform === "win32" })];
+		}
 		case "retryPending":
 			return step.records.map((record) =>
 				existsSync(record.to) && treeContained(record.from, record.to)
@@ -48,14 +47,17 @@ function stepLines(step: PlanStep): string[] {
 async function layoutCheck(ctx: DoctorContext): Promise<CheckResult> {
 	const { planLayout, snapshot } = await import("@dg/common/node/layout-work");
 	const plan = planLayout(LAYOUT_TABLE, snapshot(ctx.paths, {}), {});
-	const lines = plan.steps.flatMap(stepLines);
+	const lines = [...new Set(plan.steps.flatMap(stepLines))];
 	if (plan.steps.every(({ action }) => action.kind === "skip" || action.kind === "absent"))
 		return ok("every dg file is in its per-OS folder");
 	const windowsBlock =
 		process.platform === "win32"
 			? plan.steps.find(({ action }) => action.kind === "block" && action.reason === "live-writer")
 			: undefined;
-	const fix = windowsBlock
+	const twoUsed = plan.steps.some(({ action }) => action.kind === "block" && action.reason === "two-used");
+	const fix = twoUsed
+		? TWO_USED_RENAME
+		: windowsBlock
 		? blockedText({ reason: "live-writer", from: windowsBlock.from, to: windowsBlock.to, refused: true })
 		: "dg-skills install";
 	return warn(lines.join("\n"), fix);

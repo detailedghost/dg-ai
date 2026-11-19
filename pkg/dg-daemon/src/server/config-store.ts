@@ -41,6 +41,7 @@ export function writeConfig(
 }
 
 export function readConfigStrict(paths: DgPaths): Record<string, unknown> {
+	assertNotBlocked(paths, "daemon");
 	const file = paths.daemonConfigPath;
 	if (!existsSync(file)) return {};
 	let parsed: unknown;

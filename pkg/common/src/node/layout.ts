@@ -1,6 +1,6 @@
 import { lstatSync, readdirSync, readFileSync, type Stats } from "node:fs";
 import { basename, join } from "node:path";
-import { DgCliError, isMissingPath } from "../errors";
+import { DgCliError, EXIT_LAYOUT_BLOCKED, isMissingPath } from "../errors";
 import { type DgPaths } from "./dg-paths";
 import { withInstallLock } from "./install-lock";
 
@@ -44,6 +44,8 @@ export type MoveEntry = {
 	from: string | readonly string[];
 	to: (paths: DgPaths, hooks: Pick<OwnerHooks, "ssms.configDir">) => string;
 	unused?: "folder" | { sqlite: string };
+	usedBy?: "daemon";
+	follows?: "daemon";
 	live?: string;
 	stop?: StopKey;
 	verify?: "phone.verify";
@@ -57,6 +59,7 @@ type MarkerEntry = { name: string; from: string; marker: true };
 export type LayoutEntry = MoveEntry | MarkerEntry;
 
 const DAEMON = { live: "daemon/*.pid", stop: "daemon.stop" } as const;
+const FOLLOWS_DAEMON = { ...DAEMON, follows: "daemon" } as const;
 const LAUNCHED = { launcherBound: true } as const;
 const SSMS = { live: "ssms/*.pid" } as const;
 
@@ -66,20 +69,21 @@ export const LAYOUT_TABLE = [
 	{ name: "skills", from: "skills", to: (paths) => paths.skillsDir },
 	{ name: "browsers", from: "browsers", to: (paths) => paths.browsersDir },
 	{ name: "demo-narration", from: "demo-narration", to: (paths) => join(paths.dataDir, "demo-narration") },
-	{ name: "sessions", from: "agents/sessions", to: (paths) => paths.sessionsDir, ...DAEMON },
-	{ name: "assets", from: "agents/assets", to: (paths) => paths.assetsDir, ...DAEMON },
+	{ name: "sessions", from: "agents/sessions", to: (paths) => paths.sessionsDir, ...FOLLOWS_DAEMON },
+	{ name: "assets", from: "agents/assets", to: (paths) => paths.assetsDir, ...FOLLOWS_DAEMON },
 	{
 		name: "memory",
 		from: ["agents/memory.db", "agents/memory.db-wal", "agents/memory.db-shm"],
 		to: (paths) => paths.agentsDir,
 	},
-	{ name: "personas", from: "agents", to: (paths) => paths.personasDir },
-	{ name: "daemon-logs", from: "daemon/logs", to: (paths) => paths.logDir, ...DAEMON },
+	{ name: "personas", from: "agents", to: (paths) => paths.personasDir, follows: "daemon" },
+	{ name: "daemon-logs", from: "daemon/logs", to: (paths) => paths.logDir, ...FOLLOWS_DAEMON },
 	{
 		name: "daemon",
 		from: "daemon",
 		to: (paths) => paths.daemonDir,
 		unused: "folder",
+		usedBy: "daemon",
 		asideMark: DAEMON_ASIDE_MARK,
 		...DAEMON,
 	},
@@ -129,7 +133,7 @@ export type EntryName = Extract<(typeof LAYOUT_TABLE)[number], { to: unknown }>[
 
 type Ends = { from: string; to: string };
 
-type BlockReason = "live-writer" | "no-hook";
+type BlockReason = "live-writer" | "no-hook" | "two-used";
 
 export type Outcome = Ends &
 	(
@@ -196,7 +200,11 @@ export function placeOf(entry: MoveEntry, dest: string): string {
 	return typeof entry.from === "string" ? dest : join(dest, basename(entry.from[0] ?? ""));
 }
 
+export const TWO_USED_RENAME = "Move the folder that you do not want to a different name, then run the command again";
+
 export function blockedText({ reason, from, to, refused }: Ends & { reason: BlockReason; refused?: boolean }): string {
+	if (reason === "two-used")
+		return `dg: two daemon folders hold data: ${from} and ${to}. dg does not choose one and does not merge them. ${TWO_USED_RENAME}`;
 	if (reason === "no-hook") return `dg: ${from} has not moved to ${to}; run dg-skills install`;
 	return refused
 		? `dg: kept ${from}; stop the dg-daemon service, then run dg-skills install again`
@@ -218,7 +226,9 @@ const exists = (path: string): boolean => {
 export function assertNotBlocked(paths: DgPaths, name: EntryName): void {
 	const cached = results.get(paths)?.[name];
 	if (cached) {
-		if (cached.kind === "blocked") throw new DgCliError(cached.fix);
+		if (cached.kind === "blocked") {
+			throw new DgCliError(cached.fix, cached.reason === "two-used" ? EXIT_LAYOUT_BLOCKED : undefined);
+		}
 		if (cached.kind === "failed") throw new DgCliError(cached.error);
 		if (cached.kind === "kept" && cached.reason === "copy-incomplete") {
 			throw new DgCliError(
