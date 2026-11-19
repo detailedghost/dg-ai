@@ -304,6 +304,24 @@ describe("supervisor state folder preflight", () => {
 		expect(r.supervisor.runningCount()).toBe(0);
 	});
 
+	posixOnly("refuses a dangling link at the job state folder and creates nothing behind it", () => {
+		const { r, dump } = dumpRig();
+		const target = join(dirname(dump), "not-yet");
+		mkdirSync(r.jobStateRoot, { recursive: true });
+		const path = stateDirOf(r);
+		symlinkSync(target, path);
+
+		const result = r.supervisor.start("bot");
+
+		expect(result).toEqual({
+			ok: false,
+			kind: "invalid",
+			error: `cannot create the state folder ${path}: it is a symbolic link`,
+		});
+		expect(existsSync(target)).toBe(false);
+		expect(r.supervisor.runningCount()).toBe(0);
+	});
+
 	const canTestPermission =
 		process.platform !== "win32" && process.getuid?.() !== 0;
 	(canTestPermission ? it : it.skip)(

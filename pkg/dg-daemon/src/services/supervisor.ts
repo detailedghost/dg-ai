@@ -1,13 +1,15 @@
 import {
+	chmodSync,
 	closeSync,
 	existsSync,
 	lstatSync,
+	mkdirSync,
 	openSync,
 	readFileSync,
 	rmSync,
 	statSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describeError } from "@dg/common";
 import {
 	checkExecutableResolves,
@@ -86,12 +88,21 @@ type Entry = {
 export const exponentialBackoffMs = (failures: number): number =>
 	Math.min(BACKOFF_BASE_MS * 2 ** (failures - 1), BACKOFF_MAX_MS);
 
-function isSymbolicLink(path: string): boolean {
+function ensureRealPrivateDir(path: string): void {
 	try {
-		return lstatSync(path).isSymbolicLink();
-	} catch {
-		return false;
+		mkdirSync(path, { mode: 0o700 });
+	} catch (err) {
+		const code = (err as NodeJS.ErrnoException).code;
+		if (code === "ENOENT") {
+			mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+			return ensureRealPrivateDir(path);
+		}
+		if (code !== "EEXIST") throw err;
+		const found = lstatSync(path);
+		if (found.isSymbolicLink()) throw new Error("it is a symbolic link");
+		if (!found.isDirectory()) throw new Error("it is not a folder");
 	}
+	chmodSync(path, 0o700);
 }
 
 function sleepUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
@@ -286,10 +297,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 		let stateDir = `<jobStateRoot>/${decl.label}`;
 		try {
 			stateDir = jobStateDir(deps.paths, decl.label);
-			if (isSymbolicLink(stateDir)) {
-				throw new Error("it is a symbolic link");
-			}
-			ensurePrivateDir(stateDir);
+			ensureRealPrivateDir(stateDir);
 		} catch (err) {
 			return `cannot create the state folder ${stateDir}: ${describeError(err)}`;
 		}
