@@ -150,3 +150,4 @@ section, this section holds.
   argument list of one program that the job or service names.
 - `dg autostart` is the mount of `dg-daemon autostart`. It installs, removes and reports the login unit of the
   daemon, as the accepted text describes.
+- The job model is in [ADR 0049](0049-jobs.md).

@@ -40,6 +40,8 @@ flowchart LR
   amended so that channel review stays out of `dg`, `dg` is a fourth program name, and `dg autostart` mounts `dg-daemon autostart`.
 - [0043 — Run outside services under the daemon with a provisional service API](0043-outside-services.md) — Accepted:
   `passEnv`, `stopTimeoutMs`, `grant`, `POST /service-api/v1/credentials`, and `dg-daemon start`, `stop` and `restart`.
+- [0049 — One job model for services and scheduled jobs](0049-jobs.md) — Accepted:
+  one noun, three mode keys, one `jobs` table and one launcher; services and scheduled jobs move at daemon start.
 
 ## Security
 

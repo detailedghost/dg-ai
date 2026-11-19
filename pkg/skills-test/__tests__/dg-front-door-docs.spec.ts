@@ -16,6 +16,7 @@ const CHANGED_DOCS = [
 	JOBS,
 	"docs/service-api.md",
 	"docs/adr/0043-outside-services.md",
+	"docs/adr/0049-jobs.md",
 	TOC_PATH,
 ];
 const ROUTE_NAMES = Object.keys(ROUTES);
@@ -148,10 +149,10 @@ describe("ADR 0020 amendment", () => {
 		expect(flatText).toMatch(/`dg autostart`[^.]*mount of `dg-daemon autostart`/);
 	});
 
-	test("does not supersede, deprecate or link a record above 0048", () => {
+	test("does not supersede, deprecate or link a record above 0049", () => {
 		expect(text).not.toMatch(/supersede/i);
 		expect(text).not.toMatch(/Deprecated/);
-		for (const m of text.matchAll(/\((?:\.\/)?(\d{4})-[^)]*\.md\)/g)) expect(Number(m[1])).toBeLessThanOrEqual(48);
+		for (const m of text.matchAll(/\((?:\.\/)?(\d{4})-[^)]*\.md\)/g)) expect(Number(m[1])).toBeLessThanOrEqual(49);
 	});
 
 	test("code spans show only dg names of ROUTES, apart from the retired names it corrects", () => {

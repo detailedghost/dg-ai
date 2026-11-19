@@ -63,10 +63,10 @@ describe("ADR 0043 outside services", () => {
 		expect(existsSync(join(REPO_ROOT, ADR_PATH))).toBe(true);
 	});
 
-	test("toc entry is last in Platform, within 160 columns, with the Accepted form", () => {
+	test("toc entry is in Platform, within 160 columns, with the Accepted form", () => {
 		const platform = heading(toc, "Platform");
 		const entries = platform.split("\n").filter((l) => l.startsWith("- ["));
-		const last = entries.at(-1) ?? "";
+		const last = entries.find((l) => /^- \[0043 — /.test(l)) ?? "";
 		expect(last).toMatch(
 			/^- \[0043 — .+\]\(0043-outside-services\.md\) — Accepted:/,
 		);
@@ -145,10 +145,10 @@ describe("docs/jobs-and-services.md", () => {
 		expect(doc).not.toContain("~/.dg");
 		for (const p of [
 			"<state>/daemon/config.json",
-			"<log>/service-<label>.log",
-			"<state>/daemon/services/<label>.pid",
+			"<log>/service-<name>.log",
+			"<state>/daemon/services/<name>.pid",
 			"~/.local/state/dg/daemon/config.json",
-			"~/.local/state/dg/log/service-<label>.log",
+			"~/.local/state/dg/log/service-<name>.log",
 			"install.md#where-dg-keeps-its-files",
 		])
 			expect(doc).toContain(p);
@@ -156,10 +156,10 @@ describe("docs/jobs-and-services.md", () => {
 
 	test("gives run steps in order", () => {
 		const order = [
-			"service add",
-			"dg-daemon start",
-			"dg-daemon service start",
-			"service status --json",
+			"dg job add --name bot",
+			"dg job enable bot",
+			"## Job verbs",
+			"## Old and new commands",
 		].map((s) => doc.indexOf(s));
 		for (const i of order) expect(i).toBeGreaterThanOrEqual(0);
 		expect([...order].sort((a, b) => a - b)).toEqual(order);
@@ -231,7 +231,7 @@ describe("docs/jobs-and-services.md", () => {
 		expect(doc).toMatch(/injected[^.]*win/i);
 		expect(doc).toMatch(/nothing starts the daemon at login/i);
 		expect(doc).toMatch(
-			/--autostart[^.]*(does not start the daemon|only when the daemon boots)/i,
+			/`enabled: true` starts the job now and at each daemon start/,
 		);
 	});
 
@@ -242,7 +242,7 @@ describe("docs/jobs-and-services.md", () => {
 		expect(doc).toMatch(/no active session/i);
 		expect(doc).toMatch(/240\s?s/);
 		expect(doc).toMatch(/--force[^.]*(immediately|at once)/i);
-		expect(doc).toMatch(/does not kill a job/i);
+		expect(doc).toMatch(/does not kill a dispatch command/i);
 		expect(doc).toMatch(/Windows[^.]*(each|every) stop[^.]*forced/i);
 		expect(doc).toMatch(/restart[^.]*(only|just)[^.]*autostart/i);
 		expect(doc).not.toMatch(

@@ -215,8 +215,7 @@ folders with data stop the start of the daemon. The message names the two
 folders. dg does not choose one, and dg merges nothing.
 
 `dg-daemon serve` exits 78 for this block, and the systemd unit does not start
-it again. `service add` and `service rm` exit 78 too. `dg-daemon service status`
-reads no config and still exits 1 when no daemon runs.
+it again. The `dg job` verbs that write the config exit 78 too.
 
 To fix it, move `<state>/daemon` to a different name when the legacy folder
 holds the sessions, then start again. When `<state>/daemon` holds the sessions,
