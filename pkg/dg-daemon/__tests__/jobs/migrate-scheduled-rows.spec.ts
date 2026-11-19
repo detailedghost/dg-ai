@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
 	chmodSync,
+	existsSync,
 	readFileSync,
 	statSync,
 	utimesSync,
@@ -397,5 +398,38 @@ describe("migrateScheduledRows restart between steps", () => {
 		);
 
 		expect(lines).toEqual(['scheduled job "Jira Sprint" is now "jira-sprint"']);
+	});
+});
+
+describe("migrateScheduledRows old argv scrub", () => {
+	const fileBytes = (file: string): Buffer =>
+		existsSync(file) ? readFileSync(file) : Buffer.alloc(0);
+	const chunksOf = (bytes: Buffer): Buffer[] =>
+		Array.from({ length: Math.floor(bytes.length / 32) }, (_, index) =>
+			bytes.subarray(index * 32, index * 32 + 32),
+		);
+
+	it("leaves no part of the old argv ciphertext in the database file or its -wal file", async () => {
+		const { store, ids, paths } = await setup([
+			{
+				label: "jira-sprint",
+				argv: ["jira", "issue", "list", `--token=${"t0ken".repeat(300)}`],
+			},
+		]);
+		const chunks = chunksOf(
+			Buffer.from(rawJob(store, ids[0]).argv_ciphertext),
+		);
+		const files = [paths.dbPath, `${paths.dbPath}-wal`];
+		const found = () =>
+			chunks.filter((chunk) =>
+				files.some((file) => fileBytes(file).includes(chunk)),
+			).length;
+		expect(chunks.length).toBeGreaterThan(40);
+		expect(found()).toBe(chunks.length);
+
+		await move(store, paths);
+
+		expect(store.getJob(ids[0])?.argv).toEqual([]);
+		expect(found()).toBe(0);
 	});
 });

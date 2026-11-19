@@ -1795,20 +1795,29 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 	markJobsMoved(ids: string[]): void {
 		if (ids.length === 0) return;
 		const movedAt = new Date().toISOString();
-		this.#withImmediateTransaction(() => {
-			for (const id of ids) {
-				const argv = this.cipherBox.encryptRecord(
-					"[]",
-					this.#schedulerAad(AAD_JOB_ARGV, id),
-				);
-				this.db.run(
-					`UPDATE scheduled_jobs
-					 SET moved_at = ?, argv_ciphertext = ?, argv_iv = ?, argv_tag = ?
-					 WHERE id = ? AND moved_at IS NULL`,
-					[movedAt, argv.ciphertext, argv.iv, argv.tag, id],
-				);
-			}
-		});
+		const { secure_delete: prior } = this.db
+			.query("PRAGMA secure_delete")
+			.get() as { secure_delete: number };
+		this.db.run("PRAGMA secure_delete = ON");
+		try {
+			this.#withImmediateTransaction(() => {
+				for (const id of ids) {
+					const argv = this.cipherBox.encryptRecord(
+						"[]",
+						this.#schedulerAad(AAD_JOB_ARGV, id),
+					);
+					this.db.run(
+						`UPDATE scheduled_jobs
+						 SET moved_at = ?, argv_ciphertext = ?, argv_iv = ?, argv_tag = ?
+						 WHERE id = ? AND moved_at IS NULL`,
+						[movedAt, argv.ciphertext, argv.iv, argv.tag, id],
+					);
+				}
+			});
+			this.db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+		} finally {
+			this.db.run(`PRAGMA secure_delete = ${prior}`);
+		}
 	}
 
 	insertJobState(input: JobStateInput): ScheduledJob {

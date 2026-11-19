@@ -49,6 +49,7 @@ export type RawJob = {
 	renamed_from: string | null;
 	next_run_at: string;
 	last_exit_code: number | null;
+	argv_ciphertext: Uint8Array;
 };
 
 export function rawJob(store: ChatStore, id: string): RawJob {
