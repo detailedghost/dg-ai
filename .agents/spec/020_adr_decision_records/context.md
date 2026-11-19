@@ -8,8 +8,8 @@ current_slice: 0
 pr_strategy: "single"
 execution:
   profile: "balance"
-bundle: "/home/detailedghost/code/worktrees/dg-ai-adr-plan/.agents/spec/019_adr_decision_records"
-plan_path: "/home/detailedghost/code/worktrees/dg-ai-adr-plan/.agents/spec/019_adr_decision_records/plan.md"
+bundle: "/home/detailedghost/code/worktrees/dg-ai-adr-plan/.agents/spec/020_adr_decision_records"
+plan_path: "/home/detailedghost/code/worktrees/dg-ai-adr-plan/.agents/spec/020_adr_decision_records/plan.md"
 slices:
   - id: 1
     name: "adr-cli-core"

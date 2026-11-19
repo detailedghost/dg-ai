@@ -44,6 +44,13 @@ slices:
       qa: [dg:reviewer]
 execution:
   profile: balance
+permissions:
+  run_commands: true
+  git_push: true
+  gh_pr_create: true
+  auto_cleanup_worktree: true
+  slice_commits: true
+  housekeeping_commit: true
 ---
 
 # Decision records tool (/dg:adr + dg-skills adr)
@@ -63,7 +70,7 @@ Split decision records into two paired files: a simple human ADR in docs/adr wit
 - The three-gate test moves fully into /dg:adr; grill-me keeps a one-line pointer; fix the grill-me either/or root and the spec grill.md wrong root; agent-seed, spring-break and contributing.md point to /dg:adr
 - Build wiring: sdlc slice agents read adr relevant before building; the docs step updates existing pairs and emits RATIFY for a proposed new pair; land runs adr lint --changed before merge only in repos that ran adr init
 - Hoist generic frontmatter helpers from spec/frontmatter.ts to src/utils/frontmatter.ts
-- A follow-up brief for bundle 020: dg-ai opt-in plus backfill of all 49 numbered ADRs (see `## Follow-up: 020_adr_backfill brief`)
+- A follow-up brief for bundle 021: dg-ai opt-in plus backfill of all 49 numbered ADRs (see `## Follow-up: 021_adr_backfill brief`)
 ### Excluded
 - A CI job for adr lint in each repo
 - adr init or backfill in other repos (Velora, Freebird); they opt in later with /dg:adr
@@ -71,7 +78,7 @@ Split decision records into two paired files: a simple human ADR in docs/adr wit
 - A seventh verb; grading one text is `adr lint --grade`
 - Hoisting the readability function to pkg/common
 - Mermaid syntax validation in lint
-- The dg-ai backfill itself; it ships as bundle 020 after this PR merges
+- The dg-ai backfill itself; it ships as bundle 021 after this PR merges
 
 ### Slice 1 — adr-cli-core
 
@@ -168,7 +175,7 @@ Split decision records into two paired files: a simple human ADR in docs/adr wit
 - [ ] spec `references/grill.md`: replace the `.agents/decisions` persistence line with `/dg:adr new` writing the pair
 - [ ] agent-seed: `references/classification.md`, `docs.md`, `templates.md` and `workflow.md` point to `/dg:adr` for the format; `docs.md` shows the decision shape (frontmatter `covers:`, a link line to the ADR, terse rules or `No agent rules.`, input to the generated README)
 - [ ] spring-break: `SKILL.md` step 8 and `references/structure.md` line 118 point to `/dg:adr`; the adr step runs only when `.agents/decisions/README.md` exists, runs `dg-skills adr lint --all --json`, writes missing decision files, never rewrites an ADR body without a diff the human approves, and skips quietly otherwise
-- [ ] `docs/contributing.md`: replace the two ADR sentences with the pair, the levels, the `Topic:` line and `dg-skills adr new`; keep the "no empty file under `.agents/`" line; do not claim dg-ai passes `adr lint` (opt-in lands with bundle 020)
+- [ ] `docs/contributing.md`: replace the two ADR sentences with the pair, the levels, the `Topic:` line and `dg-skills adr new`; keep the "no empty file under `.agents/`" line; do not claim dg-ai passes `adr lint` (opt-in lands with bundle 021)
 - [ ] Indexes: add `adr` to a new `ADR_SKILLS` list in `pkg/skills-test/__tests__/skill-index-docs.spec.ts` and add its row to `README.md`, `docs/install.md` and `plugins/dg/skills/README.md`
 - [ ] List every new `adr/**` file in `pkg/common/__tests__/installed-skill-files.ts` (sorted)
 - [ ] `pkg/skills-test/__tests__/adr-skill.spec.ts`: the `levels.md` table equals `LEVELS` and `gradeLimit` from `src/adr/levels.ts`; the `write-adr.md` template headings equal `HUMAN_SECTIONS`; no file under `plugins/dg/skills/**` contains `<adr-root>` or says decisions persist to `.agents/decisions` alone
@@ -262,7 +269,7 @@ Code Structure: not applicable, this slice is text only.
 - **Decision:** a repo is opted in when `.agents/decisions/README.md` exists; every CLI verb except `init` exits 2 with `adr: not initialized. Run dg-skills adr init first.` otherwise.
 - **Home:** `.agents/decisions/README.md`
 - **Rationale:** `adr init` writes it, it carries the level, and skill text can test for a file without running the CLI.
-- **Alternatives:** test for `.agents/decisions/` (dg-ai has that directory today and must stay opted out until bundle 020).
+- **Alternatives:** test for `.agents/decisions/` (dg-ai has that directory today and must stay opted out until bundle 021).
 - **Applies to:** slices 1, 3, 4
 
 ### Exit codes and output shapes
@@ -286,11 +293,11 @@ Code Structure: not applicable, this slice is text only.
 - **Alternatives:** one shared adr spec file (slices 2 and 3 would collide).
 - **Applies to:** slices 1, 2, 3, 4
 
-## Follow-up: 020_adr_backfill brief
+## Follow-up: 021_adr_backfill brief
 
-This work left bundle 019 at the gaps pass. It becomes bundle `020_adr_backfill` after the 019 PR merges and ships as one PR of its own. `pr_strategy` in 019 stays `single`. The items below are plain bullets on purpose; render them as checkboxes when bundle 020 is scaffolded.
+This work left bundle 020 at the gaps pass. It becomes bundle `021_adr_backfill` after the 020 PR merges and ships as one PR of its own. `pr_strategy` in 020 stays `single`. The items below are plain bullets on purpose; render them as checkboxes when bundle 021 is scaffolded.
 
-Preconditions: all four slices of 019 are merged, and the installed `dg-skills` is the merged build (land's `adr lint --changed` gate turns on for every dg-ai PR the moment `.agents/decisions/README.md` lands). dg-ai holds 49 numbered ADRs today (0001 to 0048, with 0046 used twice) and 3 decision files (0022, 0023, 0024), so the backfill writes 46 new decision files and converts 3.
+Preconditions: all four slices of 020 are merged, and the installed `dg-skills` is the merged build (land's `adr lint --changed` gate turns on for every dg-ai PR the moment `.agents/decisions/README.md` lands). dg-ai holds 49 numbered ADRs today (0001 to 0048, with 0046 used twice) and 3 decision files (0022, 0023, 0024), so the backfill writes 46 new decision files and converts 3.
 
 ### Engineering
 - First commit: renumber `docs/adr/0046-pw-ext-network.md` to `0049-pw-ext-network.md`; only `docs/adr/toc.md` links it, so fix that one link; `0046-webmcp-approvals-apart-from-pw-ext.md` keeps its number and its five inbound links (ADRs 0035, 0045, 0047, `docs/webmcp.md`, `docs/pw.md`)
@@ -303,10 +310,10 @@ Preconditions: all four slices of 019 are merged, and the installed `dg-skills` 
 - Write 46 new decision files with `covers:` globs and terse rules; convert 0022, 0023 and 0024: add `covers:`, keep the rules verbatim, replace the `ADR:` line with a relative link that lint accepts
 - Covers check: a one-time script in the state dir (`dg-skills stash -s adhoc`, not committed) asserts that each decision's globs match at least one tracked file; `adr relevant` smoke on one sample path per decision
 - Diff check: a one-time script in the state dir extracts Status, Date, amendment lines, backticked paths and relative links from the old and new file and diffs the sets; the result goes in the PR body
-- Batches: 5 batches of about 10 ADRs, one commit per batch, `adr lint --changed` per batch, one sonnet agent per batch; surface the token estimate at the 020 plan approval
+- Batches: 5 batches of about 10 ADRs, one commit per batch, `adr lint --changed` per batch, one sonnet agent per batch; surface the token estimate at the 021 plan approval
 - Update the skills-test specs that read `docs/adr`: `dg-front-door-docs.spec.ts` (text in 0020, 0043 and toc.md), `outside-services-docs.spec.ts` (toc.md), `pairing-docs.spec.ts` (stale lines over every ADR), `demo-skill.spec.ts` (0029 URL), `blt-gate.spec.ts` (toc.md)
 - Run `dg-skills adr index` and `dg-skills adr lint --all` until it exits 0
-- Files: `docs/adr/**`, `.agents/decisions/**` and the five spec files above; no edit to `docs/contributing.md` (019 slice 3) and no new ADR for another feature in this PR (numbers would collide)
+- Files: `docs/adr/**`, `.agents/decisions/**` and the five spec files above; no edit to `docs/contributing.md` (020 slice 3) and no new ADR for another feature in this PR (numbers would collide)
 
 ### Testing Criteria
 Contracts:
