@@ -313,6 +313,7 @@ try {
 				continue
 			}
 		}
+		if ((Get-Item -LiteralPath $cmd -Force -ErrorAction SilentlyContinue).LinkType) { Remove-Item -LiteralPath $cmd -Force }
 		$shim = "@echo off`r`n`"$dgHome\runtime\current\bun.exe`" `"$dgHome\lib\current\dg.js`" $program %*`r`n"
 		[System.IO.File]::WriteAllText($cmd, $shim)
 	}

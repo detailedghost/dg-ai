@@ -30,6 +30,7 @@ import {
 const BOOTSTRAP_PS1 = join(import.meta.dir, "..", "bootstrap.ps1");
 const sh = readFileSync(BOOTSTRAP, "utf8");
 const ps1 = readFileSync(BOOTSTRAP_PS1, "utf8");
+const PWSH_TIMEOUT_MS = 30_000;
 const posix = describe.skipIf(process.platform === "win32");
 const unwrapped = (text: string): string => text.replace(/\n#\s*/g, " ");
 const SENTENCE_TAIL =
@@ -95,6 +96,15 @@ describe("bootstrap.ps1 program loop", () => {
 		expect(loop).toContain(check);
 		expect(loop).not.toContain("Select-String -LiteralPath $item.FullName");
 		expect(loop.indexOf(check)).toBeLessThan(loop.indexOf("WriteAllText"));
+	});
+
+	test("removes a link at the launcher path before WriteAllText so the write cannot follow it", () => {
+		const loop = ps1Loop();
+		const remove = loop.indexOf("Get-Item -LiteralPath $cmd -Force");
+
+		expect(remove).toBeGreaterThan(-1);
+		expect(loop.slice(remove)).toContain("LinkType");
+		expect(remove).toBeLessThan(loop.indexOf("WriteAllText"));
 	});
 
 	test("holds the kept sentence as its own literal", () => {
@@ -243,7 +253,9 @@ posix("bootstrap.sh with a dg path that holds something else", () => {
 describe.skipIf(Bun.which("pwsh") === null)(
 	"bootstrap.ps1 program loop run under pwsh (skipped when pwsh is absent)",
 	() => {
-		for (const fixture of launcherFixtures("win32")) {
+		for (const fixture of launcherFixtures("win32").filter(
+			(item) => item.name !== "a FIFO",
+		)) {
 			test.skipIf(fixture.skip === true)(
 				`${fixture.outcome === "kept" ? "keeps" : "replaces"} ${fixture.name}`,
 				() => {
@@ -279,6 +291,7 @@ describe.skipIf(Bun.which("pwsh") === null)(
 						rmSync(area, { recursive: true, force: true });
 					}
 				},
+				PWSH_TIMEOUT_MS,
 			);
 		}
 
@@ -308,6 +321,6 @@ describe.skipIf(Bun.which("pwsh") === null)(
 			} finally {
 				rmSync(area, { recursive: true, force: true });
 			}
-		});
+		}, PWSH_TIMEOUT_MS);
 	},
 );

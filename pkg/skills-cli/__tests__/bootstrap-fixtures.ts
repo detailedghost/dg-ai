@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fenceEnv } from "./fence-env";
 
 export const BOOTSTRAP = join(import.meta.dir, "..", "bootstrap.sh");
 export const LEGACY_PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon"] as const;
@@ -331,6 +332,7 @@ export async function runBootstrap(
 		cwd: options.cwd ?? dir,
 		env: {
 			...env,
+			...fenceEnv(),
 			HOME: join(dir, "home"),
 			...(options.withoutDgHome ? {} : { DG_HOME: root }),
 			DG_CURL: curl,
