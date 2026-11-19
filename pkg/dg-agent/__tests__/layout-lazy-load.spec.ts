@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 import { PhoneDb } from "../src/phone/db";
+import { fenceEnv } from "../../skills-cli/__tests__/fence-env";
 
 const SRC = join(import.meta.dir, "..", "src");
 const MAIN = join(SRC, "main.ts");
@@ -47,6 +48,7 @@ async function loadedModules(argv: string[]): Promise<string[]> {
 			HOME: join(dir, "home"),
 			PATH: process.env.PATH ?? "",
 			TMPDIR: process.env.TMPDIR ?? tmpdir(),
+			...fenceEnv(),
 			DG_KEY_SOURCE: "file",
 			LOAD_LOG: logFile,
 			MAIN_PATH: MAIN,

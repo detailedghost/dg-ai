@@ -1,0 +1,2 @@
+[test]
+preload = ["../skills-cli/__tests__/test-home-fence.ts"]

@@ -261,7 +261,7 @@ describe("resolveDgPaths memoization", () => {
 	});
 
 	it("returns a different object when DG_HOME differs", () => {
-		const other = resolveDgPaths({ env: { ...process.env, DG_HOME: "/other-dg-home" } });
+		const other = resolveDgPaths({ env: { ...process.env, DG_PATH_FENCE: undefined, DG_HOME: "/other-dg-home" } });
 
 		expect(other).not.toBe(resolveDgPaths());
 		expect(other.dataDir).toBe("/other-dg-home/data");

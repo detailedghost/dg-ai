@@ -141,12 +141,15 @@ describe("cliBinDir", () => {
 
 	test("cliDest follows DG_HOME and names the shim", () => {
 		const saved = process.env.DG_HOME;
+		const savedFence = process.env.DG_PATH_FENCE;
 		process.env.DG_HOME = "/opt/dg";
+		delete process.env.DG_PATH_FENCE;
 		try {
 			expect(cliDest("dg-agent")).toBe(`/opt/dg/bin/dg-agent${process.platform === "win32" ? ".cmd" : ""}`);
 		} finally {
 			if (saved === undefined) delete process.env.DG_HOME;
 			else process.env.DG_HOME = saved;
+			if (savedFence !== undefined) process.env.DG_PATH_FENCE = savedFence;
 		}
 	});
 });

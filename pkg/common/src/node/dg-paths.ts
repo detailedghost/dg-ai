@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, posix, win32 } from "node:path";
 
@@ -133,6 +134,49 @@ const ENV_KEYS = [
 	"USERPROFILE",
 ] as const;
 
+const FENCE_ROLES = [
+	"binDir",
+	"configDir",
+	"dataDir",
+	"stateDir",
+	"cacheDir",
+	"logDir",
+	"legacyHome",
+] as const;
+
+function realOrGiven(value: string): string {
+	try {
+		return realpathSync(value);
+	} catch {
+		return value;
+	}
+}
+
+function assertInsideFence(platform: NodeJS.Platform, fence: string, paths: DgPaths): void {
+	const path = platform === "win32" ? win32 : posix;
+	if (!path.isAbsolute(fence)) throw new Error(`dg path fence: ${fence} is not absolute`);
+	const norm = (value: string) => {
+		const resolved = path.resolve(value);
+		return platform === "win32" ? resolved.toLowerCase() : resolved;
+	};
+	const bases = [...new Set([norm(fence), norm(realOrGiven(fence))])];
+	const inside = (target: string) =>
+		bases.some((base) => {
+			const rel = path.relative(base, target);
+			return (
+				rel === "" ||
+				(rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
+			);
+		});
+	for (const role of FENCE_ROLES) {
+		if (!inside(norm(paths[role]))) {
+			throw new Error(
+				`dg path fence: ${role} ${paths[role]} is outside ${fence} (unset DG_PATH_FENCE to turn the fence off)`,
+			);
+		}
+	}
+}
+
 const memo = new Map<string, DgPaths>();
 
 function computeDgPaths(platform: NodeJS.Platform, home: string, env: Env): DgPaths {
@@ -174,11 +218,12 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 	const env = seams.env ?? process.env;
 	const root = env.DG_HOME ? dgHome(platform, env.DG_HOME) : undefined;
 	const key = JSON.stringify([platform, home, root, ...ENV_KEYS.map((name) => env[name])]);
+	const fence = env.DG_PATH_FENCE;
 	const known = memo.get(key);
-	if (known) return known;
-	const created = computeDgPaths(platform, home, env);
-	memo.set(key, created);
-	return created;
+	const paths = known ?? computeDgPaths(platform, home, env);
+	if (fence) assertInsideFence(platform, fence, paths);
+	if (!known) memo.set(key, paths);
+	return paths;
 }
 
 /** `PATH` with the dg launcher folder first, so children call the launchers by name. */

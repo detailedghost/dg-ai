@@ -6,6 +6,7 @@ import { completionScript } from "@dg/common/completion";
 import { completionChecks } from "../src/completion/doctor";
 import { completionFiles, completionState, removeCompletions, writeCompletions, zshHint } from "../src/completion/files";
 import type { DoctorContext } from "../src/doctor/types";
+import { fenceEnv } from "./fence-env";
 
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
 const GENERATOR = join(import.meta.dir, "..", "..", "..", "scripts", "completion-trees.ts");
@@ -39,7 +40,11 @@ function shell(command: string[], script: string): string[] {
 	const run = Bun.spawnSync([...command, file], {
 		stdout: "pipe",
 		stderr: "pipe",
-		env: { PATH: `${bin}:${process.env.PATH ?? ""}`, HOME: scratch },
+		env: {
+			PATH: `${bin}:${process.env.PATH ?? ""}`,
+			HOME: scratch,
+			...fenceEnv(),
+		},
 	});
 	expect({ stderr: run.stderr.toString(), code: run.exitCode }).toEqual({ stderr: "", code: 0 });
 	return run.stdout.toString().split("\n").filter(Boolean);

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import type { ReviewThread } from "../src/provider/types";
+import { fenceEnv } from "./fence-env";
 import { git, makeTempDir, scratchFixtures } from "./git-repo-fixtures";
 
 /** A PATH string with every directory that resolves vcs-provider-cli filtered out. */
@@ -91,6 +92,7 @@ export function isolatedGitEnv(opts: {
 	return {
 		PATH: opts.path,
 		HOME: opts.home,
+		...fenceEnv(),
 		AI_SCRATCH_DIR: opts.scratch,
 		AI_STATE_DIR: opts.state,
 		GIT_CONFIG_GLOBAL: "/dev/null",

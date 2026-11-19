@@ -8,6 +8,7 @@ import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
 import { writeLegacyLine } from "../../dg-agent/__tests__/phone/legacy-line-fixture";
 import { PhoneDb } from "../../dg-agent/src/phone/db";
 import { bundleCommand } from "./bundle-build";
+import { fenceEnv } from "./fence-env";
 import { onTestRunEnd } from "./test-run-end";
 
 export const FIXTURE_IDENTITY = "fixture-agent";
@@ -109,6 +110,7 @@ export function perOsPaths(home: string): DgPaths {
 /** Child env with no `DG_HOME` and no `XDG_*`, so every path resolves from `HOME`. */
 export function spawnEnv(home: string): Record<string, string> {
 	const env: Record<string, string> = { HOME: home, DG_KEY_SOURCE: "file" };
+	Object.assign(env, fenceEnv());
 	if (process.env.PATH !== undefined) env.PATH = process.env.PATH;
 	if (process.env.TMPDIR !== undefined) env.TMPDIR = process.env.TMPDIR;
 	return env;
