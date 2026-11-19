@@ -1,7 +1,10 @@
-import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
-import { StringDecoder } from "node:string_decoder";
-import { describeError, wait } from "@dg/common";
-import type { SystemSeams } from "@dg/common/node";
+import { describeError } from "@dg/common";
+import {
+	follow,
+	type LogTail,
+	readTail,
+	type SystemSeams,
+} from "@dg/common/node";
 import { channelReviewPaths } from "../paths";
 import { assertEnvName, type DaemonIo, savedEnvName } from "./shared";
 
@@ -16,46 +19,6 @@ type LogsSeams = {
 	signal?: AbortSignal;
 	pollIntervalMs?: number;
 };
-
-function readRange(path: string, from: number, to: number): Buffer {
-	const fd = openSync(path, "r");
-	try {
-		const buffer = Buffer.alloc(to - from);
-		const read = readSync(fd, buffer, 0, buffer.length, from);
-		return buffer.subarray(0, read);
-	} finally {
-		closeSync(fd);
-	}
-}
-
-async function follow(
-	path: string,
-	io: DaemonIo,
-	signal: AbortSignal | undefined,
-	pollMs: number,
-	start: { size: number; ino: number },
-): Promise<void> {
-	const decoder = new StringDecoder("utf8");
-	let offset = start.size;
-	let ino = start.ino;
-	let pending = "";
-	while (!signal?.aborted) {
-		await wait(pollMs);
-		if (!existsSync(path)) continue;
-		const stat = statSync(path);
-		if (stat.ino !== ino || stat.size < offset) {
-			offset = 0;
-			pending = "";
-			ino = stat.ino;
-		}
-		if (stat.size === offset) continue;
-		const chunk = readRange(path, offset, stat.size);
-		offset += chunk.length;
-		const parts = (pending + decoder.write(chunk)).split("\n");
-		pending = parts.pop() ?? "";
-		for (const line of parts) io.out(line);
-	}
-}
 
 export async function logs(
 	options: LogsOptions,
@@ -76,19 +39,21 @@ export async function logs(
 		io.err(describeError(error));
 		return 1;
 	}
-	if (!existsSync(path)) {
+	let tail: LogTail;
+	try {
+		tail = readTail(path, count);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 		io.out(`${path}: no log yet`);
 		return 0;
 	}
-	const text = readFileSync(path, "utf8");
-	const lines = text.split("\n");
-	if (lines.at(-1) === "") lines.pop();
-	for (const line of lines.slice(-count)) io.out(line);
+	for (const line of tail.lines) io.out(line);
 	if (options.follow) {
-		const { ino } = statSync(path);
-		await follow(path, io, signal, seams.pollIntervalMs ?? FOLLOW_POLL_MS, {
-			size: Buffer.byteLength(text),
-			ino,
+		await follow(path, {
+			out: io.out,
+			signal,
+			pollMs: seams.pollIntervalMs ?? FOLLOW_POLL_MS,
+			start: tail,
 		});
 	}
 	return 0;

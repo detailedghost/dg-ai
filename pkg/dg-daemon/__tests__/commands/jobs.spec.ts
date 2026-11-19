@@ -12,6 +12,7 @@ import {
 	freshTempDir,
 	subprocessEnv,
 } from "../utils/daemon-harness";
+import { homeTracker, jobsTable, readConfigFile, seedJobs } from "./job-cli-helpers";
 import { trackChild } from "../utils/child-registry";
 
 type RunResult = { code: number; stdout: string; stderr: string };
@@ -32,12 +33,28 @@ async function dg(dgHome: string, ...args: string[]): Promise<RunResult> {
 
 async function withHome(run: (dgHome: string) => Promise<void>): Promise<void> {
 	const dgHome = freshDgHome();
+	seedJobs(dgHome, {}, { jobsVersion: 2 });
 	try {
 		await run(dgHome);
 	} finally {
 		cleanupDgHome(dgHome);
 	}
 }
+
+const tracker = homeTracker();
+
+async function withDaemonHome(
+	run: (dgHome: string) => Promise<void>,
+): Promise<void> {
+	const { dgHome } = await tracker.boot(() => ({}), { jobsVersion: 2 });
+	try {
+		await run(dgHome);
+	} finally {
+		await tracker.cleanup();
+	}
+}
+
+const entries = (dgHome: string) => jobsTable(readConfigFile(dgHome));
 
 async function openStore(dgHome: string): Promise<ChatStore> {
 	return ChatStore.open(
@@ -96,19 +113,10 @@ describe("dg-daemon job add", () => {
 			);
 			expect(result.code).toBe(0);
 
-			const store = await openStore(dgHome);
-			try {
-				const job = store.getJobByLabel("jira-sprint");
-				expect(job).toBeDefined();
-				expect(job?.intervalMs).toBe(15 * 60_000);
-				expect(job?.argv[0]).toBe("printf");
-				expect(job?.enabled).toBe(true);
-				expect(store.dueJobs(new Date()).map((due) => due.label)).toEqual([
-					"jira-sprint",
-				]);
-			} finally {
-				store.close();
-			}
+			const entry = entries(dgHome)["jira-sprint"];
+			expect(entry.every).toBe("15m");
+			expect((entry.argv as string[])[0]).toBe("printf");
+			expect(entry.enabled).toBe(true);
 		});
 	});
 
@@ -131,12 +139,7 @@ describe("dg-daemon job add", () => {
 				"",
 			);
 
-			const store = await openStore(dgHome);
-			try {
-				expect(store.getJobByLabel("noisy")?.notifyIdentity).toBe("reviewer");
-			} finally {
-				store.close();
-			}
+			expect(entries(dgHome).noisy.notify).toBe("reviewer");
 		});
 	});
 
@@ -159,12 +162,7 @@ describe("dg-daemon job add", () => {
 			const second = await dg(dgHome, ...args);
 			expect(second.code).not.toBe(0);
 
-			const store = await openStore(dgHome);
-			try {
-				expect(store.listJobs()).toHaveLength(1);
-			} finally {
-				store.close();
-			}
+			expect(Object.keys(entries(dgHome))).toHaveLength(1);
 		});
 	});
 
@@ -186,12 +184,7 @@ describe("dg-daemon job add", () => {
 			expect(result.code).not.toBe(0);
 			expect(result.stderr).toContain("PATH");
 
-			const store = await openStore(dgHome);
-			try {
-				expect(store.listJobs()).toHaveLength(0);
-			} finally {
-				store.close();
-			}
+			expect(Object.keys(entries(dgHome))).toHaveLength(0);
 		});
 	});
 
@@ -274,14 +267,9 @@ describe("dg-daemon job add --cron", () => {
 			expect(result.code).toBe(0);
 			expect(result.stdout).toContain('cron "0 9 * * 1-5"');
 
-			const store = await openStore(dgHome);
-			try {
-				const job = store.getJobByLabel("weekday-standup");
-				expect(job?.cronExpr).toBe("0 9 * * 1-5");
-				expect(job?.intervalMs).toBeUndefined();
-			} finally {
-				store.close();
-			}
+			const entry = entries(dgHome)["weekday-standup"];
+			expect(entry.schedule).toBe("0 9 * * 1-5");
+			expect(Object.hasOwn(entry, "every")).toBe(false);
 
 			const list = await dg(dgHome, "job", "list");
 			expect(list.stdout).toContain("weekday-standup");
@@ -309,14 +297,9 @@ describe("dg-daemon job add --cron", () => {
 			);
 			expect(result.code).not.toBe(0);
 			expect(result.stderr).toContain("--every");
-			expect(result.stderr).toContain("--cron");
+			expect(result.stderr).toContain("--schedule");
 
-			const store = await openStore(dgHome);
-			try {
-				expect(store.listJobs()).toHaveLength(0);
-			} finally {
-				store.close();
-			}
+			expect(Object.keys(entries(dgHome))).toHaveLength(0);
 		});
 	});
 
@@ -336,7 +319,7 @@ describe("dg-daemon job add --cron", () => {
 			);
 			expect(result.code).not.toBe(0);
 			expect(result.stderr).toContain("--every");
-			expect(result.stderr).toContain("--cron");
+			expect(result.stderr).toContain("--schedule");
 		});
 	});
 
@@ -359,17 +342,12 @@ describe("dg-daemon job add --cron", () => {
 			expect(result.code).not.toBe(0);
 			expect(result.stderr).toContain("not a cron expression");
 
-			const store = await openStore(dgHome);
-			try {
-				expect(store.listJobs()).toHaveLength(0);
-			} finally {
-				store.close();
-			}
+			expect(Object.keys(entries(dgHome))).toHaveLength(0);
 		});
 	});
 
 	it("runs a bun script as a job command", async () => {
-		await withHome(async (dgHome) => {
+		await withDaemonHome(async (dgHome) => {
 			const scriptDir = freshTempDir("dg-daemon-cron-bun");
 			const scriptPath = join(scriptDir, "check.ts");
 			writeFileSync(
@@ -463,29 +441,19 @@ describe("dg-daemon job enable, disable, rm and run", () => {
 	}
 
 	it("flips only the enabled flag", async () => {
-		await withHome(async (dgHome) => {
+		await withDaemonHome(async (dgHome) => {
 			await addOne(dgHome);
 			expect((await dg(dgHome, "job", "disable", "j")).code).toBe(0);
 
-			let store = await openStore(dgHome);
-			try {
-				expect(store.getJobByLabel("j")?.enabled).toBe(false);
-			} finally {
-				store.close();
-			}
+			expect(entries(dgHome).j.enabled).toBe(false);
 
 			expect((await dg(dgHome, "job", "enable", "j")).code).toBe(0);
-			store = await openStore(dgHome);
-			try {
-				expect(store.getJobByLabel("j")?.enabled).toBe(true);
-			} finally {
-				store.close();
-			}
+			expect(entries(dgHome).j.enabled).toBe(true);
 		});
 	});
 
 	it("removes a job and its feed items", async () => {
-		await withHome(async (dgHome) => {
+		await withDaemonHome(async (dgHome) => {
 			await addOne(dgHome);
 			await dg(dgHome, "job", "run", "j");
 
@@ -493,6 +461,7 @@ describe("dg-daemon job enable, disable, rm and run", () => {
 
 			const store = await openStore(dgHome);
 			try {
+				expect(Object.keys(entries(dgHome))).toHaveLength(0);
 				expect(store.listJobs()).toHaveLength(0);
 				expect(store.listFeedItems()).toHaveLength(0);
 			} finally {
@@ -502,7 +471,7 @@ describe("dg-daemon job enable, disable, rm and run", () => {
 	});
 
 	it("runs a job now and reports what it added", async () => {
-		await withHome(async (dgHome) => {
+		await withDaemonHome(async (dgHome) => {
 			await addOne(dgHome);
 
 			const result = await dg(dgHome, "job", "run", "j");

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type AutostartDeps, resolveDgPaths } from "@dg/common/node";
-import { ensureMigrated } from "../../src/commands/service";
+import { ensureMigrated } from "../../src/commands/job-support";
 import {
 	allocatePort,
 	bootServe,
@@ -197,7 +197,7 @@ describe("ensureMigrated", () => {
 			}) as never,
 		}).catch((error: unknown) => error);
 		expect(failure).toBeInstanceOf(DgCliError);
-		expect((failure as DgCliError).message).toContain(NOT_MIGRATED);
+		expect((failure as DgCliError).message).toBe(NOT_MIGRATED);
 		expect((failure as DgCliError).exitCode).toBe(1);
 	});
 

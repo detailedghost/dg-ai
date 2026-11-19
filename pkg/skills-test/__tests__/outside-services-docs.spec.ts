@@ -281,7 +281,7 @@ describe("jobs SKILL.md", () => {
 	test("carries the final no-daemon message on one line in one code span", () => {
 		const msg =
 			/"(no live dg-daemon[^"]+)"/.exec(
-				source("dg-daemon", "src", "commands", "service.ts"),
+				source("dg-daemon", "src", "commands", "job-support.ts"),
 			)?.[1] ?? "";
 		expect(msg).not.toBe("");
 		expect(skill).toContain(`\`${msg}\``);

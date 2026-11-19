@@ -28,6 +28,8 @@ const JOB_KEYS = new Set<string>([
 	"grant",
 ]);
 const SCHEDULED_ONLY_KEYS = ["feed", "notify", "timeoutMs"] as const;
+export const JOB_NAME_RULE =
+	"must be 1-64 lowercase letters, digits or hyphens, starting with a letter or digit";
 const MODE_RULE = 'give exactly one of "continuous", "schedule" or "every"';
 const MAX_CREDENTIALS = 16;
 export const DEFAULT_STOP_TIMEOUT_MS = 5_000;
@@ -132,9 +134,7 @@ function checkCredentials(
 export function parseJobEntry(name: string, raw: unknown): ParsedJob {
 	const invalid = (error: string): ParsedJob => ({ ok: false, name, error });
 	if (!isJobName(name)) {
-		return invalid(
-			"label must be 1-64 lowercase letters, digits or hyphens, starting with a letter or digit",
-		);
+		return invalid(`label ${JOB_NAME_RULE}`);
 	}
 	if (!isRecord(raw)) return invalid("must be an object");
 	const unknownKeys = Object.keys(raw).filter((key) => !JOB_KEYS.has(key));
