@@ -303,14 +303,14 @@ describe("dg-daemon start with a login unit", () => {
 		);
 	});
 
-	it("leaves a tolerated /End failure out of the timeout text", async () => {
+	it("names a failed /End in the timeout text", async () => {
 		const scenario = await withUnit("task");
 		onManagerStart = () => false;
 		replies = (argv) => (argv[1] === "/End" ? { code: 1, stderr: "not running" } : { code: 0 });
 
 		const error = await failure(cmdStart({}, startSeams(scenario.deps, 300)));
 
-		expect(error.message).toBe(TIMEOUT_TEXT);
+		expect(error.message).toBe(`${TIMEOUT_TEXT} (schtasks /End /TN dg-daemon failed: not running)`);
 	});
 
 	it("exits 3 with no manager command in WSL NAT mode", async () => {

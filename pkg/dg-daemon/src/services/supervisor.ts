@@ -1,6 +1,7 @@
 import {
 	closeSync,
 	existsSync,
+	lstatSync,
 	openSync,
 	readFileSync,
 	rmSync,
@@ -84,6 +85,14 @@ type Entry = {
 
 export const exponentialBackoffMs = (failures: number): number =>
 	Math.min(BACKOFF_BASE_MS * 2 ** (failures - 1), BACKOFF_MAX_MS);
+
+function isSymbolicLink(path: string): boolean {
+	try {
+		return lstatSync(path).isSymbolicLink();
+	} catch {
+		return false;
+	}
+}
 
 function sleepUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
 	return new Promise((resolve) => {
@@ -277,6 +286,9 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 		let stateDir = `<jobStateRoot>/${decl.label}`;
 		try {
 			stateDir = jobStateDir(deps.paths, decl.label);
+			if (isSymbolicLink(stateDir)) {
+				throw new Error("it is a symbolic link");
+			}
 			ensurePrivateDir(stateDir);
 		} catch (err) {
 			return `cannot create the state folder ${stateDir}: ${describeError(err)}`;

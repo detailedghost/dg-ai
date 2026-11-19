@@ -6,9 +6,10 @@ import {
 	readFileSync,
 	rmSync,
 	statSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { CHAT_SERVICES_PATH, describeError } from "@dg/common";
 import { ensurePrivateDir, resolveDgPaths } from "@dg/common/node";
 import { servicePidFile } from "../../src/services/supervisor";
@@ -280,6 +281,26 @@ describe("supervisor state folder preflight", () => {
 		expect(existsSync(dump)).toBe(false);
 		expect(existsSync(r.logFile)).toBe(false);
 		expect(r.status().state).toBe("stopped");
+		expect(r.supervisor.runningCount()).toBe(0);
+	});
+
+	posixOnly("refuses a job state folder that is a symbolic link and leaves its target alone", () => {
+		const { r, dump } = dumpRig();
+		const target = join(dirname(dump), "elsewhere");
+		mkdirSync(target, { recursive: true, mode: 0o755 });
+		mkdirSync(r.jobStateRoot, { recursive: true });
+		const path = stateDirOf(r);
+		symlinkSync(target, path);
+
+		const result = r.supervisor.start("bot");
+
+		expect(result).toEqual({
+			ok: false,
+			kind: "invalid",
+			error: `cannot create the state folder ${path}: it is a symbolic link`,
+		});
+		expect(statSync(target).mode & 0o777).toBe(0o755);
+		expect(existsSync(dump)).toBe(false);
 		expect(r.supervisor.runningCount()).toBe(0);
 	});
 

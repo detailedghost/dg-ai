@@ -20,8 +20,6 @@ import {
 import { assertNotBlocked } from "@dg/common/node/layout";
 
 const NAME: AutostartName = "dg-daemon";
-const SCHTASKS_END = "/End";
-const LAUNCHCTL_BOOTSTRAP = "bootstrap";
 
 export type DaemonStartSeams = {
 	autostart?: AutostartDeps;
@@ -33,8 +31,6 @@ export function startedLine(handle: DaemonHandle, started: boolean): string {
 	const state = started ? "started on" : "already running on";
 	return `dg-daemon ${state} 127.0.0.1:${handle.port} (pid ${handle.pid}, version ${handle.versions.package})`;
 }
-
-const isTolerated = (argv: string[]): boolean => argv[1] === SCHTASKS_END || argv[1] === LAUNCHCTL_BOOTSTRAP;
 
 /** Returns the live daemon; starts one through the login unit when the unit is for this home, else detached. */
 export async function startDaemon(
@@ -57,7 +53,7 @@ export async function startDaemon(
 	let failure: string | undefined;
 	for (const argv of managedRestartCommands(kind, deps.uid, NAME, unitPath)) {
 		const result = await deps.run(argv);
-		if (result.code !== 0 && !isTolerated(argv)) {
+		if (result.code !== 0) {
 			failure ??= `${argv.join(" ")} failed: ${firstLine(result.stderr)}`;
 		}
 	}
