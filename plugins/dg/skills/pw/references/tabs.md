@@ -78,7 +78,7 @@ On native Windows PowerShell, run the installed launcher:
 ```powershell
 $dg = if ($env:DG_HOME) { Join-Path $env:DG_HOME "bin\dg-skills.cmd" } else { Join-Path $env:LOCALAPPDATA "dg\bin\dg-skills.cmd" }
 if (-not (Test-Path $dg)) {
- irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
+  irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 }
 & $dg install
 ```

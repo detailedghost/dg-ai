@@ -9,6 +9,9 @@ One-time guided setup of the companion browser extension:
 dg-skills install
 ```
 
+The target (`chrome` or `firefox`), `--local` and `--version <x.y.z>` are in the
+pw skill's [tab batch reference](../plugins/dg/skills/pw/references/tabs.md).
+
 Open a batch of PRs/URLs as plain tabs in your **default** browser. No extension needed:
 
 ```text

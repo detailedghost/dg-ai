@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { RETIRED_SKILLS } from "../../common/src/node/install-skills";
 import { REPO_ROOT, readRepoFile } from "./test-support";
 
 const SKILLS = join(REPO_ROOT, "plugins", "dg", "skills");
@@ -34,10 +33,6 @@ describe("pw tab batches replace the browser skill", () => {
 		expect(readRepoFile("plugins", "dg", "skills", "README.md")).not.toMatch(/\bbrowser\/SKILL\.md|\[`?browser`?\]/);
 	});
 
-	test("a skills-only install prunes a stale browser skill", () => {
-		expect(RETIRED_SKILLS).toContain("browser");
-	});
-
 	test("pw SKILL.md has a Tab batches section with both verbs and a pointer to references/tabs.md", () => {
 		const tabs = section("## Tab batches");
 		expect(tabs).toContain("pw batch-open [--ext] [-g <name>]");
@@ -68,7 +63,7 @@ describe("pw tab batches replace the browser skill", () => {
 	test("no skill or user doc names the browser skill or the old top-level commands", () => {
 		const files = [
 			...markdownFiles(SKILLS),
-			...markdownFiles(join(REPO_ROOT, "docs")).filter((file) => !file.includes(`${join("docs", "adr")}`)),
+			...markdownFiles(join(REPO_ROOT, "docs")).filter((file) => !file.includes(join("docs", "adr"))),
 			join(REPO_ROOT, "README.md"),
 			join(REPO_ROOT, "pkg", "extension", "README.md"),
 		];

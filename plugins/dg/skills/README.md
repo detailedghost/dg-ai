@@ -136,7 +136,7 @@ check the installed binary once and call `dg-skills` from PATH, or the launcher 
 `dg-skills install --cli-only` skips the extension, dg-daemon and
 dg-agent. No skill declares `requires: [extension]`. `pw`, `proto`, `demo`,
 `chat` and `overwatch` run locally by default, and `--ext` requires the
-extension, which pairs with each session on its own. `chat` and `overwatch` still need dg-agent and dg-daemon, so their
+extension (`pw launch` always needs it), which pairs with each session on its own. `chat` and `overwatch` still need dg-agent and dg-daemon, so their
 bootstrap block runs the full installer, which removes the CLI-only marker. The
 CLI-only set includes stash, proxy, clipboard-img, and other skills without
 that requirement. Live inbox profiles still need

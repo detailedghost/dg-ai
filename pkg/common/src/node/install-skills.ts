@@ -69,7 +69,7 @@ export function listSkillTreeFiles(root: string): string[] {
 
 export const RETIRED_SKILLS = ["browser", "phone-friend", "teach", "wait-what"];
 
-/** SHA-256 of every SKILL.md dg shipped for a retired name that another plugin now provides. */
+/** SHA-256 of every SKILL.md dg shipped for a retired name whose directory may hold another plugin's skill. */
 export const RETIRED_SKILL_HASHES: Record<string, string[]> = {
 	browser: [
 		"b969dfcd494d1232535baa69aaea096c45bdd4d7b05d08ba1934848f1725d03d",
