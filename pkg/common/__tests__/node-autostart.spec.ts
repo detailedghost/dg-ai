@@ -350,13 +350,24 @@ describe("installAutostart", () => {
 		expect(removed).toEqual([written[0]?.path]);
 	});
 
-	it("linux: a failing enable --now with an empty stderr reports only the first stdout line", async () => {
+	it("linux: a failing dg-phone enable --now with an empty stderr reports all of stdout", async () => {
 		const ran: string[][] = [];
 		const { deps } = fakeDeps({
 			run: recordingRun(ran, (argv) => (argv[2] === "enable" ? { code: 1, stdout: "a\nb" } : { code: 0 })),
 		});
 
 		const error = await installAutostart(deps, paths, spec).catch((err: unknown) => err);
+
+		expect((error as Error).message.endsWith("failed: a\nb")).toBe(true);
+	});
+
+	it("linux: a failing dg-daemon enable --now with an empty stderr reports only the first stdout line", async () => {
+		const ran: string[][] = [];
+		const { deps } = fakeDeps({
+			run: recordingRun(ran, (argv) => (argv[2] === "enable" ? { code: 1, stdout: "a\nb" } : { code: 0 })),
+		});
+
+		const error = await installAutostart(deps, paths, { ...spec, name: "dg-daemon" }).catch((err: unknown) => err);
 
 		expect((error as Error).message.endsWith("failed: a")).toBe(true);
 	});
@@ -461,6 +472,19 @@ describe("installAutostart", () => {
 			"/Delete",
 		]);
 		expect(removed).toEqual([written[0]?.path]);
+	});
+
+	it("win32: a failing Run with an empty stderr reports all of stdout for dg-phone and the first line for dg-daemon", async () => {
+		for (const [name, tail] of [["dg-phone", "a\nb"], ["dg-daemon", "a"]] as const) {
+			const { deps } = fakeDeps({
+				platform: "win32",
+				run: recordingRun([], (argv) => (argv[1] === "/Run" ? { code: 1, stdout: "a\nb" } : { code: 0 })),
+			});
+
+			const error = await installAutostart(deps, paths, { ...spec, name }).catch((err: unknown) => err);
+
+			expect((error as Error).message.endsWith(`failed: ${tail}`)).toBe(true);
+		}
 	});
 
 	it("win32: keeps the task xml when deleting the registered task after a failed Run also fails", async () => {
