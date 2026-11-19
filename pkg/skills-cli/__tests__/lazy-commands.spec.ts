@@ -22,8 +22,6 @@ const GOLDEN_COMMANDS = [
 	"test-live",
 	"install",
 	"update",
-	"batch-open",
-	"launch",
 	"demo",
 	"rerun",
 	"stash",

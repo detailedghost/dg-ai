@@ -4,7 +4,7 @@ feature_snake_case: browser_into_pw
 date: "2026-11-19"
 version: "1.0"
 status: draft
-current_slice: 0
+current_slice: 1
 pr_strategy: single
 slices:
   - id: 1
@@ -55,24 +55,24 @@ The /dg:browser skill is a thin layer over the top-level batch-open and launch c
 ### Slice 1 — pw-tab-verbs
 
 #### Engineering
-- [ ] In pw/cli.ts main, route batch-open and launch before the --ext runExt branch
-- [ ] Reuse runBatchOpen and runLaunch unchanged; port -R/--repo, -g/--group, --print, -b/--browser, --list, --dry-run, --ext
-- [ ] pw --help lists both verbs; pw batch-open --help and pw launch --help print usage
-- [ ] Remove registerBatchOpen and registerLaunch and their completion entries
-- [ ] Keep the doctor check ids batch-open and launch
+- [x] In pw/cli.ts main, route batch-open and launch before the --ext runExt branch
+- [x] Reuse runBatchOpen and runLaunch unchanged; port -R/--repo, -g/--group, --print, -b/--browser, --list, --dry-run, --ext
+- [x] pw --help lists both verbs; pw batch-open --help and pw launch --help print usage
+- [x] Remove registerBatchOpen and registerLaunch and their completion entries
+- [x] Keep the doctor check ids batch-open and launch
 
 #### Testing Criteria
 ##### Contracts
-- [ ] pw batch-open <refs...> resolves refs through utils/refs.ts as before; without --ext it opens plain tabs
-- [ ] --group without --ext prints one stderr notice and still opens plain tabs
-- [ ] pw batch-open --ext -g X groups the tabs through the extension markers; pw launch --ext keeps the existing exit codes
-- [ ] A missing ref is a usage error (exit 2)
-- [ ] A CLI-only install refuses pw launch and pw batch-open --ext with the extension-required message
-- [ ] dg-skills batch-open and dg-skills launch exit as unknown commands
+- [x] pw batch-open <refs...> resolves refs through utils/refs.ts as before; without --ext it opens plain tabs
+- [x] --group without --ext prints one stderr notice and still opens plain tabs
+- [x] pw batch-open --ext -g X groups the tabs through the extension markers; pw launch --ext keeps the existing exit codes
+- [x] A missing ref is a usage error (exit 2)
+- [x] A CLI-only install refuses pw launch and pw batch-open --ext with the extension-required message
+- [x] dg-skills batch-open and dg-skills launch exit as unknown commands
 
 #### Acceptance Criteria
-- [ ] The old batch-open and launch tests are ported to the pw entry and pass
-- [ ] dg-skills batch-open is gone
+- [x] The old batch-open and launch tests are ported to the pw entry and pass
+- [x] dg-skills batch-open is gone
 
 ### Slice 2 — skills-docs-move
 
@@ -95,7 +95,9 @@ The /dg:browser skill is a thin layer over the top-level batch-open and launch c
 - [ ] The skills index lists no browser skill; the full test suite passes
 
 ## Slice Summaries
+Slice 1 (pw-tab-verbs): pw/cli.ts routes batch-open and launch to the new pw/tab-verbs.ts before the --ext relay branch. The commander definitions moved there from commands/batch-open.ts and commands/launch.ts, which are deleted. A CLI-only install refuses pw launch and pw batch-open --ext. pw --help and the completion tree list both verbs under pw. EXT_ONLY_COMMANDS is gone. The batch-open and launch doctor items now check the pw skill files and the pw allow rule. Tests: pw-batch-open.spec.ts and pw-launch.spec.ts (renamed, ported to main), pw/cli.spec.ts, cli-only, lazy-commands, doctor-ext-only, cli-smoke.
 
 ## Agent Notes
+(slice 1) Slice 1 also touched src/batch-open/doctor.ts, src/launch/doctor.ts, src/completion/describe.ts and __tests__/doctor-ext-only.spec.ts. Under machine load, worktree.spec fails in the full suite but passes alone.
 
 ## Issues Remediation

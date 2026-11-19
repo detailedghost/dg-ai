@@ -29,6 +29,9 @@ export async function main(
 		env.err(versionError);
 		return 1;
 	}
+	const verb = commandName(argv);
+	if (verb === "batch-open" || verb === "launch")
+		return (await import("./tab-verbs")).runTabVerb(verb, argv, env);
 	if (optionArgs(argv).includes("--ext"))
 		return (await import("./ext")).runExt(argv, env);
 	try {

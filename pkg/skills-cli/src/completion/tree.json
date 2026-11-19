@@ -515,88 +515,6 @@
 			]
 		},
 		{
-			"name": "batch-open",
-			"description": "open a batch of PRs/URLs in the default browser",
-			"options": [
-				{
-					"flags": [
-						"--repo",
-						"-R"
-					],
-					"description": "default repo for bare PR numbers",
-					"value": "any"
-				},
-				{
-					"flags": [
-						"--group",
-						"-g"
-					],
-					"description": "tab group name (needs --ext)",
-					"value": "any"
-				},
-				{
-					"flags": [
-						"--print"
-					],
-					"description": "print the URLs instead of opening them"
-				},
-				{
-					"flags": [
-						"--ext"
-					],
-					"description": "use the dg-ai-extension instead of the local default"
-				}
-			]
-		},
-		{
-			"name": "launch",
-			"description": "cold-start a Chromium browser with the extension side-loaded + open a batch (needs --ext)",
-			"options": [
-				{
-					"flags": [
-						"--ext"
-					],
-					"description": "use the dg-ai-extension instead of the local default"
-				},
-				{
-					"flags": [
-						"--browser",
-						"-b"
-					],
-					"description": "browser key (see --list)",
-					"value": "any"
-				},
-				{
-					"flags": [
-						"--repo",
-						"-R"
-					],
-					"description": "default repo for bare PR numbers",
-					"value": "any"
-				},
-				{
-					"flags": [
-						"--group",
-						"-g"
-					],
-					"description": "tab group name",
-					"value": "any"
-				},
-				{
-					"flags": [
-						"--list"
-					],
-					"description": "list detected browsers and exit"
-				},
-				{
-					"flags": [
-						"--dry-run"
-					],
-					"description": "print the launch command without running it"
-				}
-			]
-		},
-		{
 			"name": "demo",
 			"description": "record a guided tour to an MP4 in a local browser, or play it through the dg-ai-extension with --ext",
 			"commands": [
@@ -1592,6 +1510,88 @@
 				{
 					"name": "video-stop",
 					"description": "Stop video recording and save the video"
+				},
+				{
+					"name": "batch-open",
+					"description": "open a batch of PRs/URLs in the default browser",
+					"options": [
+						{
+							"flags": [
+								"--repo",
+								"-R"
+							],
+							"description": "default repo for bare PR numbers",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--group",
+								"-g"
+							],
+							"description": "tab group name (needs --ext)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--print"
+							],
+							"description": "print the URLs instead of opening them"
+						},
+						{
+							"flags": [
+								"--ext"
+							],
+							"description": "use the dg-ai-extension instead of the local default"
+						}
+					]
+				},
+				{
+					"name": "launch",
+					"description": "cold-start a Chromium browser with the extension side-loaded + open a batch (needs --ext)",
+					"options": [
+						{
+							"flags": [
+								"--ext"
+							],
+							"description": "use the dg-ai-extension instead of the local default"
+						},
+						{
+							"flags": [
+								"--browser",
+								"-b"
+							],
+							"description": "browser key (see --list)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--repo",
+								"-R"
+							],
+							"description": "default repo for bare PR numbers",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--group",
+								"-g"
+							],
+							"description": "tab group name",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--list"
+							],
+							"description": "list detected browsers and exit"
+						},
+						{
+							"flags": [
+								"--dry-run"
+							],
+							"description": "print the launch command without running it"
+						}
+					]
 				}
 			],
 			"options": [

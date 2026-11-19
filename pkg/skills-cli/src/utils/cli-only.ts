@@ -5,8 +5,6 @@ import { assertEntryMoved } from "./layout-guard";
 import type { Command } from "commander";
 import { cliDest } from "./lib";
 
-export const EXT_ONLY_COMMANDS = ["launch"];
-
 export const cliOnlyMarker = (): string => resolveDgPaths().cliOnlyMarker;
 
 export const isCliOnly = (): boolean => existsSync(cliOnlyMarker());
@@ -43,10 +41,8 @@ function topLevelName(command: Command): string {
 
 export function guardExtensionCommands(program: Command): void {
 	program.hook("preAction", (_program, action) => {
-		const name = topLevelName(action);
-		if (EXT_ONLY_COMMANDS.includes(name) || extRequested(action)) {
-			assertExtensionInstalled(`dg-skills ${name}`);
-		}
+		if (extRequested(action))
+			assertExtensionInstalled(`dg-skills ${topLevelName(action)}`);
 	});
 }
 

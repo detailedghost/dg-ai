@@ -10,7 +10,7 @@ const GROUP_NOTE = "batch-open: --group needs --ext; opening plain tabs";
 const A = "https://example.test/a";
 const B = "https://example.test/b";
 
-describe("batch-open on a CLI-only install", () => {
+describe("pw batch-open on a CLI-only install", () => {
 	let world: ExtCommandWorld;
 	beforeEach(() => {
 		world = extCommandWorld({ cliOnly: true });
@@ -28,14 +28,15 @@ describe("batch-open on a CLI-only install", () => {
 
 	test("refuses --ext with the extension-required message", async () => {
 		const run = await world.run(["batch-open", "--ext", A]);
-		expect(run.error).toStartWith(
-			"dg-skills batch-open needs the dg-ai-extension, but this is a CLI-only install.",
+		expect(run.exitCode).toBe(1);
+		expect(run.stderr).toContain(
+			"dg-skills pw batch-open needs the dg-ai-extension, but this is a CLI-only install.",
 		);
 		expect(run.opened).toEqual([]);
 	});
 });
 
-describe("batch-open on a full install", () => {
+describe("pw batch-open on a full install", () => {
 	let world: ExtCommandWorld;
 	beforeEach(() => {
 		world = extCommandWorld({ cliOnly: false });
@@ -118,5 +119,44 @@ describe("batch-open on a full install", () => {
 		expect(run.stdout).toContain(
 			'dg-ai-extension will group them into "Reviews"',
 		);
+	});
+});
+
+describe("pw batch-open argument handling", () => {
+	let world: ExtCommandWorld;
+	beforeEach(() => {
+		world = extCommandWorld({ cliOnly: false });
+	});
+	afterEach(() => world.cleanup());
+
+	test("exits 2 with a usage error and opens nothing when no ref is given", async () => {
+		const run = await world.run(["batch-open"]);
+		expect(run.exitCode).toBe(2);
+		expect(run.stderr).toContain("missing required argument");
+		expect(run.opened).toEqual([]);
+	});
+
+	test("routes a leading --ext to the tab verb, not to the extension relay", async () => {
+		const run = await world.run(["--ext", "batch-open", "--print", "-g", "R", A]);
+		expect(run.exitCode).toBe(0);
+		const printed = run.stdout.split("\n").find((l) => l.startsWith(A)) ?? "";
+		expect(printed).toContain(`${MARKER_KEY}=R`);
+	});
+
+	test("resolves an owner/repo#num ref to the pull request URL", async () => {
+		const run = await world.run(["batch-open", "--print", "octo/repo#7"]);
+		expect(run.stdout.split("\n")).toContain("https://github.com/octo/repo/pull/7");
+	});
+
+	test("resolves a bare number against --repo", async () => {
+		const run = await world.run(["batch-open", "--print", "-R", "octo/repo", "9"]);
+		expect(run.stdout.split("\n")).toContain("https://github.com/octo/repo/pull/9");
+	});
+
+	test("prints usage and exits 0 for --help", async () => {
+		const run = await world.run(["batch-open", "--help"]);
+		expect(run.exitCode).toBe(0);
+		expect(run.stdout).toContain("Usage: pw batch-open");
+		expect(run.stdout).toContain("--group <name>");
 	});
 });

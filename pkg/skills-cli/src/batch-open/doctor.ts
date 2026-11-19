@@ -6,7 +6,7 @@ import {
 import type { DoctorCheck } from "../doctor/types";
 
 export const batchOpenChecks: DoctorCheck[] = [
-	skillFilesCheck(["browser"]),
+	skillFilesCheck(["pw"]),
 	...extOnlyChecks,
-	allowRuleCheck("batch-open"),
+	allowRuleCheck("pw"),
 ];

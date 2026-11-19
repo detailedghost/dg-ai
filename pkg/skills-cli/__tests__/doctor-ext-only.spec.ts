@@ -18,7 +18,7 @@ let world: ReturnType<typeof doctorWorld>;
 beforeEach(() => {
 	world = doctorWorld();
 	world.installPlugin();
-	world.writeSettings(["batch-open", "launch"]);
+	world.writeSettings(["pw"]);
 });
 
 afterEach(() => world.cleanup());

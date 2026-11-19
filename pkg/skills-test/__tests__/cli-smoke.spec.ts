@@ -47,8 +47,6 @@ describe("dg-skills CLI", () => {
 		expect(code).toBe(0);
 		for (const cmd of [
 			"install",
-			"batch-open",
-			"launch",
 			"demo",
 			"rerun",
 			"channel-review",
@@ -78,6 +76,22 @@ describe("dg-skills CLI", () => {
 		]) {
 			expectListed(out, cmd);
 		}
+	});
+
+	test("batch-open and launch are no longer top-level commands", async () => {
+		const help = await runCli(["--help"]);
+		expect(help.out).not.toMatch(/^  (batch-open|launch)(?: |$)/m);
+		for (const verb of ["batch-open", "launch"]) {
+			const { code, err } = await runCli([verb, "x"]);
+			expect(code).not.toBe(0);
+			expect(err).toContain(`unknown command '${verb}'`);
+		}
+	});
+
+	test("pw batch-open --print resolves a PR ref without opening a browser", async () => {
+		const { code, out } = await runCli(["pw", "batch-open", "--print", "octo/repo#1"]);
+		expect(code).toBe(0);
+		expect(out.trim()).toBe("https://github.com/octo/repo/pull/1");
 	});
 
 	test("stash --help documents all storage scopes without starting a service", async () => {
