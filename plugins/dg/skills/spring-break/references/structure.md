@@ -115,7 +115,7 @@ Routing for text over budget:
 | Feature detail for one package (routes, env vars, jobs, entry points) | `.agents/references/<pkg>-<topic>.md` |
 | Style, tool, or naming rules | `docs/code_standards.md` (never repeated in AGENTS.md) |
 | Review rules | `docs/code_review.md` |
-| Agent rules that follow from an ADR | `.agents/decisions/<NNNN>-<slug>.md`, linking `docs/adr/<NNNN>-<slug>.md` |
+| Agent rules that follow from an ADR | `.agents/decisions/<NNNN>-<slug>.md`, linking `docs/adr/<NNNN>-<slug>.md`; format in `/dg:adr` |
 
 Rules:
 

@@ -26,17 +26,20 @@ Bots that commit or submit a review use the address in the [bot-commit-email ski
 1. The code change.
 1. Tests that import the real production code.
 1. Updated docs, if anything a user or developer sees has changed.
-1. An ADR (Architecture Decision Record) at `docs/adr/NNNN-kebab-title.md` if the PR introduces or changes an architectural decision. It says what we decided
-   and why. Use [the template](adr/template.md) and add a link to [the index](adr/toc.md).
+1. An ADR (Architecture Decision Record) if the PR introduces or changes an architectural decision. Run `dg-skills adr new "<title>" --topic <topic>`, or
+   use `/dg:adr`. The command writes the pair and refreshes [the index](adr/toc.md).
 
 Write an ADR when a change adds a wire contract, frame type, store, table, state file, trust boundary, secret path, or a wider gate or allowlist. Routine docs,
 bug fixes, flags, and copy changes do not need an ADR.
 
-Decisions live in two places, each for a different reader:
+Each decision is a pair with one number and one slug, each for a different reader:
 
-- `docs/adr/` is for people. Write each ADR in plain English for a reader who is new to the project.
-- `.agents/decisions/` is for agents. It holds the agent-specific rules and context that follow from a decision. Each file links the matching ADR in `docs/adr/`
-  and does not repeat it.
+- `docs/adr/` is for people. Write each ADR in plain English for a reader who is new to the project. It has a `Topic:` line, a Mermaid diagram, and a reading
+  level: `eli5` (grade 4 or below), `high-school` (grade 10 or below, the default), `college` (grade 14 or below), or `phd`/`technical` (no limit).
+- `.agents/decisions/` is for agents. It holds terse rules, `covers:` globs in the frontmatter, and a link to the matching ADR. A decision with no agent rules
+  says `No agent rules.`
+
+`dg-skills adr new` writes both files. `/dg:adr` holds the rules. `dg-skills adr lint` checks a repo that ran `dg-skills adr init`.
 
 Write `docs/` pages and ADRs in simple English: short sentences, common words, active voice. Write `AGENTS.md` files and everything under `.agents/` dense and
 terse: fragments, precise technical terms, no filler.

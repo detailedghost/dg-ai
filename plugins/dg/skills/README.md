@@ -15,6 +15,7 @@ binaries. The skills-root README itself is not installed.
 | `inbox-cleanup/` | Review Proton Mail, Gmail, or Outlook cleanup with redacted feedback |
 | `channel-review/` | Local thrash reviews for Teams PR and MR requests through a bot relay |
 | `google-sms-cleanup/` | Review Messages for Web without deletion or unapproved sends |
+| `adr/` | Write a paired ADR and agent decision, or answer from the ADRs at a reading level (`dg-skills adr`) |
 | `agent-seed/` | Set up `.agents/`, a lean `AGENTS.md`, `CLAUDE.md` as `@AGENTS.md`, and the `docs/` rule files |
 | `clipboard-img/` | Capture a clipboard PNG through the compiled clipboard-image command |
 | `grill-me/` | Resolve a design through a structured interview |
@@ -66,6 +67,7 @@ binaries. The skills-root README itself is not installed.
 
 ```text
 skills/
+  adr/
   agent-seed/
   browser/
   channel-review/

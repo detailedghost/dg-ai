@@ -28,4 +28,4 @@ For work too big for one interview, use `/dg:wayfinder`. It charts a map of deci
 5. **Offer the prototype escape hatch.** For trade-off questions where trying beats reading about it (UI shapes, state machines, API ergonomics) — see `references/protocol.md` § Prototype escape hatch for the exact option text and resume mechanics.
 6. **Resolve dependencies linearly.** Identify what blocks what. Resolve foundational decisions before derivative ones. Never let the user defer a blocking question.
 7. **Track state.** Maintain a live decision log and open-questions list. Present the scoreboard between rounds so the user can see progress.
-8. **Converge.** The interview ends when every open question is resolved, durable decisions are persisted as ADRs, and the user confirms the final summary. Not before.
+8. **Converge.** The interview ends when every open question is resolved, durable decisions are persisted as ADRs through `/dg:adr`, and the user confirms the final summary. Not before.

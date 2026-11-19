@@ -73,6 +73,7 @@ Claude Code also accepts the bare `/<name>`.
 
 | Skill | Use |
 | --- | --- |
+| `adr` | Write a paired plain-English ADR and agent decision, or answer from the ADRs at a reading level; `dg-skills adr` |
 | `agent-seed` | Set up a project's `.agents/` folder and a minimal `CLAUDE.md` |
 | `assign` | Pick the best-fit agent for a piece of work or for each spec slice |
 | `bg` | Run a task in the background; `dg-skills bg` tracks the jobs |
