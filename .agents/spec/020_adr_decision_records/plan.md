@@ -4,7 +4,7 @@ feature_snake_case: adr_decision_records
 date: "2026-11-19"
 version: "1.0"
 status: draft
-current_slice: 1
+current_slice: 3
 pr_strategy: single
 slices:
   - id: 1
@@ -166,32 +166,32 @@ Split decision records into two paired files: a simple human ADR in docs/adr wit
 ### Slice 3 — adr-skill-and-rules
 
 #### Engineering
-- [ ] New skill `plugins/dg/skills/adr/SKILL.md` as a short router: `**Usage:**` `/dg:adr [new "<title>" --topic <t> [--covers <glob>...] [--level <l>] | ask "<question>" [--level <l>]]`, a four-column `## Flags` table that covers every flag in the usage line, and the first-run bootstrap block (probe `dg-skills adr --help`) generated with `bun scripts/skill-bootstrap-block.ts --write`, then checked with `--check`
-- [ ] References: `references/write-adr.md` (plain English, the levels, one Mermaid diagram that explains the idea, the simplified template with the `Topic:` line, headings equal to `HUMAN_SECTIONS`), `references/write-decision.md` (terse rules, `covers:` globs, no history, the one-line `No agent rules.` form), `references/ask.md`, `references/levels.md` (table: level, grade limit, plain-words label; `phd` and `technical` are the same level), `references/three-gates.md` (the full three-gate test, moved from grill-me)
-- [ ] Write mode: apply the three gates, run `dg-skills adr new "<title>" --topic <t> [--covers ...] [--level <l>]`, fill both files, run `dg-skills adr lint --changed`, fix until it exits 0
-- [ ] Ask mode: default level = README `level:` else `high-school`; run `dg-skills adr find <words>` and `dg-skills adr relevant <paths>`, read the matched ADRs, answer at the level and cite ADR numbers, add a Mermaid diagram only when it helps, check the answer with `dg-skills adr lint --grade - --level <l>` before replying and rewrite until it exits 0; writes no file
-- [ ] Ask mode in a repo with no `.agents/decisions/README.md` stops with one line naming `dg-skills adr init`; with no match it says no ADR covers the question and invents nothing; it ignores per-ADR `Level:` lines
-- [ ] grill-me: `SKILL.md` line 31 routes "persisted as ADRs" to `/dg:adr`; `references/decisions.md` keeps a one-line pointer to `/dg:adr` `references/three-gates.md`, routes record writing to `/dg:adr new`, and drops the `<adr-root>` either/or
-- [ ] spec `references/grill.md`: replace the `.agents/decisions` persistence line with `/dg:adr new` writing the pair
-- [ ] agent-seed: `references/classification.md`, `docs.md`, `templates.md` and `workflow.md` point to `/dg:adr` for the format; `docs.md` shows the decision shape (frontmatter `covers:`, a link line to the ADR, terse rules or `No agent rules.`, input to the generated README)
-- [ ] spring-break: `SKILL.md` step 8 and `references/structure.md` line 118 point to `/dg:adr`; the adr step runs only when `.agents/decisions/README.md` exists, runs `dg-skills adr lint --all --json`, writes missing decision files, never rewrites an ADR body without a diff the human approves, and skips quietly otherwise
-- [ ] `docs/contributing.md`: replace the two ADR sentences with the pair, the levels, the `Topic:` line and `dg-skills adr new`; keep the "no empty file under `.agents/`" line; do not claim dg-ai passes `adr lint` (opt-in lands with bundle 021)
-- [ ] Indexes: add `adr` to a new `ADR_SKILLS` list in `pkg/skills-test/__tests__/skill-index-docs.spec.ts` and add its row to `README.md`, `docs/install.md` and `plugins/dg/skills/README.md`
-- [ ] List every new `adr/**` file in `pkg/common/__tests__/installed-skill-files.ts` (sorted)
-- [ ] `pkg/skills-test/__tests__/adr-skill.spec.ts`: the `levels.md` table equals `LEVELS` and `gradeLimit` from `src/adr/levels.ts`; the `write-adr.md` template headings equal `HUMAN_SECTIONS`; no file under `plugins/dg/skills/**` contains `<adr-root>` or says decisions persist to `.agents/decisions` alone
+- [x] New skill `plugins/dg/skills/adr/SKILL.md` as a short router: `**Usage:**` `/dg:adr [new "<title>" --topic <t> [--covers <glob>...] [--level <l>] | ask "<question>" [--level <l>]]`, a four-column `## Flags` table that covers every flag in the usage line, and the first-run bootstrap block (probe `dg-skills adr --help`) generated with `bun scripts/skill-bootstrap-block.ts --write`, then checked with `--check`
+- [x] References: `references/write-adr.md` (plain English, the levels, one Mermaid diagram that explains the idea, the simplified template with the `Topic:` line, headings equal to `HUMAN_SECTIONS`), `references/write-decision.md` (terse rules, `covers:` globs, no history, the one-line `No agent rules.` form), `references/ask.md`, `references/levels.md` (table: level, grade limit, plain-words label; `phd` and `technical` are the same level), `references/three-gates.md` (the full three-gate test, moved from grill-me)
+- [x] Write mode: apply the three gates, run `dg-skills adr new "<title>" --topic <t> [--covers ...] [--level <l>]`, fill both files, run `dg-skills adr lint --changed`, fix until it exits 0
+- [x] Ask mode: default level = README `level:` else `high-school`; run `dg-skills adr find <words>` and `dg-skills adr relevant <paths>`, read the matched ADRs, answer at the level and cite ADR numbers, add a Mermaid diagram only when it helps, check the answer with `dg-skills adr lint --grade - --level <l>` before replying and rewrite until it exits 0; writes no file
+- [x] Ask mode in a repo with no `.agents/decisions/README.md` stops with one line naming `dg-skills adr init`; with no match it says no ADR covers the question and invents nothing; it ignores per-ADR `Level:` lines
+- [x] grill-me: `SKILL.md` line 31 routes "persisted as ADRs" to `/dg:adr`; `references/decisions.md` keeps a one-line pointer to `/dg:adr` `references/three-gates.md`, routes record writing to `/dg:adr new`, and drops the `<adr-root>` either/or
+- [x] spec `references/grill.md`: replace the `.agents/decisions` persistence line with `/dg:adr new` writing the pair
+- [x] agent-seed: `references/classification.md`, `docs.md`, `templates.md` and `workflow.md` point to `/dg:adr` for the format; `docs.md` shows the decision shape (frontmatter `covers:`, a link line to the ADR, terse rules or `No agent rules.`, input to the generated README)
+- [x] spring-break: `SKILL.md` step 8 and `references/structure.md` line 118 point to `/dg:adr`; the adr step runs only when `.agents/decisions/README.md` exists, runs `dg-skills adr lint --all --json`, writes missing decision files, never rewrites an ADR body without a diff the human approves, and skips quietly otherwise
+- [x] `docs/contributing.md`: replace the two ADR sentences with the pair, the levels, the `Topic:` line and `dg-skills adr new`; keep the "no empty file under `.agents/`" line; do not claim dg-ai passes `adr lint` (opt-in lands with bundle 021)
+- [x] Indexes: add `adr` to a new `ADR_SKILLS` list in `pkg/skills-test/__tests__/skill-index-docs.spec.ts` and add its row to `README.md`, `docs/install.md` and `plugins/dg/skills/README.md`
+- [x] List every new `adr/**` file in `pkg/common/__tests__/installed-skill-files.ts` (sorted)
+- [x] `pkg/skills-test/__tests__/adr-skill.spec.ts`: the `levels.md` table equals `LEVELS` and `gradeLimit` from `src/adr/levels.ts`; the `write-adr.md` template headings equal `HUMAN_SECTIONS`; no file under `plugins/dg/skills/**` contains `<adr-root>` or says decisions persist to `.agents/decisions` alone
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: `skill-bootstrap-block.spec.ts`, `skill-manifests.spec.ts`, `skill-flags.spec.ts`, `skill-index-docs.spec.ts`, `skill-files.spec.ts` and `skills-only-install.spec.ts` pass with the new skill
-- [ ] Contract: `adr-skill.spec.ts` passes (levels table, section headings, repo-wide phrase grep)
-- [ ] SKILL.md and `references/ask.md` state the grade limit per level, require ADR citations, require the `adr lint --grade` self-check and allow a Mermaid diagram only when it helps
-- [ ] Write-mode text names `dg-skills adr new` with `--topic`, then `dg-skills adr lint --changed`
-- [ ] Markdown link tests pass for every new reference file
+- [x] Contract: `skill-bootstrap-block.spec.ts`, `skill-manifests.spec.ts`, `skill-flags.spec.ts`, `skill-index-docs.spec.ts`, `skill-files.spec.ts` and `skills-only-install.spec.ts` pass with the new skill
+- [x] Contract: `adr-skill.spec.ts` passes (levels table, section headings, repo-wide phrase grep)
+- [x] SKILL.md and `references/ask.md` state the grade limit per level, require ADR citations, require the `adr lint --grade` self-check and allow a Mermaid diagram only when it helps
+- [x] Write-mode text names `dg-skills adr new` with `--topic`, then `dg-skills adr lint --changed`
+- [x] Markdown link tests pass for every new reference file
 
 #### Acceptance Criteria
-- [ ] Given a grill that reaches a decision passing the three gates, when the skill text is followed, then it runs `dg-skills adr new "<title>" --topic <t>`, fills both files and runs `dg-skills adr lint --changed`
-- [ ] Given `/dg:adr ask "how does the daemon hub work" --level eli5` in an opted-in repo, then the skill text requires citing the matched ADR numbers and a passing `adr lint --grade - --level eli5` before the reply (the live grade check is a manual finish step)
-- [ ] Given a repo without `adr init`, when I run `/dg:adr ask`, then it stops with one line naming `dg-skills adr init`
+- [x] Given a grill that reaches a decision passing the three gates, when the skill text is followed, then it runs `dg-skills adr new "<title>" --topic <t>`, fills both files and runs `dg-skills adr lint --changed`
+- [x] Given `/dg:adr ask "how does the daemon hub work" --level eli5` in an opted-in repo, then the skill text requires citing the matched ADR numbers and a passing `adr lint --grade - --level eli5` before the reply (the live grade check is a manual finish step)
+- [x] Given a repo without `adr init`, when I run `/dg:adr ask`, then it stops with one line naming `dg-skills adr init`
 
 ### Slice 4 — build-wiring
 
@@ -225,11 +225,13 @@ Code Structure: not applicable, this slice is text only.
 ## Slice Summaries
 
 - Slice 1 (adr-cli-core, 8b878d51): added dg-skills adr with init, new, index, relevant, find and a lint stub; hoisted frontmatter helpers to src/utils/frontmatter.ts with spec re-exports. adr new slugs with dashes, takes one glob per --covers flag, and fills placeholders in one pass.
+- Slice 3 (adr-skill-and-rules, 5ce53984): added the /dg:adr skill (write and ask modes, levels, three gates) and pointed grill-me, spec grill, agent-seed, spring-break and contributing.md to it; added the adr doctor item.
 
 ## Agent Notes
 
 - (slice 1, dg:js) matchCovers takes root as a third argument; init and new handlers live in src/adr/index.ts; writeIndexes lives in index-gen.ts.
 - (slice 1, dg:qa-code) an empty Topic: line renders an unnamed toc group; slice 2 lint treats an empty Topic as missing-topic.
+- (slice 3, dg:lore) grill-me/references/protocol.md also carried <adr-root> and was fixed outside the slice files list; the adr doctor item landed with slice 3 because doctor-coverage needs one per registered command.
 
 ## Issues Remediation
 
