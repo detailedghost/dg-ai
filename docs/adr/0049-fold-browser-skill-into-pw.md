@@ -12,7 +12,9 @@ Date: 2026-11-19
 - Callers such as `/dg:pushup`, `/dg:land`, `/dg:sdlc` and `/dg:deps-upgrade`
   linked the browser skill only to explain one command.
 - [ADR 0028](0028-local-default-extension-opt-in.md) made plain `batch-open`
-  local by default and kept `launch` `--ext`-only. That rule stays.
+  local by default and kept `launch` `--ext`-only. That rule stays. This
+  record amends 0028: the commands it names are now `pw batch-open` and
+  `pw launch`, and the browser skill it lists is gone.
 
 ## Decision
 

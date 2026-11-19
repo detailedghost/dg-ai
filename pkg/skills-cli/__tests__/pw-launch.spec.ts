@@ -51,7 +51,7 @@ describe("pw launch --ext", () => {
 		world = extCommandWorld({ cliOnly: true });
 		const run = await world.run(["launch", "--ext", "--list"]);
 		expect(run.exitCode).toBe(1);
-			expect(run.stderr).toContain(requiredPrefix("dg-skills pw launch"));
+		expect(run.stderr).toContain(requiredPrefix("dg-skills pw launch"));
 		expect(run.detectCalls).toBe(0);
 	});
 

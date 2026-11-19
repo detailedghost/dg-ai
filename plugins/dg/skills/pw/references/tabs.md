@@ -109,6 +109,6 @@ files and tells you to click the reload icon for the extension on
 
 The extension's **Options** page sets the URL patterns, group title and color.
 The defaults are the pattern `*://github.com/*/*/pull/*` (scope it to your org),
-the title `PRs` and the color `blue`.
+the title `PRs` and a random color per group.
 
 Demo tours belong to `/dg:demo`.

@@ -10,7 +10,7 @@ slices:
   - id: 1
     name: "pw-tab-verbs"
     depends_on: []
-    files: ["pkg/skills-cli/src/pw/**", "pkg/skills-cli/src/commands/batch-open.ts", "pkg/skills-cli/src/commands/launch.ts", "pkg/skills-cli/src/launch/cli.ts", "pkg/skills-cli/src/utils/cli-only.ts", "pkg/skills-cli/src/register-all.ts", "pkg/skills-cli/src/completion/tree.json", "pkg/skills-cli/__tests__/batch-open.spec.ts", "pkg/skills-cli/__tests__/launch-ext.spec.ts", "pkg/skills-cli/__tests__/lazy-commands.spec.ts", "pkg/skills-cli/__tests__/cli-only.spec.ts", "pkg/skills-cli/__tests__/ext-command-harness.ts", "pkg/skills-cli/__tests__/doctor-command.spec.ts", "pkg/skills-test/__tests__/cli-smoke.spec.ts"]
+    files: ["pkg/skills-cli/src/pw/**", "pkg/skills-cli/src/commands/batch-open.ts", "pkg/skills-cli/src/commands/launch.ts", "pkg/skills-cli/src/launch/**", "pkg/skills-cli/src/batch-open/**", "pkg/skills-cli/src/utils/cli-only.ts", "pkg/skills-cli/src/register-all.ts", "pkg/skills-cli/src/completion/**", "pkg/skills-cli/__tests__/pw-batch-open.spec.ts", "pkg/skills-cli/__tests__/pw-launch.spec.ts", "pkg/skills-cli/__tests__/pw/cli.spec.ts", "pkg/skills-cli/__tests__/lazy-commands.spec.ts", "pkg/skills-cli/__tests__/cli-only.spec.ts", "pkg/skills-cli/__tests__/ext-command-harness.ts", "pkg/skills-cli/__tests__/doctor-ext-only.spec.ts", "pkg/skills-test/__tests__/cli-smoke.spec.ts"]
     agents:
       primary: dg:js
       confidence: high
@@ -19,7 +19,7 @@ slices:
   - id: 2
     name: "skills-docs-move"
     depends_on: [1]
-    files: ["plugins/dg/skills/browser/**", "plugins/dg/skills/pw/**", "plugins/dg/skills/pushup/**", "plugins/dg/skills/sdlc/**", "plugins/dg/skills/spec/**", "plugins/dg/skills/land/**", "plugins/dg/skills/deps-upgrade/**", "plugins/dg/skills/doctor/**", "plugins/dg/skills/overwatch/**", "plugins/dg/skills/channel-review/references/setup.md", "plugins/dg/skills/proto/references/commands.md", "plugins/dg/skills/inbox-cleanup/references/providers.md", "plugins/dg/skills/README.md", "README.md", "docs/**", "pkg/extension/README.md", "pkg/skills-cli/src/utils/installed-skill-files.ts", "pkg/skills-test/__tests__/**"]
+    files: ["plugins/dg/skills/**", "README.md", "docs/**", "pkg/extension/README.md", "pkg/common/src/node/install-skills.ts", "pkg/common/__tests__/installed-skill-files.ts", "pkg/skills-cli/bootstrap.sh", "pkg/skills-cli/bootstrap.ps1", "pkg/skills-cli/src/install/**", "pkg/skills-cli/__tests__/pw-skill.spec.ts", "pkg/skills-test/__tests__/**"]
     agents:
       primary: dg:lore
       confidence: high
