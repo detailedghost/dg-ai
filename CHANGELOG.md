@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.17.0 (2026-11-19)
+
+### Features
+
+- feat(adr): add the decision records tool ([#235](https://github.com/detailedghost/dg-ai/pull/235))
+
 ## v5.16.0 (2026-11-19)
 
 ### Features
