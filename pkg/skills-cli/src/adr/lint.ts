@@ -22,8 +22,10 @@ interface Finding {
 	limit?: number | null;
 }
 
+type Mode = "--all" | "--changed" | "--grade";
+
 interface Options {
-	modes: string[];
+	modes: Mode[];
 	json: boolean;
 	base?: string;
 	grade?: string;
@@ -46,8 +48,11 @@ function parseOptions(args: string[]): Options {
 		else if (arg === "--base" || arg === "--grade" || arg === "--level") {
 			const value = args[++i];
 			if (value === undefined) die(USAGE);
-			if (arg === "--grade") options.modes.push(arg);
-			options[arg.slice(2) as "base" | "grade" | "level"] = value;
+			if (arg === "--grade") {
+				options.modes.push(arg);
+				options.grade = value;
+			} else if (arg === "--base") options.base = value;
+			else options.level = value;
 		} else die(USAGE);
 	}
 	if (options.base !== undefined && (!options.modes.includes("--changed") || options.base.startsWith("-"))) die(USAGE);
@@ -98,6 +103,11 @@ function decodePart(part: string): string {
 	}
 }
 
+function targetPath(target: string, from: string, root: string): string {
+	const filePart = decodePart(target.split(/[#?]/)[0] ?? "");
+	return resolve(filePart.startsWith("/") ? root : dirname(from), filePart.replace(/^\/+/, ""));
+}
+
 function brokenLinks(path: string, text: string, root: string): Finding[] {
 	const anchors = anchorsOf(text);
 	const file = normalizePath(path, root);
@@ -109,8 +119,7 @@ function brokenLinks(path: string, text: string, root: string): Finding[] {
 			continue;
 		}
 		const filePart = decodePart(target.split(/[#?]/)[0] ?? "");
-		const base = filePart.startsWith("/") ? root : dirname(path);
-		if (filePart !== "" && !existsSync(resolve(base, filePart.replace(/^\/+/, "")))) found.push({ file, rule: "broken-link", message: `link target ${echo(target)} does not exist` });
+		if (filePart !== "" && !existsSync(targetPath(target, path, root))) found.push({ file, rule: "broken-link", message: `link target ${echo(target)} does not exist` });
 	}
 	return found;
 }
@@ -157,7 +166,7 @@ function lintDecision(record: AdrRecord, text: string, context: Context): Findin
 	const add = (rule: string, message: string): void => void found.push({ file, rule, message });
 	if (!("covers" in frontOf(text))) add("missing-covers", "front matter has no covers key");
 	const pair = resolve(record.adrPath);
-	if (!linkTargets(text).some((target) => resolve(dirname(record.decisionPath), target.split(/[#?]/)[0] ?? "") === pair)) add("broken-link", `does not link its ADR ${ADR_DIR}/${record.key}.md`);
+	if (!linkTargets(text).some((target) => targetPath(target, record.decisionPath, context.root) === pair)) add("broken-link", `does not link its ADR ${ADR_DIR}/${record.key}.md`);
 	if ((context.decisionCount.get(record.number) ?? 0) > 1) add("duplicate-number", `number ${record.number} is used by more than one decision`);
 	found.push(...brokenLinks(record.decisionPath, text, context.root));
 	return found;

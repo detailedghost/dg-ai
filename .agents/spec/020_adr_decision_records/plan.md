@@ -292,7 +292,7 @@ Code Structure: not applicable, this slice is text only.
 - **Applies to:** slices 1, 2, 4
 
 ### Record API
-- **Decision:** `loadRecords`, `repoLevel`, `matchCovers` (`records.ts`) and `renderIndexes` (`index-gen.ts`) are the only record API; lint reuses them and parses nothing itself.
+- **Decision:** `loadRecords`, `repoLevel`, `matchCovers` (`records.ts`) and `renderIndexes` (`index-gen.ts`) are the only record API; lint reuses them and parses nothing itself, except the `covers` key and the README `level:` through `frontOf`, because the record API cannot tell a missing `covers` key from `covers: []` or report an invalid level.
 - **Home:** `pkg/skills-cli/src/adr/records.ts`, `pkg/skills-cli/src/adr/index-gen.ts`
 - **Rationale:** `stale-index` must compare the same bytes that `adr index` writes.
 - **Alternatives:** lint re-reads files with its own parser (drift between index and lint).

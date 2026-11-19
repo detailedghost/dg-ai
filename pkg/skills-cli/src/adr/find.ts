@@ -1,4 +1,4 @@
-import { say } from "../spec/shared";
+import { die, say } from "../spec/shared";
 import { type Hit, hitOf, splitJson } from "./args";
 import { repoRoot, requireInitialized } from "./paths";
 import { type AdrRecord, loadRecords } from "./records";
@@ -16,10 +16,11 @@ function scoreOf(record: AdrRecord, words: string[]): number {
 }
 
 export function findCommand(args: string[]): number {
-	const root = repoRoot();
-	requireInitialized(root);
 	const { json, rest } = splitJson(args, "find <words...> [--json]");
 	const words = rest.map((word) => word.toLowerCase()).filter((word) => word !== "");
+	if (words.length === 0) die("usage: dg-skills adr find <words...> [--json]");
+	const root = repoRoot();
+	requireInitialized(root);
 	const hits: Array<Hit & { score: number }> = loadRecords(root)
 		.map((record) => ({ ...hitOf(record), score: scoreOf(record, words) }))
 		.filter((hit) => hit.score > 0)

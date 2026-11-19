@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { randomBytes } from "node:crypto";
+import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { die } from "../spec/shared";
 import { splitDocument } from "../utils/frontmatter";
 import { README_FILE, refuseSymlink, TOC_FILE } from "./paths";
@@ -86,7 +87,14 @@ function replaceBelowMarker(path: string, body: string): void {
 	const at = text.indexOf(TOC_MARKER);
 	if (at < 0) die(missingMarkerMessage(path));
 	const next = `${text.slice(0, at + TOC_MARKER.length)}${indexTail(body)}`;
-	if (next !== text) writeFileSync(path, next);
+	if (next === text) return;
+	const temp = join(dirname(path), `.${basename(path)}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`);
+	try {
+		writeFileSync(temp, next, { flag: "wx" });
+		renameSync(temp, path);
+	} finally {
+		rmSync(temp, { force: true });
+	}
 }
 
 export function writeIndexes(root: string): void {

@@ -288,6 +288,7 @@ describe("adr hardening", () => {
 			expect(run.exitCode).toBe(2);
 		}
 		expect(repo.list("docs/adr").filter((name) => name !== "toc.md")).toEqual([]);
+		expect(repo.list(".agents/decisions")).toEqual(["README.md"]);
 	});
 
 	test("new numbers past an existing record and leaves it intact", async () => {
@@ -298,6 +299,8 @@ describe("adr hardening", () => {
 		expect(repo.read("docs/adr/0001-use-x.md")).toBe("KEEP ME\n");
 		expect(repo.read(".agents/decisions/0001-use-x.md")).toBe("KEEP TOO\n");
 		expect(run.exitCode).toBe(0);
+		expect(repo.exists("docs/adr/0002-use-x.md")).toBe(true);
+		expect(repo.exists(".agents/decisions/0002-use-x.md")).toBe(true);
 		expect(repo.list("docs/adr").some((name) => name.endsWith(".tmp"))).toBe(false);
 	});
 
@@ -338,6 +341,28 @@ describe("adr hardening", () => {
 	test("usage text shows --covers as a repeatable flag", async () => {
 		const repo = await makeAdrRepo();
 		expect((await repo.adr(["--help"])).stdout).toContain("[--covers <glob>]...");
+	});
+});
+
+describe("adr new input limits", () => {
+	test("caps a long title slug at 80 characters without a trailing hyphen", async () => {
+		const repo = await makeAdrRepo();
+		const title = `${"a".repeat(79)} ${"b".repeat(200)}`;
+		const run = await repo.create(title, "Tooling");
+		expect(run.exitCode).toBe(0);
+		const [name] = repo.list("docs/adr").filter((file) => file !== "toc.md");
+		expect(name).toBe(`0001-${"a".repeat(79)}.md`);
+		expect(repo.exists(`.agents/decisions/${name}`)).toBe(true);
+	});
+
+	test("rejects a blank --covers value and writes nothing", async () => {
+		const repo = await makeAdrRepo();
+		for (const blank of ["", "  "]) {
+			const run = await repo.create("Use X", "Tooling", ["--covers", blank]);
+			expect(run.exitCode).toBe(2);
+		}
+		expect(repo.list("docs/adr")).toEqual(["toc.md"]);
+		expect(repo.list(".agents/decisions")).toEqual(["README.md"]);
 	});
 });
 
@@ -412,7 +437,9 @@ describe("adr index", () => {
 		const { renderIndexes } = await import("../src/adr/index-gen");
 		const repo = await seeded();
 		const records = loadRecords(repo.root);
+		const before = structuredClone(records);
 		expect(renderIndexes(records)).toEqual(renderIndexes(records));
+		expect(records).toEqual(before);
 	});
 });
 
@@ -435,6 +462,14 @@ describe("adr relevant", () => {
 		expect(number).toBe("0001");
 		expect(title).toBe("Use X");
 		expect(path).toEndWith(".agents/decisions/0001-use-x.md");
+	});
+
+	test("matches covers written with a leading ./ or backslashes", async () => {
+		const repo = await makeAdrRepo();
+		await repo.create("Dot", "Tooling", ["--covers", "./pkg/a/**"]);
+		await repo.create("Slash", "Tooling", ["--covers", "pkg\\b\\*.ts"]);
+		const run = await repo.adr(["relevant", "pkg/a/x.ts", "pkg/b/y.ts"]);
+		expect(run.stdout.trim().split("\n").map((line) => line.split("\t")[0])).toEqual(["0001", "0002"]);
 	});
 
 	test("never matches covers: []", async () => {
@@ -491,6 +526,23 @@ describe("adr relevant", () => {
 		const repo = await covered();
 		const run = await repo.adr(["relevant", "pkg/a/x.ts"]);
 		expect(run.stdout).toContain("Use X");
+	});
+});
+
+describe("adr argument validation before init check", () => {
+	test.each([
+		[["relevant"]],
+		[["relevant", ""]],
+		[["relevant", "--json"]],
+		[["find"]],
+		[["find", ""]],
+		[["find", "--json"]],
+	])("%j exits 2 with usage even before init", async (args) => {
+		const repo = await makeAdrRepo({ init: false });
+		const run = await repo.adr(args);
+		expect(run.exitCode).toBe(2);
+		expect(run.stderr).toContain("usage:");
+		expect(run.stderr).not.toContain(NOT_INITIALIZED);
 	});
 });
 

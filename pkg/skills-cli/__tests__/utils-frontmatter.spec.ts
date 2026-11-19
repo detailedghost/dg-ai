@@ -34,6 +34,16 @@ describe("src/utils/frontmatter", () => {
 		expect(source).toMatch(/from\s+["']\.\.\/spec\/frontmatter["']/);
 	});
 
+	test("withPermission keeps CRLF line endings on every line it writes", () => {
+		const cases = ["---\r\nname: x\r\n---\r\nbody\r\n", "---\r\npermissions:\r\n  a: 1\r\n---\r\nbody\r\n", "no front\r\n"];
+		for (const text of cases) {
+			const out = specFrontmatter.withPermission(text, "b", "2");
+			expect(out).toContain("  b: 2\r\n");
+			expect(out.replace(/\r\n/g, "")).not.toContain("\n");
+		}
+		expect(specFrontmatter.withPermission("---\r\npermissions:\r\n  b: 1\r\n---\r\n", "b", "2")).toBe("---\r\npermissions:\r\n  b: 2\r\n---\r\n");
+	});
+
 	test("frontOf returns the front matter mapping, or an empty record", () => {
 		expect(utils.frontOf("---\nlevel: phd\ncovers: [a]\n---\nbody\n")).toEqual({ level: "phd", covers: ["a"] });
 		for (const text of ["no front", "---\n- a\n- b\n---\n", "---\n: : [\n---\n", ""]) {

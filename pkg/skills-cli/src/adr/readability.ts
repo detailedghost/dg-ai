@@ -1,4 +1,4 @@
-const FENCE = /^\s*(`{3,}|~{3,})/;
+const FENCE = /^\s*(`{3,}(?=[^`]*$)|~{3,})/;
 export const HEADING = /^\s{0,3}#{1,6}\s+(.*)$/;
 const HEADER_LINE = /^\s*(Status|Date|Topic|Level):/;
 const TABLE_ROW = /^\s*\|/;

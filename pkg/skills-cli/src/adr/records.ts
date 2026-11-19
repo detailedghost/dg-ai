@@ -76,7 +76,7 @@ export function matchCovers(records: AdrRecord[], paths: string[], root: string)
 	const normalized = paths.map((path) => normalizePath(path, root));
 	return records.filter((record) =>
 		record.covers.some((pattern) => {
-			const glob = new Bun.Glob(pattern);
+			const glob = new Bun.Glob(pattern.replaceAll("\\", "/").replace(/^(?:\.\/)+/, ""));
 			return normalized.some((path) => glob.match(path));
 		}),
 	);

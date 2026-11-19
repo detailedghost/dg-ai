@@ -13,6 +13,7 @@ import { relevantCommand } from "./relevant";
 import { AGENT_TEMPLATE, fill, missingMarkerMessage, README_INTRO, renderHuman, TOC_INTRO, TOC_MARKER } from "./templates";
 
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+const MAX_SLUG = 80;
 
 const USAGE = `usage: dg-skills adr <subcommand> [args]
 
@@ -129,9 +130,10 @@ function newCommand(args: string[]): number {
 	if (topic === undefined || topic.trim() === "") die(`--topic is required. usage: dg-skills adr ${usage}`);
 	if (title === "") die("title is empty");
 	if (CONTROL_CHARS.test(rawTitle) || CONTROL_CHARS.test(topic)) die("title and topic must not contain control characters");
-	const slug = slugify(title).replaceAll("_", "-");
+	const slug = slugify(title).replaceAll("_", "-").slice(0, MAX_SLUG).replace(/-+$/, "");
 	if (slug === "") die("title has no letters or digits to build a file name from");
 	const level = levelFlag(flags);
+	if ((flags.values.get("--covers") ?? []).some((pattern) => pattern.trim() === "")) die(`--covers must not be blank. usage: dg-skills adr ${usage}`);
 	const key = `${nextNumber(root)}-${slug}`;
 	const covers = flags.values.get("--covers") ?? [];
 	const values: Record<string, string> = { title, date: localDate(), topic: topic.trim(), number: key.slice(0, 4), covers: JSON.stringify(covers), link: `../../${ADR_DIR}/${key}.md` };

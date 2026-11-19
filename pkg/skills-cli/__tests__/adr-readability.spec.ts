@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { gradeOf } from "../src/adr/readability";
+import { gradeOf, scanFences } from "../src/adr/readability";
 
 interface Sample {
 	name: string;
@@ -83,6 +83,12 @@ describe("adr readability gradeOf", () => {
 	test("ignores a fenced code block", () => {
 		const withFence = `${BASE}\n\n\`\`\`ts\nconst veryComplicatedIdentifier = internationalization(configuration);\n\`\`\`\n`;
 		expect(gradeOf(withFence)).toBeCloseTo(gradeOf(BASE), 5);
+	});
+
+	test("a backtick line with more backticks later does not open a fence", () => {
+		const text = `${BASE}\n\n\`\`\`code\`\`\` and more\n\nThe next line is plain prose that counts toward the grade.\n`;
+		expect(scanFences(text).map((entry) => entry.kind)).not.toContain("open");
+		expect(gradeOf(text)).not.toBeCloseTo(gradeOf(BASE), 5);
 	});
 
 	test("ignores a Mermaid block", () => {

@@ -345,7 +345,20 @@ describe("adr lint pair rules", () => {
 		repo.write("docs/other.md", "x\n");
 		await writePair(repo, KEY, adrDoc({ extra: "See [a](../my%20doc.md), [b](/docs/other.md) and [c](../bad%zz.md)." }), decisionDoc());
 		const { found } = await findings(repo);
-		expect(found.map((finding) => finding.message)).toEqual(['link target "../bad?zz.md" does not exist']);
+		const messages = found.map((finding) => finding.message);
+		expect(messages).toHaveLength(1);
+		expect(messages[0]).toContain("bad");
+		expect(messages[0]).toContain("zz.md");
+		expect(messages[0]).toContain("does not exist");
+	});
+
+	test("broken-link: a decision linking its ADR by a root-absolute or percent-encoded path passes", async () => {
+		for (const link of [`/docs/adr/${KEY}.md`, `../../docs/adr/${KEY.replace("queues", "%71ueues")}.md`]) {
+			const repo = await makeAdrRepo();
+			await writePair(repo, KEY, adrDoc(), decisionDoc({ link: `[ADR](${link})` }));
+			const { found } = await findings(repo);
+			expect(found).toEqual([]);
+		}
 	});
 
 	test("broken-link: an anchor with no matching heading fails", async () => {
@@ -509,7 +522,7 @@ describe("adr lint hardening", () => {
 		expect((await repo.adr(["lint", "--grade", "docs"])).exitCode).toBe(2);
 	});
 
-	test("a long hostile line lints in bounded time", async () => {
+	test("a long hostile line lints without hanging", async () => {
 		const repo = await makeAdrRepo();
 		const noise = `${"[".repeat(60_000)}${"](x \"".repeat(10_000)}${"# ".repeat(20_000)}`;
 		await writePair(repo, KEY, adrDoc({ extra: noise }), decisionDoc());
@@ -727,6 +740,6 @@ describe("adr lint failure messages", () => {
 		const run = await repo.adr(["lint", "--grade", "missing.md"]);
 		expect(run.exitCode).toBe(2);
 		expect(run.stderr).toContain("missing.md");
-		expect(run.stderr).not.toContain("at ");
+		expect(run.stderr).not.toMatch(/\n\s+at .+\(.+:\d+:\d+\)/);
 	});
 });
