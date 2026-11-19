@@ -1187,152 +1187,152 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 ### Slice 10 — job-schedule-merge
 
 #### Engineering
-- [ ] `migrateScheduledRows(store, paths)`: for each `scheduled_jobs` row that is not moved, write a `jobs` entry with `argv`, `cwd`, `every` (from `interval_ms`) or `schedule` (from `cron_expr`), `enabled`, `notify` and `feed: true`
-- [ ] Mapping rules of the move: a row with `cron_expr` gives `schedule`, also when `interval_ms` is set; `enabled` 0 gives no `enabled` key; no `notify_identity` gives no `notify`; the `every` text comes from `formatIntervalMs` of pkg/common/src/chat-format.ts; each new entry passes `parseJobEntry` before the write; rows are read by `created_at`, then `label`; a valid label that no other entry has stays as it is
-- [ ] Add one schema step, step 14: the columns `moved_at` and `renamed_from TEXT` on `scheduled_jobs`
-- [ ] The move has three steps: a first database transaction saves the chosen name in each row, with the argv in place; then the one config write of the `jobs` entries; then a second transaction sets `moved_at` on each moved row and replaces its argv columns with the encrypted text `[]`, so the argv leaves the encrypted database; after that, the `jobs` table is the only copy of that argv: `config.json.pre-jobs` never held it, and the release before refuses a database at schema version 14
-- [ ] A restart after a stop between the steps reads the saved name and does only the steps that remain: a row with no `moved_at` whose saved name is in the table gets the last step only, and no entry is written again
-- [ ] The columns `cwd`, `interval_ms`, `cron_expr`, `enabled` and `notify_identity` of a moved row are not read again; they stay in the table, and no slice removes them
-- [ ] The move runs in `cmdServe` after `migrateServicesKey`, under the config lock, at each daemon start; only the row move writes `jobsVersion: 2`, and this slice changes `JOBS_VERSION` to 2, so each CLI write waits for the row move through the guard of slice 8
-- [ ] A row label that fails the name rule, or that is the name of another entry, gets a new name by one fixed rule: make the text lower case; replace each character that is not `a-z`, `0-9` or `-` with `-`; remove each `-` at the start; cut the text at 64 characters; use `job` when no character is left; when the result is the name of another entry, add `-2`, then `-3`, and so on, and cut the base so that the full name has 64 characters at most
-- [ ] The runner reads the `schedule` and `every` entries of the table at each tick and makes a state row for an entry that has none; that state row gets `moved_at` at once, the label, the argv `[]`, a `cwd` and `interval_ms` or `cron_expr`, and its first run time is the value that `job add` sets on master
-- [ ] The runner starts a run with `launcher.ts`: the allowlist, `passEnv`, `envFile`, the injected keys, the state folder and the grant keys
-- [ ] With `feed: true`, the launcher gives stdout to `parseFeedLines` as today and writes stderr to `<log>/service-<name>.log`; with no `feed`, stdout and stderr go to that log file and the exit code is the result
-- [ ] `timeoutMs` ends the process group of a run at the limit and records the error `timed out after <duration>`; an explicit `timeoutMs` is not clamped; with no `timeoutMs`, a `feed: true` run keeps the 30 s limit and the 256 KB output limit of today (`resolveLimits`), and a run with no `feed` has no default limit [DECIDED — gaps pass O5 (b)]
-- [ ] A failed run records its result and is not started again before the next scheduled time
-- [ ] When a run of a job is in progress at its next scheduled time, skip that time and write one log line `job <name>: skipped a run, the run before it is not complete`
-- [ ] At daemon start, a job whose next run time is in the past runs one time, and its next run time is then calculated from now: one catch-up run after downtime, not one for each missed time
-- [ ] `addScheduled` writes a table entry with no `enabled` key for the new form; an add with the alias `--label` or `--cron` sets `enabled: true` and `feed: true`, so a script of today gets the result of today [DECIDED — gaps pass X2 part 1 (a)]
-- [ ] `setScheduledEnabled` sets `enabled` in the table; `enable` of a scheduled job prints the next run time
-- [ ] `JobControl.start` of `control.ts` runs a scheduled entry one time and returns at once with the state `running`, `JobControl.stop` ends a run in progress, and `JobControl.status` gives a row for each scheduled entry with its next run time and last result; do not edit `http.ts`
-- [ ] `runScheduledNow` asks the daemon for one run (`POST /jobs/<name>/start`), and `job start` prints one status line; a second start during the run exits 1 with `job "<name>" already runs`; with no live daemon it exits 1 with `no live dg-daemon`
-- [ ] `job run` worked with no daemon on master and now needs one: slice 11 documents it, and job-exec.spec.ts tests the new result
-- [ ] `findScheduled`, `listScheduled` and `removeScheduled` read and write the table; `removeScheduled` also deletes the state row and its feed items, as `job rm` does today
-- [ ] `isDaemonIdle` counts the enabled scheduled entries of the table
-- [ ] Do not edit `commands/jobs.ts` or the completion tree, with one exception: this slice deletes the interim rules of slice 9 from jobs.ts and job-logs.ts, and that delete changes no command name, option or description [DECIDED — post-apply item 8 (a)]
-- [ ] For each renamed row, write one log line `scheduled job "<old>" is now "<new>"`; at the move, `label` becomes the entry name and `renamed_from` holds the old label; `listScheduled` gives `renamedFrom` from that column, and `job list` of slice 9 prints it; `label` is then the one key of the runner, `findScheduled` and `removeScheduled`
-- [ ] Do not change a command name, an option or a description: this slice does not own pkg/dg-daemon/src/completion-tree.json
-- [ ] A row that cannot move (its argv does not decrypt, its cron text is not valid, its `cwd` is gone, or its entry fails `parseJobEntry`) stays in place with no `moved_at`; the daemon logs one warning with the label and the reason and writes the mark 2; `job add` refuses its label with the `already exists` text, and `job list` shows the row as `invalid` [DECIDED — gaps pass O4 (a)]
-- [ ] Rewrite the run loop: a tick starts each due run and does not wait for it; a set of the names in progress gives the skip and its log line
-- [ ] Scheduled runs do not use the limit for each session or the limit for each minute of `DispatchScheduler`, and keep the one daemon-wide limit
-- [ ] `JobControl.stop` and the daemon shutdown end the process group of each run in progress (`killProcessGroup`)
-- [ ] A daemon that ends with SIGKILL leaves a run alive, and a scheduled run has no pid file guard: slice 11 documents it
-- [ ] New launcher options for a run: stdout through a pipe for a `feed` run, with the output limit on that pipe; stderr to the log file; a result `{ exitCode, timedOut }`
-- [ ] The runner keeps one function that a spec can inject, with the `ExecResult` shape of today (runner.spec.ts, tick.spec.ts and job-exec.spec.ts use it)
-- [ ] List in the PR body what changes for a moved job: the environment gets the `DG_SERVICE_*` keys, `envFile` and `passEnv`; the timeout text becomes `timed out after <duration>`; stderr goes to the log file and not to the `last_stderr` column
-- [ ] Store changes in store/index.ts: `recordJobRun` takes the next run time from the caller, not from the row columns; a manual run (`job start`) records its result and does not move `next_run_at`
-- [ ] Add to the store the methods of the three-step move, and the insert and the lookup of a state row by label
-- [ ] bootstrap.ts and idle.ts count the enabled entries of the table, not `countEnabledJobs`
-- [ ] When the `every` or `schedule` text of an entry is not the text of the last run, the next tick calculates `next_run_at` again
-- [ ] `addScheduled`, `setScheduledEnabled` and `removeScheduled` now write the config file: they call `ensureMigrated`, then `withConfigLock` and `guardConfig` of job-support.ts
-- [ ] They use the name rule, the `already exists` text for a name in the table and for a label of a row that is not moved, and `resolveExecutable` for the `cwd` and executable checks; they store `feed` and `timeoutMs`
-- [ ] `removeScheduled` deletes the state row first, then the entry
-- [ ] Update pkg/dg-daemon/__tests__/commands/jobs.spec.ts: it asserts SQLite rows after `job add` and runs `job run` with no daemon
-- [ ] `migrateScheduledRows` reads with `readConfigStrict`, adds each entry, and writes with one `writeFilePreserving(file, data, 0o600)` call inside migrate.ts; it does not edit config-store.ts
-- [ ] `enable` of a scheduled entry follows the path of a continuous entry (daemon start, login question), then prints the next run time
-- [ ] Remove the three interim rules of slice 9 for a scheduled row in SQLite (`enable`, `disable` and `remove` by the path of master; the `logs` text; the `update` text) and the `take effect after the jobs move` note, with their Contracts in pkg/dg-daemon/__tests__/commands/job-verbs.spec.ts
+- [x] `migrateScheduledRows(store, paths)`: for each `scheduled_jobs` row that is not moved, write a `jobs` entry with `argv`, `cwd`, `every` (from `interval_ms`) or `schedule` (from `cron_expr`), `enabled`, `notify` and `feed: true`
+- [x] Mapping rules of the move: a row with `cron_expr` gives `schedule`, also when `interval_ms` is set; `enabled` 0 gives no `enabled` key; no `notify_identity` gives no `notify`; the `every` text comes from `formatIntervalMs` of pkg/common/src/chat-format.ts; each new entry passes `parseJobEntry` before the write; rows are read by `created_at`, then `label`; a valid label that no other entry has stays as it is
+- [x] Add one schema step, step 14: the columns `moved_at` and `renamed_from TEXT` on `scheduled_jobs`
+- [x] The move has three steps: a first database transaction saves the chosen name in each row, with the argv in place; then the one config write of the `jobs` entries; then a second transaction sets `moved_at` on each moved row and replaces its argv columns with the encrypted text `[]`, so the argv leaves the encrypted database; after that, the `jobs` table is the only copy of that argv: `config.json.pre-jobs` never held it, and the release before refuses a database at schema version 14
+- [x] A restart after a stop between the steps reads the saved name and does only the steps that remain: a row with no `moved_at` whose saved name is in the table gets the last step only, and no entry is written again
+- [x] The columns `cwd`, `interval_ms`, `cron_expr`, `enabled` and `notify_identity` of a moved row are not read again; they stay in the table, and no slice removes them
+- [x] The move runs in `cmdServe` after `migrateServicesKey`, under the config lock, at each daemon start; only the row move writes `jobsVersion: 2`, and this slice changes `JOBS_VERSION` to 2, so each CLI write waits for the row move through the guard of slice 8
+- [x] A row label that fails the name rule, or that is the name of another entry, gets a new name by one fixed rule: make the text lower case; replace each character that is not `a-z`, `0-9` or `-` with `-`; remove each `-` at the start; cut the text at 64 characters; use `job` when no character is left; when the result is the name of another entry, add `-2`, then `-3`, and so on, and cut the base so that the full name has 64 characters at most
+- [x] The runner reads the `schedule` and `every` entries of the table at each tick and makes a state row for an entry that has none; that state row gets `moved_at` at once, the label, the argv `[]`, a `cwd` and `interval_ms` or `cron_expr`, and its first run time is the value that `job add` sets on master
+- [x] The runner starts a run with `launcher.ts`: the allowlist, `passEnv`, `envFile`, the injected keys, the state folder and the grant keys
+- [x] With `feed: true`, the launcher gives stdout to `parseFeedLines` as today and writes stderr to `<log>/service-<name>.log`; with no `feed`, stdout and stderr go to that log file and the exit code is the result
+- [x] `timeoutMs` ends the process group of a run at the limit and records the error `timed out after <duration>`; an explicit `timeoutMs` is not clamped; with no `timeoutMs`, a `feed: true` run keeps the 30 s limit and the 256 KB output limit of today (`resolveLimits`), and a run with no `feed` has no default limit [DECIDED — gaps pass O5 (b)]
+- [x] A failed run records its result and is not started again before the next scheduled time
+- [x] When a run of a job is in progress at its next scheduled time, skip that time and write one log line `job <name>: skipped a run, the run before it is not complete`
+- [x] At daemon start, a job whose next run time is in the past runs one time, and its next run time is then calculated from now: one catch-up run after downtime, not one for each missed time
+- [x] `addScheduled` writes a table entry with no `enabled` key for the new form; an add with the alias `--label` or `--cron` sets `enabled: true` and `feed: true`, so a script of today gets the result of today [DECIDED — gaps pass X2 part 1 (a)]
+- [x] `setScheduledEnabled` sets `enabled` in the table; `enable` of a scheduled job prints the next run time
+- [x] `JobControl.start` of `control.ts` runs a scheduled entry one time and returns at once with the state `running`, `JobControl.stop` ends a run in progress, and `JobControl.status` gives a row for each scheduled entry with its next run time and last result; do not edit `http.ts`
+- [x] `runScheduledNow` asks the daemon for one run (`POST /jobs/<name>/start`), and `job start` prints one status line; a second start during the run exits 1 with `job "<name>" already runs`; with no live daemon it exits 1 with `no live dg-daemon`
+- [x] `job run` worked with no daemon on master and now needs one: slice 11 documents it, and job-exec.spec.ts tests the new result
+- [x] `findScheduled`, `listScheduled` and `removeScheduled` read and write the table; `removeScheduled` also deletes the state row and its feed items, as `job rm` does today
+- [x] `isDaemonIdle` counts the enabled scheduled entries of the table
+- [x] Do not edit `commands/jobs.ts` or the completion tree, with one exception: this slice deletes the interim rules of slice 9 from jobs.ts and job-logs.ts, and that delete changes no command name, option or description [DECIDED — post-apply item 8 (a)]
+- [x] For each renamed row, write one log line `scheduled job "<old>" is now "<new>"`; at the move, `label` becomes the entry name and `renamed_from` holds the old label; `listScheduled` gives `renamedFrom` from that column, and `job list` of slice 9 prints it; `label` is then the one key of the runner, `findScheduled` and `removeScheduled`
+- [x] Do not change a command name, an option or a description: this slice does not own pkg/dg-daemon/src/completion-tree.json
+- [x] A row that cannot move (its argv does not decrypt, its cron text is not valid, its `cwd` is gone, or its entry fails `parseJobEntry`) stays in place with no `moved_at`; the daemon logs one warning with the label and the reason and writes the mark 2; `job add` refuses its label with the `already exists` text, and `job list` shows the row as `invalid` [DECIDED — gaps pass O4 (a)]
+- [x] Rewrite the run loop: a tick starts each due run and does not wait for it; a set of the names in progress gives the skip and its log line
+- [x] Scheduled runs do not use the limit for each session or the limit for each minute of `DispatchScheduler`, and keep the one daemon-wide limit
+- [x] `JobControl.stop` and the daemon shutdown end the process group of each run in progress (`killProcessGroup`)
+- [x] A daemon that ends with SIGKILL leaves a run alive, and a scheduled run has no pid file guard: slice 11 documents it
+- [x] New launcher options for a run: stdout through a pipe for a `feed` run, with the output limit on that pipe; stderr to the log file; a result `{ exitCode, timedOut }`
+- [x] The runner keeps one function that a spec can inject, with the `ExecResult` shape of today (runner.spec.ts, tick.spec.ts and job-exec.spec.ts use it)
+- [x] List in the PR body what changes for a moved job: the environment gets the `DG_SERVICE_*` keys, `envFile` and `passEnv`; the timeout text becomes `timed out after <duration>`; stderr goes to the log file and not to the `last_stderr` column
+- [x] Store changes in store/index.ts: `recordJobRun` takes the next run time from the caller, not from the row columns; a manual run (`job start`) records its result and does not move `next_run_at`
+- [x] Add to the store the methods of the three-step move, and the insert and the lookup of a state row by label
+- [x] bootstrap.ts and idle.ts count the enabled entries of the table, not `countEnabledJobs`
+- [x] When the `every` or `schedule` text of an entry is not the text of the last run, the next tick calculates `next_run_at` again
+- [x] `addScheduled`, `setScheduledEnabled` and `removeScheduled` now write the config file: they call `ensureMigrated`, then `withConfigLock` and `guardConfig` of job-support.ts
+- [x] They use the name rule, the `already exists` text for a name in the table and for a label of a row that is not moved, and `resolveExecutable` for the `cwd` and executable checks; they store `feed` and `timeoutMs`
+- [x] `removeScheduled` deletes the state row first, then the entry
+- [x] Update pkg/dg-daemon/__tests__/commands/jobs.spec.ts: it asserts SQLite rows after `job add` and runs `job run` with no daemon
+- [x] `migrateScheduledRows` reads with `readConfigStrict`, adds each entry, and writes with one `writeFilePreserving(file, data, 0o600)` call inside migrate.ts; it does not edit config-store.ts
+- [x] `enable` of a scheduled entry follows the path of a continuous entry (daemon start, login question), then prints the next run time
+- [x] Remove the three interim rules of slice 9 for a scheduled row in SQLite (`enable`, `disable` and `remove` by the path of master; the `logs` text; the `update` text) and the `take effect after the jobs move` note, with their Contracts in pkg/dg-daemon/__tests__/commands/job-verbs.spec.ts
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: a row `{ label: "jira-sprint", interval_ms: 900000, enabled: 1, notify_identity: "reviewer" }` becomes the entry `{ argv, cwd, "every": "15m", "enabled": true, "feed": true, "notify": "reviewer" }`; the row keeps its `id`, its `next_run_at` and its feed items, has a `moved_at` value, and its argv columns decrypt to `[]`
-- [ ] Contract: with an injected stop after the config write, the next daemon start sets `moved_at`, clears the argv and writes no second entry
-- [ ] Contract: with `jobsVersion: 1` and one row that is not moved, `job add --name <that label> …` does not write before the daemon made the move; after it, the command exits 1 with the `already exists` text
-- [ ] Contract: a second daemon start moves nothing and writes no file
-- [ ] Contract: a row label `Jira Sprint` becomes `jira-sprint`; the label `-Nightly!` becomes `nightly-`; a label of 80 characters becomes its first 64 characters; the log line names the old and the new name; `job list` shows the new name
-- [ ] Contract: a row label `bot` on a machine with a continuous job `bot` becomes `bot-2`, and with `bot-2` also in the table it becomes `bot-3`; the continuous entry does not change
-- [ ] Contract: after the move, the next run time of each job is the `next_run_at` from before
-- [ ] Contract: a scheduled job with no `feed` that prints text that is not JSON has the result `ok`, and the log file holds the text
-- [ ] Contract: a scheduled job with `feed: true` that prints text that is not JSON has the error `line 1: not valid JSON`, as today
-- [ ] Contract: a scheduled run gets `DG_SERVICE_LABEL`, `DG_SERVICE_STATE_DIR` and, with a `grant`, the two grant keys
-- [ ] Contract: a run that exits 1 at 10:00 with `every: "1h"` has its next run at 11:00 and no run between
-- [ ] Contract: with `every: "1s"` and a command that runs for 3 s, the log holds the `skipped a run` line and no two runs overlap
-- [ ] Contract: a daemon that was down for five intervals runs the job one time at start, not five times
-- [ ] Contract: a run that exceeds `timeoutMs` ends, and the result holds `timed out after`
-- [ ] Contract: `job start x` on a scheduled job with a live daemon runs it one time and does not change its next scheduled time
-- [ ] Happy path: a daemon boots on a store with two rows; the two jobs run at their times; the feed has no duplicate item
-- [ ] Regression: `bun test` passes in pkg/dg-daemon and pkg/common; `tick.spec.ts`, `runner.spec.ts` and `job-exec.spec.ts` pass with only their setup changed; the run also holds pkg/dg-agent/__tests__/job-notify.spec.ts and, with `PW_E2E`, pkg/skills-cli/__tests__/dashboard-browser.spec.ts, which pass only through the move at daemon start
-- [ ] Contract: `job list --json` gives a renamed job the key `renamedFrom` with the old label
-- [ ] Contract: pkg/dg-daemon/__tests__/completion-tree.spec.ts passes with no change of the tree file
-- [ ] Contract: after the services move, with one row that is not moved, the mark is 1 and `isMigrated` is `false`
-- [ ] Contract: a config with no `services` key and a store with no row gets the mark 2
-- [ ] Contract: a stop after the config write, on a row that got a new name, gives no second entry
-- [ ] Contract: a daemon restart after `job add --every` moves nothing and writes no entry
-- [ ] Contract: one case each for the move of a cron row, of a disabled row and of a row with no `notify_identity`
-- [ ] Contract: one case for each cause of a row that cannot move (an argv that does not decrypt, a cron text that is not valid, a `cwd` that is gone, an entry that fails `parseJobEntry`): the row stays, one warning names the label and the reason, the mark is 2, and `job list` shows `invalid` [DECIDED — gaps pass O4 (a)]
-- [ ] Contract: a run with `timeoutMs: 60000` that takes 45 s ends with the result `ok` [DECIDED — gaps pass O5 (b)]
-- [ ] Contract: two calls of `migrateScheduledRows` at the same time give one move
+- [x] Contract: a row `{ label: "jira-sprint", interval_ms: 900000, enabled: 1, notify_identity: "reviewer" }` becomes the entry `{ argv, cwd, "every": "15m", "enabled": true, "feed": true, "notify": "reviewer" }`; the row keeps its `id`, its `next_run_at` and its feed items, has a `moved_at` value, and its argv columns decrypt to `[]`
+- [x] Contract: with an injected stop after the config write, the next daemon start sets `moved_at`, clears the argv and writes no second entry
+- [x] Contract: with `jobsVersion: 1` and one row that is not moved, `job add --name <that label> …` does not write before the daemon made the move; after it, the command exits 1 with the `already exists` text
+- [x] Contract: a second daemon start moves nothing and writes no file
+- [x] Contract: a row label `Jira Sprint` becomes `jira-sprint`; the label `-Nightly!` becomes `nightly-`; a label of 80 characters becomes its first 64 characters; the log line names the old and the new name; `job list` shows the new name
+- [x] Contract: a row label `bot` on a machine with a continuous job `bot` becomes `bot-2`, and with `bot-2` also in the table it becomes `bot-3`; the continuous entry does not change
+- [x] Contract: after the move, the next run time of each job is the `next_run_at` from before
+- [x] Contract: a scheduled job with no `feed` that prints text that is not JSON has the result `ok`, and the log file holds the text
+- [x] Contract: a scheduled job with `feed: true` that prints text that is not JSON has the error `line 1: not valid JSON`, as today
+- [x] Contract: a scheduled run gets `DG_SERVICE_LABEL`, `DG_SERVICE_STATE_DIR` and, with a `grant`, the two grant keys
+- [x] Contract: a run that exits 1 at 10:00 with `every: "1h"` has its next run at 11:00 and no run between
+- [x] Contract: with `every: "1s"` and a command that runs for 3 s, the log holds the `skipped a run` line and no two runs overlap
+- [x] Contract: a daemon that was down for five intervals runs the job one time at start, not five times
+- [x] Contract: a run that exceeds `timeoutMs` ends, and the result holds `timed out after`
+- [x] Contract: `job start x` on a scheduled job with a live daemon runs it one time and does not change its next scheduled time
+- [x] Happy path: a daemon boots on a store with two rows; the two jobs run at their times; the feed has no duplicate item
+- [x] Regression: `bun test` passes in pkg/dg-daemon and pkg/common; `tick.spec.ts`, `runner.spec.ts` and `job-exec.spec.ts` pass with only their setup changed; the run also holds pkg/dg-agent/__tests__/job-notify.spec.ts and, with `PW_E2E`, pkg/skills-cli/__tests__/dashboard-browser.spec.ts, which pass only through the move at daemon start
+- [x] Contract: `job list --json` gives a renamed job the key `renamedFrom` with the old label
+- [x] Contract: pkg/dg-daemon/__tests__/completion-tree.spec.ts passes with no change of the tree file
+- [x] Contract: after the services move, with one row that is not moved, the mark is 1 and `isMigrated` is `false`
+- [x] Contract: a config with no `services` key and a store with no row gets the mark 2
+- [x] Contract: a stop after the config write, on a row that got a new name, gives no second entry
+- [x] Contract: a daemon restart after `job add --every` moves nothing and writes no entry
+- [x] Contract: one case each for the move of a cron row, of a disabled row and of a row with no `notify_identity`
+- [x] Contract: one case for each cause of a row that cannot move (an argv that does not decrypt, a cron text that is not valid, a `cwd` that is gone, an entry that fails `parseJobEntry`): the row stays, one warning names the label and the reason, the mark is 2, and `job list` shows `invalid` [DECIDED — gaps pass O4 (a)]
+- [x] Contract: a run with `timeoutMs: 60000` that takes 45 s ends with the result `ok` [DECIDED — gaps pass O5 (b)]
+- [x] Contract: two calls of `migrateScheduledRows` at the same time give one move
 
 #### Acceptance Criteria
-- [ ] Given scheduled jobs from before the upgrade, when the new daemon boots, then each job runs at its old time with its old feed
-- [ ] Given `dg job list`, when the owner reads it, then continuous and scheduled jobs are in one list
-- [ ] Given a scheduled job, when it runs, then its output is in a log file that `dg job logs <name>` shows
+- [x] Given scheduled jobs from before the upgrade, when the new daemon boots, then each job runs at its old time with its old feed
+- [x] Given `dg job list`, when the owner reads it, then continuous and scheduled jobs are in one list
+- [x] Given a scheduled job, when it runs, then its output is in a log file that `dg job logs <name>` shows
 
 ### Slice 11 — job-model-docs
 
 #### Engineering
-- [ ] Run `git fetch origin` first, then take the record number from `git ls-tree origin/master docs/adr` before you write the file: the number is the highest number in docs/adr plus one (two files have 0046, so do not count files); use it in the file name, the toc row and each link
-- [ ] Rebase on origin/master before the first edit of this slice
-- [ ] Write the jobs record docs/adr/<number>-jobs.md with the headings of docs/adr/template.md, a `Date:` header, `Status: Accepted` and exactly one fenced `mermaid` block: one noun, the three mode keys, the one table, the one launcher, the run rules of the two modes, the two migrations at daemon start, the backup file, the alias forms and their end in the major release, the pid and log paths that do not move, and the service API names that keep the word `SERVICE`
-- [ ] The jobs record states one cost: the argv of a scheduled job is now plain text in a config file with mode 0600, and no longer encrypted text in the database
-- [ ] Add one sentence to the amendment of ADR 0020 that slice 7 wrote: the job model is in the jobs record, with a link
-- [ ] Rewrite `docs/jobs-and-services.md` with `job` for each concept; the file path stays, so each link stays valid
-- [ ] The document has one table: old command → new command
-- [ ] plugins/dg/skills/jobs/SKILL.md gives the new verbs and flags in the form `dg-daemon job …` in the new section `## Job verbs`: the skills keep the program names `dg-skills`, `dg-agent` and `dg-daemon`; SKILL.md keeps each line that holds `channel-review` or an old form, and slice 21 removes the old forms [DECIDED — gaps pass O6 (a)]
-- [ ] The docs spec proves each documented command with its `--help` form
-- [ ] In docs/adr/0043-outside-services.md, add one dated line after the `Date:` line and after the line of slice 7: `Amended <date>: the noun is now job; see <link to the jobs record>.`; the line does not start with `Status:`; change no other line of that record
-- [ ] The jobs record also holds the login unit rules: `dg-daemon autostart`, and the one question of the first `job enable` at a terminal
-- [ ] Add the row of the jobs record to docs/adr/toc.md after the 0043 row of `## Platform`, in 160 columns at most
-- [ ] In pkg/skills-test/__tests__/outside-services-docs.spec.ts, change the one assertion of the test `toc entry is last in Platform` so that it finds the 0043 row by its pattern
-- [ ] In docs/jobs-and-services.md, add one table of the verbs: `enable` and `disable` change the stored `enabled` state and act now; `start`, `stop` and `restart` act now only; `add`, `update` and `remove` change the definition of a job
-- [ ] That table has a column `needs a live daemon` with a value for each of the twelve verbs of PR 2: `enable` starts the daemon when none runs; `disable` starts none; `disable` and `remove` need an answer from a daemon that runs; `restart`, and `start` of a scheduled job, need a live daemon; `logs` needs none; `list` and `status` print `daemon not running`
-- [ ] One sentence gives the difference between `dg daemon restart` (the daemon) and `dg job restart <name>` (one job)
-- [ ] The document states the run rules: a continuous job that exits with 0 stops, and each other exit starts it again with a backoff of 1 s to 60 s; a scheduled job gets no second try after a failure, a run that overlaps is skipped, and one catch-up run follows downtime
-- [ ] The document states the migration: the first start of the new daemon moves each service and each scheduled job to the `jobs` table, keeps the copy `config.json.pre-jobs`, and gives a new name to a scheduled label that is not a valid name; it gives the rename rule in short form (lower case, `-` for each other character, 64 characters at most, `-2` for a clash, `job` when empty), the log line `scheduled job "<old>" is now "<new>"`, and that `dg job list` shows `was "<old>"`
-- [ ] The document states that `feed` is explicit for a new job and is valid only for a scheduled job: a job with `--feed` prints one JSON object for each item, and a job with no `--feed` writes its output to its log; a moved scheduled job and an `add` with the alias `--label` or `--cron` get `feed: true`
-- [ ] The document states that each `dg job` verb prints the dg home and the daemon on stderr
-- [ ] The document updates the section `Start at login` of slice 7: the first `dg job enable` at a terminal asks one time to install the login unit
-- [ ] Verify that README.md and docs/install.md hold no command of the `dg-daemon service` group; do not change the message literal `dg: kept <from>; stop the dg-daemon service, then run dg-skills install again` in docs/install.md; in README.md, change the link text `Scheduled jobs, services, and dashboard` to use the noun `job`, and keep the path and the blank lines around the next bullet
-- [ ] In SKILL.md, put the new commands in the new section, and keep each channel-review section, the bootstrap fence, the SessionStart hook fence and the frontmatter `description` byte-identical, with two exceptions: the sentence on no autostart for `dg-daemon` itself now points to `dg-daemon autostart install`, and one new line above the action table points to `## Job verbs` [DECIDED — gaps pass O6 (a)]
-- [ ] In SKILL.md, state that `remove`, `disable` and `autostart install|remove` need a request from the human that names the job or the login unit
-- [ ] pkg/skills-test/__tests__/outside-services-docs.spec.ts: change the assertions that read `dg-daemon service` commands or the word `autostart` in docs/jobs-and-services.md to the new text; keep the tests on ADR 0043, SECURITY.md and docs/service-api.md
-- [ ] These tests of that spec change with the rewrite: `gives run steps in order`, `shows service add with a positional label`, `states the four corrected statements`, the `restart … only … autostart` pattern, and the path literals `<log>/service-<label>.log` and `<state>/daemon/services/<label>.pid`; these tests stay, because SKILL.md keeps its old lines: `covers the new actions and the gating rules` and `carries the final no-daemon message`
-- [ ] Write no private organization name and no private repository name in a document; name the consumer `the review bot repository` and use `bot` and `bot-dev` in each example
-- [ ] Create pkg/skills-test/__tests__/job-model-docs.spec.ts; it asserts: the fixed headings of this slice; the rows of the old → new table; the `needs a live daemon` column; the `--help` form of each command; the jobs record (the `Date:` header, one `mermaid` block, the fixed rule phrases that the document also holds); the toc row; the fixed text of SKILL.md
-- [ ] In pkg/skills-test/__tests__/dg-front-door-docs.spec.ts, add the jobs record to the document list; change nothing else in that spec
-- [ ] Fix the headings: `## Job verbs` (the verb table) and `## Old and new commands` (the old → new table) in docs/jobs-and-services.md, and `## Job verbs` in SKILL.md; slices 20 and 21 find their places by these headings
-- [ ] In SKILL.md and in the jobs record, state that the skill does not answer the login unit question of `job enable`, and that `enable` with no terminal only prints the hint; keep the sentence like the consent sentence of slice 20
-- [ ] In the hunk of SKILL.md that adds the new section, change the example label `teams-bot` to `bot` [DECIDED — gaps pass O7 (b)]
-- [ ] The document and the jobs record state the rollback: copy `config.json.pre-jobs` back; the release before refuses the database after the row move
-- [ ] The document and the jobs record state that a run that stays alive after a SIGKILL of the daemon can overlap the next run
-- [ ] The document and the jobs record state that `dg job start` of a scheduled job, and the alias `run`, need a live daemon
-- [ ] The document and the jobs record state what the owner does when a daemon of the release before still runs: a `dg job` verb that writes waits 10 s at most, then stops with the `not migrated` text and the pid of that daemon; the owner runs `dg daemon restart`, then the command again; dg never restarts that daemon itself [DECIDED — gaps pass O3 (a)]
-- [ ] The document and the jobs record state the limits of a scheduled run: an explicit `--timeout` is not clamped; with no `--timeout`, a run with `--feed` has the 30 s limit and the 256 KB output limit, and a run with no `--feed` has no default limit [DECIDED — gaps pass O5 (b)]
+- [x] Run `git fetch origin` first, then take the record number from `git ls-tree origin/master docs/adr` before you write the file: the number is the highest number in docs/adr plus one (two files have 0046, so do not count files); use it in the file name, the toc row and each link
+- [x] Rebase on origin/master before the first edit of this slice
+- [x] Write the jobs record docs/adr/<number>-jobs.md with the headings of docs/adr/template.md, a `Date:` header, `Status: Accepted` and exactly one fenced `mermaid` block: one noun, the three mode keys, the one table, the one launcher, the run rules of the two modes, the two migrations at daemon start, the backup file, the alias forms and their end in the major release, the pid and log paths that do not move, and the service API names that keep the word `SERVICE`
+- [x] The jobs record states one cost: the argv of a scheduled job is now plain text in a config file with mode 0600, and no longer encrypted text in the database
+- [x] Add one sentence to the amendment of ADR 0020 that slice 7 wrote: the job model is in the jobs record, with a link
+- [x] Rewrite `docs/jobs-and-services.md` with `job` for each concept; the file path stays, so each link stays valid
+- [x] The document has one table: old command → new command
+- [x] plugins/dg/skills/jobs/SKILL.md gives the new verbs and flags in the form `dg-daemon job …` in the new section `## Job verbs`: the skills keep the program names `dg-skills`, `dg-agent` and `dg-daemon`; SKILL.md keeps each line that holds `channel-review` or an old form, and slice 21 removes the old forms [DECIDED — gaps pass O6 (a)]
+- [x] The docs spec proves each documented command with its `--help` form
+- [x] In docs/adr/0043-outside-services.md, add one dated line after the `Date:` line and after the line of slice 7: `Amended <date>: the noun is now job; see <link to the jobs record>.`; the line does not start with `Status:`; change no other line of that record
+- [x] The jobs record also holds the login unit rules: `dg-daemon autostart`, and the one question of the first `job enable` at a terminal
+- [x] Add the row of the jobs record to docs/adr/toc.md after the 0043 row of `## Platform`, in 160 columns at most
+- [x] In pkg/skills-test/__tests__/outside-services-docs.spec.ts, change the one assertion of the test `toc entry is last in Platform` so that it finds the 0043 row by its pattern
+- [x] In docs/jobs-and-services.md, add one table of the verbs: `enable` and `disable` change the stored `enabled` state and act now; `start`, `stop` and `restart` act now only; `add`, `update` and `remove` change the definition of a job
+- [x] That table has a column `needs a live daemon` with a value for each of the twelve verbs of PR 2: `enable` starts the daemon when none runs; `disable` starts none; `disable` and `remove` need an answer from a daemon that runs; `restart`, and `start` of a scheduled job, need a live daemon; `logs` needs none; `list` and `status` print `daemon not running`
+- [x] One sentence gives the difference between `dg daemon restart` (the daemon) and `dg job restart <name>` (one job)
+- [x] The document states the run rules: a continuous job that exits with 0 stops, and each other exit starts it again with a backoff of 1 s to 60 s; a scheduled job gets no second try after a failure, a run that overlaps is skipped, and one catch-up run follows downtime
+- [x] The document states the migration: the first start of the new daemon moves each service and each scheduled job to the `jobs` table, keeps the copy `config.json.pre-jobs`, and gives a new name to a scheduled label that is not a valid name; it gives the rename rule in short form (lower case, `-` for each other character, 64 characters at most, `-2` for a clash, `job` when empty), the log line `scheduled job "<old>" is now "<new>"`, and that `dg job list` shows `was "<old>"`
+- [x] The document states that `feed` is explicit for a new job and is valid only for a scheduled job: a job with `--feed` prints one JSON object for each item, and a job with no `--feed` writes its output to its log; a moved scheduled job and an `add` with the alias `--label` or `--cron` get `feed: true`
+- [x] The document states that each `dg job` verb prints the dg home and the daemon on stderr
+- [x] The document updates the section `Start at login` of slice 7: the first `dg job enable` at a terminal asks one time to install the login unit
+- [x] Verify that README.md and docs/install.md hold no command of the `dg-daemon service` group; do not change the message literal `dg: kept <from>; stop the dg-daemon service, then run dg-skills install again` in docs/install.md; in README.md, change the link text `Scheduled jobs, services, and dashboard` to use the noun `job`, and keep the path and the blank lines around the next bullet
+- [x] In SKILL.md, put the new commands in the new section, and keep each channel-review section, the bootstrap fence, the SessionStart hook fence and the frontmatter `description` byte-identical, with two exceptions: the sentence on no autostart for `dg-daemon` itself now points to `dg-daemon autostart install`, and one new line above the action table points to `## Job verbs` [DECIDED — gaps pass O6 (a)]
+- [x] In SKILL.md, state that `remove`, `disable` and `autostart install|remove` need a request from the human that names the job or the login unit
+- [x] pkg/skills-test/__tests__/outside-services-docs.spec.ts: change the assertions that read `dg-daemon service` commands or the word `autostart` in docs/jobs-and-services.md to the new text; keep the tests on ADR 0043, SECURITY.md and docs/service-api.md
+- [x] These tests of that spec change with the rewrite: `gives run steps in order`, `shows service add with a positional label`, `states the four corrected statements`, the `restart … only … autostart` pattern, and the path literals `<log>/service-<label>.log` and `<state>/daemon/services/<label>.pid`; these tests stay, because SKILL.md keeps its old lines: `covers the new actions and the gating rules` and `carries the final no-daemon message`
+- [x] Write no private organization name and no private repository name in a document; name the consumer `the review bot repository` and use `bot` and `bot-dev` in each example
+- [x] Create pkg/skills-test/__tests__/job-model-docs.spec.ts; it asserts: the fixed headings of this slice; the rows of the old → new table; the `needs a live daemon` column; the `--help` form of each command; the jobs record (the `Date:` header, one `mermaid` block, the fixed rule phrases that the document also holds); the toc row; the fixed text of SKILL.md
+- [x] In pkg/skills-test/__tests__/dg-front-door-docs.spec.ts, add the jobs record to the document list; change nothing else in that spec
+- [x] Fix the headings: `## Job verbs` (the verb table) and `## Old and new commands` (the old → new table) in docs/jobs-and-services.md, and `## Job verbs` in SKILL.md; slices 20 and 21 find their places by these headings
+- [x] In SKILL.md and in the jobs record, state that the skill does not answer the login unit question of `job enable`, and that `enable` with no terminal only prints the hint; keep the sentence like the consent sentence of slice 20
+- [x] In the hunk of SKILL.md that adds the new section, change the example label `teams-bot` to `bot` [DECIDED — gaps pass O7 (b)]
+- [x] The document and the jobs record state the rollback: copy `config.json.pre-jobs` back; the release before refuses the database after the row move
+- [x] The document and the jobs record state that a run that stays alive after a SIGKILL of the daemon can overlap the next run
+- [x] The document and the jobs record state that `dg job start` of a scheduled job, and the alias `run`, need a live daemon
+- [x] The document and the jobs record state what the owner does when a daemon of the release before still runs: a `dg job` verb that writes waits 10 s at most, then stops with the `not migrated` text and the pid of that daemon; the owner runs `dg daemon restart`, then the command again; dg never restarts that daemon itself [DECIDED — gaps pass O3 (a)]
+- [x] The document and the jobs record state the limits of a scheduled run: an explicit `--timeout` is not clamped; with no `--timeout`, a run with `--feed` has the 30 s limit and the 256 KB output limit, and a run with no `--feed` has no default limit [DECIDED — gaps pass O5 (b)]
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: `docs/jobs-and-services.md` holds no `dg-daemon service` outside the old → new table
-- [ ] Contract: each command in a code block of the document passes its `--help` form on a build of this branch; the command is the words up to the first flag or placeholder; the spec runs it with the kit of slice 7 (pkg/skills-test/__tests__/docs-help-kit.ts: `bun pkg/dg/src/index.ts <words> --help` in the fence), runs the old forms of the table as `dg-daemon … --help`, and sets a test timeout
-- [ ] Contract: no code block of the document shows a verb of PR 3 (`setup`, `add <url>`, `add <path>`, `--credential`)
-- [ ] Contract: docs/adr/toc.md holds one link to the jobs record, the file exists, and ADR 0043 links it
-- [ ] Regression: `bun test` passes in pkg/skills-test
-- [ ] Contract: the old → new table holds one row for each of: `dg-daemon service add|rm|status|start|stop`, `dg-daemon job add --label`, `--cron`, `--pass-env`, `job rm`, `job run` and `job exec`, `--autostart` (now `enabled`, set by `dg job enable`), `--env-file`, `--grant` (dg sets `grant`; the old option stays on `dg-daemon service add`), and `service add <label>` with its positional label (now `--name`)
-- [ ] Contract: each `dg <name>` in a code span or a fenced block of the changed documents is a name of `ROUTES`; pkg/skills-test/__tests__/dg-front-door-docs.spec.ts passes
-- [ ] Check (manual): `git diff <base of PR 2> -- docs/adr/0043-outside-services.md` shows one added line and no removed line; the spec proves the same rule with fixed text: ADR 0043 has an unchanged `Status:` line and one dated line of this slice
-- [ ] Check (manual): `git diff <base of PR 2> -- plugins/dg/skills/jobs/SKILL.md` shows no hunk in a line that holds `channel-review`, in the bootstrap fence or in the SessionStart JSON fence, with three permitted changes: the sentence `There is no autostart for dg-daemon itself` in `## Autostart` (the line before it, which holds `channel-review start`, can be diff context only); the one new line above the action table that points to `## Job verbs`; and the line that changes the example label to `bot`
-- [ ] Contract: job-model-docs.spec.ts proves the SKILL.md rules with fixed text: the bootstrap fence, the SessionStart fence and each line of SKILL.md that holds `channel-review` are equal to literals or hashes in the spec
-- [ ] Contract: the jobs record has a `Date:` header and holds the same rules as the document
-- [ ] Check: `bun scripts/skill-bootstrap-block.ts --check` exits 0; do not run it with `--write`
-- [ ] Check: each relative link in the changed documents opens an existing file
+- [x] Contract: `docs/jobs-and-services.md` holds no `dg-daemon service` outside the old → new table
+- [x] Contract: each command in a code block of the document passes its `--help` form on a build of this branch; the command is the words up to the first flag or placeholder; the spec runs it with the kit of slice 7 (pkg/skills-test/__tests__/docs-help-kit.ts: `bun pkg/dg/src/index.ts <words> --help` in the fence), runs the old forms of the table as `dg-daemon … --help`, and sets a test timeout
+- [x] Contract: no code block of the document shows a verb of PR 3 (`setup`, `add <url>`, `add <path>`, `--credential`)
+- [x] Contract: docs/adr/toc.md holds one link to the jobs record, the file exists, and ADR 0043 links it
+- [x] Regression: `bun test` passes in pkg/skills-test
+- [x] Contract: the old → new table holds one row for each of: `dg-daemon service add|rm|status|start|stop`, `dg-daemon job add --label`, `--cron`, `--pass-env`, `job rm`, `job run` and `job exec`, `--autostart` (now `enabled`, set by `dg job enable`), `--env-file`, `--grant` (dg sets `grant`; the old option stays on `dg-daemon service add`), and `service add <label>` with its positional label (now `--name`)
+- [x] Contract: each `dg <name>` in a code span or a fenced block of the changed documents is a name of `ROUTES`; pkg/skills-test/__tests__/dg-front-door-docs.spec.ts passes
+- [x] Check (manual): `git diff <base of PR 2> -- docs/adr/0043-outside-services.md` shows one added line and no removed line; the spec proves the same rule with fixed text: ADR 0043 has an unchanged `Status:` line and one dated line of this slice
+- [x] Check (manual): `git diff <base of PR 2> -- plugins/dg/skills/jobs/SKILL.md` shows no hunk in a line that holds `channel-review`, in the bootstrap fence or in the SessionStart JSON fence, with three permitted changes: the sentence `There is no autostart for dg-daemon itself` in `## Autostart` (the line before it, which holds `channel-review start`, can be diff context only); the one new line above the action table that points to `## Job verbs`; and the line that changes the example label to `bot`
+- [x] Contract: job-model-docs.spec.ts proves the SKILL.md rules with fixed text: the bootstrap fence, the SessionStart fence and each line of SKILL.md that holds `channel-review` are equal to literals or hashes in the spec
+- [x] Contract: the jobs record has a `Date:` header and holds the same rules as the document
+- [x] Check: `bun scripts/skill-bootstrap-block.ts --check` exits 0; do not run it with `--write`
+- [x] Check: each relative link in the changed documents opens an existing file
 - [ ] Check: markdownlint and vale pass on the changed files; the record has exactly one fenced `mermaid` block, below the heading `## Diagrams` of docs/adr/template.md
 - [ ] Check (manual, before the commit; no spec): the private-name Check of slice 7: the orchestrator gives the private-name list at run time from the local decision log, which is outside the repository; run a case-insensitive search of the changed files and report only `found` or `not found`; job-model-docs.spec.ts holds no private name
-- [ ] Contract: docs/jobs-and-services.md holds the headings `## Job verbs` and `## Old and new commands`, and SKILL.md holds `## Job verbs`
-- [ ] Contract: the amendment of ADR 0020 gets one added sentence and no removed line, and the `Status:` line is unchanged
+- [x] Contract: docs/jobs-and-services.md holds the headings `## Job verbs` and `## Old and new commands`, and SKILL.md holds `## Job verbs`
+- [x] Contract: the amendment of ADR 0020 gets one added sentence and no removed line, and the `Status:` line is unchanged
 
 #### Acceptance Criteria
-- [ ] Given docs/jobs-and-services.md, when a reader looks for a command of the release before, then one table gives the new command
-- [ ] Given docs/jobs-and-services.md, when a reader looks for the difference between `enable` and `start`, then one table gives it
-- [ ] Given the jobs skill, when an agent reads it, then it finds each new verb and the rule that `remove` and `disable` need a request from the human
-- [ ] Given docs/adr/toc.md, when a reader opens the link of the jobs record, then the record describes the job model with the status Accepted
+- [x] Given docs/jobs-and-services.md, when a reader looks for a command of the release before, then one table gives the new command
+- [x] Given docs/jobs-and-services.md, when a reader looks for the difference between `enable` and `start`, then one table gives it
+- [x] Given the jobs skill, when an agent reads it, then it finds each new verb and the rule that `remove` and `disable` need a request from the human
+- [x] Given docs/adr/toc.md, when a reader opens the link of the jobs record, then the record describes the job model with the status Accepted
 
 ### Slice 12 — job-credential-route
 
@@ -2416,6 +2416,8 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 
 ## Slice Summaries
 
+- Slice 11 (c4ba56e9): docs/jobs-and-services.md uses the noun job, with the verb table, the old and new table, the run rules, the move, the rollback and the limits; ADR 0049 records the job model; ADR 0043 and the ADR 0020 amendment link it; the jobs skill gets ## Job verbs. job-model-docs.spec.ts is new. Vale did not run (not installed); markdownlint is clean on the new files.
+- Slice 10 (a79f1eba, 24ef07fb): scheduled rows move to the jobs table at daemon start in three steps, and the runner runs them through the one launcher. The argv rewrite runs with PRAGMA secure_delete=ON, then PRAGMA wal_checkpoint(TRUNCATE); a spec proves that no 32-byte part of the old ciphertext stays in daemon.db or daemon.db-wal.
 - Slice 9 (eb04798d): dg job verbs (add, enable, disable, update, remove, start, stop, restart, list, status, logs, run); service group and old job forms stay as aliases with a note; helpers in job-support.ts; log tail and prompt in @dg/common. New-form scheduled add refuses --notify without --feed and empty argv parts. 12 table-row specs stay red until slice 10.
 - Slice 8 (2a97c1b9): services entries move to the jobs table at daemon start with config.json.pre-jobs; continuous jobs carry continuous: true; supervisor, HTTP routes and service verbs read jobs; service write verbs wait for the migration mark. stop --force falls back to /services unless /jobs names this instanceId; entries with unknown keys move unchanged.
 - Slice 7 (3e05d897): docs name dg as the front door (ADR 0020 amendment, Start at login, dg launcher in install docs, two-used-folders block); dg-front-door-docs.spec.ts checks every dg command form against ROUTES.
@@ -2452,6 +2454,10 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 - (orchestrator) Slice 9: ensureMigrated keeps the old failure text after the move (no behavior change). A new-form scheduled add (--name with --schedule/--every) refuses --notify without --feed, as update does; the legacy --label/--cron forms keep master behavior. passEnv names are de-duplicated. After a failed login-unit install the question is asked again (no mark). The interim scheduled-add refusal of --env/--env-file/--pass-env stays until slice 10.
 - (orchestrator) Slice 10: a table entry equal to the entry built from an unrenamed row counts as already written (no -2); a renamed row resumes by name. migrateScheduledRows may take a logger and return a result; in-process tests may replace the boot log assertions. --notify without --feed is refused on the new form. Unit tests against new runner/launcher names are welcome once the names exist.
 - (orchestrator, 2026-11-19) Handoff to Susie. Branch feature/job_install is pushed: slice 8 2a97c1b9, slice 9 eb04798d, slice 10 aa3c41d7 (work in progress). Slice 10 waits on one SPEC decision: after markJobsMoved rewrites a moved row argv as [], old ciphertext can stay in the SQLite WAL or free pages; choose PRAGMA secure_delete, a WAL checkpoint after the move, or accept it. Slice 11 has not started. The slice 10 wave result lists more CONFIRM notes (service status now lists scheduled entries; parseJobEntry accepts empty argv parts after the first for scheduled entries; JOBS_VERSION is 2; schema version 14).
+- (owner, 2026-11-19) Slice 10: after markJobsMoved rewrites the argv of a moved row as [], run the rewrite with PRAGMA secure_delete=ON, then PRAGMA wal_checkpoint(TRUNCATE), so the old ciphertext leaves the free pages and the WAL. A spec proves that the old ciphertext bytes are absent from the db and -wal files after the move.
+- (orchestrator, 2026-11-19) Slice 10: the connection gets its old secure_delete value back after the move. wal_checkpoint(TRUNCATE) returns busy with no error when another connection holds a read; at daemon start the daemon holds the only connection. The pre-migration-v14 snapshot that runMigrations writes to the daemon folder still holds the old encrypted argv: RATIFY sent to the owner (keep, delete after a good move, or scrub).
+- (orchestrator, 2026-11-19) Slice 11: the ADR number is 0049. dg-front-door-docs.spec.ts gets one more change than the plan names: the amendment link limit moves from 0048 to 0049, because the ADR 0020 amendment now links ADR 0049. outside-services-docs.spec.ts also changes 'does not kill a job' to 'does not kill a dispatch command', because stop --force now kills the process tree of each job that runs, scheduled runs included.
+- (orchestrator, 2026-11-19) Branch feature/job_install rebased on origin/master 45a380b7 (5.15.0); one conflict in supervisor.ts (master's ensureRealPrivateDir kept, decl.name used).
 
 ## Issues Remediation
 
