@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.13.0 (2026-11-19)
+
+### Features
+
+- feat(dg): add the dg program, daemon autostart and the test home fence ([#227](https://github.com/detailedghost/dg-ai/pull/227))
+
 ## v5.12.1 (2026-11-18)
 
 ### Fixes
