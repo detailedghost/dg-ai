@@ -133,7 +133,7 @@ describe("dg-daemon status", () => {
 	it("keeps the pid file and says the daemon does not answer when its pid runs but healthz is silent", async () => {
 		dgHome = freshDgHome();
 		const sleeper = Bun.spawn(
-			[process.execPath, "-e", "setInterval(() => {}, 1000)"],
+			[process.execPath, "-e", "setTimeout(() => process.exit(0), 120000)"],
 			{ stdout: "ignore", stderr: "ignore" },
 		);
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });

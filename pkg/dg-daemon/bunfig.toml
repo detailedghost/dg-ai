@@ -1,3 +1,3 @@
 [test]
 timeout = 15000
-preload = ["../skills-cli/__tests__/test-home-fence.ts", "../common/src/redact-console.ts", "./__tests__/build-pages-shim.ts"]
+preload = ["../skills-cli/__tests__/test-home-fence.ts", "../common/src/redact-console.ts", "./__tests__/build-pages-shim.ts", "./__tests__/reap-children.ts"]

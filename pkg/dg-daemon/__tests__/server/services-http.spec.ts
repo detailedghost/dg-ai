@@ -68,7 +68,7 @@ async function serviceState(port: number): Promise<string> {
 
 const botDecl = (cwd: string) => ({
 	bot: {
-		argv: [process.execPath, "-e", "setInterval(() => {}, 1000)"],
+		argv: [process.execPath, "-e", "setTimeout(() => process.exit(0), 120000)"],
 		cwd,
 	},
 });

@@ -30,7 +30,7 @@ afterEach(async () => {
 	}
 });
 
-const SLEEPER = "setInterval(() => {}, 1000);";
+const SLEEPER = "setTimeout(() => process.exit(0), 120000);";
 
 type Tuning = Partial<
 	Pick<SupervisorDeps, "backoffMs" | "logCheckMs" | "maxLogBytes" | "daemonUrl">

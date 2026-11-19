@@ -25,7 +25,7 @@ async function eventually<T>(read: () => T | undefined, ms = 8000): Promise<T> {
 const markerWriter = (marker: string, pidPath: string) =>
 	`const fs = require("node:fs");
 	fs.writeFileSync(${JSON.stringify(marker)}, String(fs.existsSync(${JSON.stringify(pidPath)})));
-	setInterval(() => {}, 1000);`;
+	setTimeout(() => process.exit(0), 120000);`;
 
 describe("daemon boot with an autostart service", () => {
 	it("has the daemon pid file on disk when the service starts and logs listening before started", async () => {
