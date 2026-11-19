@@ -19,7 +19,7 @@ dg-skills assign resolve --help >/dev/null 2>&1 ||
 
 Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
-If a step fails, run dg-skills doctor assign batch-open chain proxy spec stash vcs-provider worktree.
+If a step fails, run dg-skills doctor adr assign batch-open chain proxy spec stash vcs-provider worktree.
 
 **Usage:** `/dg:sdlc "<feature brief>" [-T|--no-worktree]`.
 

@@ -73,19 +73,24 @@ IN: `pr`, `sha`, `ciRetries`, `waitTimeout`. OUT: `ci` (`pass`, `none`), `ciCycl
 
    | Exit | Meaning | Next |
    |---|---|---|
-   | `0` | All checks pass. | `ci = pass`, step 4. |
+   | `0` | All checks pass. | `ci = pass`, step 3.4. |
    | `124` | The wait timed out. | Stop with `land: ci-timeout`. Re-run `/dg:land` later. |
-   | `1`, output says no checks are reported | CI did not start yet, or the repo has no CI. | Wait 60 seconds, watch once more. Still none → `ci = none`, step 4. |
+   | `1`, output says no checks are reported | CI did not start yet, or the repo has no CI. | Wait 60 seconds, watch once more. Still none → `ci = none`, step 3.4. |
    | `127`, `126` | The command did not run. | Stop with `land: ci-wait-failed` and show the error. Do not fix CI. |
    | `1`, `8`, other | A check failed, or `gh` itself failed. | Confirm with `gh pr checks <pr> --repo <repo> --json name,bucket`. A row with `bucket` `fail` → step 3.3. No such row, or the command fails (network, auth, API) → stop with `land: ci-wait-failed` and show the output. Never send a tool error to `/dg:address`. |
 
 3. **Fix the failed checks.**
-   - `ciCycles += 1`. When `ciRetries > 0` and `ciCycles > ciRetries` → stop with `land: ci-ceiling` (step 3.4).
+   - `ciCycles += 1`. When `ciRetries > 0` and `ciCycles > ciRetries` → stop with `land: ci-ceiling` (step 3.5).
    - `dg-skills address gather-ci-failures <pr>` lists the failed jobs. A job's signature is its name plus the error lines of its `logExcerpt`, with the volatile parts removed: the leading timestamp of each line, run and job IDs, durations, and hex SHAs.
-   - A job whose signature is the same as in the previous cycle failed twice with the same error after a fix → stop with `land: ci-repeat` (step 3.4). Do not loop blindly.
+   - A job whose signature is the same as in the previous cycle failed twice with the same error after a fix → stop with `land: ci-repeat` (step 3.5). Do not loop blindly.
    - Load [../../address/SKILL.md](../../address/SKILL.md) and run `/dg:address --round <after + 1> -m "Fix the failing CI checks."`. It fixes, commits and pushes. `--round` turns off the Copilot re-request in its Phase 6, so a CI fix never asks Copilot.
    - Run step 2 again on the new changes, with the same `-r` and early-stop setting. Then go back to step 3.1 with the new `sha`.
-4. **Stop and report.** For `ci-ceiling` and `ci-repeat`, list each failed job (name, conclusion, URL) and each cycle: what failed and which commit tried to fix it.
+4. **Decision lint.** Skip quietly when `.agents/decisions/README.md` is absent. Run this after green CI and before step 4 of the flow.
+   - Probe `dg-skills adr --help`. When it fails, stop with `land: adr-cli-missing: the installed dg-skills has no adr verb; upgrade it and re-run.`
+   - Run `git fetch origin <baseRefName>` in the checkout, then `dg-skills adr lint --changed --base origin/<baseRefName>`. Use the PR's base branch here, never land's `-b` value.
+   - Exit `0` → continue. Exit `1` → write the output to `.agents/code-review/<YYYY-MM-DD-HHMMSS-NNN>.md` and run `/dg:address -l`. Count it as one CI-fix cycle toward `-c`. Run step 2 on the fix, then lint again.
+   - A finding (same file and rule) that appears in two lint runs in a row → stop with `land: adr-lint-repeat`. Any other exit → stop with `land: adr-lint-failed` and show the output.
+5. **Stop and report.** For `ci-ceiling`, `ci-repeat` and `adr-lint-repeat`, list each failed job (name, conclusion, URL) and each cycle: what failed and which commit tried to fix it.
 
 GATE: `ci` is `pass` or `none` on a head that a review loop has seen.
 

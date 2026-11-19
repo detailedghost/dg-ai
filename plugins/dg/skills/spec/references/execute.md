@@ -47,6 +47,8 @@ verify manifest item for that slice carries `record: <bundle>/<slices[N].prototy
 stored path is relative to the spec bundle, and verify resolves `record` against its working directory,
 so join the two first.
 
+Opted-in repos (`.agents/decisions/README.md` exists) get the adr decision reads and lore steps from `/dg:sdlc`'s [finish.md](../../sdlc/references/finish.md) and slice templates; this mode adds nothing.
+
 ## 2. Worktree — reuse `/dg:sdlc` setup.md Step 1 verbatim
 
 `/dg:spec -s` always runs in worktree mode. `-T`/`--no-worktree` exists on `/dg:spec`, but is valid only
