@@ -1,5 +1,15 @@
 # Changelog
 
+## v5.14.0 (2026-11-19)
+
+### Features
+
+- feat(channel-review): register each watched chat with Orion Belt ([#229](https://github.com/detailedghost/dg-ai/pull/229))
+
+### Fixes
+
+- fix(channel-review): start the daemon through the dg-skills program ([#231](https://github.com/detailedghost/dg-ai/pull/231))
+
 ## v5.13.2 (2026-11-19)
 
 ### Fixes
