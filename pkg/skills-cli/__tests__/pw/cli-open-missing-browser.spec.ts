@@ -25,7 +25,8 @@ function commandsWithoutBrowser(started: string[]): readonly CommandEntry[] {
 		pickLaunch: () => {
 			throw new BrowserMissingError();
 		},
-		downloadedChromium: () => null,
+		chromiumExecutable: () => null,
+		channelPresent: () => true,
 		startDaemon: async (spec) => {
 			started.push(spec.key);
 			return 0;

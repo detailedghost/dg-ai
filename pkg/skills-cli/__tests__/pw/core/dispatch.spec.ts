@@ -318,7 +318,7 @@ describe("describeError", () => {
 		const message =
 			"Executable doesn't exist at /h/.cache/ms-playwright/firefox-1509/firefox/firefox\n╔═╗";
 		expect(describeError(new Error(message))).toBe(
-			"Playwright firefox is not installed. run: bunx playwright-core install firefox",
+			"Playwright firefox is not installed at /h/.cache/ms-playwright/firefox-1509/firefox/firefox. A system Firefox cannot stand in: playwright-core drives only its own Firefox build. run: bunx playwright-core install firefox",
 		);
 	});
 

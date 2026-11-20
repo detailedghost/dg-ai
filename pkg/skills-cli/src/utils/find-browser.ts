@@ -9,6 +9,10 @@ export type FinderSeams = {
 };
 
 export const PATH_CANDIDATES = [
+	"google-chrome",
+	"google-chrome-stable",
+	"microsoft-edge",
+	"microsoft-edge-stable",
 	"brave-browser",
 	"brave",
 	"brave-browser-beta",
@@ -38,7 +42,7 @@ const WINDOWS_APPS = [
 export const DEFAULT_FINDER_SEAMS: FinderSeams = {
 	env: process.env,
 	platform: process.platform,
-	which: (name) => Bun.which(name),
+	which: (name) => Bun.which(name, { PATH: process.env["PATH"] ?? "" }),
 	exists: existsSync,
 };
 
@@ -69,7 +73,16 @@ function appPaths(seams: FinderSeams): string[] {
 	);
 }
 
-/** A Chromium-family binary other than the Chrome and Edge channels. */
+export function searchedLocations(
+	seams: FinderSeams = DEFAULT_FINDER_SEAMS,
+): string[] {
+	return [
+		...PATH_CANDIDATES.map((name) => `${name} on PATH`),
+		...appPaths(seams),
+	];
+}
+
+/** A Chromium-family binary on PATH or in the usual app folders. */
 export function findInstalledChromium(
 	seams: FinderSeams = DEFAULT_FINDER_SEAMS,
 ): string | null {

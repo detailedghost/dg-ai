@@ -32,6 +32,14 @@ describe.skipIf(process.platform !== "linux")("systemBrowserPresent", () => {
 });
 
 describe("BrowserMissingError", () => {
+	test("prints every location it tried and the next command", () => {
+		const tried = ["Chrome: /opt/google/chrome/chrome", "brave-browser on PATH"];
+		const lines = new BrowserMissingError(tried).message.split("\n");
+		expect(lines).toContain("  Chrome: /opt/google/chrome/chrome");
+		expect(lines).toContain("  brave-browser on PATH");
+		expect(lines.at(-1)).toContain("dg-skills pw install-browser");
+	});
+
 	test("names the install-browser command and exits 3", () => {
 		const error = new BrowserMissingError();
 		expect(error.message).toContain("dg-skills pw install-browser (downloads about 150 MB)");

@@ -1,5 +1,4 @@
 import path from "node:path";
-import { isPathInside } from "@dg/common/node";
 import type { Page } from "playwright-core";
 import { CODE_COMMAND } from "./code/index";
 import { COMMANDS } from "./commands/index";
@@ -10,9 +9,8 @@ import {
 	SESSION_NAME,
 	UsageError,
 } from "./core/args";
-import { type LaunchSpec, start } from "./core/browser";
+import { chromiumExecutable, type LaunchSpec, start } from "./core/browser";
 import { type DispatchState, describeError, dispatch } from "./core/dispatch";
-import { browsersDir, downloadedChromium } from "./core/downloaded";
 import { attach } from "./core/events";
 import {
 	BROWSERS,
@@ -238,14 +236,12 @@ function storageState(wire: Wire): Pick<LaunchSpec, "storageState"> {
 	return { storageState: file };
 }
 
-function downloadedExecutable(
+function chromiumTarget(
 	browser: BrowserName,
 ): Pick<LaunchSpec, "executablePath"> {
 	if (browser !== "chromium") return {};
-	const downloaded = downloadedChromium();
-	if (!downloaded || !isPathInside(downloaded.executablePath, browsersDir()))
-		return {};
-	return { executablePath: downloaded.executablePath };
+	const executablePath = chromiumExecutable();
+	return executablePath ? { executablePath } : {};
 }
 
 type Target = Pick<
@@ -263,7 +259,7 @@ function localTarget(wire: Wire, scratch: boolean): Target {
 		mode: "local",
 		browser,
 		profileDir,
-		...downloadedExecutable(browser),
+		...chromiumTarget(browser),
 	};
 }
 

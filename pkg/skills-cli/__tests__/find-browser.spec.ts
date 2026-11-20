@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
 	BrowserMissingError,
+	chromiumExecutable,
 	pickLaunch,
 } from "../src/pw/core/browser";
 import {
 	type FinderSeams,
 	findInstalledChromium,
 	PATH_CANDIDATES,
+	searchedLocations,
 } from "../src/utils/find-browser";
 
 const seams = (overrides: Partial<FinderSeams> = {}): FinderSeams => ({
@@ -39,6 +41,15 @@ describe("findInstalledChromium", () => {
 		expect(findInstalledChromium(seams({ which: onPath("brave-browser-beta") }))).toBe(
 			"/usr/bin/brave-browser-beta",
 		);
+	});
+
+	test("finds a Chrome or Edge on PATH before Brave", () => {
+		expect(
+			findInstalledChromium(seams({ which: onPath("brave", "google-chrome-stable") })),
+		).toBe("/usr/bin/google-chrome-stable");
+		expect(
+			findInstalledChromium(seams({ which: onPath("brave", "microsoft-edge") })),
+		).toBe("/usr/bin/microsoft-edge");
 	});
 
 	test("prefers Brave over Chromium over Vivaldi", () => {
@@ -105,6 +116,28 @@ describe("pickLaunch with other Chromium-family browsers", () => {
 				downloaded: () => null,
 			}),
 		).toEqual({ channel: "chrome" });
+	});
+});
+
+describe("searchedLocations", () => {
+	test("names each PATH binary and app folder the finder checks", () => {
+		const exe = "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe";
+		const tried = searchedLocations(
+			seams({ platform: "win32", env: { PROGRAMFILES: "C:\\Program Files" } }),
+		);
+		expect(tried).toContain("brave-browser-beta on PATH");
+		expect(tried).toContain(exe);
+	});
+});
+
+describe("chromiumExecutable", () => {
+	test("tries DG_BROWSER, then installed browsers, then the download", () => {
+		expect(
+			chromiumExecutable({ override: () => "/o", installed: () => "/i", downloaded: () => "/d" }),
+		).toBe("/o");
+		expect(chromiumExecutable({ installed: () => "/i", downloaded: () => "/d" })).toBe("/i");
+		expect(chromiumExecutable({ installed: () => null, downloaded: () => "/d" })).toBe("/d");
+		expect(chromiumExecutable({ installed: () => null, downloaded: () => null })).toBeNull();
 	});
 });
 

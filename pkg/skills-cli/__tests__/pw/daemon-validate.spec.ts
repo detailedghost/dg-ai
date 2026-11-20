@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { LaunchSpec } from "../../src/pw/core/browser";
 import { browsersDir, markerPath } from "../../src/pw/core/downloaded";
@@ -180,7 +180,52 @@ describe("validateSpec storage state", () => {
 	});
 });
 
+function withoutBrowserOverride(): void {
+	const saved: Record<string, string | undefined> = {};
+	beforeEach(() => {
+		for (const name of ["DG_BROWSER", "DG_VERIFY_BROWSER"]) {
+			saved[name] = process.env[name];
+			delete process.env[name];
+		}
+	});
+	afterEach(() => {
+		for (const [name, value] of Object.entries(saved))
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+	});
+}
+
+describe("validateSpec Chromium discovery", () => {
+	const searchPath = useTempEnv("PATH");
+	withoutBrowserOverride();
+
+	test("launches a Chromium-family browser found on PATH", () => {
+		const brave = path.join(searchPath.dir, "brave-browser-beta");
+		writeFileSync(brave, "#!/bin/sh\n");
+		chmodSync(brave, 0o755);
+		expect(validateSpec({ ...base, browser: "chromium" }).executablePath).toBe(
+			brave,
+		);
+	});
+
+	test("launches the DG_BROWSER override", () => {
+		process.env["DG_BROWSER"] = "/opt/custom/browser";
+		expect(validateSpec({ ...base, browser: "chromium" }).executablePath).toBe(
+			"/opt/custom/browser",
+		);
+	});
+
+	test("never trusts the executablePath sent on the wire", () => {
+		expect(
+			validateSpec({ ...base, browser: "chromium", executablePath: "/bin/sh" }),
+		).not.toHaveProperty("executablePath");
+	});
+});
+
 describe("validateSpec downloaded Chromium", () => {
+	useTempEnv("PATH");
+	withoutBrowserOverride();
+
 	function writeMarker(executablePath: string): void {
 		mkdirSync(browsersDir(), { recursive: true });
 		writeFileSync(
@@ -199,10 +244,17 @@ describe("validateSpec downloaded Chromium", () => {
 		);
 	});
 
-	test("ignores a marker that points outside the browsers dir", () => {
-		const outside = path.join(dgHome.dir, "elsewhere");
+	test("uses a recorded browser path outside the browsers dir", () => {
+		const outside = path.join(dgHome.dir, "brave-browser-beta");
 		writeFileSync(outside, "");
 		writeMarker(outside);
+		expect(validateSpec({ ...base, browser: "chromium" }).executablePath).toBe(
+			outside,
+		);
+	});
+
+	test("ignores a marker whose browser is gone", () => {
+		writeMarker(path.join(dgHome.dir, "missing"));
 		expect(validateSpec({ ...base, browser: "chromium" })).not.toHaveProperty(
 			"executablePath",
 		);

@@ -30,7 +30,8 @@ function harness(overrides: Partial<OpenDeps> = {}) {
 		isWSL: () => true,
 		windowsBrowserPresent: () => false,
 		pickLaunch: () => ({ channel: "chrome" }),
-		downloadedChromium: () => null,
+		chromiumExecutable: () => null,
+		channelPresent: () => true,
 		startDaemon: async (launchSpec) => {
 			launched.push(launchSpec);
 			return 0;
@@ -141,8 +142,50 @@ describe("runOpen browser selection", () => {
 	});
 });
 
+describe("runOpen with an explicit chrome or msedge", () => {
+	test("keeps the channel when that browser is installed", async () => {
+		const { deps, launched } = harness({ isWSL: () => false });
+		await runOpen(argsFor(spec, "--browser=msedge"), clientEnv(), deps);
+		expect(launched[0]).toMatchObject({ browser: "msedge" });
+		expect(launched[0]).not.toHaveProperty("executablePath");
+	});
+
+	test("falls back to a found Chromium-family browser and says so", async () => {
+		const { deps, launched } = harness({
+			isWSL: () => false,
+			channelPresent: () => false,
+			pickLaunch: () => ({ executablePath: "/usr/bin/brave-browser-beta" }),
+		});
+		const env = clientEnv();
+		await runOpen(argsFor(spec, "--browser=chrome"), env, deps);
+		expect(launched[0]).toMatchObject({
+			browser: "chromium",
+			executablePath: "/usr/bin/brave-browser-beta",
+		});
+		expect(env.stderr.join("\n")).toContain(
+			"chrome not found, using /usr/bin/brave-browser-beta",
+		);
+	});
+});
+
+describe("runOpen with an explicit chrome and no browser at all", () => {
+	test("throws BrowserMissingError and launches nothing", async () => {
+		const { deps, launched } = harness({
+			isWSL: () => false,
+			channelPresent: () => false,
+			pickLaunch: () => {
+				throw new BrowserMissingError();
+			},
+		});
+		await expect(
+			runOpen(argsFor(spec, "--browser=chrome"), clientEnv(), deps),
+		).rejects.toBeInstanceOf(BrowserMissingError);
+		expect(launched).toHaveLength(0);
+	});
+});
+
 describe("runOpen with an explicit chromium", () => {
-	test("throws BrowserMissingError when no Chromium was downloaded", async () => {
+	test("throws BrowserMissingError when no Chromium-family browser exists", async () => {
 		const { deps, launched } = harness();
 		await expect(
 			runOpen(argsFor(spec, "--browser=chromium"), clientEnv(), deps),
@@ -150,9 +193,9 @@ describe("runOpen with an explicit chromium", () => {
 		expect(launched).toHaveLength(0);
 	});
 
-	test("launches the downloaded Chromium when one exists", async () => {
+	test("launches the found Chromium-family browser", async () => {
 		const { deps, launched } = harness({
-			downloadedChromium: () => "/dl/chromium/chrome",
+			chromiumExecutable: () => "/dl/chromium/chrome",
 		});
 		await runOpen(argsFor(spec, "--browser=chromium"), clientEnv(), deps);
 		expect(launched[0]).toMatchObject({

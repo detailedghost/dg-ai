@@ -485,12 +485,16 @@ describe("demo <plan> browser selection", () => {
 		expect(plan.label).toBe(name);
 	});
 
-	test("--browser chromium without a downloaded build exits 3 and starts nothing", async () => {
-		const run = await world.drive(
-			registerDemo,
-			["demo", "--browser", "chromium", world.planPath],
-			demoDeps(),
-		);
+	test("--browser chromium with no Chromium-family browser exits 3 and starts nothing", async () => {
+		const saved = { PATH: process.env["PATH"], DG_BROWSER: process.env["DG_BROWSER"] };
+		process.env["PATH"] = world.stateDir;
+		delete process.env["DG_BROWSER"];
+		const run = await world
+			.drive(registerDemo, ["demo", "--browser", "chromium", world.planPath], demoDeps())
+			.finally(() => {
+				process.env["PATH"] = saved.PATH;
+				if (saved.DG_BROWSER !== undefined) process.env["DG_BROWSER"] = saved.DG_BROWSER;
+			});
 		expect(run.code).toBe(3);
 		expect(run.err).toContain("dg-skills pw install-browser");
 		expect(world.spawned).toHaveLength(0);
