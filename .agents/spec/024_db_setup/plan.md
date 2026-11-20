@@ -3,14 +3,14 @@ feature: "Guided database connection setup"
 feature_snake_case: db_setup
 date: "2026-11-20"
 version: "1.0"
-status: draft
+status: in-progress
 current_slice: 0
 pr_strategy: single
 slices:
   - id: 1
     name: "session-hint-doctor"
     depends_on: []
-    files: ["pkg/common/src/node/session-tokens.ts","pkg/common/__tests__/session-tokens.spec.ts","pkg/skills-cli/src/doctor/checks.ts","pkg/skills-cli/src/credentials/doctor.ts","pkg/skills-cli/src/db/doctor.ts","pkg/skills-cli/__tests__/doctor-hints.spec.ts","pkg/skills-cli/__tests__/doctor-session.spec.ts"]
+    files: ["pkg/common/src/node/session-tokens.ts", "pkg/common/__tests__/session-tokens.spec.ts", "pkg/skills-cli/src/doctor/checks.ts", "pkg/skills-cli/src/credentials/doctor.ts", "pkg/skills-cli/src/db/doctor.ts", "pkg/skills-cli/__tests__/doctor-hints.spec.ts", "pkg/skills-cli/__tests__/doctor-session.spec.ts"]
     agents:
       primary: dg:js
       confidence: high
@@ -18,7 +18,7 @@ slices:
   - id: 2
     name: "update-launcher-layout"
     depends_on: []
-    files: ["pkg/skills-cli/src/update/run.ts","pkg/skills-cli/src/install/cli.ts","pkg/skills-cli/src/install/doctor.ts","pkg/skills-cli/__tests__/update.spec.ts","pkg/skills-cli/__tests__/install-bundle.spec.ts","pkg/skills-cli/__tests__/doctor-dg-launcher.spec.ts"]
+    files: ["pkg/skills-cli/src/update/run.ts", "pkg/skills-cli/src/install/cli.ts", "pkg/skills-cli/src/install/doctor.ts", "pkg/skills-cli/__tests__/update.spec.ts", "pkg/skills-cli/__tests__/install-bundle.spec.ts", "pkg/skills-cli/__tests__/doctor-dg-launcher.spec.ts"]
     agents:
       primary: dg:js
       confidence: high
@@ -26,7 +26,7 @@ slices:
   - id: 3
     name: "db-setup-core"
     depends_on: [1]
-    files: ["pkg/skills-cli/src/db/setup.ts","pkg/skills-cli/src/db/session.ts","pkg/skills-cli/src/db/index.ts","pkg/skills-cli/src/db/credentials.ts","pkg/skills-cli/src/db/engines/postgresql.ts","pkg/skills-cli/__tests__/db-setup.spec.ts","pkg/skills-cli/__tests__/db-command.spec.ts","pkg/skills-cli/__tests__/db-credentials.spec.ts","pkg/skills-cli/__tests__/db-engines.spec.ts"]
+    files: ["pkg/skills-cli/src/db/setup.ts", "pkg/skills-cli/src/db/session.ts", "pkg/skills-cli/src/db/index.ts", "pkg/skills-cli/src/db/credentials.ts", "pkg/skills-cli/src/db/engines/postgresql.ts", "pkg/skills-cli/__tests__/db-setup.spec.ts", "pkg/skills-cli/__tests__/db-command.spec.ts", "pkg/skills-cli/__tests__/db-credentials.spec.ts", "pkg/skills-cli/__tests__/db-engines.spec.ts"]
     agents:
       primary: dg:js
       confidence: high
@@ -34,7 +34,7 @@ slices:
   - id: 4
     name: "db-aws-secret-ref"
     depends_on: [3]
-    files: ["pkg/skills-cli/src/db/aws-secret.ts","pkg/skills-cli/src/db/credentials.ts","pkg/skills-cli/src/db/index.ts","pkg/skills-cli/__tests__/db-aws-secret.spec.ts"]
+    files: ["pkg/skills-cli/src/db/aws-secret.ts", "pkg/skills-cli/src/db/credentials.ts", "pkg/skills-cli/src/db/index.ts", "pkg/skills-cli/__tests__/db-aws-secret.spec.ts"]
     agents:
       primary: dg:js
       confidence: high
@@ -42,7 +42,7 @@ slices:
   - id: 5
     name: "db-secret-form"
     depends_on: [3]
-    files: ["pkg/common/src/cli-wire.ts","pkg/common/src/credentials-format.ts","pkg/common/src/node/credentials-client.ts","pkg/common/__tests__/credentials-client.spec.ts","pkg/dg-daemon/src/server/page-codes.ts","pkg/dg-daemon/src/server/secret-intake.ts","pkg/dg-daemon/src/server/credentials.ts","pkg/dg-daemon/src/server/http.ts","pkg/dg-daemon/src/server/pages.ts","pkg/dg-daemon/__tests__/server/secret-intake.spec.ts","pkg/dg-daemon/__tests__/server/page-codes.spec.ts","pkg/pages/build.ts","pkg/pages/src/secret/**","pkg/pages/__tests__/secret-page.spec.ts","pkg/skills-cli/src/db/setup-form.ts","pkg/skills-cli/src/db/setup.ts","pkg/skills-cli/__tests__/db-setup-form.spec.ts"]
+    files: ["pkg/common/src/cli-wire.ts", "pkg/common/src/credentials-format.ts", "pkg/common/src/node/credentials-client.ts", "pkg/common/__tests__/credentials-client.spec.ts", "pkg/dg-daemon/src/server/page-codes.ts", "pkg/dg-daemon/src/server/secret-intake.ts", "pkg/dg-daemon/src/server/credentials.ts", "pkg/dg-daemon/src/server/http.ts", "pkg/dg-daemon/src/server/pages.ts", "pkg/dg-daemon/__tests__/server/secret-intake.spec.ts", "pkg/dg-daemon/__tests__/server/page-codes.spec.ts", "pkg/pages/build.ts", "pkg/pages/src/secret/**", "pkg/pages/__tests__/secret-page.spec.ts", "pkg/skills-cli/src/db/setup-form.ts", "pkg/skills-cli/src/db/setup.ts", "pkg/skills-cli/__tests__/db-setup-form.spec.ts"]
     agents:
       primary: dg:js
       confidence: high
@@ -50,12 +50,14 @@ slices:
       qa: [dg:security, dg:qa-code]
   - id: 6
     name: "db-skill-setup-flow"
-    depends_on: [3,4,5]
-    files: ["plugins/dg/skills/db/**","plugins/dg/skills/doctor/**","pkg/skills-test/__tests__/db-skill-setup.spec.ts"]
+    depends_on: [3, 4, 5]
+    files: ["plugins/dg/skills/db/**", "plugins/dg/skills/doctor/**", "pkg/skills-test/__tests__/db-skill-setup.spec.ts"]
     agents:
       primary: dg:lore
       confidence: high
       qa: [dg:reviewer]
+execution:
+  profile: balance
 ---
 
 # Guided database connection setup
@@ -225,6 +227,15 @@ Give an agentic session one guided way to connect to a database: /dg:db setup, b
 (plan) The chat code exchange (http.ts handleChatCodeExchange) returns the session token to the page, so the secret form must not reuse it.
 (plan) asm-exec and the aws-secrets-manager skill are not on this machine, and infra-conventions.md has no Secrets Manager pattern to reuse. Slice 4 starts by confirming the asm-exec CLI contract.
 (plan) Unverified: whether Claude Code ! mode gives a TTY. Without one, readCredentialValue reads piped stdin and gets nothing; slice 6 verifies before it picks the printed form.
+(owner, 2026-11-20) aws mode uses the external asm-exec; slice 4 confirms its command format first.
+(owner, 2026-11-20) Check whether Claude Code ! gives a hidden-prompt terminal; if not, tell the user to use their own terminal.
+(owner, 2026-11-20) The form page is served by dg-daemon.
+(owner, 2026-11-20) The human runs ssh -L, and setup stores 127.0.0.1.
+(owner, 2026-11-20) Read-only means the PostgreSQL read-only session setting plus an optional role; Snowflake uses the role only.
+(owner, 2026-11-20) Register the session by running dg-agent start.
+(owner, 2026-11-20) The form code lasts 120 s and is single use.
+(owner, 2026-11-20) Default mode: form on a desktop, command on a terminal-only host, aws when the secret is already in AWS Secrets Manager.
+(owner, 2026-11-20) Accept that one update from an older release still misses the launcher once.
 
 ## Issues Remediation
 
