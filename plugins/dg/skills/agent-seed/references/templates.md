@@ -105,13 +105,17 @@ topic, and link it from this table.
 
 ## .gitignore Entry
 
-Append this line to `.gitignore` (create the file if missing). `.agents/` is local agent workspace — not project source — and should be gitignored by default.
+`.agents/` is tracked agent memory; scratch subfolders are ignored. Write only this scratch list:
 
 ```
-.agents/
+.agents/verify/
+.agents/code-review/
+.agents/jot/
+.agents/clipboard/
+.agents/spec/**/roundtable/
 ```
 
-Only add once — check before appending. Skip entirely if `.agents/` is already tracked (`git ls-files .agents/` returns results); warn the user instead. If the user opts to check in `.agents/` at Step 3, remove this line (or add `!.agents/` override) before committing.
+Replace an `.agents/` or `.agents/*` block (and its `!.agents/...` negations) with this list. Never stack a second block. A repo that keeps `.agents/` local writes `.agents/` instead.
 
 ## .agents/paths.md Template
 

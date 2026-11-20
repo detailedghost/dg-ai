@@ -46,8 +46,8 @@ If a step fails, run dg-skills doctor spec.
 4. **Flip status + commit.** `dg-skills spec set <bundle>/plan.md status in-progress`, then commit —
    unconditionally, not only when step 3 moved something, and only that bundle, with any `git mv`
    rename already staged:
-   `git add -f .agents/spec/<NNN>_<slug>/ ':(exclude).agents/spec/<NNN>_<slug>/roundtable/' && git commit -m "chore(spec): pick up <slug>"`.
-   Use `-f` because `/dg:agent-seed` ignores `.agents/`. Do not add other bundles.
+   `git add .agents/spec/<NNN>_<slug>/ ':(exclude).agents/spec/<NNN>_<slug>/roundtable/' && git commit -m "chore(spec): pick up <slug>"`.
+   Do not add other bundles.
    If this is a re-pickup of an already `in-progress` bundle and nothing changed, skip both the
    `set` and the commit (idempotent no-op).
 5. **Hand off.** Invoke `/dg:spec -s <NNN>_<slug>`, plus `--no-land` or `--auto` when the person typed it. It reads only `context.md` + `plan.md`, creates its

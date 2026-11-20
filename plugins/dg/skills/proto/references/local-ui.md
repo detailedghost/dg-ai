@@ -40,7 +40,7 @@ In both sub-shapes the floating bottom bar is identical.
 
 ### 0. Pick the location
 
-The sandbox is `.agents/prototype/<name>/`, gitignored on first use. Under `--light` it is the scratch directory (see [local-build.md](local-build.md)). Variant components and the switcher that must mount on a real route live in the app's source tree. Everything else (the `NOTES.md`, the plan blurb, screenshots, scratch fixtures) lives in the sandbox. Name in-source variant files with `prototype` in the path and list them in `NOTES.md` so cleanup is trivial.
+The sandbox is `.agents/prototype/<name>/`; only its `NOTES.md` is tracked (see [local-build.md](local-build.md)). Under `--light` it is the scratch directory (see [local-build.md](local-build.md)). Variant components and the switcher that must mount on a real route live in the app's source tree. Everything else (the `NOTES.md`, the plan blurb, screenshots, scratch fixtures) lives in the sandbox. Name in-source variant files with `prototype` in the path and list them in `NOTES.md` so cleanup is trivial.
 
 ### 1. State the question and pick N
 

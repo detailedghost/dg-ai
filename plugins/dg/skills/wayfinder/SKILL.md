@@ -55,7 +55,7 @@ Wayfinder ends where `/dg:kick` starts. Never build inside a map.
 
 ## Where the map lives
 
-`$(dg-skills stash -m wayfinder)/<slug>/` holds `map.md` and `tickets/NNN-<slug>.md`. Get the path from `dg-skills stash`. Never build it by hand. `-m` resolves to `<main worktree>/.agents/wayfinder`, inside the repo. Commit the map like a spec bundle, with `git add -f`, because `/dg:agent-seed` ignores `.agents/`. For a session handoff, append a `## Handoff` section to `map.md` with the next ticket title and what is still fog. Do not call a separate jot command.
+`$(dg-skills stash -m wayfinder)/<slug>/` holds `map.md` and `tickets/NNN-<slug>.md`. Get the path from `dg-skills stash`. Never build it by hand. `-m` resolves to `<main worktree>/.agents/wayfinder`, inside the repo. Commit the map like a spec bundle, with a plain `git add`. For a session handoff, append a `## Handoff` section to `map.md` with the next ticket title and what is still fog. Do not call a separate jot command.
 
 ## Rules
 

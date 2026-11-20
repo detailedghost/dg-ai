@@ -4,7 +4,7 @@ feature_snake_case: agents_memory
 date: "2026-11-19"
 version: "1.0"
 status: in-progress
-current_slice: 0
+current_slice: 1
 pr_strategy: single
 slices:
   - id: 1
@@ -66,24 +66,24 @@ Make .agents/ tracked, token-light agent memory in every repo the skills seed. A
 ### Slice 1 — track-agents-default
 
 #### Engineering
-- [ ] agent-seed tracks .agents/; its .gitignore entry is the scratch list only: .agents/verify/, .agents/code-review/, .agents/jot/, .agents/clipboard/, .agents/spec/*/roundtable/
-- [ ] The check-in question stays for repos with private notes; track is the recommended answer
-- [ ] Migration: replace an existing .agents/ or .agents/* ignore block with the scratch list, never stack a second block
-- [ ] spring-break checks and fixes the same thing
-- [ ] Remove every git add -f and every agent-seed-ignores-.agents note; bundle commits are a plain git add with a fallback ':(exclude)<bundle>/roundtable/' pathspec
-- [ ] .agents/ is tracked agent memory; scratch subfolders are ignored
-- [ ] proto narrows its ignore to the prototype scratch files, so NOTES.md answers stay tracked
+- [x] agent-seed tracks .agents/; its .gitignore entry is the scratch list only: .agents/verify/, .agents/code-review/, .agents/jot/, .agents/clipboard/, .agents/spec/*/roundtable/
+- [x] The check-in question stays for repos with private notes; track is the recommended answer
+- [x] Migration: replace an existing .agents/ or .agents/* ignore block with the scratch list, never stack a second block
+- [x] spring-break checks and fixes the same thing
+- [x] Remove every git add -f and every agent-seed-ignores-.agents note; bundle commits are a plain git add with a fallback ':(exclude)<bundle>/roundtable/' pathspec
+- [x] .agents/ is tracked agent memory; scratch subfolders are ignored
+- [x] proto narrows its ignore to the prototype scratch files, so NOTES.md answers stay tracked
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: the agent-seed template lists exactly the scratch set
-- [ ] Contract: no skill file contains git add -f .agents
-- [ ] Contract: no skill file calls .agents/ gitignored by default
-- [ ] Contract: every spec bundle add carries the roundtable exclude pathspec and none uses add -f
+- [x] Contract: the agent-seed template lists exactly the scratch set
+- [x] Contract: no skill file contains git add -f .agents
+- [x] Contract: no skill file calls .agents/ gitignored by default
+- [x] Contract: every spec bundle add carries the roundtable exclude pathspec and none uses add -f
 
 #### Acceptance Criteria
-- [ ] rg 'git add -f \.agents' over plugins/dg/skills returns nothing
-- [ ] bun test in pkg/skills-test passes
+- [x] rg 'git add -f \.agents' over plugins/dg/skills returns nothing
+- [x] bun test in pkg/skills-test passes
 
 ### Slice 2 — agents-read-agents-folder
 
@@ -120,7 +120,10 @@ Make .agents/ tracked, token-light agent memory in every repo the skills seed. A
 - [ ] bun test in pkg/skills-cli passes
 
 ## Slice Summaries
+- Slice 1 (track-agents-default): agent-seed writes only the scratch list to .gitignore and replaces an old .agents/ or .agents/* block; spring-break step 9 does the same fix. Every git add -f of .agents is gone (spec, fast, plan, kick, pickup, prd, wayfinder, agent-seed backups); bundle adds keep the roundtable exclude fallback, and spec says to ask for /dg:spring-break when git add refuses, never -f. proto tracks only NOTES.md per prototype. Tests: agents-tracked.spec.ts, spec-bundle-commit.spec.ts.
 
 ## Agent Notes
+- (slice 1) Scratch list uses .agents/spec/**/roundtable/ instead of the plan's spec/*/roundtable/, so prd's spec/todo/<slug>/roundtable/ is covered too.
+- (slice 1) proto ignore narrowed to .agents/prototype/*/* with !.agents/prototype/*/NOTES.md. The agent-seed temp-repo fixture is not automatable (agent-seed is prose, no CLI), so tests pin the template text.
 
 ## Issues Remediation

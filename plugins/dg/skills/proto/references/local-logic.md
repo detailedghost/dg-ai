@@ -15,7 +15,7 @@ If the question is what something should look like, use [local-ui.md](local-ui.m
 
 ### 1. Pick the location and state the question
 
-The default location is `.agents/prototype/<name>/` (see [local-build.md](local-build.md)). Under `--light` it is the scratch directory. On first use of `.agents/prototype/` in a project, make sure the path is gitignored before you write into it.
+The default location is `.agents/prototype/<name>/` (see [local-build.md](local-build.md)). Under `--light` it is the scratch directory. On first use of `.agents/prototype/`, set up its ignore lines per [local-build.md](local-build.md) before you write into it.
 
 Inside `<name>/`, write a `NOTES.md` (or a top-of-file doc comment in the script) with one paragraph: which state model, what question, and what would count as an answer. A logic prototype that answers the wrong question is pure waste. Make the question explicit so it can be checked later, whether the user is watching or returns to it unattended.
 

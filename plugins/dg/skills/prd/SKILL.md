@@ -66,10 +66,9 @@ Don't restate kick's semantics here.
 5. **Fold the commit.** The relocate + assign + permissions steps edited the just-committed bundle.
    Run `git log -1 --format=%s` and `git status -sb`. If the subject is
    `chore(spec): park <slug> (deferred)` and the commit is not pushed, run
-   `git add -f .agents/spec/todo/<prd-slug>/ ':(exclude).agents/spec/todo/<prd-slug>/roundtable/' && git commit --amend --no-edit` so the PRD lands as one
+   `git add .agents/spec/todo/<prd-slug>/ ':(exclude).agents/spec/todo/<prd-slug>/roundtable/' && git commit --amend --no-edit` so the PRD lands as one
    clean commit. Otherwise make a normal follow-up commit:
-   `git add -f .agents/spec/todo/<prd-slug>/ ':(exclude).agents/spec/todo/<prd-slug>/roundtable/' && git commit -m "chore(spec): hand off <prd-slug>"`.
-   Use `-f` because `/dg:agent-seed` ignores `.agents/`.
+   `git add .agents/spec/todo/<prd-slug>/ ':(exclude).agents/spec/todo/<prd-slug>/roundtable/' && git commit -m "chore(spec): hand off <prd-slug>"`.
 
 ## After Exit
 

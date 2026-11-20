@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { REPO_ROOT, readRepoFile } from "./test-support";
 
-const BUNDLE_ADD = /git add -f (\.agents\/spec\/[^\s`]+?)\/? /g;
+const BUNDLE_ADD = /git add (?:-f )?(\.agents\/spec\/[^\s`]+?)\/? /g;
 
 function bundleAdds(): { file: string; bundle: string; line: string }[] {
 	const skills = join(REPO_ROOT, "plugins", "dg", "skills");
@@ -18,7 +18,7 @@ function bundleAdds(): { file: string; bundle: string; line: string }[] {
 }
 
 describe("spec bundle commits", () => {
-	test("every forced add of a spec bundle leaves out its roundtable folder", () => {
+	test("every add of a spec bundle leaves out its roundtable folder", () => {
 		const adds = bundleAdds();
 		expect(adds.length).toBeGreaterThanOrEqual(6);
 		for (const { file, bundle, line } of adds) {
@@ -27,6 +27,11 @@ describe("spec bundle commits", () => {
 				line: expect.stringContaining(`':(exclude)${bundle}/roundtable/'`),
 			});
 		}
+	});
+
+	test("no spec bundle add forces past .gitignore", () => {
+		const forced = bundleAdds().filter(({ line }) => /git add (?:-f|--force)\b/.test(line));
+		expect(forced).toEqual([]);
 	});
 
 	test("prd moves the whole bundle folder so untracked roundtable files go with it", () => {
