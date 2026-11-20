@@ -1,6 +1,37 @@
 # Connection Credentials
 
-Each connection is one encrypted credential named `db/<conn>`. Its secret value is read from stdin or a hidden prompt; non-secret connection fields are repeated as `--meta key=value`.
+Each connection is one encrypted credential named `db/<conn>`. Use `dg-skills db setup` first. It writes the credential and its meta keys, then runs `dg-skills db test`. The raw `credentials set` recipes below stay for manual use.
+
+## Setup
+
+```bash
+dg-skills db setup my-pg --engine postgresql --host 127.0.0.1 --port 5432 \
+  --database mydb --user readonly --secret form
+dg-skills db setup my-sf --engine snowflake --account ACCT-ID --user me \
+  --auth keypair --private-key-path ~/.snowflake/rsa_key.p8 --secret command
+dg-skills db setup my-aws --engine postgresql --host 127.0.0.1 --port 5432 \
+  --database mydb --user readonly --secret aws \
+  --secret-id prod/db --secret-key password --aws-region us-east-1
+```
+
+Flags: `--engine`, `--host`, `--port`, `--database`, `--schema`, `--user`, `--account`, `--warehouse`, `--role`, `--auth`, `--private-key-path`, `--read-only`, `--no-read-only`, `--secret`, `--secret-id`, `--secret-key`, `--aws-profile`, `--aws-region`, `--session`.
+
+PostgreSQL supports only `--auth password`. Snowflake `--auth external_browser` needs no `--secret`.
+
+## Meta keys
+
+| Key | Meaning |
+|---|---|
+| `readOnly` | `true` by default. PostgreSQL sessions start read-only through the `options` startup parameter, and `--write` is refused. A pooler such as PgBouncer can reject that parameter; set `ignore_startup_parameters = options` there, or use a read-only role. Snowflake `readOnly` is advisory only, so the role is the only guard. |
+| `secretSource` | `aws-sm` when the secret lives in AWS Secrets Manager. Absent otherwise. |
+| `secretId` | Secrets Manager secret name or ARN. |
+| `secretKey` | JSON key inside the secret that holds the value. |
+| `awsProfile` | Optional. Passed to `asm-exec` as `AWS_PROFILE`. |
+| `awsRegion` | Optional. Passed to `asm-exec` as `AWS_REGION`. |
+
+An `aws-sm` connection stores the placeholder `aws-sm` as its value. Each db verb re-runs under `asm-exec`, which resolves the real secret at run time.
+
+## Raw credentials recipes
 
 The credential store requires a non-empty value. Snowflake `external_browser` has no password, so store the literal placeholder `external_browser`. The db command recognizes that authentication mode and never passes the placeholder to Snowflake or logs it.
 
@@ -43,7 +74,7 @@ Each connect retry mints a **new** `SAMLRequest`; only the last printed URL is v
 
 ## Snowflake key pair
 
-The credential value is the private-key passphrase. Only the key's path is stored as metadata; the key contents never enter the credential store.
+The credential value is the private-key passphrase, passed to Snowflake as `privateKeyPass` next to `privateKeyPath`. The store requires a non-empty value and the code always sends it as the passphrase, so use an encrypted key. Only the key's path is stored as metadata; the key contents never enter the credential store.
 
 ```bash
 dg-skills credentials set db/my-sf-key \

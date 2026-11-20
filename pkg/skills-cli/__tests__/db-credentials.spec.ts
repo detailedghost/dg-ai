@@ -16,10 +16,23 @@ function fakeClient(options: {
 	const get = mock(async () => options.record);
 	const list = mock(async () => options.entries ?? []);
 	const close = mock(() => {});
-	return { client: { get, list, close } satisfies DbCredentialClient, get, list };
+	const set = mock(async () => {});
+	return { client: { get, list, set, close } satisfies DbCredentialClient, get, list };
 }
 
 describe("credential-backed database connections", () => {
+	test("parses readOnly metadata and treats absence as false", async () => {
+		const meta = { engine: "postgresql", database: "app", user: "u" };
+		const on = fakeClient({
+			record: { value: "x", meta: { ...meta, readOnly: "true" }, updatedAt: "2026-01-01T00:00:00Z" },
+		});
+		expect((await getConnection(on.client, "a")).readOnly).toBe(true);
+		const absent = fakeClient({
+			record: { value: "x", meta, updatedAt: "2026-01-01T00:00:00Z" },
+		});
+		expect((await getConnection(absent.client, "a")).readOnly).toBe(false);
+	});
+
 	test("maps a PostgreSQL credential value to the password", async () => {
 		const fixture = fakeClient({
 			record: {
@@ -38,6 +51,7 @@ describe("credential-backed database connections", () => {
 			engine: "postgresql",
 			host: "db.example.test",
 			port: 5433,
+			readOnly: false,
 			database: "app",
 			schema: undefined,
 			user: "readonly",

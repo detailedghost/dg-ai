@@ -141,7 +141,7 @@ describe("selectSoleSession when two live sessions share one working directory",
 		).toThrow(DgCliError);
 		expect(() =>
 			selectSoleSession([record("a", cwd), record("b", cwd)], cwd),
-		).toThrow(/found 2 matches/);
+		).toThrow(/found 2 sessions/);
 	});
 
 	it("picks the only session registered for the directory", () => {
@@ -160,7 +160,7 @@ describe("resolveCliSession when two live sessions share one working directory",
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 
 		await expect(resolveCliSession(undefined, paths, {})).rejects.toThrow(
-			/found 2 matches/,
+			/found 2 sessions/,
 		);
 		const resolved = await resolveCliSession(undefined, paths, {
 			DG_SESSION_ID: second.sessionId,

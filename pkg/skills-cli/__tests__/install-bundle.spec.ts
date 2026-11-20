@@ -228,3 +228,43 @@ describe("fetchBundle", () => {
 		expect(undone).toBe(true);
 	});
 });
+
+describe("dg-skills install launchers", () => {
+	const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
+
+	function runLaunchers(dgHome: string) {
+		return Bun.spawnSync([process.execPath, ENTRY, "install", "launchers"], {
+			stdout: "pipe",
+			stderr: "pipe",
+			env: { ...process.env, DG_HOME: dgHome, PATH: "" },
+		});
+	}
+
+	test("writes every launcher, dg included, for the current release", () => {
+		const data = join(sandbox.root, "data");
+		mkdirSync(join(data, "lib", VERSION), { recursive: true });
+		symlinkSync(VERSION, join(data, "lib", "current"));
+
+		const run = runLaunchers(sandbox.root);
+
+		expect(run.exitCode).toBe(0);
+		for (const name of ["dg", "dg-skills", "dg-agent", "dg-daemon"])
+			expect(existsSync(join(sandbox.root, "bin", name))).toBe(true);
+	});
+
+	test("fails with the install command when no release is installed", () => {
+		const run = runLaunchers(sandbox.root);
+
+		expect(run.exitCode).not.toBe(0);
+		expect(run.stderr.toString()).toContain("dg-skills install");
+		expect(existsSync(join(sandbox.root, "bin", "dg"))).toBe(false);
+	});
+
+	test("is hidden from the install help", () => {
+		const help = Bun.spawnSync([process.execPath, ENTRY, "install", "--help"], { stdout: "pipe" });
+
+		expect(help.exitCode).toBe(0);
+		expect(help.stdout.toString()).toContain("--local");
+		expect(help.stdout.toString()).not.toContain("write the launchers for the installed release");
+	});
+});

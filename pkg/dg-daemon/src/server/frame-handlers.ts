@@ -80,8 +80,10 @@ import {
 import { handleInboxCli } from "./inbox";
 import type { Logger } from "./log";
 import { pinOriginIfUnset } from "./origin";
+import type { PageCodes } from "./page-codes";
 import { protoRelayHooks } from "./proto";
 import { pwExtRelayHooks } from "./pw-ext";
+import type { SecretIntent } from "./secret-intake";
 
 export type FrameHandlerDeps = {
 	registry: SessionRegistry;
@@ -91,6 +93,7 @@ export type FrameHandlerDeps = {
 	noteActivity: () => void;
 	store: ChatStore;
 	credentials: CredentialStore;
+	secretIntents: PageCodes<SecretIntent>;
 	dispatchScheduler: DispatchScheduler;
 	port: number;
 	daemonId: string;

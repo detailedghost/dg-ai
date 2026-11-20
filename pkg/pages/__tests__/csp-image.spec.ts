@@ -8,7 +8,14 @@ import { createTranscriptView } from "../src/chat/chat-transcript";
 
 const PORT = 47823;
 const PAGE_ORIGIN = `http://127.0.0.1:${PORT}`;
-const BUILT = ["chat.html", "chat.js", "board.html", "board.js"].map((name) =>
+const BUILT = [
+	"chat.html",
+	"chat.js",
+	"board.html",
+	"board.js",
+	"secret.html",
+	"secret.js",
+].map((name) =>
 	join(import.meta.dir, "../dist", name),
 );
 

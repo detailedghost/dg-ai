@@ -15,3 +15,4 @@ covers: ["pkg/dg-daemon/src/server/**", "pkg/common/src/node/session-tokens.ts"]
 - Never restore `POST /pair`, `handlePair` or `pkg/dg-daemon/src/pairing.ts`.
 - Keep the origin pin as the trust anchor. Offer and claim bootstrap only the first pairing.
 - Never let a valid local connection alone grant session access.
+- Apply the loopback-origin check to `POST /secret-intake` too. The `/secret` page holds an intake code, never a session token.

@@ -32,8 +32,15 @@ function plainMarker(file: string): string {
 	return marker.slice(0, 60);
 }
 
-test("the daemon chunk embeds the built chat and board page assets", () => {
-	for (const file of ["chat.html", "board.html", "chat.js", "board.js"]) {
+test("the daemon chunk embeds the built chat, board and secret page assets", () => {
+	for (const file of [
+		"chat.html",
+		"board.html",
+		"secret.html",
+		"chat.js",
+		"board.js",
+		"secret.js",
+	]) {
 		expect({ file, found: bundle.includes(plainMarker(file)) }).toEqual({
 			file,
 			found: true,

@@ -16,6 +16,10 @@ export const CREDENTIAL_NAME_PATTERN = /^[a-z0-9][a-z0-9._/-]{0,127}$/;
 /** Grant prefixes are the consumer segment of a credential name. */
 export const CREDENTIAL_GRANT_PREFIX_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const SECRET_LIKE_KEY = /value|secret|token|password/i;
+export const SECRET_PAGE_PATH = "/secret";
+export const SECRET_INTAKE_PATH = "/secret-intake";
+export const SECRET_CODE_KEY = "code";
+export const SECRET_CODE_HEADER = "X-Dg-Secret-Code";
 
 /** Non-secret metadata; reserved fields are typed and any other JSON is allowed. */
 export type CredentialMeta = {
@@ -60,7 +64,8 @@ export type CredentialsCliRequest = {
 		| "grant"
 		| "revoke"
 		| "grant-list"
-		| "exec";
+		| "exec"
+		| "intake";
 	name?: string;
 	exec?: CredentialExecSpec;
 	value?: string;
@@ -68,6 +73,8 @@ export type CredentialsCliRequest = {
 	prefix?: string;
 	grant?: CredentialGrantAuth;
 };
+/** Where a human types one credential value; the page url carries a single-use code and never a session token. */
+export type CredentialIntake = { url: string; expiresAt: string };
 /** A command that dg-daemon runs with stored values in env vars; the CLI never receives the values. */
 export type CredentialExecSpec = {
 	bindings: { name: string; env: string }[];
@@ -208,6 +215,7 @@ export function validateCredentialsCliRequest(
 		revoke: ["prefix"],
 		"grant-list": [],
 		exec: ["exec"],
+		intake: ["name", "meta"],
 	};
 	requireOneOf(value.operation, "credentials CLI request.operation", [
 		"set",
@@ -218,6 +226,7 @@ export function validateCredentialsCliRequest(
 		"revoke",
 		"grant-list",
 		"exec",
+		"intake",
 	]);
 	const allowed = [
 		"type",
@@ -241,7 +250,7 @@ export function validateCredentialsCliRequest(
 	if (value.protocolVersion !== undefined && value.protocolVersion !== 1)
 		fail("credentials CLI request.protocolVersion must be 1");
 	if (value.grant !== undefined) validateGrantAuth(value.grant);
-	if (["set", "get", "delete"].includes(value.operation))
+	if (["set", "get", "delete", "intake"].includes(value.operation))
 		value.name = validateCredentialName(value.name);
 	if (value.operation === "grant" || value.operation === "revoke")
 		value.prefix = validateCredentialGrantPrefix(value.prefix);
@@ -249,6 +258,7 @@ export function validateCredentialsCliRequest(
 		validateCredentialValue(value.value);
 		validateCredentialMeta(value.meta);
 	}
+	if (value.operation === "intake") validateCredentialMeta(value.meta);
 	if (value.operation === "exec") validateExecSpec(value.exec);
 	return value as CredentialsCliRequest;
 }

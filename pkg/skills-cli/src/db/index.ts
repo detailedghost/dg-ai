@@ -1,6 +1,7 @@
 import { parseArgs as parseNodeArgs } from "node:util";
 import { parseNonNegativeInteger } from "@dg/common";
 import type { CommandSpec } from "../utils/legacy-command";
+import { rerunUnderAsm } from "./aws-secret";
 import {
 	createDbCredentialClient,
 	type DbCredentialClient,
@@ -37,6 +38,8 @@ import {
 	type OutputFormat,
 } from "./output";
 import { classifySql } from "./safety";
+import { ensureCwdSession } from "./session";
+import { runSetup } from "./setup";
 
 interface ParsedArgs {
 	positional: string[];
@@ -46,10 +49,12 @@ interface ParsedArgs {
 	maxCell: number | null;
 	schema: string;
 	sqlFile: string;
+	session: string | undefined;
 }
 
 export interface DbDeps {
-	createCredentialClient(): DbCredentialClient;
+	createCredentialClient(session?: string): DbCredentialClient;
+	ensureSession(explicit?: string): Promise<string>;
 	readSqlFile(path: string): Promise<string>;
 	stdout(line: string): void;
 	stderr(line: string): void;
@@ -68,10 +73,12 @@ export interface DbDeps {
 	sfSchema: typeof sfSchema;
 	sfTest: typeof sfTest;
 	sfDestroy: typeof sfDestroy;
+	rerunUnderAsm: typeof rerunUnderAsm;
 }
 
 const defaultDeps: DbDeps = {
 	createCredentialClient: createDbCredentialClient,
+	ensureSession: (explicit) => ensureCwdSession(explicit),
 	readSqlFile: (path) => Bun.file(path).text(),
 	stdout: (line) => process.stdout.write(`${line}\n`),
 	stderr: (line) => process.stderr.write(`${line}\n`),
@@ -90,6 +97,7 @@ const defaultDeps: DbDeps = {
 	sfSchema,
 	sfTest,
 	sfDestroy,
+	rerunUnderAsm,
 };
 
 const PARSE_ARGS_OPTIONS = {
@@ -99,6 +107,7 @@ const PARSE_ARGS_OPTIONS = {
 	"max-cell": { type: "string" as const },
 	schema: { type: "string" as const },
 	file: { type: "string" as const, short: "f" },
+	session: { type: "string" as const },
 };
 
 function parseArgs(args: string[]): ParsedArgs {
@@ -116,6 +125,7 @@ function parseArgs(args: string[]): ParsedArgs {
 		maxCell: values["max-cell"] != null ? parseNonNegativeInteger("--max-cell", values["max-cell"]) : null,
 		schema: values.schema ?? "",
 		sqlFile: values.file ?? "",
+		session: values.session,
 	};
 }
 
@@ -134,8 +144,9 @@ async function safely(
 async function loadConnection(
 	deps: DbDeps,
 	name: string,
+	session: string | undefined,
 ): ReturnType<typeof getConnection> {
-	const client = deps.createCredentialClient();
+	const client = deps.createCredentialClient(session);
 	try {
 		return await getConnection(client, name);
 	} finally {
@@ -284,7 +295,10 @@ async function runConnectionVerb(
 	const parsed = parseArgs(args);
 	const name = parsed.positional[0];
 	if (!name) throw new Error("connection name required");
-	const connection = await loadConnection(deps, name);
+	const connection = await loadConnection(deps, name, parsed.session);
+	if (parsed.write && connection.readOnly)
+		throw new Error(`connection "${name}" is read-only; --write is refused`);
+	if (connection.awsSecret) return deps.rerunUnderAsm(connection.awsSecret, verb, args);
 	return connection.engine === "snowflake"
 		? runSnowflake(verb, connection, parsed, deps)
 		: runPostgresql(verb, connection, parsed, deps);
@@ -292,10 +306,24 @@ async function runConnectionVerb(
 
 const description = `Query PostgreSQL and Snowflake databases with read-safe defaults.
 
-Flags: --write, --limit N, --format tsv|json|markdown, --max-cell N, --schema S, -f file.sql`;
+Flags: --write, --limit N, --format tsv|json|markdown, --max-cell N, --schema S, -f file.sql, --session ID`;
 
 export function createDbSpec(overrides: Partial<DbDeps> = {}): CommandSpec {
 	const deps = { ...defaultDeps, ...overrides };
+	const runTest = (args: string[]) =>
+		safely(deps, async () => {
+			const parsed = parseArgs(args);
+			const name = parsed.positional[0];
+			if (!name) throw new Error("connection name required");
+			const connection = await loadConnection(deps, name, parsed.session);
+			if (connection.awsSecret)
+				return deps.rerunUnderAsm(connection.awsSecret, "test", args);
+			deps.stdout(
+				connection.engine === "snowflake"
+					? await deps.sfTest(connection)
+					: await deps.pgTest(connection),
+			);
+		});
 	const connected = (verb: ConnectionVerb) => (args: string[]) =>
 		safely(deps, () => runConnectionVerb(verb, args, deps));
 	return {
@@ -329,9 +357,9 @@ export function createDbSpec(overrides: Partial<DbDeps> = {}): CommandSpec {
 			},
 			connections: {
 				description: "List db/* credential-backed connections.",
-				run: () =>
+				run: (args) =>
 					safely(deps, async () => {
-						const client = deps.createCredentialClient();
+						const client = deps.createCredentialClient(parseArgs(args).session);
 						try {
 							deps.stdout(formatConnections(await listConnections(client)));
 						} finally {
@@ -342,18 +370,21 @@ export function createDbSpec(overrides: Partial<DbDeps> = {}): CommandSpec {
 			test: {
 				description: "Test connectivity.",
 				args: ["conn"],
+				run: runTest,
+			},
+			setup: {
+				description:
+					"Register db/<name>: --engine, connection flags, --secret aws|form|command (see /dg:db).",
+				args: ["conn"],
 				run: (args) =>
-					safely(deps, async () => {
-						const parsed = parseArgs(args);
-						const name = parsed.positional[0];
-						if (!name) throw new Error("connection name required");
-						const connection = await loadConnection(deps, name);
-						deps.stdout(
-							connection.engine === "snowflake"
-								? await deps.sfTest(connection)
-								: await deps.pgTest(connection),
-						);
-					}),
+					safely(deps, () =>
+						runSetup(args, {
+							createCredentialClient: deps.createCredentialClient,
+							ensureSession: deps.ensureSession,
+							runTest,
+							stdout: deps.stdout,
+						}),
+					),
 			},
 		},
 	};

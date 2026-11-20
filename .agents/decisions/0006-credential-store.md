@@ -12,3 +12,5 @@ covers: ["pkg/dg-daemon/src/store/credentials-store.ts", "pkg/dg-daemon/src/serv
 - Never let a grant write credentials. Never reveal whether a denied name exists.
 - Never print credential values from CLI management commands.
 - Never put credentials in the chat database.
+- Mint a form-intake code with the session-authenticated `intake` op. The code lives 120 seconds and works once.
+- Store a form value only through `POST /secret-intake` ([0031](../../docs/adr/0031-loopback-pages.md)). Note the value for redaction before any refusal.

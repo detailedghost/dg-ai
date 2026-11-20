@@ -14,3 +14,7 @@ covers: ["pkg/pages/**", "pkg/dg-daemon/src/server/origin.ts", "pkg/dg-daemon/sr
 - Treat `--ext` as "the browser must be paired with the extension". Do not open `/start` or a side panel.
 - Let a page that holds one live token call `POST /attach` with a bearer header. Return one active agent-role session whose presence is `cli`, other than the caller's own. The Origin check binds browsers only.
 - Keep the `ext-opt-in.spec.ts` allowlist empty. `chat` and `overwatch` must work with no extension.
+- Serve the secret page at `/secret` and `/secret.js` under the same CSP as `/chat`. Give the page no session token and no session meta.
+- Carry the single-use intake code in the fragment. The page strips it. Name the code-scoped `GET` by the `X-Dg-Secret-Code` header, never by the URL.
+- Require a loopback origin or no `Origin` on `POST /secret-intake`. Validate the value before the daemon redeems the code.
+- Let a form see that a value landed by polling `list` (`updatedAt`), never `get`.

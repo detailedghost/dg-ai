@@ -27,12 +27,13 @@ dg-skills db query my-pg "SELECT * FROM users LIMIT 10"
 
 ## Usage
 
-**Usage:** `dg-skills db <query|tables|describe|explain|schema|connections|test> [arguments] [--write] [--limit N] [--format F] [--max-cell N] [--schema S] [--file file.sql]`
+**Usage:** `dg-skills db <setup|query|tables|describe|explain|schema|connections|test> [arguments] [--session ID] [--write] [--limit N] [--format F] [--max-cell N] [--schema S] [--file file.sql]` (see [connections.md](references/connections.md) for the full setup flag list)
 
 ## Flags
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
+| `--session ID` | none | Use this dg-agent session for the credential store. | the session of the current directory |
 | `--write` | none | Allow DML, DDL, multiple statements, and `SELECT INTO`. | off (read-safe statements only) |
 | `--limit N` | none | Limit displayed query rows. | `50` |
 | `--format F` | none | Format query rows as `tsv`, `json`, or `markdown`. | `tsv` |
@@ -56,7 +57,43 @@ dg-skills db connections
 dg-skills db test <conn>
 ```
 
-Connections are encrypted credentials named `db/<conn>`. Register them with `dg-skills credentials set`; see [connections.md](references/connections.md) for each authentication mode.
+Connections are encrypted credentials named `db/<conn>`. Register them with `dg-skills db setup`; see [connections.md](references/connections.md) for each authentication mode.
+
+## Setup
+
+Run `dg-skills db connections`. If it lists the connection you need, skip this section.
+
+If it lists none, or the human wants a new one, ask with `AskUserQuestion`:
+
+- Engine: `postgresql` or `snowflake`.
+- Host, or the local port of an SSH tunnel. The human runs `ssh -L`; setup stores `127.0.0.1`.
+- Port, database, and user. Snowflake needs account, and optionally warehouse and role.
+- Auth mode: `password`; Snowflake also has `keypair` and `external_browser`.
+- Read-only role, if one exists.
+- Secret mode: `aws`, `form`, or `command`.
+
+Then run ONE command:
+
+```bash
+dg-skills db setup <name> --engine postgresql --host 127.0.0.1 --port 5432 \
+  --database <db> --user <user> --secret form
+```
+
+Never ask for a password, token, or key in chat. Never accept one there. The secret goes only through one of these modes:
+
+| Mode | Use when | Extra flags |
+|---|---|---|
+| `--secret form` | Default on a desktop session. Setup opens a local page, or prints its link when it cannot open it. The human types the secret there. The link works once for 120 seconds. | none |
+| `--secret command` | The host has only a terminal. | none |
+| `--secret aws` | The secret already lives in AWS Secrets Manager. Needs `asm-exec` from the Agent Toolkit for AWS `aws-core` plugin. | `--secret-id`, `--secret-key`, optional `--aws-profile`, `--aws-region` |
+
+`command` mode prints a `dg-skills credentials ... set ...` line. Claude Code `!` mode is not confirmed to give a TTY, so do not print a `!` form. Tell the human to run the printed line in their own terminal. It asks for the secret with a hidden prompt. Then run `dg-skills db test <name>`.
+
+Snowflake `--auth external_browser` has no secret. Omit `--secret`.
+
+Setup writes `readOnly=true` by default. PostgreSQL sessions start read-only, and `--write` is refused on such a connection. Snowflake relies on the role. For a writer and a reader, run setup again under a new name such as `<db>-reader`. Pass `--no-read-only` only for the writer.
+
+Setup reuses the session of the current directory, or runs `dg-agent start`. Every db verb accepts `--session`.
 
 ## Output
 

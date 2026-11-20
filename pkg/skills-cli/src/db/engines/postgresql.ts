@@ -39,6 +39,9 @@ export function buildPgClientOptions(
 		user: connection.user,
 		password: connection.password,
 		ssl: connection.ssl,
+		...(connection.readOnly
+			? { options: "-c default_transaction_read_only=on" }
+			: {}),
 	};
 }
 

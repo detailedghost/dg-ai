@@ -85,6 +85,20 @@ describe("PostgreSQL engine", () => {
 		});
 	});
 
+	test("sets the read-only session option for a readOnly connection", () => {
+		expect(
+			buildPgClientOptions({
+				engine: "postgresql",
+				database: "app",
+				user: "readonly",
+				readOnly: true,
+			}),
+		).toMatchObject({ options: "-c default_transaction_read_only=on" });
+		expect(
+			buildPgClientOptions({ engine: "postgresql", database: "app", user: "u" }),
+		).not.toHaveProperty("options");
+	});
+
 	test("passes an explicit ssl option through to the client", () => {
 		expect(
 			buildPgClientOptions({

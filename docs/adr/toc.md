@@ -96,6 +96,7 @@ belong with their owning private tooling repository.
 - [0005 — Encrypt secret fields with a wrapped data key](0005-field-encryption.md)
 - [0006 — Separate credential storage and prefix-scoped service grants](0006-credential-store.md)
 - [0007 — Keep deployment values out of the public repository](0007-private-configuration.md)
+- [0052 — aws-sm db secrets resolve only through an asm-exec re-run of the CLI](0052-aws-sm-db-secrets-resolve-only-through-an-asm-exec-re-run-of-the-cli.md)
 
 ### Skills
 

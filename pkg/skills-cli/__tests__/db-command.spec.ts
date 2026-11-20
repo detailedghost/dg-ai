@@ -38,6 +38,7 @@ function harness(options: {
 	const credentialClient: DbCredentialClient = {
 		get: mock(async () => options.record),
 		list: mock(async () => options.entries ?? []),
+		set: mock(async () => {}),
 		close,
 	};
 	const pgConnect = mock(async () => client);
@@ -87,6 +88,7 @@ function snowflakeHarness(options: {
 	const credentialClient: DbCredentialClient = {
 		get: mock(async () => options.record),
 		list: mock(async () => []),
+		set: mock(async () => {}),
 		close,
 	};
 	const sfConnect = mock(async () => connection);

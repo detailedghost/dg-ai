@@ -1,15 +1,21 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	bootstrapCommand,
+	credentialStoreCheck,
 	installCommand,
 	upgradeCommand,
 } from "../src/doctor/checks";
 import { createContext } from "../src/doctor/runner";
 import { sharedChecks } from "../src/doctor/shared";
 import { compareVersions, versionGte } from "../src/utils/lib";
-import { doctorWorld } from "./doctor-fixtures";
+import {
+	doctorWorld,
+	FAKE_SESSION_ID,
+	type FakeCredentialDaemon,
+	startFakeCredentialDaemon,
+} from "./doctor-fixtures";
 
 let world: ReturnType<typeof doctorWorld>;
 
@@ -17,7 +23,13 @@ beforeEach(() => {
 	world = doctorWorld();
 });
 
-afterEach(() => world.cleanup());
+let daemon: FakeCredentialDaemon | undefined;
+
+afterEach(() => {
+	daemon?.stop();
+	daemon = undefined;
+	world.cleanup();
+});
 
 function context() {
 	return createContext({ home: world.home, env: world.env() });
@@ -98,5 +110,55 @@ describe("version ordering", () => {
 		expect(compareVersions("1.0.0", "1.0.1")).toBeLessThan(0);
 		expect(versionGte("2.17.0", "2.17.0")).toBe(true);
 		expect(versionGte("2.16.9", "2.17.0")).toBe(false);
+	});
+});
+
+describe("credential-store check without a usable session", () => {
+	let originalCwd: string;
+
+	beforeEach(() => {
+		originalCwd = process.cwd();
+		process.chdir(world.home);
+	});
+
+	afterEach(() => process.chdir(originalCwd));
+
+	const sessionFile = () => join(world.paths.sessionsDir, `${FAKE_SESSION_ID}.json`);
+
+	test("a missing session warns with dg-agent start and never dg-skills install", async () => {
+		daemon = startFakeCredentialDaemon(world, []);
+		rmSync(sessionFile());
+		const result = await credentialStoreCheck.run(context());
+		expect(result.status).toBe("warn");
+		expect(result.fix).toBe("dg-agent start");
+		expect(result.fix).not.toContain("install");
+	});
+
+	test("a protocol mismatch keeps the install fix", async () => {
+		daemon = startFakeCredentialDaemon(world, []);
+		const pidPath = join(world.paths.daemonDir, "daemon.pid");
+		const handle = JSON.parse(await Bun.file(pidPath).text());
+		handle.versions.protocol = 999;
+		writeFileSync(pidPath, JSON.stringify(handle));
+		const result = await credentialStoreCheck.run(context());
+		expect(result.status).toBe("warn");
+		expect(result.fix).toContain("install");
+	});
+
+	test("any other error keeps its message and offers no install hint", async () => {
+		daemon = startFakeCredentialDaemon(world, []);
+		writeFileSync(
+			sessionFile(),
+			JSON.stringify({
+				sessionId: FAKE_SESSION_ID,
+				token: "",
+				cwd: realpathSync(world.home),
+				agentIdentity: "doctor-test",
+			}),
+		);
+		const result = await credentialStoreCheck.run(context());
+		expect(result.status).toBe("warn");
+		expect(result.detail).toContain("no usable session");
+		expect(result.fix ?? "").not.toContain("install");
 	});
 });

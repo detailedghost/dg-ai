@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CheckReport, DoctorReport } from "../src/doctor/types";
-import { codexState, type InstallTarget, runUpdate, standaloneRefresh, type UpdateDeps } from "../src/update/run";
+import { codexState, defaultUpdateDeps, type InstallTarget, runUpdate, standaloneRefresh, type UpdateDeps } from "../src/update/run";
 
 let home: string;
 let codexHome: string;
@@ -67,6 +67,7 @@ function fake(overrides: FakeOptions = {}): Fake {
 		},
 		newestVersion: async () => "3.1.0",
 		installedVersion: () => installed,
+		finishLayout: () => ({ status: 0, stderr: "" }),
 		stagedExtensions: () => ({ chrome: "3.0.1" }),
 		cliOnly: () => false,
 		which: (name) => (tools.includes(name) ? `/usr/bin/${name}` : null),
@@ -354,5 +355,64 @@ describe("codexState", () => {
 	test("reads the plugin flag, the marketplace source, and whether it is local", () => {
 		codexConfig("/srv/dg", { type: "local" });
 		expect(codexState(codexHome)).toEqual({ enabled: true, source: "/srv/dg", local: true });
+	});
+});
+
+describe("dg-skills update launcher layout", () => {
+	function withLayout(overrides: FakeOptions = {}, status = 0) {
+		const layouts: string[] = [];
+		const d = fake({
+			...overrides,
+			finishLayout: (version: string) => {
+				layouts.push(version);
+				return { status, stderr: status === 0 ? "" : "launchers broke\n" };
+			},
+		});
+		return { d, layouts };
+	}
+
+	test("finishes the launcher layout once for the new release after a successful install", async () => {
+		const { d, layouts } = withLayout({ tools: [] });
+		expect(await runUpdate({}, d)).toBe(0);
+		expect(layouts).toEqual(["3.1.0"]);
+	});
+
+	test("does not finish the launcher layout after a failed install", async () => {
+		const throwing = withLayout({
+			tools: [],
+			install: async () => {
+				throw new Error("network down");
+			},
+		});
+		expect(await runUpdate({}, throwing.d)).toBe(1);
+		expect(throwing.layouts).toEqual([]);
+
+		const stuck = withLayout({ tools: [], install: async () => {} });
+		expect(await runUpdate({}, stuck.d)).toBe(1);
+		expect(stuck.layouts).toEqual([]);
+	});
+
+	test("reports a non-zero launcher step as a failed install step that names dg-skills install", async () => {
+		const { d } = withLayout({ tools: [] }, 1);
+		expect(await runUpdate({}, d)).toBe(1);
+		expect(d.lines[0]).toBe("❌ CLI, runtime and extension: launchers broke; run dg-skills install");
+	});
+
+	test("the default finishLayout runs the bin dir dg-skills launcher with the hidden launchers step", () => {
+		const dgHome = join(home, "dg-home");
+		const bin = join(dgHome, "bin");
+		mkdirSync(bin, { recursive: true });
+		const record = join(home, "argv.txt");
+		writeFileSync(join(bin, "dg-skills"), `#!/bin/sh\nprintf '%s ' "$@" > '${record}'\nexit 3\n`, { mode: 0o755 });
+		const saved = process.env.DG_HOME;
+		process.env.DG_HOME = dgHome;
+		try {
+			const result = defaultUpdateDeps().finishLayout("3.1.0");
+			expect(result.status).toBe(3);
+			expect(readFileSync(record, "utf8")).toBe("install launchers ");
+		} finally {
+			if (saved === undefined) delete process.env.DG_HOME;
+			else process.env.DG_HOME = saved;
+		}
 	});
 });

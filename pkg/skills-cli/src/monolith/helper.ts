@@ -8,10 +8,9 @@ import {
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import { parseFlag, wholeNumber } from "@dg/common";
+import { parseFlag, shellValue, wholeNumber } from "@dg/common";
 import { projectHash, repoRoot, stateRoot } from "@dg/common/node";
 import { die, EXIT, type SubcommandSpec } from "../utils/legacy-command";
-import { shellValue } from "../worktree/shared";
 
 const TERM_SECTIONS = [
 	"Domain Terms",

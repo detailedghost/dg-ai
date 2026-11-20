@@ -1,6 +1,7 @@
 import {
 	type CredentialExecSpec,
 	type CredentialGrantSummary,
+	type CredentialIntake,
 	type CredentialMeta,
 	type CredentialRecord,
 	type CredentialSummary,
@@ -48,6 +49,8 @@ export type CredentialClient = {
 	/** Has dg-daemon run a command with stored values; only scrubbed output reaches onOutput, and it resolves to the exit code. */
 	exec(spec: CredentialExecSpec, onOutput: (stream: "stdout" | "stderr", data: string) => void): Promise<number>;
 	list(): Promise<CredentialSummary[]>;
+	/** Has dg-daemon mint a one-time page where a human types the value for `name`; the value never passes through this client. */
+	intake(name: string, meta: CredentialMeta): Promise<CredentialIntake>;
 	delete(name: string): Promise<boolean>;
 	grant(prefix: string): Promise<{ prefix: string; path: string }>;
 	revoke(prefix: string): Promise<boolean>;
@@ -181,6 +184,8 @@ export function createCredentialClient(
 			((await request({ operation: "exec", exec: spec }, onOutput)) as { exitCode: number }).exitCode,
 		list: async () =>
 			(await request({ operation: "list" })) as CredentialSummary[],
+		intake: async (name, meta) =>
+			(await request({ operation: "intake", name, meta })) as CredentialIntake,
 		delete: async (name) =>
 			(await request({ operation: "delete", name })) as boolean,
 		grant: async (prefix) =>

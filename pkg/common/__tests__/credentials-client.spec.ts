@@ -9,6 +9,7 @@ import {
 	CLI_GRANT_TOKEN_HEADER,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
+	validateCredentialsCliRequest,
 } from "@dg/common";
 import {
 	createCredentialClient,
@@ -81,6 +82,11 @@ function fixtureDaemon(store: Map<string, string>) {
 				if (frame.operation === "grant")
 					value = { prefix: frame.prefix, path: "/fixture/path" };
 				if (frame.operation === "grant-list") value = [];
+				if (frame.operation === "intake")
+					value = {
+						url: "http://127.0.0.1:1/secret#code=fixture-code",
+						expiresAt: "2030-01-01T00:00:00.000Z",
+					};
 				socket.send(
 					JSON.stringify({
 						type: "cli-credentials-result",
@@ -149,6 +155,78 @@ describe("createCredentialClient", () => {
 			client.close();
 			daemon.stop();
 		}
+	});
+
+	describe("intake", () => {
+		it("sends the name and meta without any value and returns the page url and expiry", async () => {
+			const daemon = fixtureDaemon(new Map());
+			const client = createCredentialClient({ paths, session: sessionId });
+			try {
+				const intake = await client.intake("db/pg1", { engine: "postgresql" });
+
+				expect(intake).toEqual({
+					url: "http://127.0.0.1:1/secret#code=fixture-code",
+					expiresAt: "2030-01-01T00:00:00.000Z",
+				});
+				expect(daemon.requests).toHaveLength(1);
+				expect(daemon.requests[0]).toMatchObject({
+					type: "cli-credentials-request",
+					operation: "intake",
+					name: "db/pg1",
+					meta: { engine: "postgresql" },
+				});
+				expect(daemon.requests[0]).not.toHaveProperty("value");
+			} finally {
+				client.close();
+				daemon.stop();
+			}
+		});
+
+		it("folds the name to lowercase like set does", async () => {
+			const daemon = fixtureDaemon(new Map());
+			const client = createCredentialClient({ paths, session: sessionId });
+			try {
+				await client.intake("DB/PG1", {});
+
+				expect(daemon.requests[0]?.name).toBe("db/pg1");
+			} finally {
+				client.close();
+				daemon.stop();
+			}
+		});
+
+		it("rejects a bad name and secret-like meta before anything reaches the daemon", async () => {
+			const daemon = fixtureDaemon(new Map());
+			const client = createCredentialClient({ paths, session: sessionId });
+			try {
+				await expect(client.intake("bad name", {})).rejects.toThrow(/credential name/);
+				await expect(
+					client.intake("db/pg1", { password: "fixture-value" }),
+				).rejects.toThrow(/secret/);
+				expect(daemon.requests).toEqual([]);
+			} finally {
+				client.close();
+				daemon.stop();
+			}
+		});
+
+		it("does not accept a value on the intake frame", () => {
+			const frame = {
+				type: "cli-credentials-request",
+				requestId: "r1",
+				operation: "intake",
+				name: "db/pg1",
+				meta: {},
+			};
+
+			expect(validateCredentialsCliRequest(frame).operation).toBe("intake");
+			expect(() =>
+				validateCredentialsCliRequest({ ...frame, value: "fixture-value" }),
+			).toThrow(/value is not supported/);
+			expect(() =>
+				validateCredentialsCliRequest({ ...frame, meta: undefined }),
+			).toThrow();
+		});
 	});
 
 	it("names the start command when no daemon pid file exists", async () => {

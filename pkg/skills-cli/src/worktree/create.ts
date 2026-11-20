@@ -1,5 +1,6 @@
+import { shellValue } from "@dg/common";
 import { createWorktree } from "./core";
-import { fail, shellValue } from "./shared";
+import { fail } from "./shared";
 
 export const CREATE_HELP = `worktree create <slug> [flags]
 

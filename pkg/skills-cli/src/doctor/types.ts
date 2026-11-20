@@ -41,10 +41,10 @@ export interface DoctorReport {
 
 export const ok = (detail: string): CheckResult => ({ status: "ok", detail });
 
-export const warn = (detail: string, fix: string): CheckResult => ({
+export const warn = (detail: string, fix?: string): CheckResult => ({
 	status: "warn",
 	detail,
-	fix,
+	...(fix === undefined ? {} : { fix }),
 });
 
 export const fail = (detail: string, fix: string): CheckResult => ({
