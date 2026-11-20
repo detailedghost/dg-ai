@@ -107,6 +107,22 @@ and for a short time. Every other guard of ADR 0035 stays.
 ## Diagram
 
 ```mermaid
+sequenceDiagram
+    participant C as dg-skills pw --ext
+    participant W as extension worker
+    participant H as human in popup window
+    C->>W: unmask --minutes 15
+    W->>H: open popup: origin, scope, duration
+    alt Allow click
+        H-->>W: click
+        W-->>C: grant for this origin, 1 to 60 minutes
+        Note over W: emails shown, fill on secret fields allowed
+        Note over W: tokens and keys stay masked
+    else Deny, 60 s timeout, or closed window
+        W-->>C: no grant, with the reason
+    end
+    C->>W: unmask --off
+    W-->>C: grant ends at once
 ```
 
 ## References
