@@ -25,6 +25,10 @@ describe("formatFailures", () => {
 		expect(text).toBe("  ❌ ext / bad: first line");
 	});
 
+	test("omits the detail part when a failure has no detail", () => {
+		expect(formatFailures(report([{ item: "ext", checks: [check("bad", "fail", "")] }]))).toBe("  ❌ ext / bad");
+	});
+
 	test("adds a fix line under a failure that has a fix", () => {
 		const text = formatFailures(
 			report([{ item: "ext", checks: [check("bad", "fail", "broken", "dg-skills install ext"), check("worse", "fail", "gone")] }]),

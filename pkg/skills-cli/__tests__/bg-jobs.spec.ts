@@ -11,6 +11,7 @@ import {
 	existsSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -223,6 +224,19 @@ describe("dg-skills bg list", () => {
 		expect(unknown.stderr).toContain("unknown list flag");
 		const missing = await world.bg(["list", "--cwd"], world.dir());
 		expect(missing.exitCode).toBe(2);
+		const blank = await world.bg(["list", ""], world.dir());
+		expect(blank.exitCode).toBe(2);
+	});
+
+	test("--cwd given through a symlink matches jobs started in the real directory", async () => {
+		const base = world.dir();
+		const repo = world.mkdir(join(base, "repo"));
+		const link = join(base, "repo-link");
+		symlinkSync(repo, link);
+		const mine = await world.launch("exit 0", repo);
+		await world.settled(mine.id, base);
+		const { jobs } = await world.json<{ jobs: BgJob[] }>(["list", "--cwd", link], base);
+		expect(jobs.map((job) => job.id)).toEqual([mine.id]);
 	});
 
 	test("skips a truncated meta file instead of failing for every job", async () => {

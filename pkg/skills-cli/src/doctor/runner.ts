@@ -111,7 +111,8 @@ export function formatFailures(report: DoctorReport): string {
 	for (const entry of report.items) {
 		for (const check of entry.checks) {
 			if (check.status !== "fail") continue;
-			lines.push(`  ${STATUS_ICON.fail} ${entry.item} / ${check.id}: ${check.detail.split("\n")[0]}`);
+			const detail = check.detail.split("\n")[0];
+			lines.push(`  ${STATUS_ICON.fail} ${entry.item} / ${check.id}${detail ? `: ${detail}` : ""}`);
 			if (check.fix) lines.push(`      Fix: ${check.fix}`);
 		}
 	}

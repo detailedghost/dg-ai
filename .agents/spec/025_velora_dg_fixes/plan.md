@@ -246,7 +246,7 @@ Fix the dg 6.1.0 rough edges found during the Velora release. Verify and prototy
 - (owner, 2026-11-20) R5: `stat archive`, with no dates.
 - (owner, 2026-11-20) R6: old ~/.dg/bin calls in skill copies dg does not install are out of scope, with a docs note.
 - (owner, 2026-11-20) R7: hand-written in-app bars get a doc rule plus a porting guide now.
-- (owner, 2026-11-20) Waves: slice 2 depends on [1, 4] and slice 4 has no dependency, so the build runs in two waves.
+- (owner, 2026-11-20) Waves: slice 2 depends on [1, 4] and slice 4 has no dependency, so the build runs in two waves. Slice 2 needs slice 1 for CaptureRequest.stateName, and slices 2 and 4 both regenerate completion/tree.json.
 
 ## Issues Remediation
 

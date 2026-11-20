@@ -574,7 +574,12 @@ describe("acceptanceHook", () => {
 			captured += String(chunk);
 			return true;
 		}) as typeof process.stderr.write;
-		return { text: () => captured, restore: () => void (process.stderr.write = original) };
+		return {
+			text: () => captured,
+			restore: () => {
+				process.stderr.write = original;
+			},
+		};
 	}
 
 	test("a skipped fingerprint after a sign-in redirect prints the exact run line and returns its reason", async () => {

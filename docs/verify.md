@@ -10,7 +10,7 @@ Codex:      $dg:verify
 The agent writes a manifest of finished items.
 Each item has a before URL and an after URL on localhost, the roles to sign in as seed users, and the name of the agent who owns the change.
 A role can also name a saved sign-in with `state`. Save one with `dg-skills pw state save <name>`.
-Verify loads it in the browser, on localhost only, so a role with `state` needs the `playwright` engine; the `http` engine refuses it. The cookies never reach the board, the session files, or the logs.
+Verify loads only its loopback cookies and storage in the browser, so a role with `state` needs the `playwright` engine; the `http` engine refuses it. The cookies never reach the board, the session files, or the logs.
 A page that lands on a different path, such as a sign-in page, stops the capture and says how to save a state.
 When a prototype is already running, its URL is a third column.
 

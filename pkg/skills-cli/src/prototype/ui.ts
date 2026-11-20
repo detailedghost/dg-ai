@@ -9,7 +9,7 @@ import {
 import { join, resolve, sep } from "node:path";
 import { scratchDir, selfCommand, tryOpen } from "@dg/common/node";
 import { acceptanceHook, markFinal } from "./accepted";
-import { type Flags, parseFlags } from "./args";
+import { assertSavedState, type Flags, parseFlags } from "./args";
 import { parseManifestSource, render } from "./manifest";
 import {
 	assertNotSelftestName,
@@ -208,6 +208,7 @@ export async function runUi(argv: string[]): Promise<number> {
 		"--sign-in",
 		"--state",
 	]);
+	assertSavedState(flags);
 	const source = flags.rest[0];
 	if (!source) throw new Error("ui requires <manifest-file|->");
 	const manifest = parseManifestSource(

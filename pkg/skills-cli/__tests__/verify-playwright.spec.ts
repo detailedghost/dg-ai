@@ -870,15 +870,30 @@ describe("review board in a browser", () => {
 describe("verify with a saved sign-in", () => {
 	test("loads only the loopback cookies and origins of a saved state", () => {
 		const cookie = (domain: string) => ({ name: "sid", value: `fake-${domain}`, domain, path: "/", expires: -1, httpOnly: true, secure: false, sameSite: "Lax" as const });
+		const origin = (url: string) => ({ origin: url, localStorage: [{ name: "token", value: `fake-${url}` }] });
 		const state = loopbackStorageState({
-			cookies: [cookie("localhost"), cookie(".localhost"), cookie("127.0.0.1"), cookie("example.com"), cookie(".example.com")],
+			cookies: [
+				cookie("localhost"),
+				cookie(".localhost"),
+				cookie("127.0.0.1"),
+				cookie("::1"),
+				cookie("example.com"),
+				cookie(".example.com"),
+				cookie("localhost.example.com"),
+				cookie("notlocalhost"),
+				cookie("127.0.0.1.example.com"),
+			],
 			origins: [
-				{ origin: "http://localhost:4321", localStorage: [{ name: "token", value: "fake-local" }] },
-				{ origin: "https://example.com", localStorage: [{ name: "token", value: "fake-remote" }] },
+				origin("http://localhost:4321"),
+				origin("http://[::1]:4321"),
+				origin("https://example.com"),
+				origin("http://localhost.evil.com"),
+				origin("http://notlocalhost:4321"),
+				origin("not a url"),
 			],
 		});
-		expect(state.cookies.map((entry) => entry.domain)).toEqual(["localhost", ".localhost", "127.0.0.1"]);
-		expect(state.origins.map((entry) => entry.origin)).toEqual(["http://localhost:4321"]);
+		expect(state.cookies.map((entry) => entry.domain)).toEqual(["localhost", ".localhost", "127.0.0.1", "::1"]);
+		expect(state.origins.map((entry) => entry.origin)).toEqual(["http://localhost:4321", "http://[::1]:4321"]);
 	});
 
 	useTempEnv("AI_STATE_DIR");
@@ -947,6 +962,30 @@ describe("verify with a saved sign-in", () => {
 			expect(requests.length).toBeGreaterThan(0);
 			expect(requests.every((request) => request.stateName === "app-admin")).toBe(true);
 			expect(captured[0]?.records.every((record) => new URL(record.finalUrl).pathname === "/sms")).toBe(true);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("tells a role whose saved state lands on the sign-in page to save that state again", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-verify-state-"));
+		try {
+			saveState("app-admin", stateWith());
+			const expired = {
+				...signedInPageFor([]),
+				async shot(request: CaptureRequest): Promise<CaptureShot> {
+					return signedInPageFor([]).shot({ ...request, stateName: undefined });
+				},
+			};
+			const { paths, cwd } = sessionIn(dir);
+			const attempt = captureSession({
+				manifest: manifestFor("app-admin"),
+				paths,
+				capturer: expired,
+				cwd,
+				targets: [{ itemId: "inbox", sectionId: "inbox-r1" }],
+			});
+			await expect(attempt).rejects.toThrow("save it again with `dg-skills pw state save app-admin`");
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -1032,13 +1071,13 @@ describe("verify with a saved sign-in", () => {
 			port: 0,
 			fetch(req) {
 				const html = (body: string) => new Response(body, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+				if (new URL(req.url).pathname === "/Login/SignIn")
+					return html('<!doctype html><html lang="en"><head><title>Sign in</title></head><body><h1>Sign in</h1></body></html>');
 				if (!(req.headers.get("cookie") ?? "").includes(`sid=${COOKIE_VALUE}`))
 					return new Response(null, { status: 302, headers: { Location: "/Login/SignIn" } });
 				return html('<!doctype html><html lang="en"><head><title>Inbox</title></head><body><h1>Signed in</h1></body></html>');
 			},
 		});
-		saveState("app-admin", stateWith());
-		const capturer = await openPlaywrightCapturer({ noSandbox: true });
 		const request: CaptureRequest = {
 			url: `http://127.0.0.1:${server.port}/sms`,
 			headers: {},
@@ -1049,12 +1088,17 @@ describe("verify with a saved sign-in", () => {
 			state: "default",
 			menuSelector: "[data-verify-menu]",
 		};
+		let capturer: Awaited<ReturnType<typeof openPlaywrightCapturer>> | undefined;
 		try {
+			saveState("app-admin", stateWith());
+			capturer = await openPlaywrightCapturer({ noSandbox: true });
+			const anonymous = await capturer.shot(request);
+			expect(new URL(anonymous.finalUrl).pathname).toBe("/Login/SignIn");
 			const shot = await capturer.shot({ ...request, stateName: "app-admin" });
 			expect(shot.html).toContain("Signed in");
 			await expect(capturer.shot({ ...request, stateName: "missing-state" })).rejects.toBeInstanceOf(StateNotFoundError);
 		} finally {
-			await capturer.close();
+			await capturer?.close();
 			server.stop(true);
 		}
 	});

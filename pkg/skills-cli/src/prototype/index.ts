@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { validateVerdict } from "@dg/common";
 import { resolveSkillAsset } from "../utils/skill-assets";
 import { protoScratchPath } from "../utils/proto-paths";
-import { type Flags, parseFlags } from "./args";
+import { assertSavedState, type Flags, parseFlags } from "./args";
 import { acceptanceHook, acceptedSummary, refingerprint } from "./accepted";
 import {
 	assertNotSelftestName,
@@ -165,6 +165,7 @@ function write(text: string): void {
 
 async function runNamed(command: string, argv: string[]): Promise<number> {
 	const flags = parseFlags(argv, NAME_COMMANDS[command] ?? []);
+	assertSavedState(flags);
 	const [name, variant] = flags.rest;
 	if (!name || (command === "confirm" && !variant)) {
 		process.stderr.write(USAGE);

@@ -1,3 +1,5 @@
+import { load as loadSavedState } from "../pw/core/states";
+
 export const DEFAULT_TIMEOUT_SEC = 900;
 export const DEFAULT_PORT = 4321;
 
@@ -69,4 +71,9 @@ export function parseFlags(argv: string[], allowed: readonly string[]): Flags {
 		else flags.rest.push(arg);
 	}
 	return flags;
+}
+
+/** Fails before any wait when `--state` names no saved pw state. */
+export function assertSavedState(flags: Flags): void {
+	if (flags.stateName) loadSavedState(flags.stateName);
 }

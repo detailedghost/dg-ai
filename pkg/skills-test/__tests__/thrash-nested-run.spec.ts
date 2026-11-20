@@ -13,7 +13,7 @@ const workflow = collapse(read(join(SKILLS, "address", "references", "workflow.m
 const reviewLoop = collapse(read(join(SKILLS, "review-loop", "SKILL.md")));
 
 function section(text: string, heading: string): string {
-	const start = text.indexOf(`${heading}\n`);
+	const start = text.search(new RegExp(`^${heading}$`, "m"));
 	expect(start, `${heading} is missing`).toBeGreaterThanOrEqual(0);
 	const rest = text.slice(start + heading.length);
 	const end = rest.search(/\n## /);
@@ -35,7 +35,7 @@ describe("thrash nested run", () => {
 	});
 
 	test("falls back to a proxy job for each stage persona", () => {
-		expect(nested()).toContain("dg-skills proxy <backend> --subagent thrash-verify");
+		expect(nested()).toContain("dg-skills proxy codex --subagent thrash-verify");
 		expect(nested()).toContain("thrash-consolidate");
 		expect(nested()).toMatch(/--subagent thrash-verify\|thrash-consolidate/);
 	});

@@ -14,6 +14,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { save as saveState } from "../src/pw/core/states";
 import { makeTempDir } from "./git-repo-fixtures";
 import { collectRun, type SpecRun } from "./spec-fixtures";
 
@@ -33,6 +34,7 @@ let root: string;
 let scratch: string;
 let outside: string;
 const children: Array<{ kill(): void }> = [];
+const priorStateDir = process.env.AI_STATE_DIR;
 
 beforeEach(() => {
 	root = makeTempDir("dg-prototype-ui-");
@@ -40,6 +42,8 @@ beforeEach(() => {
 	outside = join(root, "outside");
 	mkdirSync(scratch, { recursive: true });
 	mkdirSync(outside, { recursive: true });
+	process.env.AI_STATE_DIR = join(root, "state");
+	saveState("velora", { cookies: [], origins: [] });
 });
 
 afterEach(() => {
@@ -63,6 +67,8 @@ afterEach(() => {
 		}
 	}
 	rmSync(root, { recursive: true, force: true });
+	if (priorStateDir === undefined) delete process.env.AI_STATE_DIR;
+	else process.env.AI_STATE_DIR = priorStateDir;
 });
 
 function env(): Record<string, string> {
@@ -533,6 +539,13 @@ describe("prototype ui", () => {
 		expect(claimed.stderr).toContain("prototype: fingerprint skipped:");
 		expect(claimed.stderr).toContain("prototype fingerprint gated --url=<url> --state=velora --sign-in=<url>");
 		await cli(["stop", "gated"]).done;
+	});
+
+	test("a --state that names no saved pw state fails before the server starts", async () => {
+		const result = await cli(["ui", manifest("missing"), "--no-open", `--port=${port()}`, "--state=no-such-state"]).done;
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr).toContain("pw state list");
+		expect(readState("missing")).toBeUndefined();
 	});
 
 	test("wait on a session takes --state from the command line", async () => {

@@ -172,7 +172,8 @@ Pick the first path that works.
 1. Read the persona file from the plugin `agents/` folder (`thrash-verify.md` or
    `thrash-consolidate.md`). Then run the stage in this agent, one item at a time, with the same
    inputs and outputs as the persona prompt.
-2. Route the stage through `dg-skills proxy <backend> --subagent thrash-verify|thrash-consolidate`.
+2. Route the stage through `dg-skills proxy codex --subagent thrash-verify|thrash-consolidate`, or
+   through the `--proxy` backend when the run has one.
 
 Triage, verify, apply, consolidate and compile never get skipped. If no path works, stop and print
 `thrash cannot run nested here: <reason>; run /dg:thrash . from the main loop`.

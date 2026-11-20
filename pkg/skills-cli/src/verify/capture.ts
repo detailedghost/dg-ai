@@ -47,10 +47,13 @@ function sideUrl(item: VerifyItem, side: SideName): string {
 
 const trimmedPath = (url: string): string => new URL(url).pathname.replace(/\/+$/, "");
 
-function assertSamePath(label: string, requested: string, landed: string): void {
+function assertSamePath(label: string, requested: string, landed: string, stateName?: string): void {
 	if (trimmedPath(requested) === trimmedPath(landed)) return;
+	const repair = stateName
+		? `the saved sign-in may have expired: save it again with \`dg-skills pw state save ${stateName}\``
+		: "save a sign-in with \`dg-skills pw state save <name>\` and add \`state\` to the role";
 	throw new Error(
-		`${label}: the page landed on ${new URL(landed).pathname} instead of ${new URL(requested).pathname}. If that is a sign-in page, save a sign-in with \`dg-skills pw state save <name>\` and add \`state\` to the role.`,
+		`${label}: the page landed on ${new URL(landed).pathname} instead of ${new URL(requested).pathname}. If that is a sign-in page, ${repair}.`,
 	);
 }
 
@@ -141,7 +144,7 @@ export async function captureSession(options: {
 								const message = error instanceof Error ? error.message : String(error);
 								throw new Error(`${item.id} ${side} ${role.id} ${viewport.id} ${theme} ${state}: ${message}`);
 							}
-							assertSamePath(`${item.id} ${side} ${role.id} ${viewport.id} ${theme} ${state}`, url, shot.finalUrl);
+							assertSamePath(`${item.id} ${side} ${role.id} ${viewport.id} ${theme} ${state}`, url, shot.finalUrl, role.state);
 							const dir = join(root, side, role.id, viewport.id, theme);
 							mkdirSync(dir, { recursive: true });
 							writeFileSync(join(dir, `${state}.png`), shot.png);
