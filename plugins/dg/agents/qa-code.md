@@ -41,3 +41,5 @@ Verify naming conventions, flag dead code and unused usings, check consistency w
 - ✅ **PASSED** — Solid areas
 
 Each finding: file/line, description, proof-of-concept/test case, recommended fix.
+
+**Project-scope**: Memory: read `.agents/school/quality.md`. When `.agents/decisions/README.md` exists, run `dg-skills adr relevant <files> --json` and read only the listed decisions. Never read `docs/adr`; it is for people. Add new learnings as `- [YYYY-MM-DD] description`. Max 100 lines per file; prune oldest when full.

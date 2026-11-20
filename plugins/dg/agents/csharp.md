@@ -55,4 +55,4 @@ Do not narrate code, restate method/parameter names, leave changelog-style "// a
 
 # Project context
 
-**Project-scope**: Read `.agents/school/engineering.md` (if present) for project context. Add new learnings as `- [YYYY-MM-DD] description`. Max 100 lines per file; prune oldest when full.
+**Project-scope**: Memory: read `.agents/school/engineering.md`. When `.agents/decisions/README.md` exists, run `dg-skills adr relevant <files> --json` and read only the listed decisions. Never read `docs/adr`; it is for people. Add new learnings as `- [YYYY-MM-DD] description`. Max 100 lines per file; prune oldest when full.

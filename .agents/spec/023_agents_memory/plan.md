@@ -4,7 +4,7 @@ feature_snake_case: agents_memory
 date: "2026-11-19"
 version: "1.0"
 status: in-progress
-current_slice: 1
+current_slice: 2
 pr_strategy: single
 slices:
   - id: 1
@@ -88,20 +88,20 @@ Make .agents/ tracked, token-light agent memory in every repo the skills seed. A
 ### Slice 2 — agents-read-agents-folder
 
 #### Engineering
-- [ ] Every persona Project-scope carries the shared memory line: read .agents/school/<topic>.md; when .agents/decisions/README.md exists run dg-skills adr relevant <files> --json and read only the listed decisions; never read docs/adr
-- [ ] AGENTS.md template Rules line: Agents read .agents/ (decisions, school, references, monolith, paths); docs/adr is human-only
-- [ ] Lore template promotes each durable rule, trap or standard into .agents/school/<topic>.md as one dated, deduplicated line; decisions go through the decision pair; prune oldest at the cap
-- [ ] Cap table in structure.md and write-decision.md: decisions 25 lines, references 150 lines then split by topic
+- [x] Every persona Project-scope carries the shared memory line: read .agents/school/<topic>.md; when .agents/decisions/README.md exists run dg-skills adr relevant <files> --json and read only the listed decisions; never read docs/adr
+- [x] AGENTS.md template Rules line: Agents read .agents/ (decisions, school, references, monolith, paths); docs/adr is human-only
+- [x] Lore template promotes each durable rule, trap or standard into .agents/school/<topic>.md as one dated, deduplicated line; decisions go through the decision pair; prune oldest at the cap
+- [x] Cap table in structure.md and write-decision.md: decisions 25 lines, references 150 lines then split by topic
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: every persona file contains the shared memory line
-- [ ] Contract: no persona or build skill tells an agent to read docs/adr; /dg:adr ask mode is exempt
-- [ ] Contract: the lore template has the school promotion step
-- [ ] Contract: the cap table is present
+- [x] Contract: every persona file contains the shared memory line
+- [x] Contract: no persona or build skill tells an agent to read docs/adr; /dg:adr ask mode is exempt
+- [x] Contract: the lore template has the school promotion step
+- [x] Contract: the cap table is present
 
 #### Acceptance Criteria
-- [ ] bun test in pkg/skills-test passes
+- [x] bun test in pkg/skills-test passes
 
 ### Slice 3 — adr-lint-decision-size
 
@@ -121,9 +121,11 @@ Make .agents/ tracked, token-light agent memory in every repo the skills seed. A
 
 ## Slice Summaries
 - Slice 1 (track-agents-default): agent-seed writes only the scratch list to .gitignore and replaces an old .agents/ or .agents/* block; spring-break step 9 does the same fix. Every git add -f of .agents is gone (spec, fast, plan, kick, pickup, prd, wayfinder, agent-seed backups); bundle adds keep the roundtable exclude fallback, and spec says to ask for /dg:spring-break when git add refuses, never -f. proto tracks only NOTES.md per prototype. Tests: agents-tracked.spec.ts, spec-bundle-commit.spec.ts.
+- Slice 2 (agents-read-agents-folder): 17 personas carry one pinned memory line (school topic, adr relevant when decisions exist, never docs/adr); arch, design, lore and qa-code gained a Project-scope line. checkpoint, copilot-antagonist and thrash* stay exempt (read-only or mechanical). AGENTS.md template routes agents to .agents; lore template adds a Learnings step; structure.md and write-decision.md carry the caps. Test: agents-memory.spec.ts.
 
 ## Agent Notes
 - (slice 1) Scratch list uses .agents/spec/**/roundtable/ instead of the plan's spec/*/roundtable/, so prd's spec/todo/<slug>/roundtable/ is covered too.
 - (slice 1) proto ignore narrowed to .agents/prototype/*/* with !.agents/prototype/*/NOTES.md. The agent-seed temp-repo fixture is not automatable (agent-seed is prose, no CLI), so tests pin the template text.
+- (slice 2) Decision cap counts non-blank lines below the front matter, ADR link line included; slice 3 lint uses the same rule.
 
 ## Issues Remediation

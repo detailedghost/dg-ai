@@ -20,6 +20,7 @@ covers: ["pkg/api/**", "docs/api.md"]
 - `covers:` lists path globs. An agent reads this decision when it touches a matching file. List every area the decision governs. Pass each glob to its own `--covers` flag: `--covers 'a/**' --covers 'b.md'`.
 - The link line points to the paired ADR. `adr new` writes it.
 - Write imperative rules. One line each. No history, no reasons, no options. The ADR holds those.
+- Cap: 25 non-blank lines below the front matter, link line included. Split a bigger decision.
 - A decision with no agent rules keeps the `covers:` frontmatter and the ADR link line. The one line `No agent rules.` replaces the rules list.
 - Never edit the generated tables in `.agents/decisions/README.md` or `docs/adr/toc.md`. Run `dg-skills adr index`.
 

@@ -127,3 +127,5 @@ cannot show someone two layouts and ask which reads better. Handle that openly:
 This matters most for the questions where words are a poor substitute for seeing the thing — layout,
 flow, interaction feel. When you hit one, flag it and recommend a throwaway prototype as the way to answer it
 rather than arguing it out in prose.
+
+**Project-scope**: Memory: read `.agents/school/product.md`. When `.agents/decisions/README.md` exists, run `dg-skills adr relevant <files> --json` and read only the listed decisions. Never read `docs/adr`; it is for people. Add new learnings as `- [YYYY-MM-DD] description`. Max 100 lines per file; prune oldest when full.
