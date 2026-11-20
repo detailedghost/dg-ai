@@ -45,14 +45,6 @@ reads from it (moved by [0036](0036-one-layout-module.md)).
   change. The staged extension folder and `ssms` move too; the browser must
   load the extension once from its new folder.
 
-## Other options
-
-- **Keep `~/.dg`.** Simple, but not standard, and it mixes cache with keys.
-- **XDG only on Linux.** Three code paths for one idea, with macOS and
-  Windows still in a flat folder.
-- **One symlink from `~/.dg`.** The old folder splits into four roots, so no
-  single link can stand in for it.
-
 ## Diagram
 
 ```mermaid
@@ -64,6 +56,14 @@ flowchart LR
     V --> R
     I --> C["~/.dg/bin compat launchers"]
 ```
+
+## Other options
+
+- **Keep `~/.dg`.** Simple, but not standard, and it mixes cache with keys.
+- **XDG only on Linux.** Three code paths for one idea, with macOS and
+  Windows still in a flat folder.
+- **One symlink from `~/.dg`.** The old folder splits into four roots, so no
+  single link can stand in for it.
 
 ## References
 

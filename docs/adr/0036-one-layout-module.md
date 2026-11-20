@@ -55,15 +55,6 @@ and the empty `~/.dg`. It never removes a copy that holds data, leaves `dg-ai-*`
 - **Bad:** set-asides stay on disk until the user runs `dg-skills clean`.
 - **Neutral:** `~/.dg` may keep `bin`, `dg-ai-*` names and dotfiles after the move.
 
-## Other options
-
-- **Per-migrator triggers.** The status quo. Each migrator misses the starts it does not own, which caused both v1.42.0 bugs.
-- **A marker file (A1).** A cross-process cache can go stale. The fast path costs one `readdir` and needs no file.
-- **An import-time hook registry (S1).** The result depends on import order. Each `main` composes its hooks and passes them in.
-- **A `needs` key on owner entries (E1 B).** It breaks the `daemon` entry. Owner post-steps run after `ensureLayout` instead.
-- **A rollback command that copies every entry back (A6).** It restores a split that the next upgrade breaks again.
-  A manual rollback and `dg-skills clean` replace it (A6').
-
 ## Diagram
 
 ```mermaid
@@ -80,6 +71,15 @@ flowchart TD
     A -->|"stop refused or still running"| B
     R --> D
 ```
+
+## Other options
+
+- **Per-migrator triggers.** The status quo. Each migrator misses the starts it does not own, which caused both v1.42.0 bugs.
+- **A marker file (A1).** A cross-process cache can go stale. The fast path costs one `readdir` and needs no file.
+- **An import-time hook registry (S1).** The result depends on import order. Each `main` composes its hooks and passes them in.
+- **A `needs` key on owner entries (E1 B).** It breaks the `daemon` entry. Owner post-steps run after `ensureLayout` instead.
+- **A rollback command that copies every entry back (A6).** It restores a split that the next upgrade breaks again.
+  A manual rollback and `dg-skills clean` replace it (A6').
 
 ## References
 

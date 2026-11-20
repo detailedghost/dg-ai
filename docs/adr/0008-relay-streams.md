@@ -23,12 +23,6 @@ relay’s direct mode. Each chat has an independent stream pump.
 - A failing chat does not stop other stream pumps in `daemon/serve.ts`.
 - A cursor cannot recover events a relay no longer retains; gap events remain possible.
 
-## Other options
-
-- Direct Graph polling would couple the consumer to Graph credentials and polling behavior.
-- Inbound webhooks would require a reachable workstation endpoint.
-- One shared stream would couple reconnect and cursor state across chats.
-
 ## Diagram
 
 ```mermaid
@@ -41,6 +35,12 @@ sequenceDiagram
     Note over C,R: Disconnect or 45-second idle period
     C->>R: Reconnect with latest event ID
 ```
+
+## Other options
+
+- Direct Graph polling would couple the consumer to Graph credentials and polling behavior.
+- Inbound webhooks would require a reachable workstation endpoint.
+- One shared stream would couple reconnect and cursor state across chats.
 
 ## References
 

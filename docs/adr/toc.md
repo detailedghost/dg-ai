@@ -55,41 +55,7 @@ belong with their owning private tooling repository.
 
 <!-- adr:index -->
 
-## Installation
-
-- [0001 — Skills-only installation](0001-skills-only-install.md)
-- [0032 — Ship one pinned Bun runtime and one minified bundle](0032-shared-runtime-bundle.md) — Accepted:
-  three shims run one runtime and one code-split bundle in place of three compiled binaries.
-- [0025 — Keep dg files in the per-OS layout](0025-per-os-layout.md) — Accepted:
-  dg files live in the per-OS roots that `resolveDgPaths` returns, and install moves the old `~/.dg` into them.
-
-## Platform
-
-- [0002 — The daemon owns durable sessions and work](0002-daemon-hub.md)
-- [0003 — SQLite for daemon state; JSON for channel review](0003-storage-by-writer.md)
-- [0020 — One `dg` command and binary that supervises channel review](0020-one-dg-command.md) — Accepted:
-  amended so that channel review stays out of `dg`, `dg` is a fourth program name, and `dg autostart` mounts `dg-daemon autostart`.
-- [0043 — Run outside services under the daemon with a provisional service API](0043-outside-services.md) — Accepted:
-  `passEnv`, `stopTimeoutMs`, `grant`, `POST /service-api/v1/credentials`, and `dg-daemon start`, `stop` and `restart`.
-- [0049 — One job model for services and scheduled jobs](0049-jobs.md) — Accepted:
-  one noun, three mode keys, one `jobs` table and one launcher; services and scheduled jobs move at daemon start.
-
-## Security
-
-- [0004 — Require origin and capability checks on loopback](0004-loopback-pairing.md)
-- [0005 — Encrypt secret fields with a wrapped data key](0005-field-encryption.md)
-- [0006 — Separate credential storage and prefix-scoped service grants](0006-credential-store.md)
-- [0007 — Keep deployment values out of the public repository](0007-private-configuration.md)
-
-## Channel review
-
-- [0008 — Consume one resumable relay stream per chat](0008-relay-streams.md)
-- [0009 — Serialize runner jobs across chats and task kinds](0009-serial-work.md)
-- [0010 — Use an owner token and sender IDs for write-capable chat commands](0010-sender-gates.md)
-- [0011 — Parse commands only from the sender’s own text](0011-sender-text.md)
-- [0012 — Invoke runner CLIs with task-specific tool lists](0012-runner-boundaries.md)
-
-## Automation
+### Automation
 
 - [0013 — Pass error reports as data files](0013-untrusted-reports.md)
 - [0014 — Automation opens drafts and never merges them](0014-draft-prs.md)
@@ -97,67 +63,63 @@ belong with their owning private tooling repository.
 - [0016 — Run dependency work in bounded windows with a cooldown](0016-scheduled-dependencies.md)
 - [0017 — Isolate automation clones and guard recursive deletion](0017-clone-lifecycle.md)
 
-## Proposed changes
+### Channel review
 
+- [0008 — Consume one resumable relay stream per chat](0008-relay-streams.md)
+- [0009 — Serialize runner jobs across chats and task kinds](0009-serial-work.md)
+- [0010 — Use an owner token and sender IDs for write-capable chat commands](0010-sender-gates.md)
+- [0011 — Parse commands only from the sender’s own text](0011-sender-text.md)
+- [0012 — Invoke runner CLIs with task-specific tool lists](0012-runner-boundaries.md)
 - [0018 — Store channel-review state in the shared daemon database](0018-channel-review-state-in-daemon-db.md)
 - [0019 — Pass review origin and model evidence across runner attempts](0019-review-execution-context.md)
-- [0021 — Relay `--ext` scrape and plant through the daemon instead of Downloads](0021-proto-daemon-relay.md)
-- [0022 — Keep Proton filters in one declared file](0022-proton-filter-policy.md)
-- [0023 — Review finished work on a local page with a claimed verdict](0023-verify-local-review.md)
-- [0024 — Host SMS provider commands on dg-skills](0024-ssms-on-dg-skills.md)
+
+### Installation
+
+- [0001 — Skills-only install is a file copy](0001-skills-only-install.md)
+- [0025 — Keep dg files in the per-OS layout](0025-per-os-layout.md)
 - [0026 — Opt-in hooks that write tool settings](0026-opt-in-hooks.md)
 - [0027 — Offer pinned third-party plugins as an opt-in install](0027-optional-third-party-plugins.md)
+- [0032 — Ship one pinned Bun runtime and one minified bundle](0032-shared-runtime-bundle.md)
+- [0036 — Move the legacy `~/.dg` through one layout module](0036-one-layout-module.md)
+
+### Platform
+
+- [0002 — The daemon owns durable sessions and work](0002-daemon-hub.md)
+- [0003 — SQLite for daemon state; JSON for channel review](0003-storage-by-writer.md)
+- [0020 — One `dg` command and binary that supervises channel review](0020-one-dg-command.md)
+- [0043 — Run outside services under the daemon with a provisional service API](0043-outside-services.md)
+- [0049 — One job model for services and scheduled jobs](0049-jobs.md)
+
+### Security
+
+- [0004 — Require origin and capability checks on loopback](0004-loopback-pairing.md)
+- [0005 — Encrypt secret fields with a wrapped data key](0005-field-encryption.md)
+- [0006 — Separate credential storage and prefix-scoped service grants](0006-credential-store.md)
+- [0007 — Keep deployment values out of the public repository](0007-private-configuration.md)
+
+### Skills
+
+- [0021 — Relay `--ext` scrape and plant through the daemon instead of Downloads](0021-proto-daemon-relay.md)
+- [0022 — Keep Proton filters in one declared file](0022-proton-filter-policy.md)
+- [0023 — Review finished work round by round on a local board](0023-verify-local-review.md)
+- [0024 — Host SMS provider commands on dg-skills](0024-ssms-on-dg-skills.md)
+- [0028 — Run every skill locally and make the extension opt-in with `--ext`](0028-local-default-extension-opt-in.md)
+- [0029 — Accept the WSL remote-debugging port for the local demo player](0029-local-demo-player-wsl-debug-port.md)
+- [0030 — Share the tour UI and play demos in a local player](0030-shared-tour-ui-and-local-player.md)
+- [0031 — Serve the chat and board pages from the daemon on loopback](0031-loopback-pages.md)
 - [0033 — Gate verify on the layout of the accepted prototype](0033-accepted-prototype-layout-gate.md)
-- [0034 — Send images over the phone](0034-phone-image-messages.md) — Proposed:
-  kind 15 behind a default-off `files` setting; the receiver pulls the ciphertext over Magic Wormhole with a kind 25015 request.
-- [0036 — Move the legacy `~/.dg` through one layout module](0036-one-layout-module.md) — Proposed:
-  one `ensureLayout` at every program start moves the legacy home, and a manual rollback replaces the rollback command.
-
-## Skills
-
-- [0028 — Run every skill locally and make the extension opt-in with `--ext`](0028-local-default-extension-opt-in.md) — Accepted: skills run locally unless
-  the caller passes `--ext`, and a repo test enforces it. The `PENDING_LOCAL_MODE`
-  allowlist (`chat`, `overwatch`) is gone: ADR 0031 ends it. Amended 2026-11-19: `batch-open` and `launch` are now `pw batch-open` and `pw launch`, and the browser skill is gone (0050).
-- [0029 — Accept the WSL remote-debugging port for the local demo player](0029-local-demo-player-wsl-debug-port.md) — Accepted:
-  a default local `demo` on WSL opens an unauthenticated 127.0.0.1 debug port for the run.
-- [0030 — Share the tour UI and play demos in a local player](0030-shared-tour-ui-and-local-player.md) — Accepted:
-  the tour UI lives in `pkg/tour-ui` behind `TourHost`, and a Playwright-injected player hosts it for the local default. Superseded in part by ADR 0040.
-- [0031 — Serve the chat and board pages from the daemon on loopback](0031-loopback-pages.md) — Accepted:
-  `dg-daemon` serves `/chat` and `/board` behind a token and loopback-origin gate; the extension is the `--ext` path.
-- [0035 — Drive the real browser with `pw --ext` behind a per-call approval](0035-pw-ext-real-browser.md) — Proposed:
-  fixed verbs over the daemon relay; an extension popup asks for every call, and the CLI cannot approve. Amended 2026-11-05: passing `--ext` is the grant and the popup is gone.
-- [0037 — One browser relay for inbox, proto and pw-ext](0037-one-browser-relay.md) — Proposed:
-  one table-driven relay in the daemon and one dispatcher in the extension carry inbox, proto and pw-ext; frames stay byte-identical
-- [0038 — Reduce the extension to pairing and tab control](0038-extension-pairing-only.md) — Proposed:
-  the extension keeps a pairing popup and per-agent tab groups; offer and claim pairing replaces `POST /pair`; the daemon `/chat` page replaces the extension chat
-- [0039 — Pair the browser with no code and no human step](0039-zero-touch-pairing.md) — Proposed:
-  the extension keeps a link socket and adopts every session the daemon pushes; code pairing and token URLs are gone
-- [0040 — Record local demos with a Node recorder](0040-local-demo-recorder.md) — Accepted:
-  local `demo` always records an MP4 with a Node recorder; `$NAME` credentials, a setup handoff, and one browser finder; the start screen is gone.
-
-- [0041 — pw --ext: user-approved, time-boxed unmask](0041-pw-ext-unmask.md) — Accepted:
-  `pw --ext unmask` lets the human allow real email addresses and secret `fill` on one origin for 1 to 60 minutes; only a click in an extension-owned window grants. Amends 0035.
-
-- [0042 — thrash: review from a scratch checkout of the PR head](0042-thrash-review-checkout.md) — Accepted:
-  `thrash diff` builds a hardened scratch tree of the PR head (cwd, clone, api, none) and `thrash post` deletes it; a stack shares one clone.
-
-- [0044 — pw --ext: answer page dialogs with a shim in agent tabs](0044-pw-ext-dialogs.md) — Accepted:
-  a MAIN-world shim in agent tabs answers `alert`, `confirm` and `prompt` at once from a one-shot policy that `pw --ext dialog` sets; no new permission. Amends 0035.
-
-- [0045 — pw --ext: an "Agent is driving" banner with Stop, and a site allowlist per session](0045-pw-ext-driving-banner-and-sites.md) — Accepted:
-  each agent tab shows a banner with Stop, which ends the session's control; the first verb on a new site in a session asks the person to allow it. Amends 0035. Amended 2026-11-13: the toolbar popup has Stop too, and Web MCP is apart (0046). Amended 2026-11-17: the banner is a bottom-left pill, so it does not cover fixed top headers.
-
-- [0046 — Web MCP approvals apart from pw --ext browser control](0046-webmcp-approvals-apart-from-pw-ext.md) — Proposed:
-  the pw --ext site allowlist no longer gates Web MCP, and pw --ext Stop refuses that session's Web MCP calls but does not revoke grants; grants are keyed by session, site and tool, a session-class Allow can be remembered for 30 days with a signed record, and the toolbar popup revokes grants. Amends 0035 and 0045. Amended 2026-11-14: area grants under the key `area:<area>` (0047), and `dg-agent mcp` uses the person's own covered tabs through `webmcp-tools` and `webmcp-call`, with no pw --ext session or agent tab group.
-
-- [0051 — pw --ext: read the network calls of an agent tab, shape first](0051-pw-ext-network.md) — Accepted:
-  a MAIN-world hook in agent tabs records `fetch` and XHR calls; `pw --ext network` shows their shape with no values, and `--values` shows masked values after one Allow per site and session. Amends 0044. Amended 2026-11-13: after that Allow the hook keeps same-origin sign-in headers sealed for `fetch --auth page` and `credential save`, which stores values unseen through a daemon-only frame; adds the `cookies` permission.
-
-- [0047 — Web MCP area approval class](0047-webmcp-area-approval-class.md) — Proposed:
-  tools of one area share one grant per session and site under the key `area:<area>`; mail list and search are the `mail` area, and message bodies are the `mail-body` area. Amends 0046.
-
-- [0048 — Outlook mail Web MCP tools over OWA service calls](0048-outlook-mail-webmcp-tools.md) — Proposed:
-  the Outlook built-in ships ten tools that call `service.svc` from the signed-in page with the headers of the tab's own account endpoint; list and search mask subject and preview; write tools report each id apart; the tools are an extra path next to full pw --ext control of Outlook pages.
-
-- [0050 — Fold browser skill into pw](0050-fold-browser-skill-into-pw.md) — Accepted:
-  `batch-open` and `launch` are pw verbs routed before the `--ext` relay; the top-level commands and the browser skill are gone with no aliases, and a skills-only install prunes a stale dg `browser` skill. Amends 0028.
+- [0034 — Send images over the phone as encrypted files](0034-phone-image-messages.md)
+- [0035 — Drive the real browser with `pw --ext` behind a per-call approval](0035-pw-ext-real-browser.md)
+- [0037 — One browser relay for inbox, proto and pw-ext](0037-one-browser-relay.md)
+- [0038 — Reduce the extension to pairing and tab control](0038-extension-pairing-only.md)
+- [0039 — Pair the browser with no code and no human step](0039-zero-touch-pairing.md)
+- [0040 — Record local demos with a Node recorder](0040-local-demo-recorder.md)
+- [0041 — pw --ext: user-approved, time-boxed unmask](0041-pw-ext-unmask.md)
+- [0042 — thrash: review from a scratch checkout of the PR head](0042-thrash-review-checkout.md)
+- [0044 — pw --ext: answer page dialogs with a shim in agent tabs](0044-pw-ext-dialogs.md)
+- [0045 — pw --ext: an "Agent is driving" banner with Stop, and a site allowlist per session](0045-pw-ext-driving-banner-and-sites.md)
+- [0046 — Web MCP approvals apart from pw --ext browser control](0046-webmcp-approvals-apart-from-pw-ext.md)
+- [0047 — Web MCP area approval class](0047-webmcp-area-approval-class.md)
+- [0048 — Outlook mail Web MCP tools over OWA service calls](0048-outlook-mail-webmcp-tools.md)
+- [0050 — Fold browser skill into pw](0050-fold-browser-skill-into-pw.md)
+- [0051 — pw --ext: read the network calls of an agent tab, shape first](0051-pw-ext-network.md)

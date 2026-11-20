@@ -22,11 +22,6 @@ time, before terminating a leftover runner and cleaning abandoned work.
 - A long review delays work from every chat.
 - Recovery and cleanup need persisted job state; the queue itself is not a durable broker.
 
-## Other options
-
-- A queue per chat would still allow conflicting runners on one machine.
-- A worker pool would require stronger isolation of runner accounts and clone operations.
-
 ## Diagram
 
 ```mermaid
@@ -37,6 +32,11 @@ flowchart LR
     R --> S["current and handled state"]
     S --> C["restart recovery"]
 ```
+
+## Other options
+
+- A queue per chat would still allow conflicting runners on one machine.
+- A worker pool would require stronger isolation of runner accounts and clone operations.
 
 ## References
 

@@ -23,11 +23,6 @@ before the poller decides.
 - Polling adds latency and requires cursor and rate-limit handling.
 - A provider’s regression signal affects whether an old issue triggers again; the adapter must preserve its meaning.
 
-## Other options
-
-- Inbound tracker webhooks would need another reachable endpoint.
-- One hard-coded provider would mix provider response shapes into automation policy.
-
 ## Diagram
 
 ```mermaid
@@ -45,6 +40,11 @@ sequenceDiagram
         P->>F: Hand off issue
     end
 ```
+
+## Other options
+
+- Inbound tracker webhooks would need another reachable endpoint.
+- One hard-coded provider would mix provider response shapes into automation policy.
 
 ## References
 

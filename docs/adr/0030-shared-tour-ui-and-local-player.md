@@ -43,14 +43,6 @@ implementation.
   then records without voice and says why.
 - **Neutral:** without `ffmpeg`, the sidecar WAV stays beside the video.
 
-## Other options
-
-- **Duplicate the overlay in the CLI.** Two UIs drift apart.
-- **Inject the extension content script.** It needs extension APIs that a plain
-  Playwright page lacks.
-- **Run Kokoro in Bun through `onnxruntime-node`.** It adds a 208 MB native
-  download.
-
 ## Diagram
 
 ```mermaid
@@ -66,6 +58,14 @@ sequenceDiagram
     B->>P: write choice.json and clips
     P->>P: write result.json
 ```
+
+## Other options
+
+- **Duplicate the overlay in the CLI.** Two UIs drift apart.
+- **Inject the extension content script.** It needs extension APIs that a plain
+  Playwright page lacks.
+- **Run Kokoro in Bun through `onnxruntime-node`.** It adds a 208 MB native
+  download.
 
 ## References
 

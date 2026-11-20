@@ -80,14 +80,6 @@ leaves the tree to the TTL.
 - **Neutral:** the clone helpers in `pkg/channel-review` (`address.ts`, `automation/repo-job.ts`) are not hoisted. They clone a branch. This code
   fetches a head SHA into a detached tree and needs a deadline and a worktree mode. Hoist a shared helper when a third caller appears.
 
-## Other options
-
-- **Review from the diff only.** The reviewer cannot check what the diff does not show.
-- **Read the working tree of the cwd.** It can hold another branch or uncommitted work.
-- **`git worktree add` in the cwd repository.** It writes to the worktree list and the refs of the cwd repository.
-- **Clone with `runShell`.** It has no process-group kill and no explicit environment, so a stalled clone or a hostile hook can outlive the review.
-- **One clone for each PR in a stack.** It repeats the network cost for one repository.
-
 ## Diagram
 
 ```mermaid
@@ -104,6 +96,14 @@ flowchart LR
     P --> K["thrash compile: review file repo"]
     K --> T["thrash post: delete tree"]
 ```
+
+## Other options
+
+- **Review from the diff only.** The reviewer cannot check what the diff does not show.
+- **Read the working tree of the cwd.** It can hold another branch or uncommitted work.
+- **`git worktree add` in the cwd repository.** It writes to the worktree list and the refs of the cwd repository.
+- **Clone with `runShell`.** It has no process-group kill and no explicit environment, so a stalled clone or a hostile hook can outlive the review.
+- **One clone for each PR in a stack.** It repeats the network cost for one repository.
 
 ## References
 

@@ -24,12 +24,6 @@ commit `d764653`.
 - Grant reads cannot write credentials, and denied names do not reveal whether the name exists.
 - CLI management commands never print credential values; internal authorized reads necessarily return values to the consumer.
 
-## Other options
-
-- A credentials table in the chat database would share its backup and data-key boundary.
-- Environment variables alone do not provide encrypted persistence or scoped read grants.
-- One keychain item per service credential would bypass the shared store and grant policy.
-
 ## Diagram
 
 ```mermaid
@@ -44,6 +38,12 @@ sequenceDiagram
     DB-->>D: Decrypted value or uniform refusal
     D-->>S: Authorized result
 ```
+
+## Other options
+
+- A credentials table in the chat database would share its backup and data-key boundary.
+- Environment variables alone do not provide encrypted persistence or scoped read grants.
+- One keychain item per service credential would bypass the shared store and grant policy.
 
 ## References
 

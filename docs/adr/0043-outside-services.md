@@ -37,15 +37,6 @@ A service declares `grant`, `passEnv` and `stopTimeoutMs` (default 5000, maximum
 - **Neutral:** `Origin: null` passes the browser gate, as on `/cli`. The grant token is the control.
 - **Neutral:** [ADR 0020](0020-one-dg-command.md) stays as it is, and ADRs 0008 to 0019 keep their status.
 
-## Other options
-
-- **A socket transport now.** The route needs only `fetch`. A later transport arrives as a new environment key.
-- **A client library.** It forces a dg dependency on a service in any language.
-- **A grant mint at spawn.** It gives each launch a new token and hides a missing grant until the service runs. The user mints the grant once instead.
-- **A token value in the environment.** A child process and a crash report can leak it. The environment holds a file path.
-- **An owner-gated shutdown route.** It adds a network route that stops the daemon. A signal needs no route.
-- **A force signal that the daemon handles.** A hung daemon cannot handle it. The CLI kills the process trees itself.
-
 ## Diagram
 
 ```mermaid
@@ -63,6 +54,15 @@ sequenceDiagram
     R-->>O: JSON, or one denial text
     S->>O: SIGTERM, wait stopTimeoutMs, then kill the group
 ```
+
+## Other options
+
+- **A socket transport now.** The route needs only `fetch`. A later transport arrives as a new environment key.
+- **A client library.** It forces a dg dependency on a service in any language.
+- **A grant mint at spawn.** It gives each launch a new token and hides a missing grant until the service runs. The user mints the grant once instead.
+- **A token value in the environment.** A child process and a crash report can leak it. The environment holds a file path.
+- **An owner-gated shutdown route.** It adds a network route that stops the daemon. A signal needs no route.
+- **A force signal that the daemon handles.** A hung daemon cannot handle it. The CLI kills the process trees itself.
 
 ## References
 

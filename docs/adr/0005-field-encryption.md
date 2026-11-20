@@ -24,12 +24,6 @@ so full-text search works.
 - The key-file fallback relies on filesystem permissions rather than a keychain unlock.
 - Memory entries need the same care as other unencrypted local notes; see `pkg/dg-agent/src/memory/store.ts`.
 
-## Other options
-
-- Whole-file encryption is unavailable through this SQLite binding.
-- A keychain entry per field would make normal queue reads depend on many keychain operations.
-- Plain-text chat and asset fields would expose stored session content.
-
 ## Diagram
 
 ```mermaid
@@ -39,6 +33,12 @@ flowchart LR
     A["domain, session, row, version"] -->|"AAD"| C
     C --> F["ciphertext, IV, tag"]
 ```
+
+## Other options
+
+- Whole-file encryption is unavailable through this SQLite binding.
+- A keychain entry per field would make normal queue reads depend on many keychain operations.
+- Plain-text chat and asset fields would expose stored session content.
 
 ## References
 

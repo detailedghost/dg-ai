@@ -23,12 +23,6 @@ command gate, not a substitute for sender identity.
 - Operators must maintain the private sender allowlist.
 - The shared `address.allowAnySender` option also widens emoji access; see `engine.ts`.
 
-## Other options
-
-- Trusting display names would allow ambiguous identities.
-- Fetching chat roles through Graph would introduce a second authorization service.
-- An owner token alone would let every reader of that token change configuration or address reviews.
-
 ## Diagram
 
 ```mermaid
@@ -41,6 +35,12 @@ flowchart TD
     S -->|"yes"| R
     S -->|"no"| E["CR-106 or CR-107"]
 ```
+
+## Other options
+
+- Trusting display names would allow ambiguous identities.
+- Fetching chat roles through Graph would introduce a second authorization service.
+- An owner token alone would let every reader of that token change configuration or address reviews.
 
 ## References
 

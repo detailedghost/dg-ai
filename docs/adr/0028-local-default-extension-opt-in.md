@@ -49,13 +49,6 @@ enforces three rules:
   bundle removes its names from the list.
 - **Neutral:** the extension never writes a marker without `--ext`.
 
-## Other options
-
-- **Fail `batch-open` without the extension.** The PR already exists, so a hard
-  failure only prints a URL that the caller prints anyway.
-- **Scan `process.argv` for `--ext`.** It also matches text such as
-  `dg-skills jot "--ext"`. The guard reads parsed options instead.
-
 ## Diagram
 
 ```mermaid
@@ -64,6 +57,13 @@ flowchart LR
     Q -- "no" --> P["plain tryOpen"]
     Q -- "yes" --> M["marker + extension"]
 ```
+
+## Other options
+
+- **Fail `batch-open` without the extension.** The PR already exists, so a hard
+  failure only prints a URL that the caller prints anyway.
+- **Scan `process.argv` for `--ext`.** It also matches text such as
+  `dg-skills jot "--ext"`. The guard reads parsed options instead.
 
 ## References
 

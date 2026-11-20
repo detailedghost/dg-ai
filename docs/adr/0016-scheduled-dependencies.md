@@ -23,11 +23,6 @@ serial queue. The draft PR watcher runs on a two-minute cadence and marks ready 
 - Missed windows wait until a later eligible window rather than creating a backlog.
 - The separately installed dependency skill must honor the requested cooldown and draft workflow.
 
-## Other options
-
-- Upgrading every package to the newest release would remove the package-age delay.
-- Automatic dependency merges would skip the human merge decision.
-
 ## Diagram
 
 ```mermaid
@@ -39,6 +34,11 @@ flowchart LR
     R --> D["draft PR"]
     D --> W["watch checks every two minutes"]
 ```
+
+## Other options
+
+- Upgrading every package to the newest release would remove the package-age delay.
+- Automatic dependency merges would skip the human merge decision.
 
 ## References
 

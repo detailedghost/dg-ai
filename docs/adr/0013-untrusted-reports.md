@@ -24,11 +24,6 @@ Notification text passes through bounded redaction.
 - This separation reduces prompt-injection exposure; it cannot prove that a model will ignore every embedded
   instruction. Notification links are appended separately from redacted text.
 
-## Other options
-
-- Including error text in the prompt would place attacker-controlled content in the prompt.
-- Environment variables would still mix large untrusted text into process inputs and could leak through diagnostics.
-
 ## Diagram
 
 ```mermaid
@@ -40,6 +35,11 @@ flowchart LR
     R --> C["finally: delete report"]
     R --> N["redact notification text"]
 ```
+
+## Other options
+
+- Including error text in the prompt would place attacker-controlled content in the prompt.
+- Environment variables would still mix large untrusted text into process inputs and could leak through diagnostics.
 
 ## References
 

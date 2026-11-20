@@ -235,20 +235,6 @@ conditions only:
   `network` there needs the new `area` approval (R-10), or it stays blocked.
   This ADR does not build `area`.
 
-## Other options
-
-- **`webRequest` / `declarativeNetRequest`.** No response body, not per tab
-  group, and host permissions for every site.
-- **`chrome.debugger` `Network` domain.** Complete, but a new install prompt
-  and a debugging bar on each attach.
-- **A static MAIN content script on all pages at `document_start`.** It sees
-  boot calls, but it would wrap `fetch` in the person's own tabs and cannot
-  know at once which tab is an agent tab.
-- **Shape computed in the worker from stored raw bodies.** The page would have
-  to send whole bodies to the worker on every read. The hook computes the key
-  structure at capture time and keeps only bounded text.
-- **A time-boxed values grant.** Rejected by Dante: ask once per session.
-
 ## Diagram
 
 ```mermaid
@@ -270,6 +256,20 @@ sequenceDiagram
     P-->>W: bounded values
     W-->>C: values through maskRaw and scrub
 ```
+
+## Other options
+
+- **`webRequest` / `declarativeNetRequest`.** No response body, not per tab
+  group, and host permissions for every site.
+- **`chrome.debugger` `Network` domain.** Complete, but a new install prompt
+  and a debugging bar on each attach.
+- **A static MAIN content script on all pages at `document_start`.** It sees
+  boot calls, but it would wrap `fetch` in the person's own tabs and cannot
+  know at once which tab is an agent tab.
+- **Shape computed in the worker from stored raw bodies.** The page would have
+  to send whole bodies to the worker on every read. The hook computes the key
+  structure at capture time and keeps only bounded text.
+- **A time-boxed values grant.** Rejected by Dante: ask once per session.
 
 ## References
 

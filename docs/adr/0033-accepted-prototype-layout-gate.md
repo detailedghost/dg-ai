@@ -63,16 +63,6 @@ board.
 - **Neutral:** the record in the sandbox is gitignored. Only the text copy in the
   spec bundle is committed.
 
-## Other options
-
-- **Compare pixels.** Seed data makes pixel diffs fail on every run.
-- **Record a CSS selector per control.** The build DOM differs from the prototype
-  DOM.
-- **Generate a Playwright test.** It adds a second browser path and a file to
-  maintain. The CLI diff already runs in `verify capture`.
-- **Put the fingerprint in `ACCEPTED.md`.** The CLI would have to parse prose. A
-  sibling JSON file keeps the page for people.
-
 ## Diagram
 
 ```mermaid
@@ -92,6 +82,16 @@ sequenceDiagram
     B->>V: verdict with layout ids
     V-->>H: ALL APPROVED when no row is unaccepted
 ```
+
+## Other options
+
+- **Compare pixels.** Seed data makes pixel diffs fail on every run.
+- **Record a CSS selector per control.** The build DOM differs from the prototype
+  DOM.
+- **Generate a Playwright test.** It adds a second browser path and a file to
+  maintain. The CLI diff already runs in `verify capture`.
+- **Put the fingerprint in `ACCEPTED.md`.** The CLI would have to parse prose. A
+  sibling JSON file keeps the page for people.
 
 ## References
 

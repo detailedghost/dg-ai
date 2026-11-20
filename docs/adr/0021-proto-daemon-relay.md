@@ -115,18 +115,6 @@ explicit:
   whether the tab has a pending relay request before it scrapes or plants, so
   the Firefox MV2 callback-only `chrome` namespace still receives a reply.
 
-## Other options
-
-- **Keep polling Downloads, add a page-readiness heartbeat file.** Still
-  requires a filesystem round trip through the browser process and still
-  surprises the user with a download; does not fix the "ask where to save"
-  failure mode.
-- **Bump the extension's version with this change.** The project's matched-set
-  version rule ties the extension, `dg-skills`, `dg-daemon`, and `dg-agent` to
-  one release version; this change does not touch that release process, so the
-  version was left unbumped and the mismatch window above is accepted rather
-  than forced into an out-of-band release.
-
 ## Diagram
 
 ```mermaid
@@ -149,6 +137,18 @@ sequenceDiagram
     end
     Daemon->>Cli: cli-proto-result
 ```
+
+## Other options
+
+- **Keep polling Downloads, add a page-readiness heartbeat file.** Still
+  requires a filesystem round trip through the browser process and still
+  surprises the user with a download; does not fix the "ask where to save"
+  failure mode.
+- **Bump the extension's version with this change.** The project's matched-set
+  version rule ties the extension, `dg-skills`, `dg-daemon`, and `dg-agent` to
+  one release version; this change does not touch that release process, so the
+  version was left unbumped and the mismatch window above is accepted rather
+  than forced into an out-of-band release.
 
 ## References
 

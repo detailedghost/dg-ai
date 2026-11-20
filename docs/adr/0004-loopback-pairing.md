@@ -25,12 +25,6 @@ constant time. Credential service grants use the narrower exception in [0006](00
 - Moving an unpacked extension can require `dg-daemon origin clear`.
 - Pairing codes are short-lived bootstrap credentials, while session tokens authorize subsequent requests.
 
-## Other options
-
-- Binding a LAN address with TLS would add remote access and certificate management.
-- A single static token would combine all sessions into one authority.
-- Local access without authentication would expose the service to local browser requests.
-
 ## Diagram
 
 ```mermaid
@@ -45,6 +39,12 @@ sequenceDiagram
     E->>D: /ws with session capability
     D-->>E: Authenticated connection and pin Origin
 ```
+
+## Other options
+
+- Binding a LAN address with TLS would add remote access and certificate management.
+- A single static token would combine all sessions into one authority.
+- Local access without authentication would expose the service to local browser requests.
 
 ## References
 

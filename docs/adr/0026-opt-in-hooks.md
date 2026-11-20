@@ -41,15 +41,6 @@ write and retries up to three times.
 - **Bad:** the writers depend on three settings formats that the tools own.
 - **Neutral:** a change applies in new sessions only.
 
-## Other options
-
-- **Enable hooks at plugin install.** The plugin would change settings the user
-  did not review.
-- **Ship shell scripts.** They need a shell on every platform and cannot share
-  the manifest.
-- **List `dg-hooks` in `opencode.json`.** opencode does not resolve a bare
-  package name from that list.
-
 ## Diagram
 
 ```mermaid
@@ -64,6 +55,15 @@ flowchart LR
     CO --> R
     OC --> R
 ```
+
+## Other options
+
+- **Enable hooks at plugin install.** The plugin would change settings the user
+  did not review.
+- **Ship shell scripts.** They need a shell on every platform and cannot share
+  the manifest.
+- **List `dg-hooks` in `opencode.json`.** opencode does not resolve a bare
+  package name from that list.
 
 ## References
 

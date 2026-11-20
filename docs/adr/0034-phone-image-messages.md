@@ -113,21 +113,6 @@ bullet above. Tailscale Personal is limited to non-commercial use, so it does no
 - **Bad:** only policy stops an agent that adds `--no-phi` by habit.
 - **Neutral:** `pkg/dg-agent/src/phone/db.ts` moves to schema version 5 when slice 2 lands.
 
-## Other options
-
-- **Blossom with kind 15 (chosen).** Standard shape and the smallest trust surface that works.
-  NIP-96 is not an option: it is marked unrecommended and deprecated in favor of Blossom.
-- **Inline in events.** Rejected. nos.lol caps a message at 131,072 bytes, and relay.damus.io and
-  relay.primal.net at 1,000,000. After base64 and two NIP-44 layers, one event carries about 40 KB of image
-  on nos.lol and about 300 KB on the others. Many screenshots exceed that. The format is not standard.
-  Relays are third-party stores, and a gift wrap is signed by a throwaway key, so NIP-09 deletion is impossible.
-- **Out of band.** Share the file through an approved channel and send a text note. Zero code. It stays the
-  fallback, and the work stops after slice 1 if the human chooses it.
-- **Tailscale sender-serves.** The sender serves the ciphertext on the tailnet. It needs no third-party
-  store, but it needs the sender online and both sides on one tailnet. Still open as the transport.
-- **Magic Wormhole (chosen 2026-11-04).** A direct, one-time transfer with no stored copy. It needs a second
-  tool, and a code exchange for each file, which the kind 25015 request carries. See the transport update.
-
 ## Diagram
 
 ```mermaid
@@ -145,6 +130,21 @@ sequenceDiagram
     B->>B: verify hashes, decrypt, check magic bytes
     B->>B: store [image] and file name
 ```
+
+## Other options
+
+- **Blossom with kind 15 (chosen).** Standard shape and the smallest trust surface that works.
+  NIP-96 is not an option: it is marked unrecommended and deprecated in favor of Blossom.
+- **Inline in events.** Rejected. nos.lol caps a message at 131,072 bytes, and relay.damus.io and
+  relay.primal.net at 1,000,000. After base64 and two NIP-44 layers, one event carries about 40 KB of image
+  on nos.lol and about 300 KB on the others. Many screenshots exceed that. The format is not standard.
+  Relays are third-party stores, and a gift wrap is signed by a throwaway key, so NIP-09 deletion is impossible.
+- **Out of band.** Share the file through an approved channel and send a text note. Zero code. It stays the
+  fallback, and the work stops after slice 1 if the human chooses it.
+- **Tailscale sender-serves.** The sender serves the ciphertext on the tailnet. It needs no third-party
+  store, but it needs the sender online and both sides on one tailnet. Still open as the transport.
+- **Magic Wormhole (chosen 2026-11-04).** A direct, one-time transfer with no stored copy. It needs a second
+  tool, and a code exchange for each file, which the kind 25015 request carries. See the transport update.
 
 ## References
 

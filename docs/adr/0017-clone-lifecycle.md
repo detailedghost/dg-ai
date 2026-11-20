@@ -23,11 +23,6 @@ sweeps. Normal job cleanup runs after the job.
 - Cloning costs time and disk space, and interrupted work depends on recovery cleanup.
 - The deletion check is a resolved-path containment guard, not a general filesystem sandbox.
 
-## Other options
-
-- Worktrees under a user checkout would couple automation cleanup to active development.
-- System temporary directories without ownership records would make ownership and restart sweeping harder to define.
-
 ## Diagram
 
 ```mermaid
@@ -40,6 +35,11 @@ flowchart TD
     G -->|"no"| N["refuse and log"]
     S["startup recovery sweep"] --> G
 ```
+
+## Other options
+
+- Worktrees under a user checkout would couple automation cleanup to active development.
+- System temporary directories without ownership records would make ownership and restart sweeping harder to define.
 
 ## References
 

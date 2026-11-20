@@ -23,11 +23,6 @@ updates are coalesced for one second; other state changes save immediately.
 - Channel-review checkpoints avoid database setup, but rewrite the state file.
 - An abrupt exit can replay the last second of event cursors; handled-message state provides a separate duplicate check.
 
-## Other options
-
-- JSON cannot provide the hub’s multi-statement claim transactions.
-- A second SQLite schema would add migration work for the single-owner channel checkpoint.
-
 ## Diagram
 
 ```mermaid
@@ -35,6 +30,11 @@ flowchart LR
     D["pkg/dg-daemon"] -->|"transaction"| SQL["daemon.db - SQLite"]
     C["pkg/channel-review"] -->|"atomic replace"| J["state per environment - JSON"]
 ```
+
+## Other options
+
+- JSON cannot provide the hub’s multi-statement claim transactions.
+- A second SQLite schema would add migration work for the single-owner channel checkpoint.
 
 ## References
 

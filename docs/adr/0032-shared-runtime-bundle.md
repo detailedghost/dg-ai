@@ -55,17 +55,6 @@ change a link.
 - **Neutral:** a compiled-binary install cannot find the new assets. Its owner
   runs `bootstrap.sh` once.
 
-## Other options
-
-- **Keep `--compile` and add minify.** It saves about 7 MB per binary and keeps
-  three runtimes.
-- **One compiled binary under three names.** It saves two runtimes, but startup
-  stays slow without lazy commands, and every release still needs a binary per
-  platform.
-- **Use the user's Bun.** The version drifts, and many machines have no Bun.
-- **Pointer text files in place of the `current` links.** A service unit could
-  not name a stable `dg.js` path.
-
 ## Diagram
 
 ```mermaid
@@ -92,6 +81,17 @@ sequenceDiagram
     I->>I: run staged dg.js dg-skills --version
     I->>I: rename staging, relink lib/current, write shims
 ```
+
+## Other options
+
+- **Keep `--compile` and add minify.** It saves about 7 MB per binary and keeps
+  three runtimes.
+- **One compiled binary under three names.** It saves two runtimes, but startup
+  stays slow without lazy commands, and every release still needs a binary per
+  platform.
+- **Use the user's Bun.** The version drifts, and many machines have no Bun.
+- **Pointer text files in place of the `current` links.** A service unit could
+  not name a stable `dg.js` path.
 
 ## References
 

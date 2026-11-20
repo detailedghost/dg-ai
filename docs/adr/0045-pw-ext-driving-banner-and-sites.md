@@ -60,14 +60,6 @@ The mailbox guard runs first and does not change.
   reconnects stays stopped. A new dg session has a new id.
 - **Neutral:** no settings page; the allowlist lives only for the session.
 
-## Other options
-
-- **A settings page with a standing allowlist.** More UI, and a standing list
-  outlives the task that needed it.
-- **A banner in the page MAIN world.** Page scripts could read and press it.
-- **Stop that only cancels the current verb.** The agent would retry at once;
-  the person asked for the session to end.
-
 ## Diagram
 
 ```mermaid
@@ -85,6 +77,14 @@ sequenceDiagram
     C->>W: next verb
     W-->>C: error: the person clicked Stop
 ```
+
+## Other options
+
+- **A settings page with a standing allowlist.** More UI, and a standing list
+  outlives the task that needed it.
+- **A banner in the page MAIN world.** Page scripts could read and press it.
+- **Stop that only cancels the current verb.** The agent would retry at once;
+  the person asked for the session to end.
 
 ## References
 

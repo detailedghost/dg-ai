@@ -22,11 +22,6 @@ context separately from command parsing.
 - Quotation handling depends on the relay’s HTML representation.
 - Readiness context remains available through the engine’s quoted-option handling.
 
-## Other options
-
-- Parsing all reply HTML would treat quoted requests as new instructions.
-- Discarding quotes everywhere would remove useful blocked-PR context.
-
 ## Diagram
 
 ```mermaid
@@ -38,6 +33,11 @@ flowchart LR
     P --> E["pkg/channel-review engine"]
     B --> E
 ```
+
+## Other options
+
+- Parsing all reply HTML would treat quoted requests as new instructions.
+- Discarding quotes everywhere would remove useful blocked-PR context.
 
 ## References
 

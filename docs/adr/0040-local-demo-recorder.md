@@ -42,13 +42,6 @@ This replaces the in-page player and start screen of [ADR 0030](0030-shared-tour
 - **Bad, breaking:** local output is an MP4, not a webm, and the default folder is `<cacheDir>/demos/`.
 - **Neutral:** `--video` stays accepted and has no effect in local mode.
 
-## Other options
-
-- **Keep the in-page player and patch the policy block.** A page script cannot beat a strict policy, and the REC badge and start screen stay.
-- **Record through the extension for every demo.** It needs the extension and a human gesture to start tab capture.
-- **Read secrets from a flag or a prompt in chat.** A flag lands in shell history, and a chat prompt puts the secret in the agent context.
-- **Keep a literal fill for setup logins.** The plan and its marker then hold the credential.
-
 ## Diagram
 
 ```mermaid
@@ -66,6 +59,13 @@ sequenceDiagram
     R->>R: encode MP4 and check with ffprobe
     R->>R: write result.json
 ```
+
+## Other options
+
+- **Keep the in-page player and patch the policy block.** A page script cannot beat a strict policy, and the REC badge and start screen stay.
+- **Record through the extension for every demo.** It needs the extension and a human gesture to start tab capture.
+- **Read secrets from a flag or a prompt in chat.** A flag lands in shell history, and a chat prompt puts the secret in the agent context.
+- **Keep a literal fill for setup logins.** The plan and its marker then hold the credential.
 
 ## References
 

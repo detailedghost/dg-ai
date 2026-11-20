@@ -45,15 +45,6 @@ Pairing needs no code and no human step. The extension keeps one link socket to 
 - **Neutral:** an extension older than this change cannot pair with a new daemon, and a new extension adopts nothing from an old daemon. Update the binaries and the extension together.
 - **Neutral:** `storage.local` still holds each pairing, so the risk that [ADR 0038](0038-extension-pairing-only.md) accepted for `<all_urls>` content scripts is unchanged. See `pkg/extension/lib/background/pairing-store.ts`.
 
-## Other options
-
-- **Keep the code and add a faster path.** Two ways to pair double the trust surface and the tests, and the code protects nothing against the same user.
-- **Ask the human to approve each session in the popup.** The prompt interrupts every agent start, and a same-user process can already read the owner token, so it adds friction and no safety.
-- **Pin the extension origin only.** A local program can fake the `Origin` header. The daemon id pin adds a check on the extension side for a process on a free port.
-- **Pin the first extension-scheme origin on Chrome.** Any installed extension that connected first got the pin and every token. The fixed manifest key removes that race.
-- **Keep the token URL and hide it.** A URL in shell output or history keeps the token. A one-time code that dies in 60 seconds does not.
-- **Poll the daemon over HTTP for new sessions.** The link socket already exists, and a push reaches the extension at once.
-
 ## Diagram
 
 ```mermaid
@@ -71,6 +62,15 @@ sequenceDiagram
     W->>D: connect the session with its token
     A-->>A: print the Paired line on stderr
 ```
+
+## Other options
+
+- **Keep the code and add a faster path.** Two ways to pair double the trust surface and the tests, and the code protects nothing against the same user.
+- **Ask the human to approve each session in the popup.** The prompt interrupts every agent start, and a same-user process can already read the owner token, so it adds friction and no safety.
+- **Pin the extension origin only.** A local program can fake the `Origin` header. The daemon id pin adds a check on the extension side for a process on a free port.
+- **Pin the first extension-scheme origin on Chrome.** Any installed extension that connected first got the pin and every token. The fixed manifest key removes that race.
+- **Keep the token URL and hide it.** A URL in shell output or history keeps the token. A one-time code that dies in 60 seconds does not.
+- **Poll the daemon over HTTP for new sessions.** The link socket already exists, and a push reaches the extension at once.
 
 ## References
 

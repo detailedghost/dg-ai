@@ -41,12 +41,6 @@ Authentication errors, cancellation, and write tasks do not trigger this retry.
 - Public attribution requires a coordinated user-owned helper and skill deployment.
 - Grok readiness checks use models and inspect --json without generating a review.
 
-## Other options
-
-- Inferring origin from the presence of a daemon would mislabel manual reviews.
-- Reporting the parent model as every reviewer would hide mixed-model work.
-- Retrying every runner error could repeat write tasks or hide authentication failures.
-
 ## Diagram
 
 ```mermaid
@@ -60,6 +54,12 @@ sequenceDiagram
     R-->>E: Result or usage limit
     E->>R: Optional fallback with remaining timeout and fresh context
 ```
+
+## Other options
+
+- Inferring origin from the presence of a daemon would mislabel manual reviews.
+- Reporting the parent model as every reviewer would hide mixed-model work.
+- Retrying every runner error could repeat write tasks or hide authentication failures.
 
 ## References
 

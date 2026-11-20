@@ -22,11 +22,6 @@ status shows the names of set variables and whether they are available. It never
 - Operators must set private values apart from the package install.
 - Redaction lowers the risk of a leak. It does not allow logging private data.
 
-## Other options
-
-- A committed deployment config would publish IDs. It would also tie releases to one install.
-- A built-in private default would point a fresh install at another deployment’s service.
-
 ## Diagram
 
 ```mermaid
@@ -37,6 +32,11 @@ flowchart LR
     C --> R
     R --> O["status: names and availability only"]
 ```
+
+## Other options
+
+- A committed deployment config would publish IDs. It would also tie releases to one install.
+- A built-in private default would point a fresh install at another deployment’s service.
 
 ## References
 

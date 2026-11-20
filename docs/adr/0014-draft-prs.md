@@ -22,11 +22,6 @@ implementation waits five minutes before marking ready. A person remains respons
 - A ready PR does not mean a person approved it, and the no-checks grace period does not supply test evidence.
 - Failed or timed-out CI causes notification and ends that watch; it does not authorize a merge.
 
-## Other options
-
-- Auto-merge on green would replace human review with CI status.
-- Opening error fixes as ready immediately would skip the draft handoff.
-
 ## Diagram
 
 ```mermaid
@@ -37,6 +32,11 @@ flowchart LR
     W -->|"failure or timeout"| N["notify owner"]
     R --> H["human merge decision"]
 ```
+
+## Other options
+
+- Auto-merge on green would replace human review with CI status.
+- Opening error fixes as ready immediately would skip the draft handoff.
 
 ## References
 

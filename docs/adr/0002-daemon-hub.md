@@ -22,12 +22,6 @@ sibling daemon binary. Channel review remains a separate process that can run as
 - A daemon failure interrupts all attached sessions until it restarts.
 - Service recovery and browser reconnection have separate lifecycles in `services/supervisor.ts` and `server/connection.ts`.
 
-## Other options
-
-- An extension-owned queue would depend on service-worker lifetime.
-- Direct agent-to-extension messages would require each short-lived client to recover work.
-- Running channel review in the hub would couple its runner failures to chat sessions.
-
 ## Diagram
 
 ```mermaid
@@ -37,6 +31,12 @@ flowchart LR
     D --> DB["daemon.db"]
     D -->|"supervised process"| C["pkg/channel-review"]
 ```
+
+## Other options
+
+- An extension-owned queue would depend on service-worker lifetime.
+- Direct agent-to-extension messages would require each short-lived client to recover work.
+- Running channel review in the hub would couple its runner failures to chat sessions.
 
 ## References
 

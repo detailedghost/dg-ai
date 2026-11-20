@@ -49,13 +49,6 @@ local process from attaching to the port.
 - **Neutral:** [the demo skill](../../plugins/dg/skills/demo/SKILL.md) and
   [the install guide](../install.md) state the port and the opt-out.
 
-## Other options
-
-- **Default to headless Chromium inside WSL.** It opens no Windows port, but the
-  demo no longer shows the browser the user works in.
-- **Authenticate the port.** Chrome offers no authentication for the
-  remote-debugging port.
-
 ## Diagram
 
 ```mermaid
@@ -66,6 +59,13 @@ flowchart LR
     P --> B["bridge: main frame on a plan origin only"]
     H --> B
 ```
+
+## Other options
+
+- **Default to headless Chromium inside WSL.** It opens no Windows port, but the
+  demo no longer shows the browser the user works in.
+- **Authenticate the port.** Chrome offers no authentication for the
+  remote-debugging port.
 
 ## References
 

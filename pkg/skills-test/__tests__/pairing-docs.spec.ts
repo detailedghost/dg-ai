@@ -3,20 +3,14 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { ForwardOnlyVersionError } from "../../common/src/node/sqlite";
 import { PW_EXT_MIN_EXTENSION_VERSION } from "../../common/src/pw-ext-format";
+import { HUMAN_SECTIONS } from "../../skills-cli/src/adr/templates";
 import { REPO_ROOT, cells, readRepoFile, section } from "./test-support";
 
 const ADR_DIR = join(REPO_ROOT, "docs", "adr");
 const ADR_0038 = "0038-extension-pairing-only.md";
 const ADR_0039 = "0039-zero-touch-pairing.md";
 const UPGRADE_HEADING = "Upgrading from a release without the pairing popup";
-const ADR_HEADINGS = [
-	"Context",
-	"Decision",
-	"Consequences",
-	"Alternatives considered",
-	"Diagrams",
-	"References",
-];
+const ADR_HEADINGS = [...HUMAN_SECTIONS, "References"];
 
 function readAdr(name: string): string {
 	const path = join(ADR_DIR, name);
@@ -135,11 +129,10 @@ describe("ADR 0038 extension-pairing-only", () => {
 	const adr = readAdr(ADR_0038);
 
 	test("follows the template headings in order and stays Proposed", () => {
-		expect(adr).toMatch(/^# 0038 — .+/m);
+		expect(adr).toMatch(/^# (?!\d{4} )(.+)/m);
 		expect(adr).toMatch(/^Status: Proposed$/m);
 		expect(adr).toMatch(/^Date: \d{4}-\d{2}-\d{2}$/m);
-		const template = readAdr("template.md");
-		expect(headingsOf(template, 2)).toEqual(ADR_HEADINGS);
+		expect(adr).toMatch(/^Topic: .+$/m);
 		expect(headingsOf(adr, 2)).toEqual(ADR_HEADINGS);
 	});
 
@@ -164,10 +157,10 @@ describe("ADR 0038 extension-pairing-only", () => {
 			"pkg/dg-daemon",
 			"pkg/dg-agent",
 		]) {
-			expect(sectionBody(adr, "Diagrams")).toContain(participant);
+			expect(sectionBody(adr, "Diagram")).toContain(participant);
 		}
 		expect(sectionBody(adr, "Consequences")).toMatch(/Not done/);
-		expect(sectionBody(adr, "Alternatives considered").length).toBeGreaterThan(
+		expect(sectionBody(adr, "Other options").length).toBeGreaterThan(
 			200,
 		);
 	});
@@ -185,9 +178,10 @@ describe("ADR 0039 zero-touch-pairing", () => {
 	const adr = readAdr(ADR_0039);
 
 	test("follows the template headings in order and carries a status", () => {
-		expect(adr).toMatch(/^# 0039 — .+/m);
+		expect(adr).toMatch(/^# (?!\d{4} )(.+)/m);
 		expect(adr).toMatch(/^Status: (Proposed|Accepted)$/m);
 		expect(adr).toMatch(/^Date: \d{4}-\d{2}-\d{2}$/m);
+		expect(adr).toMatch(/^Topic: .+$/m);
 		expect(headingsOf(adr, 2)).toEqual(ADR_HEADINGS);
 	});
 
@@ -207,12 +201,12 @@ describe("ADR 0039 zero-touch-pairing", () => {
 		expect(sectionBody(adr, "Consequences")).toMatch(/same user/);
 		expect(sectionBody(adr, "Consequences")).toMatch(/proxy that copies the live daemon/);
 		expect(sectionBody(adr, "Decision")).toMatch(/POST \/pair\/offer/);
-		expect(sectionBody(adr, "Alternatives considered").length).toBeGreaterThan(200);
+		expect(sectionBody(adr, "Other options").length).toBeGreaterThan(200);
 	});
 
 	test("the diagram is one sequence diagram with the three participants", () => {
 		expect(adr.match(/```mermaid/g)?.length).toBe(1);
-		const diagram = sectionBody(adr, "Diagrams");
+		const diagram = sectionBody(adr, "Diagram");
 		expect(diagram).toContain("sequenceDiagram");
 		for (const participant of ["pkg/dg-agent", "pkg/dg-daemon", "pkg/extension"]) {
 			expect(diagram).toContain(participant);
@@ -261,10 +255,10 @@ describe("ADR index and amendments", () => {
 		}
 	});
 
-	test("0004 stays Accepted in the file and in toc.md", () => {
-		expect(readAdr(adrFileFor("0004"))).toMatch(/^Status: Accepted$/m);
-		const row = toc.split("\n").find((l) => l.includes("0004-")) ?? "";
-		expect(row).not.toMatch(/Superseded/i);
+	test("0004 stays Accepted in the file and is not marked Superseded", () => {
+		const text = readAdr(adrFileFor("0004"));
+		expect(text).toMatch(/^Status: Accepted$/m);
+		expect(text).not.toMatch(/^Status: .*Superseded/m);
 	});
 
 	const amended: Array<[string, RegExp[]]> = [

@@ -60,13 +60,6 @@ read a per-feature table that lives in `pkg/common`.
 - **Neutral:** Extension handlers change signature. Each takes one object instead
   of the three separate handler options in `pkg/extension/lib/background/chat.ts`.
 
-## Other options
-
-- **Per-feature folders across packages.** Each package builds on its own, so
-  one table cannot span them.
-- **Unify refusal strings now.** This breaks D2 and the byte-identical frames.
-- **Keep three relays and fix the drift by hand.** The copies drift again.
-
 ## Diagram
 
 ```mermaid
@@ -84,6 +77,13 @@ sequenceDiagram
     D->>D: settled
     D-->>S: cli-*-result
 ```
+
+## Other options
+
+- **Per-feature folders across packages.** Each package builds on its own, so
+  one table cannot span them.
+- **Unify refusal strings now.** This breaks D2 and the byte-identical frames.
+- **Keep three relays and fix the drift by hand.** The copies drift again.
 
 ## References
 

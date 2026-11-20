@@ -64,15 +64,6 @@ verb at once.
   first verb that waits on such a page can stop at the 15 second deadline.
 - **Neutral:** `onbeforeunload` prompts are not handled.
 
-## Other options
-
-- **`chrome.debugger` with `Page.javascriptDialogOpening`.** It holds the real
-  dialog open until the agent answers. It needs the `debugger` permission, a
-  new install prompt, and the debugging bar on every attach.
-- **A static MAIN content script on all pages.** It would change `alert` in the
-  human's own tabs, and it cannot know at once which tab is an agent tab.
-- **`userScripts`.** Not per tab, and it needs a user toggle.
-
 ## Diagram
 
 ```mermaid
@@ -89,6 +80,15 @@ sequenceDiagram
     P-->>W: raw records
     W-->>C: masked "### Dialog" lines
 ```
+
+## Other options
+
+- **`chrome.debugger` with `Page.javascriptDialogOpening`.** It holds the real
+  dialog open until the agent answers. It needs the `debugger` permission, a
+  new install prompt, and the debugging bar on every attach.
+- **A static MAIN content script on all pages.** It would change `alert` in the
+  human's own tabs, and it cannot know at once which tab is an agent tab.
+- **`userScripts`.** Not per tab, and it needs a user toggle.
 
 ## References
 

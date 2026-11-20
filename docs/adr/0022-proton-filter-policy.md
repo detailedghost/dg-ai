@@ -43,12 +43,6 @@ The other filter commands edit only the declared file.
 - **Bad:** applying a new plan requires a new hash. Adding `--approve-delete` or `--pull` changes the hash.
 - **Neutral:** `filters.json` remains a redacted inventory. It is no longer an input to a Proton write.
 
-## Other options
-
-- **Keep writing from each command.** A confirm on extend, group, or apply could still skip the shared safety checks and the order diff.
-- **Treat `filters.json` as the source of truth.** The snapshot is redacted and truncated, so a rewrite could drop conditions.
-- **Apply rename proposals automatically.** A wrong suggestion would rename a live filter before anyone reviewed it.
-
 ## Diagram
 
 ```mermaid
@@ -59,6 +53,12 @@ flowchart LR
     Plan -->|"--apply hash"| Proton
     Apply["filters apply, extend, group, consolidate, route"] --> File
 ```
+
+## Other options
+
+- **Keep writing from each command.** A confirm on extend, group, or apply could still skip the shared safety checks and the order diff.
+- **Treat `filters.json` as the source of truth.** The snapshot is redacted and truncated, so a rewrite could drop conditions.
+- **Apply rename proposals automatically.** A wrong suggestion would rename a live filter before anyone reviewed it.
 
 ## References
 
