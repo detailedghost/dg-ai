@@ -41,13 +41,13 @@ Execute steps in order. Do not skip steps. Report progress after each.
     <!-- Any agent may add entries. Prune the oldest lines when the file passes 100 lines. -->
     ```
 - Create `.agents/paths.md` if not present — this is a repo-specific file/directory lookup table that agents read before exploring the codebase. See templates.md for the template. Populate it during Step 5 using detected project structure.
-- Ask once: "Check in `.agents/` instead of ignoring it?" If the answer is yes, skip the `.gitignore` entry below.
-- **Add `.agents/` to `.gitignore`** — local agent workspace, not project source:
-  - If `.gitignore` exists, append `.agents/` if not already present
-  - If `.gitignore` does not exist, create it with just `.agents/`
-  - Do NOT add if `.agents/` is already tracked (i.e. `git ls-files .agents/` returns results) — warn instead and skip
+- `.agents/` is tracked agent memory; scratch subfolders are ignored. Ask once: "Track `.agents/`? (recommended; keep it local only for private notes)". On "local", write `.agents/` to `.gitignore` and skip the next bullet.
+- **On "track", write the scratch list to `.gitignore`** (block in templates.md):
+  - No `.gitignore`: create it with the block.
+  - An `.agents/` or `.agents/*` line (plus its `!.agents/...` negations): replace that block with the scratch list. Never stack a second block.
+  - Otherwise append the scratch lines not already present.
 
-> **GATE:** All directories, stub files, paths.md, and `.gitignore` entry exist.
+> **GATE:** All directories, stub files, paths.md, and the `.gitignore` scratch list exist.
 
 ## Step 4 — Migrate Existing .agents/ Content
 
@@ -115,7 +115,9 @@ AGENTS.md is the primary authority. It carries conventions + routes to all conte
 
 After all seed commits are staged/committed:
 
-1. **Commit the backups.** `.agents/` is ignored, so force-add them: `git add -f .agents/references/*.md.bak && git commit -m "chore(agents): back up CLAUDE.md before seed"`.
+If `.agents/` stays local, skip this step: the backups stay on disk, untracked.
+
+1. **Commit the backups.** `git add .agents/references/*.md.bak && git commit -m "chore(agents): back up CLAUDE.md before seed"`.
 2. **Tag that commit** as `agent-seed/YYYY-MM-DD` (today's date). This preserves a reference to the old structure — the `.bak` files are recoverable via `git show agent-seed/YYYY-MM-DD:.agents/references/CLAUDE.md.bak`.
 3. **Remove all `.md.bak` files** from `.agents/references/` with `git rm -f` (e.g. `CLAUDE.md.bak`, `AGENTS.md.bak`).
 4. **Commit the removal** with message: `chore: remove seed backup files`

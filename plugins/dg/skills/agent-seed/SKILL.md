@@ -40,12 +40,13 @@ docs/
   spec/                     <- spec bundles (/dg:kick and /dg:pickup write here)
 ```
 
-A git tag `agent-seed/YYYY-MM-DD` is created on a commit that force-adds the original `.bak` backups, then the `.bak` files are removed in a follow-up commit. To recover the original CLAUDE.md: `git show agent-seed/<date>:.agents/references/CLAUDE.md.bak`
+A git tag `agent-seed/YYYY-MM-DD` is created on a commit that adds the original `.bak` backups, then the `.bak` files are removed in a follow-up commit. To recover the original CLAUDE.md: `git show agent-seed/<date>:.agents/references/CLAUDE.md.bak`
 
 ## Rules
 
 - **AGENTS.md routes, docs/ rules.** CLAUDE.md is `@AGENTS.md`. AGENTS.md holds traps and links. Style and review rules live once, in `docs/`.
 - Before you move text out of CLAUDE.md, AGENTS.md, or a doc, find the repo tests that read it, and keep their coverage.
+- `.agents/` is tracked agent memory; scratch subfolders are ignored (scratch list in templates.md).
 - Never leave an empty file or an empty folder under `.agents/`.
 - Write `docs/` and ADRs in simple English. Write `AGENTS.md` files and `.agents/` dense and terse.
 - Always backup CLAUDE.md (and AGENTS.md if it exists) before rewriting. Halt if backup fails. Backups are committed then removed (see Step 8 — tag preserves recovery path).

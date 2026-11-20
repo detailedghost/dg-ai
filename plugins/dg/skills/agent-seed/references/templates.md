@@ -33,8 +33,8 @@ traps. Code style lives in `docs/code_standards.md`. Never repeat it here.
 - Canonical rules: `docs/CONTRIBUTING.md`, `docs/code_standards.md`, `docs/code_review.md`.
 - `mise run <task>` only (`mise tasks` lists them).
 - <Trap: one terse line that stops a real mistake>
-- Decisions: human ADRs in `docs/adr/`, agent rules in `.agents/decisions/` linking the ADR (`/dg:adr`). Cite by number; never
-  relitigate.
+- Agents read `.agents/`: decisions, school, references, monolith, paths. `docs/adr` is human-only.
+- Decisions: `.agents/decisions/` (`/dg:adr`). Cite by number; never relitigate.
 - Style: `docs/` and ADRs simple English (short sentences, common words, active voice); `AGENTS.md` and `.agents/`
   dense, terse (fragments, precise terms, no filler).
 
@@ -105,13 +105,17 @@ topic, and link it from this table.
 
 ## .gitignore Entry
 
-Append this line to `.gitignore` (create the file if missing). `.agents/` is local agent workspace — not project source — and should be gitignored by default.
+`.agents/` is tracked agent memory; scratch subfolders are ignored. Write only this scratch list:
 
 ```
-.agents/
+.agents/verify/
+.agents/code-review/
+.agents/jot/
+.agents/clipboard/
+.agents/spec/**/roundtable/
 ```
 
-Only add once — check before appending. Skip entirely if `.agents/` is already tracked (`git ls-files .agents/` returns results); warn the user instead. If the user opts to check in `.agents/` at Step 3, remove this line (or add `!.agents/` override) before committing.
+Replace an `.agents/` or `.agents/*` block (and its `!.agents/...` negations) with this list. Never stack a second block. A repo that keeps `.agents/` local writes `.agents/` instead.
 
 ## .agents/paths.md Template
 

@@ -189,8 +189,8 @@ This is the file execute mode reads instead of the full planning history.
 
 ## Step 10 — Commit the bundle; print resume command
 
-- a. Commit unconditionally, the same way `/dg:kick` commits a parked bundle:
-  `git add -f .agents/spec/<NNN>_<slug>/ ':(exclude).agents/spec/<NNN>_<slug>/roundtable/' && git commit -m "chore(spec): plan <slug>"` (`-f` because `/dg:agent-seed` ignores `.agents/`). This is what
+- a. Commit every time, the same way `/dg:kick` commits a parked bundle:
+  `git add .agents/spec/<NNN>_<slug>/ ':(exclude).agents/spec/<NNN>_<slug>/roundtable/' && git commit -m "chore(spec): plan <slug>"`. If it refuses an ignored path, follow the `/dg:spec` SKILL.md fallback; never `-f`. With no commit, skip b and report that `-s` cannot resolve the bundle yet. This is what
   lets a bare `/dg:spec "<request>"` run be resolved cross-session — `/dg:spec -s`'s worktree-mode bundle
   lookup reads `$WORKTREE_ORIGIN`, which only sees committed `.agents/` state (see
   [execute.md](execute.md)'s worktree gotcha).

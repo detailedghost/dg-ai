@@ -108,6 +108,16 @@ skill (`references/templates.md` and `references/docs.md`).
 | `<pkg>/AGENTS.md` | under about 3.5K characters | stack, commands, short task templates, traps, "References (read on demand)" table |
 | `.github/copilot-instructions.md` | under 4,000 characters | the `.agents/` skip rule, a pointer to `docs/code_review.md`, and that `mise.toml` defines every check |
 
+Read-on-demand caps (agents load these lazily):
+
+| File | Cap |
+|---|---|
+| `.agents/decisions/NNNN-*.md` | 25 non-blank lines below the front matter |
+| `.agents/references/*.md` | 150 lines, then split by topic |
+| `.agents/school/*.md` | 100 lines |
+| `.agents/paths.md` | 50 lines |
+| `.agents/monolith.md` | about 6 KB, then split by domain (`/dg:monolith`) |
+
 Routing for text over budget:
 
 | Text | Destination |

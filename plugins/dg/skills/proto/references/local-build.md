@@ -2,7 +2,7 @@
 
 Default: **`.agents/prototype/<name>/`** in the project root.
 
-- On first use in a project, make sure `.agents/prototype/` is gitignored. Add the line to `.gitignore` (or `.agents/.gitignore` when the project keeps a nested one) if it is missing. Commit that gitignore change on its own. Do not sweep it into prototype scaffolding.
+- `.agents/` is tracked agent memory; prototype scratch is ignored and the `NOTES.md` answer stays tracked. On first use in a project, make sure `.gitignore` holds `.agents/prototype/*/*` and `!.agents/prototype/*/NOTES.md` (in a nested `.agents/.gitignore`: `prototype/*/*` and `!prototype/*/NOTES.md`). If it ignores all of `.agents/prototype/`, replace that line with these two. Commit that gitignore change on its own. Do not sweep it into prototype scaffolding.
 - Every prototype artifact lives under its own `<name>/` folder: the terminal app script, scratch files, the sentinels, and the `NOTES.md` that captures the question and later the answer.
 - **UI sub-shape A exception.** Variant components that must mount inside the app's routing tree live in the app's source, clearly marked as prototype. The `NOTES.md` and any standalone scratch still live under `.agents/prototype/<name>/`. The switcher component goes wherever shared UI lives in the project.
 

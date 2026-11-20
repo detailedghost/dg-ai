@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { die, say } from "../spec/shared";
-import { frontOf } from "../utils/frontmatter";
+import { frontOf, splitDocument } from "../utils/frontmatter";
 import { git, remoteDefaultBranch } from "../utils/git";
 import { indexTail, renderIndexes } from "./index-gen";
 import { gradeLimit, isLevel, LEVELS, parseLevel, type Level } from "./levels";
@@ -11,6 +11,7 @@ import { type AdrRecord, loadRecords, matchCovers, normalizePath, repoLevel } fr
 import { HUMAN_SECTIONS, TOC_MARKER } from "./templates";
 
 const MAX_GRADE_BYTES = 1_000_000;
+const MAX_DECISION_LINES = 25;
 
 const USAGE = "usage: dg-skills adr lint (--all | --changed [--base <ref>] | --grade <file|->) [--level <l>] [--json]";
 
@@ -168,6 +169,8 @@ function lintDecision(record: AdrRecord, text: string, context: Context): Findin
 	const pair = resolve(record.adrPath);
 	if (!linkTargets(text).some((target) => targetPath(target, record.decisionPath, context.root) === pair)) add("broken-link", `does not link its ADR ${ADR_DIR}/${record.key}.md`);
 	if ((context.decisionCount.get(record.number) ?? 0) > 1) add("duplicate-number", `number ${record.number} is used by more than one decision`);
+	const nonBlankLines = splitDocument(text).body.split("\n").filter((line) => line.trim() !== "").length;
+	if (nonBlankLines > MAX_DECISION_LINES) add("decision-too-long", `${nonBlankLines} non-blank lines exceed the ${MAX_DECISION_LINES}-line cap`);
 	found.push(...brokenLinks(record.decisionPath, text, context.root));
 	return found;
 }

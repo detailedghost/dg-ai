@@ -316,6 +316,35 @@ describe("adr lint pair rules", () => {
 		expect(run.exitCode).toBe(0);
 	});
 
+	test("decision-too-long: 25 non-blank lines below the front matter, link line included, pass", async () => {
+		const repo = await makeAdrRepo();
+		const rules = Array.from({ length: 24 }, (_, i) => `- Rule ${i + 1}.`).join("\n\n");
+		await writePair(repo, KEY, adrDoc(), decisionDoc({ body: rules }));
+		const { run, found } = await findings(repo);
+		expect(found).toEqual([]);
+		expect(run.exitCode).toBe(0);
+	});
+
+	test("decision-too-long: 26 non-blank lines fail with the count and the cap", async () => {
+		const repo = await makeAdrRepo();
+		const rules = Array.from({ length: 25 }, (_, i) => `- Rule ${i + 1}.`).join("\n");
+		await writePair(repo, KEY, adrDoc(), decisionDoc({ body: rules }));
+		const { run, found } = await findings(repo);
+		expect(run.exitCode).toBe(1);
+		expect(found).toEqual([
+			{ file: DECISION_FILE, rule: "decision-too-long", message: "26 non-blank lines exceed the 25-line cap" },
+		]);
+	});
+
+	test("decision-too-long: front matter lines do not count", async () => {
+		const repo = await makeAdrRepo();
+		const front = ["covers:", ...Array.from({ length: 10 }, (_, i) => `  - "src/${i}/**"`)].join("\n");
+		const rules = Array.from({ length: 24 }, (_, i) => `- Rule ${i + 1}.`).join("\n");
+		await writePair(repo, KEY, adrDoc(), decisionDoc({ front, body: rules }));
+		const { found } = await findings(repo);
+		expect(found).toEqual([]);
+	});
+
 	test("broken-link: a decision that does not link its ADR fails", async () => {
 		const repo = await makeAdrRepo();
 		await writePair(repo, KEY, adrDoc(), decisionDoc({ link: "See the ADR." }));

@@ -117,3 +117,7 @@ This cuts against your whole purpose, so handle it explicitly rather than quietl
 One-way doors get this treatment unconditionally: public API shape, wire formats, data models,
 anything whose reversal carries real cost. Those are exactly the decisions you exist to surface, and
 surfacing one is not the same as making it.
+
+# Project context
+
+**Project-scope**: Read `.agents/school/engineering.md` (if present). When `.agents/decisions/README.md` exists, run `dg-skills adr relevant <files you will touch> --json` and read only the listed decisions. Never load `docs/adr` as context; it is for people. Add new learnings as `- [YYYY-MM-DD] description`. Max 100 lines per file; prune oldest when full.
