@@ -3,14 +3,14 @@ feature: "Velora dg fixes"
 feature_snake_case: velora_dg_fixes
 date: "2026-11-20"
 version: "1.0"
-status: draft
+status: in-progress
 current_slice: 0
 pr_strategy: single
 slices:
   - id: 1
     name: "verify-saved-sign-in"
     depends_on: []
-    files: ["pkg/skills-cli/src/verify/**","pkg/skills-cli/__tests__/verify-*.spec.ts","plugins/dg/skills/verify/**","docs/verify.md"]
+    files: ["pkg/skills-cli/src/verify/**", "pkg/skills-cli/__tests__/verify-*.spec.ts", "plugins/dg/skills/verify/**", "docs/verify.md"]
     agents:
       primary: dg:js
       confidence: high
@@ -18,8 +18,8 @@ slices:
       qa: [dg:security, dg:qa-code]
   - id: 2
     name: "prototype-sign-in-and-timeout"
-    depends_on: [1]
-    files: ["pkg/skills-cli/src/prototype/**","pkg/skills-cli/__tests__/prototype-*.spec.ts","plugins/dg/skills/proto/references/local-ui.md","plugins/dg/skills/proto/references/local-formats.md","docs/demo-and-proto.md","pkg/skills-cli/src/completion/tree.json","plugins/dg/skills/proto/references/local-build.md","plugins/dg/skills/proto/assets/README.md","pkg/skills-test/__tests__/proto-skill.spec.ts"]
+    depends_on: [1, 4]
+    files: ["pkg/skills-cli/src/prototype/**", "pkg/skills-cli/__tests__/prototype-*.spec.ts", "plugins/dg/skills/proto/references/local-ui.md", "plugins/dg/skills/proto/references/local-formats.md", "docs/demo-and-proto.md", "pkg/skills-cli/src/completion/tree.json", "plugins/dg/skills/proto/references/local-build.md", "plugins/dg/skills/proto/assets/README.md", "pkg/skills-test/__tests__/proto-skill.spec.ts"]
     agents:
       primary: dg:js
       confidence: high
@@ -28,7 +28,7 @@ slices:
   - id: 3
     name: "thrash-nested-run"
     depends_on: []
-    files: ["plugins/dg/skills/thrash/SKILL.md","plugins/dg/skills/thrash/references/**","plugins/dg/skills/address/SKILL.md","plugins/dg/skills/address/references/workflow.md","plugins/dg/skills/review-loop/SKILL.md","pkg/skills-test/__tests__/thrash-pipeline-skill.spec.ts","pkg/skills-test/__tests__/thrash-nested-run.spec.ts"]
+    files: ["plugins/dg/skills/thrash/SKILL.md", "plugins/dg/skills/thrash/references/**", "plugins/dg/skills/address/SKILL.md", "plugins/dg/skills/address/references/workflow.md", "plugins/dg/skills/review-loop/SKILL.md", "pkg/skills-test/__tests__/thrash-pipeline-skill.spec.ts", "pkg/skills-test/__tests__/thrash-nested-run.spec.ts"]
     agents:
       primary: dg:lore
       confidence: high
@@ -36,8 +36,8 @@ slices:
       qa: [dg:reviewer]
   - id: 4
     name: "stat-archive-and-bg-cwd"
-    depends_on: [2]
-    files: ["pkg/skills-cli/src/stat/**","pkg/skills-cli/src/bg/jobs.ts","pkg/skills-cli/__tests__/stat-*.spec.ts","pkg/skills-cli/__tests__/bg-jobs.spec.ts","plugins/dg/skills/stat/**","plugins/dg/skills/bg/references/job-management.md","pkg/skills-cli/src/completion/tree.json"]
+    depends_on: []
+    files: ["pkg/skills-cli/src/stat/**", "pkg/skills-cli/src/bg/jobs.ts", "pkg/skills-cli/__tests__/stat-*.spec.ts", "pkg/skills-cli/__tests__/bg-jobs.spec.ts", "plugins/dg/skills/stat/**", "plugins/dg/skills/bg/references/job-management.md", "pkg/skills-cli/src/completion/tree.json"]
     agents:
       primary: dg:js
       confidence: high
@@ -46,7 +46,7 @@ slices:
   - id: 5
     name: "legacy-launcher-removal"
     depends_on: []
-    files: ["pkg/skills-cli/src/install/compat-launchers.ts","pkg/skills-cli/__tests__/compat-launchers.spec.ts","docs/install.md"]
+    files: ["pkg/skills-cli/src/install/compat-launchers.ts", "pkg/skills-cli/__tests__/compat-launchers.spec.ts", "docs/install.md"]
     agents:
       primary: dg:js
       confidence: high
@@ -55,12 +55,21 @@ slices:
   - id: 6
     name: "update-doctor-failures"
     depends_on: []
-    files: ["pkg/skills-cli/src/update/run.ts","pkg/skills-cli/src/doctor/runner.ts","pkg/skills-cli/__tests__/update.spec.ts","pkg/skills-cli/__tests__/doctor-runner.spec.ts"]
+    files: ["pkg/skills-cli/src/update/run.ts", "pkg/skills-cli/src/doctor/runner.ts", "pkg/skills-cli/__tests__/update.spec.ts", "pkg/skills-cli/__tests__/doctor-runner.spec.ts"]
     agents:
       primary: dg:js
       confidence: high
       complexity: low
       qa: [dg:qa-code]
+execution:
+  profile: balance
+permissions:
+  run_commands: true
+  git_push: true
+  gh_pr_create: true
+  auto_cleanup_worktree: true
+  slice_commits: true
+  housekeeping_commit: true
 ---
 
 # Velora dg fixes
@@ -224,6 +233,14 @@ Fix the dg 6.1.0 rough edges found during the Velora release. Verify and prototy
 ## Slice Summaries
 
 ## Agent Notes
+- (owner, 2026-11-20) R1: verify loads a saved pw state per role (`role.state`), loopback only. Seed checks and the cookie cap stay unchanged.
+- (owner, 2026-11-20) R2: `prototype wait` exits 124 on timeout and 75 on a skipped fingerprint.
+- (owner, 2026-11-20) R3: approve with a skipped fingerprint still records the pick and exits 75.
+- (owner, 2026-11-20) R4: thrash in a subagent is a doc rule only, with no new command.
+- (owner, 2026-11-20) R5: `stat archive`, with no dates.
+- (owner, 2026-11-20) R6: old ~/.dg/bin calls in skill copies dg does not install are out of scope, with a docs note.
+- (owner, 2026-11-20) R7: hand-written in-app bars get a doc rule plus a porting guide now.
+- (owner, 2026-11-20) Waves: slice 2 depends on [1, 4] and slice 4 has no dependency, so the build runs in two waves.
 
 ## Issues Remediation
 
