@@ -1,6 +1,8 @@
-# 0024 — SMS providers on dg-skills
+---
+covers: ["pkg/ssms/src/**", "pkg/skills-cli/src/commands/ssms.ts", "pkg/skills-cli/src/utils/cdp-harness.ts", "docs/ssms.md"]
+---
 
-ADR: [docs/adr/0024-ssms-on-dg-skills.md](../../docs/adr/0024-ssms-on-dg-skills.md)
+[ADR 0024](../../docs/adr/0024-ssms-on-dg-skills.md)
 
 - Command is `dg-skills ssms <provider> <verb>`. Do not add it to `dg-agent`.
 - Providers: `google` (Messages for Web via CDP), `signal` (`signal-cli` daemon JSON-RPC).

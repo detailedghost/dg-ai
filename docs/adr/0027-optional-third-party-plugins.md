@@ -1,7 +1,8 @@
-# 0027 — Offer pinned third-party plugins as an opt-in install
+# Offer pinned third-party plugins as an opt-in install
 
 Status: Proposed
 Date: 2026-11-03
+Topic: Installation
 
 ## Context
 
@@ -46,14 +47,7 @@ only when its `SKILL.md` hash matches a dg copy.
 - **Neutral:** the dg copies of `grill-me` and `wayfinder` stay, so two skills
   share a name outside Claude Code namespaces.
 
-## Alternatives considered
-
-- **Float on the upstream branch.** Upstream could change code with no review.
-- **Vendor the upstream skills.** dg would maintain them again.
-- **Install by default.** It adds prompt tokens for every user.
-- **Keep a second list in code.** It would drift from the marketplace.
-
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR
@@ -63,6 +57,13 @@ flowchart LR
     G --> D["skills-only dest"]
     B["scripts/bump-plugin-pin.ts"] --> M
 ```
+
+## Other options
+
+- **Float on the upstream branch.** Upstream could change code with no review.
+- **Vendor the upstream skills.** dg would maintain them again.
+- **Install by default.** It adds prompt tokens for every user.
+- **Keep a second list in code.** It would drift from the marketplace.
 
 ## References
 

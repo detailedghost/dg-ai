@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { ROUTES } from "../../dg/src/main";
 import { codeRegions, dgCommandForms, runDgHelp } from "./docs-help-kit";
-import { count, REPO_ROOT, readRepoFile } from "./test-support";
+import { ADR_SECTIONS, adrTitle, count, REPO_ROOT, readRepoFile, UNNUMBERED_TITLE } from "./test-support";
 
 const JOBS = "docs/jobs-and-services.md";
 const SKILL = "plugins/dg/skills/jobs/SKILL.md";
@@ -213,16 +213,17 @@ describe("the jobs record", () => {
 
 	test("exists with the template headings, a Date header and the Accepted status", () => {
 		expect(adr).not.toBe("");
-		expect(adr).toMatch(/^# 0049 — /m);
+		expect(adrTitle(adr)).toMatch(UNNUMBERED_TITLE);
 		expect(adr).toMatch(/^Status: Accepted$/m);
 		expect(adr).toMatch(/^Date: \d{4}-\d{2}-\d{2}$/m);
-		for (const h of ["Context", "Decision", "Consequences", "Alternatives considered", "Diagrams", "References"])
+		expect(adr).toMatch(/^Topic: Platform$/m);
+		for (const h of ADR_SECTIONS)
 			expect(adr).toMatch(new RegExp(`^## ${h}$`, "m"));
 	});
 
-	test("holds exactly one mermaid block, below the Diagrams heading", () => {
+	test("holds exactly one mermaid block, below the Diagram heading", () => {
 		expect(count(adr, "```mermaid")).toBe(1);
-		expect(heading(adr, "Diagrams")).toContain("```mermaid");
+		expect(heading(adr, "Diagram")).toContain("```mermaid");
 	});
 
 	test("holds each shared rule phrase", () => {
@@ -262,7 +263,8 @@ describe("record links", () => {
 		const at = entries.findIndex((l) => l.includes(`(${RECORD_FILE})`));
 		const after = entries.findIndex((l) => l.includes("(0043-outside-services.md)"));
 		expect(at).toBe(after + 1);
-		expect(entries[at]).toMatch(/^- \[0049 — .+\]\(0049-jobs\.md\) — Accepted:/);
+		expect(entries[at]).toMatch(/^- \[0049 — .+\]\(0049-jobs\.md\)$/);
+		expect(read(RECORD)).toMatch(/^Status: Accepted$/m);
 		for (const line of heading(toc, "Platform").split("\n")) expect([...line].length).toBeLessThanOrEqual(160);
 	});
 
@@ -270,8 +272,9 @@ describe("record links", () => {
 		const lines = read(ADR_0043).split("\n");
 		expect(lines).toContain("Status: Accepted");
 		const at = lines.findIndex((l) => l.startsWith("Date: "));
-		expect(lines[at + 1]).toStartWith("Amended 2026-11-18: ");
-		expect(lines[at + 2]).toMatch(
+		expect(lines[at + 1]).toMatch(/^Topic: /);
+		expect(lines[at + 2]).toStartWith("Amended 2026-11-18: ");
+		expect(lines[at + 3]).toMatch(
 			/^Amended \d{4}-\d{2}-\d{2}: the noun is now job; see \[ADR 0049\]\(0049-jobs\.md\)\.$/,
 		);
 	});

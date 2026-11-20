@@ -1,7 +1,8 @@
-# 0047 — Web MCP area approval class
+# Web MCP area approval class
 
 Status: Proposed
 Date: 2026-11-14
+Topic: Skills
 
 ## Context
 
@@ -40,17 +41,7 @@ revoke lists name the area.
 - **Neutral:** the `read` class has no tool left. It stays for a future tool
   that reads nothing private.
 
-## Alternatives considered
-
-- **An `area` field on the grant record.** It changes the HMAC payload, the
-  revoke messages and the popup parser for no gain over a key that cannot
-  collide with a `dg_` name.
-- **One mail area for list, search and read.** Dante rejected it on PR #208: a
-  list approval must not also open full bodies for 30 days.
-- **Keep list and search `read`.** R-10 rejects it: mail metadata is mail
-  content too.
-
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram
@@ -66,6 +57,16 @@ sequenceDiagram
     B->>P: Allow dg_outlook_read on live.com?
     P-->>B: Allow (grant area:mail-body)
 ```
+
+## Other options
+
+- **An `area` field on the grant record.** It changes the HMAC payload, the
+  revoke messages and the popup parser for no gain over a key that cannot
+  collide with a `dg_` name.
+- **One mail area for list, search and read.** Dante rejected it on PR #208: a
+  list approval must not also open full bodies for 30 days.
+- **Keep list and search `read`.** R-10 rejects it: mail metadata is mail
+  content too.
 
 ## References
 

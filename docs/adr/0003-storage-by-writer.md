@@ -1,7 +1,8 @@
-# 0003 — SQLite for daemon state; JSON for channel review
+# SQLite for daemon state; JSON for channel review
 
 Status: Accepted
 Date: 2026-10-16
+Topic: Platform
 Updated by [0018](0018-channel-review-state-in-daemon-db.md) (Proposed): channel review state moves to the shared daemon database.
 
 ## Context
@@ -22,18 +23,18 @@ updates are coalesced for one second; other state changes save immediately.
 - Channel-review checkpoints avoid database setup, but rewrite the state file.
 - An abrupt exit can replay the last second of event cursors; handled-message state provides a separate duplicate check.
 
-## Alternatives considered
-
-- JSON cannot provide the hub’s multi-statement claim transactions.
-- A second SQLite schema would add migration work for the single-owner channel checkpoint.
-
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR
     D["pkg/dg-daemon"] -->|"transaction"| SQL["daemon.db - SQLite"]
     C["pkg/channel-review"] -->|"atomic replace"| J["state per environment - JSON"]
 ```
+
+## Other options
+
+- JSON cannot provide the hub’s multi-statement claim transactions.
+- A second SQLite schema would add migration work for the single-owner channel checkpoint.
 
 ## References
 

@@ -1,7 +1,8 @@
-# 0046 — Web MCP approvals apart from pw --ext browser control
+# Web MCP approvals apart from pw --ext browser control
 
 Status: Proposed
 Date: 2026-11-13
+Topic: Skills
 
 ## Context
 
@@ -121,18 +122,7 @@ Consequences:
   script covers are not listed. Turning that on means a script run in every
   open tab.
 
-## Alternatives considered
-
-- **Keep the site allowlist as a second gate for Web MCP.** R-13 rejects it:
-  the two features must not depend on each other.
-- **Remember `each` tools too.** R-14 rejects it: send, delete and other
-  high-risk tools always ask.
-- **Store remembered grants unsigned.** Content scripts can write
-  `storage.local`, so an unsigned record could be forged.
-- **Sign the record with no nonce.** A content script could save a signed record
-  and write it back after a Revoke.
-
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR
@@ -147,6 +137,17 @@ flowchart LR
     P -->|Allow| R
     T["toolbar popup"] -->|Revoke| W
 ```
+
+## Other options
+
+- **Keep the site allowlist as a second gate for Web MCP.** R-13 rejects it:
+  the two features must not depend on each other.
+- **Remember `each` tools too.** R-14 rejects it: send, delete and other
+  high-risk tools always ask.
+- **Store remembered grants unsigned.** Content scripts can write
+  `storage.local`, so an unsigned record could be forged.
+- **Sign the record with no nonce.** A content script could save a signed record
+  and write it back after a Revoke.
 
 ## References
 

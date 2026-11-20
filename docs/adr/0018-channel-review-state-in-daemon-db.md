@@ -1,7 +1,8 @@
-# 0018 — Store channel-review state in the shared daemon database
+# Store channel-review state in the shared daemon database
 
 Status: Proposed
 Date: 2026-10-16
+Topic: Channel review
 Updates: [0003](0003-storage-by-writer.md) (the accepted JSON-state decision).
 
 ## Context
@@ -76,7 +77,7 @@ precedence. Status reads are read-only, do not create or migrate a database,
 and do not consume an import. State read failures produce a named status error
 and exit 1 rather than masquerading as empty state.
 
-## Restart semantics and tradeoffs
+## Consequences
 
 The move preserves current behavior: recovery prunes handled entries older than
 24 hours, marks surviving pending/running requests failed, reports CR-205, and
@@ -121,7 +122,7 @@ linked partial supersession to [0003](0003-storage-by-writer.md) for its
 channel-review JSON decision. Preserve that record’s historical Decision and
 its unrelated daemon storage decision.
 
-## Source evidence
+## Diagram
 
 ```mermaid
 flowchart LR
@@ -131,6 +132,12 @@ flowchart LR
     J["Legacy state per environment"] -->|"transactional import"| R
     D --> K["Existing crypto and credential lifecycle"]
 ```
+
+## Other options
+
+The record keeps one JSON snapshot instead of an indexed request table. It keeps a serial queue instead of a multi-worker queue. It adds no downgrade or export-back-to-JSON path.
+
+## Source evidence
 
 - [Shared opener](../../pkg/common/src/node/daemon-db.ts)
 - [Central schema and migration 12](../../pkg/common/src/node/daemon-schema.ts)

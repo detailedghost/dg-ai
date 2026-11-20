@@ -1,7 +1,8 @@
-# 0014 — Automation opens drafts and never merges them
+# Automation opens drafts and never merges them
 
 Status: Accepted
 Date: 2026-10-16
+Topic: Automation
 
 ## Context
 
@@ -21,12 +22,7 @@ implementation waits five minutes before marking ready. A person remains respons
 - A ready PR does not mean a person approved it, and the no-checks grace period does not supply test evidence.
 - Failed or timed-out CI causes notification and ends that watch; it does not authorize a merge.
 
-## Alternatives considered
-
-- Auto-merge on green would replace human review with CI status.
-- Opening error fixes as ready immediately would skip the draft handoff.
-
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR
@@ -36,6 +32,11 @@ flowchart LR
     W -->|"failure or timeout"| N["notify owner"]
     R --> H["human merge decision"]
 ```
+
+## Other options
+
+- Auto-merge on green would replace human review with CI status.
+- Opening error fixes as ready immediately would skip the draft handoff.
 
 ## References
 

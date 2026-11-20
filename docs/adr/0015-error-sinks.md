@@ -1,7 +1,8 @@
-# 0015 — Normalize error providers behind a polling interface
+# Normalize error providers behind a polling interface
 
 Status: Accepted
 Date: 2026-10-16
+Topic: Automation
 
 ## Context
 
@@ -22,12 +23,7 @@ before the poller decides.
 - Polling adds latency and requires cursor and rate-limit handling.
 - A provider’s regression signal affects whether an old issue triggers again; the adapter must preserve its meaning.
 
-## Alternatives considered
-
-- Inbound tracker webhooks would need another reachable endpoint.
-- One hard-coded provider would mix provider response shapes into automation policy.
-
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram
@@ -44,6 +40,11 @@ sequenceDiagram
         P->>F: Hand off issue
     end
 ```
+
+## Other options
+
+- Inbound tracker webhooks would need another reachable endpoint.
+- One hard-coded provider would mix provider response shapes into automation policy.
 
 ## References
 

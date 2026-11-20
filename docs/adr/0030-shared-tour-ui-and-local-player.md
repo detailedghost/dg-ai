@@ -1,7 +1,8 @@
-# 0030 — Share the tour UI and play demos in a local player
+# Share the tour UI and play demos in a local player
 
 Status: Accepted
 Date: 2026-11-02
+Topic: Skills
 
 Superseded in part by [ADR 0040](0040-local-demo-recorder.md).
 
@@ -42,15 +43,7 @@ implementation.
   then records without voice and says why.
 - **Neutral:** without `ffmpeg`, the sidecar WAV stays beside the video.
 
-## Alternatives considered
-
-- **Duplicate the overlay in the CLI.** Two UIs drift apart.
-- **Inject the extension content script.** It needs extension APIs that a plain
-  Playwright page lacks.
-- **Run Kokoro in Bun through `onnxruntime-node`.** It adds a 208 MB native
-  download.
-
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram
@@ -65,6 +58,14 @@ sequenceDiagram
     B->>P: write choice.json and clips
     P->>P: write result.json
 ```
+
+## Other options
+
+- **Duplicate the overlay in the CLI.** Two UIs drift apart.
+- **Inject the extension content script.** It needs extension APIs that a plain
+  Playwright page lacks.
+- **Run Kokoro in Bun through `onnxruntime-node`.** It adds a 208 MB native
+  download.
 
 ## References
 

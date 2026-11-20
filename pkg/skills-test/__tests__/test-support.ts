@@ -1,6 +1,15 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { HUMAN_SECTIONS } from "../../skills-cli/src/adr/templates";
+
+export const ADR_SECTIONS: readonly string[] = [...HUMAN_SECTIONS, "References"];
+
+export const UNNUMBERED_TITLE = /^(?!\d{4}\b)\S/;
+
+export function adrTitle(text: string): string {
+	return text.split("\n").find((line) => line.startsWith("# "))?.slice(2) ?? "";
+}
 
 const created: string[] = [];
 

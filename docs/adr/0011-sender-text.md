@@ -1,7 +1,8 @@
-# 0011 — Parse commands only from the sender’s own text
+# Parse commands only from the sender’s own text
 
 Status: Accepted
 Date: 2026-10-16
+Topic: Channel review
 
 ## Context
 
@@ -21,12 +22,7 @@ context separately from command parsing.
 - Quotation handling depends on the relay’s HTML representation.
 - Readiness context remains available through the engine’s quoted-option handling.
 
-## Alternatives considered
-
-- Parsing all reply HTML would treat quoted requests as new instructions.
-- Discarding quotes everywhere would remove useful blocked-PR context.
-
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR
@@ -37,6 +33,11 @@ flowchart LR
     P --> E["pkg/channel-review engine"]
     B --> E
 ```
+
+## Other options
+
+- Parsing all reply HTML would treat quoted requests as new instructions.
+- Discarding quotes everywhere would remove useful blocked-PR context.
 
 ## References
 

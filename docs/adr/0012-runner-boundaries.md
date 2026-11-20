@@ -1,7 +1,8 @@
-# 0012 — Invoke runner CLIs with task-specific tool lists
+# Invoke runner CLIs with task-specific tool lists
 
 Status: Accepted
 Date: 2026-10-16
+Topic: Channel review
 
 ## Context
 
@@ -23,13 +24,7 @@ Copilot, and Grok review runners use broader bypass settings and remain experime
 - Tool allowlists are not an OS sandbox: an allowed test command can run `git push`.
 - The fix-flow branch guard protects its own push path; address and dependency skills retain their own workflows.
 
-## Alternatives considered
-
-- An embedded runner SDK would duplicate authentication and skill setup from the installed CLI.
-- One shared tool list would grant every task the broadest task’s tools.
-- Treating an allowlist as a push sandbox would claim a boundary it does not enforce.
-
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram
@@ -43,6 +38,12 @@ sequenceDiagram
     E->>F: Finish error fix
     F->>F: Commit, check branch, push, open draft
 ```
+
+## Other options
+
+- An embedded runner SDK would duplicate authentication and skill setup from the installed CLI.
+- One shared tool list would grant every task the broadest task’s tools.
+- Treating an allowlist as a push sandbox would claim a boundary it does not enforce.
 
 ## References
 

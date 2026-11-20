@@ -1,7 +1,8 @@
-# 0023 — Review finished work round by round on a local board
+# Review finished work round by round on a local board
 
 Status: Proposed
 Date: 2026-10-28
+Topic: Skills
 
 ## Context
 
@@ -48,16 +49,7 @@ The icon set is one file, `proto/assets/dg-icons.js`. The verify board loads it 
 - **Neutral:** Chrome stable can take screenshots here.
   `demo --verify` still refuses it, because that flow loads an extension and Chrome stable disables `--load-extension`.
 
-## Alternatives considered
-
-- **Reuse `/dg:proto` with a single variant.** Proto's question is which variant to build.
-  A finished change has no variants, and the before/after pair would be forced into that model.
-- **Inject the picker into the app under review.** That fights the app's CSP and mixes review controls with the product. A separate local page keeps them apart.
-- **Add axe-core and load it in the page.** That is a new dependency and a script the CSP would have to allow.
-  The local check covers the rules we can see from HTML.
-  Full axe-core can be a later slice if the summary is not enough.
-
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram
@@ -79,6 +71,15 @@ sequenceDiagram
     Page->>CLI: poll /api/manifest
     Page->>Page: open the new round
 ```
+
+## Other options
+
+- **Reuse `/dg:proto` with a single variant.** Proto's question is which variant to build.
+  A finished change has no variants, and the before/after pair would be forced into that model.
+- **Inject the picker into the app under review.** That fights the app's CSP and mixes review controls with the product. A separate local page keeps them apart.
+- **Add axe-core and load it in the page.** That is a new dependency and a script the CSP would have to allow.
+  The local check covers the rules we can see from HTML.
+  Full axe-core can be a later slice if the summary is not enough.
 
 ## References
 

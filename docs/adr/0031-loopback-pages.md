@@ -1,7 +1,8 @@
-# 0031 — Serve the chat and board pages from the daemon on loopback
+# Serve the chat and board pages from the daemon on loopback
 
 Status: Accepted
 Date: 2026-11-02
+Topic: Skills
 
 ## Context
 
@@ -42,13 +43,7 @@ The extension stays as the `--ext` path: `dg-agent start --ext` prints the
 - **Neutral:** the token sits in a URL fragment that the shell prints, as the
   `/start` URL already did.
 
-## Alternatives considered
-
-- **Chat in the terminal.** The human and the agent share the terminal, so the
-  human cannot type while the agent works.
-- **Keep `--ext` only.** It breaks the local-default rule of ADR 0028.
-
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram
@@ -67,6 +62,12 @@ sequenceDiagram
 
 With `--ext`, `dg-agent` opens `/start#_chat=bootstrap` instead, and the
 extension side panel replaces the page.
+
+## Other options
+
+- **Chat in the terminal.** The human and the agent share the terminal, so the
+  human cannot type while the agent works.
+- **Keep `--ext` only.** It breaks the local-default rule of ADR 0028.
 
 ## References
 

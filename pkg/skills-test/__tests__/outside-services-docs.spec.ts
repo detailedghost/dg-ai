@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { count, REPO_ROOT, readRepoFile } from "./test-support";
+import { ADR_SECTIONS, count, REPO_ROOT, readRepoFile } from "./test-support";
 
 const ADR_FILE = "0043-outside-services.md";
 const ADR_PATH = join("docs", "adr", ADR_FILE);
@@ -63,26 +63,19 @@ describe("ADR 0043 outside services", () => {
 		expect(existsSync(join(REPO_ROOT, ADR_PATH))).toBe(true);
 	});
 
-	test("toc entry is in Platform, within 160 columns, with the Accepted form", () => {
+	test("toc entry is in Platform and within 160 columns, and the record is Accepted", () => {
 		const platform = heading(toc, "Platform");
 		const entries = platform.split("\n").filter((l) => l.startsWith("- ["));
 		const entry0043 = entries.find((l) => /^- \[0043 — /.test(l)) ?? "";
-		expect(entry0043).toMatch(
-			/^- \[0043 — .+\]\(0043-outside-services\.md\) — Accepted:/,
-		);
+		expect(entry0043).toMatch(/^- \[0043 — .+\]\(0043-outside-services\.md\)$/);
+		expect(adr).toMatch(/^Status: Accepted$/m);
+		expect(adr).toMatch(/^Topic: Platform$/m);
 		for (const line of platform.split("\n"))
 			expect(line.length).toBeLessThanOrEqual(160);
 	});
 
 	test("has template headings, Accepted status and a commit date", () => {
-		for (const h of [
-			"Context",
-			"Decision",
-			"Consequences",
-			"Alternatives considered",
-			"Diagrams",
-			"References",
-		])
+		for (const h of ADR_SECTIONS)
 			expect(adr).toMatch(new RegExp(`^## ${h}$`, "m"));
 		expect(adr).toMatch(/^Status: Accepted$/m);
 		expect(adr).toMatch(/^Date: \d{4}-\d{2}-\d{2}$/m);

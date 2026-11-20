@@ -1,7 +1,8 @@
-# 0020 — One `dg` command and binary that supervises channel review
+# One `dg` command and binary that supervises channel review
 
 Status: Accepted
 Date: 2026-10-22
+Topic: Platform
 
 ## Context
 
@@ -81,7 +82,19 @@ the three binaries this ADR merges, and that channel still needs its own tag.
   the sign-in the runner already started; `review-<env>` and the supervisor are not involved, so no restart
   loop follows.
 
-## Alternatives considered
+## Diagram
+
+```mermaid
+flowchart LR
+    OS["OS login task or unit"] --> D["dg daemon (pkg/dg-daemon)"]
+    U["user: dg review start"] --> D
+    D -->|"supervised child"| R["dg review run (pkg/skills-cli)"]
+    D --> J["scheduled jobs: dg <command>"]
+    A["dg agent (pkg/dg-agent)"] -->|"/cli"| D
+    S["skills: ~/.dg/bin/dg-skills link"] --> B["dg skills (pkg/skills-cli)"]
+```
+
+## Other options
 
 - **A thin `dg` dispatcher over the three binaries.** It keeps three binaries, three versions, and about 250
   MB.
@@ -100,18 +113,6 @@ the three binaries this ADR merges, and that channel still needs its own tag.
 - **A hard cut straight to `dg-v`.** Old installs, bootstrap URLs, and self-update that still look for the
   prefixed tags would break the day the switch ships, so every one of them would need to re-bootstrap by hand.
 - **Keep four tags forever.** It never lets the project collect on the one-version gain this ADR is for.
-
-## Diagrams
-
-```mermaid
-flowchart LR
-    OS["OS login task or unit"] --> D["dg daemon (pkg/dg-daemon)"]
-    U["user: dg review start"] --> D
-    D -->|"supervised child"| R["dg review run (pkg/skills-cli)"]
-    D --> J["scheduled jobs: dg <command>"]
-    A["dg agent (pkg/dg-agent)"] -->|"/cli"| D
-    S["skills: ~/.dg/bin/dg-skills link"] --> B["dg skills (pkg/skills-cli)"]
-```
 
 ## References
 

@@ -1,7 +1,8 @@
-# 0035 — Drive the real browser with `pw --ext` behind a per-call approval
+# Drive the real browser with `pw --ext` behind a per-call approval
 
 Status: Proposed
 Date: 2026-11-05
+Topic: Skills
 
 ## Amended 2026-11-05: no per-call approval
 
@@ -173,21 +174,7 @@ staged file.
 - **Bad:** a pre-approval read touches the page before consent, but only for the
   one target element or the tool list.
 
-## Alternatives considered
-
-- **`debugger` permission (CDP).** It gives trusted input and console history,
-  but it is broad, it shows a banner on every page, and it allows code
-  execution.
-- **An always-on content script that wraps `console`.** It gives warnings and
-  history, but it runs extension code in every page the user opens, all the
-  time.
-- **Approval in the side panel or a notification.** A notification needs a new
-  permission. The side panel can be closed and is easy to miss. A popup window
-  is visible and needs nothing new.
-- **Approve once per session.** Less friction, but the plan asks for one approval
-  per call.
-
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram
@@ -207,6 +194,20 @@ sequenceDiagram
     Ext->>Daemon: pw-ext-browser-result (redacted, capped)
     Daemon->>Cli: cli-pw-ext-result
 ```
+
+## Other options
+
+- **`debugger` permission (CDP).** It gives trusted input and console history,
+  but it is broad, it shows a banner on every page, and it allows code
+  execution.
+- **An always-on content script that wraps `console`.** It gives warnings and
+  history, but it runs extension code in every page the user opens, all the
+  time.
+- **Approval in the side panel or a notification.** A notification needs a new
+  permission. The side panel can be closed and is easy to miss. A popup window
+  is visible and needs nothing new.
+- **Approve once per session.** Less friction, but the plan asks for one approval
+  per call.
 
 ## References
 

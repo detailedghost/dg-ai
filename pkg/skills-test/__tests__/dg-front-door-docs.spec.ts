@@ -167,20 +167,21 @@ describe("docs/adr/toc.md", () => {
 	const toc = read(TOC_PATH);
 	const adr = read(ADR_PATH);
 
-	test("lists 0020 one time, outside Proposed changes", () => {
+	test("lists 0020 one time, under Platform", () => {
 		expect(count(toc, "(0020-one-dg-command.md)")).toBe(1);
-		expect(toc).toMatch(/^#+ Proposed changes$/m);
-		expect(heading(toc, "Proposed changes")).not.toContain("0020-one-dg-command.md");
+		expect(heading(toc, "Platform")).toContain("(0020-one-dg-command.md)");
+		expect(adr).toMatch(/^Topic: Platform$/m);
 	});
 
-	test("puts 0020 in Platform before 0043 in the Accepted form, titled with the H1", () => {
+	test("puts 0020 in Platform before 0043, titled with the H1 and numbered", () => {
 		const entries = heading(toc, "Platform").split("\n").filter((l) => l.startsWith("- ["));
 		const at = entries.findIndex((l) => l.includes("(0020-one-dg-command.md)"));
 		const after = entries.findIndex((l) => l.includes("(0043-outside-services.md)"));
 		expect(at).toBeGreaterThanOrEqual(0);
 		expect(at).toBeLessThan(after);
 		const h1 = /^# (.+)$/m.exec(adr)?.[1] ?? "";
-		expect(entries[at]).toContain(`[${h1}](0020-one-dg-command.md) — Accepted:`);
+		expect(entries[at]).toBe(`- [0020 — ${h1}](0020-one-dg-command.md)`);
+		expect(adr).toMatch(/^Status: Accepted$/m);
 	});
 
 	test("each line of Platform has 160 columns at most", () => {
@@ -193,10 +194,11 @@ describe("docs/adr/toc.md", () => {
 });
 
 describe("ADR 0043 amendment line", () => {
-	test("one Amended line follows the Date line and does not start with Status", () => {
+	test("one Amended line follows the Topic line and does not start with Status", () => {
 		const lines = read("docs/adr/0043-outside-services.md").split("\n");
 		const at = lines.findIndex((l) => l.startsWith("Date: "));
-		expect(lines[at + 1]).toMatch(
+		expect(lines[at + 1]).toMatch(/^Topic: /);
+		expect(lines[at + 2]).toMatch(
 			/^Amended \d{4}-\d{2}-\d{2}: the daemon also injects DG_SERVICE_STATE_DIR and, when it has one, DG_HOME; see docs\/service-api\.md\.$/,
 		);
 	});

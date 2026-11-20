@@ -1,8 +1,8 @@
-# 0001. Skills-only install is a file copy
+# Skills-only install is a file copy
 
-## Status
-
-Accepted
+Status: Accepted
+Date: 2026-10-16
+Topic: Installation
 
 ## Context
 
@@ -53,6 +53,24 @@ they were.
   Bun can install. The end-to-end test installs this repository's skill tree
   through the TypeScript command and through `bootstrap.sh`, and both results
   have to be the same paths.
+
+## Diagram
+
+```mermaid
+flowchart TD
+    S["plugins/dg/skills"] --> F["filesToInstall in @dg/common"]
+    F --> I["installSkillTree in @dg/common/node"]
+    I --> D{"destination"}
+    D -->|"1st"| A["$DG_SKILLS_DEST"]
+    D -->|"2nd"| H["$DG_HOME/skills"]
+    D -->|"3rd"| U["~/.dg/skills"]
+    I -.->|"amendment: CLI download"| B["dg-skills from latest skills-v* release into ${DG_HOME:-~/.dg}/bin"]
+```
+
+## Other options
+
+- `--cli-only` ships the `dg-skills` binary and hides skills that require the extension. It needs a binary download.
+- The full bootstrap downloads `dg-skills`, then `dg-skills install` downloads the daemon, the agent, and the extension. Neither path is a plain file copy.
 
 ## Amendment (2026-10-18)
 

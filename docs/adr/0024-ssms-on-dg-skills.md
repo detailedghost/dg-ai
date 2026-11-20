@@ -1,7 +1,8 @@
-# 0024 — Host SMS provider commands on dg-skills
+# Host SMS provider commands on dg-skills
 
 Status: Proposed
 Date: 2026-10-31
+Topic: Skills
 
 ## Context
 
@@ -59,20 +60,7 @@ and a reason only.
 - **Neutral:** `signal link` still needs a person to scan the QR. The CLI does
   not install `signal-cli`.
 
-## Alternatives considered
-
-- **Put `ssms` on `dg-agent`.** The chat client would own an account tool, and
-  the skill would call a different binary than inbox. ADR 0020 already rejected
-  a second command tree.
-- **Run Signal inside the daemon process.** A signal-cli crash or a Chrome
-  hang would share a fate with chat sessions. ADR 0002 keeps that work out of
-  the daemon process.
-- **Keep the skill as browser instructions.** The rules stay in prose and no
-  test can fail when a send or a delete slips through.
-- **Drive Signal Desktop's database.** That reads the desktop key and the GUI
-  state. Dante rejected it.
-
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR
@@ -84,6 +72,19 @@ flowchart LR
     CDP --> Web["Messages for Web"]
     Signal --> Rpc["signal-cli daemon JSON-RPC"]
 ```
+
+## Other options
+
+- **Put `ssms` on `dg-agent`.** The chat client would own an account tool, and
+  the skill would call a different binary than inbox. ADR 0020 already rejected
+  a second command tree.
+- **Run Signal inside the daemon process.** A signal-cli crash or a Chrome
+  hang would share a fate with chat sessions. ADR 0002 keeps that work out of
+  the daemon process.
+- **Keep the skill as browser instructions.** The rules stay in prose and no
+  test can fail when a send or a delete slips through.
+- **Drive Signal Desktop's database.** That reads the desktop key and the GUI
+  state. Dante rejected it.
 
 ## References
 

@@ -1,7 +1,8 @@
-# 0016 — Run dependency work in bounded windows with a cooldown
+# Run dependency work in bounded windows with a cooldown
 
 Status: Accepted
 Date: 2026-10-16
+Topic: Automation
 
 ## Context
 
@@ -22,12 +23,7 @@ serial queue. The draft PR watcher runs on a two-minute cadence and marks ready 
 - Missed windows wait until a later eligible window rather than creating a backlog.
 - The separately installed dependency skill must honor the requested cooldown and draft workflow.
 
-## Alternatives considered
-
-- Upgrading every package to the newest release would remove the package-age delay.
-- Automatic dependency merges would skip the human merge decision.
-
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR
@@ -38,6 +34,11 @@ flowchart LR
     R --> D["draft PR"]
     D --> W["watch checks every two minutes"]
 ```
+
+## Other options
+
+- Upgrading every package to the newest release would remove the package-age delay.
+- Automatic dependency merges would skip the human merge decision.
 
 ## References
 

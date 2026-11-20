@@ -1,7 +1,8 @@
-# 0041 — pw --ext: user-approved, time-boxed unmask
+# pw --ext: user-approved, time-boxed unmask
 
 Status: Accepted (implemented)
 Date: 2026-11-09
+Topic: Skills
 
 ## Context
 
@@ -93,7 +94,28 @@ and for a short time. Every other guard of ADR 0035 stays.
 - **Neutral:** an extension without `unmask` in `pwExtVerbs` refuses the verb.
   The minimum extension version does not change.
 
-## Alternatives considered
+## Diagram
+
+```mermaid
+sequenceDiagram
+    participant C as dg-skills pw --ext
+    participant W as extension worker
+    participant H as human in popup window
+    C->>W: unmask --minutes 15
+    W->>H: open popup: origin, scope, duration
+    alt Allow click
+        H-->>W: click
+        W-->>C: grant for this origin, 1 to 60 minutes
+        Note over W: emails shown, fill on secret fields allowed
+        Note over W: tokens and keys stay masked
+    else Deny, 60 s timeout, or closed window
+        W-->>C: no grant, with the reason
+    end
+    C->>W: unmask --off
+    W-->>C: grant ends at once
+```
+
+## Other options
 
 - **Agent self-grant.** A flag or wire field that the agent sets. It removes the
   human from the decision, so it defeats the redaction it relaxes.
