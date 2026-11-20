@@ -3,14 +3,14 @@ feature: "ADR backfill: opt dg-ai into dg-skills adr"
 feature_snake_case: adr_backfill
 date: "2026-11-20"
 version: "1.0"
-status: draft
+status: in-progress
 current_slice: 0
 pr_strategy: single
 slices:
   - id: 1
     name: "opt-in-and-normalize"
     depends_on: []
-    files: ["docs/adr/toc.md",".agents/decisions/README.md","docs/adr/0[0-9][0-9][0-9]-*.md"]
+    files: ["docs/adr/toc.md", ".agents/decisions/README.md", "docs/adr/0[0-9][0-9][0-9]-*.md"]
     agents:
       primary: dg:lore
       confidence: high
@@ -18,7 +18,7 @@ slices:
   - id: 2
     name: "backfill-0001-0019"
     depends_on: [1]
-    files: ["docs/adr/000*.md","docs/adr/001*.md",".agents/decisions/000*.md",".agents/decisions/001*.md"]
+    files: ["docs/adr/000*.md", "docs/adr/001*.md", ".agents/decisions/000*.md", ".agents/decisions/001*.md"]
     agents:
       primary: dg:lore
       confidence: high
@@ -26,7 +26,7 @@ slices:
   - id: 3
     name: "backfill-0020-0029"
     depends_on: [1]
-    files: ["docs/adr/002*.md",".agents/decisions/002*.md"]
+    files: ["docs/adr/002*.md", ".agents/decisions/002*.md"]
     agents:
       primary: dg:lore
       confidence: high
@@ -34,7 +34,7 @@ slices:
   - id: 4
     name: "backfill-0030-0039"
     depends_on: [1]
-    files: ["docs/adr/003*.md",".agents/decisions/003*.md"]
+    files: ["docs/adr/003*.md", ".agents/decisions/003*.md"]
     agents:
       primary: dg:lore
       confidence: high
@@ -42,20 +42,22 @@ slices:
   - id: 5
     name: "backfill-0040-0051"
     depends_on: [1]
-    files: ["docs/adr/004*.md","docs/adr/005*.md",".agents/decisions/004*.md",".agents/decisions/005*.md"]
+    files: ["docs/adr/004*.md", "docs/adr/005*.md", ".agents/decisions/004*.md", ".agents/decisions/005*.md"]
     agents:
       primary: dg:lore
       confidence: high
       complexity: medium
   - id: 6
     name: "index-tests-verify"
-    depends_on: [2,3,4,5]
-    files: ["docs/adr/toc.md","docs/adr/template.md",".agents/decisions/README.md","pkg/skills-test/__tests__/job-model-docs.spec.ts","pkg/skills-test/__tests__/dg-front-door-docs.spec.ts","pkg/skills-test/__tests__/outside-services-docs.spec.ts","pkg/skills-test/__tests__/pairing-docs.spec.ts","pkg/skills-test/__tests__/demo-skill.spec.ts","pkg/skills-test/__tests__/blt-gate.spec.ts","pkg/skills-test/__tests__/agents-memory.spec.ts"]
+    depends_on: [2, 3, 4, 5]
+    files: ["docs/adr/toc.md", "docs/adr/template.md", ".agents/decisions/README.md", "pkg/skills-test/__tests__/job-model-docs.spec.ts", "pkg/skills-test/__tests__/dg-front-door-docs.spec.ts", "pkg/skills-test/__tests__/outside-services-docs.spec.ts", "pkg/skills-test/__tests__/pairing-docs.spec.ts", "pkg/skills-test/__tests__/demo-skill.spec.ts", "pkg/skills-test/__tests__/blt-gate.spec.ts", "pkg/skills-test/__tests__/agents-memory.spec.ts"]
     agents:
       primary: dg:js
       confidence: high
       complexity: medium
       qa: [dg:reviewer]
+execution:
+  profile: balance
 ---
 
 # ADR backfill: opt dg-ai into dg-skills adr
@@ -197,6 +199,11 @@ Opt dg-ai into the decision records tool from bundle 020. Give every numbered AD
 ## Slice Summaries
 
 ## Agent Notes
+- (owner, 2026-11-20) RATIFY Topic: map the 11 ADRs of the old "Proposed changes" group (0018, 0019, 0021-0024, 0026, 0027, 0033, 0034, 0036) to subject topics: Channel review, Skills or Installation. Edit dg-front-door-docs or any test that pins this.
+- (owner, 2026-11-20) RATIFY H1: remove `NNNN — ` from all 51 H1s and update job-model-docs.spec.ts.
+- (owner, 2026-11-20) RATIFY 0007: rewrite to grade 10 or lower. Do not use `Level: technical`.
+- (owner, 2026-11-20) RATIFY toc: keep the "Adding an ADR" text above the marker, pointing to `/dg:adr` instead of the template.
+- (owner, 2026-11-20) Structure-only edits. No full prose rewrite.
 
 ## Issues Remediation
 
