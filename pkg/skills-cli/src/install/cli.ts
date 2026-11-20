@@ -225,6 +225,13 @@ async function installBundleLocked(root: string, release: PickedBundle): Promise
 	);
 }
 
+/** The hidden `install launchers` step: the installed release writes its own launcher set. */
+export function writeCurrentLaunchers(): void {
+	const version = readCurrentVersion();
+	if (!version) throw new Error("no dg release is installed; run dg-skills install");
+	finishLauncherLayout(version);
+}
+
 /** An unpinned install keeps the old warn-and-continue behavior when the bundle cannot be installed. */
 async function installNewestBundle(releases: Release[]): Promise<void> {
 	try {

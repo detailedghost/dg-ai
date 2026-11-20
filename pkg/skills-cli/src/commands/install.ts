@@ -2,7 +2,7 @@ import type { Command } from "commander";
 import type { InstallOptions } from "../install/cli";
 
 export function registerInstall(program: Command): void {
-	program
+	const install = program
 		.command("install")
 		.description(
 			"stage the dg-ai-extension for loading + install the pinned Bun runtime, the dg bundle and the dg, dg-skills, dg-agent and dg-daemon launchers, or copy skill instruction files with --skills-only",
@@ -44,5 +44,13 @@ export function registerInstall(program: Command): void {
 		.action(async (target: string | undefined, opts: InstallOptions) => {
 			const { runInstall } = await import("../install/cli");
 			await runInstall(target, opts);
+		});
+
+	install
+		.command("launchers", { hidden: true })
+		.description("write the launchers for the installed release")
+		.action(async () => {
+			const { writeCurrentLaunchers } = await import("../install/cli");
+			writeCurrentLaunchers();
 		});
 }

@@ -2,7 +2,9 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { describeError, isRecord } from "@dg/common";
+import { resolveDgPaths } from "@dg/common/node";
 import { DOCTOR_REGISTRY } from "../doctor/registry";
+import { cliLauncher } from "../doctor/probes";
 import { formatFailures, runDoctor, summarizeReport } from "../doctor/runner";
 import type { DoctorReport } from "../doctor/types";
 import { claudeConfigDir, type Runner, runSync } from "../install/recommended-plugins";
@@ -28,6 +30,7 @@ export type UpdateDeps = {
 	install(target: InstallTarget, version: string): Promise<void>;
 	newestVersion(): Promise<string>;
 	installedVersion(): string | undefined;
+	finishLayout(version: string): { status: number | null; stderr: string };
 	stagedExtensions(): Partial<Record<"chrome" | "firefox", string>>;
 	cliOnly(): boolean;
 	which(name: string): string | null;
@@ -202,6 +205,13 @@ async function installStep(deps: UpdateDeps, version: string): Promise<StepResul
 		const installed = deps.installedVersion();
 		if (installed !== version)
 			return { name, status: "failed", detail: `dg ${installed ?? "unknown"} is installed, not ${version}` };
+		const layout = deps.finishLayout(version);
+		if (layout.status !== 0)
+			return {
+				name,
+				status: "failed",
+				detail: `${firstLine(layout.stderr) || `launcher step exit ${layout.status ?? "signal"}`}; run dg-skills install`,
+			};
 		const more = others.map((other) => `; run dg-skills install ${other} to refresh the ${other} extension too`).join("");
 		return { name, status: "ok", detail: `dg ${version} installed${more}` };
 	} catch (error) {
@@ -307,6 +317,10 @@ export function defaultUpdateDeps(): UpdateDeps {
 		},
 		newestVersion: async () => pickBundle(await listReleases()).version,
 		installedVersion: () => readCurrentVersion(),
+		finishLayout: () => {
+			const { status, stderr } = runSync([cliLauncher(resolveDgPaths().binDir), "install", "launchers"]);
+			return { status, stderr };
+		},
 		stagedExtensions: () => {
 			const marker = readMarker();
 			return Object.fromEntries(
