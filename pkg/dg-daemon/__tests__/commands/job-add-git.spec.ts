@@ -24,7 +24,7 @@ import {
 	readConfigFile,
 	runCli,
 	seedJobs,
-	waitForJobState,
+	runUntilRefused,
 	waitUntil,
 } from "./job-cli-helpers";
 import {
@@ -402,8 +402,10 @@ describe("job remove of a repository job through the CLI", () => {
 		expect((await add(dgHome, repo, ["--yes"], port)).code).toBe(0);
 		expect((await postJob(port, "crash", "start")).ok).toBe(true);
 		const before = read(configPathOf(dgHome));
-		await waitForJobState(dgHome, port, "crash", "backoff");
-		const result = await runCli(dgHome, ["job", "remove", "crash"], { port });
+		const result = await runUntilRefused(
+			() => runCli(dgHome, ["job", "remove", "crash"], { port }),
+			"is backoff",
+		);
 
 		expect(result.stderr).toContain('job "crash" is backoff');
 		expect(read(configPathOf(dgHome))).toBe(before);

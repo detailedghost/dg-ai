@@ -14,7 +14,7 @@ import {
 	pathsOf,
 	postJob,
 	runCli,
-	waitForJobState,
+	runUntilRefused,
 } from "./job-cli-helpers";
 import {
 	addFixture,
@@ -1201,8 +1201,10 @@ describe("job update with a live daemon", () => {
 		expect((await addOn(dgHome, repo, port)).code).toBe(0);
 		expect((await postJob(port, "crash", "start")).ok).toBe(true);
 		commit(repo, {});
-		await waitForJobState(dgHome, port, "crash", "backoff");
-		const result = await runCli(dgHome, ["job", "update", "crash", "--yes"], { port });
+		const result = await runUntilRefused(
+			() => runCli(dgHome, ["job", "update", "crash", "--yes"], { port }),
+			"is backoff",
+		);
 
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(

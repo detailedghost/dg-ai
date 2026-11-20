@@ -123,16 +123,16 @@ const call = async (body) => {
   return { status: res.status, body: await res.json() };
 };
 
-const refreshed = await call({
-  operation: "refresh",
-  name: "bot/api-key",
-  job: process.env.DG_SERVICE_LABEL,
-});
+const refresh = () =>
+  call({ operation: "refresh", name: "bot/api-key", job: process.env.DG_SERVICE_LABEL });
 const retryWith = (value) => console.log("retry the upstream call with the new value", value.length);
 
+let refreshed = await refresh();
 if (refreshed.status === 429) {
   await sleep(refreshed.body.retryAfter * 1000);
-} else if (refreshed.status !== 200) {
+  refreshed = await refresh();
+}
+if (refreshed.status !== 200) {
   throw new Error(refreshed.body.error);
 }
 const { body } = await call({ operation: "get", name: "bot/api-key" });

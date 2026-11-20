@@ -3,7 +3,8 @@ import { CREDENTIAL_MAX_VALUE_BYTES } from "../credentials-format";
 import { DgCliError, EXIT_GENERAL_FAILURE } from "../errors";
 import { readCappedStdin } from "./process";
 
-const ESCAPE_SEQUENCE = /\u001b(?:\[[0-?]*[ -/]*[@-~]|O[@-~]|.)?/g;
+const CONTROL = /\p{Cc}/u;
+type EscapeState = "none" | "escape" | "csi" | "ss3";
 
 /** Writes `question` to stderr and resolves with the first line of stdin; resolves null when stdin ends first. */
 export function readLine(question: string): Promise<string | null> {
@@ -43,6 +44,7 @@ export function promptHidden(
 	stdin.resume();
 	return new Promise((resolve, reject) => {
 		let value = "";
+		let escape: EscapeState = "none";
 		const finish = (error?: Error) => {
 			stdin.off("data", onData);
 			stdin.setRawMode(false);
@@ -52,11 +54,20 @@ export function promptHidden(
 			else resolve(value);
 		};
 		const onData = (chunk: string) => {
-			for (const char of chunk.replace(ESCAPE_SEQUENCE, "")) {
+			for (const char of chunk) {
+				if (escape !== "none") {
+					if (escape === "escape") escape = char === "[" ? "csi" : char === "O" ? "ss3" : "none";
+					else if (escape === "ss3" || (char >= "@" && char <= "~")) escape = "none";
+					continue;
+				}
+				if (char === "\u001b") {
+					escape = "escape";
+					continue;
+				}
 				if (char === "\r" || char === "\n") return finish();
 				if (char === "\u0003" || char === "\u0004") return finish(new Error("Canceled."));
 				if (char === "\u007f" || char === "\b") value = Array.from(value).slice(0, -1).join("");
-				else if (char >= " ") value += char;
+				else if (!CONTROL.test(char)) value += char;
 			}
 		};
 		stdin.on("data", onData);
@@ -66,12 +77,12 @@ export function promptHidden(
 /** Reads the secret from piped stdin, or from a hidden prompt on a TTY; it is never echoed. */
 export async function readCredentialValue(): Promise<string> {
 	if (process.stdin.isTTY) return promptHidden("Credential value: ");
-	const text = await readCappedStdin(CREDENTIAL_MAX_VALUE_BYTES + 2);
-	if (text === undefined) {
+	const text = (await readCappedStdin(CREDENTIAL_MAX_VALUE_BYTES + 2))?.replace(/\r?\n$/, "");
+	if (text === undefined || Buffer.byteLength(text) > CREDENTIAL_MAX_VALUE_BYTES) {
 		throw new DgCliError(
 			`credential value is larger than ${CREDENTIAL_MAX_VALUE_BYTES} bytes`,
 			EXIT_GENERAL_FAILURE,
 		);
 	}
-	return text.replace(/\r?\n$/, "");
+	return text;
 }

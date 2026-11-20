@@ -406,9 +406,11 @@ describe("job add of a URL: the happy path", () => {
 		expect(record.credentials).toEqual(twoJobs().credentials);
 		expect(existsSync(jobStateDir(sb.paths, "bot-a"))).toBe(true);
 		expect(existsSync(jobStateDir(sb.paths, "bot-b"))).toBe(true);
-		if (process.platform !== "win32") {
-			expect(statSync(sb.paths.jobSourcesPath).mode & 0o777).toBe(0o600);
-		}
+	});
+
+	it.skipIf(process.platform === "win32")("writes sources.json with mode 0600", async () => {
+		await addRepo(repoWith(twoJobs()));
+		expect(statSync(sb.paths.jobSourcesPath).mode & 0o777).toBe(0o600);
 	});
 
 	it("prints the result with a short sha and one next line for each job", async () => {

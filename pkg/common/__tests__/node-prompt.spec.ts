@@ -119,6 +119,18 @@ describe("promptHidden", () => {
 		expect(await pending).toBe("abcdtail");
 	});
 
+	it("drops an escape sequence that arrives in two chunks and C1 controls", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("ab\u001b");
+		tty.emit("[A");
+		tty.emit("c\u001b[1;5");
+		tty.emit("Cd\u0085e\r");
+
+		expect(await pending).toBe("abcde");
+	});
+
 	it("removes one whole character with backspace for a surrogate pair", async () => {
 		const tty = fakeInput();
 
@@ -179,6 +191,11 @@ try { console.log(JSON.stringify(await readCredentialValue())); } catch (error) 
 
 	it("refuses input above the credential value limit", async () => {
 		const out = await run("x".repeat(CREDENTIAL_MAX_VALUE_BYTES + 3));
+		expect(out).toBe(`ERR credential value is larger than ${CREDENTIAL_MAX_VALUE_BYTES} bytes`);
+	});
+
+	it("refuses a value of the limit plus one byte with no newline", async () => {
+		const out = await run("x".repeat(CREDENTIAL_MAX_VALUE_BYTES + 1));
 		expect(out).toBe(`ERR credential value is larger than ${CREDENTIAL_MAX_VALUE_BYTES} bytes`);
 	});
 

@@ -403,7 +403,7 @@ describe("the runner with a bound credential", () => {
 	});
 
 	it("records a failed run with the is missing text and starts no process", async () => {
-		await withRunner({}, async (ctx) => {
+		await withRunner({ "poll/other": VALUE }, async (ctx) => {
 			const out = join(ctx.root, "out.txt");
 			ctx.table.bot = scheduledEntry([process.execPath, "-e", dumpEnv(out)], ctx.root);
 			const job = ctx.store.insertJobState({
@@ -414,6 +414,7 @@ describe("the runner with a bound credential", () => {
 			});
 			const [outcome] = await Promise.all(ctx.runner.tick());
 			expect(outcome?.error).toContain("is missing");
+			expect(outcome?.error).not.toContain(VALUE);
 			expect(ctx.store.getJob(job.id)?.lastError).toContain("is missing");
 			expect(() => readFileSync(out, "utf8")).toThrow();
 		});
@@ -455,7 +456,9 @@ describe("a daemon with a bound credential", () => {
 		removeScratchDirs();
 	});
 
-	afterEach(() => {
+	afterEach(async () => {
+		await verb("poll", "stop");
+		await credentialOp({ operation: "delete", name: "poll/api-key" });
 		writeFileSync(paths().daemonConfigPath, JSON.stringify({ jobs: { poll: entry() } }));
 	});
 

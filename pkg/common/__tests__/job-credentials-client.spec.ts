@@ -227,6 +227,19 @@ describe("createJobCredentialClient", () => {
 		}
 	});
 
+	it("leaves the stored-change clause out of the timeout text of a read", async () => {
+		fixtureDaemon(ok({}));
+		const fetchSpy = spyOn(globalThis, "fetch").mockRejectedValue(new DOMException("late", "TimeoutError"));
+		try {
+			const failure = (await createJobCredentialClient({ paths, job: "bot" })
+				.status()
+				.catch((error: unknown) => error)) as Error;
+			expect(failure.message).toBe('dg-daemon did not answer within 10 s for the credentials of job "bot"');
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
 	it("throws when there is no owner token", async () => {
 		fixtureDaemon(ok({}));
 		rmSync(join(paths.daemonDir, "owner.token"), { force: true });

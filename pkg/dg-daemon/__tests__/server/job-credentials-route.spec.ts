@@ -487,6 +487,7 @@ describe("end to end with no agent session", () => {
 	});
 
 	it("holds no value text and no token in a response or in the daemon log", async () => {
+		const before = seen.length;
 		for (const job of ["a", "b", "bot", "first"]) await op(job, { operation: "ensure-grant" });
 		await op("a", { operation: "set", name: "a/leak", value: VALUE, meta: {} });
 		await op("a", { operation: "status" });
@@ -499,7 +500,7 @@ describe("end to end with no agent session", () => {
 			expect(log).not.toContain(token);
 			for (const text of seen) expect(text).not.toContain(token);
 		}
-		expect(seen.length).toBeGreaterThan(5);
+		expect(seen.length - before).toBe(7);
 	});
 });
 

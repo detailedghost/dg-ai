@@ -8,7 +8,6 @@ import {
 } from "@dg/common";
 import {
 	type DgPaths,
-	ensurePrivateDir,
 	jobSourceDir,
 	jobStateDir,
 	resolveDgPaths,
@@ -26,6 +25,7 @@ import {
 	credentialLines,
 	type DeclaredAt,
 	displayUrl,
+	ensureStateFolder,
 	FULL_SHA,
 	findRef,
 	firstLine,
@@ -126,7 +126,7 @@ export function writeBlockEntries(
 		const stored = (table as Record<string, unknown>)[name];
 		if (!isRecord(stored)) {
 			writeJobEntry(paths, name, entry);
-			ensurePrivateDir(jobStateDir(paths, name));
+			ensureStateFolder(jobStateDir(paths, name), PREFIX);
 			created.push(name);
 			continue;
 		}

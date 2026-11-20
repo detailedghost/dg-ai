@@ -111,22 +111,19 @@ export async function waitUntil(
 	throw new Error("condition not met in time");
 }
 
-/** Waits until `dg job status <name> --json` reports the state, without changing the job. */
-export async function waitForJobState(
-	dgHome: string,
-	port: number,
-	name: string,
-	state: string,
+/** Runs the verb again until its stderr holds the text, and gives that result. */
+export async function runUntilRefused<T extends { stderr: string }>(
+	run: () => Promise<T>,
+	text: string,
 	timeoutMs = 12_000,
-): Promise<void> {
+): Promise<T> {
+	let result = await run();
 	await waitUntil(async () => {
-		const result = await runCli(dgHome, ["job", "status", name, "--json"], { port });
-		try {
-			return (JSON.parse(result.stdout) as { jobs: { state: string }[] }).jobs[0]?.state === state;
-		} catch {
-			return false;
-		}
+		if (result.stderr.includes(text)) return true;
+		result = await run();
+		return result.stderr.includes(text);
 	}, timeoutMs);
+	return result;
 }
 
 /** Homes for specs whose commands may start a detached daemon; cleanup stops it first. */

@@ -271,7 +271,9 @@ describe("job update of a folder job that cannot apply", () => {
 		const result = await runJob(["update", "a"], sb.deps());
 
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain(`EEXIST: file already exists, mkdir '${join(sb.paths.jobStateRoot, "b")}'`);
+		expect(result.stderr).toContain(
+			`job update: ${join(sb.paths.jobStateRoot, "b")} already exists and is not a folder — remove it, then run the command again`,
+		);
 		expect(readFileSync(sb.paths.daemonConfigPath).equals(config)).toBe(true);
 		expect(readFileSync(sb.paths.jobSourcesPath).equals(registry)).toBe(true);
 	});

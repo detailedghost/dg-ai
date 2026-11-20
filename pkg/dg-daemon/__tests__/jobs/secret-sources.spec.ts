@@ -209,15 +209,31 @@ afterEach(() => {
 	for (const dir of tmps.splice(0)) {
 		for (const file of ["pid", "gpid"]) {
 			const path = join(dir, file);
-			if (existsSync(path)) {
+			const pid = existsSync(path) ? parsePid(readFileSync(path, "utf8")) : undefined;
+			if (pid !== undefined) {
 				try {
-					process.kill(Number(readFileSync(path, "utf8")), "SIGKILL");
+					process.kill(pid, "SIGKILL");
 				} catch {}
 			}
 		}
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+function parsePid(text: string): number | undefined {
+	const pid = /^\d+$/.test(text.trim()) ? Number(text) : Number.NaN;
+	return Number.isInteger(pid) && pid > 1 ? pid : undefined;
+}
+
+async function readPid(path: string, ms = 3000): Promise<number> {
+	const until = Date.now() + ms;
+	for (;;) {
+		const pid = existsSync(path) ? parsePid(readFileSync(path, "utf8")) : undefined;
+		if (pid !== undefined) return pid;
+		if (Date.now() > until) throw new Error(`no pid in ${path}`);
+		await Bun.sleep(25);
+	}
+}
 
 const alive = (pid: number): boolean => {
 	try {
@@ -284,7 +300,7 @@ describe("defaultRunSource", () => {
 
 		expect(err.kind).toBe("timeout");
 		expect(Date.now() - started).toBeLessThan(5000);
-		await goneWithin(Number(readFileSync(pidFile, "utf8")));
+		await goneWithin(await readPid(pidFile));
 	});
 
 	it("stops a program whose stdout passes 128 KiB and throws the failed kind", async () => {
@@ -318,7 +334,7 @@ describe("defaultRunSource", () => {
 
 		expect(err.kind).toBe("timeout");
 		expect(Date.now() - started).toBeLessThan(4000);
-		await goneWithin(Number(readFileSync(join(dir, "pid"), "utf8")));
-		await goneWithin(Number(readFileSync(join(dir, "gpid"), "utf8")));
+		await goneWithin(await readPid(join(dir, "pid")));
+		await goneWithin(await readPid(join(dir, "gpid")));
 	});
 });

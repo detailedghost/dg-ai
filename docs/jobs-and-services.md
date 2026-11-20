@@ -289,8 +289,8 @@ dg owns the clone. On a new commit and after the consent, `update` puts the clon
 clone.
 
 `update` asks no question for a new credential. It prints `next: dg job setup <name>` for each job that lists a new
-credential, required or optional. With `--yes`, a changed credential source applies with no person present. `update` then removes the job from the "setup
-done" mark and prints `next: dg job setup <name>`; see [Refresh a credential](#refresh-a-credential).
+credential, required or optional. With `--yes`, a changed credential source applies with no person present. With or without `--yes`, a changed source makes
+`update` remove the job from the "setup done" mark and print `next: dg job setup <name>`; see [Refresh a credential](#refresh-a-credential).
 
 ## Add a local script or folder
 

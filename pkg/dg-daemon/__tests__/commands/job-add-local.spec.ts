@@ -485,7 +485,9 @@ describe("job add of a local folder", () => {
 		const result = await add([dir]);
 
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain(`EEXIST: file already exists, mkdir '${join(sb.paths.jobStateRoot, "a")}'`);
+		expect(result.stderr).toContain(
+			`job add: ${join(sb.paths.jobStateRoot, "a")} already exists and is not a folder — remove it, then run the command again`,
+		);
 		expect(readFileSync(sb.paths.daemonConfigPath).equals(before)).toBe(true);
 		expect(readRegistry(sb)).toEqual({});
 	});

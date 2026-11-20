@@ -652,6 +652,15 @@ export function rollBack(
 	);
 }
 
+export function ensureStateFolder(dir: string, prefix = "job add:"): void {
+	try {
+		ensurePrivateDir(dir);
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+		stop(`${dir} already exists and is not a folder — remove it, then run the command again`, prefix);
+	}
+}
+
 export function commitToDisk(
 	paths: DgPaths,
 	source: string,
@@ -671,7 +680,7 @@ export function commitToDisk(
 		guardConfig(() => {
 			writeSource(paths, source, record);
 			for (const { name, entry } of jobs) writeJobEntry(paths, name, entry);
-			for (const { name } of jobs) ensurePrivateDir(jobStateDir(paths, name));
+			for (const { name } of jobs) ensureStateFolder(jobStateDir(paths, name));
 		});
 	} catch (err) {
 		return rollBack(
