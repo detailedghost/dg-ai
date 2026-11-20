@@ -43,6 +43,8 @@ permissions:
   auto_cleanup_worktree: true
   slice_commits: true
   housekeeping_commit: true
+worktree:
+  pr_url: https://github.com/detailedghost/dg-ai/pull/237
 ---
 
 # .agents as tracked agent memory
