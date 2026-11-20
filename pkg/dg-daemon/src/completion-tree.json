@@ -250,6 +250,12 @@
 							],
 							"description": "agent identity to queue new items to",
 							"value": "any"
+						},
+						{
+							"flags": [
+								"--yes"
+							],
+							"description": "approve a repository update without asking"
 						}
 					]
 				},

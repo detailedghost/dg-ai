@@ -31,6 +31,8 @@ import {
 } from "@dg/common/node";
 import { JOBS_CONFIG_KEY } from "../jobs/config";
 import {
+	type Declaration,
+	type DeclaredCredential,
 	type DeclaredJob,
 	declarationHash,
 	describeCredentials,
@@ -72,20 +74,20 @@ export type JobSourceDeps = JobVerbDeps & {
 export type SourceAddOptions = { name?: string; label?: string; yes?: boolean };
 
 const CONSENT_QUESTION = "Add these jobs? [y/N]";
-const SAFE_GIT = ["-c", "protocol.ext.allow=never", "-c", "protocol.fd.allow=never"];
+export const SAFE_GIT = ["-c", "protocol.ext.allow=never", "-c", "protocol.fd.allow=never"];
 const MAX_PACKAGE_JSON_BYTES = 256 * 1024;
 const SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
 const SCP = /^[^/\\]+@[^/\\:]+:/;
 const DRIVE = /^[a-zA-Z]:[\\/]/;
-const FULL_SHA = /^[0-9a-f]{40}$/;
-const MODE_KEYS = ["continuous", "schedule", "every"];
+export const FULL_SHA = /^[0-9a-f]{40}$/;
+export const MODE_KEYS = ["continuous", "schedule", "every"];
 
 function fail(message: string): never {
 	throw new DgCliError(message, EXIT_GENERAL_FAILURE);
 }
 
-function stop(message: string): never {
-	return fail(sanitize(`job add: ${message}`));
+export function stop(message: string, prefix = "job add:"): never {
+	return fail(sanitize(`${prefix} ${message}`));
 }
 
 type Child = { kill(): void; exited: Promise<number> };
@@ -93,7 +95,7 @@ type Child = { kill(): void; exited: Promise<number> };
 const activeChildren = new Set<Child>();
 const CHILD_EXIT_WAIT_MS = 2000;
 
-class RollbackFailure extends DgCliError {}
+export class RollbackFailure extends DgCliError {}
 
 const strictConfirm = async (question: string): Promise<boolean> => {
 	const line = await readLine(`${question} `);
@@ -239,7 +241,7 @@ export function assertPrefixFree(
 const quoteValue = (value: string): string =>
 	`"${sanitize(value.replaceAll("\\", "\\\\").replaceAll('"', '\\"'))}"`;
 
-const quote = (part: string): string => {
+export const quote = (part: string): string => {
 	const text = sanitize(part);
 	return text === "" || /[\s"'\\]/.test(text) ? quoteValue(part) : text;
 };
@@ -256,8 +258,25 @@ export type RequestInput = {
 	existingState?: Record<string, string>;
 };
 
-const show = (value: unknown): string =>
+export const show = (value: unknown): string =>
 	typeof value === "string" ? quoteValue(value) : String(value);
+
+export function credentialLines(credential: DeclaredCredential): string[] {
+	const source = credential.source
+		? `${credential.source.type} ${["secretId", "region", "key", "profile"]
+				.filter((key) => credential.source?.[key] !== undefined)
+				.map((key) => `${key}=${quoteValue(String(credential.source?.[key]))}`)
+				.join(" ")}`
+		: "none";
+	const lines = [
+		`credential ${sanitize(credential.name)}: ${credential.required ? "required" : "optional"}, prompt ${quoteValue(credential.prompt)}, source ${source}, used by ${credential.jobs.map(sanitize).join(", ")}`,
+	];
+	for (const [key, meta] of Object.entries(credential.meta)) {
+		const fallback = meta.default === undefined ? "" : `, default ${quoteValue(meta.default)}`;
+		lines.push(`  meta ${quoteValue(key)}: prompt ${quoteValue(meta.prompt)}${fallback}`);
+	}
+	return lines;
+}
 
 export function formatRequest(input: RequestInput): string {
 	const lines = [
@@ -283,22 +302,7 @@ export function formatRequest(input: RequestInput): string {
 	}
 	lines.push(`credential prefix: ${sanitize(input.source)}/`);
 	for (const credential of describeCredentials(input.jobs, input.credentials)) {
-		const source = credential.source
-			? `${credential.source.type} ${["secretId", "region", "key", "profile"]
-					.filter((key) => credential.source?.[key] !== undefined)
-					.map((key) => `${key}=${quoteValue(String(credential.source?.[key]))}`)
-					.join(" ")}`
-			: "none";
-		lines.push(
-			`credential ${sanitize(credential.name)}: ${credential.required ? "required" : "optional"}, prompt ${quoteValue(credential.prompt)}, source ${source}, used by ${credential.jobs.map(sanitize).join(", ")}`,
-		);
-		for (const [key, meta] of Object.entries(credential.meta)) {
-			const fallback =
-				meta.default === undefined ? "" : `, default ${quoteValue(meta.default)}`;
-			lines.push(
-				`  meta ${quoteValue(key)}: prompt ${quoteValue(meta.prompt)}${fallback}`,
-			);
-		}
+		lines.push(...credentialLines(credential));
 	}
 	if (input.requires.length > 0) {
 		lines.push(`requires: ${input.requires.map(quote).join(", ")}`);
@@ -327,7 +331,7 @@ const GIT_LOCAL_ENV = [
 	"GIT_INTERNAL_SUPER_PREFIX",
 ];
 
-function gitEnv(deps: JobVerbDeps): Record<string, string | undefined> {
+export function gitEnv(deps: JobVerbDeps): Record<string, string | undefined> {
 	const env: Record<string, string | undefined> = {
 		...process.env,
 		GIT_LFS_SKIP_SMUDGE: "1",
@@ -340,22 +344,21 @@ function gitEnv(deps: JobVerbDeps): Record<string, string | undefined> {
 	return env;
 }
 
-const git = (deps: JobSourceDeps, args: string[], cwd?: string): Promise<GitResult> =>
+export const git = (deps: JobSourceDeps, args: string[], cwd?: string): Promise<GitResult> =>
 	deps.runGit([...SAFE_GIT, ...args], {
 		cwd,
 		env: gitEnv(deps),
 		stdin: deps.isTerminal() ? "inherit" : "ignore",
 	});
 
-const firstLine = (text: string): string =>
+export const firstLine = (text: string): string =>
 	text.split("\n").find((line) => line.trim() !== "")?.trim() ?? "no output";
 
-export async function resolveRef(
+export async function findRef(
 	deps: JobSourceDeps,
 	cloneDir: string,
 	ref: string | null,
-	url: string,
-): Promise<string> {
+): Promise<string | undefined> {
 	const verify = async (name: string): Promise<string | undefined> => {
 		const result = await git(
 			deps,
@@ -365,38 +368,52 @@ export async function resolveRef(
 		const sha = result.stdout.trim();
 		return result.code === 0 && FULL_SHA.test(sha) ? sha : undefined;
 	};
-	const found =
-		ref === null
-			? await verify("refs/remotes/origin/HEAD")
-			: ((await verify(`refs/tags/${ref}`)) ?? (await verify(`refs/remotes/origin/${ref}`)));
-	if (found) return found;
 	if (ref !== null && FULL_SHA.test(ref)) {
 		const exists = await git(deps, ["cat-file", "-e", `${ref}^{commit}`], cloneDir);
-		if (exists.code === 0) return ref;
+		return exists.code === 0 ? ref : undefined;
 	}
-	return stop(`ref "${ref ?? "HEAD"}" does not resolve in ${displayUrl(url)}`);
+	return ref === null
+		? verify("refs/remotes/origin/HEAD")
+		: ((await verify(`refs/tags/${ref}`)) ?? (await verify(`refs/remotes/origin/${ref}`)));
 }
 
-function insideClone(cloneDir: string, path: string, outside: string): void {
+export async function resolveRef(
+	deps: JobSourceDeps,
+	cloneDir: string,
+	ref: string | null,
+	url: string,
+): Promise<string> {
+	return (
+		(await findRef(deps, cloneDir, ref)) ??
+		stop(`ref "${ref ?? "HEAD"}" does not resolve in ${displayUrl(url)}`)
+	);
+}
+
+export function insideClone(
+	cloneDir: string,
+	path: string,
+	outside: string,
+	prefix = "job add:",
+): void {
 	let real: string;
 	try {
 		real = realpathSync(path);
 	} catch {
-		return stop(`executable not found: ${path}`);
+		return stop(`executable not found: ${path}`, prefix);
 	}
-	if (!insideRoot(realpathSync(cloneDir), real)) stop(outside);
-	if (!statSync(real).isFile()) stop(`executable not found: ${path}`);
+	if (!insideRoot(realpathSync(cloneDir), real)) stop(outside, prefix);
+	if (!statSync(real).isFile()) stop(`executable not found: ${path}`, prefix);
 	try {
 		accessSync(real, constants.X_OK);
 	} catch {
-		stop(`file is not executable: ${path}`);
+		stop(`file is not executable: ${path}`, prefix);
 	}
 }
 
 const hasSeparator = (name: string): boolean =>
 	name.includes("/") || (process.platform === "win32" && name.includes("\\"));
 
-function onInterrupt(cleanup: () => void): () => void {
+export function onInterrupt(cleanup: () => void): () => void {
 	let stopping = false;
 	const handlers = (
 		[
@@ -425,7 +442,7 @@ function onInterrupt(cleanup: () => void): () => void {
 	};
 }
 
-function snapshotOf(file: string): () => void {
+export function snapshotOf(file: string): () => void {
 	const bytes = existsSync(file) ? readFileSync(file) : undefined;
 	return () => {
 		if (bytes === undefined) rmSync(file, { force: true });
@@ -433,16 +450,21 @@ function snapshotOf(file: string): () => void {
 	};
 }
 
-type Resolved = { jobs: DeclaredJob[]; inClone: { name: string; path: string }[] };
+export type Resolved = { jobs: DeclaredJob[]; inClone: { name: string; path: string }[] };
 
-function resolveJobs(deps: JobSourceDeps, cloneDir: string, jobs: DeclaredJob[]): Resolved {
+export function resolveJobs(
+	deps: JobSourceDeps,
+	cloneDir: string,
+	jobs: DeclaredJob[],
+	prefix = "job add:",
+): Resolved {
 	const inClone: Resolved["inClone"] = [];
 	const resolved = jobs.map(({ name, entry }) => {
 		const [first, ...rest] = entry.argv as string[];
 		if (!hasSeparator(first)) {
 			return {
 				name,
-				entry: { ...entry, argv: [resolveExecutable(first, "job add:", deps.which), ...rest] },
+				entry: { ...entry, argv: [resolveExecutable(first, prefix, deps.which), ...rest] },
 			};
 		}
 		const path = resolve(cloneDir, first);
@@ -452,38 +474,70 @@ function resolveJobs(deps: JobSourceDeps, cloneDir: string, jobs: DeclaredJob[])
 	return { jobs: resolved, inClone };
 }
 
-function resolveBuild(deps: JobSourceDeps, cloneDir: string, build: string[]): string[] {
+export function resolveBuild(
+	deps: JobSourceDeps,
+	cloneDir: string,
+	build: string[],
+	prefix = "job add:",
+	verifyFile = true,
+): string[] {
 	const [first, ...rest] = build;
-	if (!hasSeparator(first)) return [resolveExecutable(first, "job add:", deps.which), ...rest];
+	if (!hasSeparator(first)) return [resolveExecutable(first, prefix, deps.which), ...rest];
 	const path = resolve(cloneDir, first);
 	const outside = '"build" must stay inside the repository';
-	if (!insideRoot(cloneDir, path)) stop(outside);
-	insideClone(cloneDir, path, outside);
+	if (!insideRoot(cloneDir, path)) stop(outside, prefix);
+	if (verifyFile) insideClone(cloneDir, path, outside, prefix);
 	return [path, ...rest];
 }
 
-async function readBlock(
+export async function readBlock(
 	deps: JobSourceDeps,
 	cloneDir: string,
 	sha: string,
 	url: string,
+	prefix = "job add:",
 ): Promise<unknown> {
 	const listing = await git(deps, ["ls-tree", "-l", "-z", sha, "--", "package.json"], cloneDir);
 	const [header] = listing.stdout.split("\t");
 	const [mode, , , size] = header.trim().split(/\s+/);
-	if (listing.code !== 0 || !mode) stop(`${displayUrl(url)} has no package.json`);
-	if (!mode.startsWith("100")) stop("package.json is not a regular file");
-	if (Number(size) > MAX_PACKAGE_JSON_BYTES) stop("package.json is larger than 256 KiB");
+	if (listing.code !== 0 || !mode) stop(`${displayUrl(url)} has no package.json`, prefix);
+	if (!mode.startsWith("100")) stop("package.json is not a regular file", prefix);
+	if (Number(size) > MAX_PACKAGE_JSON_BYTES) stop("package.json is larger than 256 KiB", prefix);
 	const shown = await git(deps, ["show", `${sha}:package.json`], cloneDir);
-	if (shown.code !== 0) stop(`${displayUrl(url)} has no package.json`);
+	if (shown.code !== 0) stop(`${displayUrl(url)} has no package.json`, prefix);
 	try {
 		return JSON.parse(shown.stdout);
 	} catch {
-		return stop("package.json is not valid JSON");
+		return stop("package.json is not valid JSON", prefix);
 	}
 }
 
-function readState(paths: DgPaths): { config: Record<string, unknown>; registry: SourceRegistry } {
+export type DeclaredAt = { paths: DgPaths; source: string; cloneDir: string; url: string };
+
+export async function readDeclared(
+	deps: JobSourceDeps,
+	at: DeclaredAt,
+	sha: string,
+	prefix: string,
+): Promise<{
+	pkg: { dg: unknown };
+	declaration: Extract<Declaration, { ok: true }>;
+}> {
+	const pkg = await readBlock(deps, at.cloneDir, sha, at.url, prefix);
+	if (!isRecord(pkg) || !Object.hasOwn(pkg, "dg")) {
+		stop(`${displayUrl(at.url)} has no "dg" key in package.json`, prefix);
+	}
+	const declaration = parseJobDeclaration(pkg, {
+		source: at.source,
+		sourceDir: at.cloneDir,
+		stateDir: (name) => jobStateDir(at.paths, name),
+	});
+	if (!declaration.ok) return stop(declaration.error, prefix);
+	if (declaration.jobs.length === 0) stop(`${displayUrl(at.url)} declares no jobs`, prefix);
+	return { pkg: pkg as { dg: unknown }, declaration };
+}
+
+export function readState(paths: DgPaths): { config: Record<string, unknown>; registry: SourceRegistry } {
 	return guardConfig(() => ({
 		config: readConfigStrict(paths),
 		registry: readSources(paths),
@@ -494,6 +548,27 @@ const alreadyAdded = (source: string, record: GitSourceRecord): never =>
 	stop(
 		`source "${source}" is already added from ${displayUrl(record.url)} — run dg job update ${record.jobs[0]}`,
 	);
+
+export function rollBack(
+	err: unknown,
+	restores: (() => void)[],
+	paths: DgPaths,
+	source: string,
+): never {
+	const failures: string[] = [];
+	for (const restore of restores) {
+		try {
+			restore();
+		} catch (restoreErr) {
+			failures.push(describeError(restoreErr));
+		}
+	}
+	if (failures.length === 0) throw err;
+	throw new RollbackFailure(
+		`${describeError(err)}; the rollback also failed: ${failures.join("; ")} — check ${paths.daemonConfigPath} and ${paths.jobSourcesPath}; the clone stays at ${jobSourceDir(paths, source)}`,
+		EXIT_GENERAL_FAILURE,
+	);
+}
 
 function commitToDisk(
 	paths: DgPaths,
@@ -517,19 +592,7 @@ function commitToDisk(
 			for (const { name } of jobs) ensurePrivateDir(jobStateDir(paths, name));
 		});
 	} catch (err) {
-		const failures: string[] = [];
-		for (const restore of restores) {
-			try {
-				restore();
-			} catch (restoreErr) {
-				failures.push(describeError(restoreErr));
-			}
-		}
-		if (failures.length === 0) throw err;
-		throw new RollbackFailure(
-			`${describeError(err)}; the rollback also failed: ${failures.join("; ")} — check ${paths.daemonConfigPath} and ${paths.jobSourcesPath}; the clone stays at ${jobSourceDir(paths, source)}`,
-			EXIT_GENERAL_FAILURE,
-		);
+		return rollBack(err, restores, paths, source);
 	}
 }
 
@@ -597,17 +660,12 @@ async function addGit(
 		const head = (await git(deps, ["rev-parse", "HEAD"], cloneDir)).stdout.trim();
 		if (!FULL_SHA.test(head)) stop("git did not give a full commit id");
 
-		const pkg = await readBlock(deps, cloneDir, head, url);
-		if (!isRecord(pkg) || !Object.hasOwn(pkg, "dg")) {
-			stop(`${displayUrl(url)} has no "dg" key in package.json`);
-		}
-		const declaration = parseJobDeclaration(pkg, {
-			source,
-			sourceDir: cloneDir,
-			stateDir: (name) => jobStateDir(paths, name),
-		});
-		if (!declaration.ok) return stop(declaration.error);
-		if (declaration.jobs.length === 0) stop(`${displayUrl(url)} declares no jobs`);
+		const { pkg, declaration } = await readDeclared(
+			deps,
+			{ paths, source, cloneDir, url },
+			head,
+			"job add:",
+		);
 		for (const { name } of declaration.jobs) {
 			if (isInTable(config, name)) stop(`a job named "${name}" already exists`);
 		}

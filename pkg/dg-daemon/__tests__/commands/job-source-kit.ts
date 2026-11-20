@@ -223,3 +223,22 @@ export async function runJob(
 	}
 	return { code, stdout: out.join("\n"), stderr: err.join("\n") };
 }
+
+/** Adds a repository as `name` through the CLI seams and throws when the add fails. */
+export async function addFixture(
+	sb: Sandbox,
+	repo: Repo,
+	name = "tools",
+	extra: string[] = [],
+): Promise<RunOutcome> {
+	const outcome = await runJob(["add", fileUrl(repo), "--name", name, "--yes", ...extra], sb.deps());
+	if (outcome.code !== 0) throw new Error(`add failed: ${outcome.stderr}`);
+	return outcome;
+}
+
+/** Adds a second commit with a changed `dg` block and returns its id. */
+export const changeBlock = (
+	repo: Repo,
+	dg: unknown,
+	files: Record<string, RepoFile> = {},
+): string => commit(repo, { dg, files });

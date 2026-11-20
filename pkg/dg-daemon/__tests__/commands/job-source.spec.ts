@@ -1356,11 +1356,11 @@ describe("job remove of a repository job", () => {
 		expect(Object.keys(readConfigStrict(sb.paths).jobs as object)).toEqual(["cmd"]);
 	});
 
-	it("tells that a repository job cannot be updated yet", async () => {
+	it("refuses a flag that the repository block owns on update", async () => {
 		await addRepo(repoWith());
 		const result = await runJob(["update", "bot", "--timeout", "5m"], sb.deps());
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain("job update: a repository job is not supported yet");
+		expect(result.stderr).toContain('job update: the repository declares this in its "dg" block');
 	});
 });
 

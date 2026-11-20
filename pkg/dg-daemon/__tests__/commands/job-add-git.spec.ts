@@ -467,14 +467,16 @@ describe("job remove of a repository job through the CLI", () => {
 });
 
 describe("job update and list of a repository job", () => {
-	it("tells that a repository job cannot be updated yet", async () => {
+	it("refuses a mode flag on a repository job and names the dg block", async () => {
 		const dgHome = preparedHome();
 		expect((await add(dgHome, repoOf(TWO_JOBS), ["--yes"])).code).toBe(0);
 
 		const result = await runCli(dgHome, ["job", "update", "bot-a", "--timeout", "5m"]);
 
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain("job update: a repository job is not supported yet");
+		expect(result.stderr).toContain(
+			'job update: the repository declares this in its "dg" block',
+		);
 	});
 
 	it("lists source@sha and gives the json keys", async () => {

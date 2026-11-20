@@ -69,6 +69,7 @@ describe("readSources", () => {
 		["a url that is not a string", { url: 1 }],
 		["an unknown kind", { kind: "weird" }],
 		["a url that starts with a dash", { url: "--upload-pack=x" }],
+		["a ref that starts with a dash", { ref: "--upload-pack=x" }],
 		["credentials that is an array", { credentials: [] }],
 		["a declarationHash that is not a string", { declarationHash: 1 }],
 	])("throws an error that names the file and the source for %s", (_label, bad) => {

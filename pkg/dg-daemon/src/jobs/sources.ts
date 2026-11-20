@@ -23,7 +23,7 @@ const SHA = /^[0-9a-f]{40}$/;
 
 function checkRecord(file: string, source: string, raw: unknown): GitSourceRecord {
 	const bad = (why: string): never => {
-		throw new Error(`${file}: source "${source}" ${why}`);
+		throw new Error(`the record of "${source}" in ${file} is not valid: it ${why}`);
 	};
 	if (!isRecord(raw)) return bad("is not an object");
 	if (raw.kind !== "git") bad('has a "kind" that is not "git"');
@@ -32,6 +32,9 @@ function checkRecord(file: string, source: string, raw: unknown): GitSourceRecor
 	}
 	if (raw.ref !== null && typeof raw.ref !== "string") {
 		bad('has a "ref" that is not a string or null');
+	}
+	if (typeof raw.ref === "string" && raw.ref.startsWith("-")) {
+		bad('has a "ref" that starts with "-"');
 	}
 	if (typeof raw.sha !== "string" || !SHA.test(raw.sha)) {
 		bad('has a "sha" that is not 40 hexadecimal characters');

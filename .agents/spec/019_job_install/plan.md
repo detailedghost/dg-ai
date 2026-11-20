@@ -125,7 +125,7 @@ slices:
   - id: 14
     name: "job-update"
     depends_on: [13]
-    files: ["pkg/dg-daemon/src/commands/job-source.ts", "pkg/dg-daemon/src/commands/jobs.ts", "pkg/dg-daemon/src/jobs/sources.ts", "pkg/dg-daemon/src/jobs/declaration.ts", "pkg/dg-daemon/src/completion-tree.json", "pkg/dg-daemon/__tests__/commands/job-update.spec.ts", "pkg/dg-daemon/__tests__/commands/job-source-kit.ts", "pkg/dg-daemon/__tests__/jobs/sources.spec.ts", "pkg/dg-daemon/__tests__/commands/job-add-git.spec.ts", "pkg/dg-daemon/src/commands/job-update.ts"]
+    files: ["pkg/dg-daemon/src/commands/job-source.ts", "pkg/dg-daemon/src/commands/jobs.ts", "pkg/dg-daemon/src/jobs/sources.ts", "pkg/dg-daemon/src/jobs/declaration.ts", "pkg/dg-daemon/src/completion-tree.json", "pkg/dg-daemon/__tests__/commands/job-update.spec.ts", "pkg/dg-daemon/__tests__/commands/job-source-kit.ts", "pkg/dg-daemon/__tests__/jobs/sources.spec.ts", "pkg/dg-daemon/__tests__/commands/job-add-git.spec.ts", "pkg/dg-daemon/src/commands/job-update.ts", "pkg/dg-daemon/__tests__/commands/job-update-git.spec.ts", "pkg/dg-daemon/__tests__/commands/job-source.spec.ts"]
     agents:
       primary: dg:js
       confidence: high
@@ -1429,7 +1429,7 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 - [x] Before the clone, `add` refuses when the clone folder `jobSourceDir(paths, source)` exists
 - [x] `add` runs `git -c protocol.ext.allow=never clone --no-recurse-submodules -- <url> <jobSourceDir(paths, source)>` in the CLI process with the environment of the caller; the daemon runs no git command
 - [x] With a terminal, git gets the stdin of the caller; with no terminal, the git child gets `GIT_TERMINAL_PROMPT=0`
-- [x] `resolveRef(deps, cloneDir, ref, url)` gives a full commit id and runs, in this order: `git rev-parse --verify --end-of-options refs/tags/<ref>^{commit}`; `refs/remotes/origin/<ref>^{commit}`; for a value that matches `^[0-9a-f]{40}$`, `git cat-file -e <sha>^{commit}`; a ref that is a tag and a branch is the tag; `null` gives `origin/HEAD`; a ref that resolves to nothing, and a short commit id, exit 1 with `job add: ref "<ref>" does not resolve in <url>`
+- [x] `resolveRef(deps, cloneDir, ref, url)` gives a full commit id; a value that matches `^[0-9a-f]{40}$` is checked only with `git cat-file -e <sha>^{commit}` and never as a tag or branch name [orchestrator, slice 14 security review]; another value runs, in this order: `git rev-parse --verify --end-of-options refs/tags/<ref>^{commit}`; `refs/remotes/origin/<ref>^{commit}`; for a value that matches `^[0-9a-f]{40}$`, `git cat-file -e <sha>^{commit}`; a ref that is a tag and a branch is the tag; `null` gives `origin/HEAD`; a ref that resolves to nothing, and a short commit id, exit 1 with `job add: ref "<ref>" does not resolve in <url>`
 - [x] `add` checks out the commit id, not the ref text: `git checkout --detach <40 hexadecimal characters> --`
 - [x] `add` reads the full 40-character commit id with `git rev-parse HEAD` after the checkout and stores it as `sha`
 - [x] The clone runs before the question, so it must run no code of the repository: no `--recurse-submodules`, and no command of the `dg` block before the answer `y`
@@ -1605,149 +1605,149 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 ### Slice 14 — job-update
 
 #### Engineering
-- [ ] Put the `update` action for a repository job in the new file pkg/dg-daemon/src/commands/job-update.ts, loaded with a lazy import from jobs.ts; it imports the exports of slice 13; pkg/dg-daemon/src/commands/jobs.ts sends `job update <job>` to it when the job has a record of kind `git`, and to the command-job `update` of slice 9 in each other case
-- [ ] job-update.ts exports the function that writes the entries of a block (the repository keys replaced, `enabled` and `passEnv` kept), and slice 16 calls that function
-- [ ] The order of `update` is: find the record; check the record; check the `origin` URL; fetch; resolve the ref; compare with the stored `sha`; read the new block with `git show <commit>:package.json`; parse it; check the job names; check the state of each job of the source; check `requires` and each bare `argv[0]` name; print; check the terminal; ask; read the registry and the config again; put a clone with local changes back to the stored `sha`; check out the commit; run `build`; resolve each `argv[0]` path in the clone; take the lock; check again; write the entries; write the registry; print
-- [ ] Until the answer `y`, only the fetch changed the clone
-- [ ] `update` checks the record before a git process starts: `url` and `ref` do not start with `-`, `sha` has 40 hexadecimal characters, and each job name matches the name rule
-- [ ] Each ref goes to git after `--end-of-options`; a checkout gets only a value that matches `^[0-9a-f]{40}$`
-- [ ] After the answer `y` and the second read of the registry and the config, and before the checkout of the new commit, when `git status --porcelain --untracked-files=no` in the clone is not empty, or the `HEAD` of the clone is not the stored `sha`, `update` runs `git checkout --force --detach <sha>` and prints `discarded local changes in the clone of "<source>"`; `update` then continues, because dg owns the clone; this restore comes after the refusal for a job that runs and occurs only on a new commit, so an `update` with no new commit, a refusal and the answer `n` change no file of the clone [DECIDED — gaps pass O8 (b)] [DECIDED — post-apply item 1 (c)]
-- [ ] Each git command of `update` follows the rules of `add`: no submodule step, no repository code before the answer, `--` or `--end-of-options` before a value, stderr piped for the error text, the environment of the caller
-- [ ] `job update <job>` finds the record that holds the job and runs `git fetch --tags --force origin` in the clone of that source, in the CLI process, with the environment of the caller; each job of that repository gets the new commit, and the request names each of them
-- [ ] For `ref: null`, `update` also runs `git remote set-head origin --auto` after the fetch
-- [ ] Resolve the stored `ref` to a commit after the fetch with `resolveRef` of slice 13, which peels an annotated tag: a tag first, then `origin/<ref>`; `ref: null` resolves `origin/HEAD`; a ref that is a tag and a branch resolves as the tag
-- [ ] A stored `ref` that is a full commit id is checked with `git cat-file -e <sha>^{commit}` and always gives `up to date`
-- [ ] When the resolved commit is the stored `sha`, change nothing
-- [ ] When the commit is new, read the `dg` block of the new commit with `git show <commit>:package.json`, parse it with `parseJobDeclaration`, and calculate `declarationHash`; no checkout occurs before the answer `y`
-- [ ] When `declarationHash` is equal to the stored hash, print `<source>: <old 12> -> <new 12>` and ask `Update to this commit? [y/N]` on a terminal; on `y`, after the checkout and `build`, write only the new `sha` to the registry and do not write the daemon config
-- [ ] When `declarationHash` is different, print the new request in the form of `add`, then one line for each job and key whose value changed, then ask `Apply these changes? [y/N]` on a terminal
-- [ ] When only `requires` or `build` changed, the request shows the old and the new value of that key, and the question is `Apply these changes? [y/N]`
-- [ ] On a `no` answer the clone is at the old commit, because no checkout occurred; write nothing
-- [ ] `update` refuses before the question when a live daemon reports a job of the source as `running` or `backoff`, with `job "<name>" is <state> — stop it first with dg job stop <name>`; this holds for each job of the source, not only for a job that the new block removes [DECIDED — gaps pass O9 (b)]
-- [ ] The state of a job comes from `liveJobStates` and `assertDaemonAnswers` of pkg/dg-daemon/src/commands/job-support.ts
-- [ ] With no daemon pid, `update` makes no state check and no HTTP call
-- [ ] The states `stopped` and `invalid` are not running
-- [ ] `update` never changes the `enabled` key of an entry
-- [ ] `update` does not stop, start or restart a job
-- [ ] Call `liveJobStates` one time before the question, for each job of the source, in each path with a new commit; the refusal uses that result, so `update` of a repository job prints no `next: dg job restart <name>` line [DECIDED — post-apply item 7 (a)]
-- [ ] Known gap (accepted): a scheduled run can start between the checkout and the write and meet a clone that is not built; this bundle adds no guard for it [DECIDED — gaps pass O9 (b)]
-- [ ] `update` does not hold the config lock during the question
-- [ ] Right after the answer `y` and before the checkout, `update` reads the registry and the config again and stops when they changed; after `build`, it takes the lock one time, reads the registry and the config again, checks that the record still holds the old `sha` and that each new job is free, reads the live state of the removed jobs again, and writes the entries and then the registry in that one section; the check inside the lock is the last one
-- [ ] Inside the lock, keep a copy of each entry before the first write; when a write fails, put each changed entry back and go back to the old commit
-- [ ] Extend the fixture helper in pkg/dg-daemon/__tests__/commands/job-source-kit.ts with a second commit and a changed `dg` block; do not add a second helper file
-- [ ] The specs assert the text of the `next:` lines; they do not run the commands of slice 9
-- [ ] The Edge with a live daemon and a `running` job uses pkg/dg-daemon/__tests__/utils/daemon-harness.ts with no change
-- [ ] Do not rename an export of slice 13 (`declarationHash`, `formatRequest`, `resolveRef`, `sanitize`, the deps type, the kit functions)
-- [ ] After each commit change, check `requires` of the new block before the question, as `add` does
-- [ ] With a changed block and the answer `y`: for each job of the new block, write the repository keys (`argv`, `cwd`, the mode key, `feed`, `notify`, `timeoutMs`, `credentials`, `grant`, `envFile`, `stopTimeoutMs`) from the new block; a repository key that the new block does not have is removed from the entry
-- [ ] Keep each key that the block cannot set: `enabled` and `passEnv` stay as they are in the entry
-- [ ] Print one line `replaced <name>.<key>` for each repository key whose stored value was different from the new value; the comparison is between the stored entry and the new entry, so the line also names a key that the new block removed
-- [ ] A new job of the block gets a new entry with no `enabled` key, and a state folder; `update` refuses, before a write, a new job that the `jobs` table already holds
-- [ ] With a changed block, each job of the new block gets its entry
-- [ ] With a changed block, a job whose entry is absent gets a new entry with no `enabled` key and one `next: dg job enable <name>` line; the two cases are an entry that is absent after a hand edit of the daemon config, and a job that the owner removed with `job remove` and that the new block still lists
-- [ ] With an equal `declarationHash`, `update` writes no entry, so an absent entry stays absent
-- [ ] A job that the new block removes loses its entry; its state folder stays
-- [ ] Write the new `sha`, `declarationHash`, `jobs` and `credentials` to the registry after the entries; `update` changes only these four keys of its record, and keeps each other key and each other record
-- [ ] After each commit change, run `build` of the new block one time after the checkout that follows the answer `y`, and before the first write, with the rules of `add`
-- [ ] After the checkout, each failure path goes back to the old commit in one `finally` step: `git checkout --force --detach <old sha>`; `--force` is necessary because `build` can change tracked files; when that checkout fails, exit 1 with the two errors, name the clone folder, and state that the clone is not at the old commit
-- [ ] When `build` fails, that step runs, and `update` writes nothing
-- [ ] `update` does not run the `build` of the old commit again after a failed build; build output of the new commit can stay in the clone, and the failure text says so
-- [ ] When stdin or stdout is not a terminal, `--yes` is not given and a new commit exists, `update` prints the commit change (and the request and changed keys when the block changed) and fails, also when `declarationHash` is equal; it runs no checkout and no build
-- [ ] When stdin or stdout is not a terminal and no new commit exists, `update` exits 0 with the `up to date` line
-- [ ] `update` declares the option `--yes` in jobs.ts and accepts it for a repository job: it prints the commit change and the request, asks no question and continues as after the answer `y`, with a terminal or with none; add no `--accept` option; `--yes` on `update` of a command job or a file job is accepted and changes nothing
-- [ ] After `build`, `update` resolves each `argv[0]` path in the clone with the rule of `add`; a path that leaves the clone is refused
-- [ ] A mode flag, `--timeout`, `--feed` or `--notify` on `update` of a repository job exits 1 with the `declares this in its "dg" block` text of slice 13; slice 15 adds the same refusal for `--credential`, the option that it adds
-- [ ] A change of `credentials` is a change of the declaration: the request shows the old and the new line of each credential that changed
-- [ ] After the answer `y`, the record gets the new `credentials`; `update` stores no value, deletes no stored credential and starts no wizard
-- [ ] When the new declaration has a credential that the old one did not have, required or optional, print `next: dg job setup <name>` for each job that lists it; `update` changes no `setupDone` mark [DECIDED — gaps pass X1 (c)]
-- [ ] After the option change (the `--yes` option of `update`), run `bun scripts/completion-trees.ts dg-daemon`, always with the program name, and commit pkg/dg-daemon/src/completion-tree.json; do not edit the JSON by hand
-- [ ] Before the fetch, `git remote get-url origin` must be equal to the `url` of the record; if not, fail with the `is not valid` text and start no fetch
-- [ ] Each git command of `update` gets `-c protocol.ext.allow=never` and the environment rules of `add`: `GIT_LFS_SKIP_SMUDGE=1`, `-c protocol.fd.allow=never`, and `GIT_SSH_COMMAND` with no terminal
-- [ ] This slice replaces the `a repository job is not supported yet` stub of slice 13 and its Contract in pkg/dg-daemon/__tests__/commands/job-add-git.spec.ts
-- [ ] Do not edit pkg/dg-daemon/src/main.ts, pkg/dg-daemon/src/commands/job-support.ts or pkg/dg-daemon/__tests__/utils/daemon-harness.ts
+- [x] Put the `update` action for a repository job in the new file pkg/dg-daemon/src/commands/job-update.ts, loaded with a lazy import from jobs.ts; it imports the exports of slice 13; pkg/dg-daemon/src/commands/jobs.ts sends `job update <job>` to it when the job has a record of kind `git`, and to the command-job `update` of slice 9 in each other case
+- [x] job-update.ts exports the function that writes the entries of a block (the repository keys replaced, `enabled` and `passEnv` kept), and slice 16 calls that function
+- [x] The order of `update` is: find the record; check the record; check the `origin` URL; fetch; resolve the ref; compare with the stored `sha`; read the new block with `git show <commit>:package.json`; parse it; check the job names; check the state of each job of the source; check `requires` and each bare `argv[0]` name; print; check the terminal; ask; read the registry and the config again; put a clone with local changes back to the stored `sha`; check out the commit; run `build`; resolve each `argv[0]` path in the clone; take the lock; check again; write the entries; write the registry; print
+- [x] Until the answer `y`, only the fetch changed the clone
+- [x] `update` checks the record before a git process starts: `url` and `ref` do not start with `-`, `sha` has 40 hexadecimal characters, and each job name matches the name rule
+- [x] Each ref goes to git after `--end-of-options`; a checkout gets only a value that matches `^[0-9a-f]{40}$`
+- [x] After the answer `y` and the second read of the registry and the config, and before the checkout of the new commit, when `git status --porcelain --untracked-files=no` in the clone is not empty, or the `HEAD` of the clone is not the stored `sha`, `update` runs `git checkout --force --detach <sha>` and prints `discarded local changes in the clone of "<source>"`; `update` then continues, because dg owns the clone; this restore comes after the refusal for a job that runs and occurs only on a new commit, so an `update` with no new commit, a refusal and the answer `n` change no file of the clone [DECIDED — gaps pass O8 (b)] [DECIDED — post-apply item 1 (c)]
+- [x] Each git command of `update` follows the rules of `add`: no submodule step, no repository code before the answer, `--` or `--end-of-options` before a value, stderr piped for the error text, the environment of the caller
+- [x] `job update <job>` finds the record that holds the job and runs `git fetch --tags --force origin` in the clone of that source, in the CLI process, with the environment of the caller; each job of that repository gets the new commit, and the request names each of them
+- [x] For `ref: null`, `update` also runs `git remote set-head origin --auto` after the fetch
+- [x] Resolve the stored `ref` to a commit after the fetch with `resolveRef` of slice 13, which peels an annotated tag: a tag first, then `origin/<ref>`; `ref: null` resolves `origin/HEAD`; a ref that is a tag and a branch resolves as the tag
+- [x] A stored `ref` that is a full commit id is checked with `git cat-file -e <sha>^{commit}` and always gives `up to date`
+- [x] When the resolved commit is the stored `sha`, change nothing
+- [x] When the commit is new, read the `dg` block of the new commit with `git show <commit>:package.json`, parse it with `parseJobDeclaration`, and calculate `declarationHash`; no checkout occurs before the answer `y`
+- [x] When `declarationHash` is equal to the stored hash, print `<source>: <old 12> -> <new 12>` and ask `Update to this commit? [y/N]` on a terminal; on `y`, after the checkout and `build`, write only the new `sha` to the registry and do not write the daemon config
+- [x] When `declarationHash` is different, print the new request in the form of `add`, then one line for each job and key whose value changed, then ask `Apply these changes? [y/N]` on a terminal
+- [x] When only `requires` or `build` changed, the request shows the old and the new value of that key, and the question is `Apply these changes? [y/N]`
+- [x] On a `no` answer the clone is at the old commit, because no checkout occurred; write nothing
+- [x] `update` refuses before the question when a live daemon reports a job of the source as `running` or `backoff`, with `job "<name>" is <state> — stop it first with dg job stop <name>`; this holds for each job of the source, not only for a job that the new block removes [DECIDED — gaps pass O9 (b)]
+- [x] The state of a job comes from `liveJobStates` and `assertDaemonAnswers` of pkg/dg-daemon/src/commands/job-support.ts
+- [x] With no daemon pid, `update` makes no state check and no HTTP call
+- [x] The states `stopped` and `invalid` are not running
+- [x] `update` never changes the `enabled` key of an entry
+- [x] `update` does not stop, start or restart a job
+- [x] Call `liveJobStates` one time before the question, for each job of the source, in each path with a new commit; the refusal uses that result, so `update` of a repository job prints no `next: dg job restart <name>` line [DECIDED — post-apply item 7 (a)]
+- [x] Known gap (accepted): a scheduled run can start between the checkout and the write and meet a clone that is not built; this bundle adds no guard for it [DECIDED — gaps pass O9 (b)]
+- [x] `update` does not hold the config lock during the question
+- [x] Right after the answer `y` and before the checkout, `update` reads the registry and the config again and stops when they changed; after `build`, it takes the lock one time, reads the registry and the config again, checks that the record still holds the old `sha` and that each new job is free, reads the live state of the removed jobs again, and writes the entries and then the registry in that one section; the check inside the lock is the last one
+- [x] Inside the lock, keep a copy of each entry before the first write; when a write fails, put each changed entry back and go back to the old commit
+- [x] Extend the fixture helper in pkg/dg-daemon/__tests__/commands/job-source-kit.ts with a second commit and a changed `dg` block; do not add a second helper file
+- [x] The specs assert the text of the `next:` lines; they do not run the commands of slice 9
+- [x] The Edge with a live daemon and a `running` job uses pkg/dg-daemon/__tests__/utils/daemon-harness.ts with no change
+- [x] Do not rename an export of slice 13 (`declarationHash`, `formatRequest`, `resolveRef`, `sanitize`, the deps type, the kit functions)
+- [x] After each commit change, check `requires` of the new block before the question, as `add` does
+- [x] With a changed block and the answer `y`: for each job of the new block, write the repository keys (`argv`, `cwd`, the mode key, `feed`, `notify`, `timeoutMs`, `credentials`, `grant`, `envFile`, `stopTimeoutMs`) from the new block; a repository key that the new block does not have is removed from the entry
+- [x] Keep each key that the block cannot set: `enabled` and `passEnv` stay as they are in the entry
+- [x] Print one line `replaced <name>.<key>` for each repository key whose stored value was different from the new value; the comparison is between the stored entry and the new entry, so the line also names a key that the new block removed
+- [x] A new job of the block gets a new entry with no `enabled` key, and a state folder; `update` refuses, before a write, a new job that the `jobs` table already holds
+- [x] With a changed block, each job of the new block gets its entry
+- [x] With a changed block, a job whose entry is absent gets a new entry with no `enabled` key and one `next: dg job enable <name>` line; the two cases are an entry that is absent after a hand edit of the daemon config, and a job that the owner removed with `job remove` and that the new block still lists
+- [x] With an equal `declarationHash`, `update` writes no entry, so an absent entry stays absent
+- [x] A job that the new block removes loses its entry; its state folder stays
+- [x] Write the new `sha`, `declarationHash`, `jobs` and `credentials` to the registry after the entries; `update` changes only these four keys of its record, and keeps each other key and each other record
+- [x] After each commit change, run `build` of the new block one time after the checkout that follows the answer `y`, and before the first write, with the rules of `add`
+- [x] After the checkout, each failure path goes back to the old commit in one `finally` step: `git checkout --force --detach <old sha>`; `--force` is necessary because `build` can change tracked files; when that checkout fails, exit 1 with the two errors, name the clone folder, and state that the clone is not at the old commit
+- [x] When `build` fails, that step runs, and `update` writes nothing
+- [x] `update` does not run the `build` of the old commit again after a failed build; build output of the new commit can stay in the clone, and the failure text says so
+- [x] When stdin or stdout is not a terminal, `--yes` is not given and a new commit exists, `update` prints the commit change (and the request and changed keys when the block changed) and fails, also when `declarationHash` is equal; it runs no checkout and no build
+- [x] When stdin or stdout is not a terminal and no new commit exists, `update` exits 0 with the `up to date` line
+- [x] `update` declares the option `--yes` in jobs.ts and accepts it for a repository job: it prints the commit change and the request, asks no question and continues as after the answer `y`, with a terminal or with none; add no `--accept` option; `--yes` on `update` of a command job or a file job is accepted and changes nothing
+- [x] After `build`, `update` resolves each `argv[0]` path in the clone with the rule of `add`; a path that leaves the clone is refused
+- [x] A mode flag, `--timeout`, `--feed` or `--notify` on `update` of a repository job exits 1 with the `declares this in its "dg" block` text of slice 13; slice 15 adds the same refusal for `--credential`, the option that it adds
+- [x] A change of `credentials` is a change of the declaration: the request shows the old and the new line of each credential that changed
+- [x] After the answer `y`, the record gets the new `credentials`; `update` stores no value, deletes no stored credential and starts no wizard
+- [x] When the new declaration has a credential that the old one did not have, required or optional, print `next: dg job setup <name>` for each job that lists it; `update` changes no `setupDone` mark [DECIDED — gaps pass X1 (c)]
+- [x] After the option change (the `--yes` option of `update`), run `bun scripts/completion-trees.ts dg-daemon`, always with the program name, and commit pkg/dg-daemon/src/completion-tree.json; do not edit the JSON by hand
+- [x] Before the fetch, `git remote get-url origin` must be equal to the `url` of the record; if not, fail with the `is not valid` text and start no fetch
+- [x] Each git command of `update` gets `-c protocol.ext.allow=never` and the environment rules of `add`: `GIT_LFS_SKIP_SMUDGE=1`, `-c protocol.fd.allow=never`, and `GIT_SSH_COMMAND` with no terminal
+- [x] This slice replaces the `a repository job is not supported yet` stub of slice 13 and its Contract in pkg/dg-daemon/__tests__/commands/job-add-git.spec.ts
+- [x] Do not edit pkg/dg-daemon/src/main.ts, pkg/dg-daemon/src/commands/job-support.ts or pkg/dg-daemon/__tests__/utils/daemon-harness.ts
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: `job update nope` exits 1 with `no job named "nope"`
-- [ ] Contract: with no new commit, `update` exits 0 and prints `source "<source>" is up to date at <first 12 characters of sha>`; the bytes of sources.json and of the daemon config do not change
-- [ ] Contract: with a new commit and an equal `declarationHash`, `update` prints `<source>: <old 12> -> <new 12>`, asks one question through the `confirm` seam, and on `y` exits 0 with `updated source "<source>" <old 12> -> <new 12>`; the registry holds the new `sha`; each job entry is byte-equal
-- [ ] Contract: with a different `declarationHash`, the question appears after the request text; the `confirm` seam gets one call
-- [ ] Contract: a `no` answer exits 1 with `job update: declined; source "<source>" stays at <old 12>`; `git rev-parse HEAD` in the clone is the old commit; no file changes
-- [ ] Contract: a removed job that is `running` exits 1 with `job "<name>" is running — stop it first with dg job stop <name>` before a checkout
-- [ ] Contract: a failed `git fetch` exits 1 with `job update: git fetch failed: <first line of the git stderr>` and changes no file
-- [ ] Contract: an entry with `enabled: true` before `update` has `enabled: true` after it, in each path
-- [ ] Contract: after a changed block and the answer `y`, each entry holds the new `argv`, mode key, `credentials`, `envFile` and `stopTimeoutMs`; `enabled` and `passEnv` are deep-equal to their values before
-- [ ] Contract: a job whose new `credentials` list is empty has no `grant` key after the update
-- [ ] Contract: an `argv` that the human edited in the daemon config is replaced after the answer `y`, and stdout holds `replaced <name>.argv`
-- [ ] Contract: exit 0 after a changed block prints `updated source "<source>" <old 12> -> <new 12>`, then the `replaced` lines, then one `next: dg job enable <name>` line for each new job
-- [ ] Contract: a new job that the `jobs` table already holds exits 1 with `job update: a job named "<name>" already exists`; the clone is at the old commit and no file changed
-- [ ] Contract: a removed job that does not run loses its entry; its state folder exists after the update
-- [ ] Contract: after a changed block, the registry holds the new `sha`, the new `declarationHash`, the new `jobs` and the new `credentials`
-- [ ] Contract: `build` runs one time for each accepted commit change, also when `declarationHash` is equal, after the `y` and before a write; on `N` it does not run
-- [ ] Contract: a `build` that exits with 3 makes `update` exit 1 with `job update: build failed (exit 3); source "<source>" stays at <old 12> — the clone can hold build output of <new 12>`; `git rev-parse HEAD` is the old commit; sources.json and the daemon config are byte-equal
-- [ ] Contract: a `requires` name of the new block that does not resolve exits 1 with `job update: required executable(s) do not resolve on PATH: <names>` before the question; the clone is at the old commit
-- [ ] Contract: with no terminal, no `--yes` and a changed block, `update` exits 1 with `job update: consent needs a terminal — run this command in a terminal yourself, or give --yes`; the clone is at the old commit and no file changed
-- [ ] Contract: with no terminal, no `--yes`, a new commit and an equal `declarationHash`, `update` exits 1 with the `consent needs a terminal` text; the clone is at the old commit and no file changed
-- [ ] Contract: with no terminal and no new commit, `update` exits 0 and prints the `up to date` line
-- [ ] Contract: on a new commit and after the answer `y`, a clone with local changes, or with a `HEAD` that is not the stored `sha`, gets `git checkout --force --detach <sha>` before the checkout of the new commit; `update` prints `discarded local changes in the clone of "<source>"` and continues [DECIDED — gaps pass O8 (b)] [DECIDED — post-apply item 1 (c)]
-- [ ] Contract: with no new commit, a clone with local changes keeps them, and `update` prints no `discarded local changes` line [DECIDED — post-apply item 1 (c)]
-- [ ] Contract: a tag that the remote moved gives the new commit
-- [ ] Contract: after the remote changes its default branch, a source with `ref: null` follows the new default branch
-- [ ] Contract: a record with `ref: "--upload-pack=x"` exits 1 with `job update: the record of "<source>" in <file> is not valid` and starts no git process
-- [ ] Contract: a new commit whose `argv[0]` is a link to a file outside the clone exits 1 with the `must stay inside the repository` text in the `job update:` form; the clone is at the old commit and no file changed
-- [ ] Contract: when the config or the record changes during the question, `update` exits 1 with `job update: the source or the daemon config changed during the question — nothing was changed`; the clone is at the old commit
-- [ ] Contract: with an injected failure of the registry write, the daemon config and sources.json are byte-equal to the bytes before, and the clone is at the old commit
-- [ ] Contract: with a changed block and the answer `y`, a job of the record whose entry is absent gets a new entry with no `enabled` key, and stdout holds `next: dg job enable <name>`
-- [ ] Contract: with an equal `declarationHash`, an absent entry stays absent
-- [ ] Contract: when only `requires` or `build` changed, the request shows the old and the new value of that key, and the question is `Apply these changes? [y/N]`
-- [ ] Contract: a repository key that the new block removed gives a `replaced <name>.<key>` line
-- [ ] Contract: with a daemon pid that is alive and does not answer, `update` exits 1 with the `does not answer` text and changes nothing
-- [ ] Contract: a job of the source in `backoff` makes `update` on a new commit exit 1 with `job "<name>" is backoff — stop it first with dg job stop <name>`; no `next:` line and no `note:` line prints [DECIDED — gaps pass O9 (b)]
-- [ ] Contract: a new commit with no `dg` key, with an unknown key, or with an entry that the validator refuses exits 1 with the text of slice 13 in the `job update:` form; the clone is at the old commit and no file changed
-- [ ] Contract: a stored ref that does not resolve after the fetch exits 1 with `job update: cannot resolve "<ref>" in <source>`
-- [ ] Contract: a `git checkout` that fails exits 1 with `job update: git checkout failed: <first line of the git stderr>`; no file changed
-- [ ] Contract: a daemon config that is not valid JSON exits 1, names the file, and leaves the clone at the old commit
-- [ ] Contract: a new job gets a state folder with mode 0700 (POSIX), no `enabled` key, and one `next: dg job enable <name>` line
-- [ ] Contract: a key whose stored value is equal to the new value prints no `replaced` line
-- [ ] Contract: with no terminal and a new commit, stdout holds the `<old 12> -> <new 12>` line; the `confirm` seam gets no call and `runBuild` gets no call
-- [ ] Contract: for one block, the request text of `update` is equal to the request text of `add`; the two commands call `formatRequest`
-- [ ] Happy path: a source added with the ref of a branch moves to the new head of that branch
-- [ ] Happy path: a source added with a tag reports `up to date` when only the default branch moved
-- [ ] Edge: a key that the human changed in the daemon config stays byte-equal when `declarationHash` is equal
-- [ ] Edge: with a live daemon and a `running` job of the source, `update` on a new commit exits 1 with the `stop it first` text before the question; no checkout and no build runs, and the registry and the daemon config do not change [DECIDED — gaps pass O9 (b)]
-- [ ] Regression: `bun test` and `bun run lint` pass in pkg/dg-daemon
-- [ ] Contract: with two jobs of one repository, `job update <first>` shows the two names in the request and writes the two entries
-- [ ] Contract: a commit that adds a required credential prints the `next: dg job setup` line; the `confirm` seam gets one call
-- [ ] Contract: a commit that changes only a `source.secretId` gives the question `Apply these changes? [y/N]`, and the request shows the old and the new id
-- [ ] Contract: `job update <job> --every 30m` on a repository job exits 1 with the `declares this in its "dg" block` text and starts no git process
-- [ ] Contract: with no terminal and `--yes`, `update` on a new commit prints the commit change, calls the `confirm` seam zero times, checks out the commit, runs `build`, and writes the registry
-- [ ] Contract: a clone whose `origin` URL is not the `url` of the record exits 1 with the `is not valid` text and starts no fetch
-- [ ] Contract: each call of the `runGit` seam in `update` holds `-c protocol.ext.allow=never` and the environment rules of `add`
-- [ ] Contract: an annotated tag that the remote moved gives the new commit
-- [ ] Contract: a key that this slice does not know is in the record after `update`
-- [ ] Contract: a job that the owner removed with `job remove` and that the new block still lists gets a new entry with no `enabled` key and the `next: dg job enable <name>` line
-- [ ] Contract: `job update x --yes` on a command job, and on a file job after slice 16, is accepted and changes nothing
-- [ ] Contract: with a `runGit` seam that fails on the second checkout, `update` exits 1 with the two errors, names the clone folder, and states that the clone is not at the old commit
+- [x] Contract: `job update nope` exits 1 with `no job named "nope"`
+- [x] Contract: with no new commit, `update` exits 0 and prints `source "<source>" is up to date at <first 12 characters of sha>`; the bytes of sources.json and of the daemon config do not change
+- [x] Contract: with a new commit and an equal `declarationHash`, `update` prints `<source>: <old 12> -> <new 12>`, asks one question through the `confirm` seam, and on `y` exits 0 with `updated source "<source>" <old 12> -> <new 12>`; the registry holds the new `sha`; each job entry is byte-equal
+- [x] Contract: with a different `declarationHash`, the question appears after the request text; the `confirm` seam gets one call
+- [x] Contract: a `no` answer exits 1 with `job update: declined; source "<source>" stays at <old 12>`; `git rev-parse HEAD` in the clone is the old commit; no file changes
+- [x] Contract: a removed job that is `running` exits 1 with `job "<name>" is running — stop it first with dg job stop <name>` before a checkout
+- [x] Contract: a failed `git fetch` exits 1 with `job update: git fetch failed: <first line of the git stderr>` and changes no file
+- [x] Contract: an entry with `enabled: true` before `update` has `enabled: true` after it, in each path
+- [x] Contract: after a changed block and the answer `y`, each entry holds the new `argv`, mode key, `credentials`, `envFile` and `stopTimeoutMs`; `enabled` and `passEnv` are deep-equal to their values before
+- [x] Contract: a job whose new `credentials` list is empty has no `grant` key after the update
+- [x] Contract: an `argv` that the human edited in the daemon config is replaced after the answer `y`, and stdout holds `replaced <name>.argv`
+- [x] Contract: exit 0 after a changed block prints `updated source "<source>" <old 12> -> <new 12>`, then the `replaced` lines, then one `next: dg job enable <name>` line for each new job
+- [x] Contract: a new job that the `jobs` table already holds exits 1 with `job update: a job named "<name>" already exists`; the clone is at the old commit and no file changed
+- [x] Contract: a removed job that does not run loses its entry; its state folder exists after the update
+- [x] Contract: after a changed block, the registry holds the new `sha`, the new `declarationHash`, the new `jobs` and the new `credentials`
+- [x] Contract: `build` runs one time for each accepted commit change, also when `declarationHash` is equal, after the `y` and before a write; on `N` it does not run
+- [x] Contract: a `build` that exits with 3 makes `update` exit 1 with `job update: build failed (exit 3); source "<source>" stays at <old 12> — the clone can hold build output of <new 12>`; `git rev-parse HEAD` is the old commit; sources.json and the daemon config are byte-equal
+- [x] Contract: a `requires` name of the new block that does not resolve exits 1 with `job update: required executable(s) do not resolve on PATH: <names>` before the question; the clone is at the old commit
+- [x] Contract: with no terminal, no `--yes` and a changed block, `update` exits 1 with `job update: consent needs a terminal — run this command in a terminal yourself, or give --yes`; the clone is at the old commit and no file changed
+- [x] Contract: with no terminal, no `--yes`, a new commit and an equal `declarationHash`, `update` exits 1 with the `consent needs a terminal` text; the clone is at the old commit and no file changed
+- [x] Contract: with no terminal and no new commit, `update` exits 0 and prints the `up to date` line
+- [x] Contract: on a new commit and after the answer `y`, a clone with local changes, or with a `HEAD` that is not the stored `sha`, gets `git checkout --force --detach <sha>` before the checkout of the new commit; `update` prints `discarded local changes in the clone of "<source>"` and continues [DECIDED — gaps pass O8 (b)] [DECIDED — post-apply item 1 (c)]
+- [x] Contract: with no new commit, a clone with local changes keeps them, and `update` prints no `discarded local changes` line [DECIDED — post-apply item 1 (c)]
+- [x] Contract: a tag that the remote moved gives the new commit
+- [x] Contract: after the remote changes its default branch, a source with `ref: null` follows the new default branch
+- [x] Contract: a record with `ref: "--upload-pack=x"` exits 1 with `job update: the record of "<source>" in <file> is not valid` and starts no git process
+- [x] Contract: a new commit whose `argv[0]` is a link to a file outside the clone exits 1 with the `must stay inside the repository` text in the `job update:` form; the clone is at the old commit and no file changed
+- [x] Contract: when the config or the record changes during the question, `update` exits 1 with `job update: the source or the daemon config changed during the question — nothing was changed`; the clone is at the old commit
+- [x] Contract: with an injected failure of the registry write, the daemon config and sources.json are byte-equal to the bytes before, and the clone is at the old commit
+- [x] Contract: with a changed block and the answer `y`, a job of the record whose entry is absent gets a new entry with no `enabled` key, and stdout holds `next: dg job enable <name>`
+- [x] Contract: with an equal `declarationHash`, an absent entry stays absent
+- [x] Contract: when only `requires` or `build` changed, the request shows the old and the new value of that key, and the question is `Apply these changes? [y/N]`
+- [x] Contract: a repository key that the new block removed gives a `replaced <name>.<key>` line
+- [x] Contract: with a daemon pid that is alive and does not answer, `update` exits 1 with the `does not answer` text and changes nothing
+- [x] Contract: a job of the source in `backoff` makes `update` on a new commit exit 1 with `job "<name>" is backoff — stop it first with dg job stop <name>`; no `next:` line and no `note:` line prints [DECIDED — gaps pass O9 (b)]
+- [x] Contract: a new commit with no `dg` key, with an unknown key, or with an entry that the validator refuses exits 1 with the text of slice 13 in the `job update:` form; the clone is at the old commit and no file changed
+- [x] Contract: a stored ref that does not resolve after the fetch exits 1 with `job update: cannot resolve "<ref>" in <source>`
+- [x] Contract: a `git checkout` that fails exits 1 with `job update: git checkout failed: <first line of the git stderr>`; no file changed
+- [x] Contract: a daemon config that is not valid JSON exits 1, names the file, and leaves the clone at the old commit
+- [x] Contract: a new job gets a state folder with mode 0700 (POSIX), no `enabled` key, and one `next: dg job enable <name>` line
+- [x] Contract: a key whose stored value is equal to the new value prints no `replaced` line
+- [x] Contract: with no terminal and a new commit, stdout holds the `<old 12> -> <new 12>` line; the `confirm` seam gets no call and `runBuild` gets no call
+- [x] Contract: for one block, the request text of `update` is equal to the request text of `add`; the two commands call `formatRequest`
+- [x] Happy path: a source added with the ref of a branch moves to the new head of that branch
+- [x] Happy path: a source added with a tag reports `up to date` when only the default branch moved
+- [x] Edge: a key that the human changed in the daemon config stays byte-equal when `declarationHash` is equal
+- [x] Edge: with a live daemon and a `running` job of the source, `update` on a new commit exits 1 with the `stop it first` text before the question; no checkout and no build runs, and the registry and the daemon config do not change [DECIDED — gaps pass O9 (b)]
+- [x] Regression: `bun test` and `bun run lint` pass in pkg/dg-daemon
+- [x] Contract: with two jobs of one repository, `job update <first>` shows the two names in the request and writes the two entries
+- [x] Contract: a commit that adds a required credential prints the `next: dg job setup` line; the `confirm` seam gets one call
+- [x] Contract: a commit that changes only a `source.secretId` gives the question `Apply these changes? [y/N]`, and the request shows the old and the new id
+- [x] Contract: `job update <job> --every 30m` on a repository job exits 1 with the `declares this in its "dg" block` text and starts no git process
+- [x] Contract: with no terminal and `--yes`, `update` on a new commit prints the commit change, calls the `confirm` seam zero times, checks out the commit, runs `build`, and writes the registry
+- [x] Contract: a clone whose `origin` URL is not the `url` of the record exits 1 with the `is not valid` text and starts no fetch
+- [x] Contract: each call of the `runGit` seam in `update` holds `-c protocol.ext.allow=never` and the environment rules of `add`
+- [x] Contract: an annotated tag that the remote moved gives the new commit
+- [x] Contract: a key that this slice does not know is in the record after `update`
+- [x] Contract: a job that the owner removed with `job remove` and that the new block still lists gets a new entry with no `enabled` key and the `next: dg job enable <name>` line
+- [x] Contract: `job update x --yes` on a command job, and on a file job after slice 16, is accepted and changes nothing
+- [x] Contract: with a `runGit` seam that fails on the second checkout, `update` exits 1 with the two errors, names the clone folder, and states that the clone is not at the old commit
 
 #### Acceptance Criteria
-- [ ] Given a repository job whose repository has a new commit and an unchanged `dg` block, when the owner runs `dg job update <job>` in a terminal and answers `y`, then the registry holds the new commit id
-- [ ] Given a new commit that changes an `argv` or a credential, when the owner runs `update`, then the command shows the change and asks before it writes
-- [ ] Given the answer `n`, when `update` ends, then the clone, the registry and the daemon config are as before the command
-- [ ] Given a running job of the source and a new commit, when the owner runs `update`, then the command refuses before the question, names the job and `dg job stop <name>`, and changes no entry and no record [DECIDED — gaps pass O9 (b)]
-- [ ] Given a changed block and the answer `y`, when `update` ends, then each entry has the new repository values, and each job that was enabled is still enabled
-- [ ] Given a `build` that fails after a new commit, when `update` ends, then the source is at the old commit, and the registry and the daemon config are unchanged
-- [ ] Given an agent session with no terminal and no `--yes`, when `update` finds a new commit, then `update` writes nothing and runs no build, whether or not the block changed
-- [ ] Given a `requires` name of the new commit that does not resolve, when `update` runs, then it stops before the question
-- [ ] Given no new commit, when `update` runs, then it exits 0 and changes nothing
-- [ ] Given a removed job that runs, when `update` runs, then it refuses and changes nothing
-- [ ] Given a new job, when `update` ends, then its entry has no `enabled` key
-- [ ] Given two jobs of one repository, when the owner runs `dg job update` with the name of one of them, then the two jobs move to the new commit
-- [ ] Given an agent session with no terminal, when it runs `dg job update <job> --yes` and a new commit exists, then the command prints the change and applies it with no question
-- [ ] Given a clone with local changes and a new commit, when the owner answers `y` in `update`, then it puts the tracked files back to the stored commit, prints one `discarded local changes` line, and continues [DECIDED — gaps pass O8 (b)] [DECIDED — post-apply item 1 (c)]
-- [ ] Given a record that fails the check, when `update` runs, then it starts no git process
-- [ ] Given a registry write that fails, when `update` ends, then the clone, the registry and the daemon config are as before
-- [ ] Given a new commit that adds a required credential, when `update` ends, then the output holds `next: dg job setup <name>`
-- [ ] Given no terminal and `--yes`, when `update` finds a new commit, then `build` runs one time before the write
+- [x] Given a repository job whose repository has a new commit and an unchanged `dg` block, when the owner runs `dg job update <job>` in a terminal and answers `y`, then the registry holds the new commit id
+- [x] Given a new commit that changes an `argv` or a credential, when the owner runs `update`, then the command shows the change and asks before it writes
+- [x] Given the answer `n`, when `update` ends, then the clone, the registry and the daemon config are as before the command
+- [x] Given a running job of the source and a new commit, when the owner runs `update`, then the command refuses before the question, names the job and `dg job stop <name>`, and changes no entry and no record [DECIDED — gaps pass O9 (b)]
+- [x] Given a changed block and the answer `y`, when `update` ends, then each entry has the new repository values, and each job that was enabled is still enabled
+- [x] Given a `build` that fails after a new commit, when `update` ends, then the source is at the old commit, and the registry and the daemon config are unchanged
+- [x] Given an agent session with no terminal and no `--yes`, when `update` finds a new commit, then `update` writes nothing and runs no build, whether or not the block changed
+- [x] Given a `requires` name of the new commit that does not resolve, when `update` runs, then it stops before the question
+- [x] Given no new commit, when `update` runs, then it exits 0 and changes nothing
+- [x] Given a removed job that runs, when `update` runs, then it refuses and changes nothing
+- [x] Given a new job, when `update` ends, then its entry has no `enabled` key
+- [x] Given two jobs of one repository, when the owner runs `dg job update` with the name of one of them, then the two jobs move to the new commit
+- [x] Given an agent session with no terminal, when it runs `dg job update <job> --yes` and a new commit exists, then the command prints the change and applies it with no question
+- [x] Given a clone with local changes and a new commit, when the owner answers `y` in `update`, then it puts the tracked files back to the stored commit, prints one `discarded local changes` line, and continues [DECIDED — gaps pass O8 (b)] [DECIDED — post-apply item 1 (c)]
+- [x] Given a record that fails the check, when `update` runs, then it starts no git process
+- [x] Given a registry write that fails, when `update` ends, then the clone, the registry and the daemon config are as before
+- [x] Given a new commit that adds a required credential, when `update` ends, then the output holds `next: dg job setup <name>`
+- [x] Given no terminal and `--yes`, when `update` finds a new commit, then `build` runs one time before the write
 
 ### Slice 15 — job-setup-wizard
 
@@ -2416,6 +2416,7 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 
 ## Slice Summaries
 
+- Slice 14: dg job update <job> on a repository job fetches the recorded origin with hardened git, resolves the stored ref (a full sha stays pinned), shows the changed keys, asks or takes --yes, checks out the new commit, runs build, and rewrites the entries and the record under the lock with byte-exact rollback and an old-commit restore.
 - Slice 13: dg job add <git-url>[@ref] clones with hardened git, pins the full commit id, reads the dg block from the committed package.json, prints a sanitized and quoted request, asks consent or takes --yes, runs build, then writes the registry record and the entries under the config lock with byte-exact rollback; job remove, list and status handle repository jobs.
 - Slice 12: POST /jobs/<name>/credentials is write-only for the credential prefix of one job (status, set, delete, ensure-grant, rotate-grant); the prefix is the grant of the job entry, read per request; createJobCredentialClient in @dg/common/node; RESERVED_CREDENTIAL_PREFIXES with a source-reading spec.
 - Slice 19: dg-skills channel-review export --env --label writes import.json (version 1) into the job state folder with mode 0600; it refuses a live daemon and reads state read-only; commands.md and the dg-skills completion tree list it.
@@ -2482,6 +2483,12 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 - (slice 13, dg:js) A started repository job that lists credentials cannot start until slice 17.
 - (slice 13, dg:js) PR body behavior changes: --cwd is checked by addVerb (job add: --cwd is required), not by commander; --yes is new; the request quotes repository values.
 - (slice 13, dg:js) (orchestrator) Slice 13: a block job whose state folder already exists gets the request line 'state folder exists: <path> (kept from an earlier job)' (security review RATIFY, taken as option a: a two-way door). Signal handling exits 130/143/129 and a signal inside the lock leaves a record that job remove clears. Known gap: a token in the user part of an https URL is stored in sources.json and the clone config.
+
+- (slice 14, dg:js) job-source.ts exports the shared add/update helpers (git, gitEnv, SAFE_GIT, onInterrupt, snapshotOf, rollBack, RollbackFailure, readBlock, resolveJobs, resolveBuild, insideClone, findRef, credentialLines, quote, show, stop); several take an optional error prefix.
+- (slice 14, dg:js) job-update.ts exports updateSource(name, {yes}, deps) and writeBlockEntries(paths, config, jobs) returning {replaced, created}; slice 16 reuses writeBlockEntries.
+- (slice 14, dg:js) Slice 15 adds --credential to UPDATE_FLAG_KEYS in jobs.ts and refuses it on a repository job with the declares-this-in-its-dg-block text.
+- (slice 14, dg:js) checkRecord in sources.ts now owns every record rule; its text is 'the record of "<source>" in <file> is not valid: it <why>' with no command prefix.
+- (slice 14, dg:js) (orchestrator) Slice 14 security review: a 40-hex ref is checked only with cat-file and never as a tag or branch name (add and update); the origin check reads the raw remote.origin.url; update git calls carry core.hooksPath=devNull and core.fsmonitor=false; fetch uses --prune --prune-tags --no-recurse-submodules. PR body: with --yes a changed credential source applies with no person present (plan X1 c); ignored build output can block a tracked path at the next checkout.
 
 ## Issues Remediation
 

@@ -630,12 +630,25 @@ type UpdateOptions = {
 	timeout?: string;
 	feed?: boolean;
 	notify?: string;
+	yes?: boolean;
 };
 
-async function updateVerb(name: string, options: UpdateOptions): Promise<void> {
+const UPDATE_FLAG_KEYS = ["continuous", "schedule", "every", "timeout", "feed", "notify"];
+
+async function updateVerb(
+	name: string,
+	options: UpdateOptions,
+	command: Command,
+	sourceDeps: () => JobSourceDeps,
+): Promise<void> {
 	const stop = (message: string): never => fail(`job update: ${message}`);
 	if (await recordOf(resolveDgPaths(), name)) {
-		stop("a repository job is not supported yet");
+		if (UPDATE_FLAG_KEYS.some((key) => command.getOptionValueSource(key) === "cli")) {
+			stop('the repository declares this in its "dg" block');
+		}
+		const { updateSource } = await import("./job-update");
+		await updateSource(name, { yes: options.yes }, sourceDeps());
+		return;
 	}
 	const modes: [Mode, unknown][] = [
 		["continuous", options.continuous ? true : undefined],
@@ -655,11 +668,14 @@ async function updateVerb(name: string, options: UpdateOptions): Promise<void> {
 				: duration(options.timeout, "--timeout", "job update"),
 		],
 	].filter(([, value]) => value !== undefined) as [string, unknown][];
-	if (changes.length === 0) stop("give a flag to change");
 	const paths = resolveDgPaths();
 	if (existsSync(paths.daemonConfigPath)) await ensureMigrated(paths);
 	if (!isInTable(readTable(paths), name)) {
 		notFound(name);
+	}
+	if (changes.length === 0) {
+		if (options.yes === true) return;
+		stop("give a flag to change");
 	}
 	await withConfigLock(paths, () => {
 		const config = readTable(paths);
@@ -839,7 +855,11 @@ export function registerJobCommands(
 		.option("--timeout <duration>", "stop a run that takes longer")
 		.option("--feed", "read one JSON object per item from the output")
 		.option("--notify <identity>", "agent identity to queue new items to")
-		.action(updateVerb);
+		.option("--yes", "approve a repository update without asking")
+		.action(async (name: string, options: UpdateOptions, command: Command) => {
+			const { defaultJobSourceDeps } = await import("./job-source");
+			await updateVerb(name, options, command, () => ({ ...defaultJobSourceDeps(), ...given }));
+		});
 
 	job
 		.command("remove")
