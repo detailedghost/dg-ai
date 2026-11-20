@@ -133,7 +133,7 @@ if (refreshed.status === 429) {
   refreshed = await refresh();
 }
 if (refreshed.status !== 200) {
-  throw new Error(refreshed.body.error);
+  throw new Error(`refresh failed: ${refreshed.status} ${refreshed.body.error ?? ""}`);
 }
 const { body } = await call({ operation: "get", name: "bot/api-key" });
 retryWith(body.value.value);

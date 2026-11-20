@@ -205,11 +205,29 @@ const tmp = () => {
 	tmps.push(dir);
 	return dir;
 };
-afterEach(() => {
+function parsePid(text: string): number | undefined {
+	const pid = /^\d+$/.test(text.trim()) ? Number(text) : Number.NaN;
+	return Number.isInteger(pid) && pid > 1 ? pid : undefined;
+}
+
+const tryReadPid = (path: string): number | undefined =>
+	existsSync(path) ? parsePid(readFileSync(path, "utf8")) : undefined;
+
+async function readPid(path: string, ms = 1500): Promise<number> {
+	const until = Date.now() + ms;
+	for (;;) {
+		const pid = tryReadPid(path);
+		if (pid !== undefined) return pid;
+		if (Date.now() > until) throw new Error(`no pid in ${path}`);
+		await Bun.sleep(25);
+	}
+}
+
+afterEach(async () => {
 	for (const dir of tmps.splice(0)) {
 		for (const file of ["pid", "gpid"]) {
 			const path = join(dir, file);
-			const pid = existsSync(path) ? parsePid(readFileSync(path, "utf8")) : undefined;
+			const pid = existsSync(path) ? await readPid(path, 300).catch(() => undefined) : undefined;
 			if (pid !== undefined) {
 				try {
 					process.kill(pid, "SIGKILL");
@@ -219,21 +237,6 @@ afterEach(() => {
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
-
-function parsePid(text: string): number | undefined {
-	const pid = /^\d+$/.test(text.trim()) ? Number(text) : Number.NaN;
-	return Number.isInteger(pid) && pid > 1 ? pid : undefined;
-}
-
-async function readPid(path: string, ms = 3000): Promise<number> {
-	const until = Date.now() + ms;
-	for (;;) {
-		const pid = existsSync(path) ? parsePid(readFileSync(path, "utf8")) : undefined;
-		if (pid !== undefined) return pid;
-		if (Date.now() > until) throw new Error(`no pid in ${path}`);
-		await Bun.sleep(25);
-	}
-}
 
 const alive = (pid: number): boolean => {
 	try {

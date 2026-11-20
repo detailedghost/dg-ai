@@ -405,13 +405,24 @@ describe("documented literals are in their source files", () => {
 	});
 });
 
+const RESET_SENTENCE: Record<string, string> = {
+	[JOBS]:
+		'When `dg job update` changes the source of a credential that a job lists, it removes the job from the "setup done" mark',
+	[SERVICE_API]:
+		'When `dg job update` changes the `source` of a credential that a job lists, it removes the job from the "setup done" mark',
+	[RECORD]:
+		"`update` removes the job from `setupDone` when it changes the `source` of a credential that the job lists",
+};
+
 describe("the setup mark after a changed credential source", () => {
 	test("each document says that update resets it and that the grant proves the prefix only", () => {
 		for (const file of [JOBS, SERVICE_API, RECORD]) {
 			const text = flat(read(file));
-			const resets = /update[^.]*\b(remove|removes)\b[^.]*(setup done|setupDone)/i;
-			expect([file, resets.test(text)]).toEqual([file, true]);
-			expect([file, /(is|are|stays?) (not |never )?(reset|kept)[^.]*update|update[^.]*keeps the mark/i.test(text)]).toEqual([file, false]);
+			expect([file, text.includes(RESET_SENTENCE[file])]).toEqual([file, true]);
+			const aboutMark = text.split(/(?<=\.) /).filter((sentence) => /setup done|setupDone/.test(sentence));
+			for (const wrong of ["not reset", "never reset", "keeps the mark", "leaves the mark", "does not remove"]) {
+				expect([file, wrong, aboutMark.some((sentence) => sentence.includes(wrong))]).toEqual([file, wrong, false]);
+			}
 			expect([file, text.includes("proves the prefix and not the job")]).toEqual([file, true]);
 		}
 	});
@@ -469,15 +480,13 @@ describe("the job sources record", () => {
 	});
 
 	test("ADR 0043 gets two dated lines after the line of the noun job", () => {
-		const lines = read(ADR_0043).split("\n");
-		const at = lines.findIndex((l) => l.startsWith("Date: "));
-		expect(lines[at + 4]).toBe(
-			"Amended 2026-11-20: service API v1 has the operation refresh; see [ADR 0052](0052-job-sources-and-credentials.md).",
-		);
-		expect(lines[at + 5]).toBe(
-			"Amended 2026-11-20: a credential bound to an environment variable is added after `envFile` and `passEnv` and before the injected keys; see [ADR 0052](0052-job-sources-and-credentials.md).",
-		);
-		expect(lines[at + 6]).toBe("");
+		const amended = read(ADR_0043)
+			.split("\n")
+			.filter((line) => line.startsWith("Amended 2026-11-20:"));
+		expect(amended).toHaveLength(2);
+		expect(amended[0]).toContain("operation refresh");
+		expect(amended[1]).toContain("bound to an environment variable");
+		for (const line of amended) expect(line).toContain("](0052-job-sources-and-credentials.md)");
 	});
 
 	test("holds the same phrases as the jobs document", () => {

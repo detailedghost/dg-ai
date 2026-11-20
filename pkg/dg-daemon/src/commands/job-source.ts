@@ -652,7 +652,7 @@ export function rollBack(
 	);
 }
 
-export function ensureStateFolder(dir: string, prefix = "job add:"): void {
+export function ensureStateFolder(dir: string, prefix: string): void {
 	try {
 		ensurePrivateDir(dir);
 	} catch (err) {
@@ -680,7 +680,7 @@ export function commitToDisk(
 		guardConfig(() => {
 			writeSource(paths, source, record);
 			for (const { name, entry } of jobs) writeJobEntry(paths, name, entry);
-			for (const { name } of jobs) ensureStateFolder(jobStateDir(paths, name));
+			for (const { name } of jobs) ensureStateFolder(jobStateDir(paths, name), "job add:");
 		});
 	} catch (err) {
 		return rollBack(

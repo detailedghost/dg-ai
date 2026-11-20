@@ -118,11 +118,15 @@ export async function runUntilRefused<T extends { stderr: string }>(
 	timeoutMs = 12_000,
 ): Promise<T> {
 	let result = await run();
-	await waitUntil(async () => {
-		if (result.stderr.includes(text)) return true;
-		result = await run();
-		return result.stderr.includes(text);
-	}, timeoutMs);
+	try {
+		await waitUntil(async () => {
+			if (result.stderr.includes(text)) return true;
+			result = await run();
+			return result.stderr.includes(text);
+		}, timeoutMs);
+	} catch {
+		throw new Error(`"${text}" never appeared; last stderr: ${result.stderr}`);
+	}
 	return result;
 }
 

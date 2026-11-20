@@ -116,7 +116,7 @@ describe("promptHidden", () => {
 		const pending = promptHidden("", tty.input, { write: () => undefined });
 		tty.emit("ab\u001b[A\u001b[1;5Cc\u001bOHd\u0001\ttail\r");
 
-		expect(await pending).toBe("abcdtail");
+		expect(await pending).toBe("abcd\ttail");
 	});
 
 	it("drops an escape sequence that arrives in two chunks and C1 controls", async () => {
@@ -129,6 +129,35 @@ describe("promptHidden", () => {
 		tty.emit("Cd\u0085e\r");
 
 		expect(await pending).toBe("abcde");
+	});
+
+	it("lets Enter finish the prompt after a lone Esc", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("ab\u001b");
+		tty.emit("\r");
+
+		expect(await pending).toBe("ab");
+	});
+
+	it("lets Ctrl-C cancel inside an unfinished escape sequence", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("ab\u001b[1;");
+		tty.emit("\u0003");
+
+		await expect(pending).rejects.toThrow("Canceled.");
+	});
+
+	it("keeps a tab in the typed value", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("a\tb\r");
+
+		expect(await pending).toBe("a\tb");
 	});
 
 	it("removes one whole character with backspace for a surrogate pair", async () => {

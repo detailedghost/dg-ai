@@ -55,6 +55,7 @@ export function promptHidden(
 		};
 		const onData = (chunk: string) => {
 			for (const char of chunk) {
+				if (escape !== "none" && "\r\n\u0003\u0004".includes(char)) escape = "none";
 				if (escape !== "none") {
 					if (escape === "escape") escape = char === "[" ? "csi" : char === "O" ? "ss3" : "none";
 					else if (escape === "ss3" || (char >= "@" && char <= "~")) escape = "none";
@@ -67,7 +68,7 @@ export function promptHidden(
 				if (char === "\r" || char === "\n") return finish();
 				if (char === "\u0003" || char === "\u0004") return finish(new Error("Canceled."));
 				if (char === "\u007f" || char === "\b") value = Array.from(value).slice(0, -1).join("");
-				else if (!CONTROL.test(char)) value += char;
+				else if (char === "\t" || !CONTROL.test(char)) value += char;
 			}
 		};
 		stdin.on("data", onData);

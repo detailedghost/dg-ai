@@ -67,8 +67,9 @@ export function createJobCredentialClient(options: {
 			);
 		} catch (err) {
 			if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+				const suffix = body.operation === "status" ? "" : "; the change may have been stored";
 				throw new DgCliError(
-					`dg-daemon did not answer within ${REQUEST_TIMEOUT_MS / 1000} s for the credentials of job "${job}"${body.operation === "status" ? "" : "; the change may have been stored"}`,
+					`dg-daemon did not answer within ${REQUEST_TIMEOUT_MS / 1000} s for the credentials of job "${job}"${suffix}`,
 					EXIT_GENERAL_FAILURE,
 				);
 			}

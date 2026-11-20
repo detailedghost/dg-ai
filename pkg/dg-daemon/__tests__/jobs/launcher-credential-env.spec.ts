@@ -416,6 +416,7 @@ describe("the runner with a bound credential", () => {
 			expect(outcome?.error).toContain("is missing");
 			expect(outcome?.error).not.toContain(VALUE);
 			expect(ctx.store.getJob(job.id)?.lastError).toContain("is missing");
+			expect(ctx.store.getJob(job.id)?.lastError).not.toContain(VALUE);
 			expect(() => readFileSync(out, "utf8")).toThrow();
 		});
 	});
