@@ -130,5 +130,6 @@ Make .agents/ tracked, token-light agent memory in every repo the skills seed. A
 - (slice 1) Scratch list uses .agents/spec/**/roundtable/ instead of the plan's spec/*/roundtable/, so prd's spec/todo/<slug>/roundtable/ is covered too.
 - (slice 1) proto ignore narrowed to .agents/prototype/*/* with !.agents/prototype/*/NOTES.md. The agent-seed temp-repo fixture is not automatable (agent-seed is prose, no CLI), so tests pin the template text.
 - (slice 2) Decision cap counts non-blank lines below the front matter, ADR link line included; slice 3 lint uses the same rule.
+- (review) Codex review hit its usage limit (no review). Three /dg:thrash -s 4 local rounds ran; verify and consolidate personas were not registered, so verdicts were written inline. Fixes landed in three fix(skills) commits.
 
 ## Issues Remediation
