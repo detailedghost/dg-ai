@@ -178,14 +178,6 @@ describe("docs/jobs-and-services.md job model", () => {
 		expect(text).toContain("the review bot repository");
 	});
 
-	test("shows no verb of the next release in a code block", () => {
-		for (const code of codeRegions(doc)) {
-			expect(code).not.toMatch(/\bjob setup\b/);
-			expect(code).not.toMatch(/job add (<url>|<path>|https?:|git@)/);
-			expect(code).not.toContain("--credential");
-		}
-	});
-
 	test("each dg command in a code block passes its --help form", async () => {
 		const forms = [...new Set(dgCommandForms(doc).map((w) => commandWords(w.join(" ")).join(" ")))];
 		expect(forms.length).toBeGreaterThan(5);

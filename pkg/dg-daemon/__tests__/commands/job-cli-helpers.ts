@@ -111,6 +111,25 @@ export async function waitUntil(
 	throw new Error("condition not met in time");
 }
 
+/** Runs the verb again until its stderr holds the text, and gives that result. */
+export async function runUntilRefused<T extends { stderr: string }>(
+	run: () => Promise<T>,
+	text: string,
+	timeoutMs = 12_000,
+): Promise<T> {
+	let result = await run();
+	try {
+		await waitUntil(async () => {
+			if (result.stderr.includes(text)) return true;
+			result = await run();
+			return result.stderr.includes(text);
+		}, timeoutMs);
+	} catch {
+		throw new Error(`"${text}" never appeared; last stderr: ${result.stderr}`);
+	}
+	return result;
+}
+
 /** Homes for specs whose commands may start a detached daemon; cleanup stops it first. */
 export function homeTracker() {
 	const homes: string[] = [];

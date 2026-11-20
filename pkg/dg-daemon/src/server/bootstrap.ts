@@ -24,8 +24,10 @@ import {
 } from "@dg/common/node";
 import { assertNotBlocked } from "@dg/common/node/layout";
 import { DispatchScheduler } from "../dispatch";
-import { countEnabledScheduled } from "../jobs/config";
+import { countEnabledScheduled, parseJobs } from "../jobs/config";
+import { createRefreshLimiter } from "../jobs/credential-refresh";
 import { createJobControl } from "../jobs/control";
+import { defaultRunSource } from "../jobs/secret-sources";
 import { isDaemonIdle } from "../jobs/idle";
 import {
 	migrateScheduledRows,
@@ -56,7 +58,7 @@ import {
 	setKeySourceProvider,
 	setUserVersionProvider,
 } from "../utils/key-source";
-import { readConfig } from "./config-store";
+import { readConfig, readConfigStrict } from "./config-store";
 import { ConnectionManager, isExtensionPeer, sendViaQueue } from "./connection";
 import { createHttpServer, type HttpServerDeps, newInstanceId } from "./http";
 import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
@@ -156,6 +158,8 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 	const dispatchScheduler = new DispatchScheduler();
 	let boundPort: number | undefined;
 	migrateJobsConfig(paths, store, logger);
+	const readCredential = (name: string) =>
+		credentials.getCredential(name)?.value;
 	const supervisor = createSupervisor({
 		paths,
 		daemonUrl: () => {
@@ -164,6 +168,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		},
 		loadConfig: () => readConfig(paths),
 		logger,
+		readCredential,
 	});
 	const jobRunner = createJobRunner({
 		store,
@@ -180,6 +185,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 			},
 			logger,
 			maxLogBytes: MAX_LOG_BYTES,
+			readCredential,
 		},
 	});
 	const instanceId = newInstanceId();
@@ -193,6 +199,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		getExtensionVersion: () => connections.extensionVersion(),
 	};
 
+	const refreshLimiter = createRefreshLimiter();
 	let server: ReturnType<typeof createHttpServer> | undefined;
 	let lastBindError: unknown;
 	for (const candidate of candidatePorts()) {
@@ -211,6 +218,13 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 				credentials,
 				dispatchScheduler,
 				jobs: createJobControl(supervisor, jobRunner),
+				readJobs: () => parseJobs(readConfigStrict(paths)),
+				refresh: {
+					which: (program, env) => Bun.which(program, env),
+					runSource: defaultRunSource,
+					now: Date.now,
+					limiter: refreshLimiter,
+				},
 			});
 			boundPort = candidate;
 			break;

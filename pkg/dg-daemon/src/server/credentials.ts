@@ -6,6 +6,7 @@ import {
 	type CredentialIntake,
 	type CredentialsCliRequest,
 	credentialNameInPrefix,
+	isInjectionEnvName,
 	SECRET_CODE_KEY,
 	SECRET_PAGE_PATH,
 	validateCredentialGrantPrefix,
@@ -185,9 +186,6 @@ function mintIntake(
 class SealedError extends Error {}
 
 const KILL_GRACE_MS = 2000;
-const INJECTION_ENV =
-	/^(?:LD_|DYLD_|_RLD|MALLOC_|GCONV_PATH$|NODE_OPTIONS$|NODE_PATH$|NODE_EXTRA_CA_CERTS$|BUN_|PYTHON|PERL5|PERLLIB$|RUBY|LUA_|TCL|R_PROFILE|R_ENVIRON|BASH_ENV$|ENV$|ZDOTDIR$|PS4$|SHELLOPTS$|BASHOPTS$|PROMPT_COMMAND$|JAVA_TOOL_OPTIONS$|_JAVA_OPTIONS$|JDK_JAVA_OPTIONS$|CLASSPATH$|GIT_|SSH_ASKPASS$|EDITOR$|VISUAL$|PAGER$|LESSOPEN$|PATH$|HOME$|XDG_CONFIG_HOME$|CURL_HOME$|CURL_CA_BUNDLE$|HTTPS?_PROXY$|ALL_PROXY$|NO_PROXY$|SSL_CERT_FILE$|SSL_CERT_DIR$|REQUESTS_CA_BUNDLE$|WGETRC$)/i;
-
 const SAFE_ENV = /^(?:LANG|LANGUAGE|LC_[A-Z]+|TZ|TERM|COLORTERM|NO_COLOR|COLUMNS|LINES|USER|LOGNAME)$/;
 
 function writable(path: string): boolean {
@@ -240,7 +238,7 @@ async function runExec(requester: Socket, frame: CredentialsCliRequest, deps: Fr
 	const sealedNames = spec.bindings.map((binding) => binding.name).filter((name) => sealed(name));
 	let argv = spec.argv;
 	let run: ReturnType<typeof privateCopy> | undefined;
-	if (sealedNames.length && spec.bindings.some((binding) => INJECTION_ENV.test(binding.env)))
+	if (sealedNames.length && spec.bindings.some((binding) => isInjectionEnvName(binding.env)))
 		return { ok: false, error: "credentials exec with pw/ values refuses to bind a loader, runtime or PATH variable." };
 	if (sealedNames.length) {
 		const allowed = checkExecAllowlist({

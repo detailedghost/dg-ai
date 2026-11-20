@@ -47,7 +47,7 @@ describe("the job group in the completion tree", () => {
 		}
 	});
 
-	it("gives add the new flags and no --credential or --grant", () => {
+	it("gives add the new flags and --credential but no --grant", () => {
 		const flags = flagsOf(verb("add"));
 
 		for (const flag of [
@@ -62,10 +62,10 @@ describe("the job group in the completion tree", () => {
 			"--env-file",
 			"--env",
 			"--stop-timeout",
+			"--credential",
 		]) {
 			expect(flags).toContain(flag);
 		}
-		expect(flags).not.toContain("--credential");
 		expect(flags).not.toContain("--grant");
 	});
 

@@ -6,3 +6,5 @@
 - [2026-11-20] The secret page never gets a session token or session meta. It holds one intake code and nothing else.
 - [2026-11-20] A form polls `list` (`updatedAt`), never `get`, to see that a value landed. `get` would return the value to the page.
 - [2026-11-20] `asm-exec` resolves `{{resolve:...}}` only in argv. Pass a secret to a child through `env NAME=<placeholder>`.
+- [2026-11-20] Any daemon path that calls credentials.getCredential directly must refuse sealed pw/ and reserved prefixes itself; sealed() exists only in server/credentials.ts.
+- [2026-11-20] Daemon write paths (refresh) must refuse reserved prefixes and check that the record key equals the job grant; setupDone is never reset by update.

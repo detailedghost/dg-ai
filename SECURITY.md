@@ -117,6 +117,19 @@ as a file path only. The loopback route `POST /service-api/v1/credentials`
 refuses a browser `Origin` and answers each denial with one text. A
 scheduled job receives only `PATH`, `HOME`, `LANG`, and `TZ`.
 
+A job from a repository runs with the rights of the user. `dg job add` pins a full commit
+id and shows the request before it writes anything, and each `dg job update` to a new
+commit shows the change and asks again. `--yes` skips the question: a process that can
+run `dg job add <url> --yes` can run the code of that repository with no question. The
+owner token can write the credentials of a job. `--setup` takes a file path or `-` and no
+JSON text, because a command line is visible to other processes. A repository can name
+an AWS secret, and the request text shows it. A local job needs no consent. A grant is
+not a sandbox, and one job of a source can read the credentials of the other jobs of that
+source. A job can ask the daemon for a new fetch from its own declared source, cannot
+change the argv of that fetch, and gets one fetch for one credential in 60 s. See
+[Jobs](docs/jobs-and-services.md#add-a-job-from-a-repository) and
+[ADR 0053](docs/adr/0053-job-sources-and-credentials.md).
+
 `<DG_HOME>/agents/memory.db` is plaintext so full-text search can index it.
 Keep secrets out of agent memory. Demo and prototype fill text is stored as
 plaintext. Type passwords, tokens, and MFA codes by hand.

@@ -117,3 +117,13 @@ paths = [
   '''(?:^|/)pkg/extension/__tests__/pw-ext-page\.spec\.ts$''',
 ]
 regexes = ['''abc123def456''', '''sk-abcdefgh12345678''']
+
+[[allowlists]]
+description = "Placeholder credential binding in the job credential env specs"
+condition = "AND"
+regexTarget = "secret"
+paths = [
+  '''(?:^|/)pkg/dg-daemon/__tests__/commands/job-verbs\.spec\.ts$''',
+  '''(?:^|/)pkg/dg-daemon/__tests__/commands/job-credential-env\.spec\.ts$''',
+]
+regexes = ['''^api-key=API_KEY$''']

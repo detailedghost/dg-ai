@@ -2,6 +2,13 @@
 
 To start the daemon when you log in, see [Start at login](#start-at-login).
 
+To run a repository, a script or a folder as a job, see
+[Add a job from a repository](#add-a-job-from-a-repository) and
+[Add a local script or folder](#add-a-local-script-or-folder). For credentials, see
+[Credentials: enable and setup](#credentials-enable-and-setup),
+[Answers with --setup](#answers-with---setup) and
+[Refresh a credential](#refresh-a-credential).
+
 A job is a command that the daemon runs for you. A job has one of three modes:
 
 - `continuous`: the daemon keeps it running, such as a bot or a watcher.
@@ -166,6 +173,267 @@ itself.
 The first `dg job enable` at a terminal asks one time to install the login
 unit. `enable` with no terminal only prints the hint
 `hint: dg does not start at login — run dg autostart install`.
+
+## Add a job from a repository
+
+A repository can ship its own jobs. Add the repository, read the request that dg prints, then turn each job on:
+
+```sh
+dg job add <git-url>[@ref]
+dg job enable <name>
+dg job update <job>
+dg job remove <job>
+```
+
+`add` clones the repository, pins the full commit id of `@ref` (a tag, a branch or a full commit id; the default branch when you
+give none), and reads the `dg` block of `package.json` at that commit. The source name is the last part of the URL in lower
+case, with `.git` removed. Give another name with `--name <source>`. The source name is also the credential prefix of its
+jobs. `add` writes jobs that are not enabled, and prints `next: dg job enable <name>` for each one.
+
+dg keeps three places for a repository job:
+
+| What | Path |
+| --- | --- |
+| The registry of each source | `<data>/jobs/sources.json` |
+| The clone of a repository | `<data>/jobs/<source>/` |
+| The state folder of a job | `<state>/jobs/<name>/` |
+
+`<data>` and `<state>` are the roots of the [layout table](install.md#where-dg-keeps-its-files). `update` and `remove` each
+take a job name, not a source name. `update` of a repository job moves each job of that repository to the new commit.
+`remove` refuses a job that is `running` or in `backoff`, removes the job, and removes the record and the clone with the last
+job of a source. It keeps the state folder and the credentials, and says so.
+
+### The dg block
+
+The repository names its jobs in the `dg` key of `package.json`. This is an example value of that key, with two jobs and the
+details of two credentials:
+
+```json
+{
+  "jobs": {
+    "bot": {
+      "argv": ["bun", "run", "bot.ts"],
+      "continuous": true,
+      "envFile": "bot.env",
+      "credentials": ["api-key", "tenant"]
+    },
+    "bot-dev": {
+      "argv": ["bun", "run", "bot.ts", "--dev"],
+      "continuous": true,
+      "credentials": ["api-key"]
+    }
+  },
+  "credentials": {
+    "api-key": {
+      "prompt": "Bot API key",
+      "env": "BOT_API_KEY",
+      "source": {
+        "type": "aws-secretsmanager",
+        "secretId": "placeholder/bot-api-key",
+        "region": "us-east-1"
+      }
+    },
+    "tenant": {
+      "prompt": "Tenant name",
+      "required": false,
+      "meta": { "site": { "prompt": "Tenant host", "default": "example.com" } }
+    }
+  },
+  "requires": ["bun"],
+  "build": ["bun", "install"]
+}
+```
+
+The rules of the block:
+
+- Each job takes the keys of a job entry: `argv`, one mode key, `feed`, `notify`, `timeoutMs`, `stopTimeoutMs`, `envFile` and
+  `credentials`. dg sets `cwd`, `grant`, `enabled`, `passEnv` and `credentialEnv` itself, and a block that sets one is refused.
+- A relative `envFile` resolves below the state folder of the job. An absolute path is refused.
+- `credentials` of a job is a list of names. The `credentials` object of the block gives the details of a name:
+  `prompt`, `required` (default `true`), `meta`, `source` and `env`.
+- `requires` is a list of executable names, with no path separator, that `add` checks on `PATH`.
+- `build` is one argv. It runs in the clone after the consent. A failed build of `add` leaves nothing: no record, no
+  entry and no clone. A failed build of `update` leaves the source at the old commit, and the clone can hold build output
+  of the new commit.
+
+### Consent
+
+`add` and `update` of a repository print the request and ask at a terminal. The request shows each job with its argv and
+mode, the credential prefix, each credential with its source, `requires` and `build`. The question of `add` is
+`Add these jobs? [y/N]`. `--yes` gives the consent with no terminal. With no terminal and no `--yes`, the command refuses with
+`consent needs a terminal`. A local path asks nothing.
+
+`--yes` has a cost: a process that can run `dg job add <url> --yes` can run the code of that repository with no question.
+Give `--yes` only for a repository that you have read.
+
+### Update
+
+`update` fetches the recorded origin, resolves the stored ref again (a full commit id stays pinned) and compares the commit.
+
+- With no new commit, `update` prints `source "<source>" is up to date at <commit>`, asks nothing and changes no file of the
+  clone.
+- With a new commit and an unchanged block, `update` prints the two commits and asks `Update to this commit? [y/N]`.
+- With a new commit and a changed block, `update` prints the full request and each change, and asks
+  `Apply these changes? [y/N]`.
+- With no terminal and no `--yes`, `update` refuses. `--yes` gives the consent.
+- `update` to a new commit refuses while a job of the source is `running` or in `backoff`, and names
+  `dg job stop <name>`.
+
+After the consent, `update` replaces the repository keys of each job: `argv`, `cwd`, the mode keys, `feed`, `notify`,
+`timeoutMs`, `credentials`, `credentialEnv`, `grant`, `envFile` and `stopTimeoutMs`. `enabled` and `passEnv` stay. The output
+names each replaced key as `replaced <name>.<key>`, also a key that you edited by hand. For each new job it prints
+`next: dg job enable <name>`.
+
+dg owns the clone. On a new commit and after the consent, `update` puts the clone back to the stored commit, prints
+`discarded local changes in the clone of "<source>"`, and continues. An `update` with no new commit changes no file of the
+clone.
+
+`update` asks no question for a new credential. It prints `next: dg job setup <name>` for each job that lists a new
+credential, required or optional. With `--yes`, a changed credential source applies with no person present. With or without `--yes`, a changed credential source makes
+`update` remove the job from the "setup done" mark and print `next: dg job setup <name>`; see [Refresh a credential](#refresh-a-credential).
+
+## Add a local script or folder
+
+Add a script, then turn it on:
+
+```sh
+dg job add ./script.ts --every 15m
+dg job enable script
+```
+
+The job name is the file name with no extension, in lower case. Give another name with `--name`. The argument must start
+with `./`, `../`, `/` or `~/`, so dg can tell a path from a URL. A local path has no pin and asks no question.
+
+- A file becomes one job. If the file is executable, its `argv` is the file; otherwise a `.ts`, `.js`, `.mjs` or `.cjs` file
+  runs with `bun`, and any other file is refused. Words after `--` follow the file in `argv`. The working directory is the
+  folder of the file, and `--cwd` is refused. The mode flags and the other flags of `add` work as for a command job.
+- A folder with a `dg` block in its `package.json` becomes the jobs of that block, with the rules of
+  [the dg block](#the-dg-block) and the folder as its working directory. The flags of `add` are refused, because the block
+  declares them. The `build` of the block runs after the request, with no question.
+- `add` stores the real path of a symbolic link and says so.
+- A file job has a record of kind `path` in `<data>/jobs/sources.json` from `add`, and `dg job remove <name>` removes it.
+  `remove` never touches the file or the folder.
+
+A change of the script text applies at the next run of a scheduled job, or at the next start of a continuous job. A change
+of the block or of the mode needs `dg job update <name>`. For a folder, `update` reads the block again, asks no question,
+does not run `build` and says so. `dg job list` and `dg job status` show `source changed` when the block is not the one that
+`add` read, `source missing` for a path that is gone, and `source invalid` for a block that no longer parses.
+
+If a job lists credentials, `dg job enable` runs the steps of [Credentials: enable and setup](#credentials-enable-and-setup).
+
+## Credentials: enable and setup
+
+A job can list credentials in its `dg` block, or with `--credential <name>` on `add` and `update` of a script or a command. AWS
+Secrets Manager is the one source type of this release. dg stores a credential under the credential prefix of the job, as
+`<prefix>/<name>`, in the dg credential store; for a repository the prefix is the source name, and for a file or a command the
+prefix is the job name. dg refuses a prefix that another job or source uses, and the names `pw`, `extension`, `phone-friend`,
+`phone-vault` and `db`, with `"<name>" is a reserved name`.
+
+The first `dg job enable <name>` runs these steps in order:
+
+1. Fetch each credential from its declared source, or ask for it with a hidden prompt.
+2. Store the values in the dg credential store.
+3. Make the grant: dg writes the token file for the prefix.
+4. Enable the job and start it.
+
+A source that fails at a terminal offers `Enter <name> by hand? [y/N]`. `dg job setup <name>` changes a credential later: it
+shows whether each credential is stored, expired or missing, and asks before it replaces one. It needs a terminal.
+`dg job setup <name> --rotate-token` makes a new grant token for the prefix, and prints `next: dg job restart <name>` for each
+job of that prefix that runs. `dg job setup <name> --refresh` is in [Refresh a credential](#refresh-a-credential).
+
+A prefix that already holds credentials needs one adoption question first. dg prints `credentials below <prefix>/: <names>`
+and asks `This job can read these credentials. Continue? [y/N]`. A prefix that already holds credentials needs one `y` at a
+terminal, also for an agent: with no terminal, the command stops with `the prefix <prefix>/ holds credentials` and asks you to
+run it in a terminal one time. `setup --rotate-token` and `setup --refresh` follow the same rule. The first store on an empty
+prefix needs no question.
+
+`update` asks no question for a new credential. It prints `next: dg job setup <name>` for each job that lists a new credential,
+required or optional.
+
+A job reads a credential in one of two ways:
+
+- Through [Service API v1](service-api.md) with its grant. The job reads `DG_CREDENTIAL_GRANT_FILE`, and asks for a name
+  below its prefix.
+- As an environment variable. Bind it with `--credential <name>=<NAME>` on `add` or `update`, or with the key `env` on a
+  credential of a `dg` block. The launcher reads the value at each start and puts it after `envFile` and `passEnv` and before
+  the `DG_*` keys. The child and its children see the value in their environment.
+
+Each credential that is bound to an environment variable is required at launch: a missing value stops the start with
+`credential <name> is missing — run dg job setup <job>`. A `dg` block with `env` on a credential with `required: false` is
+refused. A variable name is 64 characters at most, has letters, digits and `_`, does not start with `DG_`, and is not a name
+that changes how a program loads code, such as `PATH` or `LD_PRELOAD`. A name that fails the rule is never printed back to
+you, because a pasted secret must not reach `config.json` or your terminal.
+
+## Answers with --setup
+
+`dg job enable <name> --setup <file>` answers the questions of the wizard with no terminal. `--setup` takes a file path or `-`
+for standard input, and never JSON text, because a command line is visible to other processes. dg refuses a file that other
+users can read and tells you to run `chmod 600` on it. The input is 128 KiB at most.
+
+```json
+{
+  "version": 1,
+  "credentials": {
+    "api-key": { "source": { "profile": "bot-dev" } },
+    "tenant": { "value": "tenant-placeholder", "meta": { "site": "example.com" } }
+  }
+}
+```
+
+```sh
+dg job enable bot --setup answers.json
+dg job enable bot --setup -
+```
+
+Each credential gets one answer with exactly one of these keys:
+
+- `value`: the text to store.
+- `source`: `true`, or an object with `profile`, to fetch from the declared source with that AWS profile.
+- `keep`: `true`, to keep the stored value.
+- `skip`: `true`, to store nothing. A required credential that is missing cannot be skipped.
+
+`meta` (text values) and `expiresAt` (text) go with `value` and `source`. A name that the job does not list is refused. A
+credential with a declared source and no answer is fetched. A required credential with no source and no answer needs a
+terminal, or the command stops and names it. `--setup` works only for a job that lists credentials.
+
+## Refresh a credential
+
+A credential stops working when its upstream rotates it. There are two ways to fetch it again from its declared source.
+
+The owner runs these two commands:
+
+```sh
+dg job setup <name> --refresh
+dg job restart <name>
+```
+
+`setup --refresh` fetches each credential that has a source, with your shell and your AWS login, and stores the values. If it
+fails, it shows the cause and the hint `aws sso login`. It needs no terminal unless the adoption question is open. A job that
+binds a credential to an environment variable reads the new value at its next start, so restart the job.
+
+A job that runs can ask for itself. It sends the operation `refresh` of [Service API v1](service-api.md#refresh-a-credential)
+with its grant, and then sends `get` to read the new value.
+
+- The daemon fetches only from the source that the record holds. The request cannot give a secret id, a region, a key, a
+  profile or an argv. For a repository job the owner read that source at the consent of `dg job add` or `dg job update`. Two
+  cases have no such review: a local folder with a `dg` block asks nothing, and `--yes` gives the consent with no person
+  present.
+- A refresh needs a source and one earlier `dg job setup <name>` by a person; the answer is 409 when either is missing, or when
+  the record key is not the grant of the job.
+- The fetch uses the recorded profile and the environment of the named job (`envFile`, `passEnv` and the allowlist), not
+  the environment of the caller.
+- The daemon allows one fetch for one credential in 60 s. dg starts no refresh on its own. A second request in that time gets
+  429 with `retryAfter` in seconds.
+- When `dg job update` changes the source of a credential that a job lists, it removes the job from the "setup done" mark, so
+  `refresh` answers 409 until `dg job setup <name>` runs again.
+- After a 502 the next step is `dg job setup <job> --refresh`, which shows the cause.
+
+Note that the daemon runs no `git` command, starts `aws` only for the operation `refresh` with the fixed argv of the declared
+source, and reads `<data>/jobs/sources.json` only for that operation.
+
+Two limits follow. The grant proves the prefix and not the job, so a holder of the grant can name any job of that prefix in a
+`refresh` request, and jobs that share a prefix trust each other. And `refresh` is not a sandbox against a running job: the
+`envFile` of the job can set `PATH` or `AWS_*` for the `aws` process.
 
 ## Old and new commands
 

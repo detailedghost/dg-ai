@@ -2,7 +2,9 @@ import { isAbsolute } from "node:path";
 import {
 	CREDENTIAL_GRANT_PREFIX_PATTERN,
 	describeError,
+	isInjectionEnvName,
 	isRecord,
+	isReservedCredentialPrefix,
 	parseEvery,
 	validateCredentialName,
 } from "@dg/common";
@@ -26,12 +28,14 @@ const JOB_KEYS = new Set<string>([
 	"passEnv",
 	"stopTimeoutMs",
 	"grant",
+	"credentialEnv",
 ]);
 const SCHEDULED_ONLY_KEYS = ["feed", "notify", "timeoutMs"] as const;
 export const JOB_NAME_RULE =
 	"must be 1-64 lowercase letters, digits or hyphens, starting with a letter or digit";
 const MODE_RULE = 'give exactly one of "continuous", "schedule" or "every"';
 const MAX_CREDENTIALS = 16;
+export const MAX_ENV_NAME = 64;
 export const DEFAULT_STOP_TIMEOUT_MS = 5_000;
 export const MAX_STOP_TIMEOUT_MS = 240_000;
 
@@ -53,6 +57,7 @@ export type JobDecl = {
 	passEnv: string[];
 	stopTimeoutMs: number;
 	grant?: string;
+	credentialEnv: Record<string, string>;
 };
 
 export type ParsedJob =
@@ -80,6 +85,55 @@ export const isContinuousEntry = (raw: unknown): boolean => {
 	const mode = modeOf(raw);
 	return mode === undefined || mode === "continuous";
 };
+
+/** The reason a name cannot carry a bound credential, or undefined when it can. */
+export function envNameProblem(name: string): string | undefined {
+	if (name.length > MAX_ENV_NAME) {
+		return `environment variable name is longer than ${MAX_ENV_NAME} characters`;
+	}
+	const shown = JSON.stringify(name);
+	if (name === "__proto__") {
+		return `environment variable ${shown} cannot hold a credential`;
+	}
+	if (!ENV_KEY.test(name)) {
+		return `environment variable ${shown} must match ^[A-Za-z_][A-Za-z0-9_]*$`;
+	}
+	if (/^dg_/i.test(name)) {
+		return `environment variable ${shown} starts with DG_, which dg sets`;
+	}
+	if (isInjectionEnvName(name)) {
+		return `environment variable ${shown} can change how a program loads code or finds its tools`;
+	}
+	return undefined;
+}
+
+function checkCredentialEnv(
+	value: unknown,
+	grant: unknown,
+	credentials: string[],
+): { error: string } | { bound: Record<string, string> } {
+	if (grant === undefined) return { error: '"credentialEnv" needs "grant"' };
+	if (!isRecord(value)) {
+		return { error: '"credentialEnv" must be an object of variable names' };
+	}
+	if (Object.keys(value).length > 0 && typeof grant === "string" && isReservedCredentialPrefix(grant)) {
+		return { error: `"credentialEnv" cannot use the reserved credential prefix "${grant}"` };
+	}
+	const bound: Record<string, string> = Object.create(null);
+	for (const [name, credential] of Object.entries(value)) {
+		const problem = envNameProblem(name);
+		if (problem) return { error: `"credentialEnv": ${problem}` };
+		const listed =
+			typeof credential === "string" ? credential.toLowerCase() : undefined;
+		if (listed === undefined || !credentials.includes(listed)) {
+			return {
+				error: `"credentialEnv" binds ${JSON.stringify(name)} to a credential that is not in "credentials"`,
+			};
+		}
+		bound[name] = listed;
+	}
+	return { bound };
+}
 
 function checkSchedule(value: unknown): string | undefined {
 	if (typeof value !== "string") return '"schedule" must be a cron expression';
@@ -233,6 +287,12 @@ export function parseJobEntry(name: string, raw: unknown): ParsedJob {
 		if ("error" in checked) return invalid(checked.error);
 		credentials = checked.names;
 	}
+	let credentialEnv: Record<string, string> = {};
+	if (raw.credentialEnv !== undefined) {
+		const checked = checkCredentialEnv(raw.credentialEnv, raw.grant, credentials);
+		if ("error" in checked) return invalid(checked.error);
+		credentialEnv = checked.bound;
+	}
 	return {
 		ok: true,
 		name,
@@ -252,6 +312,7 @@ export function parseJobEntry(name: string, raw: unknown): ParsedJob {
 		passEnv: [...new Set((raw.passEnv as string[] | undefined) ?? [])],
 		stopTimeoutMs,
 		...(raw.grant === undefined ? {} : { grant: raw.grant }),
+		credentialEnv,
 	};
 }
 

@@ -5,10 +5,10 @@ covers: ["pkg/dg-daemon/src/services/**", "pkg/dg-daemon/src/server/service-api.
 [ADR 0043](../../docs/adr/0043-outside-services.md)
 
 - Treat service API v1 as provisional. Ship a breaking change as a new environment key or a v2 route. Never change a v1 key or route in place.
-- Build a service environment in this order: allowlist (`PATH`, `HOME`, `LANG`, `TZ`), `passEnv`, `envFile`, injected keys. Let injected keys win.
+- Build a service environment in this order: allowlist (`PATH`, `HOME`, `LANG`, `TZ`), `passEnv`, `envFile`, credential-bound variables, injected keys. Let injected keys win.
 - Inject `DG_SERVICE_API`, `DG_SERVICE_LABEL`, `DG_DAEMON_URL`, `DG_CREDENTIAL_GRANT_PREFIX`, `DG_CREDENTIAL_GRANT_FILE`, `DG_SERVICE_STATE_DIR` and, when set, `DG_HOME`.
 - Never put a grant token in the environment. Put its file path there.
-- Serve credentials only at `POST /service-api/v1/credentials`, with `get` and `list` below the grant prefix.
+- Serve credentials only at `POST /service-api/v1/credentials`, with `get`, `list` and `refresh` below the grant prefix. `refresh` is the addition of [ADR 0053](../../docs/adr/0053-job-sources-and-credentials.md).
 - Require `X-Dg-Grant-Prefix` and `X-Dg-Grant-Token`. Refuse a browser `Origin` with the `isBrowserOrigin` gate, and answer each denial with one text.
 - Never echo request body text or headers in a response or log line.
 - Parse `grant`, `passEnv` and `stopTimeoutMs` (default 5000, maximum 240000) with the parser the daemon uses.

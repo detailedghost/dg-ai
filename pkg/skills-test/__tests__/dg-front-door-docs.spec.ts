@@ -216,14 +216,6 @@ describe("docs/jobs-and-services.md front door", () => {
 		for (const w of ["dg-daemon start", "dg-daemon stop", "dg-daemon restart", "dg-daemon status"]) expect(doc).toContain(w);
 	});
 
-	test("shows no unbuilt job verb", () => {
-		for (const f of CHANGED_DOCS) {
-			expect([f, /dg job setup/.test(read(f))]).toEqual([f, false]);
-			expect([f, /dg job add <git-url>/.test(read(f))]).toEqual([f, false]);
-		}
-		expect(doc).not.toMatch(/dg job enable[^\n]*(credential|token|secret)/i);
-	});
-
 	test("Start at login follows Run, stop and restart, after the four run literals, and is linked from the top", () => {
 		const section = doc.indexOf("Start at login");
 		expect(section).toBeGreaterThanOrEqual(0);

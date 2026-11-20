@@ -7,7 +7,6 @@ import {
 	EXIT_GENERAL_FAILURE,
 	formatSchedule,
 	isRecord,
-	parseEvery,
 } from "@dg/common";
 import {
 	autostartManages,
@@ -25,6 +24,7 @@ import {
 	parseJobEntry,
 } from "../jobs/config";
 import { jobLogFile } from "../jobs/launcher";
+import type { NamedRegistry, PathSourceRecord } from "../jobs/sources";
 import { readConfig, readConfigStrict, writeConfig, writeJobEntry } from "../server/config-store";
 import type { ServiceStatus } from "../services/supervisor";
 import {
@@ -54,6 +54,16 @@ import {
 	resolveExecutable,
 	withConfigLock,
 } from "./job-support";
+import type { JobSetupDeps } from "./job-setup";
+import type { JobSourceDeps } from "./job-source";
+import {
+	aliasNote,
+	announceAliases,
+	assertOneMode,
+	checkEntryFlags,
+	duration,
+	entryFromFlags,
+} from "./job-entry";
 import { startDaemon } from "./start";
 
 const MODE_KEYS = ["continuous", "schedule", "every"] as const;
@@ -72,12 +82,6 @@ const fail = (message: string): never => {
 
 const notFound = (name: string) => fail(`no job named "${name}"`);
 
-const aliasNote = (oldForm: string, newForm: string): void => {
-	console.error(
-		`note: "${oldForm}" is now "${newForm}"; this form goes away in the next major release`,
-	);
-};
-
 const collect = (value: string, previous: string[] = []): string[] => [
 	...previous,
 	value,
@@ -88,14 +92,6 @@ const jobPath = (name: string, verb: "start" | "stop") =>
 
 const isActive = (state: string | undefined): boolean =>
 	state === "running" || state === "backoff";
-
-function duration(value: string, flag: string, prefix: string): number {
-	try {
-		return parseEvery(value, flag);
-	} catch (err) {
-		return fail(`${prefix}: ${describeError(err)}`);
-	}
-}
 
 function tableEntries(
 	config: Record<string, unknown>,
@@ -161,10 +157,29 @@ async function homeLine(): Promise<string> {
 	return `dg home: ${home}; daemon: ${daemon}`;
 }
 
+async function refuseTakenPrefix(
+	paths: Paths,
+	config: Record<string, unknown>,
+	name: string,
+): Promise<void> {
+	if (isInTable(config, name)) return;
+	const [{ assertPrefixFree }, { readNamedSources }] = await Promise.all([
+		import("./job-source"),
+		import("../jobs/sources"),
+	]);
+	assertPrefixFree(
+		name,
+		config,
+		guardConfig(() => readNamedSources(paths)),
+		"job add:",
+	);
+}
+
 type AddOptions = {
 	name?: string;
 	label?: string;
-	cwd: string;
+	yes?: boolean;
+	cwd?: string;
 	continuous?: boolean;
 	schedule?: string;
 	cron?: string;
@@ -176,6 +191,7 @@ type AddOptions = {
 	env?: string[];
 	passEnv?: string[];
 	stopTimeout?: string;
+	credential?: string[];
 };
 
 async function addVerb(
@@ -183,64 +199,33 @@ async function addVerb(
 	options: AddOptions,
 	deps: JobVerbDeps,
 ): Promise<void> {
-	const stop = (message: string): never => fail(`job add: ${message}`);
-	if (options.label !== undefined) aliasNote("--label", "--name");
-	if (options.cron !== undefined) aliasNote("--cron", "--schedule");
-	if (options.passEnv !== undefined) aliasNote("--pass-env", "--env");
+	function stop(message: string): never {
+		return fail(`job add: ${message}`);
+	}
+	announceAliases(options);
 	const flag = options.name === undefined ? "--label" : "--name";
 	const name = options.name ?? options.label ?? stop("--name is required");
-	const cronText = options.schedule ?? options.cron;
-	const modeCount =
-		Number(options.continuous === true) +
-		Number(options.every !== undefined) +
-		Number(options.schedule !== undefined) +
-		Number(options.cron !== undefined);
-	if (modeCount !== 1) {
-		stop("give one of --continuous, --schedule or --every");
-	}
+	assertOneMode(options, "job add");
 	if (!isJobName(name)) stop(`"${flag}" ${JOB_NAME_RULE}`);
-	const names = [
-		...new Set([...(options.env ?? []), ...(options.passEnv ?? [])]),
-	];
-	if (names.some((entry) => entry.includes("="))) {
-		stop(
-			"--env takes a variable name — put a value in the file of --env-file",
-		);
-	}
+	const parts = checkEntryFlags(options, "job add");
+	const { names, cronText, timeoutMs } = parts;
 	if (argv.length === 0) stop("no command given — put it after a bare --");
+	if (options.cwd === undefined) stop("--cwd is required");
 	const cwd = resolve(options.cwd);
 	if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
 		stop(`--cwd: no such directory: ${options.cwd}`);
 	}
-	const stopTimeoutMs =
-		options.stopTimeout === undefined
-			? undefined
-			: duration(options.stopTimeout, "--stop-timeout", "job add");
-	const timeoutMs =
-		options.timeout === undefined
-			? undefined
-			: duration(options.timeout, "--timeout", "job add");
 	const paths = resolveDgPaths();
 	let command = argv;
 	if (options.continuous) {
 		const [first, ...rest] = argv;
 		command = [resolveExecutable(first, "job add:", deps.which), ...rest];
 	}
-	const entry: Row = {
-		argv: command,
-		cwd,
-		...(options.continuous ? { continuous: true } : {}),
-		...(cronText === undefined ? {} : { schedule: cronText }),
-		...(options.every === undefined ? {} : { every: options.every }),
-		...(options.envFile === undefined
+	const credentials =
+		options.credential === undefined
 			? {}
-			: { envFile: resolve(options.envFile) }),
-		...(names.length === 0 ? {} : { passEnv: names }),
-		...(stopTimeoutMs === undefined ? {} : { stopTimeoutMs }),
-		...(options.feed ? { feed: true } : {}),
-		...(options.notify === undefined ? {} : { notify: options.notify }),
-		...(timeoutMs === undefined ? {} : { timeoutMs }),
-	};
+			: (await import("./job-source")).credentialListFor(options.credential, name);
+	const entry: Row = entryFromFlags(options, parts, { argv: command, cwd, credentials });
 	const legacy = options.label !== undefined || options.cron !== undefined;
 	const legacyScheduled = legacy && !options.continuous;
 	const probe: Row = legacyScheduled
@@ -258,6 +243,7 @@ async function addVerb(
 	const exists = () =>
 		fail(`a job named "${name}" already exists`);
 	if (!options.continuous) {
+		await refuseTakenPrefix(paths, readTable(paths), name);
 		const created = await addScheduled({
 			name,
 			argv,
@@ -270,6 +256,7 @@ async function addVerb(
 			timeoutMs,
 			envFile: options.envFile === undefined ? undefined : resolve(options.envFile),
 			passEnv: names,
+			...credentials,
 		}, deps.which);
 		if (legacy) {
 			console.log(
@@ -282,17 +269,25 @@ async function addVerb(
 		return;
 	}
 	if (await findScheduled(name)) exists();
-	await withConfigLock(paths, () => {
+	await withConfigLock(paths, async () => {
 		const config = readTable(paths);
 		requireMigrated(config);
 		if (isInTable(config, name)) exists();
+		await refuseTakenPrefix(paths, config, name);
 		guardConfig(() => writeJobEntry(paths, name, entry));
 	});
 	console.log(`added job "${name}"`);
 	console.log(`next: dg job enable ${name}`);
 }
 
-type Rows = { rows: Row[]; scheduled: ScheduledRow[] };
+type SourceMark = {
+	source?: string;
+	ref?: string | null;
+	sha?: string;
+	path?: string;
+	sourceState?: string;
+};
+type Rows = { rows: Row[]; scheduled: (ScheduledRow & SourceMark)[] };
 
 function grantFileOf(paths: Paths, grant: unknown): string | null {
 	if (typeof grant !== "string") return null;
@@ -311,8 +306,36 @@ function stateDirOf(paths: Paths, name: string): string | null {
 	}
 }
 
+async function sourcesOf(paths: Paths): Promise<NamedRegistry> {
+	if (!existsSync(paths.jobSourcesPath)) return {};
+	const { readNamedSources } = await import("../jobs/sources");
+	return guardConfig(() => readNamedSources(paths));
+}
+
+async function recordOf(paths: Paths, name: string) {
+	const registry = await sourcesOf(paths);
+	const { findRecordByJob } = await import("../jobs/sources");
+	return findRecordByJob(registry, name);
+}
+
 async function collectRows(paths: Paths): Promise<Rows> {
 	const config = readTable(paths);
+	const registry = await sourcesOf(paths);
+	const { findRecordByJob } = await import("../jobs/sources");
+	const { sourceStateOf } = await import("./job-source");
+	const markOf = (job: string): SourceMark => {
+		const found = findRecordByJob(registry, job);
+		if (!found) return {};
+		if (found.record.kind === "git") {
+			return { source: found.source, ref: found.record.ref, sha: found.record.sha };
+		}
+		const record: PathSourceRecord = found.record;
+		return {
+			source: found.source,
+			path: record.path,
+			sourceState: sourceStateOf(paths, found.source, record),
+		};
+	};
 	const live = await findLiveDaemon(paths);
 	const daemon = live
 		? ((await callJobRoute(CHAT_JOBS_PATH, "GET")) as { jobs: ServiceStatus[] })
@@ -327,6 +350,7 @@ async function collectRows(paths: Paths): Promise<Rows> {
 		const entry = isRecord(raw) ? raw : {};
 		const known = daemon?.find((row) => row.label === name);
 		return {
+			...markOf(name),
 			name,
 			mode: modeOf(raw),
 			enabled: entry.enabled === true,
@@ -340,7 +364,20 @@ async function collectRows(paths: Paths): Promise<Rows> {
 			grantFile: grantFileOf(paths, entry.grant),
 		};
 	});
-	return { rows, scheduled: await listScheduled() };
+	const scheduled = (await listScheduled()).map((row) => ({ ...row, ...markOf(row.name) }));
+	return { rows, scheduled };
+}
+
+function sourceText(row: SourceMark): string {
+	if (row.source === undefined) return "";
+	if (row.path !== undefined) return `${row.source} (${row.path})`;
+	return row.sha === undefined ? "" : `${row.source}@${row.sha.slice(0, 12)}`;
+}
+
+function sourceStateText(name: string, row: SourceMark): string {
+	if (row.sourceState === "changed") return `source changed — run dg job update ${name}`;
+	if (row.sourceState === "missing") return `source missing: ${row.path}`;
+	return row.sourceState === "invalid" ? `source invalid: ${row.path}` : "";
 }
 
 function rowLine(row: Row): string {
@@ -351,12 +388,14 @@ function rowLine(row: Row): string {
 		row.state,
 		row.pid === null ? "" : `pid ${row.pid}`,
 		`restarts ${row.restarts}`,
+		sourceText(row),
+		sourceStateText(row.name as string, row),
 	]
 		.filter((part) => part !== "")
 		.join("  ");
 }
 
-function scheduledLine(row: ScheduledRow): string {
+function scheduledLine(row: ScheduledRow & SourceMark): string {
 	return [
 		row.name,
 		row.renamedFrom ? `was "${row.renamedFrom}"` : "",
@@ -365,6 +404,8 @@ function scheduledLine(row: ScheduledRow): string {
 		`last ${row.lastRunAt ?? "never"}`,
 		`next ${row.nextRunAt ?? "-"}`,
 		row.invalid ? `invalid: ${row.invalid}` : "",
+		sourceText(row),
+		sourceStateText(row.name, row),
 	]
 		.filter((part) => part !== "")
 		.join("  ");
@@ -454,20 +495,16 @@ async function offerLoginUnit(paths: Paths, deps: JobVerbDeps): Promise<void> {
 	}
 }
 
-async function enableVerb(name: string, deps: JobVerbDeps): Promise<void> {
-	const paths = resolveDgPaths();
-	await locate(paths, name, { migrate: true, scheduled: false });
-	await assertDaemonAnswers(paths, name, "job");
-	await withConfigLock(paths, () => {
-		const config = readTable(paths);
-		requireMigrated(config);
-		const entry = tableEntry(paths, config, name);
-		if (entry.enabled !== true) {
-			guardConfig(() => writeJobEntry(paths, name, { ...entry, enabled: true }));
-		}
-	});
-	console.log(`enabled job "${name}"`);
-	await offerLoginUnit(paths, deps);
+function listedCredentials(paths: Paths, name: string): string[] {
+	if (!existsSync(paths.daemonConfigPath)) return [];
+	const config = readTable(paths);
+	if (!isInTable(config, name)) return [];
+	const entry = (config[JOBS_CONFIG_KEY] as Record<string, unknown>)[name];
+	const listed = isRecord(entry) ? entry.credentials : undefined;
+	return Array.isArray(listed) ? listed.filter((item) => typeof item === "string") : [];
+}
+
+async function startAndReport(paths: Paths, name: string, deps: JobVerbDeps): Promise<void> {
 	if (!(await findLiveDaemon(paths))) {
 		try {
 			await startDaemon(paths, { autostart: deps.autostart });
@@ -489,6 +526,42 @@ async function enableVerb(name: string, deps: JobVerbDeps): Promise<void> {
 	}
 	if (!status) return fail(`job "${name}" is not loaded by the daemon — see the daemon log`);
 	console.log(formatStatus(status));
+}
+
+async function enableVerb(
+	name: string,
+	options: { setup?: string },
+	deps: JobVerbDeps,
+	setupDeps: () => Promise<JobSetupDeps>,
+): Promise<void> {
+	if (options.setup !== undefined && options.setup.trimStart().startsWith("{")) {
+		fail("--setup takes a file path or -");
+	}
+	const paths = resolveDgPaths();
+	if (listedCredentials(paths, name).length > 0) {
+		const { runEnableWizard } = await import("./job-setup");
+		await runEnableWizard(paths, name, { setup: options.setup }, await setupDeps());
+		console.log(`enabled job "${name}"`);
+		await offerLoginUnit(paths, deps);
+		await startAndReport(paths, name, deps);
+		return;
+	}
+	await locate(paths, name, { migrate: true, scheduled: false });
+	if (options.setup !== undefined) {
+		fail(`job enable: job "${name}" lists no credential, so --setup has nothing to answer`);
+	}
+	await assertDaemonAnswers(paths, name, "job");
+	await withConfigLock(paths, () => {
+		const config = readTable(paths);
+		requireMigrated(config);
+		const entry = tableEntry(paths, config, name);
+		if (entry.enabled !== true) {
+			guardConfig(() => writeJobEntry(paths, name, { ...entry, enabled: true }));
+		}
+	});
+	console.log(`enabled job "${name}"`);
+	await offerLoginUnit(paths, deps);
+	await startAndReport(paths, name, deps);
 }
 
 async function disableVerb(name: string): Promise<void> {
@@ -522,9 +595,25 @@ async function disableVerb(name: string): Promise<void> {
 	}
 }
 
+async function dropRecord(paths: Paths, name: string): Promise<void> {
+	if (!existsSync(paths.jobSourcesPath)) return;
+	const { removeJobFromSource } = await import("./job-source");
+	guardConfig(() => removeJobFromSource(paths, name));
+}
+
+async function dropCommandRecord(paths: Paths, name: string): Promise<void> {
+	await withConfigLock(paths, () => dropRecord(paths, name));
+}
+
 async function removeVerb(name: string): Promise<void> {
 	const paths = resolveDgPaths();
-	const kind = await locate(paths, name, { migrate: true, scheduled: true });
+	const found = await recordOf(paths, name);
+	let kind: "table" | "scheduled" = "table";
+	if (found) {
+		if (existsSync(paths.daemonConfigPath)) await ensureMigrated(paths);
+	} else {
+		kind = await locate(paths, name, { migrate: true, scheduled: true });
+	}
 	const live = await assertDaemonAnswers(paths, name, "job");
 	if (live) {
 		const state = (await liveJobStates(paths))?.get(name);
@@ -533,18 +622,32 @@ async function removeVerb(name: string): Promise<void> {
 		}
 	}
 	if (kind === "scheduled") {
+		await dropCommandRecord(paths, name);
 		await removeScheduled(name);
 		console.log(`removed job "${name}"`);
 		return;
 	}
-	await withConfigLock(paths, () => {
+	let listsCredentials = false;
+	await withConfigLock(paths, async () => {
 		const config = readTable(paths);
 		requireMigrated(config);
-		if (!isInTable(config, name)) notFound(name);
+		if (!found && !isInTable(config, name)) notFound(name);
 		assertNoLiveInstance(paths, name, "job");
-		guardConfig(() => writeJobEntry(paths, name, undefined));
+		if (isInTable(config, name)) {
+			const entry = tableEntry(paths, config, name);
+			listsCredentials =
+				Array.isArray(entry.credentials) && entry.credentials.length > 0;
+			guardConfig(() => writeJobEntry(paths, name, undefined));
+		}
+		await dropRecord(paths, name);
 	});
 	console.log(`removed job "${name}"`);
+	if (!found) {
+		if (listsCredentials) console.log(`kept credentials below ${name}/`);
+		return;
+	}
+	console.log(`kept state: ${stateDirOf(paths, name)}`);
+	if (listsCredentials) console.log(`kept credentials below ${found.source}/`);
 }
 
 type UpdateOptions = {
@@ -554,10 +657,44 @@ type UpdateOptions = {
 	timeout?: string;
 	feed?: boolean;
 	notify?: string;
+	yes?: boolean;
+	credential?: string[];
 };
 
-async function updateVerb(name: string, options: UpdateOptions): Promise<void> {
+const UPDATE_FLAG_KEYS = [
+	"continuous",
+	"schedule",
+	"every",
+	"timeout",
+	"feed",
+	"notify",
+	"credential",
+];
+
+async function updateVerb(
+	name: string,
+	options: UpdateOptions,
+	command: Command,
+	sourceDeps: () => JobSourceDeps,
+): Promise<void> {
 	const stop = (message: string): never => fail(`job update: ${message}`);
+	const record = (await recordOf(resolveDgPaths(), name))?.record;
+	const folder = record?.kind === "path" && record.declarationHash !== undefined;
+	if (record && (record.kind === "git" || folder)) {
+		if (UPDATE_FLAG_KEYS.some((key) => command.getOptionValueSource(key) === "cli")) {
+			stop(
+				`the ${record.kind === "git" ? "repository" : "folder"} declares this in its "dg" block`,
+			);
+		}
+		if (record.kind === "git") {
+			const { updateSource } = await import("./job-update");
+			await updateSource(name, { yes: options.yes }, sourceDeps());
+		} else {
+			const { updateLocal } = await import("./job-local");
+			await updateLocal(name, sourceDeps());
+		}
+		return;
+	}
 	const modes: [Mode, unknown][] = [
 		["continuous", options.continuous ? true : undefined],
 		["schedule", options.schedule],
@@ -565,6 +702,10 @@ async function updateVerb(name: string, options: UpdateOptions): Promise<void> {
 	];
 	const given = modes.filter(([, value]) => value !== undefined);
 	if (given.length > 1) stop("give one of --continuous, --schedule or --every");
+	const credentials =
+		options.credential === undefined
+			? undefined
+			: (await import("./job-source")).credentialListFor(options.credential, name);
 	const changes: [string, unknown][] = [
 		...given,
 		["feed", options.feed ? true : undefined],
@@ -576,13 +717,19 @@ async function updateVerb(name: string, options: UpdateOptions): Promise<void> {
 				: duration(options.timeout, "--timeout", "job update"),
 		],
 	].filter(([, value]) => value !== undefined) as [string, unknown][];
-	if (changes.length === 0) stop("give a flag to change");
 	const paths = resolveDgPaths();
 	if (existsSync(paths.daemonConfigPath)) await ensureMigrated(paths);
 	if (!isInTable(readTable(paths), name)) {
 		notFound(name);
 	}
-	await withConfigLock(paths, () => {
+	if (changes.length === 0 && credentials === undefined) {
+		if (options.yes === true) {
+			console.log("nothing to change");
+			return;
+		}
+		stop("give a flag to change");
+	}
+	await withConfigLock(paths, async () => {
 		const config = readTable(paths);
 		requireMigrated(config);
 		const entry = tableEntry(paths, config, name);
@@ -594,13 +741,57 @@ async function updateVerb(name: string, options: UpdateOptions): Promise<void> {
 							([key]) => !(MODE_KEYS as readonly string[]).includes(key),
 						),
 					);
-		const next = { ...base, ...Object.fromEntries(changes) };
+		const listed = Array.isArray(entry.credentials) ? (entry.credentials as string[]) : [];
+		if (credentials !== undefined) {
+			if (typeof entry.grant === "string" && entry.grant !== name) {
+				stop(`the job uses the credential prefix "${entry.grant}", not its own name`);
+			}
+			const { assertPrefixFree } = await import("./job-source");
+			const { readNamedSources } = await import("../jobs/sources");
+			const others = Object.fromEntries(
+				Object.entries(config[JOBS_CONFIG_KEY] as Record<string, unknown>).filter(([key]) => key !== name),
+			);
+			assertPrefixFree(
+				name,
+				{ ...config, [JOBS_CONFIG_KEY]: others },
+				Object.fromEntries(
+					Object.entries(guardConfig(() => readNamedSources(paths))).filter(
+						([key, source]) => !(key === name && source.kind === "path"),
+					),
+				),
+				"job update:",
+			);
+		}
+		const known = isRecord(entry.credentialEnv) ? (entry.credentialEnv as Record<string, string>) : {};
+		const bound = { ...known, ...credentials?.credentialEnv };
+		for (const [variable, credential] of Object.entries(credentials?.credentialEnv ?? {})) {
+			if (Object.hasOwn(known, variable) && known[variable] !== credential) {
+				stop(`environment variable ${JSON.stringify(variable)} is bound to two credentials`);
+			}
+		}
+		const next = {
+			...base,
+			...Object.fromEntries(changes),
+			...(Object.keys(bound).length === 0 ? {} : { credentialEnv: bound }),
+			...(credentials?.credentials === undefined
+				? {}
+				: {
+						credentials: [
+							...listed,
+							...credentials.credentials.filter((item) => !listed.includes(item)),
+						],
+						grant: entry.grant ?? credentials.grant,
+					}),
+		};
 		const parsed = parseJobEntry(name, next);
 		if (!parsed.ok) stop(parsed.error);
 		guardConfig(() => writeJobEntry(paths, name, next));
 	});
 	console.log(`updated job "${name}"`);
-	console.log(`changed ${changes.map(([key]) => key).join(", ")}`);
+	console.log(
+		`changed ${[...changes.map(([key]) => key), ...(credentials === undefined ? [] : ["credentials"])].join(", ")}`,
+	);
+	if (credentials !== undefined) console.log(`next: dg job setup ${name}`);
 	const states = await liveJobStates(paths).catch(() => undefined);
 	if (isActive(states?.get(name))) {
 		console.log(`next: dg job restart ${name}`);
@@ -617,11 +808,45 @@ async function logsVerb(
 	await runJobLogs(paths, name, options);
 }
 
+const SOURCE_OPTION_KEYS = [
+	"continuous",
+	"schedule",
+	"cron",
+	"every",
+	"timeout",
+	"feed",
+	"notify",
+	"cwd",
+	"env",
+	"envFile",
+	"passEnv",
+	"stopTimeout",
+	"credential",
+];
+
+function positionalSource(
+	argv: string[],
+	command: Command,
+): { argument: string; rest: string[] } | undefined {
+	let root = command;
+	while (root.parent) root = root.parent;
+	const { rawArgs } = root as Command & { rawArgs: string[] };
+	const dash = rawArgs.indexOf("--");
+	const afterDash = dash < 0 ? 0 : rawArgs.length - dash - 1;
+	return argv.length - afterDash === 1
+		? { argument: argv[0], rest: argv.slice(1) }
+		: undefined;
+}
+
 export function registerJobCommands(
 	program: Command,
-	given: Partial<JobVerbDeps> = {},
+	given: Partial<JobSourceDeps & JobSetupDeps> = {},
 ): void {
 	const deps = (): JobVerbDeps => ({ ...defaultJobVerbDeps(), ...given });
+	const setupDeps = async (): Promise<JobSetupDeps> => ({
+		...(await import("./job-setup")).defaultJobSetupDeps(),
+		...given,
+	});
 	const job = program
 		.command("job")
 		.description("run and manage the jobs the daemon runs")
@@ -631,10 +856,13 @@ export function registerJobCommands(
 
 	job
 		.command("add")
-		.description("add a job: continuous, on a cron schedule, or at an interval")
+		.description(
+			"add a job from a repository URL, a local file or folder, or a command: " +
+				"continuous, on a cron schedule, or at an interval",
+		)
 		.option("--name <name>", "unique name for the job")
 		.addOption(new Option("--label <name>").hideHelp())
-		.requiredOption("--cwd <path>", "working directory for the command")
+		.option("--cwd <path>", "working directory for the command")
 		.option("--continuous", "keep the job running")
 		.option("--schedule <cron>", 'a cron expression, e.g. "0 9 * * 1-5"')
 		.addOption(new Option("--cron <cron>").hideHelp())
@@ -650,9 +878,30 @@ export function registerJobCommands(
 		)
 		.addOption(new Option("--pass-env <NAME>").argParser(collect).hideHelp())
 		.option("--stop-timeout <duration>", "grace period on stop, e.g. 30s")
+		.option("--yes", "approve the jobs of a repository without asking")
+		.option(
+			"--credential <name[=ENV_NAME]>",
+			"credential the job needs, with an optional variable name for its value (repeatable)",
+			collect,
+		)
 		.argument("[command...]", "the command to run, after a bare --")
-		.action(async (argv: string[], options: AddOptions) => {
-			await addVerb(argv, options, deps());
+		.action(async (argv: string[], options: AddOptions, command: Command) => {
+			const source = positionalSource(argv, command);
+			if (!source) {
+				await addVerb(argv, options, deps());
+				return;
+			}
+			const { addSource, classifySource, defaultJobSourceDeps } = await import("./job-source");
+			const flags = SOURCE_OPTION_KEYS.filter(
+				(key) => command.getOptionValueSource(key) === "cli",
+			);
+			const sourceDeps = { ...defaultJobSourceDeps(), ...given };
+			if (classifySource(source.argument) === "path") {
+				const { addLocal } = await import("./job-local");
+				await addLocal(source.argument, source.rest, flags, options, sourceDeps);
+				return;
+			}
+			await addSource(source.argument, source.rest, flags, options, sourceDeps);
 		});
 
 	job
@@ -672,7 +921,21 @@ export function registerJobCommands(
 		.command("enable")
 		.description("start the job now and at each daemon start")
 		.argument("<name>")
-		.action((name: string) => enableVerb(name, deps()));
+		.option("--setup <file>", "answers for the credentials: a file path, or - for stdin")
+		.action((name: string, options: { setup?: string }) =>
+			enableVerb(name, options, deps(), setupDeps),
+		);
+
+	job
+		.command("setup")
+		.description("store the credentials of a job, or fetch them again")
+		.argument("<name>")
+		.option("--refresh", "fetch each credential that has a source again")
+		.option("--rotate-token", "make a new token for the credential prefix of the job")
+		.action(async (name: string, options: { refresh?: boolean; rotateToken?: boolean }) => {
+			const { runSetup } = await import("./job-setup");
+			await runSetup(resolveDgPaths(), name, options, await setupDeps());
+		});
 
 	job
 		.command("disable")
@@ -718,7 +981,16 @@ export function registerJobCommands(
 		.option("--timeout <duration>", "stop a run that takes longer")
 		.option("--feed", "read one JSON object per item from the output")
 		.option("--notify <identity>", "agent identity to queue new items to")
-		.action(updateVerb);
+		.option("--yes", "approve a repository update without asking")
+		.option(
+			"--credential <name[=ENV_NAME]>",
+			"add a credential the job needs, with an optional variable name for its value (repeatable)",
+			collect,
+		)
+		.action(async (name: string, options: UpdateOptions, command: Command) => {
+			const { defaultJobSourceDeps } = await import("./job-source");
+			await updateVerb(name, options, command, () => ({ ...defaultJobSourceDeps(), ...given }));
+		});
 
 	job
 		.command("remove")

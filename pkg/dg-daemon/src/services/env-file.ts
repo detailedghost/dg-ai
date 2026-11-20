@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readFileSync } from "node:fs";
 
 export const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const GROUP_AND_WORLD_BITS = 0o077;
@@ -30,18 +30,21 @@ export function parseEnvFile(text: string): Record<string, string> {
 	);
 }
 
-/** Refuses a secrets file that other users can read on POSIX. */
-export function loadEnvFile(path: string): Record<string, string> {
-	const stats = statSync(path);
-	if (!stats.isFile())
-		throw new Error(`env file is not a regular file: ${path}`);
-	if (
-		process.platform !== "win32" &&
-		(stats.mode & GROUP_AND_WORLD_BITS) !== 0
-	) {
-		throw new Error(
-			`env file ${path} is readable by other users; run chmod 600 on it`,
-		);
+/** Refuses an open file that is not regular or that other users can read on POSIX. */
+export function assertPrivateOpenFile(fd: number, path: string, noun: string): void {
+	const stats = fstatSync(fd);
+	if (!stats.isFile()) throw new Error(`${noun} is not a regular file: ${path}`);
+	if (process.platform !== "win32" && (stats.mode & GROUP_AND_WORLD_BITS) !== 0) {
+		throw new Error(`${noun} ${path} is readable by other users; run chmod 600 on it`);
 	}
-	return parseEnvFile(readFileSync(path, "utf8"));
+}
+
+export function loadEnvFile(path: string): Record<string, string> {
+	const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
+	try {
+		assertPrivateOpenFile(fd, path, "env file");
+		return parseEnvFile(readFileSync(fd, "utf8"));
+	} finally {
+		closeSync(fd);
+	}
 }

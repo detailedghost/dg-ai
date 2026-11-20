@@ -23,6 +23,7 @@ import {
 	CLI_SESSION_TOKEN_HEADER,
 	decideLocalAttach,
 	describeError,
+	JOB_CREDENTIALS_PATH_PATTERN,
 	noteSecret,
 	OVERWATCH_SESSION_ID,
 	type OverwatchAction,
@@ -45,6 +46,7 @@ import { registerAsset } from "../assets/register";
 import { assertFlatSegment } from "../assets/safe-path";
 import { type AssetServeResult, resolveAssetForServing } from "../assets/serve";
 import type { DispatchScheduler } from "../dispatch";
+import type { ParsedJob } from "../jobs/config";
 import type { JobControl } from "../jobs/control";
 import {
 	DEFAULT_ARCHIVE_MAX_ROWS,
@@ -58,7 +60,7 @@ import type { ChatStore } from "../store";
 import type { CredentialStore } from "../store/credentials-store";
 import { readEnvNumber } from "../utils/env";
 import { type AttachLimiter, createAttachLimiter } from "./attach-limiter";
-import { readCappedBody } from "./capped-body";
+import { readCappedBody, refuse } from "./capped-body";
 import {
 	abortPendingWork,
 	type ConnectionManager,
@@ -69,6 +71,7 @@ import {
 import { hasCredentialGrant } from "./credentials";
 import { handleSocketMessage } from "./frame-handlers";
 import { isLoopbackHost } from "./host-guard";
+import { handleJobCredentials } from "./job-credentials";
 import type { Logger } from "./log";
 import {
 	bearerToken,
@@ -92,7 +95,7 @@ import {
 	handleSecretName,
 	type SecretIntent,
 } from "./secret-intake";
-import { handleServiceApiCredentials } from "./service-api";
+import { handleServiceApiCredentials, type ServiceApiRefresh } from "./service-api";
 import { renderStatus, type StatusDeps } from "./status";
 
 const ASSET_TOO_LARGE_MESSAGE = "refused: asset exceeds CHAT_MAX_ASSET_BYTES";
@@ -111,6 +114,8 @@ export type HttpServerDeps = {
 	credentials: CredentialStore;
 	dispatchScheduler: DispatchScheduler;
 	jobs: JobControl;
+	readJobs: () => ParsedJob[];
+	refresh: Omit<ServiceApiRefresh, "paths" | "readJobs">;
 };
 
 export const WS_PAYLOAD_HEADROOM_BYTES = 4096;
@@ -426,7 +431,25 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			}
 
 			if (url.pathname === SERVICE_API_CREDENTIALS_PATH) {
-				return handleServiceApiCredentials(req, deps.credentials, deps.logger);
+				return handleServiceApiCredentials(
+					req,
+					deps.credentials,
+					deps.logger,
+					{ ...deps.refresh, paths, readJobs: deps.readJobs },
+				);
+			}
+
+			const jobCredentials = JOB_CREDENTIALS_PATH_PATTERN.exec(url.pathname);
+			if (jobCredentials) {
+				const job = decodeSegment(jobCredentials[1] as string);
+				if (job === undefined) return refuse("malformed job name", 400);
+				return handleJobCredentials(req, job, {
+					paths,
+					store: credentials,
+					readJobs: deps.readJobs,
+					isOwner: (request) => hasOwnerCredential(request, paths),
+					logger,
+				});
 			}
 
 			for (const base of [CHAT_SERVICES_PATH, CHAT_JOBS_PATH] as const) {

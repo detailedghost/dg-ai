@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
+import { CREDENTIAL_MAX_VALUE_BYTES } from "../src/credentials-format";
+import { promptHidden } from "../src/node/prompt";
 
 const PROMPT = join(import.meta.dir, "..", "src", "node", "prompt.ts");
 const SCRIPT = `import { readLine } from ${JSON.stringify(PROMPT)};
@@ -34,6 +36,12 @@ describe("readLine", () => {
 		expect(JSON.parse(result.stdout.trim())).toBe("");
 	});
 
+	it("returns a last line that has no newline", async () => {
+		const result = await ask("y");
+
+		expect(JSON.parse(result.stdout.trim())).toBe("y");
+	});
+
 	it("returns null when the input ends with no line", async () => {
 		const result = await ask("");
 
@@ -45,5 +53,183 @@ describe("readLine", () => {
 
 		expect(result.stderr).toContain("Continue? [Y/n] ");
 		expect(result.stdout).not.toContain("Continue?");
+	});
+});
+
+type Listener = (chunk: string) => void;
+
+function fakeInput() {
+	const listeners = new Set<Listener>();
+	const raw: boolean[] = [];
+	let paused = false;
+	return {
+		raw,
+		get paused() {
+			return paused;
+		},
+		listenerCount: () => listeners.size,
+		emit: (chunk: string) => {
+			for (const listener of [...listeners]) listener(chunk);
+		},
+		input: {
+			setRawMode: (mode: boolean) => raw.push(mode),
+			setEncoding: () => undefined,
+			resume: () => {
+				paused = false;
+			},
+			pause: () => {
+				paused = true;
+			},
+			on: (_event: "data", listener: Listener) => listeners.add(listener),
+			off: (_event: "data", listener: Listener) => listeners.delete(listener),
+		},
+	};
+}
+
+describe("promptHidden", () => {
+	it("returns the typed text and writes only the prompt and a newline", async () => {
+		const tty = fakeInput();
+		const written: string[] = [];
+
+		const pending = promptHidden("Token: ", tty.input, {
+			write: (text) => written.push(text),
+		});
+		tty.emit("abc");
+		tty.emit("def\r");
+
+		expect(await pending).toBe("abcdef");
+		expect(written.join("")).toBe("Token: \n");
+	});
+
+	it("applies backspace and delete to the typed text", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("abx\u007f\bc\n");
+
+		expect(await pending).toBe("ac");
+	});
+
+	it("drops arrow keys and other escape sequences instead of storing them", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("ab\u001b[A\u001b[1;5Cc\u001bOHd\u0001\ttail\r");
+
+		expect(await pending).toBe("abcd\ttail");
+	});
+
+	it("drops an escape sequence that arrives in two chunks and C1 controls", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("ab\u001b");
+		tty.emit("[A");
+		tty.emit("c\u001b[1;5");
+		tty.emit("Cd\u0085e\r");
+
+		expect(await pending).toBe("abcde");
+	});
+
+	it("lets Enter finish the prompt after a lone Esc", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("ab\u001b");
+		tty.emit("\r");
+
+		expect(await pending).toBe("ab");
+	});
+
+	it("lets Ctrl-C cancel inside an unfinished escape sequence", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("ab\u001b[1;");
+		tty.emit("\u0003");
+
+		await expect(pending).rejects.toThrow("Canceled.");
+	});
+
+	it("keeps a tab in the typed value", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("a\tb\r");
+
+		expect(await pending).toBe("a\tb");
+	});
+
+	it("removes one whole character with backspace for a surrogate pair", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("a\u{1F511}\u007f\r");
+
+		expect(await pending).toBe("a");
+	});
+
+	it("rejects with Canceled. on Ctrl-D and restores the terminal", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("ab\u0004");
+
+		await expect(pending).rejects.toThrow("Canceled.");
+		expect(tty.raw).toEqual([true, false]);
+	});
+
+	it("turns raw mode on, then off, and stops listening", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("x\r");
+		await pending;
+
+		expect(tty.raw).toEqual([true, false]);
+		expect(tty.listenerCount()).toBe(0);
+		expect(tty.paused).toBe(true);
+	});
+
+	it("rejects with Canceled. on Ctrl-C and restores the terminal", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("ab\u0003");
+
+		await expect(pending).rejects.toThrow("Canceled.");
+		expect(tty.raw).toEqual([true, false]);
+	});
+});
+
+describe("readCredentialValue with piped input", () => {
+	const READ = `import { readCredentialValue } from ${JSON.stringify(PROMPT)};
+try { console.log(JSON.stringify(await readCredentialValue())); } catch (error) { console.log("ERR " + (error as Error).message); }`;
+	const run = async (input: string) => {
+		const proc = Bun.spawn([process.execPath, "-e", READ], {
+			stdin: new Blob([input]),
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		return (await new Response(proc.stdout).text()).trim();
+	};
+
+	it("returns the piped value without its trailing newline", async () => {
+		expect(await run("secret\r\n")).toBe('"secret"');
+	});
+
+	it("refuses input above the credential value limit", async () => {
+		const out = await run("x".repeat(CREDENTIAL_MAX_VALUE_BYTES + 3));
+		expect(out).toBe(`ERR credential value is larger than ${CREDENTIAL_MAX_VALUE_BYTES} bytes`);
+	});
+
+	it("refuses a value of the limit plus one byte with no newline", async () => {
+		const out = await run("x".repeat(CREDENTIAL_MAX_VALUE_BYTES + 1));
+		expect(out).toBe(`ERR credential value is larger than ${CREDENTIAL_MAX_VALUE_BYTES} bytes`);
+	});
+
+	it("accepts a value at the limit", async () => {
+		const out = await run(`${"x".repeat(CREDENTIAL_MAX_VALUE_BYTES)}\n`);
+		expect(out).toBe(JSON.stringify("x".repeat(CREDENTIAL_MAX_VALUE_BYTES)));
 	});
 });

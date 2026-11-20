@@ -388,4 +388,28 @@ describe("changed documents", () => {
 			"/service-api/v1/credentials",
 		);
 	});
+
+	test("service API refresh literals match the route source", () => {
+		const route = source("dg-daemon", "src", "server", "service-api.ts");
+		const refresh = source("dg-daemon", "src", "jobs", "credential-refresh.ts");
+		const doc = read("docs/service-api.md").replace(/\s+/g, " ");
+		expect(route).toContain('refresh: ["operation", "name", "job"]');
+		expect(refresh).toContain("— run dg job setup ${job} --refresh");
+		expect(refresh).toMatch(/REFRESH_WINDOW_MS\s*=\s*60_000\b/);
+		expect(refresh).toContain("has no source — run dg job setup ${job.name}");
+		for (const literal of [
+			'{"operation":"refresh","name":"<prefix>/<rest>","job":"<job name>"}',
+			"DG_SERVICE_LABEL",
+			"The grant proves the prefix and not the job",
+			"in 60 s",
+			"| 409 |",
+			"| 429 |",
+			"| 502 |",
+			"retryAfter",
+			"— run dg job setup <job> --refresh",
+			"`get`, `list` and `refresh`",
+			"not the environment of the caller",
+		])
+			expect(doc).toContain(literal);
+	});
 });

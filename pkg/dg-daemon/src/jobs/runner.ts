@@ -14,7 +14,12 @@ import {
 } from "../store";
 import { type JobDecl, type ParsedJob, parseScheduledJobs } from "./config";
 import { nextCronRun } from "./cron";
-import { jobLogFile, type LauncherDeps, startJobRun } from "./launcher";
+import {
+	jobLogFile,
+	type LauncherDeps,
+	readBoundCredentials,
+	startJobRun,
+} from "./launcher";
 import { parseFeedLines } from "./parse";
 
 export const JOB_TICK_INTERVAL_MS = 30_000;
@@ -416,6 +421,8 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 				error: `job "${name}" already runs`,
 			};
 		}
+		const bound = readBoundCredentials(parsed, deps.launcher.readCredential);
+		if (!bound.ok) return { ok: false, kind: "invalid", error: bound.error };
 		const now = clock();
 		const isFresh = store.getJobByLabel(name) === undefined;
 		const job = stateRow(parsed, now);

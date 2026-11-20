@@ -10,3 +10,4 @@
 - [2026-11-19] Add no Co-Authored-By trailers.
 - [2026-11-20] A spec that passes `--state` to prototype or verify must set `AI_STATE_DIR` to a temp dir and save a fake state; otherwise pw states resolve to the user's real state root.
 - [2026-11-20] Do not set `TMPDIR` for a full `bun test` in pkg/skills-cli: pw/protected-session.spec and the path fence expect `/tmp`.
+- [2026-11-20] When a verb ships, delete the older docs spec check that bans it. Do not add a per-file exemption.

@@ -23,9 +23,10 @@ Runner availability, login, missing thrash, and timeouts have separate codes.
 | `dg-skills channel-review env` | Optional `dev` or `prod` | Print default env, base URL, and AWS profile; a name saves that default. |
 | `dg-skills channel-review connect` | `datadog\|sentry\|relay`; `--env dev\|prod`, `--site <site>`, `--org <slug>`, `--paste`, `--session <id>` | Store a secret in the dg credential store; see [setup](setup.md#credentials). Never prints the value. |
 | `dg-skills channel-review migrate-env` | `--file <path>`, `--dry-run`, `--keep-backup`, `--session <id>` | Move known secrets from `.env` into the credential store and delete only their lines. Writes no backup unless `--keep-backup` is set; then it writes a plain-text copy (mode 0600, original values). Prints variable names only. |
+| `dg-skills channel-review export` | `--env dev\|prod` (required), `--label <job>` (required) | Write the state of that env to `<state>/jobs/<job>/import.json` (mode 0600). The daemon of that env must be stopped. See [Export for the review bot](#export-for-the-review-bot). |
 
-Flags are optional. Commands use the saved environment unless `--env` overrides
-it. Start and run accept runner and chat overrides for that invocation.
+Flags are optional, except for `export`, which needs `--env` and `--label`. Commands use the
+saved environment unless `--env` overrides it. Start and run accept runner and chat overrides for that invocation.
 `--chat-id` replaces the configured `chats` list with that one chat.
 Read [setup](setup.md) before changing config.
 
@@ -38,7 +39,53 @@ dg-skills channel-review logs --env dev -n 100 -f
 dg-skills channel-review env
 dg-skills channel-review connect datadog
 dg-skills channel-review migrate-env --dry-run
+dg-skills channel-review stop --env dev
+dg-skills channel-review export --env dev --label bot
 ```
+
+## Export for the review bot
+
+`dg-skills channel-review export --env <env> --label <job>` copies the state of
+one env into `import.json`, so the review bot repository can continue where the
+old daemon stopped. `--label` is the name of the job that reads the file. The
+command reads `daemon.db` read-only, writes nothing to it and stops no process.
+
+Order of work:
+
+1. Stop the daemon of that env: `dg-skills channel-review stop --env <env>`.
+   The export refuses to run while that daemon runs, and names the stop command.
+   A daemon that starts between the check and the read is not prevented, so
+   keep it stopped.
+2. Run the export. It creates `<state>/jobs/<label>/` with mode 0700, also
+   before `dg job add`, and the daemon accepts that folder.
+3. Add the job with `dg job add`. The job gets the folder as `DG_SERVICE_STATE_DIR`
+   and finds the file there.
+
+The owner exports one time, after the last stop of the old daemon. A second
+export replaces the file. The export does not see a `--chat-id` of the old
+daemon: a legacy state with one `lastEventId` takes the chat id of the first
+configured chat, and the export fails when that chat has no `id`.
+
+The file is JSON with these top-level keys, in this order:
+
+| Key | Value |
+| --- | --- |
+| `version` | The number 1; a change of shape increases `version`. |
+| `cursor` | One event id for each chat id. |
+| `handled` | One `{ messageId, status, at, chatId? }` object for each handled message, sorted by `at`, then by `messageId`. `status` is `pending`, `running`, `done` or `failed`. |
+| `current` | The job that runs, or `null`. |
+| `automation` | `blocked`, `issues`, `sinks`, `prWatch` and `deps` (`{ lastRun }`), each as the state holds it. |
+
+Rules for the reader of `import.json`:
+
+- A `handled` entry with the status `pending` or `running` is work that stopped.
+- `current.pid` and `current.pidStart` are values of the old host and have no meaning for the bot.
+- `handled` can hold entries older than 24 hours until the next prune; for older requests use `cursor`.
+- The export has no `running` key and no `fixStarts` key. The bot starts with an empty fix quota, so the fix limit of one hour starts again one time, at the import.
+- The bot records that it did the import.
+
+The file holds the old `current.url` and `sinks.*.lastError` text, so it keeps
+mode 0600 and must not be committed.
 
 ## Teams requests
 

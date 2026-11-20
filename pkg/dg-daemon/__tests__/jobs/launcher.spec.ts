@@ -44,6 +44,7 @@ function kit() {
 		daemonUrl: () => "http://127.0.0.1:4242",
 		logger: { info: () => {}, warn: (message: string) => warns.push(message) },
 		maxLogBytes: 1_000_000,
+		readCredential: () => undefined,
 	};
 	return { root, deps, warns };
 }

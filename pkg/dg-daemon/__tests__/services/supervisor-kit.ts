@@ -101,6 +101,7 @@ export function rig(
 			},
 		},
 		backoffMs: () => backoffMs,
+		readCredential: () => undefined,
 		...extra,
 	});
 	supervisors.push(supervisor);

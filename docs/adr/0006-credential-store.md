@@ -3,6 +3,7 @@
 Status: Accepted
 Date: 2026-10-16
 Topic: Security
+Amended 2026-11-20: a grant can ask for a new fetch but writes no value of its own; see [ADR 0053](0053-job-sources-and-credentials.md).
 
 ## Context
 

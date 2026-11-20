@@ -15,6 +15,20 @@ export const CREDENTIAL_MAX_META_BYTES = 8_192;
 export const CREDENTIAL_NAME_PATTERN = /^[a-z0-9][a-z0-9._/-]{0,127}$/;
 /** Grant prefixes are the consumer segment of a credential name. */
 export const CREDENTIAL_GRANT_PREFIX_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+/** Prefixes that dg tools own; a job cannot take one as its credential prefix. */
+export const RESERVED_CREDENTIAL_PREFIXES = [
+	"pw",
+	"extension",
+	"phone-friend",
+	"phone-vault",
+	"db",
+] as const;
+const INJECTION_ENV =
+	/^(?:LD_|DYLD_|_RLD|MALLOC_|GCONV_PATH$|NODE_OPTIONS$|NODE_PATH$|NODE_EXTRA_CA_CERTS$|BUN_|PYTHON|PERL5|PERLLIB$|RUBY|LUA_|TCL|R_PROFILE|R_ENVIRON|BASH_ENV$|ENV$|ZDOTDIR$|PS4$|SHELLOPTS$|BASHOPTS$|PROMPT_COMMAND$|JAVA_TOOL_OPTIONS$|_JAVA_OPTIONS$|JDK_JAVA_OPTIONS$|CLASSPATH$|GIT_|SSH_ASKPASS$|EDITOR$|VISUAL$|PAGER$|LESSOPEN$|PATH$|HOME$|XDG_CONFIG_HOME$|CURL_HOME$|CURL_CA_BUNDLE$|HTTPS?_PROXY$|ALL_PROXY$|NO_PROXY$|SSL_CERT_FILE$|SSL_CERT_DIR$|REQUESTS_CA_BUNDLE$|WGETRC$|GLIBC_TUNABLES$|OPENSSL_CONF$|OPENSSL_ENGINES$|SSLKEYLOGFILE$|NODE_TLS_REJECT_UNAUTHORIZED$|IFS$|HOSTALIASES$|LOCPATH$|NLSPATH$|NPM_CONFIG_)/i;
+
+/** True for a variable that can change how a program loads code or finds its tools. */
+export const isInjectionEnvName = (name: string): boolean => INJECTION_ENV.test(name);
+
 const SECRET_LIKE_KEY = /value|secret|token|password/i;
 export const SECRET_PAGE_PATH = "/secret";
 export const SECRET_INTAKE_PATH = "/secret-intake";
@@ -135,6 +149,13 @@ export function validateCredentialGrantPrefix(value: unknown): string {
 /** True when the name sits under `<prefix>/`, ignoring letter case. */
 export function credentialNameInPrefix(name: string, prefix: string): boolean {
 	return name.toLowerCase().startsWith(`${prefix.toLowerCase()}/`);
+}
+
+/** True when the prefix is one that a dg tool owns, ignoring letter case. */
+export function isReservedCredentialPrefix(prefix: string): boolean {
+	return (RESERVED_CREDENTIAL_PREFIXES as readonly string[]).includes(
+		prefix.toLowerCase(),
+	);
 }
 
 function validateGrantAuth(value: unknown): void {
