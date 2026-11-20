@@ -30,7 +30,7 @@ describe("spec bundle commits", () => {
 	});
 
 	test("no spec bundle add forces past .gitignore", () => {
-		const forced = bundleAdds().filter(({ line }) => /git add (?:-\S+ )*(?:-[a-zA-Z]*f\b|--force\b)/.test(line));
+		const forced = bundleAdds().filter(({ line }) => /git add\b[^&;|]*\s(?:-[a-zA-Z]*f[a-zA-Z]*|--force)\b/.test(line));
 		expect(forced).toEqual([]);
 	});
 

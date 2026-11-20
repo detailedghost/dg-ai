@@ -80,6 +80,7 @@ Make .agents/ tracked, token-light agent memory in every repo the skills seed. A
 - [x] Contract: no skill file contains git add -f .agents
 - [x] Contract: no skill file calls .agents/ gitignored by default
 - [x] Contract: every spec bundle add carries the roundtable exclude pathspec and none uses add -f
+- [x] Contract: agent-seed and spring-break name the replace-the-old-block migration
 
 #### Acceptance Criteria
 - [x] rg 'git add -f \.agents' over plugins/dg/skills returns nothing
@@ -114,6 +115,7 @@ Make .agents/ tracked, token-light agent memory in every repo the skills seed. A
 ##### Contracts
 - [x] Contract: a decision with 25 non-blank body lines is clean
 - [x] Contract: a decision with 26 non-blank body lines yields decision-too-long and exit 1
+- [x] Contract: front matter lines do not count
 
 #### Acceptance Criteria
 - [x] dg-ai master has no decisions README, so adr lint --all refuses; its 3 decisions (21, 16, 12 non-blank lines) were counted by hand and none hits the cap
