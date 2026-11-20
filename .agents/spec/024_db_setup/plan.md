@@ -202,7 +202,7 @@ Give an agentic session one guided way to connect to a database: /dg:db setup, b
 #### Engineering
 - [ ] SKILL.md gains a Setup section: run dg-skills db connections; on none, ask the human (AskUserQuestion) for engine, host or tunnel port, port, database, user, auth mode, read-only role and secret mode, then run one dg-skills db setup command
 - [ ] Secret mode guidance: never ask for or accept a secret in chat; form is the default in a desktop session, command for a terminal-only host, aws when the secret is in AWS Secrets Manager
-- [ ] Command mode tells the human to run the printed line in their own terminal; Claude Code ! mode has no hidden TTY prompt
+- [ ] First verify whether Claude Code ! mode gives the command a TTY; if yes print the ! form, else tell the human to run the printed line in their own terminal
 - [ ] Reader connection later: run setup again under a new name such as <db>-reader
 - [ ] connections.md documents setup first and keeps the raw credentials set recipes; documents readOnly, secretSource, secretId, secretKey
 - [ ] If a step fails line points at dg-skills doctor credentials db
@@ -224,7 +224,7 @@ Give an agentic session one guided way to connect to a database: /dg:db setup, b
 (plan) dg-agent start always registers a new session; sessions stay active for the 24 h reattach grace (session/liveness.ts), so ensureCwdSession must reuse a match before it spawns, or the cwd gets 2 matches and every later call fails.
 (plan) The chat code exchange (http.ts handleChatCodeExchange) returns the session token to the page, so the secret form must not reuse it.
 (plan) asm-exec and the aws-secrets-manager skill are not on this machine, and infra-conventions.md has no Secrets Manager pattern to reuse. Slice 4 starts by confirming the asm-exec CLI contract.
-(plan) Claude Code ! mode gives no TTY, so readCredentialValue would read empty piped stdin; command mode tells the human to use their own terminal.
+(plan) Unverified: whether Claude Code ! mode gives a TTY. Without one, readCredentialValue reads piped stdin and gets nothing; slice 6 verifies before it picks the printed form.
 
 ## Issues Remediation
 
@@ -238,4 +238,3 @@ Structure decisions from pass 1.5. Each names the alternative it beat.
 - **asm-exec boundary** [DECIDED] db/aws-secret.ts is the only module that names asm-exec or the resolve placeholder; the db process re-runs itself under asm-exec and reads DG_DB_SECRET. Beat: in-process SDK GetSecretValue (breaks the never-call-get-secret-value rule). Applies to: 3, 4. [OPEN — roundtable] asm-exec is not installed on this machine and its CLI contract is unverified; slice 4 verifies it first.
 - **One-time form** [DECIDED] dg-daemon serves /secret like /chat (same CSP, host guard, origin check, limiter). createPageCodes becomes generic; a second instance holds {name, meta} intents, 120 s, single use. The page sends only {code, value}; it never gets a session token or meta. A new session-authed credentials operation intake on the existing CLI wire creates the intent. Beat: reusing the chat code exchange (hands the page a session token); the extension (not always installed). Applies to: 3, 5.
 - **Read-only** [DECIDED] PostgreSQL readOnly connections set default_transaction_read_only=on through the pg options string; any --write on a readOnly connection is refused before connect; classifySql stays the SQL guard. Snowflake relies on the human-named role. Applies to: 3, 6.
-- **Launcher fix** [DECIDED] update spawns the new bin-dir dg-skills launcher with a hidden install launchers step after installBundleOnly, so the new release's PROGRAMS list writes the launchers. Beat: self-heal on every dg-skills start. Applies to: 2.
