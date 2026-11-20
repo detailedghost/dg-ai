@@ -5,7 +5,7 @@ node_modules/
 .agents/code-review/
 .agents/jot/
 .agents/clipboard/
-.agents/spec/*/roundtable/
+.agents/spec/**/roundtable/
 dist/
 .output/
 .env
