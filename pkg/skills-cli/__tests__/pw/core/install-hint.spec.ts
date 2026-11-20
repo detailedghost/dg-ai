@@ -7,16 +7,24 @@ const missing = (file: string) =>
 describe("installHint", () => {
 	test.each([
 		["/home/u/.cache/ms-playwright/ffmpeg-1011/ffmpeg-linux", "ffmpeg"],
-		["/home/u/.cache/ms-playwright/firefox-1509/firefox/firefox", "firefox"],
-		["/home/u/.cache/ms-playwright/webkit-2248/pw_run.sh", "webkit"],
 		[
 			"/home/u/.cache/ms-playwright/chromium_headless_shell-1243/chrome-linux/headless_shell",
 			"chromium",
 		],
-	])("names the product for %p", (file, product) => {
+	])("names the product and the path it tried for %p", (file, product) => {
 		expect(installHint(missing(file))).toBe(
-			`Playwright ${product} is not installed. run: bunx playwright-core install ${product}`,
+			`Playwright ${product} is not installed at ${file}. run: bunx playwright-core install ${product}`,
 		);
+	});
+
+	test.each([
+		["/home/u/.cache/ms-playwright/firefox-1509/firefox/firefox", "firefox", "Firefox"],
+		["/home/u/.cache/ms-playwright/webkit-2248/pw_run.sh", "webkit", "WebKit"],
+	])("says a system browser cannot stand in for %p", (file, product, label) => {
+		const hint = installHint(missing(file));
+		expect(hint).toContain(`is not installed at ${file}.`);
+		expect(hint).toContain(`playwright-core drives only its own ${label} build`);
+		expect(hint).toEndWith(`run: bunx playwright-core install ${product}`);
 	});
 
 	test("names the product under a custom browsers path", () => {

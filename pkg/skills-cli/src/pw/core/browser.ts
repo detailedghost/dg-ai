@@ -3,11 +3,11 @@ import path from "node:path";
 import { wslChromiumArgs } from "@dg/common/node";
 import type { BrowserContext, BrowserType } from "playwright-core";
 import { MIN_BUN } from "./bun-version";
-import { downloadedChromium } from "./downloaded";
+import { downloadedChromium, markerPath } from "./downloaded";
 import {
 	browserOverride,
 	findInstalledChromium,
-	PATH_CANDIDATES,
+	searchedLocations,
 	windowsPrefixes,
 } from "../../utils/find-browser";
 import type { BrowserName, SessionRecord } from "./registry";
@@ -34,10 +34,13 @@ export type LaunchSeams = {
 export class BrowserMissingError extends Error {
 	readonly exitCode = 3;
 
-	constructor() {
+	constructor(tried: string[] = triedLocations()) {
 		super(
-			`No Chromium-family browser found. Checked Chrome, Edge, ${PATH_CANDIDATES.join(", ")}, the usual app folders and the downloaded Chromium. ` +
+			[
+				"No Chromium-family browser found. Tried:",
+				...tried.map((location) => `  ${location}`),
 				"Set DG_BROWSER to a browser binary, or ask the user, then run: dg-skills pw install-browser (downloads about 150 MB)",
+			].join("\n"),
 		);
 	}
 }
@@ -65,6 +68,16 @@ function channelExecutables(channel: SystemChannel): string[] {
 	return windowsPrefixes().map((prefix) => path.join(prefix, location));
 }
 
+function triedLocations(): string[] {
+	return [
+		"DG_BROWSER (unset)",
+		...channelExecutables("chrome").map((file) => `Chrome: ${file}`),
+		...channelExecutables("msedge").map((file) => `Edge: ${file}`),
+		...searchedLocations(),
+		`install-browser download: ${markerPath()}`,
+	];
+}
+
 export function systemBrowserPresent(
 	channel: SystemChannel,
 	exists: (file: string) => boolean = existsSync,
@@ -79,12 +92,19 @@ const DEFAULT_SEAMS: LaunchSeams = {
 	downloaded: () => downloadedChromium()?.executablePath ?? null,
 };
 
+/** A Chromium-family executable to launch without a Chrome or Edge channel. */
+export function chromiumExecutable(
+	seams: Omit<LaunchSeams, "system"> = DEFAULT_SEAMS,
+): string | null {
+	return seams.override?.() ?? seams.installed?.() ?? seams.downloaded();
+}
+
 export function pickLaunch(seams: LaunchSeams = DEFAULT_SEAMS): LaunchPick {
 	const override = seams.override?.();
 	if (override) return { executablePath: override };
 	for (const channel of ["chrome", "msedge"] as const)
 		if (seams.system(channel)) return { channel };
-	const executablePath = seams.installed?.() ?? seams.downloaded();
+	const executablePath = chromiumExecutable(seams);
 	if (executablePath) return { executablePath };
 	throw new BrowserMissingError();
 }

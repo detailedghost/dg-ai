@@ -10,8 +10,14 @@ URL tabs with no pw session. See [Browser tabs and extension](browser.md).
 
 ## Browser
 
-`pw open` picks a system Chrome, then Edge, then a Chromium that
-`dg-skills pw install-browser` downloaded. With none, it exits 3. The skill tells
+`pw open` picks `DG_BROWSER` when set, then a system Chrome, then Edge, then
+another Chromium-family browser on PATH or in the usual app folders (Brave,
+Chromium, Vivaldi), then a Chromium that `dg-skills pw install-browser`
+downloaded. `--browser=chromium` uses the same list without the Chrome and Edge
+channels. `--browser=chrome` or `msedge` falls back to that list when the
+browser is missing. With none, it exits 3 and prints every location it tried.
+`--browser=firefox` and `webkit` need the Playwright build
+(`bunx playwright-core install firefox`). A system Firefox does not work. The skill tells
 agents to ask first, because the download is about 150 MB.
 `dg-skills pw install-browser --remove` deletes it. See
 [install](install.md#browser-download-for-pw).

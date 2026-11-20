@@ -45,7 +45,9 @@ If a step fails, run dg-skills doctor pw pw-code batch-open launch install stash
 
 ## Browser
 
-`pw open` uses a system Chrome, then Edge, then a Chromium that `install-browser` downloaded. With none, it exits 3.
+`pw open` uses `DG_BROWSER` when set, then a system Chrome, then Edge, then another Chromium-family browser on PATH or in the usual app folders (Brave, Chromium, Vivaldi), then a Chromium that `install-browser` downloaded.
+`--browser=chromium` uses the same list without the Chrome and Edge channels. `--browser=chrome` or `msedge` falls back to that list when the browser is missing.
+With none, it exits 3 and prints every location it tried.
 Ask the human before you run `dg-skills pw install-browser`: it downloads about 150 MB under the dg data directory.
 Tell the human that `install-browser --remove` deletes the download.
 
@@ -69,7 +71,7 @@ dg-skills pw close
 | `-s=<name>` | Session name. Persistent sessions are global by name. |
 | `--scratch` | In-memory profile, bound to the current directory. |
 | `--headless` | No window. |
-| `--browser=<b>` | `chrome`, `chromium`, `msedge`, `firefox`, `webkit`. |
+| `--browser=<b>` | `chrome`, `chromium`, `msedge`, `firefox`, `webkit`. `firefox` and `webkit` need the Playwright build (`bunx playwright-core install firefox`). A system Firefox does not work. |
 | `--profile=<dir>` | Profile directory. Use only when asked. |
 | `--from=<state>` | Seed from a saved state. See `references/session-management.md`. |
 | `--out=<dir>` | Output directory, for example a project folder. |

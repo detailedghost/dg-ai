@@ -12,9 +12,9 @@ import { wslPlan } from "../pw/commands/open/run";
 import {
 	BrowserMissingError,
 	type LaunchPick,
+	chromiumExecutable,
 	pickLaunch,
 } from "../pw/core/browser";
-import { downloadedChromium } from "../pw/core/downloaded";
 import { timestampedName } from "../pw/core/response";
 import { exePath } from "../pw/core/windows";
 import type { TourScript } from "../utils/plan-format";
@@ -102,7 +102,7 @@ function nearestExistingDir(path: string): string {
 
 function pickFor(opts: LocalOpts, deps: LocalDeps): LaunchPick {
 	if (opts.browser === "chromium") {
-		const executablePath = downloadedChromium()?.executablePath;
+		const executablePath = chromiumExecutable();
 		if (!executablePath) throw new BrowserMissingError();
 		return { executablePath };
 	}

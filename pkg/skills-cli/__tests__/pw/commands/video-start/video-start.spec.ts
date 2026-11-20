@@ -57,7 +57,7 @@ describe("video-start", () => {
 			(caught: unknown) => caught,
 		);
 		expect(describeError(error)).toBe(
-			"Playwright ffmpeg is not installed. run: bunx playwright-core install ffmpeg",
+			"Playwright ffmpeg is not installed at /home/u/.cache/ms-playwright/ffmpeg-1011/ffmpeg-linux. run: bunx playwright-core install ffmpeg",
 		);
 		expect(ctx.state.video).toBeUndefined();
 	});

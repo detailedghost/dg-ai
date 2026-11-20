@@ -3,11 +3,13 @@ import { isWSL } from "@dg/common/node";
 import { stringFlag, UsageError } from "../../core/args";
 import {
 	BrowserMissingError,
+	chromiumExecutable,
 	type LaunchPick,
 	type LaunchSpec,
 	pickLaunch,
+	type SystemChannel,
+	systemBrowserPresent,
 } from "../../core/browser";
-import { downloadedChromium } from "../../core/downloaded";
 import { ensurePrivateDir } from "../../core/files";
 import { launch, releaseKey, runRemote } from "../../core/launch";
 import { defaultProfileDir } from "../../core/profiles";
@@ -84,7 +86,8 @@ export type OpenDeps = {
 	isWSL(): boolean;
 	windowsBrowserPresent(): boolean;
 	pickLaunch(): LaunchPick;
-	downloadedChromium(): string | null;
+	chromiumExecutable(): string | null;
+	channelPresent(channel: SystemChannel): boolean;
 	startDaemon: typeof launch;
 	startWindowsBrowser: typeof startWindowsBrowser;
 	closeWindowsBrowser: typeof closeWindowsBrowser;
@@ -96,7 +99,8 @@ const DEFAULT_DEPS: OpenDeps = {
 	windowsBrowserPresent: () =>
 		exePath("chrome") !== null || exePath("msedge") !== null,
 	pickLaunch: () => pickLaunch(),
-	downloadedChromium: () => downloadedChromium()?.executablePath ?? null,
+	chromiumExecutable: () => chromiumExecutable(),
+	channelPresent: (channel) => systemBrowserPresent(channel),
 	startDaemon: launch,
 	startWindowsBrowser,
 	closeWindowsBrowser,
@@ -223,20 +227,32 @@ async function openWindows(
 	);
 }
 
+function pickTarget(
+	pick: LaunchPick,
+): Pick<LaunchSpec, "browser" | "executablePath"> {
+	return "channel" in pick
+		? { browser: pick.channel }
+		: { browser: "chromium", executablePath: pick.executablePath };
+}
+
 function localTarget(
 	args: ParsedArgs,
+	env: ClientEnv,
 	deps: OpenDeps,
 ): Pick<LaunchSpec, "browser" | "executablePath"> {
-	const explicit = stringFlag(args, "browser");
-	if (explicit === undefined) {
-		const pick = deps.pickLaunch();
-		return "channel" in pick
-			? { browser: pick.channel }
-			: { browser: "chromium", executablePath: pick.executablePath };
-	}
+	if (stringFlag(args, "browser") === undefined)
+		return pickTarget(deps.pickLaunch());
 	const browser = parseBrowser(args);
+	if (browser === "chrome" || browser === "msedge") {
+		if (deps.channelPresent(browser)) return { browser };
+		const target = pickTarget(deps.pickLaunch());
+		env.err(
+			`${browser} not found, using ${target.executablePath ?? target.browser}`,
+		);
+		return target;
+	}
 	if (browser !== "chromium") return { browser };
-	const executablePath = deps.downloadedChromium();
+	const executablePath = deps.chromiumExecutable();
 	if (!executablePath) throw new BrowserMissingError();
 	return { browser, executablePath };
 }
@@ -259,7 +275,7 @@ export async function runOpen(
 		if (plan.warning) env.err(plan.warning);
 		headless = plan.headless;
 	}
-	const target = localTarget(args, deps);
+	const target = localTarget(args, env, deps);
 	const seed = readSeed(args, env);
 
 	const scratch = args.flags["scratch"] === true;
