@@ -1,7 +1,8 @@
-# 0009 — Serialize runner jobs across chats and task kinds
+# Serialize runner jobs across chats and task kinds
 
 Status: Accepted
 Date: 2026-10-16
+Topic: Channel review
 
 ## Context
 
@@ -21,12 +22,12 @@ time, before terminating a leftover runner and cleaning abandoned work.
 - A long review delays work from every chat.
 - Recovery and cleanup need persisted job state; the queue itself is not a durable broker.
 
-## Alternatives considered
+## Other options
 
 - A queue per chat would still allow conflicting runners on one machine.
 - A worker pool would require stronger isolation of runner accounts and clone operations.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR

@@ -1,7 +1,8 @@
-# 0038 — Reduce the extension to pairing and tab control
+# Reduce the extension to pairing and tab control
 
 Status: Proposed
 Date: 2026-11-07
+Topic: Skills
 
 Superseded in part by [0039](0039-zero-touch-pairing.md).
 
@@ -54,7 +55,7 @@ The word "pairing popup" names this surface throughout. [ADR 0035](0035-pw-ext-r
 - **Done later:** the `/jobs` and `/feed` JSON routes lost their only client with the dashboard, so a later change deleted them with their constants, handler and tests.
 - **Not done:** The `readSessionFiles` fallback stays in the CLI client. The overwatch wire frames stay. The `sidePanel` field stays in `pkg/common/src/connection-drop.ts`. Each is dead or near dead, and a later change removes it.
 
-## Alternatives considered
+## Other options
 
 - **A QR code that encodes a URL.** A phone camera would open that URL and leak the code to a page. The text `dg-agent pair <code>` is inert outside the agent.
 - **Keep `POST /pair`.** It minted orphan sessions and let a code consumer create state. The offer and claim pair makes the agent create the session. It does not limit what a pinned extension origin can obtain.
@@ -66,7 +67,7 @@ The word "pairing popup" names this surface throughout. [ADR 0035](0035-pw-ext-r
 - **Keep the forward-pairing paths as a fallback.** Two ways to pair double the trust surface and the tests. One path is easier to review.
 - **Extension-mediated chat.** The extension would relay every chat frame. The daemon page already holds the sessions and the board state.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram

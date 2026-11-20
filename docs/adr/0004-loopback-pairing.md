@@ -1,7 +1,8 @@
-# 0004 — Require origin and capability checks on loopback
+# Require origin and capability checks on loopback
 
 Status: Accepted
 Date: 2026-10-16
+Topic: Security
 
 Superseded in part by [0039](0039-zero-touch-pairing.md).
 
@@ -24,13 +25,13 @@ constant time. Credential service grants use the narrower exception in [0006](00
 - Moving an unpacked extension can require `dg-daemon origin clear`.
 - Pairing codes are short-lived bootstrap credentials, while session tokens authorize subsequent requests.
 
-## Alternatives considered
+## Other options
 
 - Binding a LAN address with TLS would add remote access and certificate management.
 - A single static token would combine all sessions into one authority.
 - Local access without authentication would expose the service to local browser requests.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram

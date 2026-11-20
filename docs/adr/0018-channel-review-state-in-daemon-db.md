@@ -1,7 +1,8 @@
-# 0018 — Store channel-review state in the shared daemon database
+# Store channel-review state in the shared daemon database
 
 Status: Proposed
 Date: 2026-10-16
+Topic: Channel review
 Updates: [0003](0003-storage-by-writer.md) (the accepted JSON-state decision).
 
 ## Context

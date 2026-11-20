@@ -1,7 +1,8 @@
-# 0021 — Relay `--ext` scrape and plant through the daemon instead of Downloads
+# Relay `--ext` scrape and plant through the daemon instead of Downloads
 
 Status: Proposed
 Date: 2026-10-24
+Topic: Skills
 
 ## Context
 
@@ -114,7 +115,7 @@ explicit:
   whether the tab has a pending relay request before it scrapes or plants, so
   the Firefox MV2 callback-only `chrome` namespace still receives a reply.
 
-## Alternatives considered
+## Other options
 
 - **Keep polling Downloads, add a page-readiness heartbeat file.** Still
   requires a filesystem round trip through the browser process and still
@@ -126,7 +127,7 @@ explicit:
   version was left unbumped and the mismatch window above is accepted rather
   than forced into an out-of-band release.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram

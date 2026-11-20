@@ -1,7 +1,8 @@
-# 0048 — Outlook mail Web MCP tools over OWA service calls
+# Outlook mail Web MCP tools over OWA service calls
 
 Status: Proposed
 Date: 2026-11-14
+Topic: Skills
 
 ## Context
 
@@ -71,7 +72,7 @@ The runtime-registered content script
   `/owa/<n>/` mapping, is inferred from the spike. The R-11 throwaway-item
   capture must confirm them before the built-in is on by default.
 
-## Alternatives considered
+## Other options
 
 - **DOM automation.** The spike shows a virtualized list that renders only in a
   front tab, and a read that changes the read state.
@@ -80,7 +81,7 @@ The runtime-registered content script
 - **Fail a whole batch on the first bad id.** The items that moved get new ids
   that the agent then never sees.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram

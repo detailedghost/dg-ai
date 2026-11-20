@@ -1,7 +1,8 @@
-# 0013 — Pass error reports as data files
+# Pass error reports as data files
 
 Status: Accepted
 Date: 2026-10-16
+Topic: Automation
 
 ## Context
 
@@ -23,12 +24,12 @@ Notification text passes through bounded redaction.
 - This separation reduces prompt-injection exposure; it cannot prove that a model will ignore every embedded
   instruction. Notification links are appended separately from redacted text.
 
-## Alternatives considered
+## Other options
 
 - Including error text in the prompt would place attacker-controlled content in the prompt.
 - Environment variables would still mix large untrusted text into process inputs and could leak through diagnostics.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR

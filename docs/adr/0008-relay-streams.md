@@ -1,7 +1,8 @@
-# 0008 — Consume one resumable relay stream per chat
+# Consume one resumable relay stream per chat
 
 Status: Accepted
 Date: 2026-10-16
+Topic: Channel review
 
 ## Context
 
@@ -22,13 +23,13 @@ relay’s direct mode. Each chat has an independent stream pump.
 - A failing chat does not stop other stream pumps in `daemon/serve.ts`.
 - A cursor cannot recover events a relay no longer retains; gap events remain possible.
 
-## Alternatives considered
+## Other options
 
 - Direct Graph polling would couple the consumer to Graph credentials and polling behavior.
 - Inbound webhooks would require a reachable workstation endpoint.
 - One shared stream would couple reconnect and cursor state across chats.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram

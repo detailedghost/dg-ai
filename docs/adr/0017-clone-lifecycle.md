@@ -1,7 +1,8 @@
-# 0017 — Isolate automation clones and guard recursive deletion
+# Isolate automation clones and guard recursive deletion
 
 Status: Accepted
 Date: 2026-10-16
+Topic: Automation
 
 ## Context
 
@@ -22,12 +23,12 @@ sweeps. Normal job cleanup runs after the job.
 - Cloning costs time and disk space, and interrupted work depends on recovery cleanup.
 - The deletion check is a resolved-path containment guard, not a general filesystem sandbox.
 
-## Alternatives considered
+## Other options
 
 - Worktrees under a user checkout would couple automation cleanup to active development.
 - System temporary directories without ownership records would make ownership and restart sweeping harder to define.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart TD

@@ -24,6 +24,37 @@ flowchart LR
     C -->|"configured notifications"| T
 ```
 
+## Adding an ADR
+
+Run `/dg:adr` to write a record and its agent decision. It stores each record in
+`docs/adr/NNNN-kebab-title.md` with the next free four-digit number. Never reuse a
+number. `dg-skills adr index` writes the list below.
+
+Write a record when a skill adds a wire contract, frame type, store, table, state
+file, trust boundary, secret path, process that writes outside `DG_HOME` or
+pushes remotely, or a wider gate or allowlist. Flags, reaction choices, copy
+changes, and bug fixes do not each need a record unless they change such a boundary.
+
+- **Proposed:** the implementation is not yet on master.
+- **Accepted:** the implementation is on master.
+- **Deprecated:** removed without a replacement.
+- **Superseded by NNNN:** replaced by a linked record.
+
+Keep an Accepted Decision intact. To replace it, write a new record, link the
+old record from its Context, and change the old Status to a linked
+`Superseded by NNNN`. Correct factual errors and stale references explicitly;
+do not silently recast an old decision as a different design.
+
+Use repository-relative links to source evidence and a Mermaid flowchart or
+sequence diagram. Use package names for software participants and label external
+systems clearly. Keep deployment values and private machine inventories out of
+this public repository. These records cover dg; machine-wide skill decisions
+belong with their owning private tooling repository.
+
+## Records
+
+<!-- adr:index -->
+
 ## Installation
 
 - [0001 — Skills-only installation](0001-skills-only-install.md)
@@ -119,7 +150,7 @@ flowchart LR
 - [0046 — Web MCP approvals apart from pw --ext browser control](0046-webmcp-approvals-apart-from-pw-ext.md) — Proposed:
   the pw --ext site allowlist no longer gates Web MCP, and pw --ext Stop refuses that session's Web MCP calls but does not revoke grants; grants are keyed by session, site and tool, a session-class Allow can be remembered for 30 days with a signed record, and the toolbar popup revokes grants. Amends 0035 and 0045. Amended 2026-11-14: area grants under the key `area:<area>` (0047), and `dg-agent mcp` uses the person's own covered tabs through `webmcp-tools` and `webmcp-call`, with no pw --ext session or agent tab group.
 
-- [0046 — pw --ext: read the network calls of an agent tab, shape first](0046-pw-ext-network.md) — Accepted:
+- [0051 — pw --ext: read the network calls of an agent tab, shape first](0051-pw-ext-network.md) — Accepted:
   a MAIN-world hook in agent tabs records `fetch` and XHR calls; `pw --ext network` shows their shape with no values, and `--values` shows masked values after one Allow per site and session. Amends 0044. Amended 2026-11-13: after that Allow the hook keeps same-origin sign-in headers sealed for `fetch --auth page` and `credential save`, which stores values unseen through a daemon-only frame; adds the `cookies` permission.
 
 - [0047 — Web MCP area approval class](0047-webmcp-area-approval-class.md) — Proposed:
@@ -130,29 +161,3 @@ flowchart LR
 
 - [0050 — Fold browser skill into pw](0050-fold-browser-skill-into-pw.md) — Accepted:
   `batch-open` and `launch` are pw verbs routed before the `--ext` relay; the top-level commands and the browser skill are gone with no aliases, and a skills-only install prunes a stale dg `browser` skill. Amends 0028.
-
-## Adding an ADR
-
-Use [the template](template.md). Store each record in `docs/adr/NNNN-kebab-title.md`.
-Choose the next free four-digit number and never reuse a number. Add its link here.
-
-Write a record when a skill adds a wire contract, frame type, store, table, state
-file, trust boundary, secret path, process that writes outside `DG_HOME` or
-pushes remotely, or a wider gate or allowlist. Flags, reaction choices, copy
-changes, and bug fixes do not each need a record unless they change such a boundary.
-
-- **Proposed:** the implementation is not yet on master.
-- **Accepted:** the implementation is on master.
-- **Deprecated:** removed without a replacement.
-- **Superseded by NNNN:** replaced by a linked record.
-
-Keep an Accepted Decision intact. To replace it, write a new record, link the
-old record from its Context, and change the old Status to a linked
-`Superseded by NNNN`. Correct factual errors and stale references explicitly;
-do not silently recast an old decision as a different design.
-
-Use repository-relative links to source evidence and a Mermaid flowchart or
-sequence diagram. Use package names for software participants and label external
-systems clearly. Keep deployment values and private machine inventories out of
-this public repository. These records cover dg; machine-wide skill decisions
-belong with their owning private tooling repository.

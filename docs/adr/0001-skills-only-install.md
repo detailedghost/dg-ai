@@ -1,8 +1,8 @@
-# 0001. Skills-only install is a file copy
+# Skills-only install is a file copy
 
-## Status
-
-Accepted
+Status: Accepted
+Date: 2026-10-16
+Topic: Installation
 
 ## Context
 
@@ -53,6 +53,13 @@ they were.
   Bun can install. The end-to-end test installs this repository's skill tree
   through the TypeScript command and through `bootstrap.sh`, and both results
   have to be the same paths.
+
+## Diagram
+
+```mermaid
+```
+
+## Other options
 
 ## Amendment (2026-10-18)
 

@@ -1,7 +1,8 @@
-# 0028 — Run every skill locally and make the extension opt-in with `--ext`
+# Run every skill locally and make the extension opt-in with `--ext`
 
 Status: Accepted
 Date: 2026-11-01
+Topic: Skills
 
 Superseded in part by [ADR 0031](0031-loopback-pages.md): the PENDING_LOCAL_MODE allowlist is gone.
 
@@ -48,14 +49,14 @@ enforces three rules:
   bundle removes its names from the list.
 - **Neutral:** the extension never writes a marker without `--ext`.
 
-## Alternatives considered
+## Other options
 
 - **Fail `batch-open` without the extension.** The PR already exists, so a hard
   failure only prints a URL that the caller prints anyway.
 - **Scan `process.argv` for `--ext`.** It also matches text such as
   `dg-skills jot "--ext"`. The guard reads parsed options instead.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR

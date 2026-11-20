@@ -1,7 +1,8 @@
-# 0046 — pw --ext: read the network calls of an agent tab, shape first
+# pw --ext: read the network calls of an agent tab, shape first
 
 Status: Accepted (implemented)
 Date: 2026-11-13
+Topic: Skills
 
 ## Context
 
@@ -234,7 +235,7 @@ conditions only:
   `network` there needs the new `area` approval (R-10), or it stays blocked.
   This ADR does not build `area`.
 
-## Alternatives considered
+## Other options
 
 - **`webRequest` / `declarativeNetRequest`.** No response body, not per tab
   group, and host permissions for every site.
@@ -248,7 +249,7 @@ conditions only:
   structure at capture time and keeps only bounded text.
 - **A time-boxed values grant.** Rejected by Dante: ask once per session.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram

@@ -1,7 +1,8 @@
-# 0036 — Move the legacy `~/.dg` through one layout module
+# Move the legacy `~/.dg` through one layout module
 
 Status: Proposed
 Date: 2026-11-05
+Topic: Installation
 
 ## Context
 
@@ -54,7 +55,7 @@ and the empty `~/.dg`. It never removes a copy that holds data, leaves `dg-ai-*`
 - **Bad:** set-asides stay on disk until the user runs `dg-skills clean`.
 - **Neutral:** `~/.dg` may keep `bin`, `dg-ai-*` names and dotfiles after the move.
 
-## Alternatives considered
+## Other options
 
 - **Per-migrator triggers.** The status quo. Each migrator misses the starts it does not own, which caused both v1.42.0 bugs.
 - **A marker file (A1).** A cross-process cache can go stale. The fast path costs one `readdir` and needs no file.
@@ -63,7 +64,7 @@ and the empty `~/.dg`. It never removes a copy that holds data, leaves `dg-ai-*`
 - **A rollback command that copies every entry back (A6).** It restores a split that the next upgrade breaks again.
   A manual rollback and `dg-skills clean` replace it (A6').
 
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart TD

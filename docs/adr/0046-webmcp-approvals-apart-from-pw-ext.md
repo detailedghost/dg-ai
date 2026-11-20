@@ -1,7 +1,8 @@
-# 0046 — Web MCP approvals apart from pw --ext browser control
+# Web MCP approvals apart from pw --ext browser control
 
 Status: Proposed
 Date: 2026-11-13
+Topic: Skills
 
 ## Context
 
@@ -121,7 +122,7 @@ Consequences:
   script covers are not listed. Turning that on means a script run in every
   open tab.
 
-## Alternatives considered
+## Other options
 
 - **Keep the site allowlist as a second gate for Web MCP.** R-13 rejects it:
   the two features must not depend on each other.
@@ -132,7 +133,7 @@ Consequences:
 - **Sign the record with no nonce.** A content script could save a signed record
   and write it back after a Revoke.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR

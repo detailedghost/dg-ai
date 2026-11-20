@@ -1,7 +1,8 @@
-# 0029 — Accept the WSL remote-debugging port for the local demo player
+# Accept the WSL remote-debugging port for the local demo player
 
 Status: Accepted
 Date: 2026-11-02
+Topic: Skills
 
 Superseded in part by [ADR 0040](0040-local-demo-recorder.md).
 
@@ -48,14 +49,14 @@ local process from attaching to the port.
 - **Neutral:** [the demo skill](../../plugins/dg/skills/demo/SKILL.md) and
   [the install guide](../install.md) state the port and the opt-out.
 
-## Alternatives considered
+## Other options
 
 - **Default to headless Chromium inside WSL.** It opens no Windows port, but the
   demo no longer shows the browser the user works in.
 - **Authenticate the port.** Chrome offers no authentication for the
   remote-debugging port.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR

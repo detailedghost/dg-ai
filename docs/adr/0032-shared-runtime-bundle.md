@@ -1,7 +1,8 @@
-# 0032 — Ship one pinned Bun runtime and one minified bundle
+# Ship one pinned Bun runtime and one minified bundle
 
 Status: Accepted
 Date: 2026-11-03
+Topic: Installation
 
 ## Context
 
@@ -54,7 +55,7 @@ change a link.
 - **Neutral:** a compiled-binary install cannot find the new assets. Its owner
   runs `bootstrap.sh` once.
 
-## Alternatives considered
+## Other options
 
 - **Keep `--compile` and add minify.** It saves about 7 MB per binary and keeps
   three runtimes.
@@ -65,7 +66,7 @@ change a link.
 - **Pointer text files in place of the `current` links.** A service unit could
   not name a stable `dg.js` path.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR

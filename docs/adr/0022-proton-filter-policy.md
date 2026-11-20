@@ -1,7 +1,8 @@
-# 0022 — Keep Proton filters in one declared file
+# Keep Proton filters in one declared file
 
 Status: Proposed
 Date: 2026-10-24
+Topic: Skills
 
 ## Context
 
@@ -42,13 +43,13 @@ The other filter commands edit only the declared file.
 - **Bad:** applying a new plan requires a new hash. Adding `--approve-delete` or `--pull` changes the hash.
 - **Neutral:** `filters.json` remains a redacted inventory. It is no longer an input to a Proton write.
 
-## Alternatives considered
+## Other options
 
 - **Keep writing from each command.** A confirm on extend, group, or apply could still skip the shared safety checks and the order diff.
 - **Treat `filters.json` as the source of truth.** The snapshot is redacted and truncated, so a rewrite could drop conditions.
 - **Apply rename proposals automatically.** A wrong suggestion would rename a live filter before anyone reviewed it.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR

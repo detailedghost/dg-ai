@@ -1,7 +1,8 @@
-# 0035 — Drive the real browser with `pw --ext` behind a per-call approval
+# Drive the real browser with `pw --ext` behind a per-call approval
 
 Status: Proposed
 Date: 2026-11-05
+Topic: Skills
 
 ## Amended 2026-11-05: no per-call approval
 
@@ -173,7 +174,7 @@ staged file.
 - **Bad:** a pre-approval read touches the page before consent, but only for the
   one target element or the tool list.
 
-## Alternatives considered
+## Other options
 
 - **`debugger` permission (CDP).** It gives trusted input and console history,
   but it is broad, it shows a banner on every page, and it allows code
@@ -187,7 +188,7 @@ staged file.
 - **Approve once per session.** Less friction, but the plan asks for one approval
   per call.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram

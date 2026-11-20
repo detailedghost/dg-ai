@@ -1,7 +1,8 @@
-# 0033 — Gate verify on the layout of the accepted prototype
+# Gate verify on the layout of the accepted prototype
 
 Status: Proposed
 Date: 2026-11-03
+Topic: Skills
 
 ## Context
 
@@ -62,7 +63,7 @@ board.
 - **Neutral:** the record in the sandbox is gitignored. Only the text copy in the
   spec bundle is committed.
 
-## Alternatives considered
+## Other options
 
 - **Compare pixels.** Seed data makes pixel diffs fail on every run.
 - **Record a CSS selector per control.** The build DOM differs from the prototype
@@ -72,7 +73,7 @@ board.
 - **Put the fingerprint in `ACCEPTED.md`.** The CLI would have to parse prose. A
   sibling JSON file keeps the page for people.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram

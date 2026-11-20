@@ -1,7 +1,8 @@
-# 0047 — Web MCP area approval class
+# Web MCP area approval class
 
 Status: Proposed
 Date: 2026-11-14
+Topic: Skills
 
 ## Context
 
@@ -40,7 +41,7 @@ revoke lists name the area.
 - **Neutral:** the `read` class has no tool left. It stays for a future tool
   that reads nothing private.
 
-## Alternatives considered
+## Other options
 
 - **An `area` field on the grant record.** It changes the HMAC payload, the
   revoke messages and the popup parser for no gain over a key that cannot
@@ -50,7 +51,7 @@ revoke lists name the area.
 - **Keep list and search `read`.** R-10 rejects it: mail metadata is mail
   content too.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram

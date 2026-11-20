@@ -1,7 +1,8 @@
-# 0002 — The daemon owns durable sessions and work
+# The daemon owns durable sessions and work
 
 Status: Accepted
 Date: 2026-10-16
+Topic: Platform
 
 ## Context
 
@@ -21,13 +22,13 @@ sibling daemon binary. Channel review remains a separate process that can run as
 - A daemon failure interrupts all attached sessions until it restarts.
 - Service recovery and browser reconnection have separate lifecycles in `services/supervisor.ts` and `server/connection.ts`.
 
-## Alternatives considered
+## Other options
 
 - An extension-owned queue would depend on service-worker lifetime.
 - Direct agent-to-extension messages would require each short-lived client to recover work.
 - Running channel review in the hub would couple its runner failures to chat sessions.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR

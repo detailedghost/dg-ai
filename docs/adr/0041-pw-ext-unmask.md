@@ -1,7 +1,8 @@
-# 0041 — pw --ext: user-approved, time-boxed unmask
+# pw --ext: user-approved, time-boxed unmask
 
 Status: Accepted (implemented)
 Date: 2026-11-09
+Topic: Skills
 
 ## Context
 
@@ -93,7 +94,7 @@ and for a short time. Every other guard of ADR 0035 stays.
 - **Neutral:** an extension without `unmask` in `pwExtVerbs` refuses the verb.
   The minimum extension version does not change.
 
-## Alternatives considered
+## Other options
 
 - **Agent self-grant.** A flag or wire field that the agent sets. It removes the
   human from the decision, so it defeats the redaction it relaxes.
@@ -102,6 +103,11 @@ and for a short time. Every other guard of ADR 0035 stays.
 - **CLI-side approval prompt.** The agent controls the CLI process and its
   terminal. It can answer its own prompt. Only an extension-owned window is out
   of the agent's reach.
+
+## Diagram
+
+```mermaid
+```
 
 ## References
 

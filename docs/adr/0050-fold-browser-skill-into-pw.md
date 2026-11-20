@@ -1,7 +1,8 @@
-# 0050 — Fold browser skill into pw
+# Fold browser skill into pw
 
 Status: Accepted
 Date: 2026-11-19
+Topic: Skills
 
 ## Context
 
@@ -38,14 +39,14 @@ and demo and rerun stay with `/dg:demo`. A skills-only install prunes a stale
   with an unknown command error and must add `pw`.
 - **Neutral:** the completion tree lists both verbs under `pw`.
 
-## Alternatives considered
+## Other options
 
 - **Keep aliases for one release.** Dante chose a clean removal; every caller
   is in this repository and changes in the same PR.
 - **Keep the browser skill as a pointer to pw.** It would keep a second entry
   point for the same commands.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR

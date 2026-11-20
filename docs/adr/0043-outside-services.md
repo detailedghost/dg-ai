@@ -1,7 +1,8 @@
-# 0043 — Run outside services under the daemon with a provisional service API
+# Run outside services under the daemon with a provisional service API
 
 Status: Accepted
 Date: 2026-11-12
+Topic: Platform
 Amended 2026-11-18: the daemon also injects DG_SERVICE_STATE_DIR and, when it has one, DG_HOME; see docs/service-api.md.
 Amended 2026-11-19: the noun is now job; see [ADR 0049](0049-jobs.md).
 
@@ -36,7 +37,7 @@ A service declares `grant`, `passEnv` and `stopTimeoutMs` (default 5000, maximum
 - **Neutral:** `Origin: null` passes the browser gate, as on `/cli`. The grant token is the control.
 - **Neutral:** [ADR 0020](0020-one-dg-command.md) stays as it is, and ADRs 0008 to 0019 keep their status.
 
-## Alternatives considered
+## Other options
 
 - **A socket transport now.** The route needs only `fetch`. A later transport arrives as a new environment key.
 - **A client library.** It forces a dg dependency on a service in any language.
@@ -45,7 +46,7 @@ A service declares `grant`, `passEnv` and `stopTimeoutMs` (default 5000, maximum
 - **An owner-gated shutdown route.** It adds a network route that stops the daemon. A signal needs no route.
 - **A force signal that the daemon handles.** A hung daemon cannot handle it. The CLI kills the process trees itself.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram

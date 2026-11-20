@@ -1,7 +1,8 @@
-# 0026 — Opt-in hooks that write tool settings
+# Opt-in hooks that write tool settings
 
 Status: Accepted
 Date: 2026-11-01
+Topic: Installation
 
 ## Context
 
@@ -40,7 +41,7 @@ write and retries up to three times.
 - **Bad:** the writers depend on three settings formats that the tools own.
 - **Neutral:** a change applies in new sessions only.
 
-## Alternatives considered
+## Other options
 
 - **Enable hooks at plugin install.** The plugin would change settings the user
   did not review.
@@ -49,7 +50,7 @@ write and retries up to three times.
 - **List `dg-hooks` in `opencode.json`.** opencode does not resolve a bare
   package name from that list.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR

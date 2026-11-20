@@ -1,7 +1,8 @@
-# 0034 — Send images over the phone as encrypted files
+# Send images over the phone as encrypted files
 
 Status: Proposed
 Date: 2026-11-04
+Topic: Skills
 
 ## Context
 
@@ -112,7 +113,7 @@ bullet above. Tailscale Personal is limited to non-commercial use, so it does no
 - **Bad:** only policy stops an agent that adds `--no-phi` by habit.
 - **Neutral:** `pkg/dg-agent/src/phone/db.ts` moves to schema version 5 when slice 2 lands.
 
-## Alternatives considered
+## Other options
 
 - **Blossom with kind 15 (chosen).** Standard shape and the smallest trust surface that works.
   NIP-96 is not an option: it is marked unrecommended and deprecated in favor of Blossom.
@@ -127,7 +128,7 @@ bullet above. Tailscale Personal is limited to non-commercial use, so it does no
 - **Magic Wormhole (chosen 2026-11-04).** A direct, one-time transfer with no stored copy. It needs a second
   tool, and a code exchange for each file, which the kind 25015 request carries. See the transport update.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram

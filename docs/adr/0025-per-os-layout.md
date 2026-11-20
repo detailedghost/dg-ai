@@ -1,7 +1,8 @@
-# 0025 — Keep dg files in the per-OS layout
+# Keep dg files in the per-OS layout
 
 Status: Accepted
 Date: 2026-11-03
+Topic: Installation
 
 ## Context
 
@@ -44,7 +45,7 @@ reads from it (moved by [0036](0036-one-layout-module.md)).
   change. The staged extension folder and `ssms` move too; the browser must
   load the extension once from its new folder.
 
-## Alternatives considered
+## Other options
 
 - **Keep `~/.dg`.** Simple, but not standard, and it mixes cache with keys.
 - **XDG only on Linux.** Three code paths for one idea, with macOS and
@@ -52,7 +53,7 @@ reads from it (moved by [0036](0036-one-layout-module.md)).
 - **One symlink from `~/.dg`.** The old folder splits into four roots, so no
   single link can stand in for it.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR

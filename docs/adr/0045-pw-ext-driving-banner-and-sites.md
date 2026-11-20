@@ -1,7 +1,8 @@
-# 0045 — pw --ext: an "Agent is driving" banner with Stop, and a site allowlist per session
+# pw --ext: an "Agent is driving" banner with Stop, and a site allowlist per session
 
 Status: Accepted (implemented)
 Date: 2026-11-13
+Topic: Skills
 
 ## Context
 
@@ -59,7 +60,7 @@ The mailbox guard runs first and does not change.
   reconnects stays stopped. A new dg session has a new id.
 - **Neutral:** no settings page; the allowlist lives only for the session.
 
-## Alternatives considered
+## Other options
 
 - **A settings page with a standing allowlist.** More UI, and a standing list
   outlives the task that needed it.
@@ -67,7 +68,7 @@ The mailbox guard runs first and does not change.
 - **Stop that only cancels the current verb.** The agent would retry at once;
   the person asked for the session to end.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 sequenceDiagram

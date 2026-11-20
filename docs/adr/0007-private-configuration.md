@@ -1,7 +1,8 @@
-# 0007 — Keep deployment values out of the public repository
+# Keep deployment values out of the public repository
 
 Status: Accepted
 Date: 2026-10-16
+Topic: Security
 
 ## Context
 
@@ -21,12 +22,12 @@ status reports configured variable names and availability instead of secret valu
 - Operators must provision private values separately from installing the package.
 - Redaction reduces accidental disclosure but is not permission to log arbitrary private data.
 
-## Alternatives considered
+## Other options
 
 - A committed deployment config would publish identifiers and couple releases to one installation.
 - A built-in private default environment would make a fresh install point at another deployment’s service.
 
-## Diagrams
+## Diagram
 
 ```mermaid
 flowchart LR
