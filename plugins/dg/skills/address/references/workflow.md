@@ -277,6 +277,8 @@ the reply command succeeds.
 
 Runs after Phase 6 on every run (including `localOnly=true`). Skip only when Phase 1c gathered no local-review items (`localItems` empty).
 
+Phase 7 also runs in a subagent. Do not skip it there.
+
 Local code-review files are gitignored artifacts, so removal is a plain `rm -f` (no commit). Delete a file only once it is fully accomplished — never discard outstanding findings. Paths are absolute (`reviewDir`-rooted); never `rm` relative to `$PWD` when `reviewDir` differs.
 
 For each distinct `reviewFile` among the gathered local-review items, classify its findings by terminal state:

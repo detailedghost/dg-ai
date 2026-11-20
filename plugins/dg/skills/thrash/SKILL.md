@@ -163,6 +163,20 @@ which is more than the default of 120 s.
     findings per tier, comment count (line and file), and Approve, Request changes or Comment. Show it
     verbatim as the final report.
 
+## Nested run
+
+Use this rule when the host has no agent-launch tool (a subagent), or when `dg:thrash-verify` or
+`dg:thrash-consolidate` is not registered. Run the stage in your own agent, or through a proxy job.
+Pick the first path that works.
+
+1. Read the persona file from the plugin `agents/` folder (`thrash-verify.md` or
+   `thrash-consolidate.md`). Then run the stage in this agent, one item at a time, with the same
+   inputs and outputs as the persona prompt.
+2. Route the stage through `dg-skills proxy <backend> --subagent thrash-verify|thrash-consolidate`.
+
+Triage, verify, apply, consolidate and compile never get skipped. If no path works, stop and print
+`thrash cannot run nested here: <reason>; run /dg:thrash . from the main loop`.
+
 ## Waves
 
 Launch 16 agents at most in one message. Start the next wave when every agent of the wave has

@@ -79,6 +79,8 @@ API, then fail loud with a diagnostic.
 Use `--single` for manual round-by-round control, or set
 `REVIEW_LOOP_MAX_ROUNDS=1` to cap at one round globally.
 
+In a subagent, run each round by the "Nested run" rule in `/dg:thrash`.
+
 ### Proxy mode
 
 `--proxy <backend>` replaces the GitHub Copilot reviewer with a local

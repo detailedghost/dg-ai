@@ -60,6 +60,8 @@ The plugin ships its personas in `agents/` (Claude Code loads them as
 - Phase 6: reply + resolve (PR/MR comment items only — GitHub or GitLab, CI and local skip this)
 - Phase 7: local review cleanup — delete each local code-review file once all its findings are accomplished (fixed+committed or rejected); keep files with blocked/skipped findings
 
+Phase 7 cleanup also runs in a subagent: `-l` still deletes each accomplished `.agents/code-review` file.
+
 **Review reply invariant:** reply inline to the gathered review comment, then resolve that same thread. Never use a
 top-level PR/MR comment as the response. A reply must be confirmed published before resolution; if replying fails,
 leave the thread open.

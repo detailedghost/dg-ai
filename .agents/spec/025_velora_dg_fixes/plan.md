@@ -4,7 +4,7 @@ feature_snake_case: velora_dg_fixes
 date: "2026-11-20"
 version: "1.0"
 status: in-progress
-current_slice: 6
+current_slice: 3
 pr_strategy: single
 slices:
   - id: 1
@@ -156,18 +156,18 @@ Fix the dg 6.1.0 rough edges found during the Velora release. Verify and prototy
 ### Slice 3 — thrash-nested-run
 
 #### Engineering
-- [ ] Add a `Nested run` section to thrash SKILL.md: when the host has no agent-launch tool (a subagent) or `dg:thrash-verify` / `dg:thrash-consolidate` is not registered, run that stage in the same agent, one item at a time, after reading the persona file from the plugin `agents/` folder; or route the stage through `dg-skills proxy <backend> --subagent thrash-verify|thrash-consolidate`
-- [ ] State that triage, verify, apply, consolidate and compile never get skipped; if no path works, stop and print `thrash cannot run nested here: <reason>; run /dg:thrash . from the main loop`
-- [ ] address SKILL.md and workflow.md: in a subagent, `-l` still runs phase 7, so accomplished .agents/code-review files are deleted
-- [ ] review-loop SKILL.md: one line pointing a subagent at the nested-run rule for each round
-- [ ] Keep the skill text in ASD-STE100 style and American spelling
+- [x] Add a `Nested run` section to thrash SKILL.md: when the host has no agent-launch tool (a subagent) or `dg:thrash-verify` / `dg:thrash-consolidate` is not registered, run that stage in the same agent, one item at a time, after reading the persona file from the plugin `agents/` folder; or route the stage through `dg-skills proxy <backend> --subagent thrash-verify|thrash-consolidate`
+- [x] State that triage, verify, apply, consolidate and compile never get skipped; if no path works, stop and print `thrash cannot run nested here: <reason>; run /dg:thrash . from the main loop`
+- [x] address SKILL.md and workflow.md: in a subagent, `-l` still runs phase 7, so accomplished .agents/code-review files are deleted
+- [x] review-loop SKILL.md: one line pointing a subagent at the nested-run rule for each round
+- [x] Keep the skill text in ASD-STE100 style and American spelling
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: thrash SKILL.md has a `## Nested run` heading naming both personas, the persona-file fallback, the proxy fallback and the exact stop line
-- [ ] Contract: address SKILL.md says phase 7 cleanup also runs in a subagent
-- [ ] thrash-nested-run.spec (skills-test): asserts the heading, the stop line and that no step says verify or consolidate may be skipped
-- [ ] Existing thrash-pipeline-skill.spec still passes
+- [x] Contract: thrash SKILL.md has a `## Nested run` heading naming both personas, the persona-file fallback, the proxy fallback and the exact stop line
+- [x] Contract: address SKILL.md says phase 7 cleanup also runs in a subagent
+- [x] thrash-nested-run.spec (skills-test): asserts the heading, the stop line and that no step says verify or consolidate may be skipped
+- [x] Existing thrash-pipeline-skill.spec still passes
 
 #### Acceptance Criteria
 - [ ] A subagent that reads /dg:thrash knows how to run every stage without the Agent tool, or stops with a clear reason
@@ -231,8 +231,9 @@ Fix the dg 6.1.0 rough edges found during the Velora release. Verify and prototy
 - [ ] Given an update whose doctor run has failed checks, when update finishes, then each failed check and its fix is printed under the summary
 
 ## Slice Summaries
-- Slice 6: update logs each failed doctor check and its fix under the summary line through the new formatFailures; the update deps seam returns the DoctorReport; exit code unchanged.
 - Slice 5: syncCompatLaunchers rewrites only launchers that exist and sweeps leftover <name>.version files once no launcher remains, so ~/.dg/bin stays gone after the removal release; docs/install.md notes stale skill copies (R6).
+- Slice 6: update logs each failed doctor check and its fix under the summary line through the new formatFailures; the update deps seam returns the DoctorReport; exit code unchanged.
+- Slice 3: thrash SKILL.md gains a Nested run rule (persona-file fallback, then proxy --subagent fallback, never skip a stage, exact stop line); address and review-loop point subagents at it, and address phase 7 cleanup runs in a subagent too.
 
 ## Agent Notes
 - (owner, 2026-11-20) R1: verify loads a saved pw state per role (`role.state`), loopback only. Seed checks and the cookie cap stay unchanged.
