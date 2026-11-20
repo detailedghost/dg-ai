@@ -4,7 +4,7 @@ feature_snake_case: agents_memory
 date: "2026-11-19"
 version: "1.0"
 status: in-progress
-current_slice: 2
+current_slice: 3
 pr_strategy: single
 slices:
   - id: 1
@@ -106,22 +106,23 @@ Make .agents/ tracked, token-light agent memory in every repo the skills seed. A
 ### Slice 3 — adr-lint-decision-size
 
 #### Engineering
-- [ ] New lint rule decision-too-long: more than 25 non-blank lines below the frontmatter
-- [ ] Same finding shape and exit codes as the other rules
-- [ ] adr SKILL.md names the rule
+- [x] New lint rule decision-too-long: more than 25 non-blank lines below the frontmatter
+- [x] Same finding shape and exit codes as the other rules
+- [x] adr SKILL.md names the rule
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: a decision with 25 non-blank body lines is clean
-- [ ] Contract: a decision with 26 non-blank body lines yields decision-too-long and exit 1
+- [x] Contract: a decision with 25 non-blank body lines is clean
+- [x] Contract: a decision with 26 non-blank body lines yields decision-too-long and exit 1
 
 #### Acceptance Criteria
-- [ ] adr lint --all on dg-ai master stays clean, or the PR lists every hit
-- [ ] bun test in pkg/skills-cli passes
+- [x] adr lint --all on dg-ai master stays clean, or the PR lists every hit
+- [x] bun test in pkg/skills-cli passes
 
 ## Slice Summaries
 - Slice 1 (track-agents-default): agent-seed writes only the scratch list to .gitignore and replaces an old .agents/ or .agents/* block; spring-break step 9 does the same fix. Every git add -f of .agents is gone (spec, fast, plan, kick, pickup, prd, wayfinder, agent-seed backups); bundle adds keep the roundtable exclude fallback, and spec says to ask for /dg:spring-break when git add refuses, never -f. proto tracks only NOTES.md per prototype. Tests: agents-tracked.spec.ts, spec-bundle-commit.spec.ts.
 - Slice 2 (agents-read-agents-folder): 17 personas carry one pinned memory line (school topic, adr relevant when decisions exist, never docs/adr); arch, design, lore and qa-code gained a Project-scope line. checkpoint, copilot-antagonist and thrash* stay exempt (read-only or mechanical). AGENTS.md template routes agents to .agents; lore template adds a Learnings step; structure.md and write-decision.md carry the caps. Test: agents-memory.spec.ts.
+- Slice 3 (adr-lint-decision-size): adr lint adds decision-too-long for a decision over 25 non-blank lines below its front matter (link line counts). Tests at 25 (clean), 26 (finding, exit 1) and a long front matter (not counted). adr SKILL.md names the rule. dg-ai master has no .agents/decisions/README.md, so adr lint --all refuses as not initialized; its 3 decisions are 21, 16 and 12 lines, so no hits.
 
 ## Agent Notes
 - (slice 1) Scratch list uses .agents/spec/**/roundtable/ instead of the plan's spec/*/roundtable/, so prd's spec/todo/<slug>/roundtable/ is covered too.
