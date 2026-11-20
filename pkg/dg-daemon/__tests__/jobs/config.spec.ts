@@ -301,6 +301,99 @@ describe("parseJobEntry credentials", () => {
 	});
 });
 
+describe("parseJobEntry credentialEnv", () => {
+	const bound = {
+		...continuous,
+		grant: "poll",
+		credentials: ["api-key"],
+		credentialEnv: { API_KEY: "api-key" },
+	};
+
+	it("accepts a binding of a listed credential to a variable", () => {
+		expect(parseJobEntry("bot", bound)).toMatchObject({
+			ok: true,
+			credentialEnv: { API_KEY: "api-key" },
+		});
+	});
+
+	it("gives an empty credentialEnv for an entry with no binding", () => {
+		expect(parseJobEntry("bot", continuous)).toMatchObject({ ok: true, credentialEnv: {} });
+	});
+
+	it("refuses a value that is not in the credentials list", () => {
+		expect(failure({ ...bound, credentialEnv: { API_KEY: "other" } })).toContain(
+			'"API_KEY" to a credential that is not in "credentials"',
+		);
+	});
+
+	it("refuses credentialEnv on an entry with no grant", () => {
+		const { grant: _grant, credentials: _credentials, ...rest } = bound;
+		expect(failure(rest)).toBe('"credentialEnv" needs "grant"');
+	});
+
+	it("refuses credentialEnv that is not an object", () => {
+		expect(failure({ ...bound, credentialEnv: ["API_KEY"] })).toBe(
+			'"credentialEnv" must be an object of variable names',
+		);
+	});
+
+	it.each(["1BAD", "has space", "DG_X", "dg_x", "Dg_Token", "LD_PRELOAD", "node_options", "PATH"])(
+		"refuses the variable %p and names it",
+		(variable) => {
+			const error = failure({ ...bound, credentialEnv: { [variable]: "api-key" } });
+			expect(error).toContain(`"credentialEnv": environment variable ${JSON.stringify(variable)}`);
+		},
+	);
+
+	it("accepts a variable with a DG-like text that does not start with DG_", () => {
+		expect(parseJobEntry("bot", { ...bound, credentialEnv: { DGX: "api-key" } }).ok).toBe(true);
+	});
+
+	it("lets one credential bind two variables", () => {
+		expect(
+			parseJobEntry("bot", { ...bound, credentialEnv: { A_ONE: "api-key", A_TWO: "api-key" } }).ok,
+		).toBe(true);
+	});
+
+	it.each(["pw", "extension", "phone-vault", "db"])(
+		"refuses credentialEnv under the reserved prefix %s",
+		(grant) => {
+			expect(
+				failure({ ...continuous, grant, credentials: ["github.com"], credentialEnv: { TOKEN: "github.com" } }),
+			).toBe(`"credentialEnv" cannot use the reserved credential prefix "${grant}"`);
+		},
+	);
+
+	it("still accepts a reserved grant with no credentialEnv", () => {
+		expect(parseJobEntry("bot", { ...continuous, grant: "pw", credentials: ["a"] }).ok).toBe(true);
+	});
+
+	it("refuses a __proto__ key", () => {
+		const entry = JSON.parse(
+			'{"argv":["bot"],"cwd":"/srv","continuous":true,"grant":"poll","credentials":["a"],"credentialEnv":{"__proto__":"a"}}',
+		);
+		expect(failure(entry)).toContain("__proto__");
+	});
+
+	it("accepts a variable named constructor", () => {
+		expect(
+			parseJobEntry("bot", { ...bound, credentialEnv: { constructor: "api-key" } }),
+		).toMatchObject({ ok: true, credentialEnv: { constructor: "api-key" } });
+	});
+
+	it("refuses a variable name longer than 64 characters", () => {
+		expect(
+			failure({ ...bound, credentialEnv: { [`A${"B".repeat(64)}`]: "api-key" } }),
+		).toContain("longer than 64");
+	});
+
+	it("folds the credential letter case as the credentials list does", () => {
+		expect(
+			parseJobEntry("bot", { ...bound, credentialEnv: { API_KEY: "API-Key" } }),
+		).toMatchObject({ ok: true, credentialEnv: { API_KEY: "api-key" } });
+	});
+});
+
 describe("parseJobEntry name rule", () => {
 	it.each(["Bad Name", "", "-lead", "con", "a".repeat(65), "has.dot"])(
 		"refuses the job name %p",

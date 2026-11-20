@@ -165,7 +165,7 @@
 							"flags": [
 								"--credential"
 							],
-							"description": "credential the job needs (repeatable)",
+							"description": "credential the job needs, with an optional variable name for its value (repeatable)",
 							"value": "any"
 						}
 					]
@@ -295,7 +295,7 @@
 							"flags": [
 								"--credential"
 							],
-							"description": "add a credential the job needs (repeatable)",
+							"description": "add a credential the job needs, with an optional variable name for its value (repeatable)",
 							"value": "any"
 						}
 					]

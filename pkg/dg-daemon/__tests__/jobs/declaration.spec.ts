@@ -73,7 +73,7 @@ describe("parseJobDeclaration", () => {
 		);
 	});
 
-	it.each(["grant", "cwd", "enabled", "passEnv"])(
+	it.each(["grant", "cwd", "enabled", "passEnv", "credentialEnv"])(
 		"refuses the job key %s by name",
 		(key) => {
 			expect(errorOf({ jobs: { a: job({ [key]: "x" }) } })).toBe(
@@ -301,6 +301,78 @@ describe("parseJobDeclaration", () => {
 
 		it("refuses a required value that is not a boolean", () => {
 			expect(errorOf(withDetails({ a: { required: "yes" } }))).toContain('credential "a"');
+		});
+
+		it("accepts env and gives each job that lists the credential the same credentialEnv", () => {
+			const result = parse({
+				jobs: {
+					one: job({ credentials: ["api-key"] }),
+					two: job({ credentials: ["api-key", "other"] }),
+					three: job(),
+				},
+				credentials: { "api-key": { env: "API_KEY" } },
+			});
+			if (!result.ok) throw new Error(result.error);
+			const entries = Object.fromEntries(result.jobs.map((item) => [item.name, item.entry]));
+			expect(entries.one.credentialEnv).toEqual({ API_KEY: "api-key" });
+			expect(entries.two.credentialEnv).toEqual({ API_KEY: "api-key" });
+			expect(entries.three).not.toHaveProperty("credentialEnv");
+			expect(entries.one.grant).toBe("tools");
+			expect(describeCredentials(result.jobs, result.credentials)[0]).toMatchObject({
+				name: "api-key",
+				env: "API_KEY",
+			});
+		});
+
+		it.each([
+			["1BAD", "1BAD"],
+			["DG_X", "DG_X"],
+			["dg_x", "dg_x"],
+			["Dg_Home", "Dg_Home"],
+			["LD_PRELOAD", "LD_PRELOAD"],
+			["PATH", "PATH"],
+		])("refuses the env name %s and names the variable", (env, shown) => {
+			const error = errorOf(withDetails({ a: { env } }));
+			expect(error).toContain('credential "a": "env":');
+			expect(error).toContain(`"${shown}"`);
+		});
+
+		it("refuses env that is not a string", () => {
+			expect(errorOf(withDetails({ a: { env: 5 } }))).toBe(
+				'credential "a": "env" must be a variable name',
+			);
+		});
+
+		it("refuses env on a credential with required false and says a bound credential is required", () => {
+			expect(errorOf(withDetails({ a: { env: "A_KEY", required: false } }))).toContain(
+				"a bound credential is required",
+			);
+		});
+
+		it("accepts env with required true", () => {
+			expect(parse(withDetails({ a: { env: "A_KEY", required: true } })).ok).toBe(true);
+		});
+
+		it("refuses two credentials of one job that bind one variable", () => {
+			const error = errorOf({
+				jobs: { j: job({ credentials: ["a", "b"] }) },
+				credentials: { a: { env: "TOKEN" }, b: { env: "TOKEN" } },
+			});
+			expect(error).toBe('job "j": environment variable "TOKEN" is bound to two credentials');
+		});
+
+		it("allows two jobs to bind one variable to different credentials", () => {
+			const result = parse({
+				jobs: { one: job({ credentials: ["a"] }), two: job({ credentials: ["b"] }) },
+				credentials: { a: { env: "TOKEN" }, b: { env: "TOKEN" } },
+			});
+			expect(result.ok).toBe(true);
+		});
+
+		it("refuses credentialEnv as a key of a job", () => {
+			expect(
+				errorOf({ jobs: { j: job({ credentials: ["a"], credentialEnv: { X: "a" } }) } }),
+			).toBe('job "j": the key "credentialEnv" is set by dg');
 		});
 
 		it("refuses 17 credential names", () => {

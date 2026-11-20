@@ -70,6 +70,7 @@ const REPOSITORY_KEYS = [
 	"notify",
 	"timeoutMs",
 	"credentials",
+	"credentialEnv",
 	"grant",
 	"envFile",
 	"stopTimeoutMs",

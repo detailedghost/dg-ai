@@ -30,7 +30,8 @@ import {
 	resolveDgPaths,
 	writeFilePreserving,
 } from "@dg/common/node";
-import { JOBS_CONFIG_KEY } from "../jobs/config";
+import { envNameProblem, JOBS_CONFIG_KEY, MAX_ENV_NAME } from "../jobs/config";
+import { ENV_KEY } from "../services/env-file";
 import {
 	type Declaration,
 	type DeclaredCredential,
@@ -243,17 +244,39 @@ export function assertPrefixFree(
 }
 
 /** Reads the --credential values of an add or an update; dg sets the grant to the job name. */
+const ENV_TEXT_RULE =
+	"--credential: the text after = must be a variable name such as API_KEY";
+
 export function credentialListFor(
 	flagValues: string[] | undefined,
 	jobName: string,
-): { credentials?: string[]; grant?: string } {
+): { credentials?: string[]; grant?: string; credentialEnv?: Record<string, string> } {
 	if (flagValues === undefined || flagValues.length === 0) return {};
 	const names = new Set<string>();
+	const bound = new Map<string, string>();
 	for (const value of flagValues) {
-		if (value === "" || value.includes("=")) fail("--credential takes a name");
-		names.add(value.toLowerCase());
+		const at = value.indexOf("=");
+		const name = (at < 0 ? value : value.slice(0, at)).toLowerCase();
+		if (name === "") fail("--credential takes a name");
+		names.add(name);
+		if (at < 0) continue;
+		const variable = value.slice(at + 1);
+		if (variable.length > MAX_ENV_NAME || !ENV_KEY.test(variable)) {
+			fail(ENV_TEXT_RULE);
+		}
+		const problem = envNameProblem(variable);
+		if (problem) fail(`--credential ${name}: ${problem}`);
+		const earlier = bound.get(variable);
+		if (earlier !== undefined && earlier !== name) {
+			fail(`environment variable ${JSON.stringify(variable)} is bound to two credentials`);
+		}
+		bound.set(variable, name);
 	}
-	return { credentials: [...names], grant: jobName };
+	return {
+		credentials: [...names],
+		grant: jobName,
+		...(bound.size === 0 ? {} : { credentialEnv: Object.fromEntries(bound) }),
+	};
 }
 
 const quoteValue = (value: string): string =>
@@ -288,7 +311,7 @@ export function credentialLines(credential: DeclaredCredential): string[] {
 				.join(" ")}`
 		: "none";
 	const lines = [
-		`credential ${sanitize(credential.name)}: ${credential.required ? "required" : "optional"}, prompt ${quoteValue(credential.prompt)}, source ${source}, used by ${credential.jobs.map(sanitize).join(", ")}`,
+		`credential ${sanitize(credential.name)}: ${credential.required ? "required" : "optional"}, prompt ${quoteValue(credential.prompt)}, source ${source}, used by ${credential.jobs.map(sanitize).join(", ")}${credential.env === undefined ? "" : `, → env ${sanitize(credential.env)} (required at launch)`}`,
 	];
 	for (const [key, meta] of Object.entries(credential.meta)) {
 		const fallback = meta.default === undefined ? "" : `, default ${quoteValue(meta.default)}`;

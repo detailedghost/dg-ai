@@ -59,6 +59,7 @@ function deps(
 			daemonUrl: () => "http://127.0.0.1:1",
 			logger: { warn: () => {} },
 			maxLogBytes: 1_000_000,
+			readCredential: () => undefined,
 		},
 	};
 }

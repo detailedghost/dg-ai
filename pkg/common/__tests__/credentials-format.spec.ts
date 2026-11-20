@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
 	CREDENTIAL_MAX_VALUE_BYTES,
 	credentialNameInPrefix,
+	isInjectionEnvName,
 	isReservedCredentialPrefix,
 	RESERVED_CREDENTIAL_PREFIXES,
 	validateCredentialGrantPrefix,
@@ -165,5 +166,18 @@ describe("RESERVED_CREDENTIAL_PREFIXES", () => {
 		expect(isReservedCredentialPrefix("phone-vault")).toBe(true);
 		expect(isReservedCredentialPrefix("bot")).toBe(false);
 		expect(isReservedCredentialPrefix("pw2")).toBe(false);
+	});
+});
+
+describe("isInjectionEnvName", () => {
+	it.each(["LD_PRELOAD", "ld_library_path", "NODE_OPTIONS", "PATH", "Home", "GIT_DIR", "HTTPS_PROXY", "BASH_ENV", "GLIBC_TUNABLES", "openssl_conf", "OPENSSL_ENGINES", "SSLKEYLOGFILE", "NODE_TLS_REJECT_UNAUTHORIZED", "IFS", "HOSTALIASES", "LOCPATH", "NLSPATH", "NPM_CONFIG_REGISTRY", "npm_config_prefix"])(
+		"matches %p",
+		(name) => {
+			expect(isInjectionEnvName(name)).toBe(true);
+		},
+	);
+
+	it.each(["API_KEY", "TOKEN", "DATADOG_API_KEY", "PATHS", "MY_HOME"])("does not match %p", (name) => {
+		expect(isInjectionEnvName(name)).toBe(false);
 	});
 });

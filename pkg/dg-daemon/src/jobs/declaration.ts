@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { isAbsolute, resolve, win32 } from "node:path";
 import { describeError, isRecord } from "@dg/common";
 import { insideRoot, isJobName } from "@dg/common/node";
-import { JOB_NAME_RULE, parseJobEntry } from "./config";
+import { envNameProblem, JOB_NAME_RULE, parseJobEntry } from "./config";
 
 export type DeclaredJob = { name: string; entry: Record<string, unknown> };
 
@@ -10,6 +10,7 @@ export type DeclaredCredential = {
 	name: string;
 	required: boolean;
 	prompt: string;
+	env?: string;
 	source?: Record<string, string>;
 	meta: Record<string, { prompt: string; default?: string }>;
 	jobs: string[];
@@ -32,8 +33,8 @@ export type DeclarationContext = {
 };
 
 const DG_KEYS = ["jobs", "credentials", "requires", "build"];
-const FORBIDDEN_JOB_KEYS = ["grant", "cwd", "enabled", "passEnv"];
-const DETAIL_KEYS = ["prompt", "required", "meta", "source"];
+const FORBIDDEN_JOB_KEYS = ["grant", "cwd", "enabled", "passEnv", "credentialEnv"];
+const DETAIL_KEYS = ["prompt", "required", "meta", "source", "env"];
 const SOURCE_TYPE = "aws-secretsmanager";
 const SOURCE_KEYS = ["type", "secretId", "region", "key", "profile"];
 const SECRET_LIKE_KEY = /value|secret|token|password/i;
@@ -169,6 +170,14 @@ function checkDetails(name: string, details: unknown): void {
 	if (record.required !== undefined && typeof record.required !== "boolean") {
 		fail('"required" must be a boolean');
 	}
+	if (record.env !== undefined) {
+		if (typeof record.env !== "string") fail('"env" must be a variable name');
+		const problem = envNameProblem(record.env as string);
+		if (problem) fail(`"env": ${problem}`);
+		if (record.required === false) {
+			fail('"env" needs a required credential — a bound credential is required at launch');
+		}
+	}
 	if (record.meta !== undefined) checkMeta(name, record.meta);
 	if (record.source !== undefined) checkSource(name, record.source);
 }
@@ -189,6 +198,30 @@ function checkCredentials(jobs: DeclaredJob[], details: unknown): Record<string,
 		checkDetails(name, value);
 	}
 	return given;
+}
+
+function bindEnv(jobs: DeclaredJob[], details: Record<string, unknown>): void {
+	const variables = new Map<string, string>();
+	for (const [name, value] of Object.entries(details)) {
+		const env = (value as Record<string, unknown>).env;
+		if (typeof env === "string") variables.set(name.toLowerCase(), env);
+	}
+	if (variables.size === 0) return;
+	for (const { name, entry } of jobs) {
+		const bound = new Map<string, string>();
+		for (const credential of (entry.credentials as string[] | undefined) ?? []) {
+			const variable = variables.get(credential);
+			if (variable === undefined) continue;
+			if (bound.has(variable)) {
+				refuse(`job "${name}": environment variable ${JSON.stringify(variable)} is bound to two credentials`);
+			}
+			bound.set(variable, credential);
+		}
+		if (bound.size === 0) continue;
+		entry.credentialEnv = Object.fromEntries(bound);
+		const parsed = parseJobEntry(name, entry);
+		if (!parsed.ok) refuse(`job "${name}": ${parsed.error}`);
+	}
 }
 
 function stringList(value: unknown, message: string, bare: boolean): string[] {
@@ -219,6 +252,7 @@ function readDeclaration(packageJson: unknown, context: DeclarationContext): Dec
 	if (rawJobs.length > MAX_JOBS) refuse(`a "dg" block can declare ${MAX_JOBS} jobs at most`);
 	const jobs = rawJobs.map(([name, raw]) => declaredJob(name, raw, context));
 	const credentials = checkCredentials(jobs, dg.credentials);
+	bindEnv(jobs, credentials);
 	const requires =
 		dg.requires === undefined
 			? []
@@ -258,6 +292,7 @@ export function describeCredentials(
 			name,
 			required: detail.required !== false,
 			prompt: typeof detail.prompt === "string" ? detail.prompt : name,
+			...(typeof detail.env === "string" ? { env: detail.env } : {}),
 			...(detail.source === undefined ? {} : { source: detail.source as Record<string, string> }),
 			meta: (detail.meta ?? {}) as DeclaredCredential["meta"],
 			jobs: owners,

@@ -549,11 +549,11 @@ describe("job update of a file job", () => {
 		expect(entry.enabled).toBe(true);
 	});
 
-	it("refuses a credential value with =", async () => {
+	it("refuses a credential flag with no name before the =", async () => {
 		sb = box.create();
 		await add([makeScript("poll.ts"), "--every", "15m"]);
 
-		const result = await runJob(["update", "poll", "--credential", "api-key=secret"], sb.deps());
+		const result = await runJob(["update", "poll", "--credential", "=API_KEY"], sb.deps());
 
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain("--credential takes a name");

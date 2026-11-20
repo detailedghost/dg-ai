@@ -252,6 +252,18 @@ describe("path records", () => {
 		expect(readSourceRecords(paths).poll).toEqual(file);
 	});
 
+	it("keeps the env detail of a credential on a git record and a path record", () => {
+		const paths = pathsOf();
+		const credentials = { "api-key": { prompt: "Key", env: "API_KEY" } };
+		seed(
+			paths,
+			JSON.stringify({ bot: record({ credentials }), tools: folder({ credentials }) }),
+		);
+
+		expect(readSourceRecords(paths).bot).toMatchObject({ credentials });
+		expect(readSourceRecords(paths).tools).toMatchObject({ credentials });
+	});
+
 	it("accepts the two marks on a path record", () => {
 		const paths = pathsOf();
 		seed(paths, JSON.stringify({ tools: folder({ prefixAccepted: true, setupDone: ["a"] }) }));

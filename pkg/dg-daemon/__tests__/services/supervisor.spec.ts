@@ -75,6 +75,7 @@ function fixture(
 		logger: { info: () => {}, warn: () => {} },
 		backoffMs: () => 25,
 		daemonUrl: () => "http://127.0.0.1:1",
+		readCredential: () => undefined,
 		...tuning,
 	});
 	supervisors.push(supervisor);

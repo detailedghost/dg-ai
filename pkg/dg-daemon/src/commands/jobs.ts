@@ -759,9 +759,17 @@ async function updateVerb(
 				"job update:",
 			);
 		}
+		const known = isRecord(entry.credentialEnv) ? (entry.credentialEnv as Record<string, string>) : {};
+		const bound = { ...known, ...credentials?.credentialEnv };
+		for (const [variable, credential] of Object.entries(credentials?.credentialEnv ?? {})) {
+			if (Object.hasOwn(known, variable) && known[variable] !== credential) {
+				stop(`environment variable ${JSON.stringify(variable)} is bound to two credentials`);
+			}
+		}
 		const next = {
 			...base,
 			...Object.fromEntries(changes),
+			...(Object.keys(bound).length === 0 ? {} : { credentialEnv: bound }),
 			...(credentials?.credentials === undefined
 				? {}
 				: {
@@ -866,8 +874,8 @@ export function registerJobCommands(
 		.option("--stop-timeout <duration>", "grace period on stop, e.g. 30s")
 		.option("--yes", "approve the jobs of a repository without asking")
 		.option(
-			"--credential <name>",
-			"credential the job needs (repeatable)",
+			"--credential <name[=ENV_NAME]>",
+			"credential the job needs, with an optional variable name for its value (repeatable)",
 			collect,
 		)
 		.argument("[command...]", "the command to run, after a bare --")
@@ -969,8 +977,8 @@ export function registerJobCommands(
 		.option("--notify <identity>", "agent identity to queue new items to")
 		.option("--yes", "approve a repository update without asking")
 		.option(
-			"--credential <name>",
-			"add a credential the job needs (repeatable)",
+			"--credential <name[=ENV_NAME]>",
+			"add a credential the job needs, with an optional variable name for its value (repeatable)",
 			collect,
 		)
 		.action(async (name: string, options: UpdateOptions, command: Command) => {

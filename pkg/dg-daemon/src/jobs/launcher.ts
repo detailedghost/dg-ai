@@ -1,6 +1,11 @@
 import { closeSync, openSync } from "node:fs";
 import { join } from "node:path";
-import { describeError } from "@dg/common";
+import {
+	CREDENTIAL_SEALED_PREFIX,
+	describeError,
+	isReservedCredentialPrefix,
+	noteSecret,
+} from "@dg/common";
 import {
 	credentialGrantTokenPath,
 	type DgPaths,
@@ -24,6 +29,7 @@ export type LauncherDeps = {
 	daemonUrl: () => string;
 	logger: Pick<Logger, "warn">;
 	maxLogBytes: number;
+	readCredential: (name: string) => string | undefined;
 };
 
 export const jobLogFile = (logDir: string, name: string): string =>
@@ -52,12 +58,61 @@ export function buildBaseEnv(
 	};
 }
 
+export type BoundCredentials =
+	| { ok: true; env: Record<string, string> }
+	| { ok: false; error: string };
+
+export function readBoundCredentials(
+	decl: JobDecl,
+	readCredential: LauncherDeps["readCredential"],
+): BoundCredentials {
+	const env: Record<string, string> = {};
+	const bindings = Object.entries(decl.credentialEnv);
+	const grant = decl.grant ?? "";
+	if (
+		bindings.length > 0 &&
+		(isReservedCredentialPrefix(grant) ||
+			grant.toLowerCase() === CREDENTIAL_SEALED_PREFIX)
+	) {
+		return {
+			ok: false,
+			error: `credential prefix ${grant} is reserved and cannot bind an environment variable`,
+		};
+	}
+	for (const [variable, name] of bindings) {
+		let value: string | undefined;
+		try {
+			value = readCredential(`${decl.grant}/${name}`);
+		} catch (err) {
+			return { ok: false, error: describeError(err) };
+		}
+		if (value === undefined) {
+			return {
+				ok: false,
+				error: `credential ${name} is missing — run dg job setup ${decl.name}`,
+			};
+		}
+		noteSecret(value);
+		if (value.includes("\0")) {
+			return {
+				ok: false,
+				error: `credential ${name} cannot be an environment variable`,
+			};
+		}
+		env[variable] = value;
+	}
+	return { ok: true, env };
+}
+
 export function buildJobEnv(
 	decl: JobDecl,
-	deps: Pick<LauncherDeps, "paths" | "daemonUrl" | "logger">,
+	deps: Pick<LauncherDeps, "paths" | "daemonUrl" | "logger" | "readCredential">,
 ): Record<string, string> {
+	const bound = readBoundCredentials(decl, deps.readCredential);
+	if (!bound.ok) throw new Error(bound.error);
 	const env: Record<string, string> = {
 		...buildBaseEnv(decl, deps),
+		...bound.env,
 		DG_SERVICE_API: "1",
 		DG_SERVICE_LABEL: decl.name,
 		DG_DAEMON_URL: deps.daemonUrl(),
@@ -78,6 +133,7 @@ export function buildJobEnv(
 }
 
 export function launchJob(decl: JobDecl, deps: LauncherDeps): Subprocess {
+	const env = buildJobEnv(decl, deps);
 	const logFile = jobLogFile(deps.paths.logDir, decl.name);
 	ensurePrivateDir(deps.paths.logDir);
 	rotateLogIfLarge(logFile, deps.maxLogBytes);
@@ -85,7 +141,7 @@ export function launchJob(decl: JobDecl, deps: LauncherDeps): Subprocess {
 	try {
 		return Bun.spawn(decl.argv, {
 			cwd: decl.cwd,
-			env: buildJobEnv(decl, deps),
+			env,
 			stdin: "ignore",
 			stdout: fd,
 			stderr: fd,
@@ -113,6 +169,7 @@ const STDOUT_DRAIN_GRACE_MS = 500;
 
 /** A feed run keeps the 30 s and 256 KB limits of the dispatch path; a run with no feed has none unless `timeoutMs` is set. */
 export function startJobRun(decl: JobDecl, deps: LauncherDeps): JobRun {
+	const env = buildJobEnv(decl, deps);
 	const logFile = jobLogFile(deps.paths.logDir, decl.name);
 	ensurePrivateDir(deps.paths.logDir);
 	rotateLogIfLarge(logFile, deps.maxLogBytes);
@@ -124,7 +181,7 @@ export function startJobRun(decl: JobDecl, deps: LauncherDeps): JobRun {
 	try {
 		proc = Bun.spawn(decl.argv, {
 			cwd: decl.cwd,
-			env: buildJobEnv(decl, deps),
+			env,
 			stdin: "ignore",
 			stdout: decl.feed ? "pipe" : fd,
 			stderr: fd,

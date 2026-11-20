@@ -152,7 +152,7 @@ slices:
   - id: 17
     name: "job-credential-env"
     depends_on: [16]
-    files: ["pkg/dg-daemon/src/jobs/launcher.ts", "pkg/dg-daemon/src/jobs/runner.ts", "pkg/dg-daemon/src/jobs/control.ts", "pkg/dg-daemon/src/jobs/config.ts", "pkg/dg-daemon/src/jobs/declaration.ts", "pkg/dg-daemon/src/jobs/sources.ts", "pkg/dg-daemon/__tests__/jobs/sources.spec.ts", "pkg/dg-daemon/src/services/supervisor.ts", "pkg/dg-daemon/src/commands/jobs.ts", "pkg/dg-daemon/src/commands/job-local.ts", "pkg/dg-daemon/src/commands/job-source.ts", "pkg/dg-daemon/src/server/bootstrap.ts", "pkg/dg-daemon/src/completion-tree.json", "pkg/dg-daemon/__tests__/jobs/launcher-credential-env.spec.ts", "pkg/dg-daemon/__tests__/jobs/launcher.spec.ts", "pkg/dg-daemon/__tests__/jobs/config.spec.ts", "pkg/dg-daemon/__tests__/jobs/declaration.spec.ts", "pkg/dg-daemon/__tests__/commands/job-credential-env.spec.ts", "pkg/common/src/credentials-format.ts", "pkg/common/__tests__/credentials-format.spec.ts", "pkg/dg-daemon/src/server/credentials.ts", "pkg/dg-daemon/src/commands/job-update.ts"]
+    files: ["pkg/dg-daemon/src/jobs/launcher.ts", "pkg/dg-daemon/src/jobs/runner.ts", "pkg/dg-daemon/src/jobs/control.ts", "pkg/dg-daemon/src/jobs/config.ts", "pkg/dg-daemon/src/jobs/declaration.ts", "pkg/dg-daemon/src/jobs/sources.ts", "pkg/dg-daemon/__tests__/jobs/sources.spec.ts", "pkg/dg-daemon/src/services/supervisor.ts", "pkg/dg-daemon/src/commands/jobs.ts", "pkg/dg-daemon/src/commands/job-local.ts", "pkg/dg-daemon/src/commands/job-source.ts", "pkg/dg-daemon/src/server/bootstrap.ts", "pkg/dg-daemon/src/completion-tree.json", "pkg/dg-daemon/__tests__/jobs/launcher-credential-env.spec.ts", "pkg/dg-daemon/__tests__/jobs/launcher.spec.ts", "pkg/dg-daemon/__tests__/jobs/config.spec.ts", "pkg/dg-daemon/__tests__/jobs/declaration.spec.ts", "pkg/dg-daemon/__tests__/commands/job-credential-env.spec.ts", "pkg/common/src/credentials-format.ts", "pkg/common/__tests__/credentials-format.spec.ts", "pkg/dg-daemon/src/server/credentials.ts", "pkg/dg-daemon/src/commands/job-update.ts", "pkg/dg-daemon/src/commands/job-schedule.ts", "pkg/dg-daemon/__tests__/jobs/runner.spec.ts", "pkg/dg-daemon/__tests__/services/supervisor-kit.ts", "pkg/dg-daemon/__tests__/services/supervisor.spec.ts", "pkg/dg-daemon/__tests__/server/job-credentials-route.spec.ts", "pkg/dg-daemon/__tests__/commands/job-verbs.spec.ts", "pkg/dg-daemon/__tests__/commands/job-add-local.spec.ts", "pkg/dg-daemon/src/commands/job-source.ts", "pkg/common/src/credentials-format.ts", ".agents/school/security.md"]
     agents:
       primary: dg:js
       confidence: high
@@ -1982,64 +1982,64 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 ### Slice 17 — job-credential-env
 
 #### Engineering
-- [ ] `--credential <name>=<NAME>` on a command job or a file job, and the details key `"env": "<NAME>"` in a `dg` block, bind a credential to an environment variable; `--credential <name>` with no `=` only lists the credential
-- [ ] `add` and `update` write the entry key `credentialEnv`: an object `<NAME>` → `<credential name>`
-- [ ] Refuse a `<NAME>` that starts with `DG_` in each letter case, and a `<NAME>` that the injection check matches; move the `INJECTION_ENV` pattern of `server/credentials.ts` to pkg/common/src/credentials-format.ts as the export `isInjectionEnvName(name)`, and server/credentials.ts imports it
-- [ ] The three name rules (the pattern, the `DG_` prefix in each letter case, the injection check) are in `parseJobEntry`, so a hand edit of the config and a block get them; the commands call the same code
-- [ ] The launcher reads each bound value from the credential store at each launch and puts it after the `envFile` values and before the injected `DG_*` keys; one launcher serves the two modes, so a scheduled run gets the variable too
-- [ ] Each bound credential is required at launch: one that is absent makes the start `invalid` with `credential <name> is missing — run dg job setup <job>` [DECIDED — gaps pass O12 (c)]
-- [ ] `parseJobDeclaration` refuses `env` on a credential with `required: false`, and the request text says that a bound credential is required [DECIDED — gaps pass O12 (c)]
-- [ ] The request text of slice 13 shows `→ env <NAME>` on the credential line
-- [ ] No log line holds a value
-- [ ] `<NAME>` must match `^[A-Za-z_][A-Za-z0-9_]*$`; two credentials of one job cannot bind one `<NAME>`, and this rule is checked where the flag list and the block are parsed, because an object key is unique
-- [ ] The job can still read each listed credential through service API v1; the variable is a second way, for a script with no HTTP code
-- [ ] The launcher reads the store inside the daemon process: it starts no `aws` process, and a value that the store does not hold is not fetched
-- [ ] After the option change, run `bun scripts/completion-trees.ts dg-daemon` and commit pkg/dg-daemon/src/completion-tree.json when it changed; do not edit the JSON by hand
-- [ ] The store name of a bound credential is `<grant>/<credential name>`
-- [ ] `parseJobEntry` refuses a `credentialEnv` value that is not in the `credentials` list of the entry, and refuses `credentialEnv` on an entry with no `grant`
-- [ ] The launcher deps get `readCredential(name): string | undefined`; bootstrap.ts passes `credentials.getCredential(name)?.value`; the runner of slice 10 gets it through the same deps; the seam tests are in launcher-credential-env.spec.ts
-- [ ] The check for a missing credential runs in `preflight`, also for a scheduled run
-- [ ] A credential that goes away before a relaunch makes `launch` throw, and `runOnce` records `failed to start` with no value in the text
-- [ ] A scheduled run with a missing credential records a failed run with the `is missing` text and starts no process
-- [ ] A store that throws gives `invalid` with the storage text
-- [ ] A bound value that holds a NUL byte makes the start `invalid` with `credential <name> cannot be an environment variable`; the text names the credential and not the value
-- [ ] Add the bound credentials inside `buildJobEnv`, after the result of `buildBaseEnv` and before the injected `DG_*` keys; `buildBaseEnv` does not change
-- [ ] declaration.ts accepts the details key `env` and checks it with the three name rules of this slice; the spec of slice 13 that lists the details keys changes
-- [ ] The strict reader of sources.ts accepts `env`
-- [ ] Add `credentialEnv` to the repository key list of pkg/dg-daemon/src/commands/job-update.ts, so a block update prints `replaced <job>.credentialEnv`; `--credential k=NAME` with a URL or a folder keeps the exit 1 text of slices 13 and 16
-- [ ] A child and its children see a bound value in their environment; this is accepted, and slice 20 documents it
-- [ ] Edit control.ts: `JobControl.start` of a scheduled entry returns the `invalid` result of the preflight; the edit of bootstrap.ts is the `readCredential` seam line
+- [x] `--credential <name>=<NAME>` on a command job or a file job, and the details key `"env": "<NAME>"` in a `dg` block, bind a credential to an environment variable; `--credential <name>` with no `=` only lists the credential
+- [x] `add` and `update` write the entry key `credentialEnv`: an object `<NAME>` → `<credential name>`
+- [x] Refuse a `<NAME>` that starts with `DG_` in each letter case, and a `<NAME>` that the injection check matches; move the `INJECTION_ENV` pattern of `server/credentials.ts` to pkg/common/src/credentials-format.ts as the export `isInjectionEnvName(name)`, and server/credentials.ts imports it
+- [x] The three name rules (the pattern, the `DG_` prefix in each letter case, the injection check) are in `parseJobEntry`, so a hand edit of the config and a block get them; the commands call the same code
+- [x] The launcher reads each bound value from the credential store at each launch and puts it after the `envFile` values and before the injected `DG_*` keys; one launcher serves the two modes, so a scheduled run gets the variable too
+- [x] Each bound credential is required at launch: one that is absent makes the start `invalid` with `credential <name> is missing — run dg job setup <job>` [DECIDED — gaps pass O12 (c)]
+- [x] `parseJobDeclaration` refuses `env` on a credential with `required: false`, and the request text says that a bound credential is required [DECIDED — gaps pass O12 (c)]
+- [x] The request text of slice 13 shows `→ env <NAME>` on the credential line
+- [x] No log line holds a value
+- [x] `<NAME>` must match `^[A-Za-z_][A-Za-z0-9_]*$`; two credentials of one job cannot bind one `<NAME>`, and this rule is checked where the flag list and the block are parsed, because an object key is unique
+- [x] The job can still read each listed credential through service API v1; the variable is a second way, for a script with no HTTP code
+- [x] The launcher reads the store inside the daemon process: it starts no `aws` process, and a value that the store does not hold is not fetched
+- [x] After the option change, run `bun scripts/completion-trees.ts dg-daemon` and commit pkg/dg-daemon/src/completion-tree.json when it changed; do not edit the JSON by hand
+- [x] The store name of a bound credential is `<grant>/<credential name>`
+- [x] `parseJobEntry` refuses a `credentialEnv` value that is not in the `credentials` list of the entry, and refuses `credentialEnv` on an entry with no `grant`
+- [x] The launcher deps get `readCredential(name): string | undefined`; bootstrap.ts passes `credentials.getCredential(name)?.value`; the runner of slice 10 gets it through the same deps; the seam tests are in launcher-credential-env.spec.ts
+- [x] The check for a missing credential runs in `preflight`, also for a scheduled run
+- [x] A credential that goes away before a relaunch makes `launch` throw, and `runOnce` records `failed to start` with no value in the text
+- [x] A scheduled run with a missing credential records a failed run with the `is missing` text and starts no process
+- [x] A store that throws gives `invalid` with the storage text
+- [x] A bound value that holds a NUL byte makes the start `invalid` with `credential <name> cannot be an environment variable`; the text names the credential and not the value
+- [x] Add the bound credentials inside `buildJobEnv`, after the result of `buildBaseEnv` and before the injected `DG_*` keys; `buildBaseEnv` does not change
+- [x] declaration.ts accepts the details key `env` and checks it with the three name rules of this slice; the spec of slice 13 that lists the details keys changes
+- [x] The strict reader of sources.ts accepts `env`
+- [x] Add `credentialEnv` to the repository key list of pkg/dg-daemon/src/commands/job-update.ts, so a block update prints `replaced <job>.credentialEnv`; `--credential k=NAME` with a URL or a folder keeps the exit 1 text of slices 13 and 16
+- [x] A child and its children see a bound value in their environment; this is accepted, and slice 20 documents it
+- [x] Edit control.ts: `JobControl.start` of a scheduled entry returns the `invalid` result of the preflight; the edit of bootstrap.ts is the `readCredential` seam line
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: a job with `credentialEnv: { "API_KEY": "api-key" }`, the prefix `poll` and the stored value `v` starts with `API_KEY=v`
-- [ ] Contract: a line `API_KEY=x` in `envFile` does not win
-- [ ] Contract: `--credential k=DG_X` and `--credential k=LD_PRELOAD` exit 1 and name the variable
-- [ ] Contract: a missing required credential gives HTTP 400 on the start route with the `is missing` text; no process starts
-- [ ] Contract: after `setup` replaces the value and `job restart`, the child has the new value
-- [ ] Contract: a scheduled run gets the bound variable
-- [ ] Regression: `launcher.spec.ts` passes; the order of the other sources does not change; pkg/launcher/__tests__/size-budget.spec.ts passes
-- [ ] Contract: `job add ./poll.ts --every 15m --credential api-key=API_KEY` writes `credentials: ["api-key"]`, `grant: "poll"` and `credentialEnv: { "API_KEY": "api-key" }`
-- [ ] Contract: a block with `"credentials": { "api-key": { "env": "API_KEY" } }` gives each job that lists `api-key` the same `credentialEnv`; the request text shows `→ env API_KEY` on that credential line
-- [ ] Contract: `--credential k=1BAD` and two credentials bound to one name exit 1 and name the variable
-- [ ] Contract: no daemon log line and no job status row of the spec run holds the value text
-- [ ] Contract: the launcher reads the bound credential `api-key` of a job with the grant `poll` from the store name `poll/api-key`
-- [ ] Contract: `parseJobEntry` refuses a `credentialEnv` value that is not in the `credentials` list of the entry, and refuses `credentialEnv` on an entry with no `grant`
-- [ ] Contract: `preflight` gives `invalid` with the `is missing` text for a continuous entry and for a scheduled entry with a missing bound credential
-- [ ] Contract: a credential that goes away before a relaunch makes `launch` throw, and `runOnce` records `failed to start` with no value in the text
-- [ ] Contract: a scheduled run with a missing credential records a failed run with the `is missing` text and starts no process
-- [ ] Contract: a store that throws gives `invalid` with the storage text
-- [ ] Contract: a bound value with a NUL byte gives `invalid` with `credential <name> cannot be an environment variable`, and the text holds no part of the value
-- [ ] Contract: the result of `buildBaseEnv` holds no bound value; a bound `<NAME>` wins over `envFile`, over `passEnv` and over the allowlist
-- [ ] Contract: `job add <url> --credential k=NAME` and `job add <folder> --credential k=NAME` exit 1 with the texts of slices 13 and 16
-- [ ] Contract: `noteSecret` gets each bound value at launch
-- [ ] Contract: `job status --json`, `job list` and the request text show the variable name and never the value
-- [ ] Contract: after `job remove`, the stored credential stays and no process gets it
-- [ ] Contract: a `get` on service API v1 still returns the bound credential
+- [x] Contract: a job with `credentialEnv: { "API_KEY": "api-key" }`, the prefix `poll` and the stored value `v` starts with `API_KEY=v`
+- [x] Contract: a line `API_KEY=x` in `envFile` does not win
+- [x] Contract: `--credential k=DG_X` and `--credential k=LD_PRELOAD` exit 1 and name the variable
+- [x] Contract: a missing required credential gives HTTP 400 on the start route with the `is missing` text; no process starts
+- [x] Contract: after `setup` replaces the value and `job restart`, the child has the new value
+- [x] Contract: a scheduled run gets the bound variable
+- [x] Regression: `launcher.spec.ts` passes; the order of the other sources does not change; pkg/launcher/__tests__/size-budget.spec.ts passes
+- [x] Contract: `job add ./poll.ts --every 15m --credential api-key=API_KEY` writes `credentials: ["api-key"]`, `grant: "poll"` and `credentialEnv: { "API_KEY": "api-key" }`
+- [x] Contract: a block with `"credentials": { "api-key": { "env": "API_KEY" } }` gives each job that lists `api-key` the same `credentialEnv`; the request text shows `→ env API_KEY` on that credential line
+- [x] Contract: `--credential k=1BAD` and two credentials bound to one name exit 1 and name the variable
+- [x] Contract: no daemon log line and no job status row of the spec run holds the value text
+- [x] Contract: the launcher reads the bound credential `api-key` of a job with the grant `poll` from the store name `poll/api-key`
+- [x] Contract: `parseJobEntry` refuses a `credentialEnv` value that is not in the `credentials` list of the entry, and refuses `credentialEnv` on an entry with no `grant`
+- [x] Contract: `preflight` gives `invalid` with the `is missing` text for a continuous entry and for a scheduled entry with a missing bound credential
+- [x] Contract: a credential that goes away before a relaunch makes `launch` throw, and `runOnce` records `failed to start` with no value in the text
+- [x] Contract: a scheduled run with a missing credential records a failed run with the `is missing` text and starts no process
+- [x] Contract: a store that throws gives `invalid` with the storage text
+- [x] Contract: a bound value with a NUL byte gives `invalid` with `credential <name> cannot be an environment variable`, and the text holds no part of the value
+- [x] Contract: the result of `buildBaseEnv` holds no bound value; a bound `<NAME>` wins over `envFile`, over `passEnv` and over the allowlist
+- [x] Contract: `job add <url> --credential k=NAME` and `job add <folder> --credential k=NAME` exit 1 with the texts of slices 13 and 16
+- [x] Contract: `noteSecret` gets each bound value at launch
+- [x] Contract: `job status --json`, `job list` and the request text show the variable name and never the value
+- [x] Contract: after `job remove`, the stored credential stays and no process gets it
+- [x] Contract: a `get` on service API v1 still returns the bound credential
 
 #### Acceptance Criteria
-- [ ] Given a one-file script that reads `process.env.API_KEY`, when the owner adds it with `--credential api-key=API_KEY` and enables it, then the script gets the value with no HTTP code
-- [ ] Given a credential that the owner replaced with `dg job setup`, when the job starts again, then its variable has the new value
+- [x] Given a one-file script that reads `process.env.API_KEY`, when the owner adds it with `--credential api-key=API_KEY` and enables it, then the script gets the value with no HTTP code
+- [x] Given a credential that the owner replaced with `dg job setup`, when the job starts again, then its variable has the new value
 
 ### Slice 18 — credential-refresh-api
 
@@ -2416,6 +2416,7 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 
 ## Slice Summaries
 
+- Slice 17: A job binds a stored credential to an environment variable with --credential <name>=<NAME> (add and update of a file or command job) or the block key env on a credential; the entry key credentialEnv holds the binding; buildJobEnv reads each value at every launch and places it after the envFile, passEnv and allowlist values and before the DG_* keys; a missing, NUL-holding, unreadable or reserved-prefix value makes the start invalid.
 - Slice 16: dg job add <path> adds a script file as one job (record kind path, no question, no clone) or a folder with a dg block as block jobs (record keeps the declaration hash); update re-reads a folder block with no question; list and status show source changed, source missing and source invalid; remove never touches the path.
 - Slice 15: dg job enable [--setup <file|->] and dg job setup [--refresh|--rotate-token] run a wizard that takes each credential from a hidden prompt, a --setup file or AWS Secrets Manager, stores it through the job credential route and makes the grant; --credential works on add and update of a command job; sources.json takes command records and the prefixAccepted and setupDone marks; the hidden prompt lives in @dg/common.
 - Slice 14: dg job update <job> on a repository job fetches the recorded origin with hardened git, resolves the stored ref (a full sha stays pinned), shows the changed keys, asks or takes --yes, checks out the new commit, runs build, and rewrites the entries and the record under the lock with byte-exact rollback and an old-commit restore.
@@ -2504,6 +2505,11 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 - (slice 16, dg:js) job-entry.ts is the one module that turns add flags into a job entry (aliasNote, announceAliases, duration, assertOneMode, checkEntryFlags, entryFromFlags); slice 17 adds entry flags there, not in addVerb.
 - (slice 16, dg:js) job-local.ts exports addLocal and updateLocal; job-update.ts exports refuseLiveJobs; rollBack takes a fifth argument (pass an empty string for a path source).
 - (orchestrator) Slice 16: the Engineering item 'a bun that moved leaves the job invalid, and update repairs it' is not built (Issues Remediation row 31). Folder add keeps the slice 13 'already exists' text; a file add has the 'to change it, run dg job update' suffix. next: dg job restart prints for a running or backoff job with a replaced line. The job add description in the completion tree now names a local file or folder.
+
+- (slice 17, dg:js) LauncherDeps and SupervisorDeps require readCredential(name); bootstrap.ts gives one readCredential to both. JobDecl.credentialEnv is always set by parseJobEntry. readBoundCredentials(decl, readCredential) in launcher.ts is the one read path; envNameProblem(name) in config.ts is the one name rule (pattern, DG_ prefix, injection names, 64 characters, __proto__).
+- (slice 17, dg:js) credentialEnv inside a block job is refused; a block binds only through env on a credential. job update merges credentialEnv and refuses a variable that another credential binds; there is no unbind flag.
+- (slice 17, dg:js) Slice 20 documents that the child and its children see a bound value in their environment.
+- (orchestrator) Slice 17 security review: the high finding (a hand-edited pw grant could read a sealed value into the environment) is fixed in checkCredentialEnv and readBoundCredentials. RATIFY taken as option b, a two-way door: the text after = of --credential is never echoed when it fails the name rule, and a variable name is 64 characters at most, so a pasted secret does not reach config.json or stderr. The old guard that refused = in a credential name is replaced by the binding syntax; say so in the PR body. A scheduled tick has no separate preflight: a missing credential records failed to start with the credential name; runNow and the continuous preflight return invalid.
 
 ## Issues Remediation
 

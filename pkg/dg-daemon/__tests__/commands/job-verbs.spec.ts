@@ -252,8 +252,8 @@ describe("job --credential and the registry marks", () => {
 		expect(table().x.grant).toBe("x");
 	});
 
-	it("refuses a value with = and writes nothing", async () => {
-		const result = await add("x", ["--credential", "api-key=API_KEY"]);
+	it("refuses a name that is empty before the = and writes nothing", async () => {
+		const result = await add("x", ["--credential", "=API_KEY"]);
 
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain("--credential takes a name");

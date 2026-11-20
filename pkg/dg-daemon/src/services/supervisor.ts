@@ -28,7 +28,12 @@ import {
 	type ParsedJob,
 	parseContinuousJobs,
 } from "../jobs/config";
-import { jobLogFile, launchJob } from "../jobs/launcher";
+import {
+	jobLogFile,
+	type LauncherDeps,
+	launchJob,
+	readBoundCredentials,
+} from "../jobs/launcher";
 import type { Logger } from "../server/log";
 import { loadEnvFile } from "./env-file";
 
@@ -69,6 +74,7 @@ export type SupervisorDeps = {
 	daemonUrl: () => string;
 	loadConfig: () => Record<string, unknown>;
 	logger: Pick<Logger, "info" | "warn">;
+	readCredential: LauncherDeps["readCredential"];
 	backoffMs?: (failures: number) => number;
 	logCheckMs?: number;
 	maxLogBytes?: number;
@@ -149,6 +155,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 		daemonUrl: deps.daemonUrl,
 		logger,
 		maxLogBytes,
+		readCredential: deps.readCredential,
 	};
 
 	async function runOnce(entry: Entry): Promise<number | undefined> {
@@ -243,6 +250,8 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 				return `grant token file not found: ${tokenPath} — create it with dg-skills credentials grant ${decl.grant}`;
 			}
 		}
+		const bound = readBoundCredentials(decl, deps.readCredential);
+		if (!bound.ok) return bound.error;
 		let stateDir = `<jobStateRoot>/${decl.name}`;
 		try {
 			stateDir = jobStateDir(deps.paths, decl.name);

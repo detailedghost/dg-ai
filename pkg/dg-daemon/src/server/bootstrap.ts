@@ -156,6 +156,8 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 	const dispatchScheduler = new DispatchScheduler();
 	let boundPort: number | undefined;
 	migrateJobsConfig(paths, store, logger);
+	const readCredential = (name: string) =>
+		credentials.getCredential(name)?.value;
 	const supervisor = createSupervisor({
 		paths,
 		daemonUrl: () => {
@@ -164,6 +166,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		},
 		loadConfig: () => readConfig(paths),
 		logger,
+		readCredential,
 	});
 	const jobRunner = createJobRunner({
 		store,
@@ -180,6 +183,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 			},
 			logger,
 			maxLogBytes: MAX_LOG_BYTES,
+			readCredential,
 		},
 	});
 	const instanceId = newInstanceId();
