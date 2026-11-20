@@ -1,13 +1,11 @@
 node_modules/
 .DS_Store
-.agents/*
-!.agents/plugins/
-!.agents/plugins/marketplace.json
-!.agents/spec/
-!.agents/decisions/
-!.agents/decisions/**
 # Local verify shots and verdicts. Never commit them.
 .agents/verify/
+.agents/code-review/
+.agents/jot/
+.agents/clipboard/
+.agents/spec/**/roundtable/
 dist/
 .output/
 .env
