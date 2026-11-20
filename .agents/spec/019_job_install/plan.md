@@ -203,7 +203,7 @@ permissions:
   slice_commits: true
   housekeeping_commit: true
 worktree:
-  pr_url: https://github.com/detailedghost/dg-ai/pull/227
+  pr_url: https://github.com/detailedghost/dg-ai/pull/245
 ---
 
 # job install
@@ -2520,6 +2520,8 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 
 - (slice 20, dg:js) job-source-docs.spec.ts reads documented literals from the source of slices 12-19 (request questions, replaced lines, SCRIPT_EXTENSIONS, MAX_ENV_NAME, REFRESH_WINDOW_MS, SETUP_LIMIT_BYTES, dg block key lists) and checks the docs/channel-review.md Move to a job paragraph against export.ts; slice 21 must keep them in step.
 - (orchestrator) Slice 20: the spec test that compared SKILL.md with origin/master was removed (it depended on a local ref and the plan names that check manual); the manual check ran: no changed SKILL.md line touches channel-review, the bootstrap fence, the SessionStart fence or the description. The no-unbuilt-verb checks of dg-front-door-docs.spec.ts and job-model-docs.spec.ts were deleted because the verbs exist now. markdownlint, vale and a Mermaid renderer are not installed, and the private-name check had no list.
+
+- (orchestrator, 2026-11-20) PR 3 opened: https://github.com/detailedghost/dg-ai/pull/245 (slices 12-20, three local thrash rounds; Codex quota out until Nov 24). Master took ADR 0052 during the build, so the job sources record is ADR 0053.
 
 ## Issues Remediation
 
