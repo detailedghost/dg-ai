@@ -143,30 +143,42 @@ function describeCandidates(records: SessionTokenRecord[]): string {
 		.join("\n");
 }
 
-/** The one live session registered from this working directory. */
-export function selectSoleSession(
+export class SessionResolutionError extends DgCliError {
+	constructor(message: string) {
+		super(message);
+		this.name = "SessionResolutionError";
+	}
+}
+
+export function sessionsForCwd(
 	records: SessionTokenRecord[],
 	cwd = realpathSync(process.cwd()),
-): SessionTokenRecord {
-	const matches = records.filter((record) => {
+): SessionTokenRecord[] {
+	return records.filter((record) => {
 		try {
 			return realpathSync(record.cwd) === cwd;
 		} catch {
 			return false;
 		}
 	});
-	if (matches.length !== 1) {
-		throw new DgCliError(
-			`cannot resolve a session for cwd ${cwd}: found ${matches.length} matches; pass --session <id>. Live sessions:\n${describeCandidates(records)}`,
+}
+
+/** The one live session registered from this working directory. */
+export function selectSoleSession(
+	records: SessionTokenRecord[],
+	cwd = realpathSync(process.cwd()),
+): SessionTokenRecord {
+	const matches = sessionsForCwd(records, cwd);
+	const [match] = matches;
+	if (matches.length === 1 && match) return match;
+	if (matches.length === 0) {
+		throw new SessionResolutionError(
+			`cannot resolve a session for cwd ${cwd}: no live session is registered; run dg-agent start in this directory. Live sessions:\n${describeCandidates(records)}`,
 		);
 	}
-	const match = matches[0];
-	if (!match) {
-		throw new DgCliError(
-			`cannot resolve a session for cwd ${cwd}: found 0 matches; pass --session <id>.`,
-		);
-	}
-	return match;
+	throw new SessionResolutionError(
+		`cannot resolve a session for cwd ${cwd}: found ${matches.length} sessions; pass --session <id> or set DG_SESSION_ID. Matching sessions:\n${describeCandidates(matches)}`,
+	);
 }
 
 export function soleSessionForCwd(sessionsDir: string): SessionTokenRecord {

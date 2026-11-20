@@ -5,8 +5,12 @@ import {
 	createCredentialClient,
 	isDaemonLive,
 	readPidFile,
+	readSessionFiles,
+	SessionResolutionError,
+	sessionsForCwd,
 	skillsInstallDest,
 } from "@dg/common/node";
+import { DgCliError, EXIT_PROTOCOL_MISMATCH, describeError } from "@dg/common";
 import {
 	allowRuleFor,
 	connectedExtensionVersion,
@@ -278,10 +282,7 @@ export function credentialChecks(names: string[]): DoctorCheck[] {
 		async run(ctx) {
 			const stored = await storedCredentialNames(ctx);
 			if ("error" in stored)
-				return warn(
-					`cannot list credentials: ${stored.error}`,
-					stored.fix,
-				);
+				return withFix(`cannot list credentials: ${stored.error}`, stored.fix);
 			if (stored.names.includes(name)) return ok(`credential ${name} is stored`);
 			return warn(
 				`credential ${name} is not stored`,
@@ -293,7 +294,18 @@ export function credentialChecks(names: string[]): DoctorCheck[] {
 
 type CredentialNames =
 	| { names: string[] }
-	| { error: string; fix: string };
+	| { error: string; fix?: string };
+
+function credentialListFailure(error: unknown): { error: string; fix?: string } {
+	const message = describeError(error);
+	if (error instanceof SessionResolutionError) return { error: message, fix: DAEMON_START };
+	if (error instanceof DgCliError && error.exitCode === EXIT_PROTOCOL_MISMATCH)
+		return { error: message, fix: `${CLI_PATH} install` };
+	return { error: message };
+}
+
+const withFix = (detail: string, fix?: string): CheckResult =>
+	fix === undefined ? { status: "warn", detail } : warn(detail, fix);
 
 function storedCredentialNames(ctx: DoctorContext): Promise<CredentialNames> {
 	return ctx.memo("credential-names", async () => {
@@ -305,10 +317,7 @@ function storedCredentialNames(ctx: DoctorContext): Promise<CredentialNames> {
 		try {
 			return { names: (await client.list()).map((entry) => entry.name) };
 		} catch (error) {
-			return {
-				error: error instanceof Error ? error.message : String(error),
-				fix: `${CLI_PATH} install`,
-			};
+			return credentialListFailure(error);
 		} finally {
 			client.close();
 		}
@@ -320,8 +329,22 @@ export const credentialStoreCheck: DoctorCheck = {
 	async run(ctx) {
 		const stored = await storedCredentialNames(ctx);
 		if ("error" in stored)
-			return warn(`cannot list credentials: ${stored.error}`, stored.fix);
+			return withFix(`cannot list credentials: ${stored.error}`, stored.fix);
 		return ok(`credential store lists ${stored.names.length} credential(s)`);
+	},
+};
+
+export const sessionCheck: DoctorCheck = {
+	id: "session",
+	run(ctx) {
+		const matches = sessionsForCwd(readSessionFiles(ctx.paths.sessionsDir));
+		if (matches.length === 1) return ok("one live session matches this directory");
+		if (matches.length === 0)
+			return warn("no live session is registered for this directory", DAEMON_START);
+		return warn(
+			`${matches.length} sessions match this directory`,
+			"pass --session <id> or set DG_SESSION_ID",
+		);
 	},
 };
 
