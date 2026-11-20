@@ -1,5 +1,5 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { CLI_ENTRY, runCli } from "./module-call";
@@ -184,15 +184,30 @@ describe("dg-skills stat archive", () => {
 
 	test("appends under a second heading on a second run", async () => {
 		await withRoot(async (env, root) => {
-			expect((await stat(["add", "one"], env, root)).exitCode).toBe(0);
-			expect((await stat(["done", "one"], env, root)).exitCode).toBe(0);
+			expect((await stat(["add", "first-batch-item"], env, root)).exitCode).toBe(0);
+			expect((await stat(["done", "first-batch-item"], env, root)).exitCode).toBe(0);
 			const first = JSON.parse((await stat(["archive", "--json"], env, root)).stdout);
-			expect((await stat(["add", "two"], env, root)).exitCode).toBe(0);
-			expect((await stat(["done", "two"], env, root)).exitCode).toBe(0);
+			expect((await stat(["add", "second-batch-item"], env, root)).exitCode).toBe(0);
+			expect((await stat(["done", "second-batch-item"], env, root)).exitCode).toBe(0);
 			expect((await stat(["archive"], env, root)).exitCode).toBe(0);
 			const archived = readFileSync(first.archive, "utf8");
 			expect(archived.match(/^## Archived /gm)).toHaveLength(2);
-			expect(archived.indexOf("one")).toBeLessThan(archived.indexOf("two"));
+			const firstAt = archived.indexOf("first-batch-item");
+			const secondAt = archived.indexOf("second-batch-item");
+			expect(firstAt).toBeGreaterThanOrEqual(0);
+			expect(secondAt).toBeGreaterThan(firstAt);
+		});
+	});
+
+	test("a failed archive write leaves the checklist unchanged", async () => {
+		await withRoot(async (env, root) => {
+			await seed(env, root);
+			const file = checklistFile(env.AI_STATE_DIR as string);
+			const before = readFileSync(file, "utf8");
+			mkdirSync(join(dirname(file), "checklist-archive.md"));
+			const run = await stat(["archive"], env, root);
+			expect(run.exitCode).not.toBe(0);
+			expect(readFileSync(file, "utf8")).toBe(before);
 		});
 	});
 

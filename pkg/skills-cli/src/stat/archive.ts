@@ -1,9 +1,10 @@
-import { appendFileSync, existsSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { localDate } from "../spec/shared";
 import type { ChecklistItem, ChecklistModel } from "./model";
 import { serializeChecklist } from "./checklist";
-import { readChecklist, updateChecklist } from "./store";
+import { withFileLock } from "@dg/common/node";
+import { readChecklist, writeChecklist } from "./store";
 
 export interface ArchiveReport {
 	kind: "checklist-archive";
@@ -46,10 +47,18 @@ export async function archiveDone(path: string, dryRun: boolean): Promise<Archiv
 		archive,
 	});
 	if (dryRun) return report(splitDone(readChecklist(path)));
-	const { split } = await updateChecklist(path, (current) => {
-		const next = splitDone(current);
-		if (next.archived.length > 0) appendArchive(archive, next.archived);
-		return { model: next.model, split: next };
+	mkdirSync(dirname(path), { recursive: true });
+	return withFileLock(path, () => {
+		const current = readChecklist(path);
+		const split = splitDone(current);
+		if (split.archived.length === 0) return report(split);
+		writeChecklist(path, split.model);
+		try {
+			appendArchive(archive, split.archived);
+		} catch (error) {
+			writeChecklist(path, current);
+			throw error;
+		}
+		return report(split);
 	});
-	return report(split);
 }

@@ -4,6 +4,7 @@ import { type Difference, diffReadings, type LayoutCheck, layoutCheck, notChecke
 import { isLayoutError, type LayoutResult, type Reading } from "../layout/fingerprint";
 import { type AcceptedRecord, RECORD_FILE, readRecord } from "../layout/record";
 import { protoDir } from "../prototype/paths";
+import { load as loadState } from "../pw/core/states";
 import { type AxeReport, axeSummary, mergeAxe } from "./axe";
 import type { BoardImage, Section, VerifyPaths } from "./board";
 import {
@@ -16,7 +17,6 @@ import {
 	type SideName,
 } from "./capture-model";
 import type { VerifyItem, VerifyManifest } from "./manifest";
-import { load as loadState } from "../pw/core/states";
 import { runDeclaredTests, type TestReport } from "./tests-run";
 
 export interface CaptureTarget {
@@ -50,7 +50,7 @@ const trimmedPath = (url: string): string => new URL(url).pathname.replace(/\/+$
 function assertSamePath(label: string, requested: string, landed: string): void {
 	if (trimmedPath(requested) === trimmedPath(landed)) return;
 	throw new Error(
-		`${label}: the page landed on ${new URL(landed).pathname} instead of ${new URL(requested).pathname}. Save a sign-in with \`dg-skills pw state save <name>\` and add \`state\` to the role.`,
+		`${label}: the page landed on ${new URL(landed).pathname} instead of ${new URL(requested).pathname}. If that is a sign-in page, save a sign-in with \`dg-skills pw state save <name>\` and add \`state\` to the role.`,
 	);
 }
 

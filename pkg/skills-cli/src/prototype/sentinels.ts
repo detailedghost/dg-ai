@@ -230,7 +230,8 @@ export function formatWait(result: WaitResult, json: boolean): string {
 	if (result.status === "timeout")
 		return json ? `${JSON.stringify({ ...result, pending: true })}\n` : TIMEOUT_TEXT;
 	if (json) {
-		const { fingerprintSkipped: _skipped, ...printed } = result as typeof result & { fingerprintSkipped?: string };
+		if (result.status !== "ok") return `${JSON.stringify(result)}\n`;
+		const { fingerprintSkipped: _skipped, ...printed } = result;
 		return `${JSON.stringify(printed)}\n`;
 	}
 	const head = result.status === "ok" ? result.variant : result.status === "rejected" ? "rejected" : "more versions";

@@ -46,11 +46,12 @@ and writes nothing.
 
 `prototype-decision-bar.html` carries theme, width, note, Approve, Reject, and More versions only, with no arrows or label.
 
-A host with no shipped endpoint template (for example ASP.NET) needs a ported `prototype-endpoint.ts` with all four actions: `confirm`, `reject`, `more`, and `status`. Mount this bar against that endpoint, or build a bar with the same actions. Never drop the `more` action. It writes the `.more` sentinel, and without it `prototype wait` can never report `more`.
 Pair it with your own switcher UI and call `window.prototypeDecisionBar.setVariant(key)` from its
 change handler so Approve records what is on screen. Skip the call for a single-variant prototype,
 and the default `"A"` is used. Approve also fires a one-shot confetti burst, skipped under
 `prefers-reduced-motion: reduce`.
+
+A host with no shipped endpoint template (for example ASP.NET) needs a ported `prototype-endpoint.ts` with all four actions: `confirm`, `reject`, `more`, and `status`. Mount this bar against that endpoint, or build a bar with the same actions. Never drop the `more` action. It writes the `.more` sentinel, and without it `prototype wait` can never report `more`.
 
 ## Behavior
 

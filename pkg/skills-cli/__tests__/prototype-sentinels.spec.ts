@@ -138,7 +138,7 @@ describe("prototype sentinels", () => {
 		expect(Date.now() - started).toBeGreaterThanOrEqual(900);
 	});
 
-	test("wait reports the hook's skipped-fingerprint reason on an approve only", async () => {
+	test("wait reports the hook's skipped-fingerprint reason on an approve", async () => {
 		const p = paths();
 		confirm(p, "A");
 		expect(await wait(p, 0, async () => "no browser")).toEqual({

@@ -2,7 +2,7 @@ import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { type CaptureRequest, type CaptureShot, pngSize } from "../src/verify/capture-model";
 import { type Difference, diffReadings } from "../src/layout/diff";
 import type { ControlRow } from "../src/layout/fingerprint";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
@@ -867,7 +867,6 @@ describe("review board in a browser", () => {
 	});
 });
 
-
 describe("verify with a saved sign-in", () => {
 	test("loads only the loopback cookies and origins of a saved state", () => {
 		const cookie = (domain: string) => ({ name: "sid", value: `fake-${domain}`, domain, path: "/", expires: -1, httpOnly: true, secure: false, sameSite: "Lax" as const });
@@ -1001,10 +1000,11 @@ describe("verify with a saved sign-in", () => {
 			});
 			const manifest = manifestFor("app-admin");
 			const { paths, cwd } = sessionIn(dir);
+			const requests: CaptureRequest[] = [];
 			const captured = await captureSession({
 				manifest,
 				paths,
-				capturer: signedInPageFor([]),
+				capturer: signedInPageFor(requests),
 				cwd,
 				targets: [{ itemId: "inbox", sectionId: "inbox-r1" }],
 			});
@@ -1014,15 +1014,11 @@ describe("verify with a saved sign-in", () => {
 				sections: captured.map((result) => sectionFromCapture(result, { round: 1 })),
 				pending: [],
 			});
-			const files: string[] = [];
-			const walk = (current: string) => {
-				for (const entry of readdirSync(current)) {
-					const full = join(current, entry);
-					if (statSync(full).isDirectory()) walk(full);
-					else files.push(full);
-				}
-			};
-			walk(dir);
+			expect(requests.length).toBeGreaterThan(0);
+			expect(JSON.stringify(requests)).not.toContain(COOKIE_VALUE);
+			const files = readdirSync(dir, { recursive: true, withFileTypes: true })
+				.filter((entry) => entry.isFile())
+				.map((entry) => join(entry.parentPath, entry.name));
 			expect(files.length).toBeGreaterThan(2);
 			for (const file of files) expect(readFileSync(file).includes(COOKIE_VALUE)).toBe(false);
 		} finally {

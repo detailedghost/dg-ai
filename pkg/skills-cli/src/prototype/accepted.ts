@@ -281,7 +281,8 @@ export function acceptanceHook(
 				? fingerprintSummary(accepted)
 				: `skipped: ${accepted.skipped}`;
 			process.stderr.write(`prototype: recorded ${recordPath(target.dir)} (${outcome})\n`);
-			if (accepted.skipped === null || (claim.url === undefined && claim.source !== "browser")) return undefined;
+			const fromPage = claim.url !== undefined || claim.source === "browser";
+			if (accepted.skipped === null || !fromPage) return undefined;
 			process.stderr.write(
 				`prototype: fingerprint skipped: ${accepted.skipped}\n${repairLine(target, claim.url)}\n`,
 			);

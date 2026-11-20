@@ -137,7 +137,7 @@ Fix the dg 6.1.0 rough edges found during the Velora release. Verify and prototy
 
 #### Testing Criteria
 ##### Contracts
-- [x] Contract: exit 0 decision, exit 124 timeout with pick still pending, exit 75 approve recorded but fingerprint skipped, exit 1 error (codes subject to RATIFY)
+- [x] Contract: exit 0 decision, exit 124 timeout with pick still pending, exit 75 approve recorded but fingerprint skipped, exit 1 error (ratified in R2)
 - [x] Contract: `formatWait({status:'timeout'}, false)` returns `timeout, still pending\n`; JSON adds `pending: true`
 - [x] Contract: UiState stores optional `signIn` and `stateName`; waitSession forwards them to acceptanceHook
 - [x] prototype-sentinels.spec: timeout text and JSON shapes
@@ -231,12 +231,12 @@ Fix the dg 6.1.0 rough edges found during the Velora release. Verify and prototy
 - [ ] Given an update whose doctor run has failed checks, when update finishes, then each failed check and its fix is printed under the summary
 
 ## Slice Summaries
+- Slice 1: verify roles take an optional saved pw state; the playwright capturer loads only its loopback cookies and origins as storageState and refuses non-loopback WebSockets; the http engine refuses state roles; a missing state fails before capture; a capture that lands on another path names the path and the pw state save command.
+- Slice 2: prototype ui/wait/fingerprint take --state (ui also --sign-in), stored in UiState and forwarded to the capturer; wait and await-decision exit 124 with 'timeout, still pending' and exit 75 with a run line when a browser approve is recorded but its fingerprint is skipped; the proto docs require a More versions button and give a port recipe for hosts with no endpoint template.
+- Slice 3: thrash SKILL.md gains a Nested run rule (persona-file fallback, then proxy --subagent fallback, never skip a stage, exact stop line); address and review-loop point subagents at it, and address phase 7 cleanup runs in a subagent too.
+- Slice 4: stat archive moves every done top-level item and its subtree into checklist-archive.md under a dated heading inside the checklist lock, with --dry-run and --json; bg list --cwd filters jobs by path containment and the stat skill uses it in place of its jq select.
 - Slice 5: syncCompatLaunchers rewrites only launchers that exist and sweeps leftover <name>.version files once no launcher remains, so ~/.dg/bin stays gone after the removal release; docs/install.md notes stale skill copies (R6).
 - Slice 6: update logs each failed doctor check and its fix under the summary line through the new formatFailures; the update deps seam returns the DoctorReport; exit code unchanged.
-- Slice 3: thrash SKILL.md gains a Nested run rule (persona-file fallback, then proxy --subagent fallback, never skip a stage, exact stop line); address and review-loop point subagents at it, and address phase 7 cleanup runs in a subagent too.
-- Slice 1: verify roles take an optional saved pw state; the playwright capturer loads only its loopback cookies and origins as storageState and refuses non-loopback WebSockets; the http engine refuses state roles; a missing state fails before capture; a capture that lands on another path names the path and the pw state save command.
-- Slice 4: stat archive moves every done top-level item and its subtree into checklist-archive.md under a dated heading inside the checklist lock, with --dry-run and --json; bg list --cwd filters jobs by path containment and the stat skill uses it in place of its jq select.
-- Slice 2: prototype ui/wait/fingerprint take --state (ui also --sign-in), stored in UiState and forwarded to the capturer; wait and await-decision exit 124 with 'timeout, still pending' and exit 75 with a run line when a browser approve is recorded but its fingerprint is skipped; the proto docs require a More versions button and give a port recipe for hosts with no endpoint template.
 
 ## Agent Notes
 - (owner, 2026-11-20) R1: verify loads a saved pw state per role (`role.state`), loopback only. Seed checks and the cookie cap stay unchanged.
@@ -267,7 +267,7 @@ Checked on 2026-11-20 against origin/master 6a86f3e7 (6.1.0).
 
 ## Open Ratification
 
-Each item is [OPEN — roundtable] until the human ratifies it.
+The owner ratified R1 to R7 on 2026-11-20, each as recommended. See Agent Notes.
 - ⚑ RATIFY R1 (slice 1): Should verify load a saved pw state? A saved state holds live session cookies. Options: (a) `role.state` names a pw state, loopback only, with the seed checks unchanged; (b) (a) plus a cookie cap raised to 4096; (c) a cap raise only. Recommendation: (a).
 - ⚑ RATIFY R2 (slice 2): Which exit codes should prototype wait use? Options: 124 on timeout and 75 when the pick is recorded but the fingerprint is skipped; or keep 1 and add only the text. Recommendation: 124 and 75. Docs that test for exit 1 need updates, and slice 2 owns those docs.
 - ⚑ RATIFY R3 (slice 2): When approve skips the fingerprint, what happens to the pick? Options: record the pick and exit 75 with the repair command; or refuse the approve. Recommendation: record and exit 75, so the user's choice is never lost.

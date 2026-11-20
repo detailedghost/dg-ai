@@ -21,33 +21,33 @@ function section(text: string, heading: string): string {
 }
 
 describe("thrash nested run", () => {
-	const nested = section(thrash, "## Nested run");
+	const nested = (): string => section(thrash, "## Nested run");
 
 	test("names both stage personas", () => {
-		expect(nested).toContain("dg:thrash-verify");
-		expect(nested).toContain("dg:thrash-consolidate");
+		expect(nested()).toContain("dg:thrash-verify");
+		expect(nested()).toContain("dg:thrash-consolidate");
 	});
 
 	test("falls back to the persona file in the plugin agents folder", () => {
-		expect(nested).toMatch(/persona file/);
-		expect(nested).toMatch(/plugin `agents\/` folder/);
-		expect(nested).toMatch(/one item at a time/);
+		expect(nested()).toMatch(/persona file/);
+		expect(nested()).toMatch(/plugin `agents\/` folder/);
+		expect(nested()).toMatch(/one item at a time/);
 	});
 
 	test("falls back to a proxy job for each stage persona", () => {
-		expect(nested).toContain("dg-skills proxy <backend> --subagent thrash-verify");
-		expect(nested).toContain("thrash-consolidate");
-		expect(nested).toMatch(/--subagent thrash-verify\|thrash-consolidate/);
+		expect(nested()).toContain("dg-skills proxy <backend> --subagent thrash-verify");
+		expect(nested()).toContain("thrash-consolidate");
+		expect(nested()).toMatch(/--subagent thrash-verify\|thrash-consolidate/);
 	});
 
 	test("prints the exact stop line when no path works", () => {
-		expect(nested).toContain(
+		expect(nested()).toContain(
 			"thrash cannot run nested here: <reason>; run /dg:thrash . from the main loop",
 		);
 	});
 
 	test("never lets a stage be skipped", () => {
-		expect(nested).toMatch(/triage, verify, apply, consolidate and compile never get skipped/i);
+		expect(nested()).toMatch(/triage, verify, apply, consolidate and compile never get skipped/i);
 		expect(collapse(thrash)).not.toMatch(
 			/(verify|consolidate)[^.]*(may|can) be skipped/i,
 		);
