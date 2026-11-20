@@ -41,8 +41,8 @@ Execute steps in order. Do not skip steps. Report progress after each.
     <!-- Any agent may add entries. Prune the oldest lines when the file passes 100 lines. -->
     ```
 - Create `.agents/paths.md` if not present — this is a repo-specific file/directory lookup table that agents read before exploring the codebase. See templates.md for the template. Populate it during Step 5 using detected project structure.
-- `.agents/` is tracked agent memory; scratch subfolders are ignored. Ask once: "Track `.agents/`? (recommended; keep it local only for private notes)". On "local", write `.agents/` to `.gitignore` and skip the rest of this bullet.
-- **Write the scratch list to `.gitignore`** (block in templates.md):
+- `.agents/` is tracked agent memory; scratch subfolders are ignored. Ask once: "Track `.agents/`? (recommended; keep it local only for private notes)". On "local", write `.agents/` to `.gitignore` and skip the next bullet.
+- **On "track", write the scratch list to `.gitignore`** (block in templates.md):
   - No `.gitignore`: create it with the block.
   - An `.agents/` or `.agents/*` line (plus its `!.agents/...` negations): replace that block with the scratch list. Never stack a second block.
   - Otherwise append the scratch lines not already present.
@@ -114,6 +114,8 @@ AGENTS.md is the primary authority. It carries conventions + routes to all conte
 ## Step 8 — Tag and Clean Backups
 
 After all seed commits are staged/committed:
+
+If `.agents/` stays local, skip this step: the backups stay on disk, untracked.
 
 1. **Commit the backups.** `git add .agents/references/*.md.bak && git commit -m "chore(agents): back up CLAUDE.md before seed"`.
 2. **Tag that commit** as `agent-seed/YYYY-MM-DD` (today's date). This preserves a reference to the old structure — the `.bak` files are recoverable via `git show agent-seed/YYYY-MM-DD:.agents/references/CLAUDE.md.bak`.

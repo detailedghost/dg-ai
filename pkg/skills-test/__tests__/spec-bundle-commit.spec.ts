@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { REPO_ROOT, readRepoFile } from "./test-support";
 
-const BUNDLE_ADD = /git add (?:-f )?(\.agents\/spec\/[^\s`]+?)\/? /g;
+const BUNDLE_ADD = /git add (?:-\S+ )*(\.agents\/spec\/[^\s`]+?)\/? /g;
 
 function bundleAdds(): { file: string; bundle: string; line: string }[] {
 	const skills = join(REPO_ROOT, "plugins", "dg", "skills");
@@ -30,7 +30,7 @@ describe("spec bundle commits", () => {
 	});
 
 	test("no spec bundle add forces past .gitignore", () => {
-		const forced = bundleAdds().filter(({ line }) => /git add (?:-f|--force)\b/.test(line));
+		const forced = bundleAdds().filter(({ line }) => /git add (?:-\S+ )*(?:-[a-zA-Z]*f\b|--force\b)/.test(line));
 		expect(forced).toEqual([]);
 	});
 

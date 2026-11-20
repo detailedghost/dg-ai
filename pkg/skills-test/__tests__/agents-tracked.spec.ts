@@ -19,18 +19,26 @@ const IGNORED_BY_DEFAULT = [
 	/`\.agents\/prototype\/` is gitignored/,
 ];
 
-function skillFiles(): { file: string; text: string }[] {
-	const skills = join(REPO_ROOT, "plugins", "dg", "skills");
-	return [...new Bun.Glob("**/*.md").scanSync(skills)].map((file) => ({
+const FORCED_AGENTS_ADD = /^(?=.*\bgit add\b)(?=.*(?:\s-[a-zA-Z]*f\b|\s--force\b))(?=.*\.agents)/;
+
+const SKILLS = ["plugins", "dg", "skills"];
+
+function readSkill(...parts: string[]): string {
+	return readRepoFile(...SKILLS, ...parts);
+}
+
+function skillDocs(): { file: string; text: string }[] {
+	return [...new Bun.Glob("**/*.md").scanSync(join(REPO_ROOT, ...SKILLS))].map((file) => ({
 		file,
-		text: readRepoFile("plugins", "dg", "skills", file),
+		text: readSkill(file),
 	}));
 }
 
 function seedIgnoreBlock(): string[] {
-	const templates = readRepoFile("plugins", "dg", "skills", "agent-seed", "references", "templates.md");
-	const section = templates.split("## .gitignore Entry")[1]?.split("\n## ")[0] ?? "";
-	const fence = /```\n([\s\S]*?)```/.exec(section)?.[1] ?? "";
+	const section = readSkill("agent-seed", "references", "templates.md").split("## .gitignore Entry")[1];
+	if (section === undefined) throw new Error("templates.md has no '## .gitignore Entry' section");
+	const fence = /```\n([\s\S]*?)```/.exec(section.split("\n## ")[0] ?? "")?.[1];
+	if (fence === undefined) throw new Error("the .gitignore Entry section has no plain fenced block");
 	return fence.split("\n").filter((line) => line.trim() !== "");
 }
 
@@ -39,31 +47,37 @@ describe(".agents is tracked agent memory", () => {
 		expect(seedIgnoreBlock()).toEqual(SCRATCH);
 	});
 
-	test("no skill force-adds an .agents path", () => {
-		const hits = skillFiles()
+	test("no skill doc force-adds an .agents path", () => {
+		const hits = skillDocs()
 			.flatMap(({ file, text }) => text.split("\n").map((line) => ({ file, line })))
-			.filter(({ line }) => /git add (?:-f|--force)\b[^\n]*\.agents/.test(line));
+			.filter(({ line }) => FORCED_AGENTS_ADD.test(line));
 		expect(hits).toEqual([]);
 	});
 
-	test("no skill calls .agents/ gitignored by default", () => {
-		const hits = skillFiles().flatMap(({ file, text }) =>
+	test("the force-add guard catches any flag order", () => {
+		for (const line of ["git add -f .agents/x", "git add .agents/x -f", "git add -A --force .agents", "git add -vf .agents"])
+			expect(FORCED_AGENTS_ADD.test(line)).toBe(true);
+		expect(FORCED_AGENTS_ADD.test("git add .agents/spec/x/ && git commit -m fix")).toBe(false);
+	});
+
+	test("no skill doc calls .agents/ gitignored by default", () => {
+		const hits = skillDocs().flatMap(({ file, text }) =>
 			IGNORED_BY_DEFAULT.filter((pattern) => pattern.test(text)).map((pattern) => ({ file, pattern: pattern.source })),
 		);
 		expect(hits).toEqual([]);
 	});
 
-	test("agent-seed and spring-break migrate an old .agents ignore block to the scratch list", () => {
-		const seed = readRepoFile("plugins", "dg", "skills", "agent-seed", "references", "workflow.md");
-		const spring = readRepoFile("plugins", "dg", "skills", "spring-break", "SKILL.md");
-		for (const text of [seed, spring]) {
+	test.each(["agent-seed/references/workflow.md", "spring-break/SKILL.md"])(
+		"%s migrates an old .agents ignore block to the scratch list",
+		(file) => {
+			const text = readSkill(...file.split("/"));
 			expect(text).toContain("`.agents/*`");
 			expect(text).toMatch(/[Rr]eplace[^\n]*scratch list/);
-		}
-	});
+		},
+	);
 
 	test("a refused bundle add points at the migration, never at -f", () => {
-		const spec = readRepoFile("plugins", "dg", "skills", "spec", "SKILL.md");
+		const spec = readSkill("spec", "SKILL.md");
 		expect(spec).toMatch(/refuses[^\n]*\n?[^\n]*`\/dg:spring-break`/);
 		expect(spec).toContain("never `-f`");
 	});

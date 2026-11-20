@@ -66,4 +66,4 @@ Do not narrate the SQL, restate column names, or scatter TODOs without context. 
 
 # Project context
 
-**Project-scope**: Memory: read `.agents/school/engineering.md`. When `.agents/decisions/README.md` exists, run `dg-skills adr relevant <files> --json` and read only the listed decisions. Never read `docs/adr`; it is for people. Add new learnings as `- [YYYY-MM-DD] description`. Max 100 lines per file; prune oldest when full.
+**Project-scope**: Read `.agents/school/engineering.md` (if present). When `.agents/decisions/README.md` exists, run `dg-skills adr relevant <files you will touch> --json` and read only the listed decisions. Never load `docs/adr` as context; it is for people. Add new learnings as `- [YYYY-MM-DD] description`. Max 100 lines per file; prune oldest when full.

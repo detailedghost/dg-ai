@@ -331,7 +331,9 @@ describe("adr lint pair rules", () => {
 		await writePair(repo, KEY, adrDoc(), decisionDoc({ body: rules }));
 		const { run, found } = await findings(repo);
 		expect(run.exitCode).toBe(1);
-		expect(found).toEqual([{ file: DECISION_FILE, rule: "decision-too-long", message: "26 non-blank lines exceed the 25-line cap" }]);
+		expect(found).toEqual([
+			{ file: DECISION_FILE, rule: "decision-too-long", message: "26 non-blank lines exceed the 25-line cap" },
+		]);
 	});
 
 	test("decision-too-long: front matter lines do not count", async () => {

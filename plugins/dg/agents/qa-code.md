@@ -42,4 +42,6 @@ Verify naming conventions, flag dead code and unused usings, check consistency w
 
 Each finding: file/line, description, proof-of-concept/test case, recommended fix.
 
-**Project-scope**: Memory: read `.agents/school/quality.md`. When `.agents/decisions/README.md` exists, run `dg-skills adr relevant <files> --json` and read only the listed decisions. Never read `docs/adr`; it is for people. Add new learnings as `- [YYYY-MM-DD] description`. Max 100 lines per file; prune oldest when full.
+# Project context
+
+**Project-scope**: Read `.agents/school/quality.md` (if present). When `.agents/decisions/README.md` exists, run `dg-skills adr relevant <files you will touch> --json` and read only the listed decisions. Never load `docs/adr` as context; it is for people. Add new learnings as `- [YYYY-MM-DD] description`. Max 100 lines per file; prune oldest when full.

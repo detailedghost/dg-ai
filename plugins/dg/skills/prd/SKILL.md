@@ -68,7 +68,7 @@ Don't restate kick's semantics here.
    `chore(spec): park <slug> (deferred)` and the commit is not pushed, run
    `git add .agents/spec/todo/<prd-slug>/ ':(exclude).agents/spec/todo/<prd-slug>/roundtable/' && git commit --amend --no-edit` so the PRD lands as one
    clean commit. Otherwise make a normal follow-up commit:
-   `git add .agents/spec/todo/<prd-slug>/ ':(exclude).agents/spec/todo/<prd-slug>/roundtable/' && git commit -m "chore(spec): hand off <prd-slug>"`.
+   `git add .agents/spec/todo/<prd-slug>/ ':(exclude).agents/spec/todo/<prd-slug>/roundtable/' && git commit -m "chore(spec): hand off <prd-slug>"`. If it refuses an ignored path, follow the `/dg:spec` SKILL.md fallback; never `-f`.
 
 ## After Exit
 

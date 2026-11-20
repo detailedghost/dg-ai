@@ -3,53 +3,65 @@ import { join } from "node:path";
 import { REPO_ROOT, readRepoFile } from "./test-support";
 
 const MEMORY_TAIL =
-	"When `.agents/decisions/README.md` exists, run `dg-skills adr relevant <files> --json` and read only the listed decisions. Never read `docs/adr`; it is for people.";
+	"When `.agents/decisions/README.md` exists, run `dg-skills adr relevant <files you will touch> --json` " +
+	"and read only the listed decisions. Never load `docs/adr` as context; it is for people.";
 
 const MEMORY_LINE = new RegExp(
-	`Memory: read \`\\.agents/school/[a-z]+\\.md\`\\. ${MEMORY_TAIL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+	`Read \`\\.agents/school/[a-z]+\\.md\` \\(if present\\)\\. ${MEMORY_TAIL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
 );
 
 const NO_MEMORY = ["checkpoint", "copilot-antagonist", "thrash", "thrash-consolidate", "thrash-verify"];
 
 const BUILD_SKILLS = ["sdlc", "spec", "pickup", "kick", "address", "land"];
 
-const READS_HUMAN_ADR = /\b(?:read|open|consult|load)s?\b[^.\n]*`?docs\/adr/i;
+const READS_HUMAN_ADR = /\b(?:read|open|consult|load)s?\b.*docs\/adr/i;
 
-function agentFiles(): string[] {
-	return [...new Bun.Glob("*.md").scanSync(join(REPO_ROOT, "plugins", "dg", "agents"))].sort();
+const NEGATED_ADR = /never (?:read|load) `docs\/adr`/gi;
+
+const AGENTS_DIR = join("plugins", "dg", "agents");
+
+function agents(): { name: string; path: string }[] {
+	return [...new Bun.Glob("*.md").scanSync(join(REPO_ROOT, AGENTS_DIR))]
+		.sort()
+		.map((file) => ({ name: file.replace(/\.md$/, ""), path: join(AGENTS_DIR, file) }));
 }
 
 function buildSkillFiles(): string[] {
-	return BUILD_SKILLS.flatMap((skill) =>
-		[...new Bun.Glob("**/*.md").scanSync(join(REPO_ROOT, "plugins", "dg", "skills", skill))].map((file) =>
-			join("plugins", "dg", "skills", skill, file),
-		),
-	);
+	return BUILD_SKILLS.flatMap((skill) => {
+		const dir = join("plugins", "dg", "skills", skill);
+		const files = [...new Bun.Glob("**/*.md").scanSync(join(REPO_ROOT, dir))];
+		if (files.length === 0) throw new Error(`build skill ${skill} has no markdown files`);
+		return files.map((file) => join(dir, file));
+	});
 }
 
 function readsHumanAdr(text: string): string[] {
-	return text
-		.split("\n")
-		.filter((line) => READS_HUMAN_ADR.test(line.replace(/Never read `docs\/adr`/g, "")));
+	return text.split("\n").filter((line) => READS_HUMAN_ADR.test(line.replace(NEGATED_ADR, "")));
 }
 
 describe("agents read .agents, not docs/adr", () => {
 	test("every persona carries the shared memory line", () => {
-		const missing = agentFiles()
-			.filter((file) => !NO_MEMORY.includes(file.replace(/\.md$/, "")))
-			.filter((file) => !MEMORY_LINE.test(readRepoFile("plugins", "dg", "agents", file)));
+		const missing = agents()
+			.filter(({ name }) => !NO_MEMORY.includes(name))
+			.filter(({ path }) => !MEMORY_LINE.test(readRepoFile(path)))
+			.map(({ name }) => name);
 		expect(missing).toEqual([]);
 	});
 
 	test("the exempt personas exist, so the list stays honest", () => {
-		const names = agentFiles().map((file) => file.replace(/\.md$/, ""));
+		const names = agents().map(({ name }) => name);
 		for (const name of NO_MEMORY) expect(names).toContain(name);
 	});
 
 	test("no persona or build skill tells an agent to read docs/adr", () => {
-		const files = [...agentFiles().map((file) => join("plugins", "dg", "agents", file)), ...buildSkillFiles()];
+		const files = [...agents().map(({ path }) => path), ...buildSkillFiles()];
 		const hits = files.flatMap((file) => readsHumanAdr(readRepoFile(file)).map((line) => ({ file, line })));
 		expect(hits).toEqual([]);
+	});
+
+	test("the docs/adr guard catches a read instruction after a dotted path", () => {
+		expect(readsHumanAdr("Read `.agents/decisions/README.md` and `docs/adr`.")).toHaveLength(1);
+		expect(readsHumanAdr("never load `docs/adr` as context")).toHaveLength(0);
 	});
 
 	test("the AGENTS.md template routes agents to .agents and keeps docs/adr human-only", () => {

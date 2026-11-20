@@ -55,6 +55,7 @@ Verify `.agents/` structure exists (AGENTS.md, `.agents/school/`, `.agents/refer
 4. Commit the bundle (`/dg:spec` plan mode already committed it at step 10; this second commit is for
    /dg:kick's own `status: deferred` edit, so it can't be lost to a stash/clean):
    `git add .agents/spec/<NNN>_<slug>/ ':(exclude).agents/spec/<NNN>_<slug>/roundtable/' && git commit -m "chore(spec): park <slug> (deferred)"`.
+   If it refuses an ignored path, follow the `/dg:spec` SKILL.md fallback; never `-f`.
 5. Do NOT invoke execute mode. Exit.
 
 ## General Rules

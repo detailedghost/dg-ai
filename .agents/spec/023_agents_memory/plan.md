@@ -56,7 +56,7 @@ Make .agents/ tracked, token-light agent memory in every repo the skills seed. A
 - remove every git add -f .agents workaround and its agent-seed note
 - shared persona memory line and AGENTS.md Rules line
 - lore template school promotion step
-- token caps for decisions (25 lines) and references (150 lines)
+- token caps for decisions (25 non-blank lines below the front matter) and references (150 lines)
 - adr lint rule decision-too-long
 ### Excluded
 - dg-ai root .gitignore and .agents/school, monolith, references (separate PR)
@@ -66,7 +66,7 @@ Make .agents/ tracked, token-light agent memory in every repo the skills seed. A
 ### Slice 1 — track-agents-default
 
 #### Engineering
-- [x] agent-seed tracks .agents/; its .gitignore entry is the scratch list only: .agents/verify/, .agents/code-review/, .agents/jot/, .agents/clipboard/, .agents/spec/*/roundtable/
+- [x] agent-seed tracks .agents/; its .gitignore entry is the scratch list only: .agents/verify/, .agents/code-review/, .agents/jot/, .agents/clipboard/, .agents/spec/**/roundtable/
 - [x] The check-in question stays for repos with private notes; track is the recommended answer
 - [x] Migration: replace an existing .agents/ or .agents/* ignore block with the scratch list, never stack a second block
 - [x] spring-break checks and fixes the same thing
@@ -91,7 +91,7 @@ Make .agents/ tracked, token-light agent memory in every repo the skills seed. A
 - [x] Every persona Project-scope carries the shared memory line: read .agents/school/<topic>.md; when .agents/decisions/README.md exists run dg-skills adr relevant <files> --json and read only the listed decisions; never read docs/adr
 - [x] AGENTS.md template Rules line: Agents read .agents/ (decisions, school, references, monolith, paths); docs/adr is human-only
 - [x] Lore template promotes each durable rule, trap or standard into .agents/school/<topic>.md as one dated, deduplicated line; decisions go through the decision pair; prune oldest at the cap
-- [x] Cap table in structure.md and write-decision.md: decisions 25 lines, references 150 lines then split by topic
+- [x] Cap table in structure.md and write-decision.md: decisions 25 non-blank lines below the front matter, references 150 lines then split by topic
 
 #### Testing Criteria
 ##### Contracts
@@ -116,7 +116,7 @@ Make .agents/ tracked, token-light agent memory in every repo the skills seed. A
 - [x] Contract: a decision with 26 non-blank body lines yields decision-too-long and exit 1
 
 #### Acceptance Criteria
-- [x] adr lint --all on dg-ai master stays clean, or the PR lists every hit
+- [x] dg-ai master has no decisions README, so adr lint --all refuses; its 3 decisions (21, 16, 12 non-blank lines) were counted by hand and none hits the cap
 - [x] bun test in pkg/skills-cli passes
 
 ## Slice Summaries

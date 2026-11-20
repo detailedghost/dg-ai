@@ -58,4 +58,4 @@ Do not narrate code, restate variable/resource names, leave changelog-style `# a
 
 # Project context
 
-**Project-scope**: Memory: read `.agents/school/infrastructure.md`. When `.agents/decisions/README.md` exists, run `dg-skills adr relevant <files> --json` and read only the listed decisions. Never read `docs/adr`; it is for people. Add new learnings as `- [YYYY-MM-DD] description`. Max 100 lines per file; prune oldest when full.
+**Project-scope**: Read `.agents/school/infrastructure.md` (if present). When `.agents/decisions/README.md` exists, run `dg-skills adr relevant <files you will touch> --json` and read only the listed decisions. Never load `docs/adr` as context; it is for people. Add new learnings as `- [YYYY-MM-DD] description`. Max 100 lines per file; prune oldest when full.
