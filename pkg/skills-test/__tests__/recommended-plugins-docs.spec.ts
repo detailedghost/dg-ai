@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { importedPlugins, readMarketplace } from "./marketplace-support";
-import { ADR_SECTIONS, adrTitle, REPO_ROOT, readRepoFile } from "./test-support";
+import { ADR_SECTIONS, adrTitle, REPO_ROOT, readRepoFile, UNNUMBERED_TITLE } from "./test-support";
 
 const INSTALL_FLAG = "dg-skills install --with-recommended";
 const ADR_PATH = join("docs", "adr", "0027-optional-third-party-plugins.md");
@@ -100,7 +100,7 @@ describe("ADR 0027 optional third-party plugins", () => {
 	test("exists with a title and a Status line", () => {
 		expect(existsSync(join(REPO_ROOT, ADR_PATH))).toBe(true);
 		const adr = readRepoFile(ADR_PATH);
-		expect(adrTitle(adr)).toMatch(/^(?!\d{4}\b)\S/);
+		expect(adrTitle(adr)).toMatch(UNNUMBERED_TITLE);
 		expect(adr).toMatch(/^Status: (Proposed|Accepted)/m);
 	});
 

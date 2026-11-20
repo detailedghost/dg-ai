@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { ROUTES } from "../../dg/src/main";
 import { codeRegions, dgCommandForms, runDgHelp } from "./docs-help-kit";
-import { ADR_SECTIONS, adrTitle, count, REPO_ROOT, readRepoFile } from "./test-support";
+import { ADR_SECTIONS, adrTitle, count, REPO_ROOT, readRepoFile, UNNUMBERED_TITLE } from "./test-support";
 
 const JOBS = "docs/jobs-and-services.md";
 const SKILL = "plugins/dg/skills/jobs/SKILL.md";
@@ -213,7 +213,7 @@ describe("the jobs record", () => {
 
 	test("exists with the template headings, a Date header and the Accepted status", () => {
 		expect(adr).not.toBe("");
-		expect(adrTitle(adr)).toMatch(/^(?!\d{4}\b)\S/);
+		expect(adrTitle(adr)).toMatch(UNNUMBERED_TITLE);
 		expect(adr).toMatch(/^Status: Accepted$/m);
 		expect(adr).toMatch(/^Date: \d{4}-\d{2}-\d{2}$/m);
 		expect(adr).toMatch(/^Topic: Platform$/m);

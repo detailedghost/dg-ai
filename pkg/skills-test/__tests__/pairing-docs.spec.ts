@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { ForwardOnlyVersionError } from "../../common/src/node/sqlite";
 import { PW_EXT_MIN_EXTENSION_VERSION } from "../../common/src/pw-ext-format";
-import { ADR_SECTIONS, adrTitle, REPO_ROOT, cells, readRepoFile, section } from "./test-support";
+import { ADR_SECTIONS, adrTitle, REPO_ROOT, cells, readRepoFile, section, UNNUMBERED_TITLE } from "./test-support";
 
 const ADR_DIR = join(REPO_ROOT, "docs", "adr");
 const ADR_0038 = "0038-extension-pairing-only.md";
@@ -127,7 +127,7 @@ describe("ADR 0038 extension-pairing-only", () => {
 	const adr = readAdr(ADR_0038);
 
 	test("follows the template headings in order and stays Proposed", () => {
-		expect(adrTitle(adr)).toMatch(/^(?!\d{4}\b)\S/);
+		expect(adrTitle(adr)).toMatch(UNNUMBERED_TITLE);
 		expect(adr).toMatch(/^Status: Proposed$/m);
 		expect(adr).toMatch(/^Date: \d{4}-\d{2}-\d{2}$/m);
 		expect(adr).toMatch(/^Topic: .+$/m);
@@ -176,7 +176,7 @@ describe("ADR 0039 zero-touch-pairing", () => {
 	const adr = readAdr(ADR_0039);
 
 	test("follows the template headings in order and carries a status", () => {
-		expect(adrTitle(adr)).toMatch(/^(?!\d{4}\b)\S/);
+		expect(adrTitle(adr)).toMatch(UNNUMBERED_TITLE);
 		expect(adr).toMatch(/^Status: (Proposed|Accepted)$/m);
 		expect(adr).toMatch(/^Date: \d{4}-\d{2}-\d{2}$/m);
 		expect(adr).toMatch(/^Topic: .+$/m);
