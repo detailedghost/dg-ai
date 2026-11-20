@@ -7,25 +7,25 @@ Topic: Security
 ## Context
 
 - The source repository is public.
-- Relay endpoints, chat identifiers, and owner identifiers belong to a deployment.
-- Health checks need to explain missing configuration without printing secrets.
+- Relay endpoints, chat IDs, and owner IDs belong to one deployment.
+- Health checks must explain missing settings. They must not print secrets.
 
 ## Decision
 
 Tracked examples use placeholders. Private configuration, ignored `.env` files, and the encrypted credential
 store hold deployment values. Relay secret resolution keeps fetched values in process memory. Automation
-status reports configured variable names and availability instead of secret values.
+status shows the names of set variables and whether they are available. It never shows secret values.
 
 ## Consequences
 
-- Examples remain usable without carrying a deployment’s identifiers; see `config.example.json`.
-- Operators must provision private values separately from installing the package.
-- Redaction reduces accidental disclosure but is not permission to log arbitrary private data.
+- Examples still work without a deployment’s IDs; see `config.example.json`.
+- Operators must set private values apart from the package install.
+- Redaction lowers the risk of a leak. It does not allow logging private data.
 
 ## Other options
 
-- A committed deployment config would publish identifiers and couple releases to one installation.
-- A built-in private default environment would make a fresh install point at another deployment’s service.
+- A committed deployment config would publish IDs. It would also tie releases to one install.
+- A built-in private default would point a fresh install at another deployment’s service.
 
 ## Diagram
 
