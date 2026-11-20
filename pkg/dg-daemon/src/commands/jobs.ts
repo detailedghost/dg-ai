@@ -25,6 +25,7 @@ import {
 	parseJobEntry,
 } from "../jobs/config";
 import { jobLogFile } from "../jobs/launcher";
+import type { SourceRegistry } from "../jobs/sources";
 import { readConfig, readConfigStrict, writeConfig, writeJobEntry } from "../server/config-store";
 import type { ServiceStatus } from "../services/supervisor";
 import {
@@ -54,6 +55,7 @@ import {
 	resolveExecutable,
 	withConfigLock,
 } from "./job-support";
+import type { JobSourceDeps } from "./job-source";
 import { startDaemon } from "./start";
 
 const MODE_KEYS = ["continuous", "schedule", "every"] as const;
@@ -161,10 +163,29 @@ async function homeLine(): Promise<string> {
 	return `dg home: ${home}; daemon: ${daemon}`;
 }
 
+async function refuseTakenPrefix(
+	paths: Paths,
+	config: Record<string, unknown>,
+	name: string,
+): Promise<void> {
+	if (isInTable(config, name)) return;
+	const [{ assertPrefixFree }, { readSources }] = await Promise.all([
+		import("./job-source"),
+		import("../jobs/sources"),
+	]);
+	assertPrefixFree(
+		name,
+		config,
+		guardConfig(() => readSources(paths)),
+		"job add:",
+	);
+}
+
 type AddOptions = {
 	name?: string;
 	label?: string;
-	cwd: string;
+	yes?: boolean;
+	cwd?: string;
 	continuous?: boolean;
 	schedule?: string;
 	cron?: string;
@@ -183,7 +204,9 @@ async function addVerb(
 	options: AddOptions,
 	deps: JobVerbDeps,
 ): Promise<void> {
-	const stop = (message: string): never => fail(`job add: ${message}`);
+	function stop(message: string): never {
+		return fail(`job add: ${message}`);
+	}
 	if (options.label !== undefined) aliasNote("--label", "--name");
 	if (options.cron !== undefined) aliasNote("--cron", "--schedule");
 	if (options.passEnv !== undefined) aliasNote("--pass-env", "--env");
@@ -208,6 +231,7 @@ async function addVerb(
 		);
 	}
 	if (argv.length === 0) stop("no command given — put it after a bare --");
+	if (options.cwd === undefined) stop("--cwd is required");
 	const cwd = resolve(options.cwd);
 	if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
 		stop(`--cwd: no such directory: ${options.cwd}`);
@@ -258,6 +282,7 @@ async function addVerb(
 	const exists = () =>
 		fail(`a job named "${name}" already exists`);
 	if (!options.continuous) {
+		await refuseTakenPrefix(paths, readTable(paths), name);
 		const created = await addScheduled({
 			name,
 			argv,
@@ -282,17 +307,19 @@ async function addVerb(
 		return;
 	}
 	if (await findScheduled(name)) exists();
-	await withConfigLock(paths, () => {
+	await withConfigLock(paths, async () => {
 		const config = readTable(paths);
 		requireMigrated(config);
 		if (isInTable(config, name)) exists();
+		await refuseTakenPrefix(paths, config, name);
 		guardConfig(() => writeJobEntry(paths, name, entry));
 	});
 	console.log(`added job "${name}"`);
 	console.log(`next: dg job enable ${name}`);
 }
 
-type Rows = { rows: Row[]; scheduled: ScheduledRow[] };
+type SourceMark = { source?: string; ref?: string | null; sha?: string };
+type Rows = { rows: Row[]; scheduled: (ScheduledRow & SourceMark)[] };
 
 function grantFileOf(paths: Paths, grant: unknown): string | null {
 	if (typeof grant !== "string") return null;
@@ -311,8 +338,22 @@ function stateDirOf(paths: Paths, name: string): string | null {
 	}
 }
 
+async function sourcesOf(paths: Paths): Promise<SourceRegistry> {
+	if (!existsSync(paths.jobSourcesPath)) return {};
+	const { readSources } = await import("../jobs/sources");
+	return guardConfig(() => readSources(paths));
+}
+
+async function recordOf(paths: Paths, name: string) {
+	const registry = await sourcesOf(paths);
+	const { findRecordByJob } = await import("../jobs/sources");
+	return findRecordByJob(registry, name);
+}
+
 async function collectRows(paths: Paths): Promise<Rows> {
 	const config = readTable(paths);
+	const registry = await sourcesOf(paths);
+	const { findRecordByJob } = await import("../jobs/sources");
 	const live = await findLiveDaemon(paths);
 	const daemon = live
 		? ((await callJobRoute(CHAT_JOBS_PATH, "GET")) as { jobs: ServiceStatus[] })
@@ -326,7 +367,11 @@ async function collectRows(paths: Paths): Promise<Rows> {
 	const rows = continuous.map(([name, raw]): Row => {
 		const entry = isRecord(raw) ? raw : {};
 		const known = daemon?.find((row) => row.label === name);
+		const found = findRecordByJob(registry, name);
 		return {
+			...(found
+				? { source: found.source, ref: found.record.ref, sha: found.record.sha }
+				: {}),
 			name,
 			mode: modeOf(raw),
 			enabled: entry.enabled === true,
@@ -340,7 +385,13 @@ async function collectRows(paths: Paths): Promise<Rows> {
 			grantFile: grantFileOf(paths, entry.grant),
 		};
 	});
-	return { rows, scheduled: await listScheduled() };
+	const scheduled = (await listScheduled()).map((row) => {
+		const found = findRecordByJob(registry, row.name);
+		return found
+			? { ...row, source: found.source, ref: found.record.ref, sha: found.record.sha }
+			: row;
+	});
+	return { rows, scheduled };
 }
 
 function rowLine(row: Row): string {
@@ -351,12 +402,15 @@ function rowLine(row: Row): string {
 		row.state,
 		row.pid === null ? "" : `pid ${row.pid}`,
 		`restarts ${row.restarts}`,
+		typeof row.source === "string" && typeof row.sha === "string"
+			? `${row.source}@${row.sha.slice(0, 12)}`
+			: "",
 	]
 		.filter((part) => part !== "")
 		.join("  ");
 }
 
-function scheduledLine(row: ScheduledRow): string {
+function scheduledLine(row: ScheduledRow & SourceMark): string {
 	return [
 		row.name,
 		row.renamedFrom ? `was "${row.renamedFrom}"` : "",
@@ -365,6 +419,9 @@ function scheduledLine(row: ScheduledRow): string {
 		`last ${row.lastRunAt ?? "never"}`,
 		`next ${row.nextRunAt ?? "-"}`,
 		row.invalid ? `invalid: ${row.invalid}` : "",
+		row.source !== undefined && row.sha !== undefined
+			? `${row.source}@${row.sha.slice(0, 12)}`
+			: "",
 	]
 		.filter((part) => part !== "")
 		.join("  ");
@@ -524,7 +581,13 @@ async function disableVerb(name: string): Promise<void> {
 
 async function removeVerb(name: string): Promise<void> {
 	const paths = resolveDgPaths();
-	const kind = await locate(paths, name, { migrate: true, scheduled: true });
+	const found = await recordOf(paths, name);
+	let kind: "table" | "scheduled" = "table";
+	if (found) {
+		if (existsSync(paths.daemonConfigPath)) await ensureMigrated(paths);
+	} else {
+		kind = await locate(paths, name, { migrate: true, scheduled: true });
+	}
 	const live = await assertDaemonAnswers(paths, name, "job");
 	if (live) {
 		const state = (await liveJobStates(paths))?.get(name);
@@ -537,14 +600,27 @@ async function removeVerb(name: string): Promise<void> {
 		console.log(`removed job "${name}"`);
 		return;
 	}
-	await withConfigLock(paths, () => {
+	let listsCredentials = false;
+	await withConfigLock(paths, async () => {
 		const config = readTable(paths);
 		requireMigrated(config);
-		if (!isInTable(config, name)) notFound(name);
+		if (!found && !isInTable(config, name)) notFound(name);
 		assertNoLiveInstance(paths, name, "job");
-		guardConfig(() => writeJobEntry(paths, name, undefined));
+		if (isInTable(config, name)) {
+			const entry = tableEntry(paths, config, name);
+			listsCredentials =
+				Array.isArray(entry.credentials) && entry.credentials.length > 0;
+			guardConfig(() => writeJobEntry(paths, name, undefined));
+		}
+		if (found) {
+			const { removeJobFromSource } = await import("./job-source");
+			guardConfig(() => removeJobFromSource(paths, name));
+		}
 	});
 	console.log(`removed job "${name}"`);
+	if (!found) return;
+	console.log(`kept state: ${stateDirOf(paths, name)}`);
+	if (listsCredentials) console.log(`kept credentials below ${found.source}/`);
 }
 
 type UpdateOptions = {
@@ -558,6 +634,9 @@ type UpdateOptions = {
 
 async function updateVerb(name: string, options: UpdateOptions): Promise<void> {
 	const stop = (message: string): never => fail(`job update: ${message}`);
+	if (await recordOf(resolveDgPaths(), name)) {
+		stop("a repository job is not supported yet");
+	}
 	const modes: [Mode, unknown][] = [
 		["continuous", options.continuous ? true : undefined],
 		["schedule", options.schedule],
@@ -617,9 +696,38 @@ async function logsVerb(
 	await runJobLogs(paths, name, options);
 }
 
+const SOURCE_OPTION_KEYS = [
+	"continuous",
+	"schedule",
+	"cron",
+	"every",
+	"timeout",
+	"feed",
+	"notify",
+	"cwd",
+	"env",
+	"envFile",
+	"passEnv",
+	"stopTimeout",
+];
+
+function positionalSource(
+	argv: string[],
+	command: Command,
+): { argument: string; rest: string[] } | undefined {
+	let root = command;
+	while (root.parent) root = root.parent;
+	const { rawArgs } = root as Command & { rawArgs: string[] };
+	const dash = rawArgs.indexOf("--");
+	const afterDash = dash < 0 ? 0 : rawArgs.length - dash - 1;
+	return argv.length - afterDash === 1
+		? { argument: argv[0], rest: argv.slice(1) }
+		: undefined;
+}
+
 export function registerJobCommands(
 	program: Command,
-	given: Partial<JobVerbDeps> = {},
+	given: Partial<JobSourceDeps> = {},
 ): void {
 	const deps = (): JobVerbDeps => ({ ...defaultJobVerbDeps(), ...given });
 	const job = program
@@ -631,10 +739,10 @@ export function registerJobCommands(
 
 	job
 		.command("add")
-		.description("add a job: continuous, on a cron schedule, or at an interval")
+		.description("add a job from a repository URL, or a command: continuous, on a cron schedule, or at an interval")
 		.option("--name <name>", "unique name for the job")
 		.addOption(new Option("--label <name>").hideHelp())
-		.requiredOption("--cwd <path>", "working directory for the command")
+		.option("--cwd <path>", "working directory for the command")
 		.option("--continuous", "keep the job running")
 		.option("--schedule <cron>", 'a cron expression, e.g. "0 9 * * 1-5"')
 		.addOption(new Option("--cron <cron>").hideHelp())
@@ -650,9 +758,22 @@ export function registerJobCommands(
 		)
 		.addOption(new Option("--pass-env <NAME>").argParser(collect).hideHelp())
 		.option("--stop-timeout <duration>", "grace period on stop, e.g. 30s")
+		.option("--yes", "approve the jobs of a repository without asking")
 		.argument("[command...]", "the command to run, after a bare --")
-		.action(async (argv: string[], options: AddOptions) => {
-			await addVerb(argv, options, deps());
+		.action(async (argv: string[], options: AddOptions, command: Command) => {
+			const source = positionalSource(argv, command);
+			if (!source) {
+				await addVerb(argv, options, deps());
+				return;
+			}
+			const { addSource, defaultJobSourceDeps } = await import("./job-source");
+			const flags = SOURCE_OPTION_KEYS.filter(
+				(key) => command.getOptionValueSource(key) === "cli",
+			);
+			await addSource(source.argument, source.rest, flags, options, {
+				...defaultJobSourceDeps(),
+				...given,
+			});
 		});
 
 	job

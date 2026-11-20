@@ -78,7 +78,7 @@
 			"commands": [
 				{
 					"name": "add",
-					"description": "add a job: continuous, on a cron schedule, or at an interval",
+					"description": "add a job from a repository URL, or a command: continuous, on a cron schedule, or at an interval",
 					"options": [
 						{
 							"flags": [
@@ -154,6 +154,12 @@
 							],
 							"description": "grace period on stop, e.g. 30s",
 							"value": "any"
+						},
+						{
+							"flags": [
+								"--yes"
+							],
+							"description": "approve the jobs of a repository without asking"
 						}
 					]
 				},

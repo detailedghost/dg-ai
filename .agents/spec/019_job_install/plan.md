@@ -116,7 +116,7 @@ slices:
   - id: 13
     name: "job-add-git"
     depends_on: [12]
-    files: ["pkg/dg-daemon/src/jobs/sources.ts", "pkg/dg-daemon/src/jobs/declaration.ts", "pkg/dg-daemon/src/commands/job-source.ts", "pkg/dg-daemon/src/commands/jobs.ts", "pkg/dg-daemon/src/completion-tree.json", "pkg/dg-daemon/__tests__/jobs/sources.spec.ts", "pkg/dg-daemon/__tests__/jobs/declaration.spec.ts", "pkg/dg-daemon/__tests__/commands/job-add-git.spec.ts", "pkg/dg-daemon/__tests__/commands/job-source-kit.ts", "pkg/dg-daemon/__tests__/commands/job-verbs.spec.ts", "pkg/dg-daemon/src/jobs/sanitize.ts", "pkg/dg-daemon/__tests__/jobs/sanitize.spec.ts"]
+    files: ["pkg/dg-daemon/src/jobs/sources.ts", "pkg/dg-daemon/src/jobs/declaration.ts", "pkg/dg-daemon/src/commands/job-source.ts", "pkg/dg-daemon/src/commands/jobs.ts", "pkg/dg-daemon/src/completion-tree.json", "pkg/dg-daemon/__tests__/jobs/sources.spec.ts", "pkg/dg-daemon/__tests__/jobs/declaration.spec.ts", "pkg/dg-daemon/__tests__/commands/job-add-git.spec.ts", "pkg/dg-daemon/__tests__/commands/job-source-kit.ts", "pkg/dg-daemon/__tests__/commands/job-verbs.spec.ts", "pkg/dg-daemon/src/jobs/sanitize.ts", "pkg/dg-daemon/__tests__/jobs/sanitize.spec.ts", "pkg/dg-daemon/__tests__/commands/job-source.spec.ts"]
     agents:
       primary: dg:js
       confidence: high
@@ -1395,212 +1395,212 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 ### Slice 13 — job-add-git
 
 #### Engineering
-- [ ] `classifySource(argument)` in pkg/dg-daemon/src/commands/job-source.ts gives `git`, `path` or an error: refuse a leading `-`; refuse `ext::` and `fd::`; a value with `<scheme>://` is git; a value that matches `^[^/\\]+@[^/\\:]+:` is git; a value that starts with `./`, `../`, `/`, `~` or a drive letter with `:\` or `:/` is a path; each other value exits 1 with `job add: "<value>" is not a path or a URL — for a local file write ./<value>`
-- [ ] In this slice a path exits 1 with `job add: a local path is not supported yet`; slice 16 replaces that branch
-- [ ] pkg/dg-daemon/src/commands/jobs.ts sends each `add` with one positional argument to job-source.ts, with or without text after `--`, by the result of `classifySource`, and asks job-source.ts for the record of a job in `remove` and `update`; load job-source.ts with a lazy import
-- [ ] A local git repository is a clone source only as `file://<path>`; a path with no scheme is a local job of slice 16
-- [ ] A mode flag, `--timeout`, `--feed`, `--notify`, `--cwd`, `--env`, `--env-file`, `--stop-timeout`, `--cron` or `--pass-env` with a URL exits 1 with `job add: the repository declares this in its "dg" block`; `--label` is `--name` and is permitted; the code reads the option value source of commander to know that the user gave a flag
-- [ ] A URL with a command after `--` exits 1 with `job add: a URL takes no command after --` and starts no git process
-- [ ] Create pkg/dg-daemon/src/jobs/sources.ts: a strict reader and a writer for `paths.jobSourcesPath`; the file is one JSON object keyed by source name; a record of a repository is `{ kind: "git", url: string, ref: string | null, sha: string, jobs: string[], declarationHash: string, credentials: object }`
-- [ ] The registry reader returns `{}` when the file is absent, and throws an `Error` that names the file when the content is not a JSON object
-- [ ] The registry writer uses `writeFilePreserving(file, data, 0o600)` and keeps the records of the other sources
-- [ ] Create pkg/dg-daemon/src/jobs/declaration.ts: `parseJobDeclaration(packageJson: unknown, { source, sourceDir, stateDir }: { source: string; sourceDir: string; stateDir: (name: string) => string })` reads the `dg` key and returns `{ ok: true, jobs, credentials, requires, build } | { ok: false, error }`; it does not throw; `jobs` holds one entry for each name of `dg.jobs`, with `cwd` set to `sourceDir` and `grant` set to `source` by the `grant` rule of this slice, and `credentials` holds the credential details
-- [ ] `parseJobDeclaration` is pure: it checks the shape, fills `cwd` and resolves `envFile`; it reads no file and no PATH
-- [ ] `parseJobDeclaration` returns errors with no command prefix; the caller adds `job add:` or `job update:`, and the caller builds the text `<url> has no "dg" key in package.json`
-- [ ] `parseJobDeclaration` accepts the `dg` keys `jobs`, `credentials`, `requires` and `build`; it names each other key in the error
-- [ ] A job of the block accepts `argv`, one mode key (`continuous`, `schedule` or `every`), `feed`, `notify`, `credentials`, `timeoutMs`, `envFile` and `stopTimeoutMs`; the keys `grant`, `cwd`, `enabled` and `passEnv` are refused by name; each other key is in the `unknown key(s)` error
-- [ ] Each job entry passes `parseJobEntry` of slice 8 after dg adds `cwd` and `grant`, so a block and a command job follow one rule set
-- [ ] This slice writes a scheduled entry as the block gives it; slice 10 owns the run of a scheduled entry, and no spec of this slice runs one
-- [ ] The `credentials` list of a job is an array of names; the block key `credentials` is an object that gives details for a name of such a list: `prompt` (string, 200 characters at most), `required` (boolean, default `true`), `meta` (object: key → `{ prompt, default? }`) and `source`
-- [ ] A name in a job list with no details is required, and its prompt is the name; a details key that no job lists is an error
-- [ ] `<source>/<name>` must pass `validateCredentialName`, so the length of a name is the limit of that check; a block has 16 credential names at most, counted as the different names of all job lists; a name is in one job list one time at most
-- [ ] A `meta` key that matches `/value|secret|token|password/i`, or that is `provider` or `createdBy`, is refused: `validateCredentialMeta` refuses such a key at the store; also refuse the block `meta` keys `scopes` and `expiresAt`: the store gives them a structure that a text answer cannot have
-- [ ] `source` accepts one shape and no other: `{ "type": "aws-secretsmanager", "secretId", "region", "key"?, "profile"? }`; the `type` key is necessary, so a later bundle can add a type
-- [ ] Each value of a `source` is a string that does not start with `-`; `region` matches `^[a-z0-9-]+$`; each other key of a `source` is an error that names the key
-- [ ] A `source` is data only: the block cannot give a command, and this slice starts no `aws` process
-- [ ] `declarationHash` is the SHA-256 hex of the JSON text of the `dg` value with object keys sorted at each level; it covers `credentials`, so a change of a credential asks again at `update`
-- [ ] Export from job-source.ts the deps type of the source commands, `JobSourceDeps extends JobVerbDeps` (slice 9): it adds only `runGit(args, options): Promise<{ code, stdout, stderr }>` and `runBuild(argv, cwd): Promise<number>`; `confirm`, `isTerminal` and `which` come from the base type; each action takes it as a seam
-- [ ] Export `declarationHash` from declaration.ts, and `formatRequest` and `resolveRef` from job-source.ts; `sanitize` is in the new file pkg/dg-daemon/src/jobs/sanitize.ts with its spec pkg/dg-daemon/__tests__/jobs/sanitize.spec.ts, not in job-source.ts, and `formatRequest` imports it; slice 14 calls these exports, and slices 14, 15 and 18 import `sanitize` from that file
-- [ ] `job add <git-url>[@ref]`: remove a leading `<scheme>://`, then find the last `@` of the remaining text; it separates the ref only when the text before it holds a `/` or a `:`; with no ref, the value is `null` and the default branch of the remote is used
-- [ ] `add` refuses a URL or a ref that starts with `-`
-- [ ] The source name is the text after the last `/` or `:` of the URL, without `.git`, in lower case; `--name <source name>` replaces it; it is a folder name and a credential prefix, so it must match the job name rule of pkg/dg-daemon/src/jobs/config.ts (64 characters at most); a source name is not a job name
-- [ ] `add` refuses a source name of `RESERVED_CREDENTIAL_PREFIXES` (slice 12) with `job add: "<name>" is a reserved name — give another one with --name`
-- [ ] `add` refuses a source name that the registry holds
-- [ ] Before the clone, `add` refuses when the clone folder `jobSourceDir(paths, source)` exists
-- [ ] `add` runs `git -c protocol.ext.allow=never clone --no-recurse-submodules -- <url> <jobSourceDir(paths, source)>` in the CLI process with the environment of the caller; the daemon runs no git command
-- [ ] With a terminal, git gets the stdin of the caller; with no terminal, the git child gets `GIT_TERMINAL_PROMPT=0`
-- [ ] `resolveRef(deps, cloneDir, ref)` gives a full commit id and runs, in this order: `git rev-parse --verify --end-of-options refs/tags/<ref>^{commit}`; `refs/remotes/origin/<ref>^{commit}`; for a value that matches `^[0-9a-f]{40}$`, `git cat-file -e <sha>^{commit}`; a ref that is a tag and a branch is the tag; `null` gives `origin/HEAD`; a ref that resolves to nothing, and a short commit id, exit 1 with `job add: ref "<ref>" does not resolve in <url>`
-- [ ] `add` checks out the commit id, not the ref text: `git checkout --detach <40 hexadecimal characters> --`
-- [ ] `add` reads the full 40-character commit id with `git rev-parse HEAD` after the checkout and stores it as `sha`
-- [ ] The clone runs before the question, so it must run no code of the repository: no `--recurse-submodules`, and no command of the `dg` block before the answer `y`
-- [ ] `add` refuses when a job name of the block is already in the `jobs` table of the daemon config
-- [ ] dg sets `grant` to the source name on each written entry whose `credentials` list is not empty; an entry with an empty list gets no `grant`; the block cannot change this
-- [ ] `add` prints the request before it asks: the source, the URL, the ref, the full sha, and for each job the `argv`, the mode key with its value, `feed`, `notify`, `timeoutMs`, `envFile` (the absolute path that the entry will store) and `stopTimeoutMs`
-- [ ] The request then shows the line `credential prefix: <source>/`, then one line for each credential with its name, `required` or `optional`, its `prompt`, its source type with each key of the `source`, and the jobs that list it; then `requires` and `build` as written in the block
-- [ ] Each text of the request that comes from the repository goes through `sanitize`, which replaces each control character (U+0000 to U+001F, U+007F to U+009F) and each of U+202A to U+202E, U+2066 to U+2069, U+200B to U+200F, U+FEFF, U+2028 and U+2029 with a visible escape of the form `\u{…}`; the first stderr line of git in `git clone failed: …` also goes through `sanitize`
-- [ ] On a terminal, `add` asks `Add these jobs? [y/N]`; only `y` or `yes` in any letter case continues
-- [ ] An empty line, an end of input and an interrupted read are the answer `no`
-- [ ] `add` accepts `--yes` for a URL: it prints the request, asks no question and continues as after the answer `y`, with a terminal or with none
-- [ ] When stdin or stdout is not a terminal and `--yes` is not given, `add` prints the request, then fails; it asks no question
-- [ ] `--yes` is the one option that gives consent; add no `--accept` option
-- [ ] The terminal check is the `isTerminal` seam of the deps type
-- [ ] Each `add` failure and a `no` answer remove the clone with `removeInside(paths.jobsDir, cloneDir)`, only when this run made the clone, and write nothing to the daemon config or the registry
-- [ ] An interrupt (Ctrl-C) between the clone and the write removes the clone
-- [ ] `add` takes the config lock of `withConfigLock` one time, after `build`; inside the lock it reads the registry and the config again and checks again that the source name and each job name are free
-- [ ] Inside the lock, `add` writes the registry record first, then each job entry through `writeJobEntry`; a process that stops between the two leaves a record with no entry, and `job remove <name>` removes it
-- [ ] When a step inside the lock throws, `add` removes the record and each entry that this run wrote (`writeJobEntry(paths, name, undefined)` removes an entry) and removes the clone; when the rollback also fails, the command prints the two errors and names what stays
-- [ ] `writeJobEntry` puts a written entry last in the `jobs` table; the order of the table is not a contract
-- [ ] `add` writes no `enabled` key; `job enable` sets it
-- [ ] `add` creates `jobStateDir(paths, name)` for each job with `ensurePrivateDir`
-- [ ] The record stores the `credentials` details that the owner saw; `enable` and `setup` of slice 15 read the record, not the file in the clone
-- [ ] Exit 0 prints `added jobs from "<source>" at <first 12 characters of sha>: <names joined with a comma and a space>`, then one line `next: dg job enable <name>` for each job
-- [ ] `job remove <job>` on a repository job uses the guards of the command-job `remove` of slice 9: `assertDaemonAnswers`, the refusal of a `running` or `backoff` job on a live daemon, and `assertNoLiveInstance`
-- [ ] `job remove <job>` on a repository job removes that entry and takes the name out of the record; when the record has no job left, it removes the record, then the clone with `removeInside(paths.jobsDir, cloneDir)`
-- [ ] `job remove` keeps each state folder, each stored credential and the grant; it prints `kept state: <path>`, and `kept credentials below <source>/` when the job lists a credential
-- [ ] `remove` is safe to run again: an entry, a registry record or a clone that is absent is not a failure
-- [ ] `job list` and `job status` show `<source>@<first 12 characters of sha>` on the row of a repository job; the `--json` row gets the keys `source`, `ref` and `sha`
-- [ ] New failures throw `DgCliError(message, EXIT_GENERAL_FAILURE)`
-- [ ] Build the fixture repository in a temp directory at test time (`git init`, one commit with a package.json that has a `dg` block), and clone it with a `file://` URL; do not add a git repository to the tree
-- [ ] pkg/dg-daemon/__tests__/commands/job-source-kit.ts exports `makeRepo({ dg, files }): { dir, sha }` and `commit(repo, { dg, files, tag, branch }): string`; slice 14 adds commits with `commit` and does not write the kit again
-- [ ] Test the consent step in process with the `confirm` seam of the deps type; a subprocess has no terminal
-- [ ] The specs that need a live daemon or a subprocess (the Happy path, Edge and Error lines of this slice) are in job-add-git.spec.ts and use daemon-harness.ts as it is; each other spec runs in process with the seams
-- [ ] No spec starts `git` with a network URL; the clone failure Contract uses a `file://` path that does not exist
-- [ ] The Contracts that say `start no git process` count the calls of the `runGit` seam
-- [ ] The specs make each executable in a temp folder and give it through the `which` seam; they do not use the PATH of the machine
-- [ ] Do not edit pkg/dg-daemon/src/main.ts, pkg/common/src/node/index.ts, pkg/dg-daemon/src/commands/job-support.ts or pkg/dg-daemon/__tests__/utils/daemon-harness.ts
-- [ ] Order of `add` for a URL: classify the argument; refuse `ext::`, `fd::`, a leading `-` and a password in the URL; refuse a flag that the block owns; make the source name and refuse a reserved name and a name that is already a credential prefix; check the registry; check that the clone folder is absent; clone; resolve the ref; check out the commit; read the commit id; read the block with `git show <sha>:package.json` (as `update` does, not from the working tree) and parse it; check the job names; check `requires`, each bare `argv[0]` name and `build[0]`; print the request; check `--yes` or the terminal; ask; run `build`; resolve each `argv[0]` path in the clone; take the lock; check the registry, the names and the prefix again; write the registry record; write the entries; print the result
-- [ ] The clone and its network traffic occur before the terminal check on purpose: with no terminal the command still prints the request
-- [ ] A relative `envFile` of the block resolves below `jobStateDir(paths, name)`; the stored entry holds the absolute path
-- [ ] `parseJobDeclaration` refuses an absolute `envFile`, and a relative `envFile` that leaves the state folder of its job (use `insideRoot`)
-- [ ] `add` does not create the env file; for each job with an `envFile` that does not exist, it prints the path after the result
-- [ ] job-source.ts resolves `argv[0]` of a block entry in two steps; before the question, a bare name must resolve with `resolveExecutable(name, "job add:", deps.which)` of job-support.ts (the third parameter of slice 9), and the result is the stored value; a name with a path separator uses only the clone step, not the path branch of `resolveExecutable`
-- [ ] After `build` and before the first write, a name with a path separator resolves from the clone folder; its real path (`realpathSync`) must be inside the real path of the clone, must exist and must be executable; the stored value is the absolute path inside the clone
-- [ ] `requires` is an array of executable names with no path separator; `add` checks each name with the `which` seam of the deps type before the question; the default of that seam is `Bun.which`
-- [ ] `build` is one argv: a non-empty array of non-empty strings; `add` runs it one time, after the answer `y` or `--yes` and before the first write, in the clone folder, with no shell, with the environment and the terminal of the caller
-- [ ] A `build` that does not start, or that exits with a code other than 0, fails the `add`: the clone is removed and nothing is written
-- [ ] A block with no `build` runs no command
-- [ ] After the option change, run `bun scripts/completion-trees.ts dg-daemon` and commit pkg/dg-daemon/src/completion-tree.json; do not edit the JSON by hand
-- [ ] Refuse a URL whose user part holds `:` with `job add: put no password in the URL — use a git credential helper or an ssh key`, before a git process starts; remove the user part from each URL that dg prints
-- [ ] Limits of a block: a package.json of 256 KiB at most; 16 jobs; 64 `argv` items for a job; 1024 characters for a string; 200 characters for a `meta` `prompt` and `default` [DECIDED — post-apply item 4]
-- [ ] Export `assertPrefixFree(name, config, registry, errorPrefix)` from job-source.ts: it refuses a name that is a reserved name, a job name of the `jobs` table, the `grant` of an entry or a key of the registry, with `<errorPrefix> "<name>" is already used as a credential prefix by <job or source name>` (for example `job add: "poll" is already used …`); it is the one clash check, and slices 15 and 16 call it
-- [ ] `add` of a URL calls `assertPrefixFree` for the source name before the clone, and again inside the lock with the other checks; `add` of a command job (jobs.ts) calls it for the job name
-- [ ] The record of this slice has no `prefixAccepted` key
-- [ ] A `git` program that is absent gives `job add: git is not installed` (check with the `which` seam, or catch the synchronous `ENOENT` of `Bun.spawn`)
-- [ ] A `build[0]` that does not start gives `job add: build did not start: <build[0]>`
-- [ ] `build[0]` follows the rule of `argv[0]`: a bare name resolves with the `which` seam; a name with a separator resolves from the clone folder, and its real path must be inside the clone; the check runs before the question, so the request shows the resolved path
-- [ ] The clone and the checkout run with `GIT_LFS_SKIP_SMUDGE=1` and `-c protocol.fd.allow=never` next to `protocol.ext.allow=never`
-- [ ] With no terminal, and when the caller has no `GIT_SSH_COMMAND`, set `GIT_SSH_COMMAND` to `ssh -o BatchMode=yes`
-- [ ] declaration.ts imports no git code and no `node:child_process`, because slice 17 imports it from the launcher
-- [ ] Until slice 14, `job update <job>` on a repository job exits 1 with `job update: a repository job is not supported yet`
-- [ ] sources.ts exports `findRecordByJob(registry, job)`; `remove`, `update` and the refresh operation of slice 18 use it
+- [x] `classifySource(argument)` in pkg/dg-daemon/src/commands/job-source.ts gives `git`, `path` or an error: refuse a leading `-`; refuse `ext::` and `fd::`; a value with `<scheme>://` is git; a value that matches `^[^/\\]+@[^/\\:]+:` is git; a value that starts with `./`, `../`, `/`, `~` or a drive letter with `:\` or `:/` is a path; each other value exits 1 with `job add: "<value>" is not a path or a URL — for a local file write ./<value>`
+- [x] In this slice a path exits 1 with `job add: a local path is not supported yet`; slice 16 replaces that branch
+- [x] pkg/dg-daemon/src/commands/jobs.ts sends each `add` with one positional argument to job-source.ts, with or without text after `--`, by the result of `classifySource`, and asks job-source.ts for the record of a job in `remove` and `update`; load job-source.ts with a lazy import
+- [x] A local git repository is a clone source only as `file://<path>`; a path with no scheme is a local job of slice 16
+- [x] A mode flag, `--timeout`, `--feed`, `--notify`, `--cwd`, `--env`, `--env-file`, `--stop-timeout`, `--cron` or `--pass-env` with a URL exits 1 with `job add: the repository declares this in its "dg" block`; `--label` is `--name` and is permitted; the code reads the option value source of commander to know that the user gave a flag
+- [x] A URL with a command after `--` exits 1 with `job add: a URL takes no command after --` and starts no git process
+- [x] Create pkg/dg-daemon/src/jobs/sources.ts: a strict reader and a writer for `paths.jobSourcesPath`; the file is one JSON object keyed by source name; a record of a repository is `{ kind: "git", url: string, ref: string | null, sha: string, jobs: string[], declarationHash: string, credentials: object }`
+- [x] The registry reader returns `{}` when the file is absent, and throws an `Error` that names the file when the content is not a JSON object
+- [x] The registry writer uses `writeFilePreserving(file, data, 0o600)` and keeps the records of the other sources
+- [x] Create pkg/dg-daemon/src/jobs/declaration.ts: `parseJobDeclaration(packageJson: unknown, { source, sourceDir, stateDir }: { source: string; sourceDir: string; stateDir: (name: string) => string })` reads the `dg` key and returns `{ ok: true, jobs, credentials, requires, build } | { ok: false, error }`; it does not throw; `jobs` holds one entry for each name of `dg.jobs`, with `cwd` set to `sourceDir` and `grant` set to `source` by the `grant` rule of this slice, and `credentials` holds the credential details
+- [x] `parseJobDeclaration` is pure: it checks the shape, fills `cwd` and resolves `envFile`; it reads no file and no PATH
+- [x] `parseJobDeclaration` returns errors with no command prefix; the caller adds `job add:` or `job update:`, and the caller builds the text `<url> has no "dg" key in package.json`
+- [x] `parseJobDeclaration` accepts the `dg` keys `jobs`, `credentials`, `requires` and `build`; it names each other key in the error
+- [x] A job of the block accepts `argv`, one mode key (`continuous`, `schedule` or `every`), `feed`, `notify`, `credentials`, `timeoutMs`, `envFile` and `stopTimeoutMs`; the keys `grant`, `cwd`, `enabled` and `passEnv` are refused by name; each other key is in the `unknown key(s)` error
+- [x] Each job entry passes `parseJobEntry` of slice 8 after dg adds `cwd` and `grant`, so a block and a command job follow one rule set
+- [x] This slice writes a scheduled entry as the block gives it; slice 10 owns the run of a scheduled entry, and no spec of this slice runs one
+- [x] The `credentials` list of a job is an array of names; the block key `credentials` is an object that gives details for a name of such a list: `prompt` (string, 200 characters at most), `required` (boolean, default `true`), `meta` (object: key → `{ prompt, default? }`) and `source`
+- [x] A name in a job list with no details is required, and its prompt is the name; a details key that no job lists is an error
+- [x] `<source>/<name>` must pass `validateCredentialName`, so the length of a name is the limit of that check; a block has 16 credential names at most, counted as the different names of all job lists; a name is in one job list one time at most
+- [x] A `meta` key that matches `/value|secret|token|password/i`, or that is `provider` or `createdBy`, is refused: `validateCredentialMeta` refuses such a key at the store; also refuse the block `meta` keys `scopes` and `expiresAt`: the store gives them a structure that a text answer cannot have
+- [x] `source` accepts one shape and no other: `{ "type": "aws-secretsmanager", "secretId", "region", "key"?, "profile"? }`; the `type` key is necessary, so a later bundle can add a type
+- [x] Each value of a `source` is a string that does not start with `-`; `region` matches `^[a-z0-9-]+$`; each other key of a `source` is an error that names the key
+- [x] A `source` is data only: the block cannot give a command, and this slice starts no `aws` process
+- [x] `declarationHash` is the SHA-256 hex of the JSON text of the `dg` value with object keys sorted at each level; it covers `credentials`, so a change of a credential asks again at `update`
+- [x] Export from job-source.ts the deps type of the source commands, `JobSourceDeps extends JobVerbDeps` (slice 9): it adds only `runGit(args, options): Promise<{ code, stdout, stderr }>` and `runBuild(argv, cwd): Promise<number>`; `confirm`, `isTerminal` and `which` come from the base type; each action takes it as a seam
+- [x] Export `declarationHash` from declaration.ts, and `formatRequest` and `resolveRef` from job-source.ts; `sanitize` is in the new file pkg/dg-daemon/src/jobs/sanitize.ts with its spec pkg/dg-daemon/__tests__/jobs/sanitize.spec.ts, not in job-source.ts, and `formatRequest` imports it; slice 14 calls these exports, and slices 14, 15 and 18 import `sanitize` from that file
+- [x] `job add <git-url>[@ref]`: remove a leading `<scheme>://`, then find the last `@` of the remaining text; it separates the ref only when the text before it holds a `/` or a `:`; with no ref, the value is `null` and the default branch of the remote is used
+- [x] `add` refuses a URL or a ref that starts with `-`
+- [x] The source name is the text after the last `/` or `:` of the URL, without `.git`, in lower case; `--name <source name>` replaces it; it is a folder name and a credential prefix, so it must match the job name rule of pkg/dg-daemon/src/jobs/config.ts (64 characters at most); a source name is not a job name
+- [x] `add` refuses a source name of `RESERVED_CREDENTIAL_PREFIXES` (slice 12) with `job add: "<name>" is a reserved name — give another one with --name`
+- [x] `add` refuses a source name that the registry holds
+- [x] Before the clone, `add` refuses when the clone folder `jobSourceDir(paths, source)` exists
+- [x] `add` runs `git -c protocol.ext.allow=never clone --no-recurse-submodules -- <url> <jobSourceDir(paths, source)>` in the CLI process with the environment of the caller; the daemon runs no git command
+- [x] With a terminal, git gets the stdin of the caller; with no terminal, the git child gets `GIT_TERMINAL_PROMPT=0`
+- [x] `resolveRef(deps, cloneDir, ref, url)` gives a full commit id and runs, in this order: `git rev-parse --verify --end-of-options refs/tags/<ref>^{commit}`; `refs/remotes/origin/<ref>^{commit}`; for a value that matches `^[0-9a-f]{40}$`, `git cat-file -e <sha>^{commit}`; a ref that is a tag and a branch is the tag; `null` gives `origin/HEAD`; a ref that resolves to nothing, and a short commit id, exit 1 with `job add: ref "<ref>" does not resolve in <url>`
+- [x] `add` checks out the commit id, not the ref text: `git checkout --detach <40 hexadecimal characters> --`
+- [x] `add` reads the full 40-character commit id with `git rev-parse HEAD` after the checkout and stores it as `sha`
+- [x] The clone runs before the question, so it must run no code of the repository: no `--recurse-submodules`, and no command of the `dg` block before the answer `y`
+- [x] `add` refuses when a job name of the block is already in the `jobs` table of the daemon config
+- [x] dg sets `grant` to the source name on each written entry whose `credentials` list is not empty; an entry with an empty list gets no `grant`; the block cannot change this
+- [x] `add` prints the request before it asks: the source, the URL, the ref, the full sha, and for each job the `argv`, the mode key with its value, `feed`, `notify`, `timeoutMs`, `envFile` (the absolute path that the entry will store) and `stopTimeoutMs`
+- [x] The request then shows the line `credential prefix: <source>/`, then one line for each credential with its name, `required` or `optional`, its `prompt`, its source type with each key of the `source`, and the jobs that list it; then `requires` and `build` as written in the block
+- [x] Each text of the request that comes from the repository goes through `sanitize`, which replaces each control character (U+0000 to U+001F, U+007F to U+009F) and each of U+202A to U+202E, U+2066 to U+2069, U+200B to U+200F, U+FEFF, U+2028 and U+2029 with a visible escape of the form `\u{…}`; the first stderr line of git in `git clone failed: …` also goes through `sanitize`
+- [x] On a terminal, `add` asks `Add these jobs? [y/N]`; only `y` or `yes` in any letter case continues
+- [x] An empty line, an end of input and an interrupted read are the answer `no`
+- [x] `add` accepts `--yes` for a URL: it prints the request, asks no question and continues as after the answer `y`, with a terminal or with none
+- [x] When stdin or stdout is not a terminal and `--yes` is not given, `add` prints the request, then fails; it asks no question
+- [x] `--yes` is the one option that gives consent; add no `--accept` option
+- [x] The terminal check is the `isTerminal` seam of the deps type
+- [x] Each `add` failure and a `no` answer remove the clone with `removeInside(paths.jobsDir, cloneDir)`, only when this run made the clone, and write nothing to the daemon config or the registry
+- [x] An interrupt (Ctrl-C) between the clone and the write removes the clone
+- [x] `add` takes the config lock of `withConfigLock` one time, after `build`; inside the lock it reads the registry and the config again and checks again that the source name and each job name are free
+- [x] Inside the lock, `add` writes the registry record first, then each job entry through `writeJobEntry`; a process that stops between the two leaves a record with no entry, and `job remove <name>` removes it
+- [x] When a step inside the lock throws, `add` removes the record and each entry that this run wrote (`writeJobEntry(paths, name, undefined)` removes an entry) and removes the clone; when the rollback also fails, the command prints the two errors and names what stays
+- [x] `writeJobEntry` puts a written entry last in the `jobs` table; the order of the table is not a contract
+- [x] `add` writes no `enabled` key; `job enable` sets it
+- [x] `add` creates `jobStateDir(paths, name)` for each job with `ensurePrivateDir`
+- [x] The record stores the `credentials` details that the owner saw; `enable` and `setup` of slice 15 read the record, not the file in the clone
+- [x] Exit 0 prints `added jobs from "<source>" at <first 12 characters of sha>: <names joined with a comma and a space>`, then one line `next: dg job enable <name>` for each job
+- [x] `job remove <job>` on a repository job uses the guards of the command-job `remove` of slice 9: `assertDaemonAnswers`, the refusal of a `running` or `backoff` job on a live daemon, and `assertNoLiveInstance`
+- [x] `job remove <job>` on a repository job removes that entry and takes the name out of the record; when the record has no job left, it removes the record, then the clone with `removeInside(paths.jobsDir, cloneDir)`
+- [x] `job remove` keeps each state folder, each stored credential and the grant; it prints `kept state: <path>`, and `kept credentials below <source>/` when the job lists a credential
+- [x] `remove` is safe to run again: an entry, a registry record or a clone that is absent is not a failure
+- [x] `job list` and `job status` show `<source>@<first 12 characters of sha>` on the row of a repository job; the `--json` row gets the keys `source`, `ref` and `sha`
+- [x] New failures throw `DgCliError(message, EXIT_GENERAL_FAILURE)`
+- [x] Build the fixture repository in a temp directory at test time (`git init`, one commit with a package.json that has a `dg` block), and clone it with a `file://` URL; do not add a git repository to the tree
+- [x] pkg/dg-daemon/__tests__/commands/job-source-kit.ts exports `makeRepo({ dg, files }): { dir, sha }` and `commit(repo, { dg, files, tag, branch }): string`; slice 14 adds commits with `commit` and does not write the kit again
+- [x] Test the consent step in process with the `confirm` seam of the deps type; a subprocess has no terminal
+- [x] The specs that need a live daemon or a subprocess (the Happy path, Edge and Error lines of this slice) are in job-add-git.spec.ts and use daemon-harness.ts as it is; each other spec runs in process with the seams
+- [x] No spec starts `git` with a network URL; the clone failure Contract uses a `file://` path that does not exist
+- [x] The Contracts that say `start no git process` count the calls of the `runGit` seam
+- [x] The specs make each executable in a temp folder and give it through the `which` seam; they do not use the PATH of the machine
+- [x] Do not edit pkg/dg-daemon/src/main.ts, pkg/common/src/node/index.ts, pkg/dg-daemon/src/commands/job-support.ts or pkg/dg-daemon/__tests__/utils/daemon-harness.ts
+- [x] Order of `add` for a URL: classify the argument; refuse `ext::`, `fd::`, a leading `-` and a password in the URL; refuse a flag that the block owns; make the source name and refuse a reserved name and a name that is already a credential prefix; check the registry; check that the clone folder is absent; clone; resolve the ref; check out the commit; read the commit id; read the block with `git show <sha>:package.json` (as `update` does, not from the working tree) and parse it; check the job names; check `requires`, each bare `argv[0]` name and `build[0]`; print the request; check `--yes` or the terminal; ask; run `build`; resolve each `argv[0]` path in the clone; take the lock; check the registry, the names and the prefix again; write the registry record; write the entries; print the result
+- [x] The clone and its network traffic occur before the terminal check on purpose: with no terminal the command still prints the request
+- [x] A relative `envFile` of the block resolves below `jobStateDir(paths, name)`; the stored entry holds the absolute path
+- [x] `parseJobDeclaration` refuses an absolute `envFile`, and a relative `envFile` that leaves the state folder of its job (use `insideRoot`)
+- [x] `add` does not create the env file; for each job with an `envFile` that does not exist, it prints the path after the result
+- [x] job-source.ts resolves `argv[0]` of a block entry in two steps; before the question, a bare name must resolve with `resolveExecutable(name, "job add:", deps.which)` of job-support.ts (the third parameter of slice 9), and the result is the stored value; a name with a path separator uses only the clone step, not the path branch of `resolveExecutable`
+- [x] After `build` and before the first write, a name with a path separator resolves from the clone folder; its real path (`realpathSync`) must be inside the real path of the clone, must exist and must be executable; the stored value is the absolute path inside the clone
+- [x] `requires` is an array of executable names with no path separator; `add` checks each name with the `which` seam of the deps type before the question; the default of that seam is `Bun.which`
+- [x] `build` is one argv: a non-empty array of non-empty strings; `add` runs it one time, after the answer `y` or `--yes` and before the first write, in the clone folder, with no shell, with the environment and the terminal of the caller
+- [x] A `build` that does not start, or that exits with a code other than 0, fails the `add`: the clone is removed and nothing is written
+- [x] A block with no `build` runs no command
+- [x] After the option change, run `bun scripts/completion-trees.ts dg-daemon` and commit pkg/dg-daemon/src/completion-tree.json; do not edit the JSON by hand
+- [x] Refuse a URL whose user part holds `:` with `job add: put no password in the URL — use a git credential helper or an ssh key`, before a git process starts; remove the user part from each URL that dg prints
+- [x] Limits of a block: a package.json of 256 KiB at most; 16 jobs; 64 `argv` items for a job; 1024 characters for a string; 200 characters for a `meta` `prompt` and `default` [DECIDED — post-apply item 4]
+- [x] Export `assertPrefixFree(name, config, registry, errorPrefix)` from job-source.ts: it refuses a name that is a reserved name, a job name of the `jobs` table, the `grant` of an entry or a key of the registry, with `<errorPrefix> "<name>" is already used as a credential prefix by <job or source name>` (for example `job add: "poll" is already used …`); it is the one clash check, and slices 15 and 16 call it
+- [x] `add` of a URL calls `assertPrefixFree` for the source name before the clone, and again inside the lock with the other checks; `add` of a command job (jobs.ts) calls it for the job name
+- [x] The record of this slice has no `prefixAccepted` key
+- [x] A `git` program that is absent gives `job add: git is not installed` (check with the `which` seam, or catch the synchronous `ENOENT` of `Bun.spawn`)
+- [x] A `build[0]` that does not start gives `job add: build did not start: <build[0]>`
+- [x] `build[0]` follows the rule of `argv[0]`: a bare name resolves with the `which` seam; a name with a separator resolves from the clone folder, and its real path must be inside the clone; the check runs before the question, so the request shows the resolved path
+- [x] The clone and the checkout run with `GIT_LFS_SKIP_SMUDGE=1` and `-c protocol.fd.allow=never` next to `protocol.ext.allow=never`
+- [x] With no terminal, and when the caller has no `GIT_SSH_COMMAND`, set `GIT_SSH_COMMAND` to `ssh -o BatchMode=yes`
+- [x] declaration.ts imports no git code and no `node:child_process`, because slice 17 imports it from the launcher
+- [x] Until slice 14, `job update <job>` on a repository job exits 1 with `job update: a repository job is not supported yet`
+- [x] sources.ts exports `findRecordByJob(registry, job)`; `remove`, `update` and the refresh operation of slice 18 use it
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: the registry file is `{ "<source>": { "kind": "git", "url", "ref", "sha", "jobs", "declarationHash", "credentials" } }`; `sha` has 40 hexadecimal characters; `ref` is a string or `null`
-- [ ] Contract: `classifySource` gives `git` for `https://host/org/bot`, `git@host:org/bot.git`, `ssh://git@host/org/bot.git` and `file:///tmp/bot`; it gives `path` for `./bot.ts`, `../bot`, `/tmp/bot`, `~/bot.ts` and `C:\bots\bot.ts`; `bot.ts` exits 1 with the `is not a path or a URL` text
-- [ ] Contract: `parseJobDeclaration` on `{ "dg": { "jobs": { "bot-dev": { "argv": ["bun", "run", "bot.ts"], "continuous": true } } } }` gives one valid entry with `cwd` equal to the clone directory
-- [ ] Contract: a package.json with no `dg` key fails with `job add: <url> has no "dg" key in package.json`
-- [ ] Contract: a job key or a `dg` key that is not in the accepted lists fails with `job add: unknown key(s): <names>`
-- [ ] Contract: an entry that `parseJobEntry` refuses fails with `job add: job "<name>": <validator error>`
-- [ ] Contract: a block job with `"grant": "x"` fails with `job add: job "<name>": the key "grant" is set by dg`; the same form names `cwd`, `enabled` and `passEnv`
-- [ ] Contract: a block job with no mode key fails with the `give exactly one of` text of slice 8
-- [ ] Contract: a job with `"credentials": ["a"]` gets `grant` equal to the source name; a job with no `credentials` gets no `grant`
-- [ ] Contract: a `source` with `"type": "command"` fails with `job add: credential "<name>": unknown source type "command"`
-- [ ] Contract: a `source` with `"type": "azure-keyvault"` fails with `job add: credential "<name>": unknown source type "azure-keyvault"`; a `secretId` value `-x` fails with `job add: credential "<name>": "secretId" is not valid`
-- [ ] Contract: a `meta` key `apiToken` fails with `job add: credential "<name>": the meta key "apiToken" looks like a secret`
-- [ ] Contract: a details key that no job lists fails with `job add: credential "<name>" is not in the "credentials" list of a job`
-- [ ] Contract: a block with 17 credential names fails with `job add: a "dg" block can declare 16 credentials at most`
-- [ ] Contract: `git@host:org/bot.git@v1.2.0` gives the URL `git@host:org/bot.git`, the ref `v1.2.0` and the source `bot`; `git@host:org/bot.git` gives the ref `null`; `https://host/org/Bot` gives the source `bot`
-- [ ] Contract: `git@host:bot.git` gives the ref `null` and the source `bot`; `ssh://git@host/org/bot.git` gives the ref `null`; `https://host/org/bot@release/1.0` gives the ref `release/1.0`; `file:///tmp/bot@v1` gives the URL `file:///tmp/bot` and the ref `v1`
-- [ ] Contract: `job add https://host/org/bot@-x` exits 1 with `job add: a URL or a ref cannot start with "-"`, and starts no git process
-- [ ] Contract: a URL whose last segment does not match the name rule fails with `job add: cannot use "<segment>" as a source name — give one with --name`
-- [ ] Contract: `job add <url> --name tools` uses the clone folder `<data>/jobs/tools` and the credential prefix `tools/`
-- [ ] Contract: a source named `pw` exits 1 with the `reserved name` text and starts no git process
-- [ ] Contract: `job add <url> --every 15m` exits 1 with the `declares this in its "dg" block` text and starts no git process
-- [ ] Contract: `add` exit 0 prints `added jobs from "<source>" at <first 12 characters of sha>: <names joined with a comma and a space>`, then one line `next: dg job enable <name>` for each job
-- [ ] Contract: a second `add` of the same source name exits 1 with `source "<source>" is already added from <url> — run dg job update <job>`
-- [ ] Contract: a job name that the `jobs` table holds exits 1 with `job add: a job named "<name>" already exists`
-- [ ] Contract: a `no` answer exits 1 with `job add: declined; nothing was added`
-- [ ] Contract: a failed `git clone` exits 1 with `job add: git clone failed: <first line of the git stderr>`
-- [ ] Contract: after each failure, a clone directory that this run made is absent, and the bytes of the daemon config and of sources.json do not change
-- [ ] Contract: each written entry passes `parseJobs`, has an absolute `cwd` equal to `jobSourceDir(paths, source)`, and has no `enabled` key and no key outside the keys of `parseJobEntry`
-- [ ] Contract: the request text holds the credential prefix line and one line for each credential; a `prompt` with an ESC byte shows the visible escape
-- [ ] Contract: the request line of a credential with a source shows the type `aws-secretsmanager` and the values of `secretId`, `region`, `key` and `profile`
-- [ ] Contract: the record holds `credentials` deep-equal to the block value
-- [ ] Contract: with two jobs of one repository, `job remove <first>` keeps the clone and the record with one job; `job remove <second>` removes the record and the clone; the two state folders exist after it
-- [ ] Contract: `remove` exit 0 prints `removed job "<name>"`, then `kept state: <path>`
-- [ ] Contract: `remove` of a `running` or `backoff` repository job on a live daemon exits 1 with `job "<name>" is <state> — stop it first with dg job stop <name>`, and changes no file
-- [ ] Contract: with a daemon pid that is alive and does not answer, `remove` exits 1 with the `does not answer` text of `service rm` and changes no file
-- [ ] Contract: with an instance pid file that names a live process, `remove` exits 1 with the `still runs as pid` text of `service rm` and changes no file
-- [ ] Contract: with no registry record and an existing clone folder (a `remove` that stopped before its last step), `add` exits 1 with `job add: <path> already exists — remove it, then run the command again`, starts no git process, and leaves the folder
-- [ ] Contract: `job list --json` gives a repository job the keys `source`, `ref` and `sha` with 40 characters; the text row shows `<source>@<first 12 characters of sha>`
-- [ ] Contract: a block entry with `"envFile": "bot.env"` gives the stored `envFile` `<state>/jobs/<name>/bot.env`
-- [ ] Contract: `"envFile": "/abs/bot.env"` and `"envFile": "../bot.env"` fail with `job add: job "<name>": "envFile" must be a relative path inside the state folder of the job`
-- [ ] Contract: for each job whose `envFile` does not exist, exit 0 also prints `next: create <absolute envFile path> with mode 600 before you start <name>`
-- [ ] Contract: each stored `argv[0]` is an absolute path: `["tool", "run"]` stores the path that the `which` seam gives for `tool`, and `["./bin/run"]` stores `<clone>/bin/run`
-- [ ] Contract: `["../x"]` fails with `job add: job "<name>": "argv" must stay inside the repository`; a bare name that does not resolve fails with `job add: executable "<name>" does not resolve on PATH`
-- [ ] Contract: `"requires": ["nope-tool"]` exits 1 with `job add: required executable(s) do not resolve on PATH: nope-tool` before the question; the `confirm` seam gets no call
-- [ ] Contract: a `requires` value that is not an array of names with no path separator fails with `job add: "requires" must be an array of executable names`
-- [ ] Contract: a `build` value that is not a non-empty array of non-empty strings fails with `job add: "build" must be a non-empty array of non-empty strings`
-- [ ] Contract: `build` runs one time, with the clone folder as its working directory, after the `confirm` seam returns true and before sources.json exists
-- [ ] Contract: a `build` that exits with 3 makes `add` exit 1 with `job add: build failed (exit 3): <argv joined with spaces>`; the clone is absent and no file changed
-- [ ] Contract: a `no` answer runs no `build`
-- [ ] Contract: with stdin that is not a terminal and no `--yes`, `add` prints the request text on stdout, exits 1 with `job add: consent needs a terminal — run this command in a terminal yourself, or give --yes` on stderr, leaves no clone, and writes nothing
-- [ ] Contract: with stdin that is not a terminal, `job add <url> --yes` prints the request text, calls the `confirm` seam zero times, runs `build`, writes the entries and the record, and exits 0
-- [ ] Contract: with a terminal, `job add <url> --yes` calls the `confirm` seam zero times
-- [ ] Contract: `job add --accept x <url>` exits 1 with the unknown-option error of commander, and starts no git process
-- [ ] Contract: `add file://<path>@<branch>` pins the head of that branch when the default branch is a different branch
-- [ ] Contract: `job add 'ext::sh -c "touch <marker>"'` exits 1 with `job add: the URL scheme "ext::" is not allowed`, starts no git process, and the marker does not exist
-- [ ] Contract: with no terminal, the environment of the clone process holds `GIT_TERMINAL_PROMPT=0`
-- [ ] Contract: a `build` that creates `./dist/bot` and an `argv` of `["./dist/bot"]` adds the job
-- [ ] Contract: an `argv[0]` that is a link to a file outside the clone fails with `job add: job "<name>": "argv" must stay inside the repository`; the clone is absent and no file changed
-- [ ] Contract: with an injected failure of the second entry write, the bytes of the daemon config and of sources.json are equal to the bytes before, and the clone is absent
-- [ ] Contract: when the `confirm` seam rejects with an abort, the clone is absent and no file changed
-- [ ] Contract: an `argv` value that holds `ESC[2K` shows the text `\u{1b}[2K` in the request, and stdout holds no ESC byte
-- [ ] Contract: an empty answer exits 1 with the `declined` text
-- [ ] Contract: `job add <url>` with a sources.json that is not a JSON object exits 1, names the file, and starts no git process
-- [ ] Contract: a record with a `sha` that is not 40 hexadecimal characters, or with `jobs` that is not an array of names, makes the registry reader throw an `Error` that names the file and the source
-- [ ] Contract: a `dg` block with no job exits 1 with `job add: <url> declares no jobs`; the clone is absent
-- [ ] Contract: `add https://host/org/Bot` after `add https://host/org/bot` exits 1 with the `already added` text
-- [ ] Contract: the registry stores the full `sha`; only the printed form has 12 characters
-- [ ] Happy path: `add` from a `file://` fixture repository with two jobs and three credentials writes two entries with one `grant` and one registry record whose `sha` is equal to `git rev-parse HEAD` of the fixture
-- [ ] Happy path: `add file://<path>@<tag>` pins the commit of the tag when the default branch has a newer commit
-- [ ] Happy path: `add`, then `remove` of each job, leaves no clone and no record, and a `jobs` table that is deep-equal to the table before
-- [ ] Edge: `add` keeps `pinnedOrigin` and each entry of a command job
-- [ ] Edge: `remove` of a repository job keeps each command job
-- [ ] Edge: `remove` with no live daemon removes the job and makes no HTTP call
-- [ ] Edge: an entry that a repository wrote can be started: with a live daemon, `job start <name>` gives the state `running` and the child has the clone directory as its working directory
-- [ ] Error: `add` on a daemon config that is not valid JSON exits 1, names the file, and removes the clone
-- [ ] Happy path: a fixture repository with `envFile` and `build` adds its job; its `build` writes a marker file in the clone; with the env file in place, the job starts and prints the value of `DG_SERVICE_STATE_DIR`
-- [ ] Regression: `bun test` and `bun run lint` pass in pkg/dg-daemon; pkg/launcher/__tests__/size-budget.spec.ts passes; a spec asserts that jobs.ts has no static import of job-source.ts, sources.ts or declaration.ts, and that `src/server/`, `jobs/launcher.ts` and `services/supervisor.ts` hold no git command
-- [ ] Contract: `parseJobDeclaration` returns the shape `{ ok: true, jobs, credentials, requires, build }` for a valid block and `{ ok: false, error }` for a block that is not valid, and does not throw
-- [ ] Contract: `https://user:pw@host/org/bot` is refused with the `put no password in the URL` text and starts no git process; `https://user@host/org/bot` is valid with the ref `null`
-- [ ] Contract: `sanitize` shows a visible escape for one character of each added range: U+202E, U+2066, U+200B, U+FEFF and U+2028
-- [ ] Contract: a git stderr line with an ESC byte shows the visible escape in the `git clone failed` text
-- [ ] Contract: one refusal case for each limit of a block: a package.json above 256 KiB, 17 jobs, 65 `argv` items, a string of 1025 characters, and a `meta` `prompt` or `default` of 201 characters
-- [ ] Contract: a `package.json` that is a link to a file outside the clone fails and shows no content of that file
-- [ ] Contract: a source whose name is a job name of the `jobs` table or the `grant` of an entry is refused with the `is already used as a credential prefix by` text and starts no git process
-- [ ] Contract: a command job whose name is a key of the registry is refused with the same text
-- [ ] Contract: `resolveRef` cases: an annotated tag gives its commit; a tag and a branch with one name give the tag; a full commit id passes; an unknown ref exits 1 with the `does not resolve in` text
-- [ ] Contract (with the seams): an absent `git` exits 1 with `job add: git is not installed`
-- [ ] Contract (with the seams): a `build[0]` that does not start exits 1 with `job add: build did not start: <build[0]>`
-- [ ] Contract: a `build[0]` that is a link to a file outside the clone is refused
-- [ ] Contract: a process that stops between the record write and the entry writes leaves a record with no entry, and `job remove <name>` removes that record
-- [ ] Contract: the environment and the argv of the `runGit` seam hold `GIT_LFS_SKIP_SMUDGE=1`, `-c protocol.fd.allow=never` and, with no terminal and no `GIT_SSH_COMMAND` of the caller, `GIT_SSH_COMMAND=ssh -o BatchMode=yes`
-- [ ] Contract: SIGINT and SIGTERM during `build` stop the build child, remove the clone and change no file; SIGHUP also removes the clone of this run; the lock is taken after `build`, so a signal during `build` holds no lock
-- [ ] Contract (in job-add-git.spec.ts, until slice 14): `job update <job>` on a repository job exits 1 with `job update: a repository job is not supported yet`
+- [x] Contract: the registry file is `{ "<source>": { "kind": "git", "url", "ref", "sha", "jobs", "declarationHash", "credentials" } }`; `sha` has 40 hexadecimal characters; `ref` is a string or `null`
+- [x] Contract: `classifySource` gives `git` for `https://host/org/bot`, `git@host:org/bot.git`, `ssh://git@host/org/bot.git` and `file:///tmp/bot`; it gives `path` for `./bot.ts`, `../bot`, `/tmp/bot`, `~/bot.ts` and `C:\bots\bot.ts`; `bot.ts` exits 1 with the `is not a path or a URL` text
+- [x] Contract: `parseJobDeclaration` on `{ "dg": { "jobs": { "bot-dev": { "argv": ["bun", "run", "bot.ts"], "continuous": true } } } }` gives one valid entry with `cwd` equal to the clone directory
+- [x] Contract: a package.json with no `dg` key fails with `job add: <url> has no "dg" key in package.json`
+- [x] Contract: a job key or a `dg` key that is not in the accepted lists fails with `job add: unknown key(s): <names>`
+- [x] Contract: an entry that `parseJobEntry` refuses fails with `job add: job "<name>": <validator error>`
+- [x] Contract: a block job with `"grant": "x"` fails with `job add: job "<name>": the key "grant" is set by dg`; the same form names `cwd`, `enabled` and `passEnv`
+- [x] Contract: a block job with no mode key fails with the `give exactly one of` text of slice 8
+- [x] Contract: a job with `"credentials": ["a"]` gets `grant` equal to the source name; a job with no `credentials` gets no `grant`
+- [x] Contract: a `source` with `"type": "command"` fails with `job add: credential "<name>": unknown source type "command"`
+- [x] Contract: a `source` with `"type": "azure-keyvault"` fails with `job add: credential "<name>": unknown source type "azure-keyvault"`; a `secretId` value `-x` fails with `job add: credential "<name>": "secretId" is not valid`
+- [x] Contract: a `meta` key `apiToken` fails with `job add: credential "<name>": the meta key "apiToken" looks like a secret`
+- [x] Contract: a details key that no job lists fails with `job add: credential "<name>" is not in the "credentials" list of a job`
+- [x] Contract: a block with 17 credential names fails with `job add: a "dg" block can declare 16 credentials at most`
+- [x] Contract: `git@host:org/bot.git@v1.2.0` gives the URL `git@host:org/bot.git`, the ref `v1.2.0` and the source `bot`; `git@host:org/bot.git` gives the ref `null`; `https://host/org/Bot` gives the source `bot`
+- [x] Contract: `git@host:bot.git` gives the ref `null` and the source `bot`; `ssh://git@host/org/bot.git` gives the ref `null`; `https://host/org/bot@release/1.0` gives the ref `release/1.0`; `file:///tmp/bot@v1` gives the URL `file:///tmp/bot` and the ref `v1`
+- [x] Contract: `job add https://host/org/bot@-x` exits 1 with `job add: a URL or a ref cannot start with "-"`, and starts no git process
+- [x] Contract: a URL whose last segment does not match the name rule fails with `job add: cannot use "<segment>" as a source name — give one with --name`
+- [x] Contract: `job add <url> --name tools` uses the clone folder `<data>/jobs/tools` and the credential prefix `tools/`
+- [x] Contract: a source named `pw` exits 1 with the `reserved name` text and starts no git process
+- [x] Contract: `job add <url> --every 15m` exits 1 with the `declares this in its "dg" block` text and starts no git process
+- [x] Contract: `add` exit 0 prints `added jobs from "<source>" at <first 12 characters of sha>: <names joined with a comma and a space>`, then one line `next: dg job enable <name>` for each job
+- [x] Contract: a second `add` of the same source name exits 1 with `source "<source>" is already added from <url> — run dg job update <job>`
+- [x] Contract: a job name that the `jobs` table holds exits 1 with `job add: a job named "<name>" already exists`
+- [x] Contract: a `no` answer exits 1 with `job add: declined; nothing was added`
+- [x] Contract: a failed `git clone` exits 1 with `job add: git clone failed: <first line of the git stderr>`
+- [x] Contract: after each failure, a clone directory that this run made is absent, and the bytes of the daemon config and of sources.json do not change
+- [x] Contract: each written entry passes `parseJobs`, has an absolute `cwd` equal to `jobSourceDir(paths, source)`, and has no `enabled` key and no key outside the keys of `parseJobEntry`
+- [x] Contract: the request text holds the credential prefix line and one line for each credential; a `prompt` with an ESC byte shows the visible escape
+- [x] Contract: the request line of a credential with a source shows the type `aws-secretsmanager` and the values of `secretId`, `region`, `key` and `profile`
+- [x] Contract: the record holds `credentials` deep-equal to the block value
+- [x] Contract: with two jobs of one repository, `job remove <first>` keeps the clone and the record with one job; `job remove <second>` removes the record and the clone; the two state folders exist after it
+- [x] Contract: `remove` exit 0 prints `removed job "<name>"`, then `kept state: <path>`
+- [x] Contract: `remove` of a `running` or `backoff` repository job on a live daemon exits 1 with `job "<name>" is <state> — stop it first with dg job stop <name>`, and changes no file
+- [x] Contract: with a daemon pid that is alive and does not answer, `remove` exits 1 with the `does not answer` text of `service rm` and changes no file
+- [x] Contract: with an instance pid file that names a live process, `remove` exits 1 with the `still runs as pid` text of `service rm` and changes no file
+- [x] Contract: with no registry record and an existing clone folder (a `remove` that stopped before its last step), `add` exits 1 with `job add: <path> already exists — remove it, then run the command again`, starts no git process, and leaves the folder
+- [x] Contract: `job list --json` gives a repository job the keys `source`, `ref` and `sha` with 40 characters; the text row shows `<source>@<first 12 characters of sha>`
+- [x] Contract: a block entry with `"envFile": "bot.env"` gives the stored `envFile` `<state>/jobs/<name>/bot.env`
+- [x] Contract: `"envFile": "/abs/bot.env"` and `"envFile": "../bot.env"` fail with `job add: job "<name>": "envFile" must be a relative path inside the state folder of the job`
+- [x] Contract: for each job whose `envFile` does not exist, exit 0 also prints `next: create <absolute envFile path> with mode 600 before you start <name>`
+- [x] Contract: each stored `argv[0]` is an absolute path: `["tool", "run"]` stores the path that the `which` seam gives for `tool`, and `["./bin/run"]` stores `<clone>/bin/run`
+- [x] Contract: `["../x"]` fails with `job add: job "<name>": "argv" must stay inside the repository`; a bare name that does not resolve fails with `job add: executable "<name>" does not resolve on PATH`
+- [x] Contract: `"requires": ["nope-tool"]` exits 1 with `job add: required executable(s) do not resolve on PATH: nope-tool` before the question; the `confirm` seam gets no call
+- [x] Contract: a `requires` value that is not an array of names with no path separator fails with `job add: "requires" must be an array of executable names`
+- [x] Contract: a `build` value that is not a non-empty array of non-empty strings fails with `job add: "build" must be a non-empty array of non-empty strings`
+- [x] Contract: `build` runs one time, with the clone folder as its working directory, after the `confirm` seam returns true and before sources.json exists
+- [x] Contract: a `build` that exits with 3 makes `add` exit 1 with `job add: build failed (exit 3): <argv joined with spaces>`; the clone is absent and no file changed
+- [x] Contract: a `no` answer runs no `build`
+- [x] Contract: with stdin that is not a terminal and no `--yes`, `add` prints the request text on stdout, exits 1 with `job add: consent needs a terminal — run this command in a terminal yourself, or give --yes` on stderr, leaves no clone, and writes nothing
+- [x] Contract: with stdin that is not a terminal, `job add <url> --yes` prints the request text, calls the `confirm` seam zero times, runs `build`, writes the entries and the record, and exits 0
+- [x] Contract: with a terminal, `job add <url> --yes` calls the `confirm` seam zero times
+- [x] Contract: `job add --accept x <url>` exits 1 with the unknown-option error of commander, and starts no git process
+- [x] Contract: `add file://<path>@<branch>` pins the head of that branch when the default branch is a different branch
+- [x] Contract: `job add 'ext::sh -c "touch <marker>"'` exits 1 with `job add: the URL scheme "ext::" is not allowed`, starts no git process, and the marker does not exist
+- [x] Contract: with no terminal, the environment of the clone process holds `GIT_TERMINAL_PROMPT=0`
+- [x] Contract: a `build` that creates `./dist/bot` and an `argv` of `["./dist/bot"]` adds the job
+- [x] Contract: an `argv[0]` that is a link to a file outside the clone fails with `job add: job "<name>": "argv" must stay inside the repository`; the clone is absent and no file changed
+- [x] Contract: with an injected failure of the second entry write, the bytes of the daemon config and of sources.json are equal to the bytes before, and the clone is absent
+- [x] Contract: when the `confirm` seam rejects with an abort, the clone is absent and no file changed
+- [x] Contract: an `argv` value that holds `ESC[2K` shows the text `\u{1b}[2K` in the request, and stdout holds no ESC byte
+- [x] Contract: an empty answer exits 1 with the `declined` text
+- [x] Contract: `job add <url>` with a sources.json that is not a JSON object exits 1, names the file, and starts no git process
+- [x] Contract: a record with a `sha` that is not 40 hexadecimal characters, or with `jobs` that is not an array of names, makes the registry reader throw an `Error` that names the file and the source
+- [x] Contract: a `dg` block with no job exits 1 with `job add: <url> declares no jobs`; the clone is absent
+- [x] Contract: `add https://host/org/Bot` after `add https://host/org/bot` exits 1 with the `already added` text
+- [x] Contract: the registry stores the full `sha`; only the printed form has 12 characters
+- [x] Happy path: `add` from a `file://` fixture repository with two jobs and three credentials writes two entries with one `grant` and one registry record whose `sha` is equal to `git rev-parse HEAD` of the fixture
+- [x] Happy path: `add file://<path>@<tag>` pins the commit of the tag when the default branch has a newer commit
+- [x] Happy path: `add`, then `remove` of each job, leaves no clone and no record, and a `jobs` table that is deep-equal to the table before
+- [x] Edge: `add` keeps `pinnedOrigin` and each entry of a command job
+- [x] Edge: `remove` of a repository job keeps each command job
+- [x] Edge: `remove` with no live daemon removes the job and makes no HTTP call
+- [x] Edge: an entry that a repository wrote can be started: with a live daemon, `job start <name>` gives the state `running` and the child has the clone directory as its working directory
+- [x] Error: `add` on a daemon config that is not valid JSON exits 1, names the file, and removes the clone
+- [x] Happy path: a fixture repository with `envFile` and `build` adds its job; its `build` writes a marker file in the clone; with the env file in place, the job starts and prints the value of `DG_SERVICE_STATE_DIR`
+- [x] Regression: `bun test` and `bun run lint` pass in pkg/dg-daemon; pkg/launcher/__tests__/size-budget.spec.ts passes; a spec asserts that jobs.ts has no static import of job-source.ts, sources.ts or declaration.ts, and that `src/server/`, `jobs/launcher.ts` and `services/supervisor.ts` hold no git command
+- [x] Contract: `parseJobDeclaration` returns the shape `{ ok: true, jobs, credentials, requires, build }` for a valid block and `{ ok: false, error }` for a block that is not valid, and does not throw
+- [x] Contract: `https://user:pw@host/org/bot` is refused with the `put no password in the URL` text and starts no git process; `https://user@host/org/bot` is valid with the ref `null`
+- [x] Contract: `sanitize` shows a visible escape for one character of each added range: U+202E, U+2066, U+200B, U+FEFF and U+2028
+- [x] Contract: a git stderr line with an ESC byte shows the visible escape in the `git clone failed` text
+- [x] Contract: one refusal case for each limit of a block: a package.json above 256 KiB, 17 jobs, 65 `argv` items, a string of 1025 characters, and a `meta` `prompt` or `default` of 201 characters
+- [x] Contract: a `package.json` that is a link to a file outside the clone fails and shows no content of that file
+- [x] Contract: a source whose name is a job name of the `jobs` table or the `grant` of an entry is refused with the `is already used as a credential prefix by` text and starts no git process
+- [x] Contract: a command job whose name is a key of the registry is refused with the same text
+- [x] Contract: `resolveRef` cases: an annotated tag gives its commit; a tag and a branch with one name give the tag; a full commit id passes; an unknown ref exits 1 with the `does not resolve in` text
+- [x] Contract (with the seams): an absent `git` exits 1 with `job add: git is not installed`
+- [x] Contract (with the seams): a `build[0]` that does not start exits 1 with `job add: build did not start: <build[0]>`
+- [x] Contract: a `build[0]` that is a link to a file outside the clone is refused
+- [x] Contract: a process that stops between the record write and the entry writes leaves a record with no entry, and `job remove <name>` removes that record
+- [x] Contract: the environment and the argv of the `runGit` seam hold `GIT_LFS_SKIP_SMUDGE=1`, `-c protocol.fd.allow=never` and, with no terminal and no `GIT_SSH_COMMAND` of the caller, `GIT_SSH_COMMAND=ssh -o BatchMode=yes`
+- [x] Contract: SIGINT and SIGTERM during `build` stop the build child, remove the clone and change no file; SIGHUP also removes the clone of this run; the lock is taken after `build`, so a signal during `build` holds no lock
+- [x] Contract (in job-add-git.spec.ts, until slice 14): `job update <job>` on a repository job exits 1 with `job update: a repository job is not supported yet`
 
 #### Acceptance Criteria
-- [ ] Given a repository with two jobs and three credentials, when the owner runs `dg job add <url>` and answers `y`, then the config holds two entries with one credential prefix and `cwd` in `<data>/jobs/<source>`, and the registry holds the URL, the ref, the full commit id and the credential details
-- [ ] Given the request text of `add`, when the owner reads it, then it shows the full commit id, each `argv`, `envFile` and `build` value, and each credential with its secret source, before the question
-- [ ] Given the answer `n`, when `add` ends, then no clone, no job entry and no registry record remain
-- [ ] Given a repository with two stopped jobs, when the owner removes the two jobs with `dg job remove`, then the entries, the registry record and the clone are gone, and the state folders and the stored credentials remain
-- [ ] Given pkg/dg-daemon/src, when a search for `git` runs in `server/`, `jobs/launcher.ts` and `services/supervisor.ts`, then it finds no git command
-- [ ] Given a block with `"envFile": "bot.env"`, when the job is added, then the entry points at `<state>/jobs/<name>/bot.env`, outside the clone
-- [ ] Given a block whose `requires` names a program that is not installed, when `add` runs, then it stops before the question and names the program
-- [ ] Given a `build` that fails, when `add` ends, then no clone, no job entry and no registry record remain
-- [ ] Given an agent session with no terminal, when it runs `dg job add <url>` with no `--yes`, then the command prints the request and exits 1
-- [ ] Given an agent session with no terminal, when it runs `dg job add <url> --yes`, then the command prints the request and adds the jobs with no question
+- [x] Given a repository with two jobs and three credentials, when the owner runs `dg job add <url>` and answers `y`, then the config holds two entries with one credential prefix and `cwd` in `<data>/jobs/<source>`, and the registry holds the URL, the ref, the full commit id and the credential details
+- [x] Given the request text of `add`, when the owner reads it, then it shows the full commit id, each `argv`, `envFile` and `build` value, and each credential with its secret source, before the question
+- [x] Given the answer `n`, when `add` ends, then no clone, no job entry and no registry record remain
+- [x] Given a repository with two stopped jobs, when the owner removes the two jobs with `dg job remove`, then the entries, the registry record and the clone are gone, and the state folders and the stored credentials remain
+- [x] Given pkg/dg-daemon/src, when a search for `git` runs in `server/`, `jobs/launcher.ts` and `services/supervisor.ts`, then it finds no git command
+- [x] Given a block with `"envFile": "bot.env"`, when the job is added, then the entry points at `<state>/jobs/<name>/bot.env`, outside the clone
+- [x] Given a block whose `requires` names a program that is not installed, when `add` runs, then it stops before the question and names the program
+- [x] Given a `build` that fails, when `add` ends, then no clone, no job entry and no registry record remain
+- [x] Given an agent session with no terminal, when it runs `dg job add <url>` with no `--yes`, then the command prints the request and exits 1
+- [x] Given an agent session with no terminal, when it runs `dg job add <url> --yes`, then the command prints the request and adds the jobs with no question
 
 ### Slice 14 — job-update
 
@@ -2416,6 +2416,7 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 
 ## Slice Summaries
 
+- Slice 13: dg job add <git-url>[@ref] clones with hardened git, pins the full commit id, reads the dg block from the committed package.json, prints a sanitized and quoted request, asks consent or takes --yes, runs build, then writes the registry record and the entries under the config lock with byte-exact rollback; job remove, list and status handle repository jobs.
 - Slice 12: POST /jobs/<name>/credentials is write-only for the credential prefix of one job (status, set, delete, ensure-grant, rotate-grant); the prefix is the grant of the job entry, read per request; createJobCredentialClient in @dg/common/node; RESERVED_CREDENTIAL_PREFIXES with a source-reading spec.
 - Slice 19: dg-skills channel-review export --env --label writes import.json (version 1) into the job state folder with mode 0600; it refuses a live daemon and reads state read-only; commands.md and the dg-skills completion tree list it.
 - Slice 11 (c4ba56e9): docs/jobs-and-services.md uses the noun job, with the verb table, the old and new table, the run rules, the move, the rollback and the limits; ADR 0049 records the job model; ADR 0043 and the ADR 0020 amendment link it; the jobs skill gets ## Job verbs. job-model-docs.spec.ts is new. Vale did not run (not installed); markdownlint is clean on the new files.
@@ -2472,6 +2473,15 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 - (slice 12, dg:js) HttpServerDeps requires readJobs; a hand-built deps object in a later spec must pass it. CredentialStore.inspectCredentialGrant verifies with no last_used_at write.
 - (slice 12, dg:js) Two jobs can share a prefix and one token file: slice 15 must not revoke a shared grant when it removes one job.
 - (slice 12, dg:js) writeNewGrant checks the layout and makes the token folder before it changes the grant row; a failed file write after that can still leave a stale row, which the next ensure-grant repairs (PR body).
+
+- (slice 13, dg:js) resolveRef(deps, cloneDir, ref, url) takes the URL for its error text; slice 14 needs a prefix argument or its own wrapper because the prefix is job add:.
+- (slice 13, dg:js) git(deps, args, cwd) in job-source.ts is not exported; clone argv is -c protocol.ext.allow=never -c protocol.fd.allow=never clone --quiet --no-recurse-submodules -- <url> <dir>; the git env drops each local-repo variable.
+- (slice 13, dg:js) parseJobDeclaration returns jobs as { name, entry }[] and credentials verbatim; describeCredentials(jobs, credentials) gives the normalized list; formatRequest takes an optional existingState map.
+- (slice 13, dg:js) sources.ts reader accepts only kind git; slice 16 must widen it. job-source.ts exports removeJobFromSource, addSource, defaultJobSourceDeps, splitGitArgument and displayUrl. registerJobCommands takes Partial<JobSourceDeps>.
+- (slice 13, dg:js) job-source-kit.ts exports makeRepo, commit, gitIn, fileUrl, jobDeclaration, makeTools, sandbox and runJob; sandbox sets DG_HOME and DG_KEY_SOURCE=file.
+- (slice 13, dg:js) A started repository job that lists credentials cannot start until slice 17.
+- (slice 13, dg:js) PR body behavior changes: --cwd is checked by addVerb (job add: --cwd is required), not by commander; --yes is new; the request quotes repository values.
+- (slice 13, dg:js) (orchestrator) Slice 13: a block job whose state folder already exists gets the request line 'state folder exists: <path> (kept from an earlier job)' (security review RATIFY, taken as option a: a two-way door). Signal handling exits 130/143/129 and a signal inside the lock leaves a record that job remove clears. Known gap: a token in the user part of an https URL is stored in sources.json and the clone config.
 
 ## Issues Remediation
 
