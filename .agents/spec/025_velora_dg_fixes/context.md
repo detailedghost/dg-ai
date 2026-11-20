@@ -3,7 +3,7 @@ feature: "Velora dg fixes"
 feature_snake_case: "velora_dg_fixes"
 date: "2026-11-20"
 version: "1.0"
-status: "draft"
+status: "in-progress"
 current_slice: 0
 pr_strategy: "single"
 bundle: "/home/detailedghost/code/worktrees/dg-ai-spec-025/.agents/spec/025_velora_dg_fixes"
@@ -27,6 +27,7 @@ slices:
     name: "prototype-sign-in-and-timeout"
     depends_on:
       - 1
+      - 4
     files:
       - "pkg/skills-cli/src/prototype/**"
       - "pkg/skills-cli/__tests__/prototype-*.spec.ts"
@@ -60,8 +61,7 @@ slices:
         - "dg:reviewer"
   - id: 4
     name: "stat-archive-and-bg-cwd"
-    depends_on:
-      - 2
+    depends_on: []
     files:
       - "pkg/skills-cli/src/stat/**"
       - "pkg/skills-cli/src/bg/jobs.ts"
