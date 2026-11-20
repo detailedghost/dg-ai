@@ -27,7 +27,7 @@ dg-skills db query my-pg "SELECT * FROM users LIMIT 10"
 
 ## Usage
 
-**Usage:** `dg-skills db <setup|query|tables|describe|explain|schema|connections|test> [arguments] [--session ID] [--write] [--limit N] [--format F] [--max-cell N] [--schema S] [--file file.sql]` (setup flags are in the Setup section)
+**Usage:** `dg-skills db <setup|query|tables|describe|explain|schema|connections|test> [arguments] [--session ID] [--write] [--limit N] [--format F] [--max-cell N] [--schema S] [--file file.sql]` (see [connections.md](references/connections.md) for the full setup flag list)
 
 ## Flags
 

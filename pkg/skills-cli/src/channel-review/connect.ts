@@ -9,7 +9,12 @@ import {
 	resolveEnv,
 	SENTRY_CREDENTIAL,
 } from "@dg/channel-review";
-import { type CredentialMeta, DgCliError, describeError } from "@dg/common";
+import {
+	type CredentialMeta,
+	DgCliError,
+	describeError,
+	shellValue,
+} from "@dg/common";
 import {
 	type CredentialClient,
 	createCredentialClient,
@@ -20,7 +25,6 @@ import {
 } from "@dg/common/node";
 import { promptHidden } from "../credentials/cli";
 import { guardedDest } from "../utils/layout-guard";
-import { shellValue } from "../worktree/shared";
 
 export const CONNECT_TOKEN_NAME = "channel-review-daemon";
 export const CONNECT_PROVIDERS = ["datadog", "sentry", "relay"] as const;

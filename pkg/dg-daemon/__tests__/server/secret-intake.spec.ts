@@ -355,7 +355,7 @@ describe("POST /secret-intake", () => {
 		expect((await submit({ code, value: VALUE })).status).toBe(204);
 	});
 
-	it("keeps the submitted value out of the daemon log and the database file", async () => {
+	it("keeps the submitted value out of the daemon log and the database files", async () => {
 		const { intake, submit, stored } = await boot();
 		const { code } = await intake();
 		expect((await submit({ code: "never-minted", value: `${VALUE}-refused` })).status).toBe(404);
@@ -367,7 +367,11 @@ describe("POST /secret-intake", () => {
 
 		expect(log).not.toContain(VALUE);
 		expect(log).not.toContain(code);
-		expect(scanFileForBytes(paths.dbPath, VALUE)).toBe(false);
+		for (const base of [paths.dbPath, paths.credentialsDbPath]) {
+			for (const file of [base, `${base}-wal`, `${base}-shm`]) {
+				expect(scanFileForBytes(file, VALUE)).toBe(false);
+			}
+		}
 	});
 });
 
@@ -444,6 +448,35 @@ describe("secret intake handlers", () => {
 
 		expect(response.status).toBe(500);
 		expect(await response.text()).not.toContain(VALUE);
+	});
+
+	it("keeps the code usable after a storage failure so the retry can succeed", async () => {
+		const { codes, limiter, stored } = setup();
+		const code = codes.mint(intent);
+		let failing = true;
+		const credentials = {
+			setCredential(name: string, value: string, meta: unknown) {
+				if (failing) throw new Error("disk full");
+				stored.push({ name, value, meta });
+			},
+		};
+		const send = () =>
+			handleSecretIntake(
+				new Request(`${origin}${SECRET_INTAKE_PATH}`, {
+					method: "POST",
+					headers: { Origin: origin, "Content-Type": "application/json" },
+					body: JSON.stringify({ code, value: VALUE }),
+				}),
+				{ port, credentials },
+				codes,
+				limiter,
+			);
+
+		expect((await send()).status).toBe(500);
+		failing = false;
+		expect((await send()).status).toBe(204);
+		expect((await send()).status).toBe(404);
+		expect(stored).toHaveLength(1);
 	});
 
 	it("name lookup answers 429 once the shared limiter cap is spent", () => {

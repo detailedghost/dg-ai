@@ -15,6 +15,10 @@ function clock(start = 1_000_000) {
 }
 
 describe("createPageCodes", () => {
+	it("keeps a secret intent for 120 seconds", () => {
+		expect(SECRET_INTENT_TTL_MS).toBe(120_000);
+	});
+
 	it("redeems a minted code once for the session it was minted for", () => {
 		const codes = createPageCodes();
 

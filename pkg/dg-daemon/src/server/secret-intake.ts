@@ -75,12 +75,13 @@ export async function handleSecretIntake(
 	} catch {
 		return refuse("refused: the value is empty or too large", 400);
 	}
-	const intent = codes.redeem(code);
+	const intent = codes.peek(code);
 	if (intent === undefined) return refuse("no such code", 404);
 	try {
 		deps.credentials.setCredential(intent.name, value as string, intent.meta);
 	} catch {
 		return refuse("credential storage failed", 500);
 	}
+	codes.redeem(code);
 	return new Response(null, { status: 204, headers: HEADERS });
 }

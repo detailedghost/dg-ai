@@ -43,6 +43,9 @@ export async function runSetupForm(
 				: `Open this link in your browser and type the password there: ${url}`,
 		);
 		const deadline = Date.parse(expiresAt);
+		if (Number.isNaN(deadline)) {
+			throw new Error("the daemon returned an invalid expiry");
+		}
 		while (true) {
 			await deps.sleep(POLL_MS);
 			if ((await stored(client)) !== before) return;

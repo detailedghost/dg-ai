@@ -22,13 +22,6 @@ export function warn(message: string): void {
 	process.stderr.write(warnLine(message));
 }
 
-/** Single-quote a value for `eval` only when it holds characters the shell would split or expand. */
-export function shellValue(value: string): string {
-	return /^[A-Za-z0-9_@%+=:,./-]+$/.test(value)
-		? value
-		: `'${value.replaceAll("'", "'\\''")}'`;
-}
-
 /** Linked or primary checkout from `git worktree list --porcelain`; branch is null when detached. */
 export interface WorktreeEntry {
 	path: string;

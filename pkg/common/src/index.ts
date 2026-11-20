@@ -32,6 +32,7 @@ export * from "./serial-queue";
 export * from "./concurrency-limit";
 export * from "./session-connect";
 export * from "./skill-files";
+export * from "./shell";
 export * from "./slug";
 export * from "./thrash-spice";
 export * from "./types";

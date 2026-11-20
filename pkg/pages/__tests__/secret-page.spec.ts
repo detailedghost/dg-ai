@@ -192,6 +192,17 @@ describe("secret page", () => {
 		expect(text(page)).not.toContain("refused");
 	});
 
+	test("shows the throttled text, not unreachable, when the name lookup answers 429", async () => {
+		const page = open(URL_WITH_CODE, () => new Response("too many requests", { status: 429 }));
+
+		await render(page);
+
+		const message = text(page);
+		expect(message).toContain("Too many tries");
+		expect(message).not.toContain("Could not reach");
+		expect(page.document.querySelector("form")).toBeNull();
+	});
+
 	test("keeps the form when the daemon is unreachable on submit", async () => {
 		const page = open(URL_WITH_CODE, ({ init }) => {
 			if (init.method === "POST") throw new TypeError("Failed to fetch");

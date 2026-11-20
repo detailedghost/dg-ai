@@ -55,6 +55,18 @@ function formHarness(listings: Listings, overrides: Partial<SetupFormDeps> = {})
 }
 
 describe("runSetupForm", () => {
+	test("throws a distinct error when the daemon returns an invalid expiry", async () => {
+		const h = formHarness([[summary("t0")]]);
+		h.intake.mockImplementation(async () => ({ url: URL_WITH_CODE, expiresAt: "soon" }));
+
+		const error = await runSetupForm(PLAN, h.deps).catch((e: Error) => e);
+
+		expect(error).toBeInstanceOf(Error);
+		expect(error).not.toBeInstanceOf(SecretFormExpiredError);
+		expect((error as Error).message).toBe("the daemon returned an invalid expiry");
+		expect(h.close).toHaveBeenCalled();
+	});
+
 	test("asks the daemon for a form on db/<name> with the plan meta, opens it, and returns once updatedAt changes", async () => {
 		const h = formHarness([
 			[summary("t0")],

@@ -171,7 +171,11 @@ function mintIntake(
 	frame: CredentialsCliRequest,
 	deps: FrameHandlerDeps,
 ): CredentialIntake {
-	const code = deps.secretIntents.mint({ name: frame.name!, meta: frame.meta! });
+	const { name, meta } = frame;
+	if (name === undefined || meta === undefined) {
+		throw new Error("intake needs a name and meta");
+	}
+	const code = deps.secretIntents.mint({ name, meta });
 	return {
 		url: `http://127.0.0.1:${deps.port}${SECRET_PAGE_PATH}#${SECRET_CODE_KEY}=${code}`,
 		expiresAt: new Date(Date.now() + SECRET_INTENT_TTL_MS).toISOString(),

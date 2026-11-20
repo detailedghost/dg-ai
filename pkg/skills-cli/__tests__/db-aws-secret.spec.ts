@@ -39,7 +39,10 @@ describe("aws-sm secret reference", () => {
 	});
 
 	afterEach(() => {
-		process.env = { ...saved };
+		for (const key of Object.keys(process.env)) {
+			if (!(key in saved)) delete process.env[key];
+		}
+		Object.assign(process.env, saved);
 		rmSync(dir, { recursive: true, force: true });
 	});
 
@@ -107,8 +110,8 @@ describe("aws-sm secret reference", () => {
 	test("the parent re-runs the verb once under asm-exec with the placeholder", async () => {
 		const log = installFakeAsm(3);
 		const h = harness({ ...PG_META, awsProfile: "work", awsRegion: "us-west-2" });
-		const test_ = h.spec.subcommands.query;
-		const code = await test_?.run(["c", "SELECT 1", "--limit", "5"], NO_OPTS);
+		const query = h.spec.subcommands.query;
+		const code = await query?.run(["c", "SELECT 1", "--limit", "5"], NO_OPTS);
 		expect([code, h.stderr]).toEqual([3, []]);
 		const lines = readFileSync(log, "utf8").trim().split("\n");
 		expect(lines.filter((l) => l === "ARG:--")).toHaveLength(1);
@@ -155,7 +158,7 @@ describe("aws-sm secret reference", () => {
 			["pg1", "--engine", "postgresql", "--database", "app", "--user", "ro", "--secret", "aws", "--secret-id", "i", "--secret-key", "k", "--aws-profile", "work", "--aws-region", "eu-west-1"],
 			NO_OPTS,
 		);
-		expect(code ?? 0).toBe(0);
+		expect(code).toBe(0);
 		expect(set.mock.calls[0]?.[2]).toMatchObject({ awsProfile: "work", awsRegion: "eu-west-1" });
 	});
 

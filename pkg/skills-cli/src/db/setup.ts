@@ -1,7 +1,6 @@
 import { parseArgs } from "node:util";
-import { validateCredentialName, type CredentialMeta } from "@dg/common";
+import { type CredentialMeta, shellValue, validateCredentialName } from "@dg/common";
 import type { DbCredentialClient } from "./credentials";
-import { shellValue } from "../worktree/shared";
 import { createSetupForm, SecretFormExpiredError } from "./setup-form";
 
 export interface SetupPlan {
@@ -163,12 +162,12 @@ export async function runSetup(args: string[], deps: SetupDeps): Promise<number>
 	const session = await deps.ensureSession(request.session);
 	const plan: SetupPlan = { name, meta, session };
 
-	if (request.secret === "command" && !request.external) {
+	if (request.secret === "command") {
 		deps.stdout(credentialsSetLine(plan));
 		deps.stdout(`Next: dg-skills db test ${name}`);
 		return 0;
 	}
-	if (request.secret === "form" && !request.external) {
+	if (request.secret === "form") {
 		const form = deps.form ?? createSetupForm(deps.stdout);
 		try {
 			await form(plan);

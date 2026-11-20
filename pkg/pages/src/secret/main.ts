@@ -29,13 +29,14 @@ async function readName(
 	win: Window,
 	fetchFn: typeof fetch,
 	code: string,
-): Promise<{ name: string } | "expired" | "unreachable"> {
+): Promise<{ name: string } | "expired" | "throttled" | "unreachable"> {
 	const response = await fetchFn(`${win.location.origin}${SECRET_INTAKE_PATH}`, {
 		headers: { [SECRET_CODE_HEADER]: code },
 		cache: "no-store",
 	}).catch(() => undefined);
 	if (response === undefined) return "unreachable";
 	if (response.status === 404) return "expired";
+	if (response.status === 429) return "throttled";
 	const body: unknown = response.ok
 		? await response.json().catch(() => undefined)
 		: undefined;
@@ -73,7 +74,7 @@ export async function renderSecretPage(
 		return;
 	}
 	const found = await readName(win, fetchFn, code);
-	if (found === "expired" || found === "unreachable") {
+	if (typeof found === "string") {
 		say(TEXT[found], "status");
 		return;
 	}
