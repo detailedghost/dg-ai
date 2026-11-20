@@ -1,6 +1,8 @@
-# 0023 — Review finished work round by round on a local board
+---
+covers: ["pkg/skills-cli/src/verify/**", "pkg/skills-cli/src/prototype/sentinels.ts", "pkg/skills-cli/src/prototype/serve.ts", "plugins/dg/skills/verify/**", "plugins/dg/skills/proto/assets/dg-icons.js"]
+---
 
-ADR: [docs/adr/0023-verify-local-review.md](../../docs/adr/0023-verify-local-review.md)
+[ADR 0023](../../docs/adr/0023-verify-local-review.md)
 
 - `/dg:verify` is for finished work. `/dg:proto` is for variants that are not built yet.
 - Manifest URLs stay on loopback. Seed headers and cookies only. Refuse `Authorization` and token-shaped values.

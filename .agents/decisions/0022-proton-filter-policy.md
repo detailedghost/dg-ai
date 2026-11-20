@@ -1,6 +1,8 @@
-# 0022 — Keep Proton filters in one declared file
+---
+covers: ["pkg/inbox/src/features/filter-policy/**", "docs/inbox-filter-policy.md"]
+---
 
-ADR: [docs/adr/0022-proton-filter-policy.md](../../docs/adr/0022-proton-filter-policy.md)
+[ADR 0022](../../docs/adr/0022-proton-filter-policy.md)
 
 - Declared filters file is user config under `DG_HOME/inbox/workspaces/protonmail/<workspace>/declared-filters.json`. Never commit it.
 - Never commit real filter names, folder names, addresses, or a `~/.dg` snapshot. Fixtures stay synthetic.
