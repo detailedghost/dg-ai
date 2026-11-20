@@ -261,6 +261,29 @@
 					]
 				},
 				{
+					"name": "export",
+					"description": "write the channel-review state of a stopped daemon to import.json in the state folder of a job",
+					"options": [
+						{
+							"flags": [
+								"--env"
+							],
+							"description": "environment to export",
+							"value": [
+								"dev",
+								"prod"
+							]
+						},
+						{
+							"flags": [
+								"--label"
+							],
+							"description": "name of the job that reads the file",
+							"value": "any"
+						}
+					]
+				},
+				{
 					"name": "migrate-env",
 					"description": "move channel-review secrets from a .env file into the dg credential store",
 					"options": [

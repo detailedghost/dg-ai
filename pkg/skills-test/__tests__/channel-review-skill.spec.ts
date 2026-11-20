@@ -303,6 +303,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 			"logs",
 			"run",
 			"connect",
+			"export",
 			"migrate-env",
 			"env",
 		]);
@@ -322,6 +323,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 				"--follow",
 				"--force",
 				"--keep-backup",
+				"--label",
 				"--lines",
 				"--org",
 				"--paste",
@@ -333,6 +335,22 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 			].sort(),
 		);
 		for (const flag of flags) expect(commands).toContain(flag);
+	});
+
+	test("commands.md gives the reader of import.json each export rule", () => {
+		const commands = readRef("commands.md");
+		for (const phrase of [
+			"work that stopped",
+			"values of the old host",
+			"older than 24 hours",
+			"a change of shape",
+			"one time, after the last stop",
+			"records that it did the import",
+			"empty fix quota",
+			"must not be committed",
+		])
+			expect(commands).toContain(phrase);
+		expect(commands).toContain("no `running` key and no `fixStarts` key");
 	});
 
 	test("no documented dg-skills channel-review command or flag is one the CLI lacks", () => {

@@ -2127,92 +2127,92 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 ### Slice 19 — channel-review-export
 
 #### Engineering
-- [ ] Add `export` to pkg/skills-cli/src/channel-review/cli.ts: `dg-skills channel-review export --env <env> --label <label>`; the two options are required
-- [ ] `--env` uses `envOption()` with `makeOptionMandatory()`; it has no default in this command
-- [ ] Put the action in pkg/skills-cli/src/channel-review/export.ts; cli.ts imports export.ts statically, because `registerLazyRaw` already loads the full `channel-review/cli` subtree lazily
-- [ ] Read the state with `readStateSnapshot(channelReviewPaths(env))` of `@dg/channel-review`; it opens daemon.db with `readonly: true`, takes no lock and starts no migration
-- [ ] The order of `export` is: the label rule; `assertNotBlocked` for the layout keys `channel-review-config` and `daemon`; the liveness check; the config and the chat id; `readStateSnapshot`; the write
-- [ ] A daemon that starts between the check and the read is not prevented; commands.md says to keep the daemon stopped
-- [ ] Write `<jobStateDir(paths, label)>/import.json` with the keys `version`, `cursor`, `handled`, `current` and `automation`, in that order
-- [ ] Use one `DgPaths` object for the read and for the write: `channelReviewPaths(env).dg`
-- [ ] `version` is the number 1
-- [ ] `cursor` is the `lastEventIds` object of the state: one event id for each chat id
-- [ ] `handled` is an array with one object for each key of the `handled` object of the state: `{ messageId, status, at }`, plus `chatId` when the state has it; sort by `at`, then by `messageId`
-- [ ] `current` is the `current` value of the state: the job object or `null`
-- [ ] Validate `--label` with `isJobName` of `@dg/common/node` (slice 2) before a path is built; export.ts holds no copy of the pattern and keeps its own error text
-- [ ] Create the directory with `ensurePrivateDir` and write the file with `writeFileAtomic(path, data, 0o600)`; an existing import.json is replaced
-- [ ] `export` writes nothing to daemon.db and does not stop a process
-- [ ] Add `export` to plugins/dg/skills/channel-review/references/commands.md with its two options, the output path, and the rule that the daemon of that env must be stopped
-- [ ] commands.md states that the export has no `running` key and no `fixStarts` key: the bot starts with an empty fix quota, so the fix limit of one hour starts again one time, at the import
-- [ ] commands.md states that a `handled` entry with the status `pending` or `running` is work that stopped
-- [ ] commands.md states that `current.pid` and `current.pidStart` are values of the old host and have no meaning for the bot
-- [ ] commands.md says: "`handled` can hold entries older than 24 hours until the next prune; for older requests use `cursor`."
-- [ ] commands.md states that the format has `version: 1`, and that a change of shape increases `version`
-- [ ] commands.md states that the owner exports one time, after the last stop of the old daemon
-- [ ] commands.md states that the bot records that it did the import
-- [ ] Write no private organization name and no private repository name in a source file, a spec or a document; name the consumer `the review bot repository`
-- [ ] `automation` is an object with the keys `blocked`, `issues`, `sinks`, `prWatch` and `deps`, in that order; each value is the value of the same key of the state, and `deps` holds `lastRun`
-- [ ] Do not export the keys `running` and `fixStarts` of the state
-- [ ] After the `assertNotBlocked` check and before the config read, refuse when the channel-review daemon of that env runs: use `readPidRecord` and `isOurDaemon` of `@dg/channel-review`, the check of `channel-review status`; write no second liveness check
-- [ ] A legacy state with one `lastEventId` has no chat id; `export` gives `readStateSnapshot` a `legacyChatId`: no constant `defaultChatId` exists, so read the config with `loadConfig(channelReviewPaths(env).configPath)` and use `chats[0].id`; `export` does not connect to the relay
-- [ ] A config that is absent, cannot be read, or has a first chat with a `topic` and no `id` means that no chat id is configured
-- [ ] commands.md says that the export does not see a `--chat-id` of the old daemon
-- [ ] After the label rule and before the liveness check, call `assertNotBlocked` for the layout keys `channel-review-config` and `daemon`
-- [ ] export.ts builds the output as a typed `ImportFile` value with `satisfies`
-- [ ] The only optional key of the format is `chatId` of a `handled` entry: it is left out when the state has none; `current` can be `null`
-- [ ] Add no fixture helper: the spec writes the `channel_review_state` row with `createStateStore` of `@dg/channel-review`
-- [ ] `--label` is the name of the job that reads the file: the state folder is `jobStateDir(paths, label)` of slice 2, the folder that the daemon gives that job as `DG_SERVICE_STATE_DIR`
-- [ ] The option names `--env` and `--label` stay as they are: slice 21 removes this command
-- [ ] The `export` command is in the generated command tree of dg-skills: after the command change, and after a rebase on the head of the PR 3 branch, run `bun scripts/completion-trees.ts dg-skills` and commit pkg/skills-cli/src/completion/tree.json with only the `export` change plus a change that comes from a slice that is already merged; do not edit the JSON by hand
-- [ ] commands.md gives the order of work: the export creates `jobStateDir(paths, label)` with mode 0700, also before `dg job add`, and the daemon accepts that folder (the `preflight` Contract of slice 2)
-- [ ] commands.md states that the file holds the old `current.url` and `sinks.*.lastError` text, so it keeps mode 0600 and must not be committed
+- [x] Add `export` to pkg/skills-cli/src/channel-review/cli.ts: `dg-skills channel-review export --env <env> --label <label>`; the two options are required
+- [x] `--env` uses `envOption()` with `makeOptionMandatory()`; it has no default in this command
+- [x] Put the action in pkg/skills-cli/src/channel-review/export.ts; cli.ts imports export.ts statically, because `registerLazyRaw` already loads the full `channel-review/cli` subtree lazily
+- [x] Read the state with `readStateSnapshot(channelReviewPaths(env))` of `@dg/channel-review`; it opens daemon.db with `readonly: true`, takes no lock and starts no migration
+- [x] The order of `export` is: the label rule; `assertNotBlocked` for the layout keys `channel-review-config` and `daemon`; the liveness check; the config and the chat id; `readStateSnapshot`; the write
+- [x] A daemon that starts between the check and the read is not prevented; commands.md says to keep the daemon stopped
+- [x] Write `<jobStateDir(paths, label)>/import.json` with the keys `version`, `cursor`, `handled`, `current` and `automation`, in that order
+- [x] Use one `DgPaths` object for the read and for the write: `channelReviewPaths(env).dg`
+- [x] `version` is the number 1
+- [x] `cursor` is the `lastEventIds` object of the state: one event id for each chat id
+- [x] `handled` is an array with one object for each key of the `handled` object of the state: `{ messageId, status, at }`, plus `chatId` when the state has it; sort by `at`, then by `messageId`
+- [x] `current` is the `current` value of the state: the job object or `null`
+- [x] Validate `--label` with `isJobName` of `@dg/common/node` (slice 2) before a path is built; export.ts holds no copy of the pattern and keeps its own error text
+- [x] Create the directory with `ensurePrivateDir` and write the file with `writeFileAtomic(path, data, 0o600)`; an existing import.json is replaced
+- [x] `export` writes nothing to daemon.db and does not stop a process
+- [x] Add `export` to plugins/dg/skills/channel-review/references/commands.md with its two options, the output path, and the rule that the daemon of that env must be stopped
+- [x] commands.md states that the export has no `running` key and no `fixStarts` key: the bot starts with an empty fix quota, so the fix limit of one hour starts again one time, at the import
+- [x] commands.md states that a `handled` entry with the status `pending` or `running` is work that stopped
+- [x] commands.md states that `current.pid` and `current.pidStart` are values of the old host and have no meaning for the bot
+- [x] commands.md says: "`handled` can hold entries older than 24 hours until the next prune; for older requests use `cursor`."
+- [x] commands.md states that the format has `version: 1`, and that a change of shape increases `version`
+- [x] commands.md states that the owner exports one time, after the last stop of the old daemon
+- [x] commands.md states that the bot records that it did the import
+- [x] Write no private organization name and no private repository name in a source file, a spec or a document; name the consumer `the review bot repository`
+- [x] `automation` is an object with the keys `blocked`, `issues`, `sinks`, `prWatch` and `deps`, in that order; each value is the value of the same key of the state, and `deps` holds `lastRun`
+- [x] Do not export the keys `running` and `fixStarts` of the state
+- [x] After the `assertNotBlocked` check and before the config read, refuse when the channel-review daemon of that env runs: use `readPidRecord` and `isOurDaemon` of `@dg/channel-review`, the check of `channel-review status`; write no second liveness check
+- [x] A legacy state with one `lastEventId` has no chat id; `export` gives `readStateSnapshot` a `legacyChatId`: no constant `defaultChatId` exists, so read the config with `loadConfig(channelReviewPaths(env).configPath)` and use `chats[0].id`; `export` does not connect to the relay
+- [x] A config that is absent, cannot be read, or has a first chat with a `topic` and no `id` means that no chat id is configured
+- [x] commands.md says that the export does not see a `--chat-id` of the old daemon
+- [x] After the label rule and before the liveness check, call `assertNotBlocked` for the layout keys `channel-review-config` and `daemon`
+- [x] export.ts builds the output as a typed `ImportFile` value with `satisfies`
+- [x] The only optional key of the format is `chatId` of a `handled` entry: it is left out when the state has none; `current` can be `null`
+- [x] Add no fixture helper: the spec writes the `channel_review_state` row with `createStateStore` of `@dg/channel-review`
+- [x] `--label` is the name of the job that reads the file: the state folder is `jobStateDir(paths, label)` of slice 2, the folder that the daemon gives that job as `DG_SERVICE_STATE_DIR`
+- [x] The option names `--env` and `--label` stay as they are: slice 21 removes this command
+- [x] The `export` command is in the generated command tree of dg-skills: after the command change, and after a rebase on the head of the PR 3 branch, run `bun scripts/completion-trees.ts dg-skills` and commit pkg/skills-cli/src/completion/tree.json with only the `export` change plus a change that comes from a slice that is already merged; do not edit the JSON by hand
+- [x] commands.md gives the order of work: the export creates `jobStateDir(paths, label)` with mode 0700, also before `dg job add`, and the daemon accepts that folder (the `preflight` Contract of slice 2)
+- [x] commands.md states that the file holds the old `current.url` and `sinks.*.lastError` text, so it keeps mode 0600 and must not be committed
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: import.json parses as `{ "version": 1, "cursor": { "<chatId>": "<eventId>" }, "handled": [{ "messageId", "status", "at", "chatId"? }], "current": <object|null>, "automation": { "blocked", "issues", "sinks", "prWatch", "deps": { "lastRun" } } }` and has no other top-level key
-- [ ] Contract: `handled` holds each message id of the state one time, in ascending `at` order
-- [ ] Contract: `status` is one of `pending`, `running`, `done`, `failed`
-- [ ] Contract: exit 0 prints one line: `exported channel-review <env> state to <path>: <n> handled, <m> chat cursors, current <message id or none>`
-- [ ] Contract: the file mode is 0600 and the directory mode is 0700 (POSIX)
-- [ ] Contract: `--label Bad/Label` exits 1 with `channel-review export: "--label" must be 1-64 lowercase letters, digits or hyphens, starting with a letter or digit`, and creates no directory
-- [ ] Contract: an `--env` value other than `dev` or `prod` exits 1 with the commander text for a choice that is not valid, as in the other channel-review commands
-- [ ] Contract: a missing `--env` exits 1 with the commander text for a required option
-- [ ] Contract: the bytes of daemon.db, of its `-wal` file and of the `channel_review_state` row do not change; `export` opens daemon.db with `readonly: true` and takes no lock
-- [ ] Contract: `automation.blocked`, `automation.issues`, `automation.sinks` and `automation.prWatch` are deep-equal to the same keys of `readStateSnapshot`; `automation.deps` is `{ "lastRun": <the deps.lastRun object of the state> }`; `automation.blocked` holds each full blocked entry (`options`, `messageId`, `chatId`, `at`), keyed as in the state
-- [ ] Contract: import.json has no `running` key and no `fixStarts` key at any level
-- [ ] Contract: with a live channel-review daemon for the env, `export` exits 1 with `channel-review export: the <env> daemon is running (pid <pid>) — stop it first with dg-skills channel-review stop --env <env>`, and creates no file and no directory
-- [ ] Contract: a pid file that names a dead process, or a process that is not the channel-review daemon, does not stop the export
-- [ ] Contract: a live `prod` daemon does not stop `export --env dev`
-- [ ] Contract: plugins/dg/skills/channel-review/references/commands.md holds one literal phrase for each of the six rules for the reader of import.json and for the statement on `running` and `fixStarts`, and the spec matches these phrases: `work that stopped`, `values of the old host`, `older than 24 hours`, `a change of shape`, `one time, after the last stop`, `records that it did the import` and `empty fix quota`
-- [ ] Contract: a legacy state file with `lastEventId: "e1"` and a configured chat id `c1` gives `cursor: { "c1": "e1" }`
-- [ ] Contract: the same state with no default chat id exits 1 with `channel-review export: the <env> state has a legacy cursor and no chat id is configured`, and writes no file
-- [ ] Contract: with a blocked `daemon` entry, `export` prints the block text, exits with the code of the block error (78 for `two-used`, 1 for each other reason), and opens no database; the exit code 78 comes from the `two-used` code of slice 3, so run this Contract on a build that holds slice 3
-- [ ] Contract: with `DG_HOME=/d`, the file is `/d/state/jobs/<label>/import.json`; no spec uses the default roots
-- [ ] Contract: the key list of each object level of import.json is equal to the list of the first Contract of this slice; a `handled` entry with no chat id has no `chatId` key
-- [ ] Happy path: a daemon.db with a `dev` row that has 3 handled messages, 2 chat cursors and a `current` job gives a file with those values
-- [ ] Happy path: `--env prod --label bot-prod` and `--env dev --label bot-dev` write two files in two directories, each with the state of its env
-- [ ] Edge: a state with `current: null` writes `"current": null`
-- [ ] Edge: an env with no row and no legacy state file writes `{ "version": 1, "cursor": {}, "handled": [], "current": null, "automation": { "blocked": {}, "issues": {}, "sinks": {}, "prWatch": {}, "deps": { "lastRun": {} } } }` and the count line shows 0
-- [ ] Edge: a second `export` replaces the file
-- [ ] Edge: `export` before the schema has the channel-review table reads the legacy state file, as `channel-review status` does
-- [ ] Happy path: a state with one blocked URL, one issue, one sink cursor, one watched PR and one dependency run gives an import.json with those five values below `automation`
-- [ ] Error: a daemon.db of a newer build (`ForwardOnlyVersionError`) exits 1 with one line that starts with `channel-review export:`, with no stack trace and no import.json
-- [ ] Error: a state that `parseState` refuses exits 1 with one line that starts with `channel-review export:`, with no stack trace and no import.json
-- [ ] Error: a daemon.db that cannot be read exits 1 with one line that starts with `channel-review export:`, with no stack trace and no import.json
-- [ ] Error: a write that fails exits 1 with one line that starts with `channel-review export:`, with no stack trace and no import.json
-- [ ] Check: pkg/skills-test/__tests__/channel-review-skill.spec.ts passes; its test `every subcommand and flag the CLI registers is documented` passes because commands.md documents `export`, `--env` and `--label`
-- [ ] Regression: `bun test pkg/skills-cli/__tests__/channel-review-cli.spec.ts` passes; `bun run lint` passes in pkg/skills-cli
-- [ ] Contract: `bun scripts/completion-trees.ts --check dg-skills` exits 0, and the tree holds `export` below `channel-review`
-- [ ] Contract: a legacy state with a config whose first chat has a `topic` and no `id` exits 1 with the `no chat id is configured` text and writes no file
-- [ ] Contract: a legacy state with no config file exits 1 with the `no chat id is configured` text and writes no file
-- [ ] Edge: a state with a `handled` entry of 30 hours ago exports that entry
+- [x] Contract: import.json parses as `{ "version": 1, "cursor": { "<chatId>": "<eventId>" }, "handled": [{ "messageId", "status", "at", "chatId"? }], "current": <object|null>, "automation": { "blocked", "issues", "sinks", "prWatch", "deps": { "lastRun" } } }` and has no other top-level key
+- [x] Contract: `handled` holds each message id of the state one time, in ascending `at` order
+- [x] Contract: `status` is one of `pending`, `running`, `done`, `failed`
+- [x] Contract: exit 0 prints one line: `exported channel-review <env> state to <path>: <n> handled, <m> chat cursors, current <message id or none>`
+- [x] Contract: the file mode is 0600 and the directory mode is 0700 (POSIX)
+- [x] Contract: `--label Bad/Label` exits 1 with `channel-review export: "--label" must be 1-64 lowercase letters, digits or hyphens, starting with a letter or digit`, and creates no directory
+- [x] Contract: an `--env` value other than `dev` or `prod` exits 1 with the commander text for a choice that is not valid, as in the other channel-review commands
+- [x] Contract: a missing `--env` exits 1 with the commander text for a required option
+- [x] Contract: the bytes of daemon.db, of its `-wal` file and of the `channel_review_state` row do not change; `export` opens daemon.db with `readonly: true` and takes no lock
+- [x] Contract: `automation.blocked`, `automation.issues`, `automation.sinks` and `automation.prWatch` are deep-equal to the same keys of `readStateSnapshot`; `automation.deps` is `{ "lastRun": <the deps.lastRun object of the state> }`; `automation.blocked` holds each full blocked entry (`options`, `messageId`, `chatId`, `at`), keyed as in the state
+- [x] Contract: import.json has no `running` key and no `fixStarts` key at any level
+- [x] Contract: with a live channel-review daemon for the env, `export` exits 1 with `channel-review export: the <env> daemon is running (pid <pid>) — stop it first with dg-skills channel-review stop --env <env>`, and creates no file and no directory
+- [x] Contract: a pid file that names a dead process, or a process that is not the channel-review daemon, does not stop the export
+- [x] Contract: a live `prod` daemon does not stop `export --env dev`
+- [x] Contract: plugins/dg/skills/channel-review/references/commands.md holds one literal phrase for each of the six rules for the reader of import.json and for the statement on `running` and `fixStarts`, and the spec matches these phrases: `work that stopped`, `values of the old host`, `older than 24 hours`, `a change of shape`, `one time, after the last stop`, `records that it did the import` and `empty fix quota`
+- [x] Contract: a legacy state file with `lastEventId: "e1"` and a configured chat id `c1` gives `cursor: { "c1": "e1" }`
+- [x] Contract: the same state with no default chat id exits 1 with `channel-review export: the <env> state has a legacy cursor and no chat id is configured`, and writes no file
+- [x] Contract: with a blocked `daemon` entry, `export` prints the block text, exits with the code of the block error (78 for `two-used`, 1 for each other reason), and opens no database; the exit code 78 comes from the `two-used` code of slice 3, so run this Contract on a build that holds slice 3
+- [x] Contract: with `DG_HOME=/d`, the file is `/d/state/jobs/<label>/import.json`; no spec uses the default roots
+- [x] Contract: the key list of each object level of import.json is equal to the list of the first Contract of this slice; a `handled` entry with no chat id has no `chatId` key
+- [x] Happy path: a daemon.db with a `dev` row that has 3 handled messages, 2 chat cursors and a `current` job gives a file with those values
+- [x] Happy path: `--env prod --label bot-prod` and `--env dev --label bot-dev` write two files in two directories, each with the state of its env
+- [x] Edge: a state with `current: null` writes `"current": null`
+- [x] Edge: an env with no row and no legacy state file writes `{ "version": 1, "cursor": {}, "handled": [], "current": null, "automation": { "blocked": {}, "issues": {}, "sinks": {}, "prWatch": {}, "deps": { "lastRun": {} } } }` and the count line shows 0
+- [x] Edge: a second `export` replaces the file
+- [x] Edge: `export` before the schema has the channel-review table reads the legacy state file, as `channel-review status` does
+- [x] Happy path: a state with one blocked URL, one issue, one sink cursor, one watched PR and one dependency run gives an import.json with those five values below `automation`
+- [x] Error: a daemon.db of a newer build (`ForwardOnlyVersionError`) exits 1 with one line that starts with `channel-review export:`, with no stack trace and no import.json
+- [x] Error: a state that `parseState` refuses exits 1 with one line that starts with `channel-review export:`, with no stack trace and no import.json
+- [x] Error: a daemon.db that cannot be read exits 1 with one line that starts with `channel-review export:`, with no stack trace and no import.json
+- [x] Error: a write that fails exits 1 with one line that starts with `channel-review export:`, with no stack trace and no import.json
+- [x] Check: pkg/skills-test/__tests__/channel-review-skill.spec.ts passes; its test `every subcommand and flag the CLI registers is documented` passes because commands.md documents `export`, `--env` and `--label`
+- [x] Regression: `bun test pkg/skills-cli/__tests__/channel-review-cli.spec.ts` passes; `bun run lint` passes in pkg/skills-cli
+- [x] Contract: `bun scripts/completion-trees.ts --check dg-skills` exits 0, and the tree holds `export` below `channel-review`
+- [x] Contract: a legacy state with a config whose first chat has a `topic` and no `id` exits 1 with the `no chat id is configured` text and writes no file
+- [x] Contract: a legacy state with no config file exits 1 with the `no chat id is configured` text and writes no file
+- [x] Edge: a state with a `handled` entry of 30 hours ago exports that entry
 
 #### Acceptance Criteria
-- [ ] Given a daemon.db with channel-review state for `dev` and a stopped `dev` daemon, when the owner runs `dg-skills channel-review export --env dev --label <label>`, then `<state>/jobs/<label>/import.json` holds version 1, the chat cursors, the handled list, the current job and the `automation` object
-- [ ] Given the export, when the owner compares it with `dg-skills channel-review status --env dev`, then the handled count and the current job are equal
-- [ ] Given the export, when it ends, then daemon.db is unchanged and the old channel-review commands work as before
-- [ ] Given a running channel-review daemon for `dev`, when the owner runs the export for `dev`, then the command writes nothing and names the stop command
-- [ ] Given a state with a sink poll cursor, a seen issue and a dependency run, when the export ends, then import.json holds them below `automation`
+- [x] Given a daemon.db with channel-review state for `dev` and a stopped `dev` daemon, when the owner runs `dg-skills channel-review export --env dev --label <label>`, then `<state>/jobs/<label>/import.json` holds version 1, the chat cursors, the handled list, the current job and the `automation` object
+- [x] Given the export, when the owner compares it with `dg-skills channel-review status --env dev`, then the handled count and the current job are equal
+- [x] Given the export, when it ends, then daemon.db is unchanged and the old channel-review commands work as before
+- [x] Given a running channel-review daemon for `dev`, when the owner runs the export for `dev`, then the command writes nothing and names the stop command
+- [x] Given a state with a sink poll cursor, a seen issue and a dependency run, when the export ends, then import.json holds them below `automation`
 
 ### Slice 20 — job-source-docs
 
@@ -2416,6 +2416,7 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 
 ## Slice Summaries
 
+- Slice 19: dg-skills channel-review export --env --label writes import.json (version 1) into the job state folder with mode 0600; it refuses a live daemon and reads state read-only; commands.md and the dg-skills completion tree list it.
 - Slice 11 (c4ba56e9): docs/jobs-and-services.md uses the noun job, with the verb table, the old and new table, the run rules, the move, the rollback and the limits; ADR 0049 records the job model; ADR 0043 and the ADR 0020 amendment link it; the jobs skill gets ## Job verbs. job-model-docs.spec.ts is new. Vale did not run (not installed); markdownlint is clean on the new files.
 - Slice 10 (a79f1eba, 24ef07fb): scheduled rows move to the jobs table at daemon start in three steps, and the runner runs them through the one launcher. The argv rewrite runs with PRAGMA secure_delete=ON, then PRAGMA wal_checkpoint(TRUNCATE); a spec proves that no 32-byte part of the old ciphertext stays in daemon.db or daemon.db-wal.
 - Slice 9 (eb04798d): dg job verbs (add, enable, disable, update, remove, start, stop, restart, list, status, logs, run); service group and old job forms stay as aliases with a note; helpers in job-support.ts; log tail and prompt in @dg/common. New-form scheduled add refuses --notify without --feed and empty argv parts. 12 table-row specs stay red until slice 10.
@@ -2459,6 +2460,10 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 - (owner, 2026-11-19) RATIFY on the pre-migration-v14 snapshot: option (b). After a good row move (markJobsMoved succeeded and the scrub ran), the daemon deletes the pre-migration-v14-*.db snapshot and its -wal, -shm and -journal files. The database rollback is given up; docs, ADR 0049 and the PR body say so.
 - (orchestrator, 2026-11-19) Slice 11: the ADR number is 0049. dg-front-door-docs.spec.ts gets one more change than the plan names: the amendment link limit moves from 0048 to 0049, because the ADR 0020 amendment now links ADR 0049. outside-services-docs.spec.ts also changes 'does not kill a job' to 'does not kill a dispatch command', because stop --force now kills the process tree of each job that runs, scheduled runs included.
 - (orchestrator, 2026-11-19) Branch feature/job_install rebased on origin/master 45a380b7 (5.15.0); one conflict in supervisor.ts (master's ensureRealPrivateDir kept, decl.name used).
+
+- (slice 19, dg:js) runExport(flags, io, platform?) is in pkg/skills-cli/src/channel-review/export.ts; slice 21 removes it with the command.
+- (slice 19, dg:js) Legacy state is detected by "lastEventId" in state; readPidRecord and isOurDaemon use ps, so live-daemon specs keep ps on PATH.
+- (slice 19, dg:js) Export failures print channel-review export: lines to stderr with exit 1 (not DgCliError, to avoid the dg-skills prefix); a blocked layout keeps its own text and exit code.
 
 ## Issues Remediation
 

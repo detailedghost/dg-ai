@@ -27,6 +27,7 @@ import {
 	type ConnectProvider,
 	runConnect,
 } from "./connect";
+import { type ExportFlags, runExport } from "./export";
 import { type MigrateFlags, runMigrateEnv } from "./migrate";
 import { defaultSetupDeps, runSetup, type SetupFlags } from "./setup";
 
@@ -48,6 +49,12 @@ const envOption = () =>
 		"--env <env>",
 		"environment (default: the saved env)",
 	).choices(ENV_NAMES);
+
+const requiredEnvOption = () => {
+	const option = envOption().makeOptionMandatory();
+	option.description = "environment to export";
+	return option;
+};
 
 const runnerOption = () =>
 	new Option("--runner <runner>", "agent CLI that runs the review").choices(
@@ -224,6 +231,19 @@ export function registerChannelReview(program: Command): void {
 		.option("--session <id>", "dg session to authenticate with")
 		.action(async (provider: ConnectProvider, flags: ConnectFlags) => {
 			await runConnect(provider, flags);
+		});
+
+	command
+		.command("export")
+		.description(
+			"write the channel-review state of a stopped daemon to import.json in the state folder of a job",
+		)
+		.addOption(requiredEnvOption())
+		.addOption(
+			new Option("--label <label>", "name of the job that reads the file").makeOptionMandatory(),
+		)
+		.action(async (flags: ExportFlags) => {
+			process.exitCode = await runExport(flags, io);
 		});
 
 	command
