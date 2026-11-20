@@ -1,4 +1,5 @@
 import { DEFAULT_ROOT_SELECTOR } from "../layout/fingerprint";
+import { STATE_NAME } from "../pw/core/states";
 import { assertVerifyName } from "./names";
 import { assertLoopbackUrl, assertSeedCookie, assertSeedHeader } from "./urls";
 
@@ -11,6 +12,7 @@ export interface VerifyRole {
 	id: string;
 	headers: Record<string, string>;
 	cookies: VerifyCookie[];
+	state?: string;
 }
 
 export interface VerifyTests {
@@ -65,7 +67,7 @@ const ITEM_KEYS = new Set([
 	"roles",
 	"tests",
 ]);
-const ROLE_KEYS = new Set(["id", "headers", "cookies"]);
+const ROLE_KEYS = new Set(["id", "headers", "cookies", "state"]);
 const COOKIE_KEYS = new Set(["name", "value"]);
 const TEST_KEYS = new Set(["cmd", "summary", "passed", "failed"]);
 
@@ -144,14 +146,24 @@ function parseCookies(value: unknown, label: string): VerifyCookie[] {
 	});
 }
 
+function parseState(value: unknown, label: string): string | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "string" || !STATE_NAME.test(value))
+		throw new Error(`${label} must be a saved pw state name`);
+	return value;
+}
+
 function parseRole(value: unknown, index: number): VerifyRole {
 	if (!isRecord(value)) throw new Error(`roles[${index}] must be an object`);
 	unknownKey(value, ROLE_KEYS, `roles[${index}]`);
-	return {
+	const role: VerifyRole = {
 		id: assertVerifyName(text(value.id, `roles[${index}].id`, 64), "role"),
 		headers: parseHeaders(value.headers, `roles[${index}].headers`),
 		cookies: parseCookies(value.cookies, `roles[${index}].cookies`),
 	};
+	const state = parseState(value.state, `roles[${index}].state`);
+	if (state) role.state = state;
+	return role;
 }
 
 function parseItem(value: unknown, index: number): VerifyItem {

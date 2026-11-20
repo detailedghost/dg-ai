@@ -9,6 +9,9 @@ Codex:      $dg:verify
 
 The agent writes a manifest of finished items.
 Each item has a before URL and an after URL on localhost, the roles to sign in as seed users, and the name of the agent who owns the change.
+A role can also name a saved sign-in with `state`. Save one with `dg-skills pw state save <name>`.
+Verify loads it in the browser, on localhost only. The cookies never reach the board, the session files, or the logs.
+A page that lands on a sign-in page stops the capture and says how to save a state.
 When a prototype is already running, its URL is a third column.
 
 `dg-skills verify capture <name> --manifest=<file>` captures desktop (1440), tablet (768), and mobile (390), light and dark.

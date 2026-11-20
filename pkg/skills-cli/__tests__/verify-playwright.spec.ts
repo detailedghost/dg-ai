@@ -2,12 +2,18 @@ import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { type CaptureRequest, type CaptureShot, pngSize } from "../src/verify/capture-model";
 import { type Difference, diffReadings } from "../src/layout/diff";
 import type { ControlRow } from "../src/layout/fingerprint";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
+import { type StorageState, StateNotFoundError, save as saveState } from "../src/pw/core/states";
+import { useTempEnv } from "../src/pw/test-support";
 import { readVerdicts, verifyPaths, writeBoard } from "../src/verify/board";
-import { openPlaywrightCapturer, resolveVerifyBrowser, verifyBrowserAvailable } from "../src/verify/playwright-capturer";
+import { captureSession, sectionFromCapture } from "../src/verify/capture";
+import { parseManifest } from "../src/verify/manifest";
+import { createHttpCapturer } from "../src/verify/http-capturer";
+import { saveManifest } from "../src/verify/session";
+import { loopbackStorageState, openPlaywrightCapturer, resolveVerifyBrowser, verifyBrowserAvailable } from "../src/verify/playwright-capturer";
 import { startVerifyServer } from "../src/verify/serve";
 
 setDefaultTimeout(60_000);
@@ -857,6 +863,203 @@ describe("review board in a browser", () => {
 			await pw.close();
 			server.stop();
 			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+
+describe("verify with a saved sign-in", () => {
+	test("loads only the loopback cookies and origins of a saved state", () => {
+		const cookie = (domain: string) => ({ name: "sid", value: `fake-${domain}`, domain, path: "/", expires: -1, httpOnly: true, secure: false, sameSite: "Lax" as const });
+		const state = loopbackStorageState({
+			cookies: [cookie("localhost"), cookie(".localhost"), cookie("127.0.0.1"), cookie("example.com"), cookie(".example.com")],
+			origins: [
+				{ origin: "http://localhost:4321", localStorage: [{ name: "token", value: "fake-local" }] },
+				{ origin: "https://example.com", localStorage: [{ name: "token", value: "fake-remote" }] },
+			],
+		});
+		expect(state.cookies.map((entry) => entry.domain)).toEqual(["localhost", ".localhost", "127.0.0.1"]);
+		expect(state.origins.map((entry) => entry.origin)).toEqual(["http://localhost:4321"]);
+	});
+
+	useTempEnv("AI_STATE_DIR");
+	const COOKIE_VALUE = "fake-session-cookie-value-7f3a";
+	const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+	const stateWith = (): StorageState => ({
+		cookies: [
+			{ name: "sid", value: COOKIE_VALUE, domain: "127.0.0.1", path: "/", expires: -1, httpOnly: false, secure: false, sameSite: "Lax" },
+		],
+		origins: [],
+	});
+
+	function manifestFor(state?: string) {
+		return parseManifest({
+			name: "review",
+			stackUrl: "http://127.0.0.1:3000/",
+			items: [
+				{
+					id: "inbox",
+					title: "Inbox",
+					owner: "dg:js",
+					beforeUrl: "http://127.0.0.1:4001/sms",
+					afterUrl: "http://127.0.0.1:4002/sms",
+					roles: [{ id: "admin", ...(state ? { state } : {}) }],
+				},
+			],
+		});
+	}
+
+	function signedInPageFor(requests: CaptureRequest[]) {
+		return {
+			async shot(request: CaptureRequest): Promise<CaptureShot> {
+				requests.push(request);
+				const path = request.stateName ? "/sms" : "/Login/SignIn";
+				return {
+					png: PNG,
+					html: "<html lang='en'><title>t</title></html>",
+					finalUrl: `http://127.0.0.1:4002${path}`,
+					menuFound: false,
+					scrolled: false,
+					engine: "playwright" as const,
+				};
+			},
+			async close() {},
+		};
+	}
+
+	function sessionIn(dir: string) {
+		return { paths: verifyPaths(join(dir, "session")), cwd: dir };
+	}
+
+	test("captures every shot of a role through its saved state", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-verify-state-"));
+		try {
+			saveState("app-admin", stateWith());
+			const requests: CaptureRequest[] = [];
+			const { paths, cwd } = sessionIn(dir);
+			const captured = await captureSession({
+				manifest: manifestFor("app-admin"),
+				paths,
+				capturer: signedInPageFor(requests),
+				cwd,
+				targets: [{ itemId: "inbox", sectionId: "inbox-r1" }],
+			});
+			expect(requests.length).toBeGreaterThan(0);
+			expect(requests.every((request) => request.stateName === "app-admin")).toBe(true);
+			expect(captured[0]?.records.every((record) => new URL(record.finalUrl).pathname === "/sms")).toBe(true);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("fails before any page opens when the named state is not saved", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-verify-state-"));
+		try {
+			const requests: CaptureRequest[] = [];
+			const { paths, cwd } = sessionIn(dir);
+			const attempt = captureSession({
+				manifest: manifestFor("missing-state"),
+				paths,
+				capturer: signedInPageFor(requests),
+				cwd,
+				targets: [{ itemId: "inbox", sectionId: "inbox-r1" }],
+			});
+			await expect(attempt).rejects.toBeInstanceOf(StateNotFoundError);
+			await expect(attempt).rejects.toThrow("pw state list");
+			expect(requests).toHaveLength(0);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("names the role when a saved state meets the http engine", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-verify-state-"));
+		try {
+			saveState("app-admin", stateWith());
+			const { paths, cwd } = sessionIn(dir);
+			await expect(
+				captureSession({
+					manifest: manifestFor("app-admin"),
+					paths,
+					capturer: createHttpCapturer(),
+					cwd,
+					targets: [{ itemId: "inbox", sectionId: "inbox-r1" }],
+				}),
+			).rejects.toThrow("verify role admin uses a saved state; it needs the playwright engine");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("never writes the state's cookie value into the session files", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-verify-state-"));
+		try {
+			saveState("app-admin", {
+				...stateWith(),
+				origins: [{ origin: "http://127.0.0.1:4002", localStorage: [{ name: "token", value: COOKIE_VALUE }] }],
+			});
+			const manifest = manifestFor("app-admin");
+			const { paths, cwd } = sessionIn(dir);
+			const captured = await captureSession({
+				manifest,
+				paths,
+				capturer: signedInPageFor([]),
+				cwd,
+				targets: [{ itemId: "inbox", sectionId: "inbox-r1" }],
+			});
+			saveManifest(paths, manifest);
+			writeBoard(paths, {
+				name: "review",
+				sections: captured.map((result) => sectionFromCapture(result, { round: 1 })),
+				pending: [],
+			});
+			const files: string[] = [];
+			const walk = (current: string) => {
+				for (const entry of readdirSync(current)) {
+					const full = join(current, entry);
+					if (statSync(full).isDirectory()) walk(full);
+					else files.push(full);
+				}
+			};
+			walk(dir);
+			expect(files.length).toBeGreaterThan(2);
+			for (const file of files) expect(readFileSync(file).includes(COOKIE_VALUE)).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test.skipIf(!browser)("a real browser reaches the signed-in page through the saved state", async () => {
+		const server = Bun.serve({
+			hostname: "127.0.0.1",
+			port: 0,
+			fetch(req) {
+				const html = (body: string) => new Response(body, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+				if (!(req.headers.get("cookie") ?? "").includes(`sid=${COOKIE_VALUE}`))
+					return new Response(null, { status: 302, headers: { Location: "/Login/SignIn" } });
+				return html('<!doctype html><html lang="en"><head><title>Inbox</title></head><body><h1>Signed in</h1></body></html>');
+			},
+		});
+		saveState("app-admin", stateWith());
+		const capturer = await openPlaywrightCapturer({ noSandbox: true });
+		const request: CaptureRequest = {
+			url: `http://127.0.0.1:${server.port}/sms`,
+			headers: {},
+			cookies: [],
+			width: 390,
+			height: 844,
+			theme: "light",
+			state: "default",
+			menuSelector: "[data-verify-menu]",
+		};
+		try {
+			const shot = await capturer.shot({ ...request, stateName: "app-admin" });
+			expect(shot.html).toContain("Signed in");
+			await expect(capturer.shot({ ...request, stateName: "missing-state" })).rejects.toBeInstanceOf(StateNotFoundError);
+		} finally {
+			await capturer.close();
+			server.stop(true);
 		}
 	});
 });

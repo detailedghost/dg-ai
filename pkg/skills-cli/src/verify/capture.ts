@@ -7,6 +7,7 @@ import { protoDir } from "../prototype/paths";
 import { type AxeReport, axeSummary, mergeAxe } from "./axe";
 import type { BoardImage, Section, VerifyPaths } from "./board";
 import {
+	SavedStateEngineError,
 	STATES,
 	THEMES,
 	VIEWPORTS,
@@ -15,6 +16,7 @@ import {
 	type SideName,
 } from "./capture-model";
 import type { VerifyItem, VerifyManifest } from "./manifest";
+import { load as loadState } from "../pw/core/states";
 import { runDeclaredTests, type TestReport } from "./tests-run";
 
 export interface CaptureTarget {
@@ -41,6 +43,15 @@ function sideUrl(item: VerifyItem, side: SideName): string {
 	if (side === "after") return item.afterUrl;
 	if (!item.targetUrl) throw new Error(`${item.id} has no prototype target`);
 	return item.targetUrl;
+}
+
+const trimmedPath = (url: string): string => new URL(url).pathname.replace(/\/+$/, "");
+
+function assertSamePath(label: string, requested: string, landed: string): void {
+	if (trimmedPath(requested) === trimmedPath(landed)) return;
+	throw new Error(
+		`${label}: the page landed on ${new URL(landed).pathname} instead of ${new URL(requested).pathname}. Save a sign-in with \`dg-skills pw state save <name>\` and add \`state\` to the role.`,
+	);
 }
 
 const noAxe = (): AxeReport => ({ tool: "dg-axe-summary", engine: "local-static", violations: [], passes: [] });
@@ -91,6 +102,8 @@ export async function captureSession(options: {
 	const accepted = new Map(
 		items.flatMap(({ item }) => (item.record ? [[item.id, readRecord(resolve(options.cwd, item.record))] as const] : [])),
 	);
+	for (const { item } of items)
+		for (const role of item.roles) if (role.state) loadState(role.state);
 	const sessionTests = await runDeclaredTests(options.manifest.tests, options.cwd);
 	const captured: CapturedItem[] = [];
 	for (const { item, sectionId } of items) {
@@ -114,6 +127,7 @@ export async function captureSession(options: {
 									url,
 									headers: role.headers,
 									cookies: role.cookies,
+									...(role.state ? { stateName: role.state } : {}),
 									width: viewport.width,
 									height: viewport.height,
 									theme,
@@ -122,9 +136,12 @@ export async function captureSession(options: {
 									...(reads ? { fingerprintRoot: item.rootSelector } : {}),
 								});
 							} catch (error) {
+								if (error instanceof SavedStateEngineError)
+									throw new Error(`verify role ${role.id} uses a saved state; it needs the playwright engine`);
 								const message = error instanceof Error ? error.message : String(error);
 								throw new Error(`${item.id} ${side} ${role.id} ${viewport.id} ${theme} ${state}: ${message}`);
 							}
+							assertSamePath(`${item.id} ${side} ${role.id} ${viewport.id} ${theme} ${state}`, url, shot.finalUrl);
 							const dir = join(root, side, role.id, viewport.id, theme);
 							mkdirSync(dir, { recursive: true });
 							writeFileSync(join(dir, `${state}.png`), shot.png);

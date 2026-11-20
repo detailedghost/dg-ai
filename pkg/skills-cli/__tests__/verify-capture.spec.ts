@@ -316,6 +316,46 @@ describe("layout capture", () => {
 			targets: [{ itemId: "notes", sectionId: "notes-r1" }],
 		});
 
+	test("names the landing path and the pw state command when a capture is redirected", async () => {
+		const ready = setup(undefined, { record: undefined, afterUrl: "http://127.0.0.1:4002/sms" });
+		const capturer: Capturer = {
+			async shot(request) {
+				return {
+					png: PNG,
+					html: "<html lang='en'><title>t</title></html>",
+					finalUrl: "http://127.0.0.1:4002/Login/SignIn?ReturnUrl=%2Fsms",
+					menuFound: false,
+					scrolled: false,
+					engine: request.fingerprintRoot ? "playwright" : "http",
+				};
+			},
+			async close() {},
+		};
+		const attempt = run(ready, capturer);
+		await expect(attempt).rejects.toThrow("/Login/SignIn");
+		await expect(attempt).rejects.toThrow("dg-skills pw state save <name>");
+		await expect(attempt).rejects.toThrow("add `state` to the role");
+	});
+
+	test("accepts a capture that lands on the requested path with a trailing slash", async () => {
+		const ready = setup(undefined, { record: undefined, afterUrl: "http://127.0.0.1:4002/sms" });
+		const capturer: Capturer = {
+			async shot(request) {
+				return {
+					png: PNG,
+					html: "<html lang='en'><title>t</title></html>",
+					finalUrl: request.url.endsWith("/") ? request.url : `${request.url}/`,
+					menuFound: false,
+					scrolled: false,
+					engine: "http",
+				};
+			},
+			async close() {},
+		};
+		const result = await run(ready, capturer);
+		expect(result).toHaveLength(1);
+	});
+
 	test("names a missing record and takes no shot", async () => {
 		const ready = setup(undefined);
 		const { capturer, requests } = fake(control("top", 20));

@@ -4,7 +4,7 @@ feature_snake_case: velora_dg_fixes
 date: "2026-11-20"
 version: "1.0"
 status: in-progress
-current_slice: 3
+current_slice: 1
 pr_strategy: single
 slices:
   - id: 1
@@ -100,22 +100,22 @@ Fix the dg 6.1.0 rough edges found during the Velora release. Verify and prototy
 ### Slice 1 — verify-saved-sign-in
 
 #### Engineering
-- [ ] Manifest role accepts optional `state: <pw state name>`, validated with STATE_NAME from pkg/skills-cli/src/pw/core/states.ts; header and cookie seed checks stay unchanged
-- [ ] CaptureRequest gains optional `stateName`; the playwright capturer loads it with pw states `load()` and passes it as the context storageState; loopback routing and redirect refusal stay in force
-- [ ] A role with `state` refuses the http capturer with a clear error (cookies from a state need the browser engine)
-- [ ] A missing state fails before capture with the StateNotFoundError text, which names `pw state list`
-- [ ] When a capture lands on a different path than requested, the error names the path and says: save a sign-in with `dg-skills pw state save <name>` and add `state` to the role
-- [ ] The state's cookies and storage are never written to the board, session files or logs
-- [ ] Update verify SKILL.md, references/capture.md and docs/verify.md
+- [x] Manifest role accepts optional `state: <pw state name>`, validated with STATE_NAME from pkg/skills-cli/src/pw/core/states.ts; header and cookie seed checks stay unchanged
+- [x] CaptureRequest gains optional `stateName`; the playwright capturer loads it with pw states `load()` and passes it as the context storageState; loopback routing and redirect refusal stay in force
+- [x] A role with `state` refuses the http capturer with a clear error (cookies from a state need the browser engine)
+- [x] A missing state fails before capture with the StateNotFoundError text, which names `pw state list`
+- [x] When a capture lands on a different path than requested, the error names the path and says: save a sign-in with `dg-skills pw state save <name>` and add `state` to the role
+- [x] The state's cookies and storage are never written to the board, session files or logs
+- [x] Update verify SKILL.md, references/capture.md and docs/verify.md
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: `roles[].state?: string` in the verify manifest; invalid names throw `roles[N].state must be a saved pw state name`
-- [ ] Contract: `CaptureRequest.stateName?: string`; playwright capturer calls newContext with `storageState` from `load(stateName)`
-- [ ] Contract: http capturer throws `verify role <id> uses a saved state; it needs the playwright engine` for a request with stateName
-- [ ] verify-manifest.spec: accepts a valid state, rejects a bad name, leaves the 500-char cookie limit and secret checks as they are
-- [ ] verify-playwright.spec: a state-backed request reaches the signed-in page through a fake capturer seam; a missing state fails before any page opens
-- [ ] verify-capture.spec: a redirected capture error names the landing path and the pw state command
+- [x] Contract: `roles[].state?: string` in the verify manifest; invalid names throw `roles[N].state must be a saved pw state name`
+- [x] Contract: `CaptureRequest.stateName?: string`; playwright capturer calls newContext with `storageState` from `load(stateName)`
+- [x] Contract: http capturer throws `verify role <id> uses a saved state; it needs the playwright engine` for a request with stateName
+- [x] verify-manifest.spec: accepts a valid state, rejects a bad name, leaves the 500-char cookie limit and secret checks as they are
+- [x] verify-playwright.spec: a state-backed request reaches the signed-in page through a fake capturer seam; a missing state fails before any page opens
+- [x] verify-capture.spec: a redirected capture error names the landing path and the pw state command
 
 #### Acceptance Criteria
 - [ ] Given a saved pw state for a signed-in loopback app, when a verify role names it, then every capture for that role shows the signed-in page
@@ -234,6 +234,7 @@ Fix the dg 6.1.0 rough edges found during the Velora release. Verify and prototy
 - Slice 5: syncCompatLaunchers rewrites only launchers that exist and sweeps leftover <name>.version files once no launcher remains, so ~/.dg/bin stays gone after the removal release; docs/install.md notes stale skill copies (R6).
 - Slice 6: update logs each failed doctor check and its fix under the summary line through the new formatFailures; the update deps seam returns the DoctorReport; exit code unchanged.
 - Slice 3: thrash SKILL.md gains a Nested run rule (persona-file fallback, then proxy --subagent fallback, never skip a stage, exact stop line); address and review-loop point subagents at it, and address phase 7 cleanup runs in a subagent too.
+- Slice 1: verify roles take an optional saved pw state; the playwright capturer loads only its loopback cookies and origins as storageState and refuses non-loopback WebSockets; the http engine refuses state roles; a missing state fails before capture; a capture that lands on another path names the path and the pw state save command.
 
 ## Agent Notes
 - (owner, 2026-11-20) R1: verify loads a saved pw state per role (`role.state`), loopback only. Seed checks and the cookie cap stay unchanged.

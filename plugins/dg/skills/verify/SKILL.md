@@ -62,6 +62,11 @@ Write a JSON file. Every URL must be loopback (`127.0.0.1`, `localhost`, or `::1
 Do not point at production.
 Do not put real sessions, passwords, or access tokens in headers or cookies.
 Use seed roles only.
+A role may name a saved sign-in instead: set `"state": "<name>"`, where `<name>` is a state saved with `dg-skills pw state save <name>`.
+Verify loads the state and signs in as that user. Only loopback pages are captured.
+A state role needs the `playwright` engine. The `http` engine refuses it.
+The manifest holds the state name only. The cookies stay in the saved state and never reach the board, the session files, or the logs.
+If a page lands on another path, such as a sign-in page, capture stops and tells you to save a sign-in and add `state` to the role.
 
 ```json
 {

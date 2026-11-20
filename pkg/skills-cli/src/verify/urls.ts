@@ -28,9 +28,14 @@ export function looksSecret(value: string): boolean {
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
+/** True for localhost, 127.0.0.1 or ::1, with or without brackets or a leading cookie-domain dot. */
+export function isLoopbackHost(host: string): boolean {
+	return LOOPBACK_HOSTS.has(host.replace(/^\[|\]$/g, "").replace(/^\./, ""));
+}
+
 /** True for an http(s) URL on localhost, 127.0.0.1, or ::1. */
 export function isLoopbackUrl(url: URL): boolean {
-	return (url.protocol === "http:" || url.protocol === "https:") && LOOPBACK_HOSTS.has(url.hostname.replace(/^\[|\]$/g, ""));
+	return (url.protocol === "http:" || url.protocol === "https:") && isLoopbackHost(url.hostname);
 }
 
 /** Accept only a loopback http(s) URL with no userinfo. */

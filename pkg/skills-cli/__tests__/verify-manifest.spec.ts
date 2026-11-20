@@ -85,6 +85,29 @@ describe("parse manifest", () => {
 		expect(() => parseManifest(raw({ name: "" }))).toThrow(/empty/);
 	});
 
+	test("accepts a saved pw state name on a role and rejects a bad one", () => {
+		const withRole = (role: Record<string, unknown>) =>
+			raw({ items: [{ ...(raw().items as Record<string, unknown>[])[0], roles: [role] }] });
+		const manifest = parseManifest(withRole({ id: "admin", state: "app-admin.v2" }));
+		expect(manifest.items[0]?.roles[0]?.state).toBe("app-admin.v2");
+		expect(parseManifest(raw()).items[0]?.roles[0]?.state).toBeUndefined();
+		for (const bad of ["../escape", "Upper", "", 7, "a".repeat(65)])
+			expect(() => parseManifest(withRole({ id: "admin", state: bad }))).toThrow(
+				"roles[0].state must be a saved pw state name",
+			);
+	});
+
+	test("keeps the cookie length limit and secret check on a role that names a state", () => {
+		const withRole = (role: Record<string, unknown>) =>
+			raw({ items: [{ ...(raw().items as Record<string, unknown>[])[0], roles: [role] }] });
+		expect(() =>
+			parseManifest(withRole({ id: "admin", state: "app", cookies: [{ name: "sid", value: "a".repeat(501) }] })),
+		).toThrow(/at most 500 characters/);
+		expect(() =>
+			parseManifest(withRole({ id: "admin", state: "app", cookies: [{ name: "sid", value: "ghp_abcdefghijklmnopqrst" }] })),
+		).toThrow(/looks like a secret/);
+	});
+
 	test("rejects an authorization header and a token-shaped seed", () => {
 		const item = {
 			...(raw().items as Record<string, unknown>[])[0],
