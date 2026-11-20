@@ -1,11 +1,17 @@
 import {
 	CLI_GRANT_PREFIX_HEADER,
 	credentialNameInPrefix,
-	isRecord,
 	validateCredentialName,
 } from "@dg/common";
 import type { CredentialStore } from "../store/credentials-store";
-import { readCappedBody } from "./capped-body";
+import {
+	HARDENING_HEADERS,
+	isJsonContentType,
+	json,
+	readJsonObject,
+	refuse,
+	STORAGE_FAILED,
+} from "./capped-body";
 import { hasCredentialGrant, NOT_ALLOWED, scopedRead } from "./credentials";
 import type { Logger } from "./log";
 import { isBrowserOrigin } from "./origin";
@@ -15,10 +21,6 @@ export type ServiceApiStore = Pick<
 	"listCredentials" | "getCredential" | "verifyCredentialGrant"
 >;
 
-const HARDENING_HEADERS = {
-	"Cache-Control": "no-store",
-	"X-Content-Type-Options": "nosniff",
-};
 const KNOWN_BODY_KEYS = new Set([
 	"type",
 	"requestId",
@@ -30,8 +32,6 @@ const KNOWN_BODY_KEYS = new Set([
 	"grant",
 ]);
 const MAX_BODY_BYTES = 64 * 1024;
-const STORAGE_FAILED =
-	"Credential storage failed; check daemon health and encryption key access.";
 
 function text(body: string, status: number): Response {
 	return new Response(body, {
@@ -41,37 +41,6 @@ function text(body: string, status: number): Response {
 			"Content-Type": "text/plain; charset=utf-8",
 		},
 	});
-}
-
-function json(body: unknown, status: number): Response {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: { ...HARDENING_HEADERS, "Content-Type": "application/json" },
-	});
-}
-
-const refuse = (error: string, status: number) =>
-	json({ ok: false, error }, status);
-
-function isJsonContentType(req: Request): boolean {
-	const type = (req.headers.get("content-type") ?? "")
-		.split(";")[0]
-		.trim()
-		.toLowerCase();
-	return type === "application/json";
-}
-
-async function readJsonObject(
-	req: Request,
-): Promise<Record<string, unknown> | "too-large" | undefined> {
-	const bytes = await readCappedBody(req, MAX_BODY_BYTES);
-	if (!bytes) return "too-large";
-	try {
-		const parsed: unknown = JSON.parse(bytes.toString("utf8"));
-		return isRecord(parsed) ? parsed : undefined;
-	} catch {
-		return undefined;
-	}
 }
 
 /** Serves get and list under the grant prefix for a service that holds a token. */
@@ -87,7 +56,7 @@ export async function handleServiceApiCredentials(
 		if (!hasCredentialGrant(req, store)) return refuse(NOT_ALLOWED, 401);
 		if (!isJsonContentType(req))
 			return text("Content-Type must be application/json", 415);
-		const body = await readJsonObject(req);
+		const body = await readJsonObject(req, MAX_BODY_BYTES);
 		if (body === "too-large") return refuse("request body is too large", 413);
 		if (!body) return refuse("request body must be a JSON object", 400);
 		const { operation } = body;

@@ -66,6 +66,11 @@ export const CHAT_ASSETS_PATH = "/assets";
 export const CHAT_SERVICES_PATH = "/services";
 export const CHAT_JOBS_PATH = "/jobs";
 export const SERVICE_API_CREDENTIALS_PATH = "/service-api/v1/credentials";
+export const JOB_CREDENTIALS_PATH_PATTERN = /^\/jobs\/([^/]+)\/credentials$/;
+
+export function jobCredentialsPath(job: string): string {
+	return `${CHAT_JOBS_PATH}/${encodeURIComponent(job)}/credentials`;
+}
 
 export type JobState = "ok" | "failed" | "paused";
 

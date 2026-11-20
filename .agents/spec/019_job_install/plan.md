@@ -1337,60 +1337,60 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 ### Slice 12 — job-credential-route
 
 #### Engineering
-- [ ] Serve `POST /jobs/<name>/credentials` with the guards of the job route: loopback `Host` (`requireLoopbackHost`), the owner token, and its own check that refuses each `Origin` header; it does not use `refuseForeignOrigin`, which permits the pinned extension origin; the check order is Host, Origin, owner token, job lookup, content type, body
-- [ ] The prefix of a request is the `grant` of the entry `<name>` in the `jobs` table; the body cannot give a prefix
-- [ ] The body is JSON with `Content-Type: application/json` and 128 KiB at most
-- [ ] Operation `status`: `{ prefix, grant: "ok" | "missing" | "stale", credentials: [{ name, meta, updatedAt }] }`, only names below `<prefix>/`
-- [ ] Operation `set` with `name`, `value`, `meta`: the name must be below `<prefix>/`; use `validateCredentialName`, `validateCredentialValue` and `validateCredentialMeta`
-- [ ] Operation `delete` with `name`: the same name rule
-- [ ] Operation `ensure-grant`: make the grant and write the token file only when the grant row is absent, the token file is absent, or the token of the file fails `verifyCredentialGrant`; answer `{ created, path }`; `createCredentialGrant` makes a new token at each call, so a call for each `enable` would break a job that runs with the same prefix
-- [ ] Operation `rotate-grant`: always make a new token and write the file
-- [ ] No answer and no log line holds a value or a token; call `noteSecret` for each value
-- [ ] Add `RESERVED_CREDENTIAL_PREFIXES = ["pw", "extension", "phone-friend", "phone-vault", "db"]` to `pkg/common/src/credentials-format.ts` (`db` is `CREDENTIAL_PREFIX = "db/"` of pkg/skills-cli/src/db/credentials.ts); the route refuses a job whose prefix is in the list
-- [ ] `reserved-credential-prefixes.spec.ts` reads the source text by path, not by import: pkg/common/src/credentials-format.ts, pkg/dg-daemon/src/server/credentials.ts, pkg/dg-agent/src/phone/keys.ts and vault.ts, and pkg/skills-cli/src/db/credentials.ts; it fails when a source constant (`CREDENTIAL_SEALED_PREFIX`, `EXTENSION_CREDENTIAL_PREFIX`, `GRANT_PREFIX`, `VAULT_GRANT_PREFIX`, `CREDENTIAL_PREFIX`) is not in the list; match the `GRANT_PREFIX` line of keys.ts, and list `PW_EXT_CREDENTIAL_PREFIX` of pw-ext-credential-format.ts as the same value as `pw`
-- [ ] `createJobCredentialClient({ paths, job })` in `pkg/common/src/node/job-credentials-client.ts` has `status`, `set`, `delete`, `ensureGrant` and `rotateGrant`; it sends the owner token with `requireOwnerToken`
-- [ ] Each refusal of the route is JSON `{ ok: false, error }`, and an unknown job answers 404 with the error `no job named "<name>"`; the client turns a 404 whose body is not that JSON shape into `DgCliError("this dg-daemon is older than the CLI — run dg daemon restart")`
-- [ ] Do not change the `/cli` socket, `dg-skills credentials` or the service API route
-- [ ] The route is write-only for one prefix: it has no operation that returns a value, and the owner token already lists each session token (`/sessions/local`), so the route adds no authority
-- [ ] The route file is pkg/dg-daemon/src/server/job-credentials.ts; pkg/dg-daemon/src/server/http.ts gets only the route match and the call
-- [ ] The route reads the `jobs` table at each request through one dep `readJobs()` (`parseJobs` of the result of `readConfigStrict`), not from the memory of the supervisor; `HttpServerDeps` gets `readJobs`, and pkg/dg-daemon/src/server/bootstrap.ts gives it in one line
-- [ ] Move `isJsonContentType`, `readJsonObject` and `STORAGE_FAILED` from service-api.ts to pkg/dg-daemon/src/server/capped-body.ts; service-api.ts and the new route import them; write no copy
-- [ ] An unknown operation, a body with no `operation`, an extra body key and a `name` that is not a string answer 400; a method other than POST answers 404; only `"get"` answers 403
-- [ ] Define `grant` of `status`: `missing` is no grant row and no token file; `stale` is a row or a file that exists while the token of the file fails the check, or a row with no file; `ok` is a row whose file token verifies
-- [ ] `status` and `ensure-grant` use a new store method that verifies and does not write `last_used_at`
-- [ ] In `ensure-grant`, the check, `createCredentialGrant` and the file write run with no `await` between them
-- [ ] `rotate-grant` ends the token of each job that shares the prefix
+- [x] Serve `POST /jobs/<name>/credentials` with the guards of the job route: loopback `Host` (`requireLoopbackHost`), the owner token, and its own check that refuses each `Origin` header; it does not use `refuseForeignOrigin`, which permits the pinned extension origin; the check order is Host, Origin, owner token, job lookup, content type, body
+- [x] The prefix of a request is the `grant` of the entry `<name>` in the `jobs` table; the body cannot give a prefix
+- [x] The body is JSON with `Content-Type: application/json` and 128 KiB at most
+- [x] Operation `status`: `{ prefix, grant: "ok" | "missing" | "stale", credentials: [{ name, meta, updatedAt }] }`, only names below `<prefix>/`
+- [x] Operation `set` with `name`, `value`, `meta`: the name must be below `<prefix>/`; use `validateCredentialName`, `validateCredentialValue` and `validateCredentialMeta`
+- [x] Operation `delete` with `name`: the same name rule
+- [x] Operation `ensure-grant`: make the grant and write the token file only when the grant row is absent, the token file is absent, or the token of the file fails `verifyCredentialGrant`; answer `{ created, path }`; `createCredentialGrant` makes a new token at each call, so a call for each `enable` would break a job that runs with the same prefix
+- [x] Operation `rotate-grant`: always make a new token and write the file
+- [x] No answer and no log line holds a value or a token; call `noteSecret` for each value
+- [x] Add `RESERVED_CREDENTIAL_PREFIXES = ["pw", "extension", "phone-friend", "phone-vault", "db"]` to `pkg/common/src/credentials-format.ts` (`db` is `CREDENTIAL_PREFIX = "db/"` of pkg/skills-cli/src/db/credentials.ts); the route refuses a job whose prefix is in the list
+- [x] `reserved-credential-prefixes.spec.ts` reads the source text by path, not by import: pkg/common/src/credentials-format.ts, pkg/dg-daemon/src/server/credentials.ts, pkg/dg-agent/src/phone/keys.ts and vault.ts, and pkg/skills-cli/src/db/credentials.ts; it fails when a source constant (`CREDENTIAL_SEALED_PREFIX`, `EXTENSION_CREDENTIAL_PREFIX`, `GRANT_PREFIX`, `VAULT_GRANT_PREFIX`, `CREDENTIAL_PREFIX`) is not in the list; match the `GRANT_PREFIX` line of keys.ts, and list `PW_EXT_CREDENTIAL_PREFIX` of pw-ext-credential-format.ts as the same value as `pw`
+- [x] `createJobCredentialClient({ paths, job })` in `pkg/common/src/node/job-credentials-client.ts` has `status`, `set`, `delete`, `ensureGrant` and `rotateGrant`; it sends the owner token with `requireOwnerToken`
+- [x] Each refusal of the route is JSON `{ ok: false, error }`, and an unknown job answers 404 with the error `no job named "<name>"`; the client turns a 404 whose body is not that JSON shape into `DgCliError("this dg-daemon is older than the CLI — run dg daemon restart")`
+- [x] Do not change the `/cli` socket, `dg-skills credentials` or the service API route
+- [x] The route is write-only for one prefix: it has no operation that returns a value, and the owner token already lists each session token (`/sessions/local`), so the route adds no authority
+- [x] The route file is pkg/dg-daemon/src/server/job-credentials.ts; pkg/dg-daemon/src/server/http.ts gets only the route match and the call
+- [x] The route reads the `jobs` table at each request through one dep `readJobs()` (`parseJobs` of the result of `readConfigStrict`), not from the memory of the supervisor; `HttpServerDeps` gets `readJobs`, and pkg/dg-daemon/src/server/bootstrap.ts gives it in one line
+- [x] Move `isJsonContentType`, `readJsonObject` and `STORAGE_FAILED` from service-api.ts to pkg/dg-daemon/src/server/capped-body.ts; service-api.ts and the new route import them; write no copy
+- [x] An unknown operation, a body with no `operation`, an extra body key and a `name` that is not a string answer 400; a method other than POST answers 404; only `"get"` answers 403
+- [x] Define `grant` of `status`: `missing` is no grant row and no token file; `stale` is a row or a file that exists while the token of the file fails the check, or a row with no file; `ok` is a row whose file token verifies
+- [x] `status` and `ensure-grant` use a new store method that verifies and does not write `last_used_at`
+- [x] In `ensure-grant`, the check, `createCredentialGrant` and the file write run with no `await` between them
+- [x] `rotate-grant` ends the token of each job that shares the prefix
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: 401 with no owner token or an incorrect one; 400 with an `Origin` header; 400 with a `Host` that is not the loopback authority; 404 with the error `no job named "<name>"` for an unknown job; 409 with `job "<name>" has no credential prefix`; 403 for a name outside the prefix and for a reserved prefix; 413 above 128 KiB; 415 for another content type; 200 for success; each refusal is JSON `{ ok: false, error }`
-- [ ] Contract: no operation has a `get`; a body with `"operation": "get"` gives 403
-- [ ] Contract: `ensure-grant` two times: the second answer has `created: false`, and the token file bytes are equal
-- [ ] Contract: `ensure-grant` after a delete of the token file has `created: true`
-- [ ] Contract: after `set` and `ensure-grant`, a `get` on `/service-api/v1/credentials` with the token of the file gives the value
-- [ ] Contract: no response body and no daemon log line of the spec run holds the value text
-- [ ] Contract: `set` for the job `a` with the name `b/x` gives 403 and stores nothing
-- [ ] Error: with the credential store closed or broken, each operation gives 500 with the text of the service API
-- [ ] Regression: `bun test` and `bun run lint` pass in pkg/dg-daemon, pkg/common and pkg/skills-test
-- [ ] Contract: after `job add` on a live daemon, the route finds the new job with no daemon restart
-- [ ] Contract: a plain value of 65536 bytes passes `set`; a value that JSON escapes push above 128 KiB gets 413 (accepted)
-- [ ] Contract: a request with an `Origin` and no token answers 400
-- [ ] Contract: an unknown job on a new daemon does not give the `older than the CLI` text in the client
-- [ ] Contract: one case each: an unknown operation, a body with no `operation`, an extra body key and a `name` that is not a string answer 400; a method other than POST answers 404
-- [ ] Contract: one case for each `grant` state of `status`: `missing`, `stale` and `ok`
-- [ ] Contract: two `ensure-grant` calls at the same time give exactly one `created: true`, and the file token verifies
-- [ ] Contract: a row with a new token and an old file is `stale`, and the next `ensure-grant` repairs it
-- [ ] Contract: `rotate-grant` gives a new token, the old token fails, and the file has mode 0600
-- [ ] Contract: one case for `delete` of a name that exists, and one for a name that does not
-- [ ] Contract: the shape of `status`: only names below the prefix, with `meta` and `updatedAt`, and no value
-- [ ] Contract: `set` with a name, a value or a meta that is not valid answers 400 with no echo of the value; `set` with no `meta` passes, because `meta` is optional in the route and in the client
-- [ ] Contract: the names `a` and `ab/x` for the prefix `a` answer 403; `A/x` is folded as `validateCredentialName` does
-- [ ] Contract (client spec): each method sends the owner token header and the right body, and no error text holds a token or a value
-- [ ] Check (manual, before the commit; no spec): the private-name Check of slice 7 on the changed files; the fixtures use `bot`, `a` and `b`
+- [x] Contract: 401 with no owner token or an incorrect one; 400 with an `Origin` header; 400 with a `Host` that is not the loopback authority; 404 with the error `no job named "<name>"` for an unknown job; 409 with `job "<name>" has no credential prefix`; 403 for a name outside the prefix and for a reserved prefix; 413 above 128 KiB; 415 for another content type; 200 for success; each refusal is JSON `{ ok: false, error }`
+- [x] Contract: no operation has a `get`; a body with `"operation": "get"` gives 403
+- [x] Contract: `ensure-grant` two times: the second answer has `created: false`, and the token file bytes are equal
+- [x] Contract: `ensure-grant` after a delete of the token file has `created: true`
+- [x] Contract: after `set` and `ensure-grant`, a `get` on `/service-api/v1/credentials` with the token of the file gives the value
+- [x] Contract: no response body and no daemon log line of the spec run holds the value text
+- [x] Contract: `set` for the job `a` with the name `b/x` gives 403 and stores nothing
+- [x] Error: with the credential store closed or broken, each operation gives 500 with the text of the service API
+- [x] Regression: `bun test` and `bun run lint` pass in pkg/dg-daemon, pkg/common and pkg/skills-test
+- [x] Contract: after `job add` on a live daemon, the route finds the new job with no daemon restart
+- [x] Contract: a plain value of 65536 bytes passes `set`; a value that JSON escapes push above 128 KiB gets 413 (accepted)
+- [x] Contract: a request with an `Origin` and no token answers 400
+- [x] Contract: an unknown job on a new daemon does not give the `older than the CLI` text in the client
+- [x] Contract: one case each: an unknown operation, a body with no `operation`, an extra body key and a `name` that is not a string answer 400; a method other than POST answers 404
+- [x] Contract: one case for each `grant` state of `status`: `missing`, `stale` and `ok`
+- [x] Contract: two `ensure-grant` calls at the same time give exactly one `created: true`, and the file token verifies
+- [x] Contract: a row with a new token and an old file is `stale`, and the next `ensure-grant` repairs it
+- [x] Contract: `rotate-grant` gives a new token, the old token fails, and the file has mode 0600
+- [x] Contract: one case for `delete` of a name that exists, and one for a name that does not
+- [x] Contract: the shape of `status`: only names below the prefix, with `meta` and `updatedAt`, and no value
+- [x] Contract: `set` with a name, a value or a meta that is not valid answers 400 with no echo of the value; `set` with no `meta` passes, because `meta` is optional in the route and in the client
+- [x] Contract: the names `a` and `ab/x` for the prefix `a` answer 403; `A/x` is folded as `validateCredentialName` does
+- [x] Contract (client spec): each method sends the owner token header and the right body, and no error text holds a token or a value
+- [x] Check (manual, before the commit; no spec): the private-name Check of slice 7 on the changed files; the fixtures use `bot`, `a` and `b`
 
 #### Acceptance Criteria
-- [ ] Given a daemon with no agent session, when the CLI stores a credential for a job, then the store holds it and the job can read it with its grant
-- [ ] Given two jobs with one prefix, when the second job gets its grant, then the token of the first job stays valid
+- [x] Given a daemon with no agent session, when the CLI stores a credential for a job, then the store holds it and the job can read it with its grant
+- [x] Given two jobs with one prefix, when the second job gets its grant, then the token of the first job stays valid
 
 ### Slice 13 — job-add-git
 
@@ -2416,6 +2416,7 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 
 ## Slice Summaries
 
+- Slice 12: POST /jobs/<name>/credentials is write-only for the credential prefix of one job (status, set, delete, ensure-grant, rotate-grant); the prefix is the grant of the job entry, read per request; createJobCredentialClient in @dg/common/node; RESERVED_CREDENTIAL_PREFIXES with a source-reading spec.
 - Slice 19: dg-skills channel-review export --env --label writes import.json (version 1) into the job state folder with mode 0600; it refuses a live daemon and reads state read-only; commands.md and the dg-skills completion tree list it.
 - Slice 11 (c4ba56e9): docs/jobs-and-services.md uses the noun job, with the verb table, the old and new table, the run rules, the move, the rollback and the limits; ADR 0049 records the job model; ADR 0043 and the ADR 0020 amendment link it; the jobs skill gets ## Job verbs. job-model-docs.spec.ts is new. Vale did not run (not installed); markdownlint is clean on the new files.
 - Slice 10 (a79f1eba, 24ef07fb): scheduled rows move to the jobs table at daemon start in three steps, and the runner runs them through the one launcher. The argv rewrite runs with PRAGMA secure_delete=ON, then PRAGMA wal_checkpoint(TRUNCATE); a spec proves that no 32-byte part of the old ciphertext stays in daemon.db or daemon.db-wal.
@@ -2464,6 +2465,13 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 - (slice 19, dg:js) runExport(flags, io, platform?) is in pkg/skills-cli/src/channel-review/export.ts; slice 21 removes it with the command.
 - (slice 19, dg:js) Legacy state is detected by "lastEventId" in state; readPidRecord and isOurDaemon use ps, so live-daemon specs keep ps on PATH.
 - (slice 19, dg:js) Export failures print channel-review export: lines to stderr with exit 1 (not DgCliError, to avoid the dg-skills prefix); a blocked layout keeps its own text and exit code.
+
+- (slice 12, dg:js) isReservedCredentialPrefix(prefix) is in @dg/common credentials-format.ts; slices 13, 15 and 16 use it in assertPrefixFree.
+- (slice 12, dg:js) The loopback Host refusal comes from the global check in http.ts and answers 400 as plain text: the one exception to 'each refusal is JSON'. Put it in the PR body.
+- (slice 12, dg:js) OLDER_DAEMON_TEXT is exported from job-credentials-client.ts; job-support.ts has its own copy with the same text.
+- (slice 12, dg:js) HttpServerDeps requires readJobs; a hand-built deps object in a later spec must pass it. CredentialStore.inspectCredentialGrant verifies with no last_used_at write.
+- (slice 12, dg:js) Two jobs can share a prefix and one token file: slice 15 must not revoke a shared grant when it removes one job.
+- (slice 12, dg:js) writeNewGrant checks the layout and makes the token folder before it changes the grant row; a failed file write after that can still leave a stale row, which the next ensure-grant repairs (PR body).
 
 ## Issues Remediation
 

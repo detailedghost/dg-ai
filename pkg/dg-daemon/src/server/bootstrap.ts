@@ -24,7 +24,7 @@ import {
 } from "@dg/common/node";
 import { assertNotBlocked } from "@dg/common/node/layout";
 import { DispatchScheduler } from "../dispatch";
-import { countEnabledScheduled } from "../jobs/config";
+import { countEnabledScheduled, parseJobs } from "../jobs/config";
 import { createJobControl } from "../jobs/control";
 import { isDaemonIdle } from "../jobs/idle";
 import {
@@ -56,7 +56,7 @@ import {
 	setKeySourceProvider,
 	setUserVersionProvider,
 } from "../utils/key-source";
-import { readConfig } from "./config-store";
+import { readConfig, readConfigStrict } from "./config-store";
 import { ConnectionManager, isExtensionPeer, sendViaQueue } from "./connection";
 import { createHttpServer, type HttpServerDeps, newInstanceId } from "./http";
 import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
@@ -211,6 +211,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 				credentials,
 				dispatchScheduler,
 				jobs: createJobControl(supervisor, jobRunner),
+				readJobs: () => parseJobs(readConfigStrict(paths)),
 			});
 			boundPort = candidate;
 			break;

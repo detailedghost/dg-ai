@@ -262,6 +262,27 @@ export class CredentialStore {
 		return true;
 	}
 
+	/** Reports whether a grant row exists and whether the token matches it, with no write of last_used_at. */
+	inspectCredentialGrant(
+		prefix: string,
+		token: string | undefined,
+	): { row: boolean; valid: boolean } {
+		let canonical: string;
+		try {
+			canonical = validateCredentialGrantPrefix(prefix);
+		} catch {
+			return { row: false, valid: false };
+		}
+		const row = this.db
+			.query("SELECT token_hash FROM credential_grants WHERE prefix = ?")
+			.get(canonical) as { token_hash: string } | null;
+		const matches = tokensEqual(
+			row?.token_hash ?? UNKNOWN_GRANT_HASH,
+			hashToken(token ?? ""),
+		);
+		return { row: row !== null, valid: row !== null && token !== undefined && matches };
+	}
+
 	/** Lists grants without their token hashes. */
 	listCredentialGrants(): CredentialGrantSummary[] {
 		return (

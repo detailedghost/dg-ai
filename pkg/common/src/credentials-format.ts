@@ -15,6 +15,14 @@ export const CREDENTIAL_MAX_META_BYTES = 8_192;
 export const CREDENTIAL_NAME_PATTERN = /^[a-z0-9][a-z0-9._/-]{0,127}$/;
 /** Grant prefixes are the consumer segment of a credential name. */
 export const CREDENTIAL_GRANT_PREFIX_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+/** Prefixes that dg tools own; a job cannot take one as its credential prefix. */
+export const RESERVED_CREDENTIAL_PREFIXES = [
+	"pw",
+	"extension",
+	"phone-friend",
+	"phone-vault",
+	"db",
+] as const;
 const SECRET_LIKE_KEY = /value|secret|token|password/i;
 export const SECRET_PAGE_PATH = "/secret";
 export const SECRET_INTAKE_PATH = "/secret-intake";
@@ -135,6 +143,13 @@ export function validateCredentialGrantPrefix(value: unknown): string {
 /** True when the name sits under `<prefix>/`, ignoring letter case. */
 export function credentialNameInPrefix(name: string, prefix: string): boolean {
 	return name.toLowerCase().startsWith(`${prefix.toLowerCase()}/`);
+}
+
+/** True when the prefix is one that a dg tool owns, ignoring letter case. */
+export function isReservedCredentialPrefix(prefix: string): boolean {
+	return (RESERVED_CREDENTIAL_PREFIXES as readonly string[]).includes(
+		prefix.toLowerCase(),
+	);
 }
 
 function validateGrantAuth(value: unknown): void {

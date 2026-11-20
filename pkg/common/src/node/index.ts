@@ -4,6 +4,7 @@ export * from "./bun-path";
 export * from "./cli-client";
 export * from "./credential-grants";
 export * from "./credentials-client";
+export * from "./job-credentials-client";
 export * from "./daemon-id";
 export * from "./daemon-start";
 export * from "./dg-config";

@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import {
 	CREDENTIAL_MAX_VALUE_BYTES,
 	credentialNameInPrefix,
+	isReservedCredentialPrefix,
+	RESERVED_CREDENTIAL_PREFIXES,
 	validateCredentialGrantPrefix,
 	validateCredentialMeta,
 	validateCredentialName,
@@ -143,5 +145,25 @@ describe("validateCredentialsCliRequest", () => {
 		});
 		expect(authed.name).toBe("phone-vault/2026-w46");
 		expect(authed.grant?.prefix).toBe("phone-vault");
+	});
+});
+
+describe("RESERVED_CREDENTIAL_PREFIXES", () => {
+	it("lists the prefixes that dg tools own", () => {
+		expect([...RESERVED_CREDENTIAL_PREFIXES]).toEqual([
+			"pw",
+			"extension",
+			"phone-friend",
+			"phone-vault",
+			"db",
+		]);
+	});
+
+	it("matches a reserved prefix in any letter case and nothing else", () => {
+		expect(isReservedCredentialPrefix("pw")).toBe(true);
+		expect(isReservedCredentialPrefix("DB")).toBe(true);
+		expect(isReservedCredentialPrefix("phone-vault")).toBe(true);
+		expect(isReservedCredentialPrefix("bot")).toBe(false);
+		expect(isReservedCredentialPrefix("pw2")).toBe(false);
 	});
 });
