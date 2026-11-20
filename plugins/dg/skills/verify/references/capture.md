@@ -70,3 +70,15 @@ Roles may set headers and cookies.
 `Authorization`, `Cookie`, and `Proxy-Authorization` are rejected.
 Values that look like a GitHub token, a Slack token, an AWS access key, a bearer token, or a long `sk-` key are rejected.
 Point every URL at a local server that serves seed accounts.
+
+## Saved sign-in
+
+A role may set `state` to the name of a saved pw state.
+Save one with `dg-skills pw state save <name>`. List them with `dg-skills pw state list`.
+The `playwright` engine loads only the loopback cookies and storage of the state into the browser for every shot of that role.
+The page must still be on loopback. The seed header and cookie checks and the 500 character cookie limit do not change.
+The `http` engine refuses a role with `state`: `verify role <id> uses a saved state; it needs the playwright engine`.
+A missing state stops the capture before any page opens.
+The state's cookies and storage never go into the manifest, the board, the session files, or the logs.
+A shot that lands on another path than the one you asked for stops the capture. The error names the landing path.
+It says to save a sign-in and add `state` to the role.

@@ -1,6 +1,7 @@
 import {
 	menuIsOpen,
 	pageMarkedScrolled,
+	SavedStateEngineError,
 	type Capturer,
 	type CaptureRequest,
 	type CaptureShot,
@@ -39,6 +40,7 @@ async function followLoopback(target: string, headers: Headers, timeoutMs: numbe
 export function createHttpCapturer(timeoutMs = 10_000): Capturer {
 	return {
 		async shot(request: CaptureRequest): Promise<CaptureShot> {
+			if (request.stateName) throw new SavedStateEngineError();
 			const headers = new Headers(request.headers);
 			if (request.cookies.length > 0) headers.set("cookie", cookieHeader(request.cookies));
 			const target = withCaptureQuery(request.url, request.theme, request.state);

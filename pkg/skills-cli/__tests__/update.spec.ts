@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { CheckReport, DoctorReport } from "../src/doctor/types";
 import { codexState, type InstallTarget, runUpdate, standaloneRefresh, type UpdateDeps } from "../src/update/run";
 
 let home: string;
@@ -15,6 +16,12 @@ beforeEach(() => {
 afterEach(() => {
 	rmSync(home, { recursive: true, force: true });
 });
+
+const doctorReport = (failures = 0): DoctorReport => {
+	const checks: CheckReport[] = [{ id: "fine", status: "ok", detail: "fine", fix: null }];
+	for (let i = 1; i <= failures; i++) checks.push({ id: `bad-${i}`, status: "fail", detail: `broken ${i}`, fix: `repair ${i}` });
+	return { items: [{ item: "ext", checks }], ok: failures === 0 };
+};
 
 const claudeHome = () => join(home, ".claude");
 
@@ -71,7 +78,7 @@ function fake(overrides: FakeOptions = {}): Fake {
 			if (!stuck && line === "codex plugin add dg@detailedghost") codexPlugin("3.1.0");
 			return { status: 0, stdout: "", stderr: "" };
 		},
-		doctorSummary: async () => "10 passed, 0 info, 0 to review, 0 failed",
+		doctor: async () => doctorReport(),
 		log: (line) => lines.push(line),
 		...rest,
 	};
@@ -91,8 +98,30 @@ describe("dg-skills update", () => {
 			"codex plugin add dg@detailedghost",
 		]);
 		expect(d.lines[0]).toBe("✅ CLI, runtime and extension: dg 3.1.0 installed");
-		expect(d.lines.join("\n")).toContain("Doctor (information only, not part of the exit code): 10 passed");
+		expect(d.lines.join("\n")).toContain("Doctor (information only, not part of the exit code): 1 passed");
 		expect(d.lines.at(-1)).toContain("Restart Claude Code and Codex sessions");
+	});
+
+	test("prints each failed doctor check under the summary and still exits 0", async () => {
+		claudePlugin("3.0.1");
+		const d = fake({ doctor: async () => doctorReport(4) });
+		expect(await runUpdate({}, d)).toBe(0);
+		const at = d.lines.findIndex((line) => line.startsWith("Doctor (information only"));
+		expect(d.lines[at]).toContain("1 passed, 0 info, 0 to review, 4 failed");
+		const failures = d.lines.slice(at + 1).join("\n").split("\n").filter((line) => line.includes("❌"));
+		expect(failures).toHaveLength(4);
+		expect(d.lines.slice(at + 1).join("\n")).toContain("Fix: repair 4");
+		expect(d.lines.at(-1)).toContain("Restart Claude Code");
+	});
+
+	test("prints only the summary when no doctor check fails", async () => {
+		claudePlugin("3.0.1");
+		const d = fake();
+		await runUpdate({}, d);
+		const at = d.lines.findIndex((line) => line.startsWith("Doctor (information only"));
+		expect(d.lines[at]).toContain("1 passed, 0 info, 0 to review, 0 failed");
+		expect(d.lines[at + 1]).toBe("Run dg-skills doctor for details.");
+		expect(d.lines).toHaveLength(at + 3);
 	});
 
 	test("a CLI-only install stays CLI-only", async () => {

@@ -360,6 +360,33 @@ describe("proto skill local mode", () => {
 	});
 });
 
+describe("proto skill minimum bar and exit codes", () => {
+	test("local-ui.md requires Approve, Reject, More versions and notes on a hand-written bar", () => {
+		expect(skillFile("references/local-ui.md")).toMatch(
+			/a bar without Approve, Reject, More versions, and notes is incomplete/,
+		);
+	});
+
+	test("the port recipe for a host with no endpoint template keeps the more action and names the .more sentinel", () => {
+		for (const path of ["references/local-build.md", "assets/README.md"]) {
+			const text = skillFile(path);
+			expect(text).toMatch(/no shipped endpoint template/);
+			expect(text).toMatch(/`confirm`, `reject`, `more`, and `status`/);
+			expect(text).toMatch(/Never drop the `more` action/);
+			expect(text).toContain("`.more` sentinel");
+		}
+	});
+
+	test("the docs say wait exits 124 on timeout and 75 for a skipped fingerprint, never 1 for a timeout", () => {
+		const build = skillFile("references/local-build.md");
+		expect(build).toContain('{"status":"timeout","pending":true}');
+		expect(build).toMatch(/exits 124/);
+		expect(build).toMatch(/Exit 75/);
+		expect(build).not.toMatch(/timeout[^\n]*exits 1\b/);
+		expect(skillFile("references/local-ui.md")).toContain("run: dg-skills prototype fingerprint <name> --url=<url> --state=<name>");
+	});
+});
+
 describe("proto skill network egress", () => {
 	const files = walkSkillFiles();
 

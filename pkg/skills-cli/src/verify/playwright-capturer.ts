@@ -1,4 +1,5 @@
 import { collectLayout, PROTOTYPE_CHROME_SELECTOR, settleAnimations } from "../layout/fingerprint";
+import { load as loadState, type StorageState } from "../pw/core/states";
 import { resolveBrowserBinary, sandboxDisabled } from "../utils/cdp-harness";
 import {
 	menuIsOpen,
@@ -8,7 +9,21 @@ import {
 	type CaptureRequest,
 	type CaptureShot,
 } from "./capture-model";
-import { isLoopbackUrl } from "./urls";
+import { isLoopbackHost, isLoopbackUrl } from "./urls";
+
+function isLoopbackOrigin(origin: string): boolean {
+	return URL.canParse(origin) && isLoopbackUrl(new URL(origin));
+}
+
+/** The loopback-only part of a saved state, in the shape newContext takes. */
+export function loopbackStorageState(saved: StorageState) {
+	return {
+		cookies: (saved.cookies ?? []).filter((cookie) => isLoopbackHost(cookie.domain ?? "")),
+		origins: (saved.origins ?? [])
+			.filter((origin) => isLoopbackOrigin(origin.origin))
+			.map((origin) => ({ origin: origin.origin, localStorage: origin.localStorage ?? [] })),
+	};
+}
 
 const STABLE_BROWSERS = ["google-chrome", "google-chrome-stable"];
 
@@ -55,7 +70,9 @@ export async function openPlaywrightCapturer(options?: {
 	});
 	return {
 		async shot(request: CaptureRequest): Promise<CaptureShot> {
+			const saved = request.stateName ? loadState(request.stateName) : undefined;
 			const context = await browser.newContext({
+				...(saved ? { storageState: loopbackStorageState(saved) } : {}),
 				viewport: { width: request.width, height: request.height },
 				deviceScaleFactor: 1,
 				colorScheme: request.theme,
@@ -88,6 +105,10 @@ export async function openPlaywrightCapturer(options?: {
 						return route.abort("blockedbyclient");
 					}
 					return route.fulfill({ response });
+				});
+				await context.routeWebSocket(/.*/, (socket) => {
+					if (isLoopbackOrigin(socket.url().replace(/^ws/, "http"))) socket.connectToServer();
+					else socket.close();
 				});
 				const page = await context.newPage();
 				if (request.signIn) {

@@ -14,6 +14,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { save as saveState } from "../src/pw/core/states";
 import { makeTempDir } from "./git-repo-fixtures";
 import { collectRun, type SpecRun } from "./spec-fixtures";
 
@@ -33,6 +34,7 @@ let root: string;
 let scratch: string;
 let outside: string;
 const children: Array<{ kill(): void }> = [];
+const priorStateDir = process.env.AI_STATE_DIR;
 
 beforeEach(() => {
 	root = makeTempDir("dg-prototype-ui-");
@@ -40,6 +42,8 @@ beforeEach(() => {
 	outside = join(root, "outside");
 	mkdirSync(scratch, { recursive: true });
 	mkdirSync(outside, { recursive: true });
+	process.env.AI_STATE_DIR = join(root, "state");
+	saveState("velora", { cookies: [], origins: [] });
 });
 
 afterEach(() => {
@@ -63,6 +67,8 @@ afterEach(() => {
 		}
 	}
 	rmSync(root, { recursive: true, force: true });
+	if (priorStateDir === undefined) delete process.env.AI_STATE_DIR;
+	else process.env.AI_STATE_DIR = priorStateDir;
 });
 
 function env(): Record<string, string> {
@@ -167,7 +173,7 @@ describe("prototype ui", () => {
 		expect(page).toContain("Alpha");
 		await decide(session.port, { action: "confirm", variant: "B", notes: "" });
 		const result = await run.done;
-		expect(result.exitCode).toBe(0);
+		expect(result.exitCode).toBe(75);
 		expect(JSON.parse(result.stdout)).toEqual({
 			status: "ok",
 			variant: "B",
@@ -315,7 +321,7 @@ describe("prototype ui", () => {
 		mkdirSync(ambient, { recursive: true });
 		expect((await cli(["status", "pinned"], ambient).done).stdout).toBe("B\n");
 		const claimed = await cli(["wait", "pinned", "--timeout=5"], ambient).done;
-		expect(claimed.exitCode).toBe(0);
+		expect(claimed.exitCode).toBe(75);
 		expect(JSON.parse(claimed.stdout)).toEqual({
 			status: "ok",
 			variant: "B",
@@ -368,8 +374,8 @@ describe("prototype ui", () => {
 			'{"status":"ok","variant":"C","notes":"n"}\n',
 		);
 		const timed = await cli(["wait", "raw", "--timeout=1"]).done;
-		expect(timed.exitCode).toBe(1);
-		expect(timed.stdout).toBe("timeout\n");
+		expect(timed.exitCode).toBe(124);
+		expect(timed.stdout).toBe("timeout, still pending\n");
 	});
 
 	test("status falls back to an unclaimed --ext verdict when no local sentinel is pending", async () => {
@@ -482,8 +488,8 @@ describe("prototype ui", () => {
 
 		expect((await cli(["status", name]).done).stdout).toBe("pending\n");
 		const timedOut = await cli(["wait", name, "--timeout=1"]).done;
-		expect(timedOut.exitCode).toBe(1);
-		expect(timedOut.stdout).toBe("timeout\n");
+		expect(timedOut.exitCode).toBe(124);
+		expect(timedOut.stdout).toBe("timeout, still pending\n");
 
 		expect((await cli(["status", `${name}-selftest`]).done).stdout).toBe("Z\n");
 	});
@@ -494,7 +500,7 @@ describe("prototype ui", () => {
 		expect(result.stderr).toContain("invalid prototype name");
 	});
 
-	test("times out with status 1 and a timeout line when nothing is decided", async () => {
+	test("times out with status 124 and a pending timeout line when nothing is decided", async () => {
 		const run = cli([
 			"ui",
 			manifest("idle"),
@@ -503,10 +509,55 @@ describe("prototype ui", () => {
 			"--timeout=1",
 		]);
 		const result = await run.done;
-		expect(result.exitCode).toBe(1);
-		expect(JSON.parse(result.stdout)).toEqual({ status: "timeout" });
+		expect(result.exitCode).toBe(124);
+		expect(JSON.parse(result.stdout)).toEqual({ status: "timeout", pending: true });
 		const session = readState("idle");
 		if (session) expect(await exited(session.pid)).toBe(true);
+	});
+
+	test("a session started with --sign-in and --state forwards both on wait and exits 75 for a skipped fingerprint", async () => {
+		const run = cli([
+			"ui",
+			manifest("gated"),
+			"--no-open",
+			`--port=${port()}`,
+			"--timeout=60",
+			"--sign-in=http://127.0.0.1:5000/prototype-signin",
+			"--state=velora",
+		]);
+		const session = await sessionFor("gated");
+		expect(session).toMatchObject({
+			signIn: "http://127.0.0.1:5000/prototype-signin",
+			stateName: "velora",
+		});
+		run.proc.kill();
+		await run.done;
+		await decide(session.port, { action: "confirm", variant: "A", notes: "" });
+		const claimed = await cli(["wait", "gated", "--timeout=5"]).done;
+		expect(claimed.exitCode).toBe(75);
+		expect(JSON.parse(claimed.stdout)).toEqual({ status: "ok", variant: "A", notes: "" });
+		expect(claimed.stderr).toContain("prototype: fingerprint skipped:");
+		expect(claimed.stderr).toContain("prototype fingerprint gated --url=<url> --state=velora --sign-in=<url>");
+		await cli(["stop", "gated"]).done;
+	});
+
+	test("a --state that names no saved pw state fails before the server starts", async () => {
+		const result = await cli(["ui", manifest("missing"), "--no-open", `--port=${port()}`, "--state=no-such-state"]).done;
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("pw state list");
+		expect(readState("missing")).toBeUndefined();
+	});
+
+	test("wait on a session takes --state from the command line", async () => {
+		const run = cli(["ui", manifest("late"), "--no-open", `--port=${port()}`, "--timeout=60"]);
+		const session = await sessionFor("late");
+		run.proc.kill();
+		await run.done;
+		await decide(session.port, { action: "confirm", variant: "A", notes: "" });
+		const claimed = await cli(["wait", "late", "--timeout=5", "--state=velora"]).done;
+		expect(claimed.exitCode).toBe(75);
+		expect(claimed.stderr).toContain("prototype fingerprint late --url=<url> --state=velora");
+		await cli(["stop", "late"]).done;
 	});
 
 	test("renders a ProtoPlan with labels and scoped styles from the shared format", async () => {
@@ -668,6 +719,6 @@ describe("prototype ui", () => {
 			await (await fetch(`http://127.0.0.1:${session.port}/`)).text(),
 		).toContain("Piped");
 		await decide(session.port, { action: "confirm", variant: "A", notes: "" });
-		expect((await done).exitCode).toBe(0);
+		expect((await done).exitCode).toBe(75);
 	});
 });

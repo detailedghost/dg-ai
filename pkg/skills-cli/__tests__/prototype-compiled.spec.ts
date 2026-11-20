@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { cleanupDgHome } from "@dg/dg-daemon/test-harness";
 import { relocatedBundleCommand } from "./bundle-build";
 import { mergeEnv } from "./module-call";
+import { EXIT_FINGERPRINT_SKIPPED, EXIT_PROTOTYPE_TIMEOUT } from "../src/prototype/sentinels";
 import { protoDaemonFixture } from "./proto-cli-harness";
 import {
 	collectRun,
@@ -205,8 +206,8 @@ describe("compiled dg-skills prototype, local mode, from an outside folder", () 
 			"--timeout=1",
 			"--json",
 		]);
-		expect(timed.exitCode).toBe(1);
-		expect(timed.stdout).toBe('{"status":"timeout"}\n');
+		expect(timed.exitCode).toBe(EXIT_PROTOTYPE_TIMEOUT);
+		expect(timed.stdout).toBe('{"status":"timeout","pending":true}\n');
 
 		const rejectPath = (await compiled(["prototype", "path", "logic"])).stdout
 			.trim()
@@ -251,7 +252,7 @@ describe("compiled dg-skills prototype, local mode, from an outside folder", () 
 		expect(page).toContain('"get_prototype_state"');
 		await post(live.port, { action: "confirm", variant: "b", notes: "" });
 		const result = await run.done;
-		expect(result.exitCode).toBe(0);
+		expect(result.exitCode).toBe(EXIT_FINGERPRINT_SKIPPED);
 		expect(JSON.parse(result.stdout)).toEqual({
 			status: "ok",
 			variant: "b",

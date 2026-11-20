@@ -1,7 +1,7 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { CLI_ENTRY, runCli } from "./module-call";
 
 setDefaultTimeout(20_000);
@@ -127,6 +127,124 @@ describe("dg-skills stat mutations", () => {
 			expect(json.open.map((item: { text: string }) => item.text).sort()).toEqual(["a", "b", "c", "d"]);
 			const file = checklistFile(env.AI_STATE_DIR as string);
 			expect(existsSync(`${file}.lock`)).toBe(false);
+		});
+	});
+});
+
+describe("dg-skills stat archive", () => {
+	async function seed(env: Record<string, string>, root: string): Promise<void> {
+		for (const args of [
+			["add", "open first"],
+			["add", "shipped parent"],
+			["add", "shipped child", "--under", "2"],
+			["add", "open second"],
+			["add", "other shipped"],
+			["done", "shipped child"],
+			["done", "shipped parent"],
+			["done", "other shipped"],
+		])
+			expect((await stat(args, env, root)).exitCode).toBe(0);
+		expect((await stat(["add", "late child", "--under", "open first"], env, root)).exitCode).toBe(0);
+	}
+
+	test("moves done items with their subtrees, keeps open items in order, and reports open children", async () => {
+		await withRoot(async (env, root) => {
+			await seed(env, root);
+			const file = checklistFile(env.AI_STATE_DIR as string);
+			const run = await stat(["archive", "--json"], env, root);
+			expect(run.exitCode).toBe(0);
+			const report = JSON.parse(run.stdout);
+			expect(report).toEqual({
+				kind: "checklist-archive",
+				moved: 2,
+				openChildren: 0,
+				archive: join(dirname(file), "checklist-archive.md"),
+			});
+			const json = JSON.parse((await stat(["checklist", "--json"], env, root)).stdout);
+			expect(json.done).toEqual([]);
+			expect(json.open.map((item: { text: string }) => item.text)).toEqual(["open first", "open second"]);
+			const archived = readFileSync(report.archive, "utf8");
+			expect(archived).toMatch(/^## Archived \d{4}-\d{2}-\d{2}\n/);
+			expect(archived).toContain("shipped parent");
+			expect(archived).toContain("shipped child");
+			expect(archived).toContain("other shipped");
+			expect(archived).not.toContain("open first");
+		});
+	});
+
+	test("counts open children that travel with a done parent", async () => {
+		await withRoot(async (env, root) => {
+			expect((await stat(["add", "parent", "--status", "running"], env, root)).exitCode).toBe(0);
+			expect((await stat(["add", "child task", "--under", "1"], env, root)).exitCode).toBe(0);
+			expect((await stat(["done", "parent"], env, root)).exitCode).toBe(0);
+			const run = await stat(["archive", "--json"], env, root);
+			expect(JSON.parse(run.stdout)).toMatchObject({ moved: 1, openChildren: 1 });
+		});
+	});
+
+	test("appends under a second heading on a second run", async () => {
+		await withRoot(async (env, root) => {
+			expect((await stat(["add", "first-batch-item"], env, root)).exitCode).toBe(0);
+			expect((await stat(["done", "first-batch-item"], env, root)).exitCode).toBe(0);
+			const first = JSON.parse((await stat(["archive", "--json"], env, root)).stdout);
+			expect((await stat(["add", "second-batch-item"], env, root)).exitCode).toBe(0);
+			expect((await stat(["done", "second-batch-item"], env, root)).exitCode).toBe(0);
+			expect((await stat(["archive"], env, root)).exitCode).toBe(0);
+			const archived = readFileSync(first.archive, "utf8");
+			expect(archived.match(/^## Archived /gm)).toHaveLength(2);
+			const firstAt = archived.indexOf("first-batch-item");
+			const secondAt = archived.indexOf("second-batch-item");
+			expect(firstAt).toBeGreaterThanOrEqual(0);
+			expect(secondAt).toBeGreaterThan(firstAt);
+		});
+	});
+
+	test("a failed archive write leaves the checklist unchanged", async () => {
+		await withRoot(async (env, root) => {
+			await seed(env, root);
+			const file = checklistFile(env.AI_STATE_DIR as string);
+			const before = readFileSync(file, "utf8");
+			mkdirSync(join(dirname(file), "checklist-archive.md"));
+			const run = await stat(["archive"], env, root);
+			expect(run.exitCode).not.toBe(0);
+			expect(readFileSync(file, "utf8")).toBe(before);
+		});
+	});
+
+	test("dry run reports the counts and writes nothing", async () => {
+		await withRoot(async (env, root) => {
+			await seed(env, root);
+			const file = checklistFile(env.AI_STATE_DIR as string);
+			const before = readFileSync(file, "utf8");
+			const run = await stat(["archive", "--dry-run", "--json"], env, root);
+			expect(run.exitCode).toBe(0);
+			expect(JSON.parse(run.stdout)).toMatchObject({ moved: 2 });
+			expect(readFileSync(file, "utf8")).toBe(before);
+			expect(existsSync(join(dirname(file), "checklist-archive.md"))).toBe(false);
+		});
+	});
+
+	test("with no done items it moves nothing and creates no archive", async () => {
+		await withRoot(async (env, root) => {
+			expect((await stat(["add", "still open"], env, root)).exitCode).toBe(0);
+			const run = await stat(["archive", "--json"], env, root);
+			expect(JSON.parse(run.stdout)).toMatchObject({ moved: 0, openChildren: 0 });
+			const file = checklistFile(env.AI_STATE_DIR as string);
+			expect(existsSync(join(dirname(file), "checklist-archive.md"))).toBe(false);
+		});
+	});
+
+	test("a lock held by a live process blocks archive and leaves both files unchanged", async () => {
+		await withRoot(async (env, root) => {
+			expect((await stat(["add", "one"], env, root)).exitCode).toBe(0);
+			expect((await stat(["done", "one"], env, root)).exitCode).toBe(0);
+			const file = checklistFile(env.AI_STATE_DIR as string);
+			const before = readFileSync(file, "utf8");
+			writeFileSync(`${file}.lock`, String(process.pid));
+			const blocked = await stat(["archive"], env, root);
+			expect(blocked.exitCode).toBe(1);
+			expect(readFileSync(file, "utf8")).toBe(before);
+			expect(existsSync(join(dirname(file), "checklist-archive.md"))).toBe(false);
 		});
 	});
 });

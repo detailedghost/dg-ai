@@ -11,6 +11,7 @@ import {
 	existsSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -190,6 +191,52 @@ describe("dg-skills bg list", () => {
 		expect(await world.json<unknown>(["list"], world.dir())).toEqual({
 			jobs: [],
 		});
+	});
+
+	test("--cwd keeps jobs in the directory and below it and drops a sibling that shares the prefix", async () => {
+		const base = world.dir();
+		const repo = world.mkdir(join(base, "repo"));
+		const nested = world.mkdir(join(repo, "pkg"));
+		const sibling = world.mkdir(join(base, "repo-other"));
+		const atRoot = await world.launch("exit 0", repo);
+		const below = await world.launch("exit 0", nested);
+		const beside = await world.launch("exit 0", sibling);
+		for (const job of [atRoot, below, beside]) await world.settled(job.id, base);
+		const { jobs } = await world.json<{ jobs: BgJob[] }>(["list", "--cwd", repo], base);
+		expect(jobs.map((job) => job.id).sort()).toEqual([atRoot.id, below.id].sort());
+	});
+
+	test("--cwd resolves a relative directory against the caller", async () => {
+		const base = world.dir();
+		const repo = world.mkdir(join(base, "repo"));
+		const sibling = world.mkdir(join(base, "repo-other"));
+		const mine = await world.launch("exit 0", repo);
+		const theirs = await world.launch("exit 0", sibling);
+		await world.settled(mine.id, base);
+		await world.settled(theirs.id, base);
+		const { jobs } = await world.json<{ jobs: BgJob[] }>(["list", "--cwd", "."], repo);
+		expect(jobs.map((job) => job.id)).toEqual([mine.id]);
+	});
+
+	test("list rejects an unknown flag and a --cwd without a directory with a usage error", async () => {
+		const unknown = await world.bg(["list", "--all"], world.dir());
+		expect(unknown.exitCode).toBe(2);
+		expect(unknown.stderr).toContain("unknown list flag");
+		const missing = await world.bg(["list", "--cwd"], world.dir());
+		expect(missing.exitCode).toBe(2);
+		const blank = await world.bg(["list", ""], world.dir());
+		expect(blank.exitCode).toBe(2);
+	});
+
+	test("--cwd given through a symlink matches jobs started in the real directory", async () => {
+		const base = world.dir();
+		const repo = world.mkdir(join(base, "repo"));
+		const link = join(base, "repo-link");
+		symlinkSync(repo, link);
+		const mine = await world.launch("exit 0", repo);
+		await world.settled(mine.id, base);
+		const { jobs } = await world.json<{ jobs: BgJob[] }>(["list", "--cwd", link], base);
+		expect(jobs.map((job) => job.id)).toEqual([mine.id]);
 	});
 
 	test("skips a truncated meta file instead of failing for every job", async () => {

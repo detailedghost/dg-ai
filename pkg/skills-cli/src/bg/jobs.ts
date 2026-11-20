@@ -6,6 +6,7 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
+	realpathSync,
 	renameSync,
 	rmdirSync,
 	rmSync,
@@ -82,7 +83,9 @@ export const bgSpec: CommandSpec = {
 			run: cmdRun,
 		},
 		list: {
-			description: "Print all known background jobs with derived state",
+			description:
+				"Print all known background jobs with derived state, optionally only those started in or below a directory",
+			args: ["[--cwd <dir>]"],
 			run: cmdList,
 		},
 		prune: {
@@ -287,8 +290,14 @@ export function listJobs(): JobState[] {
 		.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 
-async function cmdList(): Promise<void> {
-	emitJson({ jobs: listJobs() });
+async function cmdList(args: string[]): Promise<void> {
+	const unknown = args.findIndex((arg, i) => arg !== "--cwd" && args[i - 1] !== "--cwd");
+	if (unknown !== -1) die(`unknown list flag: ${args[unknown]}`, EXIT.USAGE);
+	const [cwd] = extractCwd(args);
+	const jobs = listJobs();
+	if (cwd === undefined) return emitJson({ jobs });
+	const target = realOrResolved(cwd);
+	emitJson({ jobs: jobs.filter((job) => isPathInside(realOrResolved(job.cwd), target)) });
 }
 
 async function cmdPrune(args: string[]): Promise<void> {
@@ -891,6 +900,14 @@ function appendPending(id: string, context: string): string {
 	const file = jobPaths(id).pendingFile;
 	appendFileSync(file, `${context}\n`);
 	return readFileSync(file, "utf8").trim();
+}
+
+function realOrResolved(dir: string): string {
+	try {
+		return realpathSync(dir);
+	} catch {
+		return path.resolve(dir);
+	}
 }
 
 function extractCwd(args: string[]): [string | undefined, string[]] {

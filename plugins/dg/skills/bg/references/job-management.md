@@ -2,7 +2,7 @@
 
 - **Claude background Agent or Bash:** you are notified on completion. Meanwhile the user can ask you to poll BashOutput or report the agent's status. Relay results as they arrive.
 - **`dg-skills bg` jobs:**
-  - `dg-skills bg list` shows every job with derived `state`, `exitCode`, and any `pendingUpdate`.
+  - `dg-skills bg list` shows every job with derived `state`, `exitCode`, and any `pendingUpdate`. Add `--cwd <dir>` to keep only jobs started in that directory or below it. A sibling like `/repo-other` does not match `/repo`. Any other flag is a usage error.
   - `dg-skills bg status <id>` shows one job.
   - Read (or `tail -f`) the `logFile` for live or final output.
   - `pendingUpdate`, when not null, is context queued with `dg-skills bg update`. It goes to the backend session once the current run finishes.

@@ -27,6 +27,13 @@ export interface CaptureRequest {
 	menuSelector: string;
 	fingerprintRoot?: string;
 	signIn?: string;
+	stateName?: string;
+}
+
+export class SavedStateEngineError extends Error {
+	constructor() {
+		super("a saved state needs the playwright engine");
+	}
 }
 
 export interface CaptureShot {

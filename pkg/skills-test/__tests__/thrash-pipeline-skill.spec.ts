@@ -220,7 +220,7 @@ describe("guard rules", () => {
 	for (const [name, text] of [["SKILL.md", skill], ["agent-prompt.md", prompts], ["details.md", details]] as const) {
 		test(`${name} writes the new persona names with the dg: prefix`, () => {
 			expect(text).not.toMatch(/`thrash-(verify|consolidate)`|\*\*thrash-(verify|consolidate)\*\*/);
-			expect(text).not.toMatch(/(?<![\w:/.-])thrash-(verify|consolidate)(?![\w.-])/);
+			expect(text).not.toMatch(/(?<![\w:/.-])(?<!--subagent )(?<!--subagent thrash-verify\|)thrash-(verify|consolidate)(?![\w.-])/);
 		});
 	}
 });

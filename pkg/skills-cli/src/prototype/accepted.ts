@@ -20,6 +20,12 @@ export interface AcceptTarget {
 	chain: string;
 	labels?: Record<string, string>;
 	signIn?: string;
+	stateName?: string;
+}
+
+export interface CaptureAccess {
+	signIn?: string;
+	stateName?: string;
 }
 
 export interface AcceptSeams {
@@ -79,7 +85,7 @@ async function readLayouts(
 	variant: string,
 	url: string | undefined,
 	seams: AcceptSeams,
-	signIn?: string,
+	{ signIn, stateName }: CaptureAccess = {},
 ): Promise<Captured> {
 	const none = (skipped: string): Captured => ({ fingerprint: null, skipped, shots: false });
 	const fix = repair(name, signIn !== undefined);
@@ -128,6 +134,7 @@ async function readLayouts(
 					menuSelector: "[data-verify-menu]",
 					fingerprintRoot: root,
 					...(signIn ? { signIn } : {}),
+					...(stateName ? { stateName } : {}),
 				});
 				writeFileSync(join(dir, SHOTS_DIR, `${viewport.id}-${theme}.png`), shot.png);
 				shots = true;
@@ -201,7 +208,7 @@ export async function recordAcceptance(
 		}),
 	);
 	const accepted = build(
-		await readLayouts(target.dir, target.name, claim.variant, claim.url, seams, target.signIn),
+		await readLayouts(target.dir, target.name, claim.variant, claim.url, seams, target),
 	);
 	store(target.dir, accepted);
 	return accepted;
@@ -213,13 +220,14 @@ export async function refingerprint(
 	name: string,
 	url: string,
 	overrides: Partial<AcceptSeams> = {},
-	signIn?: string,
+	access: CaptureAccess = {},
 ): Promise<AcceptedRecord> {
+	const { signIn } = access;
 	const prior = loadRecord(dir);
 	if (!prior) throw new Error(`nothing accepted for "${name}"`);
 	if (!isLoopbackUrl(new URL(url))) throw new Error("refused non-loopback url");
 	if (signIn !== undefined && !isLoopbackUrl(new URL(signIn))) throw new Error("refused non-loopback sign-in url");
-	const captured = await readLayouts(dir, name, prior.variant, url, { ...DEFAULT_SEAMS, ...overrides }, signIn);
+	const captured = await readLayouts(dir, name, prior.variant, url, { ...DEFAULT_SEAMS, ...overrides }, access);
 	const shotsDir = join(dir, SHOTS_DIR);
 	const keptShots = existsSync(shotsDir) && readdirSync(shotsDir).length > 0;
 	const updated: AcceptedRecord = {
@@ -251,17 +259,37 @@ export function acceptedSummary(dir: string) {
 		: undefined;
 }
 
+function repairLine(target: AcceptTarget, url = "<url>"): string {
+	const access = [
+		`--url=${url}`,
+		...(target.stateName ? [`--state=${target.stateName}`] : []),
+		...(target.signIn ? ["--sign-in=<url>"] : []),
+		...(!target.stateName && !target.signIn ? ["--state=<name>"] : []),
+	];
+	return `run: dg-skills prototype fingerprint ${target.name} ${access.join(" ")}`;
+}
+
 /** Build the claim hook that records an approve and tells stderr where the record went. */
-export function acceptanceHook(target: AcceptTarget): ApproveHook {
+export function acceptanceHook(
+	target: AcceptTarget,
+	overrides: Partial<AcceptSeams> = {},
+): ApproveHook {
 	return async (claim) => {
 		try {
-			const accepted = await recordAcceptance(target, claim);
+			const accepted = await recordAcceptance(target, claim, overrides);
 			const outcome = accepted.fingerprint
 				? fingerprintSummary(accepted)
 				: `skipped: ${accepted.skipped}`;
 			process.stderr.write(`prototype: recorded ${recordPath(target.dir)} (${outcome})\n`);
+			const fromPage = claim.url !== undefined || claim.source === "browser";
+			if (accepted.skipped === null || !fromPage) return undefined;
+			process.stderr.write(
+				`prototype: fingerprint skipped: ${accepted.skipped}\n${repairLine(target, claim.url)}\n`,
+			);
+			return accepted.skipped;
 		} catch (error) {
 			process.stderr.write(`prototype: warning: could not record the acceptance: ${firstLine(error)}\n`);
+			return undefined;
 		}
 	};
 }

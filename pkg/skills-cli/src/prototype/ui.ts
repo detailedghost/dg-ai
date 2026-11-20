@@ -9,7 +9,7 @@ import {
 import { join, resolve, sep } from "node:path";
 import { scratchDir, selfCommand, tryOpen } from "@dg/common/node";
 import { acceptanceHook, markFinal } from "./accepted";
-import { type Flags, parseFlags } from "./args";
+import { assertSavedState, type Flags, parseFlags } from "./args";
 import { parseManifestSource, render } from "./manifest";
 import {
 	assertNotSelftestName,
@@ -17,7 +17,7 @@ import {
 	protoDir,
 	sentinelPaths,
 } from "./paths";
-import { type WaitResult, wait } from "./sentinels";
+import { type WaitResult, formatWait, wait, waitExitCode } from "./sentinels";
 
 const SERVER_START_MS = 10_000;
 const STALE_SENTINELS = [".selection", ".reject", ".more", ".notes", ".decision", ".url"];
@@ -35,9 +35,14 @@ export interface UiState {
 	prototype?: string;
 	labels?: Record<string, string>;
 	recordDir?: string;
+	signIn?: string;
+	stateName?: string;
 }
 
-type Described = Pick<UiState, "prototype" | "labels" | "recordDir">;
+type Described = Pick<
+	UiState,
+	"prototype" | "labels" | "recordDir" | "signIn" | "stateName"
+>;
 
 function stateDirectory(): string {
 	return scratchDir("prototype-ui", { cwdScope: false });
@@ -159,10 +164,10 @@ function stopSession(state: UiState): void {
 }
 
 function finish(result: WaitResult, state: UiState): number {
-	process.stdout.write(`${JSON.stringify(result)}\n`);
+	process.stdout.write(formatWait(result, true));
 	if (result.status === "ok" && result.notes === "" && !state.series)
 		stopSession(state);
-	return result.status === "timeout" ? 1 : 0;
+	return waitExitCode(result);
 }
 
 /** Claim a session's decision as one JSON line, from the sentinel directory recorded when it started. */
@@ -177,6 +182,8 @@ export async function waitSession(
 					name: state.prototype,
 					chain: state.name,
 					labels: state.labels,
+					...(state.signIn ? { signIn: state.signIn } : {}),
+					...(state.stateName ? { stateName: state.stateName } : {}),
 				}
 			: undefined;
 	return finish(
@@ -198,7 +205,10 @@ export async function runUi(argv: string[]): Promise<number> {
 		"--port",
 		"--timeout",
 		"--no-open",
+		"--sign-in",
+		"--state",
 	]);
+	assertSavedState(flags);
 	const source = flags.rest[0];
 	if (!source) throw new Error("ui requires <manifest-file|->");
 	const manifest = parseManifestSource(
@@ -222,6 +232,8 @@ export async function runUi(argv: string[]): Promise<number> {
 			cwd: process.cwd(),
 			light: flags.light,
 		}),
+		signIn: flags.signIn,
+		stateName: flags.stateName,
 	};
 	const existing = loadState(key);
 	let state: UiState;

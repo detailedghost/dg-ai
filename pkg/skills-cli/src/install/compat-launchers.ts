@@ -84,11 +84,12 @@ export function syncCompatLaunchers(
 ): void {
 	const legacyBin = join(paths.legacyHome, "bin");
 	if (legacyBin === paths.binDir || !existsSync(legacyBin)) return;
-	const windows = platform === "win32";
+	const launcherFile = (name: string) => (platform === "win32" ? `${name}.cmd` : name);
 	for (const name of LEGACY_PROGRAMS) {
-		const file = windows ? `${name}.cmd` : name;
+		const file = launcherFile(name);
 		const path = join(legacyBin, file);
-		const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
+		if (!existsSync(path)) continue;
+		const existing = readFileSync(path, "utf8");
 		const release =
 			RELEASE_IN_TEXT.exec(existing)?.[1] ?? removalRelease(version);
 		if (versionGte(version, release)) {
@@ -102,6 +103,10 @@ export function syncCompatLaunchers(
 			platform,
 		);
 		if (existing !== text) writeAtomic(path, text);
+	}
+	const launchersLeft = LEGACY_PROGRAMS.some((name) => existsSync(join(legacyBin, launcherFile(name))));
+	if (!launchersLeft) {
+		for (const name of LEGACY_PROGRAMS) rmSync(join(legacyBin, `${name}.version`), { force: true });
 	}
 	removeIfEmpty(legacyBin);
 	removeIfEmpty(paths.legacyHome);

@@ -107,14 +107,14 @@ if [ -n "$b" ]; then
   prs=$(dg-skills vcs-provider list-prs --head "$b" 2>/dev/null | jq -c '[.[]|{number,state,title}]' 2>/dev/null)
 fi
 echo "PRS=${prs:-[]}"
-jobs=$(dg-skills bg list 2>/dev/null | jq -c --arg d "$PWD" '[.jobs[]|select(.cwd==$d or ((.cwd // "")|startswith($d+"/")))|{id,state,exitCode,logFile,cmd:.command[0:60]}]' 2>/dev/null)
+jobs=$(dg-skills bg list --cwd "$PWD" 2>/dev/null | jq -c '[.jobs[]|{id,state,exitCode,logFile,cmd:.command[0:60]}]' 2>/dev/null)
 echo "JOBS=${jobs:-[]}"
 echo "WORKTREES=$(dg-skills worktree list --porcelain 2>/dev/null | tr '\n' ' ')"
 checklist=$(dg-skills stat checklist --json 2>/dev/null)
 echo "CHECKLIST=${checklist:-null}"
 ```
 
-`dg-skills bg list` is machine-wide with no `--cwd` filter. The jq `select` keeps it from dumping every job ever launched. It matches the directory or a path inside it, never a sibling like `/repo-other`. PR lookup goes through `dg-skills vcs-provider`, never `gh` or `glab` directly. The checklist is per repo (shared by linked worktrees) or per cwd outside a repo; `dg-skills stat checklist` already orders, numbers, and totals it, so this gather step only needs its JSON for merging.
+`dg-skills bg list` is machine-wide. `--cwd "$PWD"` keeps it from dumping every job ever launched. It matches the directory or a path inside it, never a sibling like `/repo-other`. PR lookup goes through `dg-skills vcs-provider`, never `gh` or `glab` directly. The checklist is per repo (shared by linked worktrees) or per cwd outside a repo; `dg-skills stat checklist` already orders, numbers, and totals it, so this gather step only needs its JSON for merging.
 
 Then add what only you know: your current foreground task, how far into it you are, and any subagent or background work this session launched that is not yet on the checklist.
 
@@ -224,6 +224,7 @@ dg-skills stat status "Phone feature" queued --eta "~30 min"
 - `--at <n>` places a new top-level item at the shown number `n` (default: the end of the plan). A number inside the done range means the first open slot,
   and one past the end appends. It fails with a non-zero exit, writing nothing, when a `needs-user` or `parked` item cannot land there, because those sit
   after the plan. `--under <n|match>` adds it as a sub-item of that open top-level item instead.
+- When the done section is long, run `dg-skills stat archive`. It moves every done item, with its sub-items, into `checklist-archive.md` beside the checklist. Add `--dry-run` to preview and `--json` for the report. The report counts open sub-items that went with a done parent; reopen them with `stat add` if they still matter.
 - There is no separate `reopen` command: `stat status "<match>" queued` (or any open status) moves a done item back to the end of the open list.
 
 ## `--overwatch`

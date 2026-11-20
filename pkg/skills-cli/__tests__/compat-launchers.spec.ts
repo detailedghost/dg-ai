@@ -165,6 +165,51 @@ posix("syncCompatLaunchers", () => {
 		expect(existsSync(paths.legacyHome)).toBe(false);
 	});
 
+	test("writes no launcher into a legacy bin folder that holds only version files", () => {
+		const bin = join(paths.legacyHome, "bin");
+		mkdirSync(bin, { recursive: true });
+		writeFileSync(join(bin, "dg-skills.version"), "1.28.1\n");
+
+		syncCompatLaunchers(paths, "1.31.0");
+
+		for (const name of NAMES) expect(existsSync(join(bin, name))).toBe(false);
+	});
+
+	test("removes the legacy bin folder after the removal release even when version files are left over", () => {
+		const bin = seedOldBin();
+		syncCompatLaunchers(paths, "1.28.1");
+		for (const name of NAMES)
+			writeFileSync(join(bin, `${name}.version`), "1.28.1\n");
+
+		syncCompatLaunchers(paths, "1.30.0");
+
+		expect(existsSync(paths.legacyHome)).toBe(false);
+	});
+
+	test("keeps the legacy bin folder gone on a later install with a leftover version file", () => {
+		const bin = seedOldBin();
+		syncCompatLaunchers(paths, "1.28.1");
+		syncCompatLaunchers(paths, "1.30.0");
+		mkdirSync(bin, { recursive: true });
+		writeFileSync(join(bin, "dg-skills.version"), "1.30.0\n");
+
+		syncCompatLaunchers(paths, "1.31.0");
+
+		expect(existsSync(join(bin, "dg-skills"))).toBe(false);
+		expect(existsSync(paths.legacyHome)).toBe(false);
+	});
+
+	test("leaves a file that is not from dg in the legacy bin folder", () => {
+		const bin = join(paths.legacyHome, "bin");
+		mkdirSync(bin, { recursive: true });
+		writeFileSync(join(bin, "dg-skills.version"), "1.28.1\n");
+		writeFileSync(join(bin, "other"), "x");
+
+		syncCompatLaunchers(paths, "1.31.0");
+
+		expect(readdirSync(bin)).toEqual(["other"]);
+	});
+
 	test("creates nothing when there was no old install", () => {
 		syncCompatLaunchers(paths, "1.28.1");
 

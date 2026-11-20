@@ -37,6 +37,13 @@ default (`-n <count>` or `-o "<a>,<b>"` change that) on one route, served by
 plan becomes one clickable walkthrough. Approve with a note starts a new round
 from the pick, `tweak` edits in place, and `-c` resumes an open chain.
 
+`prototype wait` and `prototype await-decision` exit 0 for a decision and 124
+on a timeout, with the pick still pending. `wait` exits 75 when the approve is
+recorded but the layout fingerprint was skipped, and prints the `run:` line
+that repairs it. For a page behind a login, pass `--sign-in=<url>` or
+`--state=<pw state name>` to `prototype ui`, `wait`, or `fingerprint`. A
+hand-written in-app bar needs Approve, Reject, More versions, and notes.
+
 Add `--ext` to explore app-native approaches directly inside a live page, then
 export the one you approve:
 
