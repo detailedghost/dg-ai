@@ -161,7 +161,7 @@ slices:
   - id: 18
     name: "credential-refresh-api"
     depends_on: [17]
-    files: ["pkg/dg-daemon/src/server/service-api.ts", "pkg/dg-daemon/src/server/http.ts", "pkg/dg-daemon/src/server/bootstrap.ts", "pkg/dg-daemon/src/jobs/credential-refresh.ts", "docs/service-api.md", "pkg/dg-daemon/__tests__/server/service-api.spec.ts", "pkg/dg-daemon/__tests__/server/service-api-refresh.spec.ts", "pkg/dg-daemon/__tests__/jobs/credential-refresh.spec.ts", "pkg/skills-test/__tests__/outside-services-docs.spec.ts"]
+    files: ["pkg/dg-daemon/src/server/service-api.ts", "pkg/dg-daemon/src/server/http.ts", "pkg/dg-daemon/src/server/bootstrap.ts", "pkg/dg-daemon/src/jobs/credential-refresh.ts", "docs/service-api.md", "pkg/dg-daemon/__tests__/server/service-api.spec.ts", "pkg/dg-daemon/__tests__/server/service-api-refresh.spec.ts", "pkg/dg-daemon/__tests__/jobs/credential-refresh.spec.ts", "pkg/skills-test/__tests__/outside-services-docs.spec.ts", "pkg/skills-test/__tests__/dg-front-door-docs.spec.ts", ".agents/school/security.md"]
     agents:
       primary: dg:js
       confidence: high
@@ -2044,85 +2044,85 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 ### Slice 18 — credential-refresh-api
 
 #### Engineering
-- [ ] Add the operation `refresh` to `POST /service-api/v1/credentials`: the body is `{ "operation": "refresh", "name": "<prefix>/<rest>", "job": "<job name>" }`; the three keys are necessary, and each other key gets the `is not supported` answer of the route [DECIDED — gaps pass: the refresh contract of this slice stays as planned]
-- [ ] The operation is an addition to service API v1: it changes no key and no operation of v1 in place; the job sources record of slice 20 states the addition, and slice 20 adds one dated line to ADR 0043; `get` and `list` do not change
-- [ ] `refresh` has the guards of `get`: the grant headers, the refusal of a browser `Origin`, `Content-Type: application/json`, a body of 64 KiB at most, a `name` below the grant prefix that passes `validateCredentialName`
-- [ ] `job` must be the name of an entry of the `jobs` table whose `grant` is equal to the grant prefix of the request; in each other case answer 403 with the `NOT_ALLOWED` text; a job reads its name from `DG_SERVICE_LABEL`
-- [ ] Create pkg/dg-daemon/src/jobs/credential-refresh.ts with `refreshCredential({ paths, store, job, name, deps })`: it reads the record that holds the job from `paths.jobSourcesPath` with the reader of sources.ts, finds the details of the credential, and fetches from their `source` with `fetchSecret` of secret-sources.ts
-- [ ] The source is only the one in the record, as recorded at `add` or `update` (a local folder gets no question): the request cannot give a secret id, a region, a key, a profile or an argv
-- [ ] A `--setup` answer with a `profile` changes the profile for that run only, so a refresh uses the recorded profile; the refresh uses the environment of the job, not the shell of the owner
-- [ ] Each 502 text of `refresh` ends with `— run dg job setup <job> --refresh`, and docs/service-api.md names that command as the next step; the 502 texts in the other items of this slice give the part before this end [DECIDED — post-apply item 2 (a)]
-- [ ] A job with no record, a credential with no details and a credential with no `source` answer 409 with `credential "<name>" has no source — run dg job setup <job>`; no process starts
-- [ ] The fetch process gets the environment that `buildBaseEnv(decl, deps)` of slice 8 builds for that job (the allowlist, the `envFile` values and the `passEnv` values), with no injected `DG_*` key and no bound credential; this slice does not edit launcher.ts
-- [ ] An `envFile` that is absent or not valid answers 502 with `the env file of job "<job>" cannot be read` and no path
-- [ ] Resolve `aws` on the `PATH` of that environment and run the AWS argv of slice 15 with the seams of slice 15 as they are: `which("aws", <base env>)` and `runSource(argv, { env: <base env>, cwd: jobStateDir(paths, job), timeoutMs: 30000 })`, with the default `runSource` of secret-sources.ts; this slice changes no seam and no spec of slice 15
-- [ ] `job setup --refresh` of slice 15 and this operation call the one function `fetchSecret`; write no second argv
-- [ ] After a fetch that passed: validate the value with `validateCredentialValue`, call `noteSecret` for it, and store it with `setCredential` under the same name; keep the meta of the stored credential, and set `provider: "aws-secretsmanager"` and `createdBy: "service api refresh"`
-- [ ] Answer 200 with `{ "ok": true, "value": { "name", "updatedAt" } }`; the answer holds no credential value, and the job reads the value with `get`
-- [ ] Rate limit: the daemon starts one fetch at most for one credential name in 60 s; a request inside that time, or during a fetch of that name, answers 429 with `{ "ok": false, "error": "refresh of <name> is limited — try again in <n> s", "retryAfter": <n> }` and starts no process; the limit is in the memory of the daemon
-- [ ] A failed fetch answers 502 with `{ "ok": false, "error": "aws failed for <name>: <first line of stderr>" }`; the line goes through `sanitize` and is cut at 200 characters; nothing is stored, and the stored value does not change
-- [ ] When `aws` does not resolve, answer 502 with `aws is not on the PATH of job "<job>"`; when the secret has no `key` that the source names, answer 502 with `the secret has no key "<key>"`
-- [ ] A refresh does not change the grant token and does not restart a job; a job with the credential as an environment variable (slice 17) gets the new value at its next start
-- [ ] Write one daemon log line for each refresh request with the job, the credential name and the result; the line holds no value
-- [ ] `ServiceApiStore` gets `setCredential` in its `Pick`; `handleServiceApiCredentials` gets a fourth parameter, one object `refresh: { paths, readJobs, which, runSource, now, limiter }`; `readJobs` is the dep of slice 12, and bootstrap.ts builds the limiter (no module global); pkg/dg-daemon/src/server/http.ts and bootstrap.ts give the parameter; the handler reads the `jobs` table and not `JobControl`, which covers only `start`, `stop` and `status`
-- [ ] Add `job` to the known body keys of the route, so a stray-key answer can name it
-- [ ] The daemon starts an `aws` process only for this operation, and only with the fixed argv of a declared source
-- [ ] In docs/service-api.md, add the request body and the answer of `refresh`, the rows 409, 429 and 502 of the status table, the change of the 403 row (an operation other than `get`, `list` and `refresh`), the 60 s limit, and one example that sends `refresh` and then `get` after the upstream answers 401
-- [ ] In docs/service-api.md, state that the job gives its own name from `DG_SERVICE_LABEL`, and that the name is not a proof of identity: each holder of the grant can ask for a refresh of a credential below the prefix
-- [ ] In pkg/skills-test/__tests__/outside-services-docs.spec.ts, add the new literals to the test `service API literals match the route source`
-- [ ] Use `bot` and placeholders in each example; write no name of a real secret
-- [ ] credential-refresh.ts imports `sanitize` from pkg/dg-daemon/src/jobs/sanitize.ts (slice 13) and imports nothing from `src/commands/`
-- [ ] Map each `SecretFetchError.kind` to a 502 text: `not-installed` is `aws is not on the PATH of job "<job>"`; `failed` is `aws failed for <name>: <line>`; `timeout` is `aws timed out for <name>`; `no-text` is `the secret of <name> has no text value`; `invalid-json` is `the secret of <name> is not JSON`; `no-key` is `the secret has no key "<key>"`
-- [ ] Map the request `name` to the details: remove `<prefix>/` and require the remainder to be in the `credentials` list of the job `job`; a name below the prefix that the job does not list answers 409 with the `has no source` text
-- [ ] An entry that fails `parseJobs` answers 403 with the `NOT_ALLOWED` text
-- [ ] Check order: method, Origin, grant (401), content type (415), body (413, 400), key list (400), the types of `name` and `job` (400), `name` in the prefix and valid (403, 400), `job` in the table with an equal `grant` (403), the record, the list and the `source` (409), the limit (429), the fetch
-- [ ] A 400, 403 or 409 does not start the 60 s window; the window starts when the process starts and counts a failed fetch; a request during a fetch answers 429 with `retryAfter` of 1 or more; remove the entry of a name when its window ends
-- [ ] A `sources.json` that is not valid answers 500 with the storage text and no path
-- [ ] A fetched value that fails `validateCredentialValue` answers 502 with `the secret of <name> is not a valid credential value` and stores nothing
-- [ ] A credential that was not stored before the refresh gets the meta `{ provider, createdBy }` only
-- [ ] The result of `which` must be an absolute path; the fetch process runs in `jobStateDir(paths, job)`, never in the `cwd` of the job
-- [ ] docs/service-api.md states that the fetch uses the environment of the job that the request names, not of the caller
-- [ ] This slice adds no command, option or description and runs no `bun scripts/completion-trees.ts`
-- [ ] Put new test helpers in service-api-refresh.spec.ts and credential-refresh.spec.ts; do not edit the kits of slices 13 and 15 or the daemon harness
+- [x] Add the operation `refresh` to `POST /service-api/v1/credentials`: the body is `{ "operation": "refresh", "name": "<prefix>/<rest>", "job": "<job name>" }`; the three keys are necessary, and each other key gets the `is not supported` answer of the route [DECIDED — gaps pass: the refresh contract of this slice stays as planned]
+- [x] The operation is an addition to service API v1: it changes no key and no operation of v1 in place; the job sources record of slice 20 states the addition, and slice 20 adds one dated line to ADR 0043; `get` and `list` do not change
+- [x] `refresh` has the guards of `get`: the grant headers, the refusal of a browser `Origin`, `Content-Type: application/json`, a body of 64 KiB at most, a `name` below the grant prefix that passes `validateCredentialName`
+- [x] `job` must be the name of an entry of the `jobs` table whose `grant` is equal to the grant prefix of the request; in each other case answer 403 with the `NOT_ALLOWED` text; a job reads its name from `DG_SERVICE_LABEL`
+- [x] Create pkg/dg-daemon/src/jobs/credential-refresh.ts with `refreshCredential({ paths, store, job, name, deps })`: it reads the record that holds the job from `paths.jobSourcesPath` with the reader of sources.ts, finds the details of the credential, and fetches from their `source` with `fetchSecret` of secret-sources.ts
+- [x] The source is only the one in the record, as recorded at `add` or `update` (a local folder gets no question): the request cannot give a secret id, a region, a key, a profile or an argv
+- [x] A `--setup` answer with a `profile` changes the profile for that run only, so a refresh uses the recorded profile; the refresh uses the environment of the job, not the shell of the owner
+- [x] Each 502 text of `refresh` ends with `— run dg job setup <job> --refresh`, and docs/service-api.md names that command as the next step; the 502 texts in the other items of this slice give the part before this end [DECIDED — post-apply item 2 (a)]
+- [x] A job with no record, a credential with no details and a credential with no `source` answer 409 with `credential "<name>" has no source — run dg job setup <job>`; no process starts
+- [x] The fetch process gets the environment that `buildBaseEnv(decl, deps)` of slice 8 builds for that job (the allowlist, the `envFile` values and the `passEnv` values), with no injected `DG_*` key and no bound credential; this slice does not edit launcher.ts
+- [x] An `envFile` that is absent or not valid answers 502 with `the env file of job "<job>" cannot be read` and no path
+- [x] Resolve `aws` on the `PATH` of that environment and run the AWS argv of slice 15 with the seams of slice 15 as they are: `which("aws", <base env>)` and `runSource(argv, { env: <base env>, cwd: jobStateDir(paths, job), timeoutMs: 30000 })`, with the default `runSource` of secret-sources.ts; this slice changes no seam and no spec of slice 15
+- [x] `job setup --refresh` of slice 15 and this operation call the one function `fetchSecret`; write no second argv
+- [x] After a fetch that passed: validate the value with `validateCredentialValue`, call `noteSecret` for it, and store it with `setCredential` under the same name; keep the meta of the stored credential, and set `provider: "aws-secretsmanager"` and `createdBy: "service api refresh"`
+- [x] Answer 200 with `{ "ok": true, "value": { "name", "updatedAt" } }`; the answer holds no credential value, and the job reads the value with `get`
+- [x] Rate limit: the daemon starts one fetch at most for one credential name in 60 s; a request inside that time, or during a fetch of that name, answers 429 with `{ "ok": false, "error": "refresh of <name> is limited — try again in <n> s", "retryAfter": <n> }` and starts no process; the limit is in the memory of the daemon
+- [x] A failed fetch answers 502 with `{ "ok": false, "error": "aws failed for <name>: <first line of stderr>" }`; the line goes through `sanitize` and is cut at 200 characters; nothing is stored, and the stored value does not change
+- [x] When `aws` does not resolve, answer 502 with `aws is not on the PATH of job "<job>"`; when the secret has no `key` that the source names, answer 502 with `the secret has no key "<key>"`
+- [x] A refresh does not change the grant token and does not restart a job; a job with the credential as an environment variable (slice 17) gets the new value at its next start
+- [x] Write one daemon log line for each refresh request with the job, the credential name and the result; the line holds no value
+- [x] `ServiceApiStore` gets `setCredential` in its `Pick`; `handleServiceApiCredentials` gets a fourth parameter, one object `refresh: { paths, readJobs, which, runSource, now, limiter }`; `readJobs` is the dep of slice 12, and bootstrap.ts builds the limiter (no module global); pkg/dg-daemon/src/server/http.ts and bootstrap.ts give the parameter; the handler reads the `jobs` table and not `JobControl`, which covers only `start`, `stop` and `status`
+- [x] Add `job` to the known body keys of the route, so a stray-key answer can name it
+- [x] The daemon starts an `aws` process only for this operation, and only with the fixed argv of a declared source
+- [x] In docs/service-api.md, add the request body and the answer of `refresh`, the rows 409, 429 and 502 of the status table, the change of the 403 row (an operation other than `get`, `list` and `refresh`), the 60 s limit, and one example that sends `refresh` and then `get` after the upstream answers 401
+- [x] In docs/service-api.md, state that the job gives its own name from `DG_SERVICE_LABEL`, and that the name is not a proof of identity: each holder of the grant can ask for a refresh of a credential below the prefix
+- [x] In pkg/skills-test/__tests__/outside-services-docs.spec.ts, add the new literals to the test `service API literals match the route source`
+- [x] Use `bot` and placeholders in each example; write no name of a real secret
+- [x] credential-refresh.ts imports `sanitize` from pkg/dg-daemon/src/jobs/sanitize.ts (slice 13) and imports nothing from `src/commands/`
+- [x] Map each `SecretFetchError.kind` to a 502 text: `not-installed` is `aws is not on the PATH of job "<job>"`; `failed` is `aws failed for <name>: <line>`; `timeout` is `aws timed out for <name>`; `no-text` is `the secret of <name> has no text value`; `invalid-json` is `the secret of <name> is not JSON`; `no-key` is `the secret has no key "<key>"`
+- [x] Map the request `name` to the details: remove `<prefix>/` and require the remainder to be in the `credentials` list of the job `job`; a name below the prefix that the job does not list answers 409 with the `has no source` text
+- [x] An entry that fails `parseJobs` answers 403 with the `NOT_ALLOWED` text
+- [x] Check order: method, Origin, grant (401), content type (415), body (413, 400), key list (400), the types of `name` and `job` (400), `name` in the prefix and valid (403, 400), `job` in the table with an equal `grant` (403), the record, the list and the `source` (409), the limit (429), the fetch
+- [x] A 400, 403 or 409 does not start the 60 s window; the window starts when the process starts and counts a failed fetch; a request during a fetch answers 429 with `retryAfter` of 1 or more; remove the entry of a name when its window ends
+- [x] A `sources.json` that is not valid answers 500 with the storage text and no path
+- [x] A fetched value that fails `validateCredentialValue` answers 502 with `the secret of <name> is not a valid credential value` and stores nothing
+- [x] A credential that was not stored before the refresh gets the meta `{ provider, createdBy }` only
+- [x] The result of `which` must be an absolute path; the fetch process runs in `jobStateDir(paths, job)`, never in the `cwd` of the job
+- [x] docs/service-api.md states that the fetch uses the environment of the job that the request names, not of the caller
+- [x] This slice adds no command, option or description and runs no `bun scripts/completion-trees.ts`
+- [x] Put new test helpers in service-api-refresh.spec.ts and credential-refresh.spec.ts; do not edit the kits of slices 13 and 15 or the daemon harness
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: `refresh` for `bot/api/dev` with a declared source answers 200 with `{ "ok": true, "value": { "name": "bot/api/dev", "updatedAt": "<ISO 8601>" } }`; a `get` after it gives the new value; the body of the `refresh` answer holds no value text
-- [ ] Contract: the `runSource` seam gets the exact AWS argv of slice 15; its environment holds a key of the `envFile` of the job and holds no `DG_CREDENTIAL_GRANT_FILE`
-- [ ] Contract: `refresh` gives 401 with no grant or an incorrect token, 400 with an `Origin` header, 415 for another content type, 413 above 64 KiB, and 400 when `name` or `job` is absent or is not a string
-- [ ] Contract: a body with `"secretId": "x"` gives 400 with `request body key "other" is not supported`, and no process starts
-- [ ] Contract: `refresh` gives 403 for a name outside the prefix, for a `job` that is not in the `jobs` table, and for a job whose `grant` is a different prefix
-- [ ] Contract: a credential with no `source`, and a credential of a command job, give 409 with the `has no source` text; the `runSource` seam gets no call
-- [ ] Contract: two requests for one name in 60 s: the second gives 429 with a `retryAfter` from 1 to 60, and the `runSource` seam has one call; with the `now` seam 61 s later, the next request starts a fetch
-- [ ] Contract: two requests for two names in 60 s start two fetches
-- [ ] Contract: an `aws` exit code that is not 0 gives 502 with the `aws failed for` text; the stored value and its `updatedAt` are equal to the values before
-- [ ] Contract: an environment of the job in which `aws` does not resolve gives 502 with the `is not on the PATH of job` text
-- [ ] Contract: a secret with no key `K` for a source with `key: "K"` gives 502 with `the secret has no key "K"`; no part of the secret is in the body or in the log
-- [ ] Contract: no response body and no daemon log line of the spec run holds the value text
-- [ ] Contract: the bytes of the grant token file are equal before and after a refresh
-- [ ] Contract: the stored meta after a refresh holds each meta key from before, `provider: "aws-secretsmanager"` and `createdBy: "service api refresh"`
-- [ ] Contract: `get` and `list` answer as before; pkg/dg-daemon/__tests__/server/service-api.spec.ts changes only in each call, for the new parameter, and where it names the refused operations
-- [ ] Contract: docs/service-api.md names the operation, its three body keys, the status codes 409, 429 and 502, and the 60 s limit; pkg/skills-test/__tests__/outside-services-docs.spec.ts passes
-- [ ] Happy path: daemon harness, a job from a `file://` fixture repository whose `envFile` puts a fixture `aws` program on `PATH` and keeps the system folders on `PATH`, for the `env` line of the fixture program: the job sends `refresh`, then `get`, and reads the value that the fixture program prints
-- [ ] Error: with the credential store closed or broken, `refresh` gives 500 with the storage text of the route
-- [ ] Regression: `bun test` and `bun run lint` pass in pkg/dg-daemon and pkg/skills-test; pkg/launcher/__tests__/size-budget.spec.ts passes
-- [ ] Contract: a `sources.json` that is not valid gives 500 with the storage text, and the body holds no path
-- [ ] Contract: a fetched value that fails `validateCredentialValue` gives 502 with `the secret of <name> is not a valid credential value`, and nothing is stored
-- [ ] Contract: a credential that was not stored before the refresh has only the meta keys `provider` and `createdBy` after it
-- [ ] Contract: a relative `PATH` entry does not resolve `aws`
-- [ ] Contract: a job `a` that names a job `b` of the same prefix gets the environment of `b`
-- [ ] Contract: a `name` that fails `validateCredentialName` gives 400
-- [ ] Contract: each 502 answer of `refresh` (the six fetch errors, the env file error and the value error) ends with `— run dg job setup <job> --refresh` [DECIDED — post-apply item 2 (a)]
-- [ ] Contract: a 403 and a 409 do not use the 60 s window, and a failed fetch does
-- [ ] Contract: a request during a fetch (a deferred promise in the `runSource` seam) gives 429
-- [ ] Contract: the 30 s limit gives 502 with the `aws timed out for` text and ends the process
-- [ ] Contract: with a `key`, stdout that is not JSON gives 502 with the `is not JSON` text
-- [ ] Contract: the log line of a refresh holds the job, the name and the result, and no value
+- [x] Contract: `refresh` for `bot/api/dev` with a declared source answers 200 with `{ "ok": true, "value": { "name": "bot/api/dev", "updatedAt": "<ISO 8601>" } }`; a `get` after it gives the new value; the body of the `refresh` answer holds no value text
+- [x] Contract: the `runSource` seam gets the exact AWS argv of slice 15; its environment holds a key of the `envFile` of the job and holds no `DG_CREDENTIAL_GRANT_FILE`
+- [x] Contract: `refresh` gives 401 with no grant or an incorrect token, 400 with an `Origin` header, 415 for another content type, 413 above 64 KiB, and 400 when `name` or `job` is absent or is not a string
+- [x] Contract: a body with `"secretId": "x"` gives 400 with `request body key "other" is not supported`, and no process starts
+- [x] Contract: `refresh` gives 403 for a name outside the prefix, for a `job` that is not in the `jobs` table, and for a job whose `grant` is a different prefix
+- [x] Contract: a credential with no `source`, and a credential of a command job, give 409 with the `has no source` text; the `runSource` seam gets no call
+- [x] Contract: two requests for one name in 60 s: the second gives 429 with a `retryAfter` from 1 to 60, and the `runSource` seam has one call; with the `now` seam 61 s later, the next request starts a fetch
+- [x] Contract: two requests for two names in 60 s start two fetches
+- [x] Contract: an `aws` exit code that is not 0 gives 502 with the `aws failed for` text; the stored value and its `updatedAt` are equal to the values before
+- [x] Contract: an environment of the job in which `aws` does not resolve gives 502 with the `is not on the PATH of job` text
+- [x] Contract: a secret with no key `K` for a source with `key: "K"` gives 502 with `the secret has no key "K"`; no part of the secret is in the body or in the log
+- [x] Contract: no response body and no daemon log line of the spec run holds the value text
+- [x] Contract: the bytes of the grant token file are equal before and after a refresh
+- [x] Contract: the stored meta after a refresh holds each meta key from before, `provider: "aws-secretsmanager"` and `createdBy: "service api refresh"`
+- [x] Contract: `get` and `list` answer as before; pkg/dg-daemon/__tests__/server/service-api.spec.ts changes only in each call, for the new parameter, and where it names the refused operations
+- [x] Contract: docs/service-api.md names the operation, its three body keys, the status codes 409, 429 and 502, and the 60 s limit; pkg/skills-test/__tests__/outside-services-docs.spec.ts passes
+- [x] Happy path: daemon harness, a job from a `file://` fixture repository whose `envFile` puts a fixture `aws` program on `PATH` and keeps the system folders on `PATH`, for the `env` line of the fixture program: the job sends `refresh`, then `get`, and reads the value that the fixture program prints
+- [x] Error: with the credential store closed or broken, `refresh` gives 500 with the storage text of the route
+- [x] Regression: `bun test` and `bun run lint` pass in pkg/dg-daemon and pkg/skills-test; pkg/launcher/__tests__/size-budget.spec.ts passes
+- [x] Contract: a `sources.json` that is not valid gives 500 with the storage text, and the body holds no path
+- [x] Contract: a fetched value that fails `validateCredentialValue` gives 502 with `the secret of <name> is not a valid credential value`, and nothing is stored
+- [x] Contract: a credential that was not stored before the refresh has only the meta keys `provider` and `createdBy` after it
+- [x] Contract: a relative `PATH` entry does not resolve `aws`
+- [x] Contract: a job `a` that names a job `b` of the same prefix gets the environment of `b`
+- [x] Contract: a `name` that fails `validateCredentialName` gives 400
+- [x] Contract: each 502 answer of `refresh` (the six fetch errors, the env file error and the value error) ends with `— run dg job setup <job> --refresh` [DECIDED — post-apply item 2 (a)]
+- [x] Contract: a 403 and a 409 do not use the 60 s window, and a failed fetch does
+- [x] Contract: a request during a fetch (a deferred promise in the `runSource` seam) gives 429
+- [x] Contract: the 30 s limit gives 502 with the `aws timed out for` text and ends the process
+- [x] Contract: with a `key`, stdout that is not JSON gives 502 with the `is not JSON` text
+- [x] Contract: the log line of a refresh holds the job, the name and the result, and no value
 
 #### Acceptance Criteria
-- [ ] Given a running job whose upstream refuses a stored credential (for example with HTTP 401), when the job sends `refresh` for that credential and then `get`, then it has the value that the source holds now, with no command of the owner
-- [ ] Given a job that sends `refresh` in a loop, when a second request for the same credential arrives in 60 s, then dg starts no second fetch
-- [ ] Given a request that names a secret id or a profile, when the daemon reads it, then it refuses the request: the source is only the one that the owner saw
+- [x] Given a running job whose upstream refuses a stored credential (for example with HTTP 401), when the job sends `refresh` for that credential and then `get`, then it has the value that the source holds now, with no command of the owner
+- [x] Given a job that sends `refresh` in a loop, when a second request for the same credential arrives in 60 s, then dg starts no second fetch
+- [x] Given a request that names a secret id or a profile, when the daemon reads it, then it refuses the request: the source is only the one that the owner saw
 
 ### Slice 19 — channel-review-export
 
@@ -2416,6 +2416,7 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 
 ## Slice Summaries
 
+- Slice 18: POST /service-api/v1/credentials takes refresh with {operation, name, job}: the daemon fetches only from the source in the sources.json record of the job, with the job's base environment and the shared fetchSecret, stores the value with merged meta, returns only {name, updatedAt}, and starts one fetch at most for one credential in 60 s; docs/service-api.md and the outside-services docs spec are updated.
 - Slice 17: A job binds a stored credential to an environment variable with --credential <name>=<NAME> (add and update of a file or command job) or the block key env on a credential; the entry key credentialEnv holds the binding; buildJobEnv reads each value at every launch and places it after the envFile, passEnv and allowlist values and before the DG_* keys; a missing, NUL-holding, unreadable or reserved-prefix value makes the start invalid.
 - Slice 16: dg job add <path> adds a script file as one job (record kind path, no question, no clone) or a folder with a dg block as block jobs (record keeps the declaration hash); update re-reads a folder block with no question; list and status show source changed, source missing and source invalid; remove never touches the path.
 - Slice 15: dg job enable [--setup <file|->] and dg job setup [--refresh|--rotate-token] run a wizard that takes each credential from a hidden prompt, a --setup file or AWS Secrets Manager, stores it through the job credential route and makes the grant; --credential works on add and update of a command job; sources.json takes command records and the prefixAccepted and setupDone marks; the hidden prompt lives in @dg/common.
@@ -2510,6 +2511,11 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 - (slice 17, dg:js) credentialEnv inside a block job is refused; a block binds only through env on a credential. job update merges credentialEnv and refuses a variable that another credential binds; there is no unbind flag.
 - (slice 17, dg:js) Slice 20 documents that the child and its children see a bound value in their environment.
 - (orchestrator) Slice 17 security review: the high finding (a hand-edited pw grant could read a sealed value into the environment) is fixed in checkCredentialEnv and readBoundCredentials. RATIFY taken as option b, a two-way door: the text after = of --credential is never echoed when it fails the name rule, and a variable name is 64 characters at most, so a pasted secret does not reach config.json or stderr. The old guard that refused = in a credential name is replaced by the binding syntax; say so in the PR body. A scheduled tick has no separate preflight: a missing credential records failed to start with the credential name; runNow and the continuous preflight return invalid.
+
+- (slice 18, dg:js) credential-refresh.ts exports refreshCredential, createRefreshLimiter (claim returns retryAfter seconds or undefined), REFRESH_WINDOW_MS, RefreshDeps and RefreshResult. HttpServerDeps requires refresh {which, runSource, now, limiter}; handleServiceApiCredentials takes logger and refresh; ServiceApiStore adds setCredential.
+- (slice 18, dg:js) Request names are canonicalized to lowercase; a relative PATH entry is dropped before which; the refresh log line is 'service API refresh: job=<j> credential=<n> result=<...>' and never holds a value or token.
+- (slice 18, dg:js) Slice 20 lists refresh as an addition to service API v1 in the job sources record, adds the dated line to ADR 0043, and should remove the 'no dg job setup' check of dg-front-door-docs.spec.ts instead of adding exemptions (a one-file exemption for docs/service-api.md is in place).
+- (orchestrator) Slice 18 additions beyond the slice text, accepted: refresh answers 409 unless the record setupDone lists the job (a person ran setup once) and unless the record key equals the job grant; reserved and sealed prefixes get 403. Known gaps for the PR body: setupDone is never reset by update, so a repository change applied by update --yes can change the source and the job can then refresh it with no person present (plan X1 c); the 60 s window starts before which; refresh limits what a caller can do, it is not a sandbox against a running job (its envFile can set PATH or AWS_* for the daemon-spawned aws).
 
 ## Issues Remediation
 

@@ -58,6 +58,7 @@ Request bodies:
 
 - `{"operation":"list"}`
 - `{"operation":"get","name":"<prefix>/<rest>"}`
+- `{"operation":"refresh","name":"<prefix>/<rest>","job":"<job name>"}`
 
 Responses:
 
@@ -65,7 +66,67 @@ Responses:
   `<prefix>/` appear. An entry has no `value`.
 - `get`: `{"ok":true,"value":{"value","meta","updatedAt"}}`, or
   `{"ok":true,"value":null}` when the name is absent.
+- `refresh`: `{"ok":true,"value":{"name","updatedAt"}}`. The answer holds no
+  credential value. Send `get` to read the new value.
 - Error: `{"ok":false,"error":"<reason>"}`
+
+## Refresh a credential
+
+`refresh` makes the daemon fetch one credential again from the source that the
+owner saw at `dg job add` or `dg job update`, and store the new value under the
+same name. A job uses it when its upstream refuses a stored credential, for
+example with HTTP 401. The body keys `operation`, `name` and `job` are
+necessary. Each other key gets the 400 answer for an unsupported key. The
+request cannot give a secret id, a region, a key, a profile or an argv.
+
+- `name` is `<prefix>/<rest>` and must be a credential that the job lists.
+- `job` is the name of a job whose `grant` is the prefix of the request. The job
+  reads its own name from `DG_SERVICE_LABEL`. The name is not a proof of
+  identity: each holder of the grant can ask for a refresh of a credential
+  below the prefix.
+- The credential needs a recorded `source`, and a person must have run
+  `dg job setup <job>` once. Without both, the answer is 409. The mark "setup
+  done" does not show that a person saw the source that the record holds now: a
+  repository change that `dg job update --yes` applies keeps the mark.
+- The fetch uses the environment of the job that the request names (`envFile`,
+  `passEnv` and the allowlist), not the environment of the caller. It runs
+  `aws` from the `PATH` of that environment, in the state folder of the job.
+- The daemon starts one fetch at most for one credential name in 60 s. A
+  request inside that time, or during a fetch, gets 429 with `retryAfter` in
+  seconds. A failed fetch counts. The limit is in the memory of the daemon.
+- A refresh does not change the grant token and does not restart a job. A job
+  that binds the credential to an environment variable gets the new value at its
+  next start.
+- Each 502 answer ends with `— run dg job setup <job> --refresh`. Run that
+  command as the next step: it fetches the value again with the shell of the
+  owner and shows the cause.
+
+Example after an upstream answers 401:
+
+```js
+const call = async (body) => {
+  const res = await fetch(`${process.env.DG_DAEMON_URL}/service-api/v1/credentials`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Dg-Grant-Prefix": process.env.DG_CREDENTIAL_GRANT_PREFIX,
+      "X-Dg-Grant-Token": readFileSync(process.env.DG_CREDENTIAL_GRANT_FILE, "utf8").trim(),
+    },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, body: await res.json() };
+};
+
+const refreshed = await call({
+  operation: "refresh",
+  name: "bot/api-key",
+  job: process.env.DG_SERVICE_LABEL,
+});
+if (refreshed.status === 200) {
+  const { body } = await call({ operation: "get", name: "bot/api-key" });
+  retryWith(body.value.value);
+}
+```
 
 ## Status codes
 
@@ -76,17 +137,20 @@ Responses:
 | 400 | A bad body, a bad key, or an invalid name | JSON |
 | 400 | A `Host` header that is not the loopback authority | Plain text |
 | 401 | No grant, an unknown prefix, an incorrect token, or a session id header | JSON |
-| 403 | A name outside `<prefix>/`, or an operation other than `get` and `list` | JSON |
+| 403 | A name outside `<prefix>/`, an operation other than `get`, `list` and `refresh`, or a `job` that is not a job of this grant | JSON |
+| 409 | `refresh`: the credential has no recorded source, or no person ran `dg job setup <job>` | JSON |
+| 429 | `refresh`: one fetch at most for one credential in 60 s; the body has `retryAfter` | JSON |
 | 404 | A method other than POST, or another path | Plain text, with the same hardening headers |
 | 413 | A body above 64 KiB | JSON |
 | 415 | A content type other than `application/json` | Plain text |
 | 500 | The credential store failed | JSON |
+| 502 | `refresh`: the fetch failed; the text ends with `— run dg job setup <job> --refresh` | JSON |
 
 Do not call `res.json()` on a plain text body.
 
 A 400 for an unsupported body key names the key only for the known frame
 fields (`type`, `requestId`, `protocolVersion`, `name`, `value`, `meta`,
-`prefix`, `grant`). Any other key shows as `other`. The route never echoes a
+`prefix`, `grant`, `job`). Any other key shows as `other`. The route never echoes a
 part of the request.
 
 ## Example

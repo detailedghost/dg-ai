@@ -95,7 +95,7 @@ import {
 	handleSecretName,
 	type SecretIntent,
 } from "./secret-intake";
-import { handleServiceApiCredentials } from "./service-api";
+import { handleServiceApiCredentials, type ServiceApiRefresh } from "./service-api";
 import { renderStatus, type StatusDeps } from "./status";
 
 const ASSET_TOO_LARGE_MESSAGE = "refused: asset exceeds CHAT_MAX_ASSET_BYTES";
@@ -115,6 +115,7 @@ export type HttpServerDeps = {
 	dispatchScheduler: DispatchScheduler;
 	jobs: JobControl;
 	readJobs: () => ParsedJob[];
+	refresh: Omit<ServiceApiRefresh, "paths" | "readJobs">;
 };
 
 export const WS_PAYLOAD_HEADROOM_BYTES = 4096;
@@ -430,7 +431,12 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			}
 
 			if (url.pathname === SERVICE_API_CREDENTIALS_PATH) {
-				return handleServiceApiCredentials(req, deps.credentials, deps.logger);
+				return handleServiceApiCredentials(
+					req,
+					deps.credentials,
+					deps.logger,
+					{ ...deps.refresh, paths, readJobs: deps.readJobs },
+				);
 			}
 
 			const jobCredentials = JOB_CREDENTIALS_PATH_PATTERN.exec(url.pathname);

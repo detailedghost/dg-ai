@@ -25,7 +25,9 @@ import {
 import { assertNotBlocked } from "@dg/common/node/layout";
 import { DispatchScheduler } from "../dispatch";
 import { countEnabledScheduled, parseJobs } from "../jobs/config";
+import { createRefreshLimiter } from "../jobs/credential-refresh";
 import { createJobControl } from "../jobs/control";
+import { defaultRunSource } from "../jobs/secret-sources";
 import { isDaemonIdle } from "../jobs/idle";
 import {
 	migrateScheduledRows,
@@ -197,6 +199,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		getExtensionVersion: () => connections.extensionVersion(),
 	};
 
+	const refreshLimiter = createRefreshLimiter();
 	let server: ReturnType<typeof createHttpServer> | undefined;
 	let lastBindError: unknown;
 	for (const candidate of candidatePorts()) {
@@ -216,6 +219,12 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 				dispatchScheduler,
 				jobs: createJobControl(supervisor, jobRunner),
 				readJobs: () => parseJobs(readConfigStrict(paths)),
+				refresh: {
+					which: (program, env) => Bun.which(program, env),
+					runSource: defaultRunSource,
+					now: Date.now,
+					limiter: refreshLimiter,
+				},
 			});
 			boundPort = candidate;
 			break;

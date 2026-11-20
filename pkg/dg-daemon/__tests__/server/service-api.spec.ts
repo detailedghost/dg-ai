@@ -9,6 +9,7 @@ import {
 	validateCredentialName,
 } from "@dg/common";
 import { credentialGrantTokenPath, resolveDgPaths } from "@dg/common/node";
+import { createRefreshLimiter } from "../../src/jobs/credential-refresh";
 import { handleServiceApiCredentials } from "../../src/server/service-api";
 import {
 	cleanupDgHome,
@@ -239,7 +240,7 @@ describe("POST /service-api/v1/credentials 401", () => {
 });
 
 describe("POST /service-api/v1/credentials 403", () => {
-	it("refuses a name outside the prefix and an operation that is not get or list", async () => {
+	it("refuses a name outside the prefix and an operation that is not get, list or refresh", async () => {
 		const before = (await cliCall({ operation: "list" })).value;
 		const bodies = [
 			{ operation: "get", name: "b/z" },
@@ -476,12 +477,21 @@ describe("service API secrecy", () => {
 
 describe("handleServiceApiCredentials with a failing store", () => {
 	function failingStoreRequest(logger: { error: (message: string) => void }) {
+		const refresh = {
+			paths: { jobSourcesPath: "/none", jobStateRoot: "/none" },
+			readJobs: () => [],
+			which: () => null,
+			runSource: async () => ({ code: 1, stdout: "", stderr: "" }),
+			now: () => 0,
+			limiter: createRefreshLimiter(),
+		};
 		const store = {
 			verifyCredentialGrant: () => true,
 			listCredentials: () => {
 				throw new Error("disk failure marker");
 			},
 			getCredential: () => undefined,
+			setCredential: () => {},
 		};
 		return handleServiceApiCredentials(
 			new Request("http://127.0.0.1/service-api/v1/credentials", {
@@ -494,7 +504,8 @@ describe("handleServiceApiCredentials with a failing store", () => {
 				body: JSON.stringify({ operation: "list" }),
 			}),
 			store,
-			logger,
+			{ info() {}, warn() {}, ...logger },
+			refresh,
 		);
 	}
 
