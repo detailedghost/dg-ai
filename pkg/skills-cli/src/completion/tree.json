@@ -1934,7 +1934,7 @@
 				},
 				{
 					"name": "list",
-					"description": "Print all known background jobs with derived state"
+					"description": "Print all known background jobs with derived state, optionally only those started in or below a directory"
 				},
 				{
 					"name": "prune",
@@ -2048,6 +2048,24 @@
 							],
 							"description": "one of <5 min, ~15 min, ~30 min, ~1 hr, >1 hr, unknown",
 							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "archive",
+					"description": "Move every done item, with its sub-items, from the checklist into checklist-archive.md beside it",
+					"options": [
+						{
+							"flags": [
+								"--dry-run"
+							],
+							"description": "report what would move and write nothing"
+						},
+						{
+							"flags": [
+								"--json"
+							],
+							"description": "print the report as JSON"
 						}
 					]
 				},

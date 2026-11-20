@@ -21,6 +21,7 @@ import {
 import { runSubtree } from "../utils/lazy-command";
 import { listJobs } from "../bg/jobs";
 import { fileMtime, findStalled, lastLogLine } from "./loops";
+import { archiveDone } from "./archive";
 import { renderReap, runReap } from "./reap-run";
 
 function minutes(value: string | undefined, name: string, fallback: number): number {
@@ -160,6 +161,25 @@ export function registerStat(program: Command): void {
 			});
 			console.log(
 				JSON.stringify({ kind: "checklist-item-status", order: result.label, status }),
+			);
+		});
+
+	stat
+		.command("archive")
+		.description(
+			"Move every done item, with its sub-items, from the checklist into checklist-archive.md beside it",
+		)
+		.option("--dry-run", "report what would move and write nothing")
+		.option("--json", "print the report as JSON")
+		.action(async (options: { dryRun?: boolean; json?: boolean }) => {
+			const report = await archiveDone(checklistPath(), !!options.dryRun);
+			if (options.json) {
+				console.log(JSON.stringify(report));
+				return;
+			}
+			const verb = options.dryRun ? "Would archive" : "Archived";
+			console.log(
+				`${verb} ${report.moved} done item(s); ${report.openChildren} open sub-item(s) went with a done parent. Archive: ${report.archive}`,
 			);
 		});
 

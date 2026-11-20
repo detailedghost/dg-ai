@@ -4,7 +4,7 @@ feature_snake_case: velora_dg_fixes
 date: "2026-11-20"
 version: "1.0"
 status: in-progress
-current_slice: 1
+current_slice: 4
 pr_strategy: single
 slices:
   - id: 1
@@ -176,20 +176,20 @@ Fix the dg 6.1.0 rough edges found during the Velora release. Verify and prototy
 ### Slice 4 — stat-archive-and-bg-cwd
 
 #### Engineering
-- [ ] `dg-skills stat archive [--dry-run] [--json]` moves every done top-level item with its subtree out of checklist.md into a sibling checklist-archive.md under a `## Archived YYYY-MM-DD` heading, inside the existing updateChecklist lock
-- [ ] The report states moved items and how many open children went with a done parent
-- [ ] `dg-skills bg list --cwd <dir>` keeps jobs whose cwd is the dir or below it, reusing isPathInside from pkg/common/src/node/scratch-paths.ts; unknown list flags exit with EXIT.USAGE
-- [ ] stat SKILL.md replaces the jq select with `bg list --cwd "$PWD"` and suggests `stat archive` when the done section is long
-- [ ] bg job-management.md documents --cwd
-- [ ] Regenerate completion tree.json
+- [x] `dg-skills stat archive [--dry-run] [--json]` moves every done top-level item with its subtree out of checklist.md into a sibling checklist-archive.md under a `## Archived YYYY-MM-DD` heading, inside the existing updateChecklist lock
+- [x] The report states moved items and how many open children went with a done parent
+- [x] `dg-skills bg list --cwd <dir>` keeps jobs whose cwd is the dir or below it, reusing isPathInside from pkg/common/src/node/scratch-paths.ts; unknown list flags exit with EXIT.USAGE
+- [x] stat SKILL.md replaces the jq select with `bg list --cwd "$PWD"` and suggests `stat archive` when the done section is long
+- [x] bg job-management.md documents --cwd
+- [x] Regenerate completion tree.json
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: `stat archive --json` prints `{"kind":"checklist-archive","moved":N,"openChildren":M,"archive":"<path>"}`
-- [ ] Contract: `bg list --cwd <dir>` prints `{jobs:[...]}` filtered by path containment, never a sibling prefix such as /repo-other
-- [ ] stat-cli.spec: archive moves done items, keeps open items and order, appends on a second run, --dry-run writes nothing
-- [ ] bg-jobs.spec: --cwd keeps the dir and its children, drops a sibling prefix
-- [ ] completion.spec passes after regeneration
+- [x] Contract: `stat archive --json` prints `{"kind":"checklist-archive","moved":N,"openChildren":M,"archive":"<path>"}`
+- [x] Contract: `bg list --cwd <dir>` prints `{jobs:[...]}` filtered by path containment, never a sibling prefix such as /repo-other
+- [x] stat-cli.spec: archive moves done items, keeps open items and order, appends on a second run, --dry-run writes nothing
+- [x] bg-jobs.spec: --cwd keeps the dir and its children, drops a sibling prefix
+- [x] completion.spec passes after regeneration
 
 #### Acceptance Criteria
 - [ ] Given a checklist with many done rows, when the user runs stat archive, then checklist.md holds only open work and the archive holds the rest
@@ -235,6 +235,7 @@ Fix the dg 6.1.0 rough edges found during the Velora release. Verify and prototy
 - Slice 6: update logs each failed doctor check and its fix under the summary line through the new formatFailures; the update deps seam returns the DoctorReport; exit code unchanged.
 - Slice 3: thrash SKILL.md gains a Nested run rule (persona-file fallback, then proxy --subagent fallback, never skip a stage, exact stop line); address and review-loop point subagents at it, and address phase 7 cleanup runs in a subagent too.
 - Slice 1: verify roles take an optional saved pw state; the playwright capturer loads only its loopback cookies and origins as storageState and refuses non-loopback WebSockets; the http engine refuses state roles; a missing state fails before capture; a capture that lands on another path names the path and the pw state save command.
+- Slice 4: stat archive moves every done top-level item and its subtree into checklist-archive.md under a dated heading inside the checklist lock, with --dry-run and --json; bg list --cwd filters jobs by path containment and the stat skill uses it in place of its jq select.
 
 ## Agent Notes
 - (owner, 2026-11-20) R1: verify loads a saved pw state per role (`role.state`), loopback only. Seed checks and the cookie cap stay unchanged.

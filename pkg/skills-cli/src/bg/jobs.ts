@@ -82,7 +82,9 @@ export const bgSpec: CommandSpec = {
 			run: cmdRun,
 		},
 		list: {
-			description: "Print all known background jobs with derived state",
+			description:
+				"Print all known background jobs with derived state, optionally only those started in or below a directory",
+			args: ["[--cwd <dir>]"],
 			run: cmdList,
 		},
 		prune: {
@@ -287,8 +289,13 @@ export function listJobs(): JobState[] {
 		.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 
-async function cmdList(): Promise<void> {
-	emitJson({ jobs: listJobs() });
+async function cmdList(args: string[]): Promise<void> {
+	const unknown = args.find((arg, i) => arg !== "--cwd" && args[i - 1] !== "--cwd");
+	if (unknown) die(`unknown list flag: ${unknown}`, EXIT.USAGE);
+	const [cwd] = extractCwd(args);
+	const target = cwd && path.resolve(cwd);
+	const jobs = listJobs();
+	emitJson({ jobs: target ? jobs.filter((job) => isPathInside(job.cwd, target)) : jobs });
 }
 
 async function cmdPrune(args: string[]): Promise<void> {
