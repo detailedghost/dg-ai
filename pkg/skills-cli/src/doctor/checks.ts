@@ -111,8 +111,8 @@ export function bootstrapCommand(
 	const base = "https://github.com/detailedghost/dg-ai/releases/latest/download";
 	const cliOnly = isCliOnly(ctx);
 	if (platform === "win32") {
-		const script = `irm ${base}/bootstrap.ps1 | iex`;
-		return cliOnly ? `$env:DG_CLI_ONLY = "1"; ${script}` : script;
+		if (!cliOnly) return `irm ${base}/bootstrap.ps1 | iex`;
+		return `& ([scriptblock]::Create((irm ${base}/bootstrap.ps1))) -CliOnly`;
 	}
 	const script = `curl -fsSL ${base}/bootstrap.sh | sh`;
 	return cliOnly ? `${script} -s -- --cli-only` : script;

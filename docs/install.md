@@ -517,7 +517,7 @@ the command exits 1 when any step failed:
    also reports things `update` does not own, such as a stopped daemon, so it
    does not change the exit code.
 
-Skills copied into `$CODEX_HOME/skills` by a `DG_INSTALL_CODEX=1` bootstrap
+Skills copied into `$CODEX_HOME/skills` by a `--codex` bootstrap
 are not refreshed by `update`. When Codex has no dg plugin but has that
 folder, `update` and `--check` print the bootstrap command that refreshes it.
 
@@ -548,7 +548,7 @@ claude plugin update dg@detailedghost
 ## Pin a version
 
 Install a specific release instead of the newest, by adding `--version <x.y.z>`
-(shell) or setting `DG_VERSION` first (PowerShell):
+(shell) or `-Version <x.y.z>` (PowerShell):
 
 <!-- markdownlint-disable MD013 -->
 
@@ -557,8 +557,7 @@ curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/boots
 ```
 
 ```powershell
-$env:DG_VERSION = "X.Y.Z"
-irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
+& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -Version X.Y.Z
 ```
 
 <!-- markdownlint-enable MD013 -->
@@ -753,15 +752,13 @@ curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/boots
 Windows, in PowerShell:
 
 ```powershell
-$env:DG_CLI_ONLY = "1"
-irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
+& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -CliOnly
 ```
 
 <!-- markdownlint-enable MD013 -->
 
-`DG_CLI_ONLY=1` works in place of `--cli-only` for the shell form, and an
-installed `dg-skills` accepts `dg-skills install --cli-only`. Add `DG_INSTALL_CODEX=1`
-to copy only the CLI skills into `$CODEX_HOME/skills`.
+An installed `dg-skills` accepts `dg-skills install --cli-only`. Add `--codex`
+(`-Codex` in PowerShell) to copy only the CLI skills into `$CODEX_HOME/skills`.
 
 | Skill | CLI-only |
 | --- | --- |
@@ -837,16 +834,54 @@ curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/boots
 Windows, in PowerShell:
 
 ```powershell
-$env:DG_SKILLS_ONLY = "1"
-irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
+& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -SkillsOnly
 ```
 
 <!-- markdownlint-enable MD013 -->
 
-`DG_SKILLS_ONLY=1` works in place of `--skills-only` for the shell form.
-`DG_SKILLS_DEST` chooses the directory (default: `skills/` in the dg data
-folder). Point it at `$CODEX_HOME/skills` when the files should land
-where Codex reads skills. The skills root `README.md` is not installed.
+`--dest <dir>` (`-Dest <dir>`) chooses the directory (default: `skills/` in the dg
+data folder). Point it at `$CODEX_HOME/skills` when the files should land
+where Codex reads skills. Add `--no-cli` (`-NoCli`) for an offline copy that
+downloads nothing. The skills root `README.md` is not installed.
+
+## Chat-only install
+
+Download only the chat-safe chat skills, ready to upload to Claude chat. This
+installs no runtime, no bundle, no launchers and no extension, and runs nothing
+it downloads. See [chat install](chat-install.md) for what the skills do and how to
+upload them.
+
+<!-- markdownlint-disable MD013 -->
+
+```bash
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --chat-only
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -ChatOnly
+```
+
+<!-- markdownlint-enable MD013 -->
+
+## Install flags
+
+Every bootstrap mode is a flag. PowerShell takes the same flags as switches when
+the script runs as a script block, as in the commands above.
+
+| `bootstrap.sh` | `bootstrap.ps1` | Effect |
+| --- | --- | --- |
+| `--cli-only` | `-CliOnly` | Skip the browser extension |
+| `--agent-only` | `-AgentOnly` | Install for a non-Claude agent that only needs phone |
+| `--skills-only` | `-SkillsOnly` | Copy the skill files, then the runtime and bundle |
+| `--no-cli` | `-NoCli` | With `--skills-only`: copy the files only, download nothing |
+| `--chat-only` | `-ChatOnly` | Download only the chat skills for Claude chat |
+| `--dest <dir>` | `-Dest <dir>` | Where `--skills-only` or `--chat-only` writes |
+| `--codex` | `-Codex` | Also copy the skills into `$CODEX_HOME/skills` |
+| `--version <x.y.z>` | `-Version <x.y.z>` | Install that release instead of the newest |
+
+Older scripts may still set `DG_CLI_ONLY`, `DG_AGENT_ONLY`, `DG_SKILLS_ONLY`,
+`DG_SKILLS_NO_CLI`, `DG_SKILLS_DEST`, `DG_INSTALL_CODEX` or `DG_VERSION`. They keep
+working, and a flag always wins. `--chat-only` has no environment variable.
 
 ## Codex plugin
 
@@ -864,14 +899,13 @@ To install the same skills directly into `$CODEX_HOME/skills` without the Codex
 plugin, opt in while bootstrapping:
 
 ```bash
-curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | DG_INSTALL_CODEX=1 sh
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --codex
 ```
 
 PowerShell standalone installation:
 
 ```powershell
-$env:DG_INSTALL_CODEX = "1"
-irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
+& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -Codex
 ```
 
 The standalone path copies the skills to `$CODEX_HOME/skills` (or

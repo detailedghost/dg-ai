@@ -239,3 +239,7 @@ run = "bunx stryker run stryker.verify.conf.mjs"
 description = "Scan git history for secrets with gitleaks"
 tools = { gitleaks = "8.30.1" }
 run = "gitleaks detect --source . --config .gitleaks.toml --redact --verbose"
+
+[tasks."package:chat"]
+description = "Validate the chat-only skills and build dg-chat-skills-<version>.zip into dist/chat. Pass the version after --, for example: mise run package:chat -- 5.11.0"
+run = "bun scripts/package-chat-skills.ts --out dist/chat --version"

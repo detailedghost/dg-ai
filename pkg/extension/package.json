@@ -34,6 +34,6 @@
 		"@dg/tour-ui": "workspace:*",
 		"kokoro-js": "^1.2.1",
 		"qrcode": "1.5.4",
-		"tldts": "7.4.19"
+		"tldts": "7.5.4"
 	}
 }

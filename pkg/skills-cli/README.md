@@ -132,7 +132,7 @@ child directory that contains `SKILL.md` is included, references and all. The
 copy is data: the command does not fetch `dg-skills`, `dg-daemon`, `dg-agent`,
 or the extension, and it does not execute skill content. From the repo root,
 `mise run install:skills` is the same command. `bootstrap.sh --skills-only`
-and `DG_SKILLS_ONLY=1` do that copy on a machine without Bun.
+and `bootstrap.ps1 -SkillsOnly` do that copy on a machine without Bun.
 
 ## Shell completion
 

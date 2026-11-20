@@ -151,9 +151,9 @@ describe("dg-skills update", () => {
 	});
 
 	test.each([
-		["linux", false, "curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | DG_INSTALL_CODEX=1 sh"],
-		["linux", true, "curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | DG_INSTALL_CODEX=1 sh -s -- --cli-only"],
-		["win32", true, '$env:DG_INSTALL_CODEX = "1"; $env:DG_CLI_ONLY = "1"; irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex'],
+		["linux", false, "curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --codex"],
+		["linux", true, "curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --codex --cli-only"],
+		["win32", true, "& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -Codex -CliOnly"],
 	] as const)("the standalone refresh on %s (cli-only %s) is %s", (platform, cliOnly, command) => {
 		expect(standaloneRefresh(platform, cliOnly)).toBe(command);
 	});

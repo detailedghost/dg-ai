@@ -83,8 +83,8 @@ describe("doctor bootstrap command", () => {
 		mkdirSync(ctx.paths.configDir, { recursive: true });
 		writeFileSync(ctx.paths.cliOnlyMarker, "");
 		expect(bootstrapCommand(ctx, "linux")).toEndWith("-s -- --cli-only");
-		expect(bootstrapCommand(ctx, "win32")).toStartWith(
-			'$env:DG_CLI_ONLY = "1"; irm ',
+		expect(bootstrapCommand(ctx, "win32")).toBe(
+			"& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -CliOnly",
 		);
 	});
 });
