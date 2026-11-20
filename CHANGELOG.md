@@ -1,5 +1,11 @@
 # Changelog
 
+## v6.1.1 (2026-11-20)
+
+### Fixes
+
+- fix(pw): launch the Chromium-family browser that pw finds ([#241](https://github.com/detailedghost/dg-ai/pull/241))
+
 ## v6.1.0 (2026-11-20)
 
 ### Features
