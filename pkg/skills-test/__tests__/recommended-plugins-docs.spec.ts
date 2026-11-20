@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { HUMAN_SECTIONS } from "../../skills-cli/src/adr/templates";
 import { importedPlugins, readMarketplace } from "./marketplace-support";
-import { REPO_ROOT, readRepoFile } from "./test-support";
+import { ADR_SECTIONS, adrTitle, REPO_ROOT, readRepoFile } from "./test-support";
 
 const INSTALL_FLAG = "dg-skills install --with-recommended";
 const ADR_PATH = join("docs", "adr", "0027-optional-third-party-plugins.md");
@@ -101,13 +100,13 @@ describe("ADR 0027 optional third-party plugins", () => {
 	test("exists with a title and a Status line", () => {
 		expect(existsSync(join(REPO_ROOT, ADR_PATH))).toBe(true);
 		const adr = readRepoFile(ADR_PATH);
-		expect(adr).toMatch(/^# (?!\d{4} ).+/m);
+		expect(adrTitle(adr)).toMatch(/^(?!\d{4}\b)\S/);
 		expect(adr).toMatch(/^Status: (Proposed|Accepted)/m);
 	});
 
 	test("follows the template sections", () => {
 		const adr = readRepoFile(ADR_PATH);
-		for (const heading of [...HUMAN_SECTIONS, "References"])
+		for (const heading of ADR_SECTIONS)
 			expect(adr).toMatch(new RegExp(`^## ${heading}$`, "m"));
 	});
 

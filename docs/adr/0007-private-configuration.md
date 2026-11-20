@@ -19,7 +19,7 @@ status shows the names of set variables and whether they are available. It never
 ## Consequences
 
 - Examples still work without a deployment’s IDs; see `config.example.json`.
-- Operators must set private values apart from the package install.
+- Operators must set private values separately from the package install.
 - Redaction lowers the risk of a leak. It does not allow logging private data.
 
 ## Diagram

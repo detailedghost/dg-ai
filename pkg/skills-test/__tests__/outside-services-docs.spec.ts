@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { HUMAN_SECTIONS } from "../../skills-cli/src/adr/templates";
-import { count, REPO_ROOT, readRepoFile } from "./test-support";
+import { ADR_SECTIONS, count, REPO_ROOT, readRepoFile } from "./test-support";
 
 const ADR_FILE = "0043-outside-services.md";
 const ADR_PATH = join("docs", "adr", ADR_FILE);
@@ -76,7 +75,7 @@ describe("ADR 0043 outside services", () => {
 	});
 
 	test("has template headings, Accepted status and a commit date", () => {
-		for (const h of [...HUMAN_SECTIONS, "References"])
+		for (const h of ADR_SECTIONS)
 			expect(adr).toMatch(new RegExp(`^## ${h}$`, "m"));
 		expect(adr).toMatch(/^Status: Accepted$/m);
 		expect(adr).toMatch(/^Date: \d{4}-\d{2}-\d{2}$/m);

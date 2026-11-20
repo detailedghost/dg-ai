@@ -10,4 +10,4 @@ covers: ["pkg/channel-review/src/trigger.ts", "pkg/channel-review/src/engine.ts"
 - Fail closed when the relay omits the sender ID and the override is off.
 - Never use display names as sender identity.
 - Never treat the owner token as a substitute for sender identity.
-- Remember that `address.allowAnySender` also widens emoji access.
+- Treat `address.allowAnySender` as a widening of emoji access too. Say so wherever the setting is documented.

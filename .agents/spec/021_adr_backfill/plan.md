@@ -224,10 +224,10 @@ Opt dg-ai into the decision records tool from bundle 020. Give every numbered AD
 ## Issues Remediation
 
 ## Open decisions
-- [OPEN — roundtable] RATIFY H1 numbers: strip `NNNN — ` from all 51 H1s and update job-model-docs (recommended), or keep them and accept `[0049 — 0049 — …]` lines in the generated toc.
-- [OPEN — roundtable] RATIFY Topic for the 11 ADRs in the old "Proposed changes" group (0018, 0019, 0021 to 0024, 0026, 0027, 0033, 0034, 0036): keep the literal topic per the brief (default), or map each to a subject topic (Channel review, Skills, Installation) and edit dg-front-door-docs.
-- [OPEN — roundtable] RATIFY 0007 (grade 11.9): rewrite to grade 10 or lower (recommended, 205 words), or set `Level: technical`.
-- [OPEN — roundtable] RATIFY toc "Adding an ADR" text: keep it above the marker with `/dg:adr` in place of the template link (recommended), or drop it.
+- Decided (owner, 2026-11-20): strip `NNNN — ` from all 51 H1s and update job-model-docs.
+- Decided (owner, 2026-11-20): map the 11 old Proposed changes ADRs to Channel review, Skills or Installation, and edit the tests that pin the group.
+- Decided (owner, 2026-11-20): rewrite 0007 to grade 10 or lower, with no `Level: technical`.
+- Decided (owner, 2026-11-20): keep the "Adding an ADR" text above the marker, pointing to `/dg:adr`.
 - Decided: `## References` and every amendment section stay verbatim. Lint checks only that the five template sections exist, and outside-services-docs reads the References section of 0043.
 - Decided: the renumber target is 0051, the next free number on master. 0049 and 0050 are taken, and no open PR adds an ADR.
 - Decided: batch slices own decade ranges (000 to 001, 002, 003, 004 to 005), because lint-waves treats globs with a shared literal prefix as overlapping. Only slice 6 runs `adr index`.

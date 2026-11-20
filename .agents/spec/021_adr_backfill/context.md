@@ -3,8 +3,8 @@ feature: "ADR backfill: opt dg-ai into dg-skills adr"
 feature_snake_case: "adr_backfill"
 date: "2026-11-20"
 version: "1.0"
-status: "draft"
-current_slice: 0
+status: "in-progress"
+current_slice: 6
 pr_strategy: "single"
 bundle: "/home/detailedghost/code/worktrees/dg-ai-spec-021/.agents/spec/021_adr_backfill"
 plan_path: "/home/detailedghost/code/worktrees/dg-ai-spec-021/.agents/spec/021_adr_backfill/plan.md"

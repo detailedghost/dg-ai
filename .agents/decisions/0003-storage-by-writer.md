@@ -6,7 +6,7 @@ covers: ["pkg/dg-daemon/src/store/**", "pkg/common/src/node/sqlite.ts", "pkg/cha
 
 - Use `bun:sqlite`, STRICT tables, ordered schema migrations and immediate write transactions for daemon state.
 - Update claims and delivery state in one transaction.
-- Replace channel-review state atomically and validate its shape on load. This decision is updated by [0018](../../docs/adr/0018-channel-review-state-in-daemon-db.md) (Proposed), which moves that state to the daemon database.
+- Replace channel-review state atomically and validate its shape on load. [ADR 0018](../../docs/adr/0018-channel-review-state-in-daemon-db.md) moves that state to the daemon database.
 - Coalesce only event-cursor updates, for one second. Save every other state change at once.
 - Keep older state files readable when fields are added.
 - Keep a handled-message check as a duplicate guard separate from event cursors.

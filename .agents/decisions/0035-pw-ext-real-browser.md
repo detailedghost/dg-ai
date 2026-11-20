@@ -4,9 +4,9 @@ covers: ["pkg/common/src/pw-ext-format.ts", "pkg/dg-daemon/src/server/pw-ext.ts"
 
 [ADR 0035](../../docs/adr/0035-pw-ext-real-browser.md)
 
-- Treat `--ext` on the CLI as the explicit grant. Never add a per-call approval popup, a consent field on the wire, or a setting that restores one.
+- Treat `--ext` on the CLI as the explicit grant. Never add a per-call approval popup, a consent field on the wire, or a setting that restores one. The per-site Allow of ADR 0045, the unmask window of ADR 0041 and the Web MCP approvals of ADR 0046 are not per-call approvals.
 - Send `pw --ext <verb>` as one `cli-pw-ext-request` on the `/cli` socket. The daemon forwards `pw-ext-browser-request` to the one paired extension at `PW_EXT_MIN_EXTENSION_VERSION` or newer.
-- Keep the verb set fixed: `current`, `snapshot`, `screenshot`, `selection`, `console`, `tools` read; `open`, `click`, `fill`, `upload`, `call` write. Make the `pw-ext-format.ts` validators accept an exact field set per verb. The wire carries no code.
+- Add a verb only through an ADR. The base set is `current`, `snapshot`, `screenshot`, `selection`, `console`, `tools` read; `open`, `click`, `fill`, `upload`, `call` write. Later records add verbs such as `unmask` (0041), `dialog` (0044) and `network` (0051). Make the `pw-ext-format.ts` validators accept an exact field set per verb. The wire carries no code.
 - Act on the selected tab of the agent's own tab group. `--tab <id>` names another tab of the group.
 - Refuse browser settings pages, extension pages, `file:` and `about:` pages, web stores, private windows and the signed-in Proton Mail tab (`PW_EXT_BLOCKED_ERROR`, `PW_EXT_MAILBOX_ERROR`).
 - Redact text and URLs in the extension and again in the CLI. Keep the output caps: 100,000 characters of text, or the proto preview limit for an image.

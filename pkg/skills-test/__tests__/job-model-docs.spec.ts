@@ -2,9 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { ROUTES } from "../../dg/src/main";
-import { HUMAN_SECTIONS } from "../../skills-cli/src/adr/templates";
 import { codeRegions, dgCommandForms, runDgHelp } from "./docs-help-kit";
-import { count, REPO_ROOT, readRepoFile } from "./test-support";
+import { ADR_SECTIONS, adrTitle, count, REPO_ROOT, readRepoFile } from "./test-support";
 
 const JOBS = "docs/jobs-and-services.md";
 const SKILL = "plugins/dg/skills/jobs/SKILL.md";
@@ -214,11 +213,11 @@ describe("the jobs record", () => {
 
 	test("exists with the template headings, a Date header and the Accepted status", () => {
 		expect(adr).not.toBe("");
-		expect(adr).toMatch(/^# (?!\d{4} ).+/m);
+		expect(adrTitle(adr)).toMatch(/^(?!\d{4}\b)\S/);
 		expect(adr).toMatch(/^Status: Accepted$/m);
 		expect(adr).toMatch(/^Date: \d{4}-\d{2}-\d{2}$/m);
 		expect(adr).toMatch(/^Topic: Platform$/m);
-		for (const h of [...HUMAN_SECTIONS, "References"])
+		for (const h of ADR_SECTIONS)
 			expect(adr).toMatch(new RegExp(`^## ${h}$`, "m"));
 	});
 
