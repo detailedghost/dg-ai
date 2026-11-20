@@ -48,7 +48,8 @@ viewer or decision bar from scratch. Then:
 4. Replace `PROTO_NAME` everywhere with a short slug, such as `signup-form`.
 
 Keep the bar as it is: its light and dark toggle, width menu, note box, and Approve, Tweak,
-Reject and More buttons. Style the prototype content against `html.dark` so the toggle
+Reject and More versions buttons. A bar without all four buttons and the note box is
+incomplete. Style the prototype content against `html.dark` so the toggle
 themes it too. A reviewer who can't see both modes approves a variant that breaks in the
 other.
 
