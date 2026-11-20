@@ -15,6 +15,7 @@ export interface Flags {
 	source: string;
 	url?: string;
 	signIn?: string;
+	stateName?: string;
 	rest: string[];
 }
 
@@ -63,6 +64,8 @@ export function parseFlags(argv: string[], allowed: readonly string[]): Flags {
 			flags.url = arg.slice("--url=".length).trim() || undefined;
 		else if (arg.startsWith("--sign-in="))
 			flags.signIn = arg.slice("--sign-in=".length).trim() || undefined;
+		else if (arg.startsWith("--state="))
+			flags.stateName = arg.slice("--state=".length).trim() || undefined;
 		else flags.rest.push(arg);
 	}
 	return flags;

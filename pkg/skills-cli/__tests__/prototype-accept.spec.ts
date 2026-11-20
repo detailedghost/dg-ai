@@ -21,7 +21,7 @@ import {
 	renderAccepted,
 } from "../src/layout/record";
 import type { LayoutResult } from "../src/layout/fingerprint";
-import { recordAcceptance, refingerprint } from "../src/prototype/accepted";
+import { acceptanceHook, recordAcceptance, refingerprint } from "../src/prototype/accepted";
 import type { Capturer, CaptureRequest } from "../src/verify/capture-model";
 import { verifyBrowserAvailable } from "../src/verify/playwright-capturer";
 import { makeTempDir } from "./git-repo-fixtures";
@@ -144,7 +144,7 @@ describe("prototype acceptance record from a ui session", () => {
 		const session = await sessionFor("solo");
 		await decide(session.port, { url: `http://127.0.0.1:${session.port}/` });
 		const result = await run.done;
-		expect(result.exitCode).toBe(0);
+		expect(result.exitCode).toBe(75);
 		expect(JSON.parse(result.stdout)).toEqual({ status: "ok", variant: "A", notes: "" });
 		expect(result.stdout.trim().split("\n")).toHaveLength(1);
 		const record = readRecord("solo");
@@ -411,6 +411,13 @@ describe("recordAcceptance", () => {
 		expect(readFileSync(join(root, "sandbox", "accepted.json"), "utf8")).not.toContain("prototype-signin");
 	});
 
+	test("passes the saved state name to every shot", async () => {
+		const seen: CaptureRequest[] = [];
+		await recordAcceptance({ ...target(), stateName: "velora" }, claim, { open: fake(found, seen), now });
+		expect(seen).toHaveLength(6);
+		expect(seen.every((request) => request.stateName === "velora")).toBe(true);
+	});
+
 	test("sends no sign-in page when none is set", async () => {
 		const seen: CaptureRequest[] = [];
 		await recordAcceptance(target(), claim, { open: fake(found, seen), now });
@@ -538,6 +545,97 @@ describe("recordAcceptance", () => {
 		expect(repaired.skipped).toContain("capture failed");
 		expect(readdirSync(join(root, "sandbox", "accepted"))).toHaveLength(0);
 		expect(repaired.shots).toBeNull();
+	});
+});
+
+describe("acceptanceHook", () => {
+	const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+	const claim = { variant: "D", notes: "", source: "browser", url: "http://127.0.0.1:4321/dashboard" };
+	const capturer = (shot: (request: CaptureRequest) => { finalUrl: string; fingerprint: LayoutResult }) => async (): Promise<Capturer> => ({
+		async shot(request) {
+			const { finalUrl, fingerprint } = shot(request);
+			return { png, html: "", finalUrl, menuFound: false, scrolled: false, engine: "playwright", fingerprint };
+		},
+		async close() {},
+	});
+	const redirectedToSignIn = capturer(() => ({
+		finalUrl: "http://127.0.0.1:4321/login",
+		fingerprint: { error: 'root: found 0 visible [data-verify-root="demo"]' },
+	}));
+	const clean = capturer((request) => ({
+		finalUrl: request.url,
+		fingerprint: { root: { x: 0, y: 0, w: request.width, h: request.height }, controls: [], themeApplied: request.theme },
+	}));
+
+	function captureStderr(): { text: () => string; restore: () => void } {
+		const original = process.stderr.write.bind(process.stderr);
+		let captured = "";
+		process.stderr.write = ((chunk: string | Uint8Array) => {
+			captured += String(chunk);
+			return true;
+		}) as typeof process.stderr.write;
+		return { text: () => captured, restore: () => void (process.stderr.write = original) };
+	}
+
+	test("a skipped fingerprint after a sign-in redirect prints the exact run line and returns its reason", async () => {
+		const stderr = captureStderr();
+		try {
+			const reason = await acceptanceHook(
+				{ dir: join(root, "sandbox"), name: "demo", chain: "demo", stateName: "velora" },
+				{ open: redirectedToSignIn },
+			)(claim);
+			expect(reason).toContain("the page redirected to /login");
+			expect(stderr.text()).toContain(`prototype: fingerprint skipped: ${reason}\n`);
+			expect(stderr.text()).toContain(
+				"run: dg-skills prototype fingerprint demo --url=http://127.0.0.1:4321/dashboard --state=velora\n",
+			);
+		} finally {
+			stderr.restore();
+		}
+	});
+
+	test("the run line names --sign-in when one was used", async () => {
+		const stderr = captureStderr();
+		try {
+			await acceptanceHook(
+				{ dir: join(root, "sandbox"), name: "demo", chain: "demo", signIn: "http://127.0.0.1:4321/login" },
+				{ open: redirectedToSignIn },
+			)(claim);
+			expect(stderr.text()).toContain(
+				"run: dg-skills prototype fingerprint demo --url=http://127.0.0.1:4321/dashboard --sign-in=<url>\n",
+			);
+		} finally {
+			stderr.restore();
+		}
+	});
+
+	test("a cli approve with no page url, as from a logic prototype, returns nothing and prints no run line", async () => {
+		const stderr = captureStderr();
+		try {
+			const reason = await acceptanceHook(
+				{ dir: join(root, "sandbox"), name: "demo", chain: "demo" },
+				{ open: clean },
+			)({ variant: "B", notes: "", source: "cli" });
+			expect(reason).toBeUndefined();
+			expect(stderr.text()).toContain("skipped: no page url recorded");
+			expect(stderr.text()).not.toContain("run: dg-skills");
+		} finally {
+			stderr.restore();
+		}
+	});
+
+	test("a good fingerprint returns nothing and prints no run line", async () => {
+		const stderr = captureStderr();
+		try {
+			const reason = await acceptanceHook(
+				{ dir: join(root, "sandbox"), name: "demo", chain: "demo", stateName: "velora" },
+				{ open: clean },
+			)(claim);
+			expect(reason).toBeUndefined();
+			expect(stderr.text()).not.toContain("run: dg-skills");
+		} finally {
+			stderr.restore();
+		}
 	});
 });
 

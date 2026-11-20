@@ -23,6 +23,7 @@ import {
 	readSource,
 	status,
 	wait,
+	waitExitCode,
 	writeSentinel,
 } from "../src/prototype/sentinels";
 import { git, makeTempDir, scratchFixtures } from "./git-repo-fixtures";
@@ -137,6 +138,31 @@ describe("prototype sentinels", () => {
 		expect(Date.now() - started).toBeGreaterThanOrEqual(900);
 	});
 
+	test("wait reports the hook's skipped-fingerprint reason on an approve only", async () => {
+		const p = paths();
+		confirm(p, "A");
+		expect(await wait(p, 0, async () => "no browser")).toEqual({
+			status: "ok",
+			variant: "A",
+			notes: "",
+			fingerprintSkipped: "no browser",
+		});
+		confirm(p, "A");
+		expect(await wait(p, 0, async () => undefined)).toEqual({ status: "ok", variant: "A", notes: "" });
+	});
+
+	test("exit codes: 0 for a decision, 124 for a timeout, 75 for a skipped fingerprint", () => {
+		expect(waitExitCode({ status: "ok", variant: "A", notes: "" })).toBe(0);
+		expect(waitExitCode({ status: "rejected", notes: "" })).toBe(0);
+		expect(waitExitCode({ status: "timeout" })).toBe(124);
+		expect(waitExitCode({ status: "ok", variant: "A", notes: "", fingerprintSkipped: "x" })).toBe(75);
+	});
+
+	test("await-decision timeout prints the pending text and JSON", () => {
+		expect(formatDecision({ status: "timeout" }, false)).toBe("timeout, still pending\n");
+		expect(formatDecision({ status: "timeout" }, true)).toBe('{"status":"timeout","pending":true}\n');
+	});
+
 	test("wait wakes when a decision lands while it is blocked", async () => {
 		const p = paths();
 		const pending = wait(p, 5);
@@ -203,9 +229,9 @@ describe("prototype sentinels", () => {
 			'{"status":"more","notes":"bolder"}\n',
 		);
 		expect(formatWait({ status: "timeout" }, true)).toBe(
-			'{"status":"timeout"}\n',
+			'{"status":"timeout","pending":true}\n',
 		);
-		expect(formatWait({ status: "timeout" }, false)).toBe("timeout\n");
+		expect(formatWait({ status: "timeout" }, false)).toBe("timeout, still pending\n");
 	});
 });
 

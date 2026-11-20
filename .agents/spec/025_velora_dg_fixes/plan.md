@@ -4,7 +4,7 @@ feature_snake_case: velora_dg_fixes
 date: "2026-11-20"
 version: "1.0"
 status: in-progress
-current_slice: 4
+current_slice: 2
 pr_strategy: single
 slices:
   - id: 1
@@ -125,27 +125,27 @@ Fix the dg 6.1.0 rough edges found during the Velora release. Verify and prototy
 ### Slice 2 — prototype-sign-in-and-timeout
 
 #### Engineering
-- [ ] `prototype ui`, `wait` and `fingerprint` accept `--state=<pw state name>`; `ui` also accepts `--sign-in`; both are stored in UiState so `waitSession` passes them into the AcceptTarget (today the session path drops --sign-in)
-- [ ] AcceptTarget gains `stateName`; readLayouts passes it to the capturer as CaptureRequest.stateName (slice 1)
-- [ ] When an approve is recorded but the fingerprint was skipped, print to stderr `prototype: fingerprint skipped: <reason>` and one line `run: dg-skills prototype fingerprint <name> --url=<url> --state=<name>` (or `--sign-in=<url>` when that was used), and exit with the skipped-fingerprint code; the user's pick stays recorded
-- [ ] On timeout, text mode prints `timeout, still pending`; JSON mode prints `{"status":"timeout","pending":true}`; both `wait` paths (named and session) and `await-decision` exit with the timeout code
-- [ ] Add the two exit codes as named constants in prototype/sentinels.ts (EXIT_PROTOTYPE_TIMEOUT, EXIT_FINGERPRINT_SKIPPED); they must not collide with the EXIT_* values 1-6 and 78 in pkg/common/src/errors.ts
-- [ ] Regenerate completion tree.json with `bun scripts/completion-trees.ts`
-- [ ] Update local-ui.md (sign-in section, wait result handling, exit codes) and docs/demo-and-proto.md
-- [ ] Item 10: the shipped bars already render More versions (PrototypeSwitcher.tsx/.astro, prototype-decision-bar.html since #215, v5.11.3) and wait already returns status more. The gap is the hand-rolled bar: local-ui.md requires only Approve and Reject, and no endpoint template exists for a non-JS host such as ASP.NET. Change the minimum-bar rule to Approve, Reject, More versions and notes
-- [ ] local-build.md and assets/README.md: for a host with no shipped endpoint template, port prototype-endpoint.ts and keep all four actions (confirm, reject, more, status), or mount prototype-decision-bar.html with that ported endpoint; never drop the more action
+- [x] `prototype ui`, `wait` and `fingerprint` accept `--state=<pw state name>`; `ui` also accepts `--sign-in`; both are stored in UiState so `waitSession` passes them into the AcceptTarget (today the session path drops --sign-in)
+- [x] AcceptTarget gains `stateName`; readLayouts passes it to the capturer as CaptureRequest.stateName (slice 1)
+- [x] When an approve is recorded but the fingerprint was skipped, print to stderr `prototype: fingerprint skipped: <reason>` and one line `run: dg-skills prototype fingerprint <name> --url=<url> --state=<name>` (or `--sign-in=<url>` when that was used), and exit with the skipped-fingerprint code; the user's pick stays recorded
+- [x] On timeout, text mode prints `timeout, still pending`; JSON mode prints `{"status":"timeout","pending":true}`; both `wait` paths (named and session) and `await-decision` exit with the timeout code
+- [x] Add the two exit codes as named constants in prototype/sentinels.ts (EXIT_PROTOTYPE_TIMEOUT, EXIT_FINGERPRINT_SKIPPED); they must not collide with the EXIT_* values 1-6 and 78 in pkg/common/src/errors.ts
+- [x] Regenerate completion tree.json with `bun scripts/completion-trees.ts`
+- [x] Update local-ui.md (sign-in section, wait result handling, exit codes) and docs/demo-and-proto.md
+- [x] Item 10: the shipped bars already render More versions (PrototypeSwitcher.tsx/.astro, prototype-decision-bar.html since #215, v5.11.3) and wait already returns status more. The gap is the hand-rolled bar: local-ui.md requires only Approve and Reject, and no endpoint template exists for a non-JS host such as ASP.NET. Change the minimum-bar rule to Approve, Reject, More versions and notes
+- [x] local-build.md and assets/README.md: for a host with no shipped endpoint template, port prototype-endpoint.ts and keep all four actions (confirm, reject, more, status), or mount prototype-decision-bar.html with that ported endpoint; never drop the more action
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: exit 0 decision, exit 124 timeout with pick still pending, exit 75 approve recorded but fingerprint skipped, exit 1 error (codes subject to RATIFY)
-- [ ] Contract: `formatWait({status:'timeout'}, false)` returns `timeout, still pending\n`; JSON adds `pending: true`
-- [ ] Contract: UiState stores optional `signIn` and `stateName`; waitSession forwards them to acceptanceHook
-- [ ] prototype-sentinels.spec: timeout text and JSON shapes
-- [ ] prototype-ui.spec: a session started with --sign-in or --state forwards it on wait; timeout exits 124
-- [ ] prototype-accept.spec: a skipped fingerprint after a sign-in redirect prints the exact run line with --state and returns the skipped code; a good fingerprint returns 0
-- [ ] completion.spec passes after regeneration
-- [ ] Contract (item 10): every proto doc that defines the minimum in-app bar names Approve, Reject and More versions; the non-JS host recipe names the more action and the .more sentinel
-- [ ] proto-skill.spec: asserts the minimum-bar rule and the port recipe text; the existing bar render test (proto-skill.spec) and endpoint test (proto-endpoint-template.spec, action more) and prototype-sentinels.spec (wait returns more) stay green
+- [x] Contract: exit 0 decision, exit 124 timeout with pick still pending, exit 75 approve recorded but fingerprint skipped, exit 1 error (codes subject to RATIFY)
+- [x] Contract: `formatWait({status:'timeout'}, false)` returns `timeout, still pending\n`; JSON adds `pending: true`
+- [x] Contract: UiState stores optional `signIn` and `stateName`; waitSession forwards them to acceptanceHook
+- [x] prototype-sentinels.spec: timeout text and JSON shapes
+- [x] prototype-ui.spec: a session started with --sign-in or --state forwards it on wait; timeout exits 124
+- [x] prototype-accept.spec: a skipped fingerprint after a sign-in redirect prints the exact run line with --state and returns the skipped code; a good fingerprint returns 0
+- [x] completion.spec passes after regeneration
+- [x] Contract (item 10): every proto doc that defines the minimum in-app bar names Approve, Reject and More versions; the non-JS host recipe names the more action and the .more sentinel
+- [x] proto-skill.spec: asserts the minimum-bar rule and the port recipe text; the existing bar render test (proto-skill.spec) and endpoint test (proto-endpoint-template.spec, action more) and prototype-sentinels.spec (wait returns more) stay green
 
 #### Acceptance Criteria
 - [ ] Given a prototype behind a sign-in and a saved pw state, when the user approves and the agent runs `prototype wait <name> --state=<s>`, then accepted.json holds six readings
@@ -236,6 +236,7 @@ Fix the dg 6.1.0 rough edges found during the Velora release. Verify and prototy
 - Slice 3: thrash SKILL.md gains a Nested run rule (persona-file fallback, then proxy --subagent fallback, never skip a stage, exact stop line); address and review-loop point subagents at it, and address phase 7 cleanup runs in a subagent too.
 - Slice 1: verify roles take an optional saved pw state; the playwright capturer loads only its loopback cookies and origins as storageState and refuses non-loopback WebSockets; the http engine refuses state roles; a missing state fails before capture; a capture that lands on another path names the path and the pw state save command.
 - Slice 4: stat archive moves every done top-level item and its subtree into checklist-archive.md under a dated heading inside the checklist lock, with --dry-run and --json; bg list --cwd filters jobs by path containment and the stat skill uses it in place of its jq select.
+- Slice 2: prototype ui/wait/fingerprint take --state (ui also --sign-in), stored in UiState and forwarded to the capturer; wait and await-decision exit 124 with 'timeout, still pending' and exit 75 with a run line when a browser approve is recorded but its fingerprint is skipped; the proto docs require a More versions button and give a port recipe for hosts with no endpoint template.
 
 ## Agent Notes
 - (owner, 2026-11-20) R1: verify loads a saved pw state per role (`role.state`), loopback only. Seed checks and the cookie cap stay unchanged.

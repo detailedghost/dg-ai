@@ -20,6 +20,7 @@ import {
 	readDecision,
 	readSource,
 	wait,
+	waitExitCode,
 } from "./sentinels";
 import { runServe } from "./serve";
 import {
@@ -111,19 +112,22 @@ export function extSnapshot(resolved: string): DecisionSnapshot {
 export const USAGE = `Usage: prototype <command> [options]
 
   ui <manifest|plan.json|-> [--chain=NAME] [--series] [--light] [--port=N] [--timeout=SEC] [--no-open]
+                    [--sign-in=LOOPBACK_URL] [--state=NAME]
                                                  Render, serve, open, and block for one decision
   serve <html-file> <name> [--light] [--port=PORT] [--idle=SEC] [--dir=PATH]
                                                  Serve a self-contained prototype page
-  wait <name> [--timeout=SEC] [--light] [--json] [--sign-in=LOOPBACK_URL]
+  wait <name> [--timeout=SEC] [--light] [--json] [--sign-in=LOOPBACK_URL] [--state=NAME]
                                                  Block until a variant is selected, rejected, or more versions are asked for.
                                                  --sign-in opens that page first, in the same browser, before the layout read.
+                                                 --state loads a saved pw login state. Exit 124 on timeout, 75 when the pick is
+                                                 recorded but the layout fingerprint was skipped.
   confirm <name> <variant> [--light] [--notes=TEXT] [--selftest] [--source=TEXT]
                                                  Write the selection sentinel (and optional notes).
                                                  --selftest writes to <name>-selftest instead.
                                                  --source names who decided (default "cli").
   status <name> [--light] [--json] [--require-pending]
                                                  Print the selection, "rejected", "more", or "pending"
-  fingerprint <name> --url=LOOPBACK_URL [--light] [--sign-in=LOOPBACK_URL]
+  fingerprint <name> --url=LOOPBACK_URL [--light] [--sign-in=LOOPBACK_URL] [--state=NAME]
                                                  Read the accepted layout again from a running page
   stop <name>                                    Stop a ui session's server and drop its state
   path <name> [--light]                          Print the selection sentinel path
@@ -138,10 +142,10 @@ export const USAGE = `Usage: prototype <command> [options]
 `;
 
 const NAME_COMMANDS: Record<string, readonly string[]> = {
-	wait: ["--timeout", "--light", "--json", "--sign-in"],
+	wait: ["--timeout", "--light", "--json", "--sign-in", "--state"],
 	confirm: ["--light", "--notes", "--selftest", "--source"],
 	status: ["--light", "--json", "--require-pending"],
-	fingerprint: ["--light", "--url", "--sign-in"],
+	fingerprint: ["--light", "--url", "--sign-in", "--state"],
 	path: ["--light"],
 	"await-decision": ["--timeout", "--light", "--json"],
 	"decision-path": ["--light"],
@@ -169,7 +173,14 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 	const session =
 		command === "wait" || command === "status" ? loadState(name) : undefined;
 	if (command === "wait" && session)
-		return waitSession(session, flags.timeoutSec);
+		return waitSession(
+			{
+				...session,
+				...(flags.signIn ? { signIn: flags.signIn } : {}),
+				...(flags.stateName ? { stateName: flags.stateName } : {}),
+			},
+			flags.timeoutSec,
+		);
 	if (command === "status" && session) {
 		return reportStatus(
 			sentinelPaths(session.sentinelDir),
@@ -182,7 +193,10 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 	if (command === "fingerprint") {
 		const dir = protoDir(name, { cwd: process.cwd(), light: flags.light });
 		if (!flags.url) throw new Error("fingerprint requires --url=<loopback-url>");
-		const record = await refingerprint(dir, name, flags.url, {}, flags.signIn);
+		const record = await refingerprint(dir, name, flags.url, {}, {
+			...(flags.signIn ? { signIn: flags.signIn } : {}),
+			...(flags.stateName ? { stateName: flags.stateName } : {}),
+		});
 		write(
 			`recorded ${join(dir, "accepted.json")} (${record.fingerprint ? `${record.fingerprint.readings.length} readings` : `skipped: ${record.skipped}`})\n`,
 		);
@@ -201,15 +215,16 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 					name: targetName,
 					chain: targetName,
 					...(flags.signIn ? { signIn: flags.signIn } : {}),
+					...(flags.stateName ? { stateName: flags.stateName } : {}),
 				}),
 			);
 			write(formatWait(result, flags.json));
-			return result.status === "timeout" ? 1 : 0;
+			return waitExitCode(result);
 		}
 		case "await-decision": {
 			const result = await awaitDecision(paths, flags.timeoutSec);
 			write(formatDecision(result, flags.json));
-			return result.status === "timeout" ? 1 : 0;
+			return waitExitCode(result);
 		}
 		case "confirm":
 			confirm(paths, variant as string, flags.notes, flags.source);

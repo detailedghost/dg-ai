@@ -7,14 +7,16 @@ localhost, opens it in the browser, blocks until a decision, and prints exactly 
 {"status":"ok","variant":"B","notes":"ship it"}
 {"status":"rejected","notes":"too busy, try flatter neutrals"}
 {"status":"more","notes":"bolder, less corporate"}
-{"status":"timeout"}
+{"status":"timeout","pending":true}
 ```
+
+The process exit code tells the outcomes apart: 0 for a decision, 124 for a timeout (the pick is still pending), 75 when the approve is recorded but the layout fingerprint was skipped, and 1 for an error.
 
 It is the default way to show variants that have no host app. Nothing else is needed to show
 prose, tables, code blocks, or compare cards: they are plain HTML inside a variant.
 
 ```sh
-dg-skills prototype ui <plan.json|manifest.md|-> [--chain=NAME] [--series] [--light] [--port=N] [--timeout=SEC] [--no-open]
+dg-skills prototype ui <plan.json|manifest.md|-> [--chain=NAME] [--series] [--light] [--port=N] [--timeout=SEC] [--no-open] [--sign-in=URL] [--state=NAME]
 ```
 
 | Option | Effect |
@@ -24,6 +26,8 @@ dg-skills prototype ui <plan.json|manifest.md|-> [--chain=NAME] [--series] [--li
 | `--light` | Keep the sentinels in the scratch bucket for the pinned session folder. A `ui` session records its own sentinel directory either way, so claim the decision with `prototype wait <chain>` and never by path. |
 | `--port=N` | First port to try. Default 4321. It moves to the next free port when taken. |
 | `--timeout=SEC` | Seconds to wait for a decision, and the server's idle limit. Default 900. |
+| `--sign-in=URL` | Loopback sign-in page the acceptance capture opens first. Stored in the session, so a later `wait <chain>` uses it. |
+| `--state=NAME` | Saved pw login state the acceptance capture loads. Stored in the session. |
 | `--no-open` | Do not open the browser. `PROTOTYPE_UI_NO_OPEN=1` does the same. |
 
 Pass `-` to read the plan or manifest from stdin, so you can pipe HTML without a temp file.

@@ -8,8 +8,11 @@ import {
 } from "node:fs";
 import type { SentinelPaths } from "./paths";
 
+export const EXIT_PROTOTYPE_TIMEOUT = 124;
+export const EXIT_FINGERPRINT_SKIPPED = 75;
+
 export type WaitResult =
-	| { status: "ok"; variant: string; notes: string }
+	| { status: "ok"; variant: string; notes: string; fingerprintSkipped?: string }
 	| { status: "rejected"; notes: string }
 	| { status: "more"; notes: string }
 	| { status: "timeout" };
@@ -25,7 +28,8 @@ export interface ApprovedClaim {
 	url?: string;
 }
 
-export type ApproveHook = (claim: ApprovedClaim) => Promise<void>;
+/** Resolves to the reason the layout fingerprint was skipped, or undefined when it was recorded. */
+export type ApproveHook = (claim: ApprovedClaim) => Promise<string | undefined>;
 
 interface Claimed {
 	result: WaitResult;
@@ -182,7 +186,11 @@ export async function wait(
 ): Promise<WaitResult> {
 	const claimed = await poll(timeoutSec, () => claim(paths));
 	if (!claimed) return { status: "timeout" };
-	if (claimed.approved && onApprove) await onApprove(claimed.approved);
+	if (claimed.approved && onApprove && claimed.result.status === "ok") {
+		const fingerprintSkipped = await onApprove(claimed.approved);
+		if (fingerprintSkipped !== undefined)
+			return { ...claimed.result, fingerprintSkipped };
+	}
 	return claimed.result;
 }
 
@@ -209,15 +217,28 @@ export async function awaitDecision(
 	return { status: "ok", contents: found, decision };
 }
 
+export function waitExitCode(result: WaitResult | DecisionResult): number {
+	if (result.status === "timeout") return EXIT_PROTOTYPE_TIMEOUT;
+	return "fingerprintSkipped" in result && result.fingerprintSkipped !== undefined
+		? EXIT_FINGERPRINT_SKIPPED
+		: 0;
+}
+
+const TIMEOUT_TEXT = "timeout, still pending\n";
+
 export function formatWait(result: WaitResult, json: boolean): string {
-	if (json) return `${JSON.stringify(result)}\n`;
-	if (result.status === "timeout") return "timeout\n";
+	if (result.status === "timeout")
+		return json ? `${JSON.stringify({ ...result, pending: true })}\n` : TIMEOUT_TEXT;
+	if (json) {
+		const { fingerprintSkipped: _skipped, ...printed } = result as typeof result & { fingerprintSkipped?: string };
+		return `${JSON.stringify(printed)}\n`;
+	}
 	const head = result.status === "ok" ? result.variant : result.status === "rejected" ? "rejected" : "more versions";
 	return result.notes ? `${head}\n${result.notes}\n` : `${head}\n`;
 }
 
 export function formatDecision(result: DecisionResult, json: boolean): string {
 	if (result.status === "timeout")
-		return json ? `${JSON.stringify(result)}\n` : "timeout\n";
+		return json ? `${JSON.stringify({ ...result, pending: true })}\n` : TIMEOUT_TEXT;
 	return json ? `${result.contents}\n` : `${result.decision}\n`;
 }
