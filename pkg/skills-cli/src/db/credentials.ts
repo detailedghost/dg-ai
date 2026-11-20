@@ -26,12 +26,13 @@ export interface ConnectionConfig {
 	clientStoreTemporaryCredential?: boolean;
 	browserActionTimeout?: number;
 	ssl?: boolean;
+	readOnly?: boolean;
 }
 
-export type DbCredentialClient = Pick<CredentialClient, "get" | "list" | "close">;
+export type DbCredentialClient = Pick<CredentialClient, "get" | "list" | "set" | "close">;
 
-export function createDbCredentialClient(): DbCredentialClient {
-	return createCredentialClient({ paths: resolveDgPaths() });
+export function createDbCredentialClient(session?: string): DbCredentialClient {
+	return createCredentialClient({ paths: resolveDgPaths(), session });
 }
 
 function optionalString(
@@ -130,6 +131,7 @@ function connectionFromRecord(
 		role: optionalString(meta, "role", name),
 		authenticator: optionalString(meta, "authenticator", name),
 		ssl: optionalBoolean(meta, "ssl", name),
+		readOnly: optionalBoolean(meta, "readOnly", name) ?? false,
 		clientStoreTemporaryCredential: optionalBoolean(
 			meta,
 			"clientStoreTemporaryCredential",

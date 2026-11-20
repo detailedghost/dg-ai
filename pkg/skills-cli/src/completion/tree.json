@@ -402,6 +402,10 @@
 				{
 					"name": "test",
 					"description": "Test connectivity."
+				},
+				{
+					"name": "setup",
+					"description": "Register db/<name>: --engine, connection flags, --secret aws|form|command (see /dg:db)."
 				}
 			],
 			"options": [
