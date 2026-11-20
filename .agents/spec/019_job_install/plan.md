@@ -143,7 +143,7 @@ slices:
   - id: 16
     name: "job-add-local"
     depends_on: [15]
-    files: ["pkg/dg-daemon/src/commands/job-local.ts", "pkg/dg-daemon/src/commands/job-source.ts", "pkg/dg-daemon/src/jobs/sources.ts", "pkg/dg-daemon/src/jobs/declaration.ts", "pkg/dg-daemon/src/commands/jobs.ts", "pkg/dg-daemon/src/completion-tree.json", "pkg/dg-daemon/__tests__/jobs/sources.spec.ts", "pkg/dg-daemon/__tests__/commands/job-add-local.spec.ts", "pkg/dg-daemon/__tests__/commands/job-local-change.spec.ts", "pkg/dg-daemon/__tests__/commands/job-local-headless.spec.ts", "pkg/dg-daemon/__tests__/commands/job-add-git.spec.ts", "pkg/dg-daemon/__tests__/commands/job-source-kit.ts"]
+    files: ["pkg/dg-daemon/src/commands/job-local.ts", "pkg/dg-daemon/src/commands/job-source.ts", "pkg/dg-daemon/src/jobs/sources.ts", "pkg/dg-daemon/src/jobs/declaration.ts", "pkg/dg-daemon/src/commands/jobs.ts", "pkg/dg-daemon/src/completion-tree.json", "pkg/dg-daemon/__tests__/jobs/sources.spec.ts", "pkg/dg-daemon/__tests__/commands/job-add-local.spec.ts", "pkg/dg-daemon/__tests__/commands/job-local-change.spec.ts", "pkg/dg-daemon/__tests__/commands/job-local-headless.spec.ts", "pkg/dg-daemon/__tests__/commands/job-add-git.spec.ts", "pkg/dg-daemon/__tests__/commands/job-source-kit.ts", "pkg/dg-daemon/src/commands/job-update.ts", "pkg/dg-daemon/src/commands/job-setup.ts", "pkg/dg-daemon/__tests__/commands/job-source.spec.ts"]
     agents:
       primary: dg:js
       confidence: high
@@ -1892,92 +1892,92 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 ### Slice 16 — job-add-local
 
 #### Engineering
-- [ ] Replace the `not supported yet` branch of slice 13: a path goes to `job-local.ts`
-- [ ] Expand a leading `~` or `~/` to the home folder; the path must exist; resolve it with `realpathSync`; a path that does not exist exits 1 with `job add: no file or folder at <path>`
-- [ ] A folder must hold a package.json with a `dg` block; parse it with `parseJobDeclaration` of slice 13; `cwd` of each entry is the folder
-- [ ] A folder refuses the full flag list of a URL: a mode flag, `--credential`, `--timeout`, `--feed`, `--notify`, `--cwd`, `--env`, `--env-file` or `--stop-timeout` (and the alias forms `--cron` and `--pass-env`) with a folder exits 1 with `job add: the folder declares this in its "dg" block`
-- [ ] A file permits `--name`, one mode flag, `--credential`, `--timeout`, `--feed`, `--notify`, `--env-file`, `--env` and `--stop-timeout`, and refuses `--cwd` with `job add: the folder of the file is its working directory`
-- [ ] In a folder, an `argv[0]` with a path separator resolves inside the real path of the folder, as in a clone
-- [ ] A folder with a `build` runs it one time after the parse and before the first write
-- [ ] The record of a folder is `{ kind: "path", path, jobs, declarationHash, credentials }`; it has no `url`, no `ref` and no `sha`; the source name is the folder name in lower case, or `--name`
-- [ ] A file gives one job; the name is `--name` or the file name with no extension in lower case; a name that fails the name rule exits 1 and names the rule
-- [ ] A file needs exactly one mode flag; with none, exit 1 with `job add: give one of --continuous, --schedule or --every`
-- [ ] The `argv` of a file: a file with the execute bit is `[<real path>, …args]`; a file with the extension `.ts`, `.js`, `.mjs` or `.cjs` and no execute bit is `[<bun>, <real path>, …args]`, where `<bun>` is the result of the `which` seam for `bun` (default `Bun.which("bun")`), stored as an absolute path, because `process.execPath` is not bun in a compiled binary; each other file exits 1 with `job add: <path> is not executable — run chmod +x, or use dg job add --name <name> --cwd <dir> <mode> -- <command>`
-- [ ] With no bun, a file that needs bun exits 1 with `job add: bun is not installed — it is necessary to run <file>`; a bun that moved leaves the job `invalid`, and `update` repairs it
-- [ ] The arguments after a bare `--` go to the script; `cwd` of a file job is the folder of the file
-- [ ] `--credential <name>` (repeatable) fills the `credentials` list of a file job; each name is required and its prompt is the name; `grant` is the job name when the list is not empty
-- [ ] `add` of a file writes the record `{ kind: "path", path, jobs: [<name>], credentials: {} }` at once, with the job name as its key; the wizard of slice 15 adds its marks to that record; the entry holds the full definition; `job status` reads `path` from the record for `source missing: <path>`; `job remove` of a file job follows the rule of slice 13, so this record goes with the job [DECIDED — gaps pass O11 (a)]
-- [ ] The reserved name rule of slice 13 applies to the source name and to the name of a file job
-- [ ] A local `add` asks no question and works with no terminal; `--yes` with a path is accepted and changes nothing
-- [ ] An `add` whose name exists exits 1 with `a job named "<name>" already exists — to change it, run dg job update <name>`
-- [ ] `job update <name> [flags]` on a file job is the command-job `update` of slice 9, so it can change the mode
-- [ ] `job update <name>` on a folder job reads the block again, prints one `replaced <job>.<key>` line for each key that changed (the word of slice 14; `changed <key>` is for a flag update), writes the entries of each job of the folder with the entry function of job-update.ts (slice 14), and asks nothing: a job that the block no longer lists loses its entry, a new job gets one with no `enabled` key, and `enabled` and `passEnv` stay
-- [ ] `update` of a folder does not run `build`, and says so in one line when the block has one; it prints `next: dg job restart <name>` for a job that runs, and one line for each changed credential with each key of a changed `source`
-- [ ] jobs.ts sends `update` to this action for a record of kind `path` that has a `declarationHash` (a folder); the record of a file job has no `declarationHash`, and a file job keeps the command-job `update` of slice 9 [DECIDED — post-apply item 6 (a)]
-- [ ] `job remove <name>` of a folder job follows the rule of slice 13: the record goes with the last job; it never deletes or changes the path
-- [ ] `job list` and `job status` show `source changed — run dg job update <name>` when the block hash of a folder is not the recorded hash, and `source missing: <path>` when the path does not exist; the text row of a path job is `<source> (<path>)`
-- [ ] The `--json` keys of a path job are `source`, `path` and `sourceState`: `ok`, `changed`, `missing` or `invalid` (the package.json cannot be read or has no valid `dg` block); `list` reads the folder at each call, and a read error never fails the command
-- [ ] A change of the script text needs no dg command and no new consent: a scheduled job uses the new text at its next run, and a continuous job at its next start; the output of `add` says so in one line
-- [ ] Add no file watcher and no content hash of a script
-- [ ] Exit 0 of a file prints `added job "<name>" from <path>`, then `next: dg job enable <name>`; a folder prints `added jobs from "<source>" at <path>: <names joined with a comma and a space>`, then one `next:` line for each job
-- [ ] Block text of a folder goes through `sanitize` of pkg/dg-daemon/src/jobs/sanitize.ts; the command shows the job lines of the request of slice 13 and asks nothing
-- [ ] A local `add` starts no git process and no build of a repository; the daemon reads the script at each run
-- [ ] After the command change, run `bun scripts/completion-trees.ts dg-daemon` and commit pkg/dg-daemon/src/completion-tree.json when it changed; do not edit the JSON by hand
-- [ ] The spec of slice 13 that expects `a local path is not supported yet` changes to the new result
-- [ ] In jobs.ts: one positional argument with text after `--` is a file job with arguments; no positional argument is a command job
-- [ ] `add` of a folder calls `assertPrefixFree` of slice 13 for the source name, and `add` of a file calls it for the job name; write no second check
-- [ ] A folder `add` follows the steps of slice 13 with no clone step: the `requires` check with the `which` seam; a bare `argv[0]` becomes an absolute path; the text `job add: build failed (exit N): <argv>`; `ensurePrivateDir(jobStateDir(paths, name))` for each job; the `next: create <envFile> with mode 600 …` line; the check that no job name of the block is in the table; the lock; the removal of the entries of this run after a failed write
-- [ ] A file job also gets its state folder and passes `parseJobEntry`
-- [ ] A folder name that fails the name rule exits 1 with `job add: cannot use "<name>" as a source name — give one with --name`; a file name that fails it exits 1 with `job add: cannot use "<name>" as a job name — give one with --name`
-- [ ] `~user/…` exits 1 with `job add: only ~ and ~/ are supported`
-- [ ] The execute-bit rule is POSIX only: on win32, only the four extensions run, through bun, and each other file is refused with the `is not executable` text; the Contract list runs on POSIX [DECIDED — post-apply item 5]
-- [ ] The strict reader of sources.ts accepts kind `path`: `path` is an absolute string, `jobs` is an array of names, `credentials` is an object, and `declarationHash` (64 hexadecimal characters) is necessary for a folder; the two marks are permitted
-- [ ] Spec files: job-add-local.spec.ts holds the in-process Contracts with seams; job-local-change.spec.ts holds `update`, `remove`, `status` and `list`; job-local-headless.spec.ts holds the cases with no terminal and the Happy paths with a live daemon
-- [ ] Do not edit main.ts, job-support.ts, launcher.ts or daemon-harness.ts
-- [ ] The helper that makes a temp folder with a `dg` block goes into pkg/dg-daemon/__tests__/commands/job-source-kit.ts
-- [ ] jobs.ts loads job-local.ts with a lazy import; `classifySource` stays the one router, and job-local.ts holds only the two local actions
-- [ ] When the given path was a link, `add` prints one line `stored real path <path>`: a later change of the link does not change the job
+- [x] Replace the `not supported yet` branch of slice 13: a path goes to `job-local.ts`
+- [x] Expand a leading `~` or `~/` to the home folder; the path must exist; resolve it with `realpathSync`; a path that does not exist exits 1 with `job add: no file or folder at <path>`
+- [x] A folder must hold a package.json with a `dg` block; parse it with `parseJobDeclaration` of slice 13; `cwd` of each entry is the folder
+- [x] A folder refuses the full flag list of a URL: a mode flag, `--credential`, `--timeout`, `--feed`, `--notify`, `--cwd`, `--env`, `--env-file` or `--stop-timeout` (and the alias forms `--cron` and `--pass-env`) with a folder exits 1 with `job add: the folder declares this in its "dg" block`
+- [x] A file permits `--name`, one mode flag, `--credential`, `--timeout`, `--feed`, `--notify`, `--env-file`, `--env` and `--stop-timeout`, and refuses `--cwd` with `job add: the folder of the file is its working directory`
+- [x] In a folder, an `argv[0]` with a path separator resolves inside the real path of the folder, as in a clone
+- [x] A folder with a `build` runs it one time after the parse and before the first write
+- [x] The record of a folder is `{ kind: "path", path, jobs, declarationHash, credentials }`; it has no `url`, no `ref` and no `sha`; the source name is the folder name in lower case, or `--name`
+- [x] A file gives one job; the name is `--name` or the file name with no extension in lower case; a name that fails the name rule exits 1 and names the rule
+- [x] A file needs exactly one mode flag; with none, exit 1 with `job add: give one of --continuous, --schedule or --every`
+- [x] The `argv` of a file: a file with the execute bit is `[<real path>, …args]`; a file with the extension `.ts`, `.js`, `.mjs` or `.cjs` and no execute bit is `[<bun>, <real path>, …args]`, where `<bun>` is the result of the `which` seam for `bun` (default `Bun.which("bun")`), stored as an absolute path, because `process.execPath` is not bun in a compiled binary; each other file exits 1 with `job add: <path> is not executable — run chmod +x, or use dg job add --name <name> --cwd <dir> <mode> -- <command>`
+- [x] With no bun, a file that needs bun exits 1 with `job add: bun is not installed — it is necessary to run <file>`; a bun that moved leaves the job `invalid`, and `update` repairs it
+- [x] The arguments after a bare `--` go to the script; `cwd` of a file job is the folder of the file
+- [x] `--credential <name>` (repeatable) fills the `credentials` list of a file job; each name is required and its prompt is the name; `grant` is the job name when the list is not empty
+- [x] `add` of a file writes the record `{ kind: "path", path, jobs: [<name>], credentials: {} }` at once, with the job name as its key; the wizard of slice 15 adds its marks to that record; the entry holds the full definition; `job status` reads `path` from the record for `source missing: <path>`; `job remove` of a file job follows the rule of slice 13, so this record goes with the job [DECIDED — gaps pass O11 (a)]
+- [x] The reserved name rule of slice 13 applies to the source name and to the name of a file job
+- [x] A local `add` asks no question and works with no terminal; `--yes` with a path is accepted and changes nothing
+- [x] An `add` whose name exists exits 1 with `a job named "<name>" already exists — to change it, run dg job update <name>`
+- [x] `job update <name> [flags]` on a file job is the command-job `update` of slice 9, so it can change the mode
+- [x] `job update <name>` on a folder job reads the block again, prints one `replaced <job>.<key>` line for each key that changed (the word of slice 14; `changed <key>` is for a flag update), writes the entries of each job of the folder with the entry function of job-update.ts (slice 14), and asks nothing: a job that the block no longer lists loses its entry, a new job gets one with no `enabled` key, and `enabled` and `passEnv` stay
+- [x] `update` of a folder does not run `build`, and says so in one line when the block has one; it prints `next: dg job restart <name>` for a job that runs, and one line for each changed credential with each key of a changed `source`
+- [x] jobs.ts sends `update` to this action for a record of kind `path` that has a `declarationHash` (a folder); the record of a file job has no `declarationHash`, and a file job keeps the command-job `update` of slice 9 [DECIDED — post-apply item 6 (a)]
+- [x] `job remove <name>` of a folder job follows the rule of slice 13: the record goes with the last job; it never deletes or changes the path
+- [x] `job list` and `job status` show `source changed — run dg job update <name>` when the block hash of a folder is not the recorded hash, and `source missing: <path>` when the path does not exist; the text row of a path job is `<source> (<path>)`
+- [x] The `--json` keys of a path job are `source`, `path` and `sourceState`: `ok`, `changed`, `missing` or `invalid` (the package.json cannot be read or has no valid `dg` block); `list` reads the folder at each call, and a read error never fails the command
+- [x] A change of the script text needs no dg command and no new consent: a scheduled job uses the new text at its next run, and a continuous job at its next start; the output of `add` says so in one line
+- [x] Add no file watcher and no content hash of a script
+- [x] Exit 0 of a file prints `added job "<name>" from <path>`, then `next: dg job enable <name>`; a folder prints `added jobs from "<source>" at <path>: <names joined with a comma and a space>`, then one `next:` line for each job
+- [x] Block text of a folder goes through `sanitize` of pkg/dg-daemon/src/jobs/sanitize.ts; the command shows the job lines of the request of slice 13 and asks nothing
+- [x] A local `add` starts no git process and no build of a repository; the daemon reads the script at each run
+- [x] After the command change, run `bun scripts/completion-trees.ts dg-daemon` and commit pkg/dg-daemon/src/completion-tree.json when it changed; do not edit the JSON by hand
+- [x] The spec of slice 13 that expects `a local path is not supported yet` changes to the new result
+- [x] In jobs.ts: one positional argument with text after `--` is a file job with arguments; no positional argument is a command job
+- [x] `add` of a folder calls `assertPrefixFree` of slice 13 for the source name, and `add` of a file calls it for the job name; write no second check
+- [x] A folder `add` follows the steps of slice 13 with no clone step: the `requires` check with the `which` seam; a bare `argv[0]` becomes an absolute path; the text `job add: build failed (exit N): <argv>`; `ensurePrivateDir(jobStateDir(paths, name))` for each job; the `next: create <envFile> with mode 600 …` line; the check that no job name of the block is in the table; the lock; the removal of the entries of this run after a failed write
+- [x] A file job also gets its state folder and passes `parseJobEntry`
+- [x] A folder name that fails the name rule exits 1 with `job add: cannot use "<name>" as a source name — give one with --name`; a file name that fails it exits 1 with `job add: cannot use "<name>" as a job name — give one with --name`
+- [x] `~user/…` exits 1 with `job add: only ~ and ~/ are supported`
+- [x] The execute-bit rule is POSIX only: on win32, only the four extensions run, through bun, and each other file is refused with the `is not executable` text; the Contract list runs on POSIX [DECIDED — post-apply item 5]
+- [x] The strict reader of sources.ts accepts kind `path`: `path` is an absolute string, `jobs` is an array of names, `credentials` is an object, and `declarationHash` (64 hexadecimal characters) is necessary for a folder; the two marks are permitted
+- [x] Spec files: job-add-local.spec.ts holds the in-process Contracts with seams; job-local-change.spec.ts holds `update`, `remove`, `status` and `list`; job-local-headless.spec.ts holds the cases with no terminal and the Happy paths with a live daemon
+- [x] Do not edit main.ts, job-support.ts, launcher.ts or daemon-harness.ts
+- [x] The helper that makes a temp folder with a `dg` block goes into pkg/dg-daemon/__tests__/commands/job-source-kit.ts
+- [x] jobs.ts loads job-local.ts with a lazy import; `classifySource` stays the one router, and job-local.ts holds only the two local actions
+- [x] When the given path was a link, `add` prints one line `stored real path <path>`: a later change of the link does not change the job
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: `job add ./poll.ts --every 15m` writes `jobs.poll` with `argv` `[<bun>, <real path>]`, `cwd` the folder of the file, `every: "15m"` and no `grant`; it starts no git process
-- [ ] Contract: `job add ./poll.ts --every 15m --credential api-key` writes `credentials: ["api-key"]` and `grant: "poll"`
-- [ ] Contract: `job add ./run.sh --continuous` with the execute bit writes `argv` `[<real path>]` and `continuous: true`
-- [ ] Contract: `job add ./notes.txt --continuous` exits 1 with the `is not executable` text and writes nothing
-- [ ] Contract: `job add ./poll.ts` with no mode flag exits 1 with the mode text
-- [ ] Contract: `job add ./Poll_Job.ts --every 15m` exits 1 and names the name rule; with `--name poll-job` it exits 0
-- [ ] Contract: `job add ./pw.ts --every 15m --credential x` exits 1 with the `reserved name` text
-- [ ] Contract: `job add ~/jobs/poll.ts --every 15m` given as quoted text stores the real path below the home folder
-- [ ] Contract: `job add <folder>` with two jobs in the block writes two entries with `cwd` equal to the real path of the folder
-- [ ] Contract: `job add <folder>` with no package.json exits 1 with `job add: <path> has no package.json with a "dg" key`
-- [ ] Contract: `job add <folder> --every 15m` exits 1 with the `folder declares this` text
-- [ ] Contract: a second `job add ./poll.ts --every 30m` exits 1 with the `already exists` text; `job update poll --every 30m` exits 0 with `changed every`, and `enabled` is as before
-- [ ] Contract: a link `./poll.ts` to a file in another folder stores the real path
-- [ ] Contract: after the delete of the script, `job status poll` and `job list` show `source missing: <path>`, a text of `list` and `status` only; a start of a job whose script is absent does not give the state `running`; this slice does not edit launcher.ts or supervisor.ts
-- [ ] Contract: `job remove poll` leaves the script file byte-equal
-- [ ] Contract: with stdin that is not a terminal and an empty prefix `poll/`, `job add ./poll.ts --every 15m --credential api-key` exits 0, and `job enable poll --setup <file>` stores the value, makes the grant and enables the job with zero questions
-- [ ] Contract: with credentials below `poll/`, `job enable poll --setup <file>` with no terminal exits 1 with the `holds credentials` text
-- [ ] Contract: an edit of a folder block shows `source changed` in `job status`; `job update <name>` writes the new keys and calls the `confirm` seam zero times
-- [ ] Happy path: a file job with `--continuous`, then `job enable`, then a daemon restart: the job runs again with a new pid
-- [ ] Happy path: a file job with `--every 1s` runs two times, and an edit of the file between the two runs changes the output of the second run; start the second run with `job start` (`runScheduledNow`), not with a wait for a tick, and give the test an upper time limit with the helper of test-timeout.spec.ts
-- [ ] Happy path: a file job with `--credential api-key` and `enable --setup <file>` reads `api-key` through service API v1
-- [ ] Regression: `bun test` and `bun run lint` pass in pkg/dg-daemon; pkg/launcher/__tests__/size-budget.spec.ts passes with job-local.ts behind a lazy import
-- [ ] Contract: `job add ./poll.ts --every 15m --yes` gives the same entry as the command with no `--yes`
-- [ ] Contract (with the `which` seam): a `.ts` file with no execute bit stores the absolute bun path of the seam as `argv[0]`; with a seam that finds no bun, `add` exits 1 with `job add: bun is not installed — it is necessary to run <file>` and writes nothing
-- [ ] Contract: `job add ./run.sh --continuous -- --verbose` stores `argv` `[<real path>, "--verbose"]`
-- [ ] Contract: a file job `poll` and a folder with the source name `poll` are refused in the two orders
-- [ ] Contract: `job add ./poll.ts --every 15m` with one permitted flag (`--feed`) exits 0, and the key of the flag is in the entry
-- [ ] Contract: `job add ./poll.ts --every 15m --cwd <dir>` exits 1 with `job add: the folder of the file is its working directory` and writes nothing
-- [ ] Contract: a `path` record that is not valid fails the reader with a text that names the file and the source
-- [ ] Contract: a `path` record with the two marks passes the reader
-- [ ] Contract: `job update poll --credential api-key` on a file job with no credential writes `credentials: ["api-key"]` and `grant: "poll"` and keeps `enabled`; a value with `=` is refused until slice 17
-- [ ] Contract: a link inside a folder that points outside the folder is refused as `argv[0]`, as in a clone
+- [x] Contract: `job add ./poll.ts --every 15m` writes `jobs.poll` with `argv` `[<bun>, <real path>]`, `cwd` the folder of the file, `every: "15m"` and no `grant`; it starts no git process
+- [x] Contract: `job add ./poll.ts --every 15m --credential api-key` writes `credentials: ["api-key"]` and `grant: "poll"`
+- [x] Contract: `job add ./run.sh --continuous` with the execute bit writes `argv` `[<real path>]` and `continuous: true`
+- [x] Contract: `job add ./notes.txt --continuous` exits 1 with the `is not executable` text and writes nothing
+- [x] Contract: `job add ./poll.ts` with no mode flag exits 1 with the mode text
+- [x] Contract: `job add ./Poll_Job.ts --every 15m` exits 1 and names the name rule; with `--name poll-job` it exits 0
+- [x] Contract: `job add ./pw.ts --every 15m --credential x` exits 1 with the `reserved name` text
+- [x] Contract: `job add ~/jobs/poll.ts --every 15m` given as quoted text stores the real path below the home folder
+- [x] Contract: `job add <folder>` with two jobs in the block writes two entries with `cwd` equal to the real path of the folder
+- [x] Contract: `job add <folder>` with no package.json exits 1 with `job add: <path> has no package.json with a "dg" key`
+- [x] Contract: `job add <folder> --every 15m` exits 1 with the `folder declares this` text
+- [x] Contract: a second `job add ./poll.ts --every 30m` exits 1 with the `already exists` text; `job update poll --every 30m` exits 0 with `changed every`, and `enabled` is as before
+- [x] Contract: a link `./poll.ts` to a file in another folder stores the real path
+- [x] Contract: after the delete of the script, `job status poll` and `job list` show `source missing: <path>`, a text of `list` and `status` only; a start of a job whose script is absent does not give the state `running`; this slice does not edit launcher.ts or supervisor.ts
+- [x] Contract: `job remove poll` leaves the script file byte-equal
+- [x] Contract: with stdin that is not a terminal and an empty prefix `poll/`, `job add ./poll.ts --every 15m --credential api-key` exits 0, and `job enable poll --setup <file>` stores the value, makes the grant and enables the job with zero questions
+- [x] Contract: with credentials below `poll/`, `job enable poll --setup <file>` with no terminal exits 1 with the `holds credentials` text
+- [x] Contract: an edit of a folder block shows `source changed` in `job status`; `job update <name>` writes the new keys and calls the `confirm` seam zero times
+- [x] Happy path: a file job with `--continuous`, then `job enable`, then a daemon restart: the job runs again with a new pid
+- [x] Happy path: a file job with `--every 1s` runs two times, and an edit of the file between the two runs changes the output of the second run; start the second run with `job start` (`runScheduledNow`), not with a wait for a tick, and give the test an upper time limit with the helper of test-timeout.spec.ts
+- [x] Happy path: a file job with `--credential api-key` and `enable --setup <file>` reads `api-key` through service API v1
+- [x] Regression: `bun test` and `bun run lint` pass in pkg/dg-daemon; pkg/launcher/__tests__/size-budget.spec.ts passes with job-local.ts behind a lazy import
+- [x] Contract: `job add ./poll.ts --every 15m --yes` gives the same entry as the command with no `--yes`
+- [x] Contract (with the `which` seam): a `.ts` file with no execute bit stores the absolute bun path of the seam as `argv[0]`; with a seam that finds no bun, `add` exits 1 with `job add: bun is not installed — it is necessary to run <file>` and writes nothing
+- [x] Contract: `job add ./run.sh --continuous -- --verbose` stores `argv` `[<real path>, "--verbose"]`
+- [x] Contract: a file job `poll` and a folder with the source name `poll` are refused in the two orders
+- [x] Contract: `job add ./poll.ts --every 15m` with one permitted flag (`--feed`) exits 0, and the key of the flag is in the entry
+- [x] Contract: `job add ./poll.ts --every 15m --cwd <dir>` exits 1 with `job add: the folder of the file is its working directory` and writes nothing
+- [x] Contract: a `path` record that is not valid fails the reader with a text that names the file and the source
+- [x] Contract: a `path` record with the two marks passes the reader
+- [x] Contract: `job update poll --credential api-key` on a file job with no credential writes `credentials: ["api-key"]` and `grant: "poll"` and keeps `enabled`; a value with `=` is refused until slice 17
+- [x] Contract: a link inside a folder that points outside the folder is refused as `argv[0]`, as in a clone
 
 #### Acceptance Criteria
-- [ ] Given a script on this machine, when the owner runs `dg job add ./script.ts --every 15m` and `dg job enable script`, then the daemon runs it each 15 minutes, also after a daemon restart
-- [ ] Given a local folder with a `dg` block, when the owner adds it, then its jobs behave as the jobs of a repository, with no clone and no question
-- [ ] Given a script that the owner edits, when the next run starts, then it runs the new text with no dg command
-- [ ] Given an agent session with no terminal, when it adds a local script and enables it with `--setup`, then the job runs
+- [x] Given a script on this machine, when the owner runs `dg job add ./script.ts --every 15m` and `dg job enable script`, then the daemon runs it each 15 minutes, also after a daemon restart
+- [x] Given a local folder with a `dg` block, when the owner adds it, then its jobs behave as the jobs of a repository, with no clone and no question
+- [x] Given a script that the owner edits, when the next run starts, then it runs the new text with no dg command
+- [x] Given an agent session with no terminal, when it adds a local script and enables it with `--setup`, then the job runs
 
 ### Slice 17 — job-credential-env
 
@@ -2416,6 +2416,7 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 
 ## Slice Summaries
 
+- Slice 16: dg job add <path> adds a script file as one job (record kind path, no question, no clone) or a folder with a dg block as block jobs (record keeps the declaration hash); update re-reads a folder block with no question; list and status show source changed, source missing and source invalid; remove never touches the path.
 - Slice 15: dg job enable [--setup <file|->] and dg job setup [--refresh|--rotate-token] run a wizard that takes each credential from a hidden prompt, a --setup file or AWS Secrets Manager, stores it through the job credential route and makes the grant; --credential works on add and update of a command job; sources.json takes command records and the prefixAccepted and setupDone marks; the hidden prompt lives in @dg/common.
 - Slice 14: dg job update <job> on a repository job fetches the recorded origin with hardened git, resolves the stored ref (a full sha stays pinned), shows the changed keys, asks or takes --yes, checks out the new commit, runs build, and rewrites the entries and the record under the lock with byte-exact rollback and an old-commit restore.
 - Slice 13: dg job add <git-url>[@ref] clones with hardened git, pins the full commit id, reads the dg block from the committed package.json, prints a sanitized and quoted request, asks consent or takes --yes, runs build, then writes the registry record and the entries under the config lock with byte-exact rollback; job remove, list and status handle repository jobs.
@@ -2498,6 +2499,12 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 - (slice 15, dg:js) Value fixtures in wizard specs look like tok-alpha-91f3c2d8: a bare v1 collides with 'service API v1'.
 - (orchestrator) Slice 15 security review RATIFY taken as option (a), under the plan rule that adoption applies to setup: setup --rotate-token and --refresh also need the adoption answer for a non-empty prefix with no prefixAccepted mark (no terminal: exit 1), and --rotate-token refuses a missing grant. enable writes prefixAccepted after the sets even when ensureGrant then fails, but not setupDone or enabled. onInterrupt now calls exitAfterDrain (pkg/common exit rule). Known gap for slice 21: promptHidden leaves raw mode on SIGTERM/SIGHUP.
 
+- (slice 16, dg:js) PathSourceRecord is { kind: path, path, jobs, declarationHash?, credentials } plus marks; a file job record is keyed by the job name and has no declarationHash; jobs.ts routes update to updateLocal only when declarationHash is present.
+- (slice 16, dg:js) readSources and SourceRegistry are gone; readNamedSources (git and path) and readSourceRecords (all kinds) are the registry readers; findRecordByJob and findMarkRecord return path records.
+- (slice 16, dg:js) job-entry.ts is the one module that turns add flags into a job entry (aliasNote, announceAliases, duration, assertOneMode, checkEntryFlags, entryFromFlags); slice 17 adds entry flags there, not in addVerb.
+- (slice 16, dg:js) job-local.ts exports addLocal and updateLocal; job-update.ts exports refuseLiveJobs; rollBack takes a fifth argument (pass an empty string for a path source).
+- (orchestrator) Slice 16: the Engineering item 'a bun that moved leaves the job invalid, and update repairs it' is not built (Issues Remediation row 31). Folder add keeps the slice 13 'already exists' text; a file add has the 'to change it, run dg job update' suffix. next: dg job restart prints for a running or backoff job with a replaced line. The job add description in the completion tree now names a local file or folder.
+
 ## Issues Remediation
 
 | id | slice | from | severity | status | description |
@@ -2532,6 +2539,10 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 | 28 | 4 | review | low | resolved | pkg/dg-daemon/src/commands/start.ts:46: managed start awaits each manager command with no timeout (runArgv); the 15 s STARTUP_TIMEOUT_MS starts after the loop, so a hung systemctl restart or schtasks delays the failure message (bounded by the manager's own timeout). |
 | 29 | 5 | review | low | open | pkg/dg/src/main.ts:93: --version repeats process.env.DG_BUILD_VERSION ?? 'dev' (fourth copy, with launcher, dg-agent and skills-cli). Not hoisted, to keep the launcher bundle free of a new shared import. |
 | 30 | 5 | review | low | resolved | .github/workflows/skills-blt.yml: no workflow runs pkg/launcher tests and pkg/launcher/** triggers none, so dg-mount, dispatch and size-budget never run in CI (as on master). |
+| 31 | 16 | review | low | open | Engineering item "a bun that moved leaves the job invalid, and update repairs it" is not built: no check marks such a job invalid, and the command-job update cannot rewrite argv. Repair today: job remove, then job add. No Contract covers it. |
+| 32 | 13 | review | low | open | A token in the user part of an https URL (https://TOKEN@host/...) is accepted and stored in sources.json and the clone .git/config. The slice text permits a user part. |
+| 33 | 15 | review | low | open | promptHidden (moved to pkg/common, no behavior change) leaves the TTY in raw mode on SIGTERM or SIGHUP and accepts control characters in the value. Fix with slice 21 or later. |
+| 34 | 12 | review | low | open | noteSecret adds each value of 8+ characters to a Set that never shrinks; each owner-token set adds up to 128 KiB. Owner-only, not an attack path. |
 ## PR Plan
 
 Four PRs and one operator gate, in this order. Each PR starts in a new worktree from master after the PR before it merges. The `depends_on` edges 7 → 8, 11 → 12 and 11 → 19 hold this order.

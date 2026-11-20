@@ -78,7 +78,7 @@
 			"commands": [
 				{
 					"name": "add",
-					"description": "add a job from a repository URL, or a command: continuous, on a cron schedule, or at an interval",
+					"description": "add a job from a repository URL, a local file or folder, or a command: continuous, on a cron schedule, or at an interval",
 					"options": [
 						{
 							"flags": [

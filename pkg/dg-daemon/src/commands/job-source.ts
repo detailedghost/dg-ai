@@ -9,7 +9,7 @@ import {
 	rmSync,
 	statSync,
 } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { exitAfterDrain } from "@dg/common/async";
 import {
 	DgCliError,
@@ -44,9 +44,10 @@ import {
 	findMarkRecord,
 	findRecordByJob,
 	type GitSourceRecord,
+	type PathSourceRecord,
 	readSourceRecords,
-	readSources,
-	type SourceRegistry,
+	readNamedSources,
+	type NamedRegistry,
 	writeSource,
 } from "../jobs/sources";
 import { readConfigStrict, writeJobEntry } from "../server/config-store";
@@ -224,7 +225,7 @@ function sourceNameOf(url: string, options: SourceAddOptions): string {
 export function assertPrefixFree(
 	name: string,
 	config: Record<string, unknown>,
-	registry: SourceRegistry,
+	registry: NamedRegistry,
 	errorPrefix: string,
 ): void {
 	const taken = (by: string): never =>
@@ -265,9 +266,10 @@ export const quote = (part: string): string => {
 
 export type RequestInput = {
 	source: string;
-	url: string;
-	ref: string | null;
-	sha: string;
+	url?: string;
+	ref?: string | null;
+	sha?: string;
+	path?: string;
 	jobs: DeclaredJob[];
 	credentials: Record<string, unknown>;
 	requires: string[];
@@ -298,9 +300,13 @@ export function credentialLines(credential: DeclaredCredential): string[] {
 export function formatRequest(input: RequestInput): string {
 	const lines = [
 		`source: ${sanitize(input.source)}`,
-		`url: ${sanitize(displayUrl(input.url))}`,
-		`ref: ${input.ref === null ? "(default branch)" : sanitize(input.ref)}`,
-		`sha: ${input.sha}`,
+		...(input.path === undefined
+			? [
+					`url: ${sanitize(displayUrl(input.url ?? ""))}`,
+					`ref: ${input.ref == null ? "(default branch)" : sanitize(input.ref)}`,
+					`sha: ${input.sha}`,
+				]
+			: [`path: ${sanitize(input.path)}`]),
 	];
 	for (const { name, entry } of input.jobs) {
 		const mode = MODE_KEYS.find((key) => Object.hasOwn(entry, key)) ?? "continuous";
@@ -554,16 +560,16 @@ export async function readDeclared(
 	return { pkg: pkg as { dg: unknown }, declaration };
 }
 
-export function readState(paths: DgPaths): { config: Record<string, unknown>; registry: SourceRegistry } {
+export function readState(paths: DgPaths): { config: Record<string, unknown>; registry: NamedRegistry } {
 	return guardConfig(() => ({
 		config: readConfigStrict(paths),
-		registry: readSources(paths),
+		registry: readNamedSources(paths),
 	}));
 }
 
-const alreadyAdded = (source: string, record: GitSourceRecord): never =>
+export const alreadyAdded = (source: string, record: GitSourceRecord | PathSourceRecord): never =>
 	stop(
-		`source "${source}" is already added from ${displayUrl(record.url)} — run dg job update ${record.jobs[0]}`,
+		`source "${source}" is already added from ${record.kind === "git" ? displayUrl(record.url) : record.path} — run dg job update ${record.jobs[0]}`,
 	);
 
 export function rollBack(
@@ -571,6 +577,7 @@ export function rollBack(
 	restores: (() => void)[],
 	paths: DgPaths,
 	source: string,
+	kept = `; the clone stays at ${jobSourceDir(paths, source)}`,
 ): never {
 	const failures: string[] = [];
 	for (const restore of restores) {
@@ -582,20 +589,20 @@ export function rollBack(
 	}
 	if (failures.length === 0) throw err;
 	throw new RollbackFailure(
-		`${describeError(err)}; the rollback also failed: ${failures.join("; ")} — check ${paths.daemonConfigPath} and ${paths.jobSourcesPath}; the clone stays at ${jobSourceDir(paths, source)}`,
+		`${describeError(err)}; the rollback also failed: ${failures.join("; ")} — check ${paths.daemonConfigPath} and ${paths.jobSourcesPath}${kept}`,
 		EXIT_GENERAL_FAILURE,
 	);
 }
 
-function commitToDisk(
+export function commitToDisk(
 	paths: DgPaths,
 	source: string,
-	record: GitSourceRecord,
+	record: GitSourceRecord | PathSourceRecord,
 	jobs: DeclaredJob[],
 ): void {
 	const config = guardConfig(() => readConfigStrict(paths));
 	requireMigrated(config);
-	const registry = guardConfig(() => readSources(paths));
+	const registry = guardConfig(() => readNamedSources(paths));
 	if (registry[source]) alreadyAdded(source, registry[source]);
 	for (const { name } of jobs) {
 		if (isInTable(config, name)) stop(`a job named "${name}" already exists`);
@@ -609,7 +616,13 @@ function commitToDisk(
 			for (const { name } of jobs) ensurePrivateDir(jobStateDir(paths, name));
 		});
 	} catch (err) {
-		return rollBack(err, restores, paths, source);
+		return rollBack(
+			err,
+			restores,
+			paths,
+			source,
+			record.kind === "git" ? undefined : "",
+		);
 	}
 }
 
@@ -788,7 +801,7 @@ function lstatExists(path: string): boolean {
 	}
 }
 
-/** Adds the jobs of one positional argument: a repository URL now, a local path in a later slice. */
+/** Adds the jobs of one repository URL; `classifySource` routes a path to job-local.ts first. */
 export async function addSource(
 	argument: string,
 	rest: string[],
@@ -796,10 +809,60 @@ export async function addSource(
 	options: SourceAddOptions,
 	deps: JobSourceDeps,
 ): Promise<void> {
-	if (classifySource(argument) === "path") {
-		stop("a local path is not supported yet");
-	}
 	await addGit(argument, rest, ownedFlags, options, deps);
+}
+
+const NO_BLOCK = (dir: string) => `${dir} has no package.json with a "dg" key`;
+
+export function readFolderPackage(dir: string, prefix: string): { dg: unknown } {
+	const file = join(dir, "package.json");
+	let size: number;
+	try {
+		const info = statSync(file);
+		if (!info.isFile()) return stop(NO_BLOCK(dir), prefix);
+		size = info.size;
+	} catch {
+		return stop(NO_BLOCK(dir), prefix);
+	}
+	if (size > MAX_PACKAGE_JSON_BYTES) stop("package.json is larger than 256 KiB", prefix);
+	let pkg: unknown;
+	try {
+		pkg = JSON.parse(readFileSync(file, "utf8"));
+	} catch {
+		return stop("package.json is not valid JSON", prefix);
+	}
+	if (!isRecord(pkg) || !Object.hasOwn(pkg, "dg")) return stop(NO_BLOCK(dir), prefix);
+	return pkg as { dg: unknown };
+}
+
+export function readFolderDeclared(
+	paths: DgPaths,
+	source: string,
+	dir: string,
+	prefix: string,
+): { pkg: { dg: unknown }; declaration: Extract<Declaration, { ok: true }> } {
+	const pkg = readFolderPackage(dir, prefix);
+	const declaration = parseJobDeclaration(pkg, {
+		source,
+		sourceDir: dir,
+		stateDir: (name) => jobStateDir(paths, name),
+	});
+	if (!declaration.ok) return stop(declaration.error, prefix);
+	if (declaration.jobs.length === 0) stop(`${dir} declares no jobs`, prefix);
+	return { pkg, declaration };
+}
+
+export type SourceState = "ok" | "changed" | "missing" | "invalid";
+
+export function sourceStateOf(paths: DgPaths, source: string, record: PathSourceRecord): SourceState {
+	if (!existsSync(record.path)) return "missing";
+	if (record.declarationHash === undefined) return "ok";
+	try {
+		const { pkg } = readFolderDeclared(paths, source, record.path, "job:");
+		return declarationHash(pkg.dg) === record.declarationHash ? "ok" : "changed";
+	} catch {
+		return "invalid";
+	}
 }
 
 /** Takes one job out of its record; the last job removes the record, then the clone. */
@@ -821,5 +884,5 @@ export function removeJobFromSource(paths: DgPaths, job: string): void {
 		return;
 	}
 	writeSource(paths, found.source, undefined);
-	removeInside(paths.jobsDir, jobSourceDir(paths, found.source));
+	if (found.record.kind === "git") removeInside(paths.jobsDir, jobSourceDir(paths, found.source));
 }

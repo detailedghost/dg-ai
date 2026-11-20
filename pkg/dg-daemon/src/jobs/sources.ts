@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import { describeError, isRecord } from "@dg/common";
 import {
 	type DgPaths,
@@ -19,28 +20,55 @@ export type GitSourceRecord = {
 	credentials: Record<string, unknown>;
 } & SourceMarks;
 
+export type PathSourceRecord = {
+	kind: "path";
+	path: string;
+	jobs: string[];
+	declarationHash?: string;
+	credentials: Record<string, unknown>;
+} & SourceMarks;
+
 export type CommandSourceRecord = { kind: "command" } & SourceMarks;
 
-export type SourceRecord = GitSourceRecord | CommandSourceRecord;
+export type SourceRecord = GitSourceRecord | PathSourceRecord | CommandSourceRecord;
 
-export type SourceRegistry = Record<string, GitSourceRecord>;
+export type NamedRegistry = Record<string, GitSourceRecord | PathSourceRecord>;
 
 export type RecordRegistry = Record<string, SourceRecord>;
 
 const SHA = /^[0-9a-f]{40}$/;
+const HASH = /^[0-9a-f]{64}$/;
 const MARK_KEYS = ["prefixAccepted", "setupDone"];
 const KEYS = {
 	git: ["kind", "url", "ref", "sha", "jobs", "declarationHash", "credentials", ...MARK_KEYS],
+	path: ["kind", "path", "jobs", "declarationHash", "credentials", ...MARK_KEYS],
 	command: ["kind", ...MARK_KEYS],
 };
+
+function checkPathRecord(
+	raw: Record<string, unknown>,
+	bad: (why: string) => never,
+): PathSourceRecord {
+	if (typeof raw.path !== "string" || !isAbsolute(raw.path)) {
+		bad('has a "path" that is not an absolute path');
+	}
+	if (!Array.isArray(raw.jobs) || !raw.jobs.every((job) => typeof job === "string" && isJobName(job))) {
+		bad('has "jobs" that is not an array of job names');
+	}
+	if (raw.declarationHash !== undefined && !(typeof raw.declarationHash === "string" && HASH.test(raw.declarationHash))) {
+		bad('has a "declarationHash" that is not 64 hexadecimal characters');
+	}
+	if (!isRecord(raw.credentials)) bad('has "credentials" that is not an object');
+	return raw as PathSourceRecord;
+}
 
 function checkRecord(file: string, source: string, raw: unknown): SourceRecord {
 	const bad = (why: string): never => {
 		throw new Error(`the record of "${source}" in ${file} is not valid: it ${why}`);
 	};
 	if (!isRecord(raw)) return bad("is not an object");
-	if (raw.kind !== "git" && raw.kind !== "command") {
-		bad('has a "kind" that is not "git" or "command"');
+	if (raw.kind !== "git" && raw.kind !== "path" && raw.kind !== "command") {
+		bad('has a "kind" that is not "git", "path" or "command"');
 	}
 	const kind = raw.kind as keyof typeof KEYS;
 	const stray = Object.keys(raw).find((key) => !KEYS[kind].includes(key));
@@ -58,6 +86,7 @@ function checkRecord(file: string, source: string, raw: unknown): SourceRecord {
 		bad('has a "setupDone" that is not an array of job names');
 	}
 	if (kind === "command") return raw as CommandSourceRecord;
+	if (kind === "path") return checkPathRecord(raw, bad);
 	if (typeof raw.url !== "string" || raw.url.startsWith("-")) {
 		bad('has a "url" that is not a string or starts with "-"');
 	}
@@ -101,11 +130,11 @@ export function readSourceRecords(paths: Pick<DgPaths, "jobSourcesPath">): Recor
 	);
 }
 
-/** The repository records only; a command record belongs to the marks of its job. */
-export function readSources(paths: Pick<DgPaths, "jobSourcesPath">): SourceRegistry {
+/** The repository and path records: each source name that holds a credential prefix. */
+export function readNamedSources(paths: Pick<DgPaths, "jobSourcesPath">): NamedRegistry {
 	return Object.fromEntries(
 		Object.entries(readSourceRecords(paths)).filter(
-			(entry): entry is [string, GitSourceRecord] => entry[1].kind === "git",
+			(entry): entry is [string, GitSourceRecord | PathSourceRecord] => entry[1].kind !== "command",
 		),
 	);
 }
@@ -126,9 +155,9 @@ export function writeSource(
 export function findRecordByJob(
 	registry: RecordRegistry,
 	job: string,
-): { source: string; record: GitSourceRecord } | undefined {
+): { source: string; record: GitSourceRecord | PathSourceRecord } | undefined {
 	for (const [source, record] of Object.entries(registry)) {
-		if (record.kind === "git" && record.jobs.includes(job)) return { source, record };
+		if (record.kind !== "command" && record.jobs.includes(job)) return { source, record };
 	}
 	return undefined;
 }

@@ -21,7 +21,7 @@ import {
 	splitGitArgument,
 } from "../../src/commands/job-source";
 import { parseJobs } from "../../src/jobs/config";
-import { readSources, writeSource } from "../../src/jobs/sources";
+import { type GitSourceRecord, readNamedSources, writeSource } from "../../src/jobs/sources";
 import * as store from "../../src/server/config-store";
 import { readConfigStrict } from "../../src/server/config-store";
 import { freshTempDir } from "../utils/daemon-harness";
@@ -240,8 +240,8 @@ describe("job add of a URL: refusals before git", () => {
 		expect(sb.gitCalls[0].args).toContain("https://user@host/org/bot");
 	});
 
-	it("refuses a local path until the local action exists", async () => {
-		await refused(["./bot.ts"], "job add: a local path is not supported yet");
+	it("sends a local path to the local action", async () => {
+		await refused(["./bot.ts"], "job add: no file or folder at");
 	});
 
 	it("refuses a bare name that is not a path or a URL", async () => {
@@ -389,7 +389,7 @@ describe("job add of a URL: the happy path", () => {
 			expect(entry).not.toHaveProperty("enabled");
 			expect(entry.argv).toEqual([join(cloneOf(), "bin/run")]);
 		}
-		const record = readSources(sb.paths)[NAME];
+		const record = (readNamedSources(sb.paths)[NAME] as GitSourceRecord);
 		expect(record.sha).toBe(repo.sha);
 		expect(record.sha).toMatch(SHA);
 		expect(record.url).toBe(fileUrl(repo));
@@ -441,7 +441,7 @@ describe("job add of a URL: the happy path", () => {
 		);
 
 		expect(result.code).toBe(0);
-		const record = readSources(sb.paths)[NAME];
+		const record = (readNamedSources(sb.paths)[NAME] as GitSourceRecord);
 		expect(record.sha).toBe(branchSha);
 		expect(record.sha).not.toBe(repo.sha);
 		expect(record.ref).toBe("feature");
@@ -456,7 +456,7 @@ describe("job add of a URL: the happy path", () => {
 		const result = await runJob(["add", `${fileUrl(repo)}@v1`, "--name", NAME], sb.deps());
 
 		expect(result.code).toBe(0);
-		expect(readSources(sb.paths)[NAME].sha).toBe(tagged);
+		expect((readNamedSources(sb.paths)[NAME] as GitSourceRecord).sha).toBe(tagged);
 	});
 
 	it("pins a full commit id", async () => {
@@ -467,7 +467,7 @@ describe("job add of a URL: the happy path", () => {
 		const result = await runJob(["add", `${fileUrl(repo)}@${first}`, "--name", NAME], sb.deps());
 
 		expect(result.code).toBe(0);
-		expect(readSources(sb.paths)[NAME].sha).toBe(first);
+		expect((readNamedSources(sb.paths)[NAME] as GitSourceRecord).sha).toBe(first);
 	});
 
 	it("checks out the commit id and never runs submodule or code paths", async () => {
@@ -763,7 +763,7 @@ describe("job add of a URL: consent", () => {
 		expect(asked).toEqual([]);
 		expect(result.stdout).toContain(`sha: ${repo.sha}`);
 		expect(sb.builds).toHaveLength(1);
-		expect(readSources(sb.paths)[NAME].sha).toBe(repo.sha);
+		expect((readNamedSources(sb.paths)[NAME] as GitSourceRecord).sha).toBe(repo.sha);
 	});
 });
 
@@ -1286,7 +1286,7 @@ describe("job remove of a repository job", () => {
 			`kept state: ${jobStateDir(sb.paths, "bot-a")}`,
 			`kept credentials below ${NAME}/`,
 		]);
-		expect(readSources(sb.paths)[NAME].jobs).toEqual(["bot-b"]);
+		expect((readNamedSources(sb.paths)[NAME] as GitSourceRecord).jobs).toEqual(["bot-b"]);
 		expect(existsSync(cloneOf())).toBe(true);
 		expect(Object.keys(readConfigStrict(sb.paths).jobs as object)).toEqual(["bot-b"]);
 	});
@@ -1298,7 +1298,7 @@ describe("job remove of a repository job", () => {
 		const result = await runJob(["remove", "bot-b"], sb.deps());
 
 		expect(result.code).toBe(0);
-		expect(readSources(sb.paths)).toEqual({});
+		expect(readNamedSources(sb.paths)).toEqual({});
 		expect(existsSync(cloneOf())).toBe(false);
 		expect(existsSync(jobStateDir(sb.paths, "bot-a"))).toBe(true);
 		expect(existsSync(jobStateDir(sb.paths, "bot-b"))).toBe(true);
@@ -1339,7 +1339,7 @@ describe("job remove of a repository job", () => {
 		const result = await runJob(["remove", "bot"], sb.deps());
 
 		expect(result.code).toBe(0);
-		expect(readSources(sb.paths)).toEqual({});
+		expect(readNamedSources(sb.paths)).toEqual({});
 		expect(existsSync(cloneOf())).toBe(false);
 	});
 

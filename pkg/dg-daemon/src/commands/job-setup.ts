@@ -198,7 +198,7 @@ function loadJob(paths: DgPaths, name: string, verb: Verb): Loaded {
 	if (parsed.credentials.length === 0) fail(`job setup: job "${name}" lists no credential`);
 	if (parsed.grant === undefined) fail(`job ${verb}: job "${name}" has no credential prefix`);
 	const found = findMarkRecord(guardConfig(() => readSourceRecords(paths)), name);
-	const stored = found?.record.kind === "git" ? found.record.credentials : {};
+	const stored = found && "credentials" in found.record ? found.record.credentials : {};
 	return {
 		name,
 		prefix: parsed.grant as string,

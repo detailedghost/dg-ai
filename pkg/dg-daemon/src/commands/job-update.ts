@@ -208,7 +208,7 @@ function refuseActive(states: Map<string, string> | undefined, names: string[]):
 	}
 }
 
-async function refuseLiveJobs(paths: DgPaths, via: string, names: string[]): Promise<void> {
+export async function refuseLiveJobs(paths: DgPaths, via: string, names: string[]): Promise<void> {
 	if (await assertDaemonAnswers(paths, via, "job")) {
 		refuseActive(await liveJobStates(paths), names);
 	}
@@ -227,7 +227,7 @@ export async function updateSource(
 	if (existsSync(paths.daemonConfigPath)) await ensureMigrated(paths);
 	const first = readState(paths);
 	const found = findRecordByJob(first.registry, name);
-	if (!found) {
+	if (found?.record.kind !== "git") {
 		throw new DgCliError(`no job named "${name}"`, EXIT_GENERAL_FAILURE);
 	}
 	const { source } = found;
@@ -384,7 +384,7 @@ export async function updateSource(
 			const state = readState(paths);
 			requireMigrated(state.config);
 			const stored = state.registry[source];
-			if (!stored || stored.sha !== record.sha || !sameValue(stored.jobs, record.jobs)) {
+			if (stored?.kind !== "git" || stored.sha !== record.sha || !sameValue(stored.jobs, record.jobs)) {
 				changed();
 			}
 			for (const job of names) {

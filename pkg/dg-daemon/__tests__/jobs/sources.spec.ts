@@ -6,8 +6,8 @@ import {
 	findMarkRecord,
 	findRecordByJob,
 	type GitSourceRecord,
+	readNamedSources,
 	readSourceRecords,
-	readSources,
 	updateMarks,
 	writeSource,
 } from "../../src/jobs/sources";
@@ -41,15 +41,15 @@ function seed(paths: ReturnType<typeof pathsOf>, text: string): void {
 	writeFileSync(paths.jobSourcesPath, text);
 }
 
-describe("readSources", () => {
+describe("readNamedSources", () => {
 	it("returns an empty registry when the file is absent", () => {
-		expect(readSources(pathsOf())).toEqual({});
+		expect(readNamedSources(pathsOf())).toEqual({});
 	});
 
 	it("reads a valid registry", () => {
 		const paths = pathsOf();
 		seed(paths, JSON.stringify({ bot: record({ ref: "v1" }) }));
-		expect(readSources(paths).bot.ref).toBe("v1");
+		expect((readNamedSources(paths).bot as GitSourceRecord).ref).toBe("v1");
 	});
 
 	it.each([
@@ -60,7 +60,7 @@ describe("readSources", () => {
 	])("throws an error that names the file for %s", (_label, text) => {
 		const paths = pathsOf();
 		seed(paths, text);
-		expect(() => readSources(paths)).toThrow(paths.jobSourcesPath);
+		expect(() => readNamedSources(paths)).toThrow(paths.jobSourcesPath);
 	});
 
 	it.each([
@@ -80,7 +80,7 @@ describe("readSources", () => {
 		seed(paths, JSON.stringify({ bot: { ...record(), ...bad } }));
 		let message = "";
 		try {
-			readSources(paths);
+			readNamedSources(paths);
 		} catch (err) {
 			message = (err as Error).message;
 		}
@@ -91,13 +91,13 @@ describe("readSources", () => {
 	it("throws for a source name that is not a valid name", () => {
 		const paths = pathsOf();
 		seed(paths, JSON.stringify({ "../x": record() }));
-		expect(() => readSources(paths)).toThrow("../x");
+		expect(() => readNamedSources(paths)).toThrow("../x");
 	});
 
 	it("throws for a source record that is not an object", () => {
 		const paths = pathsOf();
 		seed(paths, JSON.stringify({ bot: 1 }));
-		expect(() => readSources(paths)).toThrow('"bot"');
+		expect(() => readNamedSources(paths)).toThrow('"bot"');
 	});
 });
 
@@ -107,7 +107,7 @@ describe("writeSource", () => {
 		writeSource(paths, "a", record());
 		writeSource(paths, "b", record({ jobs: ["b"] }));
 
-		expect(Object.keys(readSources(paths))).toEqual(["a", "b"]);
+		expect(Object.keys(readNamedSources(paths))).toEqual(["a", "b"]);
 		expect(statSync(paths.jobSourcesPath).mode & 0o777).toBe(0o600);
 	});
 
@@ -118,7 +118,7 @@ describe("writeSource", () => {
 
 		writeSource(paths, "a", undefined);
 
-		expect(Object.keys(readSources(paths))).toEqual(["b"]);
+		expect(Object.keys(readNamedSources(paths))).toEqual(["b"]);
 	});
 
 	it("refuses to overwrite a file that is not a JSON object", () => {
@@ -145,7 +145,7 @@ describe("findRecordByJob", () => {
 	});
 });
 
-describe("readSources marks and command records", () => {
+describe("readNamedSources marks and command records", () => {
 	it("accepts a command record with both marks", () => {
 		const paths = pathsOf();
 		seed(
@@ -159,11 +159,11 @@ describe("readSources marks and command records", () => {
 		});
 	});
 
-	it("leaves a command record out of readSources and keeps it when another record is written", () => {
+	it("leaves a command record out of readNamedSources and keeps it when another record is written", () => {
 		const paths = pathsOf();
 		seed(paths, JSON.stringify({ x: { kind: "command", prefixAccepted: true } }));
 		writeSource(paths, "bot", record());
-		expect(Object.keys(readSources(paths))).toEqual(["bot"]);
+		expect(Object.keys(readNamedSources(paths))).toEqual(["bot"]);
 		expect(readSourceRecords(paths).x).toEqual({ kind: "command", prefixAccepted: true });
 	});
 
@@ -230,5 +230,68 @@ describe("updateMarks", () => {
 		expect(stored.setupDone).toEqual(["a", "b"]);
 		expect(stored.prefixAccepted).toBe(true);
 		expect(stored.sha).toBe(SHA);
+	});
+});
+
+describe("path records", () => {
+	const folder = (extra: Record<string, unknown> = {}) => ({
+		kind: "path" as const,
+		path: "/srv/tools",
+		jobs: ["a"],
+		declarationHash: "f".repeat(64),
+		credentials: {},
+		...extra,
+	});
+
+	it("accepts a folder record and a file record and keeps both in readNamedSources", () => {
+		const paths = pathsOf();
+		const file = { kind: "path" as const, path: "/srv/poll.ts", jobs: ["poll"], credentials: {} };
+		seed(paths, JSON.stringify({ tools: folder(), poll: file }));
+
+		expect(readNamedSources(paths).tools).toEqual(folder());
+		expect(readSourceRecords(paths).poll).toEqual(file);
+	});
+
+	it("accepts the two marks on a path record", () => {
+		const paths = pathsOf();
+		seed(paths, JSON.stringify({ tools: folder({ prefixAccepted: true, setupDone: ["a"] }) }));
+		expect(readSourceRecords(paths).tools).toMatchObject({ prefixAccepted: true, setupDone: ["a"] });
+	});
+
+	it.each([
+		["a relative path", { path: "tools" }],
+		["a path that is not a string", { path: 1 }],
+		["jobs that is not an array", { jobs: "a" }],
+		["a job name that is not valid", { jobs: ["A B"] }],
+		["credentials that is an array", { credentials: [] }],
+		["a declarationHash that is not 64 hexadecimal characters", { declarationHash: "abc" }],
+		["a url key", { url: "x" }],
+		["a sha key", { sha: "a".repeat(40) }],
+	])("throws an error that names the file and the source for %s", (_label, bad) => {
+		const paths = pathsOf();
+		seed(paths, JSON.stringify({ tools: folder(bad) }));
+		let message = "";
+		try {
+			readSourceRecords(paths);
+		} catch (err) {
+			message = (err as Error).message;
+		}
+		expect(message).toContain(paths.jobSourcesPath);
+		expect(message).toContain('"tools"');
+	});
+
+	it("finds a path record by its job and gives its marks to findMarkRecord", () => {
+		const registry = { tools: { ...folder(), setupDone: ["a"] } } as never;
+		expect(findRecordByJob(registry, "a")?.source).toBe("tools");
+		expect(findMarkRecord(registry, "a")?.record.setupDone).toEqual(["a"]);
+	});
+
+	it("keeps a path record when the marks change", () => {
+		const paths = pathsOf();
+		seed(paths, JSON.stringify({ tools: folder() }));
+
+		updateMarks(paths, "a", { prefixAccepted: true });
+
+		expect(readSourceRecords(paths).tools).toEqual(folder({ prefixAccepted: true }));
 	});
 });

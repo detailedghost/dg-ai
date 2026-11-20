@@ -7,7 +7,6 @@ import {
 	EXIT_GENERAL_FAILURE,
 	formatSchedule,
 	isRecord,
-	parseEvery,
 } from "@dg/common";
 import {
 	autostartManages,
@@ -25,7 +24,7 @@ import {
 	parseJobEntry,
 } from "../jobs/config";
 import { jobLogFile } from "../jobs/launcher";
-import type { SourceRegistry } from "../jobs/sources";
+import type { NamedRegistry, PathSourceRecord } from "../jobs/sources";
 import { readConfig, readConfigStrict, writeConfig, writeJobEntry } from "../server/config-store";
 import type { ServiceStatus } from "../services/supervisor";
 import {
@@ -57,6 +56,14 @@ import {
 } from "./job-support";
 import type { JobSetupDeps } from "./job-setup";
 import type { JobSourceDeps } from "./job-source";
+import {
+	aliasNote,
+	announceAliases,
+	assertOneMode,
+	checkEntryFlags,
+	duration,
+	entryFromFlags,
+} from "./job-entry";
 import { startDaemon } from "./start";
 
 const MODE_KEYS = ["continuous", "schedule", "every"] as const;
@@ -75,12 +82,6 @@ const fail = (message: string): never => {
 
 const notFound = (name: string) => fail(`no job named "${name}"`);
 
-const aliasNote = (oldForm: string, newForm: string): void => {
-	console.error(
-		`note: "${oldForm}" is now "${newForm}"; this form goes away in the next major release`,
-	);
-};
-
 const collect = (value: string, previous: string[] = []): string[] => [
 	...previous,
 	value,
@@ -91,14 +92,6 @@ const jobPath = (name: string, verb: "start" | "stop") =>
 
 const isActive = (state: string | undefined): boolean =>
 	state === "running" || state === "backoff";
-
-function duration(value: string, flag: string, prefix: string): number {
-	try {
-		return parseEvery(value, flag);
-	} catch (err) {
-		return fail(`${prefix}: ${describeError(err)}`);
-	}
-}
 
 function tableEntries(
 	config: Record<string, unknown>,
@@ -170,14 +163,14 @@ async function refuseTakenPrefix(
 	name: string,
 ): Promise<void> {
 	if (isInTable(config, name)) return;
-	const [{ assertPrefixFree }, { readSources }] = await Promise.all([
+	const [{ assertPrefixFree }, { readNamedSources }] = await Promise.all([
 		import("./job-source"),
 		import("../jobs/sources"),
 	]);
 	assertPrefixFree(
 		name,
 		config,
-		guardConfig(() => readSources(paths)),
+		guardConfig(() => readNamedSources(paths)),
 		"job add:",
 	);
 }
@@ -209,43 +202,19 @@ async function addVerb(
 	function stop(message: string): never {
 		return fail(`job add: ${message}`);
 	}
-	if (options.label !== undefined) aliasNote("--label", "--name");
-	if (options.cron !== undefined) aliasNote("--cron", "--schedule");
-	if (options.passEnv !== undefined) aliasNote("--pass-env", "--env");
+	announceAliases(options);
 	const flag = options.name === undefined ? "--label" : "--name";
 	const name = options.name ?? options.label ?? stop("--name is required");
-	const cronText = options.schedule ?? options.cron;
-	const modeCount =
-		Number(options.continuous === true) +
-		Number(options.every !== undefined) +
-		Number(options.schedule !== undefined) +
-		Number(options.cron !== undefined);
-	if (modeCount !== 1) {
-		stop("give one of --continuous, --schedule or --every");
-	}
+	assertOneMode(options, "job add");
 	if (!isJobName(name)) stop(`"${flag}" ${JOB_NAME_RULE}`);
-	const names = [
-		...new Set([...(options.env ?? []), ...(options.passEnv ?? [])]),
-	];
-	if (names.some((entry) => entry.includes("="))) {
-		stop(
-			"--env takes a variable name — put a value in the file of --env-file",
-		);
-	}
+	const parts = checkEntryFlags(options, "job add");
+	const { names, cronText, timeoutMs } = parts;
 	if (argv.length === 0) stop("no command given — put it after a bare --");
 	if (options.cwd === undefined) stop("--cwd is required");
 	const cwd = resolve(options.cwd);
 	if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
 		stop(`--cwd: no such directory: ${options.cwd}`);
 	}
-	const stopTimeoutMs =
-		options.stopTimeout === undefined
-			? undefined
-			: duration(options.stopTimeout, "--stop-timeout", "job add");
-	const timeoutMs =
-		options.timeout === undefined
-			? undefined
-			: duration(options.timeout, "--timeout", "job add");
 	const paths = resolveDgPaths();
 	let command = argv;
 	if (options.continuous) {
@@ -256,22 +225,7 @@ async function addVerb(
 		options.credential === undefined
 			? {}
 			: (await import("./job-source")).credentialListFor(options.credential, name);
-	const entry: Row = {
-		argv: command,
-		cwd,
-		...(options.continuous ? { continuous: true } : {}),
-		...credentials,
-		...(cronText === undefined ? {} : { schedule: cronText }),
-		...(options.every === undefined ? {} : { every: options.every }),
-		...(options.envFile === undefined
-			? {}
-			: { envFile: resolve(options.envFile) }),
-		...(names.length === 0 ? {} : { passEnv: names }),
-		...(stopTimeoutMs === undefined ? {} : { stopTimeoutMs }),
-		...(options.feed ? { feed: true } : {}),
-		...(options.notify === undefined ? {} : { notify: options.notify }),
-		...(timeoutMs === undefined ? {} : { timeoutMs }),
-	};
+	const entry: Row = entryFromFlags(options, parts, { argv: command, cwd, credentials });
 	const legacy = options.label !== undefined || options.cron !== undefined;
 	const legacyScheduled = legacy && !options.continuous;
 	const probe: Row = legacyScheduled
@@ -326,7 +280,13 @@ async function addVerb(
 	console.log(`next: dg job enable ${name}`);
 }
 
-type SourceMark = { source?: string; ref?: string | null; sha?: string };
+type SourceMark = {
+	source?: string;
+	ref?: string | null;
+	sha?: string;
+	path?: string;
+	sourceState?: string;
+};
 type Rows = { rows: Row[]; scheduled: (ScheduledRow & SourceMark)[] };
 
 function grantFileOf(paths: Paths, grant: unknown): string | null {
@@ -346,10 +306,10 @@ function stateDirOf(paths: Paths, name: string): string | null {
 	}
 }
 
-async function sourcesOf(paths: Paths): Promise<SourceRegistry> {
+async function sourcesOf(paths: Paths): Promise<NamedRegistry> {
 	if (!existsSync(paths.jobSourcesPath)) return {};
-	const { readSources } = await import("../jobs/sources");
-	return guardConfig(() => readSources(paths));
+	const { readNamedSources } = await import("../jobs/sources");
+	return guardConfig(() => readNamedSources(paths));
 }
 
 async function recordOf(paths: Paths, name: string) {
@@ -362,6 +322,20 @@ async function collectRows(paths: Paths): Promise<Rows> {
 	const config = readTable(paths);
 	const registry = await sourcesOf(paths);
 	const { findRecordByJob } = await import("../jobs/sources");
+	const { sourceStateOf } = await import("./job-source");
+	const markOf = (job: string): SourceMark => {
+		const found = findRecordByJob(registry, job);
+		if (!found) return {};
+		if (found.record.kind === "git") {
+			return { source: found.source, ref: found.record.ref, sha: found.record.sha };
+		}
+		const record: PathSourceRecord = found.record;
+		return {
+			source: found.source,
+			path: record.path,
+			sourceState: sourceStateOf(paths, found.source, record),
+		};
+	};
 	const live = await findLiveDaemon(paths);
 	const daemon = live
 		? ((await callJobRoute(CHAT_JOBS_PATH, "GET")) as { jobs: ServiceStatus[] })
@@ -375,11 +349,8 @@ async function collectRows(paths: Paths): Promise<Rows> {
 	const rows = continuous.map(([name, raw]): Row => {
 		const entry = isRecord(raw) ? raw : {};
 		const known = daemon?.find((row) => row.label === name);
-		const found = findRecordByJob(registry, name);
 		return {
-			...(found
-				? { source: found.source, ref: found.record.ref, sha: found.record.sha }
-				: {}),
+			...markOf(name),
 			name,
 			mode: modeOf(raw),
 			enabled: entry.enabled === true,
@@ -393,13 +364,20 @@ async function collectRows(paths: Paths): Promise<Rows> {
 			grantFile: grantFileOf(paths, entry.grant),
 		};
 	});
-	const scheduled = (await listScheduled()).map((row) => {
-		const found = findRecordByJob(registry, row.name);
-		return found
-			? { ...row, source: found.source, ref: found.record.ref, sha: found.record.sha }
-			: row;
-	});
+	const scheduled = (await listScheduled()).map((row) => ({ ...row, ...markOf(row.name) }));
 	return { rows, scheduled };
+}
+
+function sourceText(row: SourceMark): string {
+	if (row.source === undefined) return "";
+	if (row.path !== undefined) return `${row.source} (${row.path})`;
+	return row.sha === undefined ? "" : `${row.source}@${row.sha.slice(0, 12)}`;
+}
+
+function sourceStateText(name: string, row: SourceMark): string {
+	if (row.sourceState === "changed") return `source changed — run dg job update ${name}`;
+	if (row.sourceState === "missing") return `source missing: ${row.path}`;
+	return row.sourceState === "invalid" ? `source invalid: ${row.path}` : "";
 }
 
 function rowLine(row: Row): string {
@@ -410,9 +388,8 @@ function rowLine(row: Row): string {
 		row.state,
 		row.pid === null ? "" : `pid ${row.pid}`,
 		`restarts ${row.restarts}`,
-		typeof row.source === "string" && typeof row.sha === "string"
-			? `${row.source}@${row.sha.slice(0, 12)}`
-			: "",
+		sourceText(row),
+		sourceStateText(row.name as string, row),
 	]
 		.filter((part) => part !== "")
 		.join("  ");
@@ -427,9 +404,8 @@ function scheduledLine(row: ScheduledRow & SourceMark): string {
 		`last ${row.lastRunAt ?? "never"}`,
 		`next ${row.nextRunAt ?? "-"}`,
 		row.invalid ? `invalid: ${row.invalid}` : "",
-		row.source !== undefined && row.sha !== undefined
-			? `${row.source}@${row.sha.slice(0, 12)}`
-			: "",
+		sourceText(row),
+		sourceStateText(row.name, row),
 	]
 		.filter((part) => part !== "")
 		.join("  ");
@@ -702,12 +678,21 @@ async function updateVerb(
 	sourceDeps: () => JobSourceDeps,
 ): Promise<void> {
 	const stop = (message: string): never => fail(`job update: ${message}`);
-	if (await recordOf(resolveDgPaths(), name)) {
+	const record = (await recordOf(resolveDgPaths(), name))?.record;
+	const folder = record?.kind === "path" && record.declarationHash !== undefined;
+	if (record && (record.kind === "git" || folder)) {
 		if (UPDATE_FLAG_KEYS.some((key) => command.getOptionValueSource(key) === "cli")) {
-			stop('the repository declares this in its "dg" block');
+			stop(
+				`the ${record.kind === "git" ? "repository" : "folder"} declares this in its "dg" block`,
+			);
 		}
-		const { updateSource } = await import("./job-update");
-		await updateSource(name, { yes: options.yes }, sourceDeps());
+		if (record.kind === "git") {
+			const { updateSource } = await import("./job-update");
+			await updateSource(name, { yes: options.yes }, sourceDeps());
+		} else {
+			const { updateLocal } = await import("./job-local");
+			await updateLocal(name, sourceDeps());
+		}
 		return;
 	}
 	const modes: [Mode, unknown][] = [
@@ -759,14 +744,18 @@ async function updateVerb(
 				stop(`the job uses the credential prefix "${entry.grant}", not its own name`);
 			}
 			const { assertPrefixFree } = await import("./job-source");
-			const { readSources } = await import("../jobs/sources");
+			const { readNamedSources } = await import("../jobs/sources");
 			const others = Object.fromEntries(
 				Object.entries(config[JOBS_CONFIG_KEY] as Record<string, unknown>).filter(([key]) => key !== name),
 			);
 			assertPrefixFree(
 				name,
 				{ ...config, [JOBS_CONFIG_KEY]: others },
-				guardConfig(() => readSources(paths)),
+				Object.fromEntries(
+					Object.entries(guardConfig(() => readNamedSources(paths))).filter(
+						([key, source]) => !(key === name && source.kind === "path"),
+					),
+				),
 				"job update:",
 			);
 		}
@@ -856,7 +845,7 @@ export function registerJobCommands(
 
 	job
 		.command("add")
-		.description("add a job from a repository URL, or a command: continuous, on a cron schedule, or at an interval")
+		.description("add a job from a repository URL, a local file or folder, or a command: continuous, on a cron schedule, or at an interval")
 		.option("--name <name>", "unique name for the job")
 		.addOption(new Option("--label <name>").hideHelp())
 		.option("--cwd <path>", "working directory for the command")
@@ -888,14 +877,17 @@ export function registerJobCommands(
 				await addVerb(argv, options, deps());
 				return;
 			}
-			const { addSource, defaultJobSourceDeps } = await import("./job-source");
+			const { addSource, classifySource, defaultJobSourceDeps } = await import("./job-source");
 			const flags = SOURCE_OPTION_KEYS.filter(
 				(key) => command.getOptionValueSource(key) === "cli",
 			);
-			await addSource(source.argument, source.rest, flags, options, {
-				...defaultJobSourceDeps(),
-				...given,
-			});
+			const sourceDeps = { ...defaultJobSourceDeps(), ...given };
+			if (classifySource(source.argument) === "path") {
+				const { addLocal } = await import("./job-local");
+				await addLocal(source.argument, source.rest, flags, options, sourceDeps);
+				return;
+			}
+			await addSource(source.argument, source.rest, flags, options, sourceDeps);
 		});
 
 	job

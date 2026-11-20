@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { spyOn } from "bun:test";
 import { DgCliError } from "@dg/common";
@@ -242,3 +242,58 @@ export const changeBlock = (
 	dg: unknown,
 	files: Record<string, RepoFile> = {},
 ): string => commit(repo, { dg, files });
+
+export const FAKE_BUN = "/opt/dg-fake/bin/bun";
+
+/** Deps whose `which` finds a fixed bun; `bun: null` finds none. */
+export function withBun(
+	sb: Sandbox,
+	over: Partial<JobSourceDeps> & { bun?: string | null } = {},
+): Partial<JobSourceDeps> {
+	const { bun = FAKE_BUN, ...rest } = over;
+	return sb.deps({
+		which: (name) => (name === "bun" ? bun : sb.tools.which(name)),
+		...rest,
+	});
+}
+
+/** Writes one script into a fresh folder; the file name keeps its case. */
+export function makeScript(
+	name: string,
+	content = "process.exit(0);\n",
+	options: { executable?: boolean; dir?: string } = {},
+): string {
+	const file = join(options.dir ?? freshTempDir("job-script"), name);
+	mkdirSync(dirname(file), { recursive: true });
+	writeFileSync(file, content);
+	chmodSync(file, options.executable ? 0o755 : 0o644);
+	return file;
+}
+
+/** Makes a temp folder named `name` with a package.json that holds the `dg` block. */
+export function makeFolder(input: {
+	name?: string;
+	dg?: unknown;
+	files?: Record<string, RepoFile>;
+}): string {
+	const dir = join(freshTempDir("job-folder"), input.name ?? "toolkit");
+	mkdirSync(dir, { recursive: true });
+	if (input.dg !== undefined) {
+		writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "fixture", dg: input.dg }));
+	}
+	writeFiles(dir, input.files ?? {});
+	return dir;
+}
+
+export const readConfig = (sb: Sandbox): { jobs: Record<string, Record<string, unknown>> } =>
+	JSON.parse(readFileSync(sb.paths.daemonConfigPath, "utf8"));
+
+export const readRegistry = (sb: Sandbox): Record<string, Record<string, unknown>> => {
+	try {
+		return JSON.parse(readFileSync(sb.paths.jobSourcesPath, "utf8"));
+	} catch {
+		return {};
+	}
+};
+
+export const BIN_RUN: RepoFile = { content: "#!/bin/sh\nexit 0\n", executable: true };
