@@ -55,6 +55,7 @@ import {
 	resolveExecutable,
 	withConfigLock,
 } from "./job-support";
+import type { JobSetupDeps } from "./job-setup";
 import type { JobSourceDeps } from "./job-source";
 import { startDaemon } from "./start";
 
@@ -197,6 +198,7 @@ type AddOptions = {
 	env?: string[];
 	passEnv?: string[];
 	stopTimeout?: string;
+	credential?: string[];
 };
 
 async function addVerb(
@@ -250,10 +252,15 @@ async function addVerb(
 		const [first, ...rest] = argv;
 		command = [resolveExecutable(first, "job add:", deps.which), ...rest];
 	}
+	const credentials =
+		options.credential === undefined
+			? {}
+			: (await import("./job-source")).credentialListFor(options.credential, name);
 	const entry: Row = {
 		argv: command,
 		cwd,
 		...(options.continuous ? { continuous: true } : {}),
+		...credentials,
 		...(cronText === undefined ? {} : { schedule: cronText }),
 		...(options.every === undefined ? {} : { every: options.every }),
 		...(options.envFile === undefined
@@ -295,6 +302,7 @@ async function addVerb(
 			timeoutMs,
 			envFile: options.envFile === undefined ? undefined : resolve(options.envFile),
 			passEnv: names,
+			...credentials,
 		}, deps.which);
 		if (legacy) {
 			console.log(
@@ -511,20 +519,16 @@ async function offerLoginUnit(paths: Paths, deps: JobVerbDeps): Promise<void> {
 	}
 }
 
-async function enableVerb(name: string, deps: JobVerbDeps): Promise<void> {
-	const paths = resolveDgPaths();
-	await locate(paths, name, { migrate: true, scheduled: false });
-	await assertDaemonAnswers(paths, name, "job");
-	await withConfigLock(paths, () => {
-		const config = readTable(paths);
-		requireMigrated(config);
-		const entry = tableEntry(paths, config, name);
-		if (entry.enabled !== true) {
-			guardConfig(() => writeJobEntry(paths, name, { ...entry, enabled: true }));
-		}
-	});
-	console.log(`enabled job "${name}"`);
-	await offerLoginUnit(paths, deps);
+function listedCredentials(paths: Paths, name: string): string[] {
+	if (!existsSync(paths.daemonConfigPath)) return [];
+	const config = readTable(paths);
+	if (!isInTable(config, name)) return [];
+	const entry = (config[JOBS_CONFIG_KEY] as Record<string, unknown>)[name];
+	const listed = isRecord(entry) ? entry.credentials : undefined;
+	return Array.isArray(listed) ? listed.filter((item) => typeof item === "string") : [];
+}
+
+async function startAndReport(paths: Paths, name: string, deps: JobVerbDeps): Promise<void> {
 	if (!(await findLiveDaemon(paths))) {
 		try {
 			await startDaemon(paths, { autostart: deps.autostart });
@@ -546,6 +550,42 @@ async function enableVerb(name: string, deps: JobVerbDeps): Promise<void> {
 	}
 	if (!status) return fail(`job "${name}" is not loaded by the daemon — see the daemon log`);
 	console.log(formatStatus(status));
+}
+
+async function enableVerb(
+	name: string,
+	options: { setup?: string },
+	deps: JobVerbDeps,
+	setupDeps: () => Promise<JobSetupDeps>,
+): Promise<void> {
+	if (options.setup !== undefined && options.setup.trimStart().startsWith("{")) {
+		fail("--setup takes a file path or -");
+	}
+	const paths = resolveDgPaths();
+	if (listedCredentials(paths, name).length > 0) {
+		const { runEnableWizard } = await import("./job-setup");
+		await runEnableWizard(paths, name, { setup: options.setup }, await setupDeps());
+		console.log(`enabled job "${name}"`);
+		await offerLoginUnit(paths, deps);
+		await startAndReport(paths, name, deps);
+		return;
+	}
+	await locate(paths, name, { migrate: true, scheduled: false });
+	if (options.setup !== undefined) {
+		fail(`job enable: job "${name}" lists no credential, so --setup has nothing to answer`);
+	}
+	await assertDaemonAnswers(paths, name, "job");
+	await withConfigLock(paths, () => {
+		const config = readTable(paths);
+		requireMigrated(config);
+		const entry = tableEntry(paths, config, name);
+		if (entry.enabled !== true) {
+			guardConfig(() => writeJobEntry(paths, name, { ...entry, enabled: true }));
+		}
+	});
+	console.log(`enabled job "${name}"`);
+	await offerLoginUnit(paths, deps);
+	await startAndReport(paths, name, deps);
 }
 
 async function disableVerb(name: string): Promise<void> {
@@ -579,6 +619,16 @@ async function disableVerb(name: string): Promise<void> {
 	}
 }
 
+async function dropRecord(paths: Paths, name: string): Promise<void> {
+	if (!existsSync(paths.jobSourcesPath)) return;
+	const { removeJobFromSource } = await import("./job-source");
+	guardConfig(() => removeJobFromSource(paths, name));
+}
+
+async function dropCommandRecord(paths: Paths, name: string): Promise<void> {
+	await withConfigLock(paths, () => dropRecord(paths, name));
+}
+
 async function removeVerb(name: string): Promise<void> {
 	const paths = resolveDgPaths();
 	const found = await recordOf(paths, name);
@@ -596,6 +646,7 @@ async function removeVerb(name: string): Promise<void> {
 		}
 	}
 	if (kind === "scheduled") {
+		await dropCommandRecord(paths, name);
 		await removeScheduled(name);
 		console.log(`removed job "${name}"`);
 		return;
@@ -612,13 +663,13 @@ async function removeVerb(name: string): Promise<void> {
 				Array.isArray(entry.credentials) && entry.credentials.length > 0;
 			guardConfig(() => writeJobEntry(paths, name, undefined));
 		}
-		if (found) {
-			const { removeJobFromSource } = await import("./job-source");
-			guardConfig(() => removeJobFromSource(paths, name));
-		}
+		await dropRecord(paths, name);
 	});
 	console.log(`removed job "${name}"`);
-	if (!found) return;
+	if (!found) {
+		if (listsCredentials) console.log(`kept credentials below ${name}/`);
+		return;
+	}
 	console.log(`kept state: ${stateDirOf(paths, name)}`);
 	if (listsCredentials) console.log(`kept credentials below ${found.source}/`);
 }
@@ -631,9 +682,18 @@ type UpdateOptions = {
 	feed?: boolean;
 	notify?: string;
 	yes?: boolean;
+	credential?: string[];
 };
 
-const UPDATE_FLAG_KEYS = ["continuous", "schedule", "every", "timeout", "feed", "notify"];
+const UPDATE_FLAG_KEYS = [
+	"continuous",
+	"schedule",
+	"every",
+	"timeout",
+	"feed",
+	"notify",
+	"credential",
+];
 
 async function updateVerb(
 	name: string,
@@ -657,6 +717,10 @@ async function updateVerb(
 	];
 	const given = modes.filter(([, value]) => value !== undefined);
 	if (given.length > 1) stop("give one of --continuous, --schedule or --every");
+	const credentials =
+		options.credential === undefined
+			? undefined
+			: (await import("./job-source")).credentialListFor(options.credential, name);
 	const changes: [string, unknown][] = [
 		...given,
 		["feed", options.feed ? true : undefined],
@@ -673,11 +737,11 @@ async function updateVerb(
 	if (!isInTable(readTable(paths), name)) {
 		notFound(name);
 	}
-	if (changes.length === 0) {
+	if (changes.length === 0 && credentials === undefined) {
 		if (options.yes === true) return;
 		stop("give a flag to change");
 	}
-	await withConfigLock(paths, () => {
+	await withConfigLock(paths, async () => {
 		const config = readTable(paths);
 		requireMigrated(config);
 		const entry = tableEntry(paths, config, name);
@@ -689,13 +753,45 @@ async function updateVerb(
 							([key]) => !(MODE_KEYS as readonly string[]).includes(key),
 						),
 					);
-		const next = { ...base, ...Object.fromEntries(changes) };
+		const listed = Array.isArray(entry.credentials) ? (entry.credentials as string[]) : [];
+		if (credentials !== undefined) {
+			if (typeof entry.grant === "string" && entry.grant !== name) {
+				stop(`the job uses the credential prefix "${entry.grant}", not its own name`);
+			}
+			const { assertPrefixFree } = await import("./job-source");
+			const { readSources } = await import("../jobs/sources");
+			const others = Object.fromEntries(
+				Object.entries(config[JOBS_CONFIG_KEY] as Record<string, unknown>).filter(([key]) => key !== name),
+			);
+			assertPrefixFree(
+				name,
+				{ ...config, [JOBS_CONFIG_KEY]: others },
+				guardConfig(() => readSources(paths)),
+				"job update:",
+			);
+		}
+		const next = {
+			...base,
+			...Object.fromEntries(changes),
+			...(credentials?.credentials === undefined
+				? {}
+				: {
+						credentials: [
+							...listed,
+							...credentials.credentials.filter((item) => !listed.includes(item)),
+						],
+						grant: entry.grant ?? credentials.grant,
+					}),
+		};
 		const parsed = parseJobEntry(name, next);
 		if (!parsed.ok) stop(parsed.error);
 		guardConfig(() => writeJobEntry(paths, name, next));
 	});
 	console.log(`updated job "${name}"`);
-	console.log(`changed ${changes.map(([key]) => key).join(", ")}`);
+	console.log(
+		`changed ${[...changes.map(([key]) => key), ...(credentials === undefined ? [] : ["credentials"])].join(", ")}`,
+	);
+	if (credentials !== undefined) console.log(`next: dg job setup ${name}`);
 	const states = await liveJobStates(paths).catch(() => undefined);
 	if (isActive(states?.get(name))) {
 		console.log(`next: dg job restart ${name}`);
@@ -725,6 +821,7 @@ const SOURCE_OPTION_KEYS = [
 	"envFile",
 	"passEnv",
 	"stopTimeout",
+	"credential",
 ];
 
 function positionalSource(
@@ -743,9 +840,13 @@ function positionalSource(
 
 export function registerJobCommands(
 	program: Command,
-	given: Partial<JobSourceDeps> = {},
+	given: Partial<JobSourceDeps & JobSetupDeps> = {},
 ): void {
 	const deps = (): JobVerbDeps => ({ ...defaultJobVerbDeps(), ...given });
+	const setupDeps = async (): Promise<JobSetupDeps> => ({
+		...(await import("./job-setup")).defaultJobSetupDeps(),
+		...given,
+	});
 	const job = program
 		.command("job")
 		.description("run and manage the jobs the daemon runs")
@@ -775,6 +876,11 @@ export function registerJobCommands(
 		.addOption(new Option("--pass-env <NAME>").argParser(collect).hideHelp())
 		.option("--stop-timeout <duration>", "grace period on stop, e.g. 30s")
 		.option("--yes", "approve the jobs of a repository without asking")
+		.option(
+			"--credential <name>",
+			"credential the job needs (repeatable)",
+			collect,
+		)
 		.argument("[command...]", "the command to run, after a bare --")
 		.action(async (argv: string[], options: AddOptions, command: Command) => {
 			const source = positionalSource(argv, command);
@@ -809,7 +915,21 @@ export function registerJobCommands(
 		.command("enable")
 		.description("start the job now and at each daemon start")
 		.argument("<name>")
-		.action((name: string) => enableVerb(name, deps()));
+		.option("--setup <file>", "answers for the credentials: a file path, or - for stdin")
+		.action((name: string, options: { setup?: string }) =>
+			enableVerb(name, options, deps(), setupDeps),
+		);
+
+	job
+		.command("setup")
+		.description("store the credentials of a job, or fetch them again")
+		.argument("<name>")
+		.option("--refresh", "fetch each credential that has a source again")
+		.option("--rotate-token", "make a new token for the credential prefix of the job")
+		.action(async (name: string, options: { refresh?: boolean; rotateToken?: boolean }) => {
+			const { runSetup } = await import("./job-setup");
+			await runSetup(resolveDgPaths(), name, options, await setupDeps());
+		});
 
 	job
 		.command("disable")
@@ -856,6 +976,11 @@ export function registerJobCommands(
 		.option("--feed", "read one JSON object per item from the output")
 		.option("--notify <identity>", "agent identity to queue new items to")
 		.option("--yes", "approve a repository update without asking")
+		.option(
+			"--credential <name>",
+			"add a credential the job needs (repeatable)",
+			collect,
+		)
 		.action(async (name: string, options: UpdateOptions, command: Command) => {
 			const { defaultJobSourceDeps } = await import("./job-source");
 			await updateVerb(name, options, command, () => ({ ...defaultJobSourceDeps(), ...given }));

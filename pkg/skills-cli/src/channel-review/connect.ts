@@ -20,10 +20,10 @@ import {
 	createCredentialClient,
 	ensurePrivateDir,
 	openOAuthBrowser,
+	promptHidden,
 	resolveDgPaths,
 	wslChromiumArgs,
 } from "@dg/common/node";
-import { promptHidden } from "../credentials/cli";
 import { guardedDest } from "../utils/layout-guard";
 
 export const CONNECT_TOKEN_NAME = "channel-review-daemon";

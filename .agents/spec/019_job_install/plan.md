@@ -134,7 +134,7 @@ slices:
   - id: 15
     name: "job-setup-wizard"
     depends_on: [14]
-    files: ["pkg/dg-daemon/src/commands/job-setup.ts", "pkg/dg-daemon/src/jobs/setup-answers.ts", "pkg/dg-daemon/src/jobs/secret-sources.ts", "pkg/dg-daemon/src/jobs/sources.ts", "pkg/dg-daemon/src/commands/jobs.ts", "pkg/dg-daemon/src/commands/job-source.ts", "pkg/dg-daemon/src/completion-tree.json", "pkg/common/src/node/prompt.ts", "pkg/common/src/node/index.ts", "pkg/skills-cli/src/credentials/cli.ts", "pkg/skills-cli/src/channel-review/connect.ts", "pkg/dg-daemon/__tests__/jobs/sources.spec.ts", "pkg/dg-daemon/__tests__/commands/job-setup.spec.ts", "pkg/dg-daemon/__tests__/commands/job-enable-wizard.spec.ts", "pkg/dg-daemon/__tests__/commands/job-setup-refresh.spec.ts", "pkg/dg-daemon/__tests__/commands/job-verbs.spec.ts", "pkg/dg-daemon/__tests__/jobs/setup-answers.spec.ts", "pkg/dg-daemon/__tests__/jobs/secret-sources.spec.ts", "pkg/common/__tests__/node-prompt.spec.ts", "pkg/dg-daemon/src/services/env-file.ts", "pkg/dg-daemon/__tests__/services/env-file.spec.ts", "pkg/common/package.json"]
+    files: ["pkg/dg-daemon/src/commands/job-setup.ts", "pkg/dg-daemon/src/jobs/setup-answers.ts", "pkg/dg-daemon/src/jobs/secret-sources.ts", "pkg/dg-daemon/src/jobs/sources.ts", "pkg/dg-daemon/src/commands/jobs.ts", "pkg/dg-daemon/src/commands/job-source.ts", "pkg/dg-daemon/src/completion-tree.json", "pkg/common/src/node/prompt.ts", "pkg/common/src/node/index.ts", "pkg/skills-cli/src/credentials/cli.ts", "pkg/skills-cli/src/channel-review/connect.ts", "pkg/dg-daemon/__tests__/jobs/sources.spec.ts", "pkg/dg-daemon/__tests__/commands/job-setup.spec.ts", "pkg/dg-daemon/__tests__/commands/job-enable-wizard.spec.ts", "pkg/dg-daemon/__tests__/commands/job-setup-refresh.spec.ts", "pkg/dg-daemon/__tests__/commands/job-verbs.spec.ts", "pkg/dg-daemon/__tests__/jobs/setup-answers.spec.ts", "pkg/dg-daemon/__tests__/jobs/secret-sources.spec.ts", "pkg/common/__tests__/node-prompt.spec.ts", "pkg/dg-daemon/src/services/env-file.ts", "pkg/dg-daemon/__tests__/services/env-file.spec.ts", "pkg/common/package.json", "pkg/dg-daemon/src/commands/job-schedule.ts", "pkg/dg-daemon/src/commands/job-source.ts", "pkg/dg-daemon/__tests__/commands/job-setup-kit.ts", "pkg/dg-daemon/__tests__/job-command-tree.spec.ts", ".agents/school/engineering.md"]
     agents:
       primary: dg:js
       confidence: high
@@ -1752,142 +1752,142 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 ### Slice 15 — job-setup-wizard
 
 #### Engineering
-- [ ] Move `promptHidden`, `HiddenInput` and `readCredentialValue` from pkg/skills-cli/src/credentials/cli.ts to pkg/common/src/node/prompt.ts, the file that slice 9 made with `readLine`, and export them from pkg/common/src/node/index.ts; credentials/cli.ts and channel-review/connect.ts import them; change no behavior: the wizard is their third caller, in another package
-- [ ] `credentials/cli.ts` keeps a re-export of `promptHidden`: `pkg/skills-cli/__tests__/channel-review-connect.spec.ts` imports it from there, and this slice does not own that spec; slice 21 removes the re-export with the spec
-- [ ] Add `--credential <name>` (repeatable) to `add` and `update` of a command job: it fills the `credentials` list of the entry, and dg sets `grant` to the job name when the list is not empty; the reserved name rule of slice 13 applies to that job name
-- [ ] `--credential` with a URL exits 1 with the `declares this in its "dg" block` text of slice 13
-- [ ] Add the record kind `command` and the two marks `prefixAccepted` and `setupDone` to the reader and the writer of `sources.ts`; `prefixAccepted` is one boolean for the source, and `setupDone` is a list of job names
-- [ ] Load `job-setup.ts` with a lazy import from `jobs.ts`
-- [ ] The deps type of the wizard is `JobSetupDeps extends JobVerbDeps` (slice 9): the base type gives `isTerminal()`, `confirm(question)` and `which(name, env?)`, and this type adds `readHidden(prompt)`, `readLine(prompt)`, `runSource(argv, { env, cwd, timeoutMs }): Promise<{ code, stdout, stderr }>` and `client` (the client of slice 12); `readLine` is the export of prompt.ts from slice 9; the wizard gives the environment of the caller to `runSource` and `which`
-- [ ] `job enable <name> [--setup <file or ->]`: the credentials of the job are the names of its `credentials` list; the details come from the record of its source, or are the defaults for a job with no record
-- [ ] A job with an empty `credentials` list gets no wizard; `enable` is the verb of slice 9
-- [ ] `setup` with no live daemon starts the daemon as `enable` of slice 9 does, then continues
-- [ ] Read `status` of slice 12; a credential is `stored`, `expired` (meta `expiresAt` in the past) or `missing`
-- [ ] Adoption: when the source of the job has no `prefixAccepted` mark and `status` shows that the `grant` is not `missing` or that one credential or more is stored below its prefix, print the stored names and ask `This job can read these credentials. Continue? [y/N]` at a terminal; with no terminal exit 1 with `job enable: the prefix <prefix>/ holds credentials — run this command in a terminal one time`; after `y`, write the mark; `--setup` does not answer this question, and `enable` has no `--yes` option
-- [ ] dg also writes `prefixAccepted` when it stores the first credential of a prefix itself, not only after the answer `y`
-- [ ] `enable` asks only for a required credential that is `missing` or `expired`, and the first time (the job has no `setupDone` mark) also for each optional one that is `missing`
-- [ ] `setup` asks for each credential of the job: it shows the state and the date, never the value, and asks `Replace <name>? [y/N]` for a stored one
-- [ ] A credential with no `source` reads the value with `readHidden("<prompt text>: ")`; an empty answer skips an optional credential and asks again for a required one
-- [ ] Each `meta` key of the details reads one visible line; an empty line uses its `default`
-- [ ] `aws-secretsmanager` in pkg/dg-daemon/src/jobs/secret-sources.ts: resolve `aws` with the `which` seam; run `[aws, "secretsmanager", "get-secret-value", "--secret-id", <secretId>, "--region", <region>, "--profile", <profile>, "--query", "SecretString", "--output", "text"]` through the `runSource` seam with no shell, the environment that the caller gives in `env` and a limit of 30 s in `timeoutMs`; leave out `--profile` when none is given
-- [ ] secret-sources.ts exports the one real default `runSource`: no shell, stdin closed, stderr piped, `killSignal: "SIGKILL"`, a limit of 30 s, and a limit of 128 KiB while it reads stdout; above that limit it stops the process and gives the error kind `failed` [DECIDED — post-apply item 3]
-- [ ] A spec runs the default `runSource` with a fixture program that sleeps past a short limit; it uses the `which` seam and no real `aws`
-- [ ] With a `key`, parse stdout as JSON and take the own string property `key`; with no `key`, the value is stdout with no last newline
-- [ ] A failed fetch gives one line `job setup: aws failed for <name>: <first line of stderr>` and the hint `hint: aws sso login --profile <profile>` (`hint: aws sso login` with no profile); the stderr line goes through `sanitize`; when the `which` seam does not find `aws`, the line is `job setup: aws is not installed — it is necessary for <name>`
-- [ ] Validate each value with `validateCredentialValue` before the first write; collect each value before the first `set`
-- [ ] Store with `set`; the meta is the meta answers plus `createdBy: "dg job setup"`, and `provider: "<source type>"` for a fetched value; no source parameter goes into meta, because `validateCredentialMeta` refuses a key such as `secretId`
-- [ ] After the last `set`, call `ensureGrant`; `enable` never rotates a token, so a job that runs with the same prefix keeps its token
-- [ ] Then add the job name to the `setupDone` list, set `enabled`, and start the job (continuous) or print its next run (scheduled) with the function that `enable` of slices 9 and 10 uses
-- [ ] The two marks are keys of the `sources.json` record for a job with a record: `prefixAccepted` is one boolean for the source, and `setupDone` is the list of the job names whose first setup is done; a job with no record keeps them in a record `{ kind: "command" }` that this slice makes
-- [ ] When a `set` fails, stop, print each name that was stored, do not enable, and exit 1
-- [ ] With no terminal, a required credential that is missing or expired, has no `source` and has no `--setup` answer makes `enable` exit 1 with `job enable: credentials missing or expired: <names> — run dg job setup <name> in a terminal, or give --setup`; store nothing and start nothing
-- [ ] `--setup -` reads JSON from stdin; each other value is a file path; a value that starts with `{` exits 1 with `--setup takes a file path or -`: a command line is visible to other processes, so `--setup` never takes JSON text
-- [ ] Export from pkg/dg-daemon/src/services/env-file.ts the one check of an open file: `fstat` on the descriptor, a regular file, and no `0o077` bit; the check takes the noun of its message, so `loadEnvFile` keeps `env file <path> is readable by other users; run chmod 600 on it`
-- [ ] A `--setup` file that other users can read (POSIX mode bits `0o077`) is refused through that check with `--setup file <path> is readable by other users; run chmod 600 on it`
-- [ ] The shape of the `--setup` JSON is `{ "version": 1, "credentials": { "<name>": <answer> } }`; an answer has one of `"value": "<text>"`, `"source": true | { "profile": "<name>" }`, `"keep": true`, `"skip": true`, plus `"meta"?: { key: text }` and `"expiresAt"?: "<ISO 8601>"`
-- [ ] An unknown top-level key, an unknown credential name, an unknown answer key, two answer kinds in one answer, `skip` on a required credential that is missing, and `keep` on a missing credential are errors that name the key; nothing is stored
-- [ ] A credential with an answer gets no question; a credential with no answer follows the terminal rule
-- [ ] With no terminal, `enable --setup <file or ->` runs for each kind of job, also for a repository job: the consent of `add` is the consent; each required credential that is missing needs an answer, and the adoption rule still applies
-- [ ] `job setup <name> --rotate-token`: call `rotateGrant` and change no credential
-- [ ] After `setup` changed a value or the token, print `next: dg job restart <job>` for each job with that prefix that runs
-- [ ] No value goes to stdout, stderr, a log, a process argument or a file other than the store
-- [ ] A credential with a `source` is fetched from that source first, with no question: print `fetching <name> from AWS Secrets Manager` on stderr, run the fetch, and use the value; the value then stays in the dg credential store, so a later `enable` does not fetch it again
-- [ ] When a fetch fails at a terminal, print the failure line and the hint, then ask `Enter <name> by hand? [y/N]`: `y` gives the hidden prompt, and `n` stops with exit 1 and nothing stored; with no terminal a failed fetch exits 1 with nothing stored
-- [ ] secret-sources.ts exports `fetchSecret(source, deps): Promise<string>` with the seams `which` and `runSource`; it prints nothing, so slice 18 can call it from the daemon; it throws one typed `SecretFetchError` with `kind` (`not-installed`, `failed`, `timeout`, `no-text`, `invalid-json` or `no-key`) and the first stderr line after `sanitize`
-- [ ] Each caller of `fetchSecret` builds its own text: the CLI builds the `job setup:` line and the `aws sso login` hint (CLI only), and slice 18 builds its 502 texts
-- [ ] A `--setup` answer `"source": true` fetches from the declared source; `"source": { "profile": "<name>" }` replaces the profile for this run; on a credential with no `source`, each of the two is an error that names the credential
-- [ ] A `--setup` answer `"value"` for a credential that has a `source` stores that value and starts no fetch
-- [ ] `job setup <name> --refresh` fetches again each credential of the job whose details have a `source`, with no question and with no terminal necessary; it stores each fetched value with `set`, changes no credential that has no `source`, and prints `refreshed <names joined with a comma and a space>`
-- [ ] `--refresh` collects each value before the first `set`; when one fetch fails it stores nothing, prints the failure line and the hint, and exits 1
-- [ ] `--refresh` on a job that has no credential with a `source` exits 1 with `job setup: no credential of job "<name>" has a source — run dg job setup <name> to enter a value`
-- [ ] `--refresh` with `--rotate-token` exits 1 with `job setup: give --refresh alone`; `setup` has no `--setup` option: `enable --setup` is the way to give answers with no question
-- [ ] `--refresh` is the command of the owner, or of an agent with no terminal, for a credential that does not work; a job that runs asks through the service API operation of slice 18; the two call `fetchSecret`
-- [ ] The `--setup` parser is in pkg/dg-daemon/src/jobs/setup-answers.ts and is pure: it takes the JSON text and the credential list of the job, and returns the answers or one error
-- [ ] After the option change, run `bun scripts/completion-trees.ts dg-daemon` and commit pkg/dg-daemon/src/completion-tree.json; do not edit the JSON by hand
-- [ ] The registry writer keeps `prefixAccepted` and `setupDone` when `update` writes its four keys [DECIDED — gaps pass X1 (c)]
-- [ ] The key of a `{ kind: "command" }` record is the job name; `--credential` on a command job calls `assertPrefixFree` of slice 13 for the job name
-- [ ] `job remove` of a command job deletes its `command` record
-- [ ] `enable` of an entry that already has `enabled: true`, with a required credential that is `missing`, still runs the wizard (the repair path)
-- [ ] The login unit question of slice 9 comes after the wizard, so a wizard that fails writes no `loginUnitAsked`
-- [ ] Register in jobs.ts the verb `setup` with the options `--refresh` and `--rotate-token`, and the option `--setup` on `enable`
-- [ ] `setup` stores values and writes its `setupDone` entry; it never sets `enabled` and never starts a job; the adoption question applies to it
-- [ ] `setup` on a job with no credential exits 1 with `job setup: job "<name>" lists no credential`
-- [ ] The 409 answer `has no credential prefix` of the route becomes one line for `--rotate-token`
-- [ ] The wizard holds no config lock during a prompt, a fetch or a `set`; it takes `withConfigLock` one time at the end, reads again, checks that the entry exists and that its `credentials` list did not change, then writes the marks and `enabled`
-- [ ] job-setup.ts imports `withConfigLock`, `callDaemon` and `assertDaemonAnswers` from job-support.ts
-- [ ] The `--setup` reader opens the file, checks the descriptor with the check of env-file.ts, and reads 128 KiB at most; stdin has the same limit; win32 skips the mode check, as `loadEnvFile` does
-- [ ] setup-answers.ts uses `Object.hasOwn`, refuses the names `__proto__`, `constructor` and `prototype`, and builds objects with no prototype
-- [ ] Check the `profile` of a `--setup` answer before it goes to the argv: a string that does not start with `-` and that passes the `profile` rule of the block (slice 13)
-- [ ] Three more results of the fetch: stdout `None` or empty is the error `job setup: the secret of <name> has no text value`; with a `key`, stdout that is not JSON gives the fixed line `job setup: the secret of <name> is not JSON` and no part of the parser message; a `key` whose property is not a string is the `no-key` error; no error of `fetchSecret` holds stdout [DECIDED — post-apply item 9]
-- [ ] The `expiresAt` of a `--setup` answer is stored as `meta.expiresAt`; call `validateCredentialMeta` in the collect phase, with the value check, so no `set` fails after an earlier `set` passed
-- [ ] Export `credentialListFor(flagValues, jobName)` from job-source.ts: it parses the `--credential` values and gives `credentials` and `grant`
-- [ ] A `--credential` value with `=` exits 1 with `--credential takes a name` until slice 17
-- [ ] `update` can add a credential, and no flag removes one; `--credential` on `update` of a repository job exits 1 with the `declares this in its "dg" block` text of slice 13
-- [ ] When `ensureGrant` fails after each `set` passed: print the stored names, write no mark, do not enable, and exit 1; a second run stores nothing again and calls `ensureGrant` again
-- [ ] If the barrel export of prompt.ts breaks the size budget, add the export path `@dg/common/node/prompt` in pkg/common/package.json and import the prompt code from that path
-- [ ] Slice 19 builds in pkg/skills-cli at the same time: a lint or build failure in a file of slice 19 is a retry, not a finding
-- [ ] Never run `bun scripts/completion-trees.ts` with no program name; credentials/cli.ts gets only the move
-- [ ] The order of `enable` for a job with credentials: `assertDaemonAnswers`; `ensureMigrated`; the daemon start; the adoption question; the wizard; each `set`; `ensureGrant`; the marks and `enabled` in one lock; the login unit question; the start request or the next run line; a daemon start that fails writes nothing; a job with no credential keeps the order of slice 9 [DECIDED — gaps pass O10 (a)]
+- [x] Move `promptHidden`, `HiddenInput` and `readCredentialValue` from pkg/skills-cli/src/credentials/cli.ts to pkg/common/src/node/prompt.ts, the file that slice 9 made with `readLine`, and export them from pkg/common/src/node/index.ts; credentials/cli.ts and channel-review/connect.ts import them; change no behavior: the wizard is their third caller, in another package
+- [x] `credentials/cli.ts` keeps a re-export of `promptHidden`: `pkg/skills-cli/__tests__/channel-review-connect.spec.ts` imports it from there, and this slice does not own that spec; slice 21 removes the re-export with the spec
+- [x] Add `--credential <name>` (repeatable) to `add` and `update` of a command job: it fills the `credentials` list of the entry, and dg sets `grant` to the job name when the list is not empty; the reserved name rule of slice 13 applies to that job name
+- [x] `--credential` with a URL exits 1 with the `declares this in its "dg" block` text of slice 13
+- [x] Add the record kind `command` and the two marks `prefixAccepted` and `setupDone` to the reader and the writer of `sources.ts`; `prefixAccepted` is one boolean for the source, and `setupDone` is a list of job names
+- [x] Load `job-setup.ts` with a lazy import from `jobs.ts`
+- [x] The deps type of the wizard is `JobSetupDeps extends JobVerbDeps` (slice 9): the base type gives `isTerminal()`, `confirm(question)` and `which(name, env?)`, and this type adds `readHidden(prompt)`, `readLine(prompt)`, `runSource(argv, { env, cwd, timeoutMs }): Promise<{ code, stdout, stderr }>` and `client` (the client of slice 12); `readLine` is the export of prompt.ts from slice 9; the wizard gives the environment of the caller to `runSource` and `which`
+- [x] `job enable <name> [--setup <file or ->]`: the credentials of the job are the names of its `credentials` list; the details come from the record of its source, or are the defaults for a job with no record
+- [x] A job with an empty `credentials` list gets no wizard; `enable` is the verb of slice 9
+- [x] `setup` with no live daemon starts the daemon as `enable` of slice 9 does, then continues
+- [x] Read `status` of slice 12; a credential is `stored`, `expired` (meta `expiresAt` in the past) or `missing`
+- [x] Adoption: when the source of the job has no `prefixAccepted` mark and `status` shows that the `grant` is not `missing` or that one credential or more is stored below its prefix, print the stored names and ask `This job can read these credentials. Continue? [y/N]` at a terminal; with no terminal exit 1 with `job enable: the prefix <prefix>/ holds credentials — run this command in a terminal one time`; after `y`, write the mark; `--setup` does not answer this question, and `enable` has no `--yes` option
+- [x] dg also writes `prefixAccepted` when it stores the first credential of a prefix itself, not only after the answer `y`
+- [x] `enable` asks only for a required credential that is `missing` or `expired`, and the first time (the job has no `setupDone` mark) also for each optional one that is `missing`
+- [x] `setup` asks for each credential of the job: it shows the state and the date, never the value, and asks `Replace <name>? [y/N]` for a stored one
+- [x] A credential with no `source` reads the value with `readHidden("<prompt text>: ")`; an empty answer skips an optional credential and asks again for a required one
+- [x] Each `meta` key of the details reads one visible line; an empty line uses its `default`
+- [x] `aws-secretsmanager` in pkg/dg-daemon/src/jobs/secret-sources.ts: resolve `aws` with the `which` seam; run `[aws, "secretsmanager", "get-secret-value", "--secret-id", <secretId>, "--region", <region>, "--profile", <profile>, "--query", "SecretString", "--output", "text"]` through the `runSource` seam with no shell, the environment that the caller gives in `env` and a limit of 30 s in `timeoutMs`; leave out `--profile` when none is given
+- [x] secret-sources.ts exports the one real default `runSource`: no shell, stdin closed, stderr piped, `killSignal: "SIGKILL"`, a limit of 30 s, and a limit of 128 KiB while it reads stdout; above that limit it stops the process and gives the error kind `failed` [DECIDED — post-apply item 3]
+- [x] A spec runs the default `runSource` with a fixture program that sleeps past a short limit; it uses the `which` seam and no real `aws`
+- [x] With a `key`, parse stdout as JSON and take the own string property `key`; with no `key`, the value is stdout with no last newline
+- [x] A failed fetch gives one line `job setup: aws failed for <name>: <first line of stderr>` and the hint `hint: aws sso login --profile <profile>` (`hint: aws sso login` with no profile); the stderr line goes through `sanitize`; when the `which` seam does not find `aws`, the line is `job setup: aws is not installed — it is necessary for <name>`
+- [x] Validate each value with `validateCredentialValue` before the first write; collect each value before the first `set`
+- [x] Store with `set`; the meta is the meta answers plus `createdBy: "dg job setup"`, and `provider: "<source type>"` for a fetched value; no source parameter goes into meta, because `validateCredentialMeta` refuses a key such as `secretId`
+- [x] After the last `set`, call `ensureGrant`; `enable` never rotates a token, so a job that runs with the same prefix keeps its token
+- [x] Then add the job name to the `setupDone` list, set `enabled`, and start the job (continuous) or print its next run (scheduled) with the function that `enable` of slices 9 and 10 uses
+- [x] The two marks are keys of the `sources.json` record for a job with a record: `prefixAccepted` is one boolean for the source, and `setupDone` is the list of the job names whose first setup is done; a job with no record keeps them in a record `{ kind: "command" }` that this slice makes
+- [x] When a `set` fails, stop, print each name that was stored, do not enable, and exit 1
+- [x] With no terminal, a required credential that is missing or expired, has no `source` and has no `--setup` answer makes `enable` exit 1 with `job enable: credentials missing or expired: <names> — run dg job setup <name> in a terminal, or give --setup`; store nothing and start nothing
+- [x] `--setup -` reads JSON from stdin; each other value is a file path; a value that starts with `{` exits 1 with `--setup takes a file path or -`: a command line is visible to other processes, so `--setup` never takes JSON text
+- [x] Export from pkg/dg-daemon/src/services/env-file.ts the one check of an open file: `fstat` on the descriptor, a regular file, and no `0o077` bit; the check takes the noun of its message, so `loadEnvFile` keeps `env file <path> is readable by other users; run chmod 600 on it`
+- [x] A `--setup` file that other users can read (POSIX mode bits `0o077`) is refused through that check with `--setup file <path> is readable by other users; run chmod 600 on it`
+- [x] The shape of the `--setup` JSON is `{ "version": 1, "credentials": { "<name>": <answer> } }`; an answer has one of `"value": "<text>"`, `"source": true | { "profile": "<name>" }`, `"keep": true`, `"skip": true`, plus `"meta"?: { key: text }` and `"expiresAt"?: "<ISO 8601>"`
+- [x] An unknown top-level key, an unknown credential name, an unknown answer key, two answer kinds in one answer, `skip` on a required credential that is missing, and `keep` on a missing credential are errors that name the key; nothing is stored
+- [x] A credential with an answer gets no question; a credential with no answer follows the terminal rule
+- [x] With no terminal, `enable --setup <file or ->` runs for each kind of job, also for a repository job: the consent of `add` is the consent; each required credential that is missing needs an answer, and the adoption rule still applies
+- [x] `job setup <name> --rotate-token`: call `rotateGrant` and change no credential
+- [x] After `setup` changed a value or the token, print `next: dg job restart <job>` for each job with that prefix that runs
+- [x] No value goes to stdout, stderr, a log, a process argument or a file other than the store
+- [x] A credential with a `source` is fetched from that source first, with no question: print `fetching <name> from AWS Secrets Manager` on stderr, run the fetch, and use the value; the value then stays in the dg credential store, so a later `enable` does not fetch it again
+- [x] When a fetch fails at a terminal, print the failure line and the hint, then ask `Enter <name> by hand? [y/N]`: `y` gives the hidden prompt, and `n` stops with exit 1 and nothing stored; with no terminal a failed fetch exits 1 with nothing stored
+- [x] secret-sources.ts exports `fetchSecret(source, deps): Promise<string>` with the seams `which` and `runSource`; it prints nothing, so slice 18 can call it from the daemon; it throws one typed `SecretFetchError` with `kind` (`not-installed`, `failed`, `timeout`, `no-text`, `invalid-json` or `no-key`) and the first stderr line after `sanitize`
+- [x] Each caller of `fetchSecret` builds its own text: the CLI builds the `job setup:` line and the `aws sso login` hint (CLI only), and slice 18 builds its 502 texts
+- [x] A `--setup` answer `"source": true` fetches from the declared source; `"source": { "profile": "<name>" }` replaces the profile for this run; on a credential with no `source`, each of the two is an error that names the credential
+- [x] A `--setup` answer `"value"` for a credential that has a `source` stores that value and starts no fetch
+- [x] `job setup <name> --refresh` fetches again each credential of the job whose details have a `source`, with no question and with no terminal necessary; it stores each fetched value with `set`, changes no credential that has no `source`, and prints `refreshed <names joined with a comma and a space>`
+- [x] `--refresh` collects each value before the first `set`; when one fetch fails it stores nothing, prints the failure line and the hint, and exits 1
+- [x] `--refresh` on a job that has no credential with a `source` exits 1 with `job setup: no credential of job "<name>" has a source — run dg job setup <name> to enter a value`
+- [x] `--refresh` with `--rotate-token` exits 1 with `job setup: give --refresh alone`; `setup` has no `--setup` option: `enable --setup` is the way to give answers with no question
+- [x] `--refresh` is the command of the owner, or of an agent with no terminal, for a credential that does not work; a job that runs asks through the service API operation of slice 18; the two call `fetchSecret`
+- [x] The `--setup` parser is in pkg/dg-daemon/src/jobs/setup-answers.ts and is pure: it takes the JSON text and the credential list of the job, and returns the answers or one error
+- [x] After the option change, run `bun scripts/completion-trees.ts dg-daemon` and commit pkg/dg-daemon/src/completion-tree.json; do not edit the JSON by hand
+- [x] The registry writer keeps `prefixAccepted` and `setupDone` when `update` writes its four keys [DECIDED — gaps pass X1 (c)]
+- [x] The key of a `{ kind: "command" }` record is the job name; `--credential` on a command job calls `assertPrefixFree` of slice 13 for the job name
+- [x] `job remove` of a command job deletes its `command` record
+- [x] `enable` of an entry that already has `enabled: true`, with a required credential that is `missing`, still runs the wizard (the repair path)
+- [x] The login unit question of slice 9 comes after the wizard, so a wizard that fails writes no `loginUnitAsked`
+- [x] Register in jobs.ts the verb `setup` with the options `--refresh` and `--rotate-token`, and the option `--setup` on `enable`
+- [x] `setup` stores values and writes its `setupDone` entry; it never sets `enabled` and never starts a job; the adoption question applies to it
+- [x] `setup` on a job with no credential exits 1 with `job setup: job "<name>" lists no credential`
+- [x] The 409 answer `has no credential prefix` of the route becomes one line for `--rotate-token`
+- [x] The wizard holds no config lock during a prompt, a fetch or a `set`; it takes `withConfigLock` one time at the end, reads again, checks that the entry exists and that its `credentials` list did not change, then writes the marks and `enabled`
+- [x] job-setup.ts imports `withConfigLock`, `callDaemon` and `assertDaemonAnswers` from job-support.ts
+- [x] The `--setup` reader opens the file, checks the descriptor with the check of env-file.ts, and reads 128 KiB at most; stdin has the same limit; win32 skips the mode check, as `loadEnvFile` does
+- [x] setup-answers.ts uses `Object.hasOwn`, refuses the names `__proto__`, `constructor` and `prototype`, and builds objects with no prototype
+- [x] Check the `profile` of a `--setup` answer before it goes to the argv: a string that does not start with `-` and that passes the `profile` rule of the block (slice 13)
+- [x] Three more results of the fetch: stdout `None` or empty is the error `job setup: the secret of <name> has no text value`; with a `key`, stdout that is not JSON gives the fixed line `job setup: the secret of <name> is not JSON` and no part of the parser message; a `key` whose property is not a string is the `no-key` error; no error of `fetchSecret` holds stdout [DECIDED — post-apply item 9]
+- [x] The `expiresAt` of a `--setup` answer is stored as `meta.expiresAt`; call `validateCredentialMeta` in the collect phase, with the value check, so no `set` fails after an earlier `set` passed
+- [x] Export `credentialListFor(flagValues, jobName)` from job-source.ts: it parses the `--credential` values and gives `credentials` and `grant`
+- [x] A `--credential` value with `=` exits 1 with `--credential takes a name` until slice 17
+- [x] `update` can add a credential, and no flag removes one; `--credential` on `update` of a repository job exits 1 with the `declares this in its "dg" block` text of slice 13
+- [x] When `ensureGrant` fails after each `set` passed: print the stored names, write no mark, do not enable, and exit 1; a second run stores nothing again and calls `ensureGrant` again
+- [x] If the barrel export of prompt.ts breaks the size budget, add the export path `@dg/common/node/prompt` in pkg/common/package.json and import the prompt code from that path
+- [x] Slice 19 builds in pkg/skills-cli at the same time: a lint or build failure in a file of slice 19 is a retry, not a finding
+- [x] Never run `bun scripts/completion-trees.ts` with no program name; credentials/cli.ts gets only the move
+- [x] The order of `enable` for a job with credentials: `assertDaemonAnswers`; `ensureMigrated`; the daemon start; the adoption question; the wizard; each `set`; `ensureGrant`; the marks and `enabled` in one lock; the login unit question; the start request or the next run line; a daemon start that fails writes nothing; a job with no credential keeps the order of slice 9 [DECIDED — gaps pass O10 (a)]
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: `--setup` accepts `{ "version": 1, "credentials": { "api/dev": { "source": { "profile": "p" } }, "metrics": { "value": "v", "meta": { "site": "s" } }, "errors": { "skip": true } } }` from a file with mode 0600 and from stdin
-- [ ] Contract: `--setup '{"version":1}'` exits 1 with `--setup takes a file path or -`; nothing is stored
-- [ ] Contract: a `--setup` file with mode 0644 exits 1 and stores nothing (POSIX)
-- [ ] Contract: with complete answers and no terminal, `enable` calls `readHidden`, `readLine` and `confirm` zero times, stores each value, calls `ensureGrant` one time and starts the job
-- [ ] Contract: with no terminal, no `--setup` and one required credential with no `source` missing, `enable` exits 1 with the `credentials missing` text; `set` gets no call; the job does not start; `enabled` does not change
-- [ ] Contract: a second `enable` with each credential stored asks nothing and calls `set` zero times
-- [ ] Contract: stdout `{"K":"v1"}` with `key: "K"` stores `v1`; with no `key` it stores the full text; a JSON text with no `K` exits 1 with `job setup: the secret has no key "K"` and prints no part of the secret
-- [ ] Contract: with no terminal, an `aws` exit code that is not 0 exits 1 with the `aws failed for <name>` line and the hint; nothing is stored
-- [ ] Contract: no stdout, stderr or log line of each spec holds a value text or a token text
-- [ ] Contract: `enable` of the second job of a repository with a live first job: the token file bytes do not change
-- [ ] Contract: adoption with no terminal exits 1 with the `holds credentials` text; after one `y`, a later `enable` with no terminal passes
-- [ ] Contract: `setup` with the answer `n` for each stored credential changes nothing and prints no `next:` line
-- [ ] Contract: `setup --rotate-token` changes the token file and no credential, and prints `next: dg job restart <job>` for a running job
-- [ ] Contract: an answer for a name that the job does not list exits 1 with `--setup: "<name>" is not a credential of job "<job>"`
-- [ ] Contract: a stored meta has `createdBy: "dg job setup"` and no key that matches the secret key rule
-- [ ] Contract: `dg-skills credentials set` and `channel-review connect` pass their specs with the moved prompt code; `channel-review-connect.spec.ts`, `channel-review-connect-compiled.spec.ts`, `credentials-cli.spec.ts` and `credentials-exec.spec.ts` pass with no edit; pkg/common/__tests__/node-prompt.spec.ts tests `promptHidden` with the `HiddenInput` seam
-- [ ] Contract: `job add --name x --cwd <dir> --continuous --credential api-key -- <cmd>` writes `credentials: ["api-key"]` and `grant: "x"`; `job update x --credential other` gives `credentials: ["api-key", "other"]`
-- [ ] Contract: `job add <url> --credential k` exits 1 with the `declares this in its "dg" block` text and starts no git process
-- [ ] Contract: a `sources.json` record of kind `command` with the two marks passes the reader; a record of kind `git` with no mark passes as before
-- [ ] Happy path: daemon harness, a job from a `file://` fixture repository with one listed credential, `enable --setup <file>` with no terminal: the job starts and reads the credential through service API v1
-- [ ] Regression: `bun test` and `bun run lint` pass in pkg/dg-daemon, pkg/common and pkg/skills-cli; `bun test` passes in pkg/launcher, which holds the size budget spec pkg/launcher/__tests__/size-budget.spec.ts; this slice edits no docs spec of pkg/skills-test
-- [ ] Contract: for a credential with an AWS source, the `runSource` seam gets the exact AWS argv of the Engineering list; with no `profile`, the argv holds no `--profile`
-- [ ] Contract: `enable` at a terminal fetches a missing credential that has a `source` and calls `readHidden` and `confirm` zero times for it; the stored meta has `provider` equal to the source type
-- [ ] Contract: a second `enable` calls `runSource` zero times: the value comes from the dg credential store
-- [ ] Contract: a failed fetch at a terminal with the answer `y` reads the value with `readHidden` and stores it with no `provider` meta; with the answer `n`, `enable` exits 1 and `set` gets no call
-- [ ] Contract: a tool that the `which` seam does not find exits 1 with the `is not installed` text and starts no process
-- [ ] Contract: `"source": true` on a credential with no `source` exits 1 with `--setup: "<name>" has no source`; nothing is stored
-- [ ] Contract: `job setup <name> --refresh` with no terminal calls `runSource` one time for each credential with a `source`, calls `set` for each, calls `readHidden`, `readLine` and `confirm` zero times, prints the `refreshed` line, and prints `next: dg job restart <job>` for a running job
-- [ ] Contract: `--refresh` with one failed fetch of two calls `set` zero times and exits 1
-- [ ] Contract: `--refresh` on a job with no `source` exits 1 with the `has a source` text; `--refresh --rotate-token` exits 1 with `job setup: give --refresh alone`
-- [ ] Contract: with no terminal and a complete `--setup` file, `enable` of a repository job that was added with consent stores each value, calls `ensureGrant` one time and starts the job
-- [ ] Contract: `--setup` does not answer the adoption question: with stored credentials below the prefix, no mark and no terminal, `enable --setup <file>` exits 1 with the `holds credentials` text; `enable` has no `--yes` option
-- [ ] Contract: two jobs of one source: the first `enable` runs at a terminal on an empty prefix, and the second `enable` passes with no terminal
-- [ ] Contract: after `update` of a repository job, the record still holds `prefixAccepted` and `setupDone` [DECIDED — gaps pass X1 (c)]
-- [ ] Contract: a command job `x` with `--credential` and a git source `x` are refused in the two orders
-- [ ] Contract: after `job remove x` and a new `job add` of `x`, no old mark stays
-- [ ] Contract: `enable` of an entry with `enabled: true` and a required credential that is `missing` runs the wizard
-- [ ] Contract: a `--setup` path that is a link to a file with mode 0644 exits 1 and stores nothing (POSIX)
-- [ ] Contract: a `--setup` input above 128 KiB, from a file and from stdin, exits 1 and stores nothing
-- [ ] Contract: `"source": { "profile": "-x" }` exits 1 and starts no process
-- [ ] Contract: stdout `None`, and empty stdout, exit 1 with `job setup: the secret of <name> has no text value`
-- [ ] Contract: with a `key`, stdout that is not JSON exits 1 with the fixed line and shows no part of the parser message and no part of stdout
-- [ ] Contract: a `key` whose property is not a string gives the `no-key` error
-- [ ] Contract: the `expiresAt` of an answer is in the stored meta as `expiresAt`; a meta that `validateCredentialMeta` refuses for the second credential of two makes `set` get zero calls
-- [ ] Contract: `job update <repository job> --credential k` exits 1 with the `declares this in its "dg" block` text and starts no git process
-- [ ] Contract: `enable --setup <file>` on a scheduled job with one credential stores the value, sets `enabled` and prints the next run
-- [ ] Contract: with an `ensureGrant` that fails after each `set` passed, `enable` prints the stored names, writes no mark, does not enable, and exits 1; a second run calls `set` zero times and calls `ensureGrant` again
-- [ ] Contract: a `git` record with an unknown key still fails the strict reader, and a `git` record with no mark passes
-- [ ] Contract: a failed daemon start in `enable` of a job with credentials leaves the entry with no `enabled` key [DECIDED — gaps pass O10 (a)]
+- [x] Contract: `--setup` accepts `{ "version": 1, "credentials": { "api/dev": { "source": { "profile": "p" } }, "metrics": { "value": "v", "meta": { "site": "s" } }, "errors": { "skip": true } } }` from a file with mode 0600 and from stdin
+- [x] Contract: `--setup '{"version":1}'` exits 1 with `--setup takes a file path or -`; nothing is stored
+- [x] Contract: a `--setup` file with mode 0644 exits 1 and stores nothing (POSIX)
+- [x] Contract: with complete answers and no terminal, `enable` calls `readHidden`, `readLine` and `confirm` zero times, stores each value, calls `ensureGrant` one time and starts the job
+- [x] Contract: with no terminal, no `--setup` and one required credential with no `source` missing, `enable` exits 1 with the `credentials missing` text; `set` gets no call; the job does not start; `enabled` does not change
+- [x] Contract: a second `enable` with each credential stored asks nothing and calls `set` zero times
+- [x] Contract: stdout `{"K":"v1"}` with `key: "K"` stores `v1`; with no `key` it stores the full text; a JSON text with no `K` exits 1 with `job setup: the secret has no key "K"` and prints no part of the secret
+- [x] Contract: with no terminal, an `aws` exit code that is not 0 exits 1 with the `aws failed for <name>` line and the hint; nothing is stored
+- [x] Contract: no stdout, stderr or log line of each spec holds a value text or a token text
+- [x] Contract: `enable` of the second job of a repository with a live first job: the token file bytes do not change
+- [x] Contract: adoption with no terminal exits 1 with the `holds credentials` text; after one `y`, a later `enable` with no terminal passes
+- [x] Contract: `setup` with the answer `n` for each stored credential changes nothing and prints no `next:` line
+- [x] Contract: `setup --rotate-token` changes the token file and no credential, and prints `next: dg job restart <job>` for a running job
+- [x] Contract: an answer for a name that the job does not list exits 1 with `--setup: "<name>" is not a credential of job "<job>"`
+- [x] Contract: a stored meta has `createdBy: "dg job setup"` and no key that matches the secret key rule
+- [x] Contract: `dg-skills credentials set` and `channel-review connect` pass their specs with the moved prompt code; `channel-review-connect.spec.ts`, `channel-review-connect-compiled.spec.ts`, `credentials-cli.spec.ts` and `credentials-exec.spec.ts` pass with no edit; pkg/common/__tests__/node-prompt.spec.ts tests `promptHidden` with the `HiddenInput` seam
+- [x] Contract: `job add --name x --cwd <dir> --continuous --credential api-key -- <cmd>` writes `credentials: ["api-key"]` and `grant: "x"`; `job update x --credential other` gives `credentials: ["api-key", "other"]`
+- [x] Contract: `job add <url> --credential k` exits 1 with the `declares this in its "dg" block` text and starts no git process
+- [x] Contract: a `sources.json` record of kind `command` with the two marks passes the reader; a record of kind `git` with no mark passes as before
+- [x] Happy path: daemon harness, a job from a `file://` fixture repository with one listed credential, `enable --setup <file>` with no terminal: the job starts and reads the credential through service API v1
+- [x] Regression: `bun test` and `bun run lint` pass in pkg/dg-daemon, pkg/common and pkg/skills-cli; `bun test` passes in pkg/launcher, which holds the size budget spec pkg/launcher/__tests__/size-budget.spec.ts; this slice edits no docs spec of pkg/skills-test
+- [x] Contract: for a credential with an AWS source, the `runSource` seam gets the exact AWS argv of the Engineering list; with no `profile`, the argv holds no `--profile`
+- [x] Contract: `enable` at a terminal fetches a missing credential that has a `source` and calls `readHidden` and `confirm` zero times for it; the stored meta has `provider` equal to the source type
+- [x] Contract: a second `enable` calls `runSource` zero times: the value comes from the dg credential store
+- [x] Contract: a failed fetch at a terminal with the answer `y` reads the value with `readHidden` and stores it with no `provider` meta; with the answer `n`, `enable` exits 1 and `set` gets no call
+- [x] Contract: a tool that the `which` seam does not find exits 1 with the `is not installed` text and starts no process
+- [x] Contract: `"source": true` on a credential with no `source` exits 1 with `--setup: "<name>" has no source`; nothing is stored
+- [x] Contract: `job setup <name> --refresh` with no terminal calls `runSource` one time for each credential with a `source`, calls `set` for each, calls `readHidden`, `readLine` and `confirm` zero times, prints the `refreshed` line, and prints `next: dg job restart <job>` for a running job
+- [x] Contract: `--refresh` with one failed fetch of two calls `set` zero times and exits 1
+- [x] Contract: `--refresh` on a job with no `source` exits 1 with the `has a source` text; `--refresh --rotate-token` exits 1 with `job setup: give --refresh alone`
+- [x] Contract: with no terminal and a complete `--setup` file, `enable` of a repository job that was added with consent stores each value, calls `ensureGrant` one time and starts the job
+- [x] Contract: `--setup` does not answer the adoption question: with stored credentials below the prefix, no mark and no terminal, `enable --setup <file>` exits 1 with the `holds credentials` text; `enable` has no `--yes` option
+- [x] Contract: two jobs of one source: the first `enable` runs at a terminal on an empty prefix, and the second `enable` passes with no terminal
+- [x] Contract: after `update` of a repository job, the record still holds `prefixAccepted` and `setupDone` [DECIDED — gaps pass X1 (c)]
+- [x] Contract: a command job `x` with `--credential` and a git source `x` are refused in the two orders
+- [x] Contract: after `job remove x` and a new `job add` of `x`, no old mark stays
+- [x] Contract: `enable` of an entry with `enabled: true` and a required credential that is `missing` runs the wizard
+- [x] Contract: a `--setup` path that is a link to a file with mode 0644 exits 1 and stores nothing (POSIX)
+- [x] Contract: a `--setup` input above 128 KiB, from a file and from stdin, exits 1 and stores nothing
+- [x] Contract: `"source": { "profile": "-x" }` exits 1 and starts no process
+- [x] Contract: stdout `None`, and empty stdout, exit 1 with `job setup: the secret of <name> has no text value`
+- [x] Contract: with a `key`, stdout that is not JSON exits 1 with the fixed line and shows no part of the parser message and no part of stdout
+- [x] Contract: a `key` whose property is not a string gives the `no-key` error
+- [x] Contract: the `expiresAt` of an answer is in the stored meta as `expiresAt`; a meta that `validateCredentialMeta` refuses for the second credential of two makes `set` get zero calls
+- [x] Contract: `job update <repository job> --credential k` exits 1 with the `declares this in its "dg" block` text and starts no git process
+- [x] Contract: `enable --setup <file>` on a scheduled job with one credential stores the value, sets `enabled` and prints the next run
+- [x] Contract: with an `ensureGrant` that fails after each `set` passed, `enable` prints the stored names, writes no mark, does not enable, and exits 1; a second run calls `set` zero times and calls `ensureGrant` again
+- [x] Contract: a `git` record with an unknown key still fails the strict reader, and a `git` record with no mark passes
+- [x] Contract: a failed daemon start in `enable` of a job with credentials leaves the entry with no `enabled` key [DECIDED — gaps pass O10 (a)]
 
 #### Acceptance Criteria
-- [ ] Given a job with three listed credentials and a terminal, when the owner runs `dg job enable <name>` the first time, then the command asks for each missing one, stores them, grants them and starts the job, with no other command
-- [ ] Given a stored credential that must change, when the owner runs `dg job setup <name>`, then the new value is in the store and the output tells the owner to restart the job
-- [ ] Given a `--setup` value that is JSON text, when `enable` runs, then it refuses and stores nothing
-- [ ] Given a credential with an AWS Secrets Manager source, when the owner enables the job the first time, then dg fetches the value from that source and keeps it in the dg credential store
-- [ ] Given a stored credential that does not work, when the owner runs `dg job setup <name> --refresh` and then `dg job restart <name>`, then the job runs with the value that the source holds now
-- [ ] Given a repository job that was added with consent, when an agent with no terminal runs `dg job enable <name> --setup <file>` with each answer, then the job starts with no question
+- [x] Given a job with three listed credentials and a terminal, when the owner runs `dg job enable <name>` the first time, then the command asks for each missing one, stores them, grants them and starts the job, with no other command
+- [x] Given a stored credential that must change, when the owner runs `dg job setup <name>`, then the new value is in the store and the output tells the owner to restart the job
+- [x] Given a `--setup` value that is JSON text, when `enable` runs, then it refuses and stores nothing
+- [x] Given a credential with an AWS Secrets Manager source, when the owner enables the job the first time, then dg fetches the value from that source and keeps it in the dg credential store
+- [x] Given a stored credential that does not work, when the owner runs `dg job setup <name> --refresh` and then `dg job restart <name>`, then the job runs with the value that the source holds now
+- [x] Given a repository job that was added with consent, when an agent with no terminal runs `dg job enable <name> --setup <file>` with each answer, then the job starts with no question
 
 ### Slice 16 — job-add-local
 
@@ -2416,6 +2416,7 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 
 ## Slice Summaries
 
+- Slice 15: dg job enable [--setup <file|->] and dg job setup [--refresh|--rotate-token] run a wizard that takes each credential from a hidden prompt, a --setup file or AWS Secrets Manager, stores it through the job credential route and makes the grant; --credential works on add and update of a command job; sources.json takes command records and the prefixAccepted and setupDone marks; the hidden prompt lives in @dg/common.
 - Slice 14: dg job update <job> on a repository job fetches the recorded origin with hardened git, resolves the stored ref (a full sha stays pinned), shows the changed keys, asks or takes --yes, checks out the new commit, runs build, and rewrites the entries and the record under the lock with byte-exact rollback and an old-commit restore.
 - Slice 13: dg job add <git-url>[@ref] clones with hardened git, pins the full commit id, reads the dg block from the committed package.json, prints a sanitized and quoted request, asks consent or takes --yes, runs build, then writes the registry record and the entries under the config lock with byte-exact rollback; job remove, list and status handle repository jobs.
 - Slice 12: POST /jobs/<name>/credentials is write-only for the credential prefix of one job (status, set, delete, ensure-grant, rotate-grant); the prefix is the grant of the job entry, read per request; createJobCredentialClient in @dg/common/node; RESERVED_CREDENTIAL_PREFIXES with a source-reading spec.
@@ -2489,6 +2490,13 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 - (slice 14, dg:js) Slice 15 adds --credential to UPDATE_FLAG_KEYS in jobs.ts and refuses it on a repository job with the declares-this-in-its-dg-block text.
 - (slice 14, dg:js) checkRecord in sources.ts now owns every record rule; its text is 'the record of "<source>" in <file> is not valid: it <why>' with no command prefix.
 - (slice 14, dg:js) (orchestrator) Slice 14 security review: a 40-hex ref is checked only with cat-file and never as a tag or branch name (add and update); the origin check reads the raw remote.origin.url; update git calls carry core.hooksPath=devNull and core.fsmonitor=false; fetch uses --prune --prune-tags --no-recurse-submodules. PR body: with --yes a changed credential source applies with no person present (plan X1 c); ignored build output can block a tracked path at the next checkout.
+
+- (slice 15, dg:js) job-setup.ts exports JobSetupDeps (client(paths, job), stdin seam), defaultJobSetupDeps, runEnableWizard and runSetup; registerJobCommands takes Partial<JobSourceDeps & JobSetupDeps>.
+- (slice 15, dg:js) secret-sources.ts exports fetchSecret, SecretFetchError(kind, detail), defaultRunSource (detached, process-group SIGKILL, 30 s, 128 KiB), FETCH_TIMEOUT_MS, RunSource and SecretSource; fetchSecret prints nothing; slice 18 builds its own 502 texts.
+- (slice 15, dg:js) setup-answers.ts exports parseSetupAnswers and checkAnswers; env-file.ts exports assertPrivateOpenFile(fd, path, noun).
+- (slice 15, dg:js) sources.ts: readSources gives git records only; readSourceRecords gives git and command records; findMarkRecord and updateMarks handle the marks; records refuse unknown keys. AddScheduledInput takes credentials and grant.
+- (slice 15, dg:js) Value fixtures in wizard specs look like tok-alpha-91f3c2d8: a bare v1 collides with 'service API v1'.
+- (orchestrator) Slice 15 security review RATIFY taken as option (a), under the plan rule that adoption applies to setup: setup --rotate-token and --refresh also need the adoption answer for a non-empty prefix with no prefixAccepted mark (no terminal: exit 1), and --rotate-token refuses a missing grant. enable writes prefixAccepted after the sets even when ensureGrant then fails, but not setupDone or enabled. onInterrupt now calls exitAfterDrain (pkg/common exit rule). Known gap for slice 21: promptHidden leaves raw mode on SIGTERM/SIGHUP.
 
 ## Issues Remediation
 

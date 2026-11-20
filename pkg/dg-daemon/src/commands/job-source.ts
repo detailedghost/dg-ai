@@ -10,6 +10,7 @@ import {
 	statSync,
 } from "node:fs";
 import { resolve } from "node:path";
+import { exitAfterDrain } from "@dg/common/async";
 import {
 	DgCliError,
 	describeError,
@@ -40,8 +41,10 @@ import {
 } from "../jobs/declaration";
 import { sanitize } from "../jobs/sanitize";
 import {
+	findMarkRecord,
 	findRecordByJob,
 	type GitSourceRecord,
+	readSourceRecords,
 	readSources,
 	type SourceRegistry,
 	writeSource,
@@ -238,6 +241,20 @@ export function assertPrefixFree(
 	if (Object.keys(registry).some((source) => source.toLowerCase() === lower)) taken(name);
 }
 
+/** Reads the --credential values of an add or an update; dg sets the grant to the job name. */
+export function credentialListFor(
+	flagValues: string[] | undefined,
+	jobName: string,
+): { credentials?: string[]; grant?: string } {
+	if (flagValues === undefined || flagValues.length === 0) return {};
+	const names = new Set<string>();
+	for (const value of flagValues) {
+		if (value === "" || value.includes("=")) fail("--credential takes a name");
+		names.add(value.toLowerCase());
+	}
+	return { credentials: [...names], grant: jobName };
+}
+
 const quoteValue = (value: string): string =>
 	`"${sanitize(value.replaceAll("\\", "\\\\").replaceAll('"', '\\"'))}"`;
 
@@ -432,7 +449,7 @@ export function onInterrupt(cleanup: () => void): () => void {
 				Bun.sleep(CHILD_EXIT_WAIT_MS),
 			]);
 			cleanup();
-			process.exit(code);
+			await exitAfterDrain(code);
 		};
 		process.on(signal, handler);
 		return [signal, handler] as const;
@@ -787,11 +804,20 @@ export async function addSource(
 
 /** Takes one job out of its record; the last job removes the record, then the clone. */
 export function removeJobFromSource(paths: DgPaths, job: string): void {
-	const found = findRecordByJob(readSources(paths), job);
-	if (!found) return;
+	const registry = readSourceRecords(paths);
+	const found = findRecordByJob(registry, job);
+	if (!found) {
+		if (findMarkRecord(registry, job)) writeSource(paths, job, undefined);
+		return;
+	}
 	const remaining = found.record.jobs.filter((name) => name !== job);
 	if (remaining.length > 0) {
-		writeSource(paths, found.source, { ...found.record, jobs: remaining });
+		const done = found.record.setupDone?.filter((name) => name !== job);
+		writeSource(paths, found.source, {
+			...found.record,
+			jobs: remaining,
+			...(done === undefined ? {} : { setupDone: done }),
+		});
 		return;
 	}
 	writeSource(paths, found.source, undefined);

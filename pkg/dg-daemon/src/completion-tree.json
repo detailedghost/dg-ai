@@ -160,6 +160,13 @@
 								"--yes"
 							],
 							"description": "approve the jobs of a repository without asking"
+						},
+						{
+							"flags": [
+								"--credential"
+							],
+							"description": "credential the job needs (repeatable)",
+							"value": "any"
 						}
 					]
 				},
@@ -189,7 +196,34 @@
 				},
 				{
 					"name": "enable",
-					"description": "start the job now and at each daemon start"
+					"description": "start the job now and at each daemon start",
+					"options": [
+						{
+							"flags": [
+								"--setup"
+							],
+							"description": "answers for the credentials: a file path, or - for stdin",
+							"value": "path"
+						}
+					]
+				},
+				{
+					"name": "setup",
+					"description": "store the credentials of a job, or fetch them again",
+					"options": [
+						{
+							"flags": [
+								"--refresh"
+							],
+							"description": "fetch each credential that has a source again"
+						},
+						{
+							"flags": [
+								"--rotate-token"
+							],
+							"description": "make a new token for the credential prefix of the job"
+						}
+					]
 				},
 				{
 					"name": "disable",
@@ -256,6 +290,13 @@
 								"--yes"
 							],
 							"description": "approve a repository update without asking"
+						},
+						{
+							"flags": [
+								"--credential"
+							],
+							"description": "add a credential the job needs (repeatable)",
+							"value": "any"
 						}
 					]
 				},

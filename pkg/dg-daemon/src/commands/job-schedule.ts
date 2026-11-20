@@ -54,6 +54,8 @@ export type AddScheduledInput = {
 	timeoutMs?: number;
 	envFile?: string;
 	passEnv?: string[];
+	credentials?: string[];
+	grant?: string;
 };
 
 export type AddedScheduled = {
@@ -193,6 +195,9 @@ export async function addScheduled(
 		...(input.passEnv === undefined || input.passEnv.length === 0
 			? {}
 			: { passEnv: input.passEnv }),
+		...(input.credentials === undefined
+			? {}
+			: { credentials: input.credentials, grant: input.grant }),
 	};
 	const parsed = parseJobEntry(input.name, entry);
 	if (!parsed.ok) fail(`job add: ${parsed.error}`);

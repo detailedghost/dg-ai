@@ -3,9 +3,12 @@ import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
 import {
+	findMarkRecord,
 	findRecordByJob,
 	type GitSourceRecord,
+	readSourceRecords,
 	readSources,
+	updateMarks,
 	writeSource,
 } from "../../src/jobs/sources";
 import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
@@ -139,5 +142,93 @@ describe("findRecordByJob", () => {
 
 	it("gives undefined for a job that no record lists", () => {
 		expect(findRecordByJob({ a: record() }, "nope")).toBeUndefined();
+	});
+});
+
+describe("readSources marks and command records", () => {
+	it("accepts a command record with both marks", () => {
+		const paths = pathsOf();
+		seed(
+			paths,
+			JSON.stringify({ x: { kind: "command", prefixAccepted: true, setupDone: ["x"] } }),
+		);
+		expect(readSourceRecords(paths).x).toEqual({
+			kind: "command",
+			prefixAccepted: true,
+			setupDone: ["x"],
+		});
+	});
+
+	it("leaves a command record out of readSources and keeps it when another record is written", () => {
+		const paths = pathsOf();
+		seed(paths, JSON.stringify({ x: { kind: "command", prefixAccepted: true } }));
+		writeSource(paths, "bot", record());
+		expect(Object.keys(readSources(paths))).toEqual(["bot"]);
+		expect(readSourceRecords(paths).x).toEqual({ kind: "command", prefixAccepted: true });
+	});
+
+	it("accepts a git record with no mark and with both marks", () => {
+		const paths = pathsOf();
+		seed(
+			paths,
+			JSON.stringify({
+				a: record(),
+				b: record({ jobs: ["b"], prefixAccepted: false, setupDone: ["b"] }),
+			}),
+		);
+		expect(Object.keys(readSourceRecords(paths))).toEqual(["a", "b"]);
+	});
+
+	it.each([
+		["a git record with an unknown key", { bot: { ...record(), extra: 1 } }],
+		["a command record with an unknown key", { bot: { kind: "command", url: "x" } }],
+		["a prefixAccepted that is not a boolean", { bot: { ...record(), prefixAccepted: "yes" } }],
+		["a setupDone that is not an array", { bot: { ...record(), setupDone: "a" } }],
+		["a setupDone with a bad job name", { bot: { ...record(), setupDone: ["A B"] } }],
+		["a command record with a bad setupDone", { bot: { kind: "command", setupDone: [1] } }],
+	])("throws for %s", (_label, registry) => {
+		const paths = pathsOf();
+		seed(paths, JSON.stringify(registry));
+		expect(() => readSourceRecords(paths)).toThrow('"bot"');
+	});
+});
+
+describe("findMarkRecord", () => {
+	it("finds a git record by its job and a command record by its key", () => {
+		const registry = {
+			a: record({ jobs: ["x"] }),
+			y: { kind: "command" as const },
+		};
+		expect(findMarkRecord(registry, "x")?.source).toBe("a");
+		expect(findMarkRecord(registry, "y")?.source).toBe("y");
+		expect(findMarkRecord(registry, "z")).toBeUndefined();
+	});
+
+	it("leaves a command record out of findRecordByJob", () => {
+		expect(findRecordByJob({ y: { kind: "command" } }, "y")).toBeUndefined();
+	});
+});
+
+describe("updateMarks", () => {
+	it("makes a command record for a job that has none", () => {
+		const paths = pathsOf();
+		updateMarks(paths, "x", { prefixAccepted: true, setupDone: "x" });
+		expect(readSourceRecords(paths).x).toEqual({
+			kind: "command",
+			prefixAccepted: true,
+			setupDone: ["x"],
+		});
+	});
+
+	it("writes the marks into the record of a source and keeps the other keys", () => {
+		const paths = pathsOf();
+		writeSource(paths, "bot", record({ jobs: ["a", "b"] }));
+		updateMarks(paths, "a", { setupDone: "a" });
+		updateMarks(paths, "b", { prefixAccepted: true, setupDone: "b" });
+		updateMarks(paths, "a", { setupDone: "a" });
+		const stored = readSourceRecords(paths).bot as GitSourceRecord;
+		expect(stored.setupDone).toEqual(["a", "b"]);
+		expect(stored.prefixAccepted).toBe(true);
+		expect(stored.sha).toBe(SHA);
 	});
 });
