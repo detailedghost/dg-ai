@@ -1,5 +1,11 @@
 # Changelog
 
+## v6.1.0 (2026-11-20)
+
+### Features
+
+- feat(skills): track .agents as agent memory ([#237](https://github.com/detailedghost/dg-ai/pull/237))
+
 ## v6.0.0 (2026-11-19)
 
 ### Breaking
