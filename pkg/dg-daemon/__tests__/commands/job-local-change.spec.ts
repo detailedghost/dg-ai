@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CHAT_JOBS_PATH } from "@dg/common";
+import { updateMarks } from "../../src/jobs/sources";
 import { startFakeDaemon } from "./job-cli-helpers";
 import {
 	BIN_RUN,
@@ -80,6 +81,27 @@ describe("job update of a folder job", () => {
 		expect(newHash).not.toBe(oldHash);
 	});
 
+	it("removes the job from the setupDone list when a credential source changes and says to run setup", async () => {
+		sb = box.create();
+		const declared = (secretId: string) => ({
+			jobs: { a: { argv: ["./bin/run"], continuous: true, credentials: ["token"] } },
+			credentials: {
+				token: { source: { type: "aws-secretsmanager", secretId, region: "us-east-1" } },
+			},
+		});
+		const dir = await addFolder(declared("prod/a"));
+		updateMarks(sb.paths, "a", { prefixAccepted: true, setupDone: "a" });
+		expect(readRegistry(sb).toolkit.setupDone).toEqual(["a"]);
+		rewrite(dir, declared("prod/b"));
+
+		const result = await runJob(["update", "a"], sb.deps());
+
+		expect(result.code).toBe(0);
+		expect(readRegistry(sb).toolkit.setupDone).toEqual([]);
+		expect(readRegistry(sb).toolkit.prefixAccepted).toBe(true);
+		expect(result.stdout.split("\n")).toContain("next: dg job setup a");
+	});
+
 	it("gives a new job an entry with no enabled key and a next line", async () => {
 		sb = box.create();
 		const dir = await addFolder(jobsOf("a"));
@@ -115,7 +137,9 @@ describe("job update of a folder job", () => {
 
 		expect(result.code).toBe(0);
 		expect(sb.builds).toHaveLength(before);
-		expect(result.stdout.split("\n").filter((line) => /build/.test(line))).toHaveLength(1);
+		expect(result.stdout.split("\n").filter((line) => line.startsWith("build was not run"))).toEqual([
+			`build was not run — run ./bin/run yourself in ${realpathSync(dir)}`,
+		]);
 	});
 
 	it.each(["running", "backoff"])("prints the restart line for a job in the state %s", async (state) => {
@@ -246,7 +270,8 @@ describe("job update of a folder job that cannot apply", () => {
 
 		const result = await runJob(["update", "a"], sb.deps());
 
-		expect(result.code).not.toBe(0);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain(`EEXIST: file already exists, mkdir '${join(sb.paths.jobStateRoot, "b")}'`);
 		expect(readFileSync(sb.paths.daemonConfigPath).equals(config)).toBe(true);
 		expect(readFileSync(sb.paths.jobSourcesPath).equals(registry)).toBe(true);
 	});

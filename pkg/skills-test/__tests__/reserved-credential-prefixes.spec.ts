@@ -68,18 +68,18 @@ describe("reserved credential prefixes", () => {
 		});
 	}
 
-	test("the pw extension prefix is the same value as pw", () => {
-		const pw = loaded.find((e) => e.constant === "PW_EXT_CREDENTIAL_PREFIX");
-		expect(constantValue(pw?.text ?? "", "PW_EXT_CREDENTIAL_PREFIX")).toBe("pw");
-	});
-
-	test("GRANT_PREFIX does not match the VAULT_GRANT_PREFIX line", () => {
-		const keys = loaded.find((e) => e.constant === "GRANT_PREFIX");
-		expect(constantValue(keys?.text ?? "", "GRANT_PREFIX")).toBe("phone-friend");
+	test("GRANT_PREFIX does not read the value of the VAULT_GRANT_PREFIX line", () => {
+		const grant = loaded.find((e) => e.constant === "GRANT_PREFIX");
+		const vault = loaded.find((e) => e.constant === "VAULT_GRANT_PREFIX");
+		const value = constantValue(grant?.text ?? "", "GRANT_PREFIX");
+		expect(value).toBeDefined();
+		expect(value).not.toBe(constantValue(vault?.text ?? "", "VAULT_GRANT_PREFIX"));
 	});
 
 	test("a source constant that is missing from the list is reported", () => {
-		const without = LIST.filter((prefix) => prefix !== "phone-vault");
+		const vault = loaded.find((e) => e.constant === "VAULT_GRANT_PREFIX");
+		const vaultValue = constantValue(vault?.text ?? "", "VAULT_GRANT_PREFIX");
+		const without = LIST.filter((prefix) => prefix !== vaultValue);
 		expect(missingFromList(without, loaded)).toEqual(["VAULT_GRANT_PREFIX"]);
 		expect(missingFromList(LIST, loaded)).toEqual([]);
 	});

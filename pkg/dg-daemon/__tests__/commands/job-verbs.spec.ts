@@ -296,6 +296,7 @@ describe("job --credential and the registry marks", () => {
 		const result = await runJob(["update", "x", "--credential", "m"], sb.deps());
 
 		expect(result.code).toBe(1);
+		expect(result.stderr).toContain('job update: the job uses the credential prefix "other", not its own name');
 		expect(table().x.credentials).toEqual(["k"]);
 	});
 
@@ -308,6 +309,7 @@ describe("job --credential and the registry marks", () => {
 		const result = await runJob(["update", "x", "--credential", "m"], sb.deps());
 
 		expect(result.code).toBe(1);
+		expect(result.stderr).toContain('job update: "x" is already used as a credential prefix by y');
 		expect(result.stderr).toContain("already used as a credential prefix");
 	});
 
@@ -423,6 +425,42 @@ describe("job --credential and the registry marks", () => {
 		expect(result.code).toBe(0);
 		expect(registry().tools.prefixAccepted).toBe(true);
 		expect(registry().tools.setupDone).toEqual(["bot"]);
+	});
+
+	describe("a changed credential source", () => {
+		const declared = (secretId: string, prompt = "Token") => ({
+			jobs: { bot: { argv: ["./bin/run"], continuous: true, credentials: ["token"] } },
+			credentials: {
+				token: { prompt, source: { type: "aws-secretsmanager", secretId, region: "us-east-1" } },
+			},
+		});
+
+		it("removes the job from the setupDone list of a repository record and says to run setup", async () => {
+			const repo = makeRepo({ dg: declared("prod/a"), files: FILES });
+			await addFixture(sb, repo);
+			updateMarks(sb.paths, "bot", { prefixAccepted: true, setupDone: "bot" });
+			changeBlock(repo, declared("prod/b"), FILES);
+
+			const result = await runJob(["update", "bot", "--yes"], sb.deps());
+
+			expect(result.code).toBe(0);
+			expect(registry().tools.setupDone).toEqual([]);
+			expect(registry().tools.prefixAccepted).toBe(true);
+			expect(result.stdout.split("\n")).toContain("next: dg job setup bot");
+		});
+
+		it("keeps the setupDone mark when only the prompt of the credential changes", async () => {
+			const repo = makeRepo({ dg: declared("prod/a"), files: FILES });
+			await addFixture(sb, repo);
+			updateMarks(sb.paths, "bot", { prefixAccepted: true, setupDone: "bot" });
+			changeBlock(repo, declared("prod/a", "Another prompt"), FILES);
+
+			const result = await runJob(["update", "bot", "--yes"], sb.deps());
+
+			expect(result.code).toBe(0);
+			expect(registry().tools.setupDone).toEqual(["bot"]);
+			expect(result.stdout.split("\n")).not.toContain("next: dg job setup bot");
+		});
 	});
 
 	it("drops a removed job from the setupDone list of a repository record", async () => {

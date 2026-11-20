@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import {
 	existsSync,
 	mkdirSync,
@@ -44,7 +44,10 @@ let sb: Sandbox;
 beforeEach(() => {
 	sb = box.create();
 });
-afterEach(() => box.cleanup());
+afterEach(() => {
+	mock.restore();
+	box.cleanup();
+});
 
 const ESC = String.fromCharCode(27);
 const SHA = /^[0-9a-f]{40}$/;
@@ -106,7 +109,7 @@ describe("classifySource", () => {
 
 	it("refuses a bare file name and says how to write a local file", () => {
 		expect(() => classifySource("bot.ts")).toThrow(
-			'job add: "bot.ts" is not a path or a URL — for a local file write ./bot.ts',
+			'job add: "bot.ts" is not a path or a URL — for a local file write ./bot.ts; for a command put it after a bare --',
 		);
 	});
 
@@ -248,6 +251,13 @@ describe("job add of a URL: refusals before git", () => {
 		await refused(["bot.ts"], "is not a path or a URL");
 	});
 
+	it("reads one bare word with no -- as a source and not as the command", async () => {
+		await refused(
+			["--name", "x", "--cwd", ".", "--continuous", "node"],
+			'job add: "node" is not a path or a URL — for a local file write ./node; for a command put it after a bare --',
+		);
+	});
+
 	it("refuses a source name that a job of the table already uses as a name", async () => {
 		sb = box.create({ tools: { continuous: true, argv: ["/bin/x"], cwd: "/tmp" } });
 		await refused(
@@ -341,11 +351,9 @@ describe("job add of a URL: source name", () => {
 	});
 
 	it("uses the folder and the credential prefix of --name", async () => {
-		const repo = repoWith(
-			jobDeclaration("a", {}) && {
-				jobs: { a: { argv: ["./bin/run"], continuous: true, credentials: ["c"] } },
-			},
-		);
+		const repo = repoWith({
+			jobs: { a: { argv: ["./bin/run"], continuous: true, credentials: ["c"] } },
+		});
 
 		const result = await runJob(["add", fileUrl(repo), "--name", "tools"], sb.deps());
 
@@ -398,7 +406,9 @@ describe("job add of a URL: the happy path", () => {
 		expect(record.credentials).toEqual(twoJobs().credentials);
 		expect(existsSync(jobStateDir(sb.paths, "bot-a"))).toBe(true);
 		expect(existsSync(jobStateDir(sb.paths, "bot-b"))).toBe(true);
-		expect(statSync(sb.paths.jobSourcesPath).mode & 0o777).toBe(0o600);
+		if (process.platform !== "win32") {
+			expect(statSync(sb.paths.jobSourcesPath).mode & 0o777).toBe(0o600);
+		}
 	});
 
 	it("prints the result with a short sha and one next line for each job", async () => {
@@ -553,14 +563,15 @@ describe("job add of a URL: failures leave nothing", () => {
 		expect(snapshot()).toEqual(before);
 	});
 
-	it("refuses a source name that differs only in letter case", async () => {
+	it("refuses a source name that uppercase letters make different", async () => {
 		const repo = repoWith();
 		await addRepo(repo);
 		const other = repoWith(jobDeclaration("other"));
 
-		const result = await runJob(["add", fileUrl(other), "--name", "tools"], sb.deps());
+		const result = await runJob(["add", fileUrl(other), "--name", "Tools"], sb.deps());
 
-		expect(result.stderr).toContain("already added");
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain('job add: cannot use "Tools" as a source name — give one with --name');
 	});
 
 	it("refuses a job name that the table holds", async () => {
@@ -786,23 +797,31 @@ describe("the default terminal check of the source commands", () => {
 });
 
 describe("the default confirm of the source commands", () => {
-	const answer = async (text: string): Promise<boolean> => {
+	const answer = async (text: string): Promise<{ answer: boolean; stderr: string[]; stdout: string[] }> => {
 		const original = Object.getOwnPropertyDescriptor(process, "stdin") as PropertyDescriptor;
 		Object.defineProperty(process, "stdin", {
 			value: Readable.from(text === "" ? [] : [text]),
 			configurable: true,
 		});
-		const write = spyOn(process.stderr, "write").mockImplementation(() => true);
+		const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+		const stdout = spyOn(process.stdout, "write").mockImplementation(() => true);
 		try {
-			return await defaultJobSourceDeps().confirm("Add these jobs? [y/N]");
+			const given = await defaultJobSourceDeps().confirm("Add these jobs? [y/N]");
+			return {
+				answer: given,
+				stderr: stderr.mock.calls.map(([chunk]) => String(chunk)),
+				stdout: stdout.mock.calls.map(([chunk]) => String(chunk)),
+			};
 		} finally {
-			write.mockRestore();
+			stderr.mockRestore();
+			stdout.mockRestore();
 			Object.defineProperty(process, "stdin", original);
 		}
 	};
 
 	it.each([
 		["y\n", true],
+		["y", true],
 		["YES\n", true],
 		["Yes\n", true],
 		["\n", false],
@@ -810,7 +829,14 @@ describe("the default confirm of the source commands", () => {
 		["yep\n", false],
 		["", false],
 	])("treats %p as %p", async (text, expected) => {
-		expect(await answer(text)).toBe(expected);
+		expect((await answer(text)).answer).toBe(expected);
+	});
+
+	it("writes the question to stderr and nothing to stdout", async () => {
+		const result = await answer("y\n");
+
+		expect(result.stderr.join("")).toContain("Add these jobs? [y/N]");
+		expect(result.stdout.join("")).not.toContain("Add these jobs?");
 	});
 });
 
@@ -1127,13 +1153,9 @@ describe("the git environment", () => {
 		const saved = process.env.GIT_SSH_COMMAND;
 		delete process.env.GIT_SSH_COMMAND;
 		try {
-			await addRepo(repoWith(), [], { isTerminal: () => false, confirm: async () => true }).catch(
-				() => {},
-			);
-			await runJob(
-				["add", fileUrl(repoWith()), "--name", "other", "--yes"],
-				sb.deps({ isTerminal: () => false }),
-			);
+			const result = await addRepo(repoWith(), [], { isTerminal: () => false });
+			expect(result.code).toBe(1);
+			expect(result.stderr).toContain("consent needs a terminal");
 		} finally {
 			if (saved !== undefined) process.env.GIT_SSH_COMMAND = saved;
 		}
@@ -1176,10 +1198,10 @@ describe("the git environment", () => {
 describe("resolveRef", () => {
 	async function clone(repo: { dir: string }) {
 		const dir = join(freshTempDir("job-clone"), "c");
-		gitIn(repo.dir, ["status"]);
-		Bun.spawnSync(["git", "clone", "-q", `file://${repo.dir}`, dir], {
+		const cloned = Bun.spawnSync(["git", "clone", "-q", `file://${repo.dir}`, dir], {
 			env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" },
 		});
+		if (cloned.exitCode !== 0) throw new Error(`git clone failed: ${cloned.stderr.toString()}`);
 		return dir;
 	}
 	const deps = () => sb.deps() as Parameters<typeof resolveRef>[0];

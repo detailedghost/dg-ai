@@ -6,3 +6,6 @@
 - [2026-11-20] `dg-skills update` must run the new release's code through the bin-dir launcher, not an in-process import, or it runs the old release's code.
 - [2026-11-20] sources.json holds git and command records: readSources gives git records only; readSourceRecords gives all; marks go through updateMarks.
 - [2026-11-20] The job setup wizard specs use setupRig in __tests__/commands/job-setup-kit.ts: a fake daemon for the job routes and a fake client for the credential route.
+- [2026-11-20] Open a path that a job can swap (envFile, --setup file) with O_RDONLY | O_NONBLOCK and fstat after the open; a plain open of a FIFO with no writer blocks the daemon thread.
+- [2026-11-20] readLine in @dg/common listens for the line event; rl.question loses a last answer that has no newline under Bun.
+- [2026-11-20] update clears a job from setupDone when a credential source changes (resetSetupOnSourceChange in job-source.ts); refresh then answers 409 until dg job setup runs.

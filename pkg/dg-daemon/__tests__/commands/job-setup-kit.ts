@@ -1,3 +1,4 @@
+import { expect } from "bun:test";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
@@ -28,6 +29,28 @@ export const VALUE_A = "tok-alpha-91f3c2d8";
 export const VALUE_B = "tok-bravo-77d0e4a1";
 export const VALUE_C = "tok-charlie-5b2e9f60";
 export const ALL_VALUES = [VALUE_A, VALUE_B, VALUE_C];
+export const SHA = "a".repeat(40);
+
+export const noValue = (text: string): void => {
+	for (const value of ALL_VALUES) expect(text).not.toContain(value);
+};
+
+export const gitRecord = (
+	jobs: string[],
+	credentials: Record<string, unknown>,
+	extra: Record<string, unknown> = {},
+) => ({
+	x: {
+		kind: "git",
+		url: "file:///tmp/x",
+		ref: null,
+		sha: SHA,
+		jobs,
+		declarationHash: "f".repeat(64),
+		credentials,
+		...extra,
+	},
+});
 
 export type Stored = { name: string; meta?: CredentialMeta; updatedAt?: string };
 

@@ -191,7 +191,13 @@ function checkCredentials(jobs: DeclaredJob[], details: unknown): Record<string,
 		refuse(`a "dg" block can declare ${MAX_CREDENTIALS} credentials at most`);
 	}
 	const given = (details ?? {}) as Record<string, unknown>;
+	const seen = new Set<string>();
 	for (const [name, value] of Object.entries(given)) {
+		const folded = name.toLowerCase();
+		if (seen.has(folded)) {
+			refuse(`credential "${folded}" is declared two times in "credentials" (names ignore letter case)`);
+		}
+		seen.add(folded);
 		if (!listed.has(name.toLowerCase())) {
 			refuse(`credential "${name}" is not in the "credentials" list of a job`);
 		}

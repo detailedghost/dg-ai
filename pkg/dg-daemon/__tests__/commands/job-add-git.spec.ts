@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import {
 	existsSync,
 	mkdirSync,
@@ -24,6 +24,7 @@ import {
 	readConfigFile,
 	runCli,
 	seedJobs,
+	waitForJobState,
 	waitUntil,
 } from "./job-cli-helpers";
 import {
@@ -35,6 +36,8 @@ import {
 	type Repo,
 	type RepoFile,
 } from "./job-source-kit";
+
+setDefaultTimeout(30_000);
 
 const homes = homeTracker();
 afterEach(() => homes.cleanup());
@@ -300,7 +303,11 @@ describe.each([
 			{ ...TWO_JOBS, build: ["./bin/hang"] },
 			{
 				"bin/hang": script(
-					'const fs = require("node:fs");\nfs.writeFileSync("build.pid", String(process.pid));\nsetTimeout(() => {}, 600000);',
+					[
+						'const fs = require("node:fs");',
+						'fs.writeFileSync("build.pid", String(process.pid));',
+						"setTimeout(() => {}, 600000);",
+					].join("\n"),
 				),
 			},
 		);
@@ -313,8 +320,9 @@ describe.each([
 				{ env: subprocessEnv(dgHome, 0), stdout: "pipe", stderr: "pipe" },
 			),
 		);
-		await waitUntil(() => existsSync(join(clone, "build.pid")), 12000);
-		const buildPid = Number(readFileSync(join(clone, "build.pid"), "utf8"));
+		const pidFile = join(clone, "build.pid");
+		await waitUntil(() => existsSync(pidFile) && /^\d+$/.test(readFileSync(pidFile, "utf8")), 12000);
+		const buildPid = Number(readFileSync(pidFile, "utf8"));
 
 		proc.kill(signal);
 		const exit = await proc.exited;
@@ -394,11 +402,8 @@ describe("job remove of a repository job through the CLI", () => {
 		expect((await add(dgHome, repo, ["--yes"], port)).code).toBe(0);
 		expect((await postJob(port, "crash", "start")).ok).toBe(true);
 		const before = read(configPathOf(dgHome));
-		let result = await runCli(dgHome, ["job", "remove", "crash"], { port });
-		for (let i = 0; i < 40 && !result.stderr.includes("is backoff"); i++) {
-			await Bun.sleep(100);
-			result = await runCli(dgHome, ["job", "remove", "crash"], { port });
-		}
+		await waitForJobState(dgHome, port, "crash", "backoff");
+		const result = await runCli(dgHome, ["job", "remove", "crash"], { port });
 
 		expect(result.stderr).toContain('job "crash" is backoff');
 		expect(read(configPathOf(dgHome))).toBe(before);

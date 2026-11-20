@@ -161,7 +161,7 @@ describe("job add --credential <name>=<NAME> of a file", () => {
 		expect(readConfig(sb).jobs).toEqual({});
 	});
 
-	it("never prints a stored value", async () => {
+	it("never echoes a secret that was pasted after the equals sign", async () => {
 		sb = box.create();
 
 		const result = await add([
@@ -169,10 +169,13 @@ describe("job add --credential <name>=<NAME> of a file", () => {
 			"--every",
 			"15m",
 			"--credential",
-			"api-key=API_KEY",
+			`api-key=${VALUE}`,
 		]);
 
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("--credential: the text after = must be a variable name such as API_KEY");
 		expect(result.stdout + result.stderr).not.toContain(VALUE);
+		expect(readConfig(sb).jobs).toEqual({});
 	});
 });
 

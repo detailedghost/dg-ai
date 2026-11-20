@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
+import { CREDENTIAL_MAX_VALUE_BYTES } from "../src/credentials-format";
 import { promptHidden } from "../src/node/prompt";
 
 const PROMPT = join(import.meta.dir, "..", "src", "node", "prompt.ts");
@@ -33,6 +34,12 @@ describe("readLine", () => {
 		const result = await ask("\n");
 
 		expect(JSON.parse(result.stdout.trim())).toBe("");
+	});
+
+	it("returns a last line that has no newline", async () => {
+		const result = await ask("y");
+
+		expect(JSON.parse(result.stdout.trim())).toBe("y");
 	});
 
 	it("returns null when the input ends with no line", async () => {
@@ -103,6 +110,34 @@ describe("promptHidden", () => {
 		expect(await pending).toBe("ac");
 	});
 
+	it("drops arrow keys and other escape sequences instead of storing them", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("ab\u001b[A\u001b[1;5Cc\u001bOHd\u0001\ttail\r");
+
+		expect(await pending).toBe("abcdtail");
+	});
+
+	it("removes one whole character with backspace for a surrogate pair", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("a\u{1F511}\u007f\r");
+
+		expect(await pending).toBe("a");
+	});
+
+	it("rejects with Canceled. on Ctrl-D and restores the terminal", async () => {
+		const tty = fakeInput();
+
+		const pending = promptHidden("", tty.input, { write: () => undefined });
+		tty.emit("ab\u0004");
+
+		await expect(pending).rejects.toThrow("Canceled.");
+		expect(tty.raw).toEqual([true, false]);
+	});
+
 	it("turns raw mode on, then off, and stops listening", async () => {
 		const tty = fakeInput();
 
@@ -123,5 +158,32 @@ describe("promptHidden", () => {
 
 		await expect(pending).rejects.toThrow("Canceled.");
 		expect(tty.raw).toEqual([true, false]);
+	});
+});
+
+describe("readCredentialValue with piped input", () => {
+	const READ = `import { readCredentialValue } from ${JSON.stringify(PROMPT)};
+try { console.log(JSON.stringify(await readCredentialValue())); } catch (error) { console.log("ERR " + (error as Error).message); }`;
+	const run = async (input: string) => {
+		const proc = Bun.spawn([process.execPath, "-e", READ], {
+			stdin: new Blob([input]),
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		return (await new Response(proc.stdout).text()).trim();
+	};
+
+	it("returns the piped value without its trailing newline", async () => {
+		expect(await run("secret\r\n")).toBe('"secret"');
+	});
+
+	it("refuses input above the credential value limit", async () => {
+		const out = await run("x".repeat(CREDENTIAL_MAX_VALUE_BYTES + 3));
+		expect(out).toBe(`ERR credential value is larger than ${CREDENTIAL_MAX_VALUE_BYTES} bytes`);
+	});
+
+	it("accepts a value at the limit", async () => {
+		const out = await run(`${"x".repeat(CREDENTIAL_MAX_VALUE_BYTES)}\n`);
+		expect(out).toBe(JSON.stringify("x".repeat(CREDENTIAL_MAX_VALUE_BYTES)));
 	});
 });

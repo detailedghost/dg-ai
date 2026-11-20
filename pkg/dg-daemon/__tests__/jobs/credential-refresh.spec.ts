@@ -240,11 +240,11 @@ describe("refreshCredential", () => {
 	describe("502 answers", () => {
 		const suffix = " — run dg job setup bot --refresh";
 
-		const cases: [string, Fake, string, (kit: Kit) => void][] = [
-			["failed", { result: { code: 255, stderr: "\nAccessDenied here\nsecond line" } }, `aws failed for ${NAME}: AccessDenied here`, () => {}],
-			["timeout", { throws: new SecretFetchError("timeout", "timed out after 30 s") }, `aws timed out for ${NAME}`, () => {}],
-			["no-text", { result: { stdout: "None\n" } }, `the secret of ${NAME} has no text value`, () => {}],
-			["invalid-json", { result: { stdout: "not json" } }, `the secret of ${NAME} is not JSON`, () => {}],
+		const cases: [string, Fake, string][] = [
+			["failed", { result: { code: 255, stderr: "\nAccessDenied here\nsecond line" } }, `aws failed for ${NAME}: AccessDenied here`],
+			["timeout", { throws: new SecretFetchError("timeout", "timed out after 30 s") }, `aws timed out for ${NAME}`],
+			["no-text", { result: { stdout: "None\n" } }, `the secret of ${NAME} has no text value`],
+			["invalid-json", { result: { stdout: "not json" } }, `the secret of ${NAME} is not JSON`],
 		];
 
 		for (const [label, fake, text] of cases) {
@@ -269,6 +269,13 @@ describe("refreshCredential", () => {
 			expect(result.error).not.toContain(VALUE);
 		});
 
+		it("strips control characters from the key in the no-key text", async () => {
+			const kit = await makeKit({ credentials: { "api/dev": { source: { ...SOURCE, key: "K\u001b[31m" } } } });
+			kit.fake.result = { stdout: JSON.stringify({ other: VALUE }) };
+			const result = failure(await kit.run());
+			expect(result.error).not.toContain("\u001b");
+		});
+
 		it("answers not on the PATH when aws does not resolve", async () => {
 			const kit = await makeKit();
 			kit.deps.which = () => null;
@@ -286,7 +293,11 @@ describe("refreshCredential", () => {
 			writeFileSync(kit.decl.envFile as string, "PATH=rel\n");
 			chmodSync(kit.decl.envFile as string, 0o600);
 			kit.deps.which = (name, env) => Bun.which(name, { PATH: env?.PATH ?? "", cwd: kit.dgHome });
-			expect(failure(await kit.run())).toMatchObject({ status: 502 });
+			expect(kit.deps.which("aws", { PATH: "rel" })).not.toBeNull();
+			expect(failure(await kit.run())).toMatchObject({
+				status: 502,
+				error: `aws is not on the PATH of job "bot"${suffix}`,
+			});
 			expect(kit.calls).toHaveLength(0);
 		});
 
@@ -362,23 +373,29 @@ describe("refreshCredential", () => {
 		it("starts two fetches for two names", async () => {
 			const kit = await makeKit();
 			expect((await kit.run("bot/api/dev")).ok).toBe(true);
-			expect((await kit.run("bot/api/prod")).ok).toBe(false);
+			kit.fake.result = { stdout: JSON.stringify({ K: VALUE }) };
+			expect((await kit.run("bot/api/prod")).ok).toBe(true);
 			expect(kit.calls).toHaveLength(2);
 		});
 
 		it("answers 429 with retryAfter of 1 or more during a fetch", async () => {
 			const kit = await makeKit();
 			let release: () => void = () => {};
+			let entered: () => void = () => {};
 			const gate = new Promise<void>((resolve) => {
 				release = resolve;
 			});
+			const started = new Promise<void>((resolve) => {
+				entered = resolve;
+			});
 			const inner = kit.deps.runSource;
 			kit.deps.runSource = async (argv, options) => {
+				entered();
 				await gate;
 				return inner(argv, options);
 			};
 			const first = kit.run();
-			await Bun.sleep(5);
+			await started;
 			kit.clock.now += 70_000;
 			const second = failure(await kit.run());
 			expect(second.status).toBe(429);
@@ -397,9 +414,18 @@ describe("refreshCredential", () => {
 		});
 	});
 
-	it("writes no value to the warnings", async () => {
-		const kit = await makeKit();
-		await kit.run();
+	it.each<[string, Fake, string | undefined]>([
+		["a failing aws that printed the value", { result: { code: 1, stdout: `${VALUE}\n`, stderr: "boom" } }, undefined],
+		["a secret that is not JSON", { result: { stdout: VALUE } }, "K"],
+		["a secret with another key", { result: { stdout: JSON.stringify({ other: VALUE }) } }, "K"],
+	])("puts no part of the value in the answer for %s", async (_label, fake, key) => {
+		const kit = await makeKit({ credentials: { "api/dev": { source: key ? { ...SOURCE, key } : SOURCE } } });
+		Object.assign(kit.fake, fake);
+
+		const result = failure(await kit.run());
+
+		expect(result.status).toBe(502);
+		expect(JSON.stringify(result)).not.toContain(VALUE);
 		expect(kit.warnings.join("\n")).not.toContain(VALUE);
 	});
 });

@@ -54,6 +54,27 @@ describe("loadEnvFile", () => {
 	});
 });
 
+describe("loadEnvFile with a FIFO", () => {
+	it.skipIf(process.platform === "win32")("refuses a FIFO with no writer instead of blocking", () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-env-"));
+		dirs.push(dir);
+		const path = join(dir, "fifo.env");
+		const made = Bun.spawnSync(["mkfifo", path]);
+		if (made.exitCode !== 0) throw new Error("mkfifo failed");
+		const probe = Bun.spawnSync(
+			[
+				process.execPath,
+				"-e",
+				`const { loadEnvFile } = require(${JSON.stringify(join(import.meta.dir, "../../src/services/env-file"))});` +
+					`try { loadEnvFile(${JSON.stringify(path)}); } catch (e) { console.log(e.message); }`,
+			],
+			{ timeout: 5000, env: { ...process.env } },
+		);
+		expect(probe.exitedDueToTimeout).toBeFalsy();
+		expect(probe.stdout.toString()).toContain(`env file is not a regular file: ${path}`);
+	});
+});
+
 describe("assertPrivateOpenFile", () => {
 	const check = (path: string, noun = "--setup file") => {
 		const fd = openSync(path, "r");
@@ -74,6 +95,14 @@ describe("assertPrivateOpenFile", () => {
 			`--setup file ${path} is readable by other users; run chmod 600 on it`,
 		);
 	});
+
+	it.each([0o640, 0o604, 0o620, 0o602, 0o660])(
+		"refuses mode %o",
+		(mode) => {
+			if (process.platform === "win32") return;
+			expect(() => check(envFile("A=1", mode))).toThrow("readable by other users");
+		},
+	);
 
 	it("checks the target of a link, not the link", () => {
 		const path = envFile("A=1", 0o644);

@@ -158,7 +158,7 @@ export function classifySource(argument: string): "git" | "path" {
 	if (SCHEME.test(argument) || SCP.test(argument)) return "git";
 	if (/^(\.\.?\/|\/|~)/.test(argument) || DRIVE.test(argument)) return "path";
 	return stop(
-		`"${argument}" is not a path or a URL — for a local file write ./${argument}`,
+		`"${argument}" is not a path or a URL — for a local file write ./${argument}; for a command put it after a bare --`,
 	);
 }
 
@@ -243,10 +243,45 @@ export function assertPrefixFree(
 	if (Object.keys(registry).some((source) => source.toLowerCase() === lower)) taken(name);
 }
 
-/** Reads the --credential values of an add or an update; dg sets the grant to the job name. */
 const ENV_TEXT_RULE =
 	"--credential: the text after = must be a variable name such as API_KEY";
 
+const sourcesOf = (credentials: Record<string, unknown>): Map<string, string> =>
+	new Map(
+		Object.entries(credentials).map(([name, detail]) => [
+			name.toLowerCase(),
+			JSON.stringify(isRecord(detail) ? (detail.source ?? null) : null),
+		]),
+	);
+
+/** Takes each job whose credential source changed out of setupDone, so refresh answers 409 until setup runs. */
+export function resetSetupOnSourceChange(
+	record: { credentials: Record<string, unknown>; setupDone?: string[] },
+	next: Record<string, unknown>,
+	jobs: DeclaredJob[],
+): { setupDone?: string[]; reset: string[] } {
+	const done = record.setupDone;
+	if (done === undefined) return { reset: [] };
+	const was = sourcesOf(record.credentials);
+	const now = sourcesOf(next);
+	const reset = jobs
+		.filter(({ name, entry }) => {
+			const listed = (entry.credentials as string[] | undefined) ?? [];
+			return done.includes(name) && listed.some((key) => (was.get(key) ?? "null") !== (now.get(key) ?? "null"));
+		})
+		.map(({ name }) => name);
+	return { setupDone: done.filter((name) => !reset.includes(name)), reset };
+}
+
+export function stateFoldersOf(paths: DgPaths, names: string[]): Record<string, string> {
+	return Object.fromEntries(
+		names
+			.map((name) => [name, jobStateDir(paths, name)] as const)
+			.filter(([, dir]) => existsSync(dir)),
+	);
+}
+
+/** Reads the --credential values of an add or an update; dg sets the grant to the job name. */
 export function credentialListFor(
 	flagValues: string[] | undefined,
 	jobName: string,
@@ -741,10 +776,9 @@ async function addGit(
 				credentials: declaration.credentials,
 				requires: declaration.requires,
 				build,
-				existingState: Object.fromEntries(
-					resolved.jobs
-						.map(({ name }) => [name, jobStateDir(paths, name)] as const)
-						.filter(([, dir]) => existsSync(dir)),
+				existingState: stateFoldersOf(
+					paths,
+					resolved.jobs.map(({ name }) => name),
 				),
 			}),
 		);

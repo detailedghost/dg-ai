@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +11,7 @@ import {
 import {
 	createJobCredentialClient,
 	DaemonNotRunningError,
+	OLDER_DAEMON_TEXT,
 	type DgPaths,
 	ensureOwnerToken,
 	resolveDgPaths,
@@ -18,7 +19,6 @@ import {
 } from "../src/node/index";
 
 const VALUE = "fixture-value-for-the-client-spec";
-const OLDER = "this dg-daemon is older than the CLI — run dg daemon restart";
 type Seen = {
 	path: string;
 	method: string;
@@ -166,7 +166,7 @@ describe("createJobCredentialClient", () => {
 			.status()
 			.catch((error: unknown) => error);
 		expect(failure).toBeInstanceOf(DgCliError);
-		expect((failure as Error).message).toBe(OLDER);
+		expect((failure as Error).message).toBe(OLDER_DAEMON_TEXT);
 	});
 
 	it("names an older daemon when a 404 JSON body has no error text", async () => {
@@ -174,7 +174,7 @@ describe("createJobCredentialClient", () => {
 		const failure = await createJobCredentialClient({ paths, job: "bot" })
 			.status()
 			.catch((error: unknown) => error);
-		expect((failure as Error).message).toBe(OLDER);
+		expect((failure as Error).message).toBe(OLDER_DAEMON_TEXT);
 	});
 
 	it("never puts a token or a value in an error", async () => {
@@ -202,11 +202,29 @@ describe("createJobCredentialClient", () => {
 	it("throws DaemonNotRunningError when the pid file names a closed port", async () => {
 		const daemon = fixtureDaemon(ok({}));
 		servers.pop()?.stop(true);
-		expect(daemon.port).toBeGreaterThan(0);
+		await expect(fetch(`http://127.0.0.1:${daemon.port}/`)).rejects.toBeDefined();
 		const failure = await createJobCredentialClient({ paths, job: "bot" })
 			.status()
 			.catch((error: unknown) => error);
 		expect(failure).toBeInstanceOf(DaemonNotRunningError);
+	});
+
+	it.each(["TimeoutError", "AbortError"])("reports a %s as no answer and not as a stopped daemon", async (name) => {
+		fixtureDaemon(ok({}));
+		const fetchSpy = spyOn(globalThis, "fetch").mockRejectedValue(new DOMException("late", name));
+		try {
+			const failure = (await createJobCredentialClient({ paths, job: "bot" })
+				.set("bot/api", VALUE)
+				.catch((error: unknown) => error)) as Error;
+
+			expect(failure).toBeInstanceOf(DgCliError);
+			expect(failure).not.toBeInstanceOf(DaemonNotRunningError);
+			expect(failure.message).toBe(
+				'dg-daemon did not answer within 10 s for the credentials of job "bot"; the change may have been stored',
+			);
+		} finally {
+			fetchSpy.mockRestore();
+		}
 	});
 
 	it("throws when there is no owner token", async () => {

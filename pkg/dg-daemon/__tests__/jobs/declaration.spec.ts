@@ -112,9 +112,18 @@ describe("parseJobDeclaration", () => {
 	});
 
 	it("refuses a name that is in one job list two times", () => {
-		expect(errorOf({ jobs: { a: job({ credentials: ["x", "x"] }) } })).toContain(
-			'job "a"',
+		expect(errorOf({ jobs: { a: job({ credentials: ["x", "x"] }) } })).toBe(
+			'job "a": "credentials" must not list a name two times',
 		);
+	});
+
+	it("refuses two credential keys that differ only in letter case", () => {
+		expect(
+			errorOf({
+				jobs: { a: job({ credentials: ["token"] }) },
+				credentials: { Token: { prompt: "one" }, token: { prompt: "two" } },
+			}),
+		).toBe('credential "token" is declared two times in "credentials" (names ignore letter case)');
 	});
 
 	it("keeps a scheduled entry as the block gives it", () => {
@@ -149,7 +158,9 @@ describe("parseJobDeclaration", () => {
 		);
 
 		it("refuses an envFile that is not a string", () => {
-			expect(errorOf({ jobs: { a: job({ envFile: 3 }) } })).toContain("envFile");
+			expect(errorOf({ jobs: { a: job({ envFile: 3 }) } })).toBe(
+				'job "a": "envFile" must be a relative path inside the state folder of the job',
+			);
 		});
 	});
 
@@ -240,8 +251,8 @@ describe("parseJobDeclaration", () => {
 		});
 
 		it("refuses a source with no type", () => {
-			expect(errorOf(withDetails({ a: { source: { secretId: "x" } } }))).toContain(
-				'credential "a"',
+			expect(errorOf(withDetails({ a: { source: { secretId: "x" } } }))).toBe(
+				'credential "a": unknown source type (missing)',
 			);
 		});
 
@@ -272,14 +283,18 @@ describe("parseJobDeclaration", () => {
 			);
 		});
 
-		it.each(["apiToken", "value", "mySecret", "password", "provider", "createdBy"])(
-			"refuses the meta key %s",
-			(key) => {
-				expect(errorOf(withDetails({ a: { meta: { [key]: { prompt: "x" } } } }))).toContain(
-					`credential "a": the meta key "${key}"`,
-				);
-			},
-		);
+		it.each([
+			["apiToken", "looks like a secret"],
+			["value", "looks like a secret"],
+			["mySecret", "looks like a secret"],
+			["password", "looks like a secret"],
+			["provider", "is set by dg"],
+			["createdBy", "is set by dg"],
+		])("refuses the meta key %s", (key, why) => {
+			expect(errorOf(withDetails({ a: { meta: { [key]: { prompt: "x" } } } }))).toBe(
+				`credential "a": the meta key "${key}" ${why}`,
+			);
+		});
 
 		it("says apiToken looks like a secret", () => {
 			expect(errorOf(withDetails({ a: { meta: { apiToken: { prompt: "x" } } } }))).toBe(
@@ -288,8 +303,8 @@ describe("parseJobDeclaration", () => {
 		});
 
 		it.each(["scopes", "expiresAt"])("refuses the meta key %s", (key) => {
-			expect(errorOf(withDetails({ a: { meta: { [key]: { prompt: "x" } } } }))).toContain(
-				`"${key}"`,
+			expect(errorOf(withDetails({ a: { meta: { [key]: { prompt: "x" } } } }))).toBe(
+				`credential "a": the meta key "${key}" cannot be given as text`,
 			);
 		});
 
@@ -300,7 +315,9 @@ describe("parseJobDeclaration", () => {
 		});
 
 		it("refuses a required value that is not a boolean", () => {
-			expect(errorOf(withDetails({ a: { required: "yes" } }))).toContain('credential "a"');
+			expect(errorOf(withDetails({ a: { required: "yes" } }))).toBe(
+				'credential "a": "required" must be a boolean',
+			);
 		});
 
 		it("accepts env and gives each job that lists the credential the same credentialEnv", () => {
@@ -391,8 +408,8 @@ describe("parseJobDeclaration", () => {
 		});
 
 		it("refuses a credential name that fails the name rule under the source", () => {
-			expect(errorOf({ jobs: { a: job({ credentials: ["x".repeat(130)] }) } })).toContain(
-				'job "a"',
+			expect(errorOf({ jobs: { a: job({ credentials: ["x".repeat(130)] }) } })).toBe(
+				`job "a": "credentials" holds a name that is not valid under the grant: "${"x".repeat(130)}"`,
 			);
 		});
 	});

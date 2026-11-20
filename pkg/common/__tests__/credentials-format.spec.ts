@@ -150,14 +150,8 @@ describe("validateCredentialsCliRequest", () => {
 });
 
 describe("RESERVED_CREDENTIAL_PREFIXES", () => {
-	it("lists the prefixes that dg tools own", () => {
-		expect([...RESERVED_CREDENTIAL_PREFIXES]).toEqual([
-			"pw",
-			"extension",
-			"phone-friend",
-			"phone-vault",
-			"db",
-		]);
+	it.each(["pw", "extension", "phone-friend", "phone-vault", "db"])("reserves the tool prefix %s", (prefix) => {
+		expect(RESERVED_CREDENTIAL_PREFIXES).toContain(prefix);
 	});
 
 	it("matches a reserved prefix in any letter case and nothing else", () => {
@@ -170,7 +164,27 @@ describe("RESERVED_CREDENTIAL_PREFIXES", () => {
 });
 
 describe("isInjectionEnvName", () => {
-	it.each(["LD_PRELOAD", "ld_library_path", "NODE_OPTIONS", "PATH", "Home", "GIT_DIR", "HTTPS_PROXY", "BASH_ENV", "GLIBC_TUNABLES", "openssl_conf", "OPENSSL_ENGINES", "SSLKEYLOGFILE", "NODE_TLS_REJECT_UNAUTHORIZED", "IFS", "HOSTALIASES", "LOCPATH", "NLSPATH", "NPM_CONFIG_REGISTRY", "npm_config_prefix"])(
+	it.each([
+		"LD_PRELOAD",
+		"ld_library_path",
+		"NODE_OPTIONS",
+		"PATH",
+		"Home",
+		"GIT_DIR",
+		"HTTPS_PROXY",
+		"BASH_ENV",
+		"GLIBC_TUNABLES",
+		"openssl_conf",
+		"OPENSSL_ENGINES",
+		"SSLKEYLOGFILE",
+		"NODE_TLS_REJECT_UNAUTHORIZED",
+		"IFS",
+		"HOSTALIASES",
+		"LOCPATH",
+		"NLSPATH",
+		"NPM_CONFIG_REGISTRY",
+		"npm_config_prefix",
+	])(
 		"matches %p",
 		(name) => {
 			expect(isInjectionEnvName(name)).toBe(true);

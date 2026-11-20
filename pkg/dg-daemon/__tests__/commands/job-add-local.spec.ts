@@ -110,7 +110,11 @@ describe("job add of a local file", () => {
 		sb = box.create();
 		const file = makeScript("notes.txt", "hello");
 
-		await refused([file, "--continuous"], `job add: ${realpathSync(file)} is not executable — run chmod +x, or use dg job add --name <name> --cwd <dir> <mode> -- <command>`);
+		await refused(
+			[file, "--continuous"],
+			`job add: ${realpathSync(file)} is not executable — run chmod +x, ` +
+				"or use dg job add --name <name> --cwd <dir> <mode> -- <command>",
+		);
 
 		expect(readConfig(sb).jobs).toEqual({});
 		expect(existsSync(sb.paths.jobSourcesPath)).toBe(false);
@@ -480,7 +484,8 @@ describe("job add of a local folder", () => {
 
 		const result = await add([dir]);
 
-		expect(result.code).not.toBe(0);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain(`EEXIST: file already exists, mkdir '${join(sb.paths.jobStateRoot, "a")}'`);
 		expect(readFileSync(sb.paths.daemonConfigPath).equals(before)).toBe(true);
 		expect(readRegistry(sb)).toEqual({});
 	});

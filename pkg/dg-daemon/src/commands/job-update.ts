@@ -45,6 +45,8 @@ import {
 	SAFE_GIT,
 	show,
 	snapshotOf,
+	resetSetupOnSourceChange,
+	stateFoldersOf,
 	stop as stopWith,
 } from "./job-source";
 import {
@@ -104,7 +106,9 @@ async function readOldBlock(
 ): Promise<Declared> {
 	try {
 		return (await readDeclared(deps, at, sha, PREFIX)).declaration;
-	} catch {
+	} catch (err) {
+		if (!(err instanceof DgCliError)) throw err;
+		console.log("could not read the old declaration; showing the full block");
 		return emptyDeclared();
 	}
 }
@@ -312,11 +316,9 @@ export async function updateSource(
 				credentials: declaration.credentials,
 				requires: declaration.requires,
 				build,
-				existingState: Object.fromEntries(
-					names
-						.filter((job) => !known.has(job))
-						.map((job) => [job, jobStateDir(paths, job)] as const)
-						.filter(([, dir]) => existsSync(dir)),
+				existingState: stateFoldersOf(
+					paths,
+					names.filter((job) => !known.has(job)),
 				),
 			}),
 		);
@@ -353,6 +355,7 @@ export async function updateSource(
 	const stays = `source "${source}" stays at ${oldShort} — the clone can hold build output of ${newShort}`;
 	let replaced: string[] = [];
 	let created: string[] = [];
+	let reset: string[] = [];
 	try {
 		const status = await run(["status", "--porcelain", "--untracked-files=no"], cloneDir);
 		if (status.code !== 0) stop(`git status failed: ${firstLine(status.stderr)}`);
@@ -396,6 +399,10 @@ export async function updateSource(
 			const removed = record.jobs.filter((job) => !names.includes(job));
 			for (const job of removed) assertNoLiveInstance(paths, job, "job");
 			if (removed.length > 0) await refuseLiveJobs(paths, name, removed);
+			const marks = same
+				? { reset: [] as string[] }
+				: resetSetupOnSourceChange(record, declaration.credentials, declaration.jobs);
+			reset = marks.reset;
 			const next: GitSourceRecord = same
 				? { ...record, sha: newSha as string }
 				: {
@@ -404,6 +411,7 @@ export async function updateSource(
 						declarationHash: hash,
 						jobs: names,
 						credentials: declaration.credentials,
+						...(marks.setupDone === undefined ? {} : { setupDone: marks.setupDone }),
 					};
 			const restores = [snapshotOf(paths.daemonConfigPath), snapshotOf(paths.jobSourcesPath)];
 			try {
@@ -449,7 +457,7 @@ export async function updateSource(
 	for (const job of created) console.log(`next: dg job enable ${job}`);
 	if (!same) {
 		const before = new Set(credentialMap(old).keys());
-		const setup = new Set<string>();
+		const setup = new Set<string>(reset);
 		for (const credential of describeCredentials(declaration.jobs, declaration.credentials)) {
 			if (before.has(credential.name)) continue;
 			for (const job of credential.jobs) setup.add(job);

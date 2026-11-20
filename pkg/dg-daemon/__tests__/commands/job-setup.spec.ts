@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
-	ALL_VALUES,
 	credentialJob,
 	everything,
+	noValue,
 	type Rig,
 	type RigOptions,
 	setupRig,
@@ -24,9 +24,6 @@ function rigFor(options: RigOptions = {}, extra: Record<string, unknown> = {}): 
 
 const STORED = ["x/api", "x/metrics", "x/errors"].map((name) => ({ name }));
 const LOGIN = /Start dg at login/;
-const noValue = (text: string) => {
-	for (const value of ALL_VALUES) expect(text).not.toContain(value);
-};
 const never = (question: string) => !question.startsWith("Replace");
 const accepted = { x: { kind: "command", prefixAccepted: true } };
 
@@ -221,14 +218,14 @@ describe("job setup --rotate-token", () => {
 		expect(rig.asked.hidden).toEqual([]);
 	});
 
-	it("turns the no credential prefix answer of the route into one line", async () => {
-		const rig = rigFor({ failRotate: 'job "x" has no credential prefix', grant: "ok" });
+	it("passes a refusal of the rotate route through as it is", async () => {
+		const rig = rigFor({ failRotate: "the route refused the rotation", grant: "ok" });
 		rig.seedRegistry(accepted);
 
 		const result = await rig.run(["setup", "x", "--rotate-token"]);
 
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain('job setup: job "x" has no credential prefix');
+		expect(result.stderr).toContain("the route refused the rotation");
 	});
 
 	it("exits 1 with no terminal and calls rotateGrant zero times when the prefix holds credentials and has no mark", async () => {

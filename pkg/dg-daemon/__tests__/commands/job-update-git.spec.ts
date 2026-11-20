@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { devNull } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,7 @@ import {
 	pathsOf,
 	postJob,
 	runCli,
+	waitForJobState,
 } from "./job-cli-helpers";
 import {
 	addFixture,
@@ -36,7 +37,10 @@ let sb: Sandbox;
 beforeEach(() => {
 	sb = box.create();
 });
-afterEach(() => box.cleanup());
+afterEach(() => {
+	mock.restore();
+	box.cleanup();
+});
 
 const NAME = "tools";
 const FILES = { "bin/run": RUN_SCRIPT, "bin/quick": QUICK_SCRIPT };
@@ -406,6 +410,21 @@ describe("job update with a changed block", () => {
 		expect(result.stdout.split("\n")).toContain("next: dg job enable extra");
 	});
 
+	it("says that the old declaration could not be read and lists the full block", async () => {
+		const repo = await sourced();
+		writeFileSync(join(repo.dir, "package.json"), "{ not json");
+		gitIn(repo.dir, ["commit", "-am", "broken"]);
+		const broken = gitIn(repo.dir, ["rev-parse", "HEAD"]);
+		gitIn(clone(), ["fetch", fileUrl(repo)]);
+		patchRecord({ sha: broken });
+		changeBlock(repo, NEW_BLOCK);
+
+		const result = await update(["--yes"]);
+
+		expect(result.code).toBe(0);
+		expect(result.stdout).toContain("could not read the old declaration; showing the full block");
+	});
+
 	it("refuses a new job that the table already holds and changes nothing", async () => {
 		const repo = await sourced();
 		changeBlock(repo, {
@@ -559,6 +578,7 @@ describe("job update with a changed block", () => {
 
 		const added = await runJob(["add", fileUrl(repo), "--name", NAME, "--yes"], sb.deps());
 
+		expect(request(updated.stdout)).toContain("sha: ");
 		expect(request(updated.stdout)).toBe(request(added.stdout));
 	});
 
@@ -1107,7 +1127,7 @@ describe("job update follows the ref", () => {
 });
 
 describe("job update of other jobs", () => {
-	it("accepts --yes on a command job and changes nothing", async () => {
+	it("accepts --yes on a command job, says nothing to change and changes nothing", async () => {
 		const cmd = {
 			continuous: true,
 			argv: [process.execPath, "-e", "1"],
@@ -1121,6 +1141,7 @@ describe("job update of other jobs", () => {
 		const result = await runJob(["update", "cmd", "--yes"], sb.deps());
 
 		expect(result.code).toBe(0);
+		expect(result.stdout).toBe("nothing to change");
 		expect(files()).toEqual(before);
 	});
 });
@@ -1180,11 +1201,8 @@ describe("job update with a live daemon", () => {
 		expect((await addOn(dgHome, repo, port)).code).toBe(0);
 		expect((await postJob(port, "crash", "start")).ok).toBe(true);
 		commit(repo, {});
-		let result = await runCli(dgHome, ["job", "update", "crash", "--yes"], { port });
-		for (let i = 0; i < 40 && !result.stderr.includes("is backoff"); i++) {
-			await Bun.sleep(100);
-			result = await runCli(dgHome, ["job", "update", "crash", "--yes"], { port });
-		}
+		await waitForJobState(dgHome, port, "crash", "backoff");
+		const result = await runCli(dgHome, ["job", "update", "crash", "--yes"], { port });
 
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(

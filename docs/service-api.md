@@ -71,21 +71,26 @@ Responses:
 ## Refresh a credential
 
 `refresh` makes the daemon fetch one credential again from the source that the
-owner saw at `dg job add` or `dg job update`, and store the new value under the
-same name. A job uses it when its upstream refuses a stored credential, for
+record holds, and store the new value under the same name. For a repository job
+the owner read that source at the consent of `dg job add` or `dg job update`. Two
+cases have no such review: a local folder with a `dg` block asks nothing, and
+`--yes` gives the consent with no person present. A job uses it when its upstream refuses a stored credential, for
 example with HTTP 401. The body keys `operation`, `name` and `job` are
 necessary. Each other key gets the 400 answer for an unsupported key. The
 request cannot give a secret id, a region, a key, a profile or an argv.
 
 - `name` is `<prefix>/<rest>` and must be a credential that the job lists.
 - `job` is the name of a job whose `grant` is the prefix of the request. The job
-  reads its own name from `DG_SERVICE_LABEL`. The name is not a proof of
-  identity: each holder of the grant can ask for a refresh of a credential
-  below the prefix.
+  reads its own name from `DG_SERVICE_LABEL`. The grant proves the prefix and
+  not the job: each holder of the grant can name any job of that prefix, and
+  jobs that share a prefix trust each other. This is an accepted risk; see
+  [ADR 0052](adr/0052-job-sources-and-credentials.md).
 - The credential needs a recorded `source`, and a person must have run
-  `dg job setup <job>` once. Without both, the answer is 409. The mark "setup
-  done" does not show that a person saw the source that the record holds now: a
-  repository change that `dg job update --yes` applies keeps the mark.
+  `dg job setup <job>` once. Without both, the answer is 409. When
+  `dg job update` changes the `source` of a credential that a job lists, it
+  removes the job from the "setup done" mark and prints
+  `next: dg job setup <job>`, so the answer is 409 until a person runs setup
+  again.
 - The fetch uses the environment of the job that the request names (`envFile`,
   `passEnv` and the allowlist), not the environment of the caller. It runs
   `aws` from the `PATH` of that environment, in the state folder of the job.
@@ -102,6 +107,9 @@ request cannot give a secret id, a region, a key, a profile or an argv.
 Example after an upstream answers 401:
 
 ```js
+import { readFileSync } from "node:fs";
+import { setTimeout as sleep } from "node:timers/promises";
+
 const call = async (body) => {
   const res = await fetch(`${process.env.DG_DAEMON_URL}/service-api/v1/credentials`, {
     method: "POST",
@@ -120,10 +128,15 @@ const refreshed = await call({
   name: "bot/api-key",
   job: process.env.DG_SERVICE_LABEL,
 });
-if (refreshed.status === 200) {
-  const { body } = await call({ operation: "get", name: "bot/api-key" });
-  retryWith(body.value.value);
+const retryWith = (value) => console.log("retry the upstream call with the new value", value.length);
+
+if (refreshed.status === 429) {
+  await sleep(refreshed.body.retryAfter * 1000);
+} else if (refreshed.status !== 200) {
+  throw new Error(refreshed.body.error);
 }
+const { body } = await call({ operation: "get", name: "bot/api-key" });
+retryWith(body.value.value);
 ```
 
 ## Status codes

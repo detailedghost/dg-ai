@@ -14,11 +14,17 @@ describe("sanitize", () => {
 		expect(sanitize(`${char(0x7f)}${char(0x9f)}`)).toBe("\\u{7f}\\u{9f}");
 	});
 
-	it.each([
-		0x202a, 0x202e, 0x2066, 0x2069, 0x200b, 0x200f, 0xfeff, 0x2028, 0x2029,
-		0x061c, 0x180e, 0x2060, 0x2064, 0xfff9, 0xfffb, 0xe0000, 0xe0041, 0xe007f,
-	])("shows a visible escape for U+%i", (code) => {
-		expect(sanitize(`x${char(code)}y`)).toBe(`x\\u{${code.toString(16)}}y`);
+	it.each(
+		[
+			0x202a, 0x202e, 0x2066, 0x2069, 0x200b, 0x200f, 0xfeff, 0x2028, 0x2029,
+			0x061c, 0x180e, 0x2060, 0x2064, 0xfff9, 0xfffb, 0xe0000, 0xe0041, 0xe007f,
+		].map((code) => [code.toString(16), code] as const),
+	)("shows a visible escape for U+%s", (hex, code) => {
+		expect(sanitize(`x${char(code)}y`)).toBe(`x\\u{${hex}}y`);
+	});
+
+	it("leaves plain non-ASCII text unchanged", () => {
+		expect(sanitize("caf\u00e9 \u65e5\u672c\u8a9e")).toBe("caf\u00e9 \u65e5\u672c\u8a9e");
 	});
 
 	it("keeps no character of the unsafe ranges in its output", () => {

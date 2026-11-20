@@ -1,4 +1,4 @@
-import { closeSync, fstatSync, openSync, readFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readFileSync } from "node:fs";
 
 export const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const GROUP_AND_WORLD_BITS = 0o077;
@@ -40,7 +40,7 @@ export function assertPrivateOpenFile(fd: number, path: string, noun: string): v
 }
 
 export function loadEnvFile(path: string): Record<string, string> {
-	const fd = openSync(path, "r");
+	const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
 	try {
 		assertPrivateOpenFile(fd, path, "env file");
 		return parseEnvFile(readFileSync(fd, "utf8"));

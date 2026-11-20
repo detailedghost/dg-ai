@@ -44,6 +44,11 @@ function configuredChatId(configPath: string): string | undefined {
 	}
 }
 
+const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+const compareHandled = (x: { at: string; messageId: string }, y: { at: string; messageId: string }): number =>
+	byText(x.at, y.at) || byText(x.messageId, y.messageId);
+
 function importFileOf(state: ChannelState): ImportFile {
 	const handled = Object.entries(state.handled)
 		.map(([messageId, { status, at, chatId }]) => ({
@@ -52,7 +57,7 @@ function importFileOf(state: ChannelState): ImportFile {
 			at,
 			...(chatId === undefined ? {} : { chatId }),
 		}))
-		.sort((x, y) => (x.at < y.at ? -1 : x.at > y.at ? 1 : x.messageId < y.messageId ? -1 : x.messageId > y.messageId ? 1 : 0));
+		.sort(compareHandled);
 	return {
 		version: 1,
 		cursor: state.lastEventIds,
@@ -100,7 +105,9 @@ export async function runExport(
 ): Promise<number> {
 	const { env, label } = flags;
 	if (!isJobName(label)) {
-		io.err(`${PREFIX} "--label" must be 1-64 lowercase letters, digits or hyphens, starting with a letter or digit`);
+		io.err(
+			`${PREFIX} "--label" must be 1-64 lowercase letters, digits or hyphens, starting with a letter or digit`,
+		);
 		return 1;
 	}
 	const paths = channelReviewPaths(env);
@@ -109,7 +116,8 @@ export async function runExport(
 	try {
 		const { target, file } = await writeExport(flags, paths, platform);
 		io.out(
-			`exported channel-review ${env} state to ${target}: ${file.handled.length} handled, ${Object.keys(file.cursor).length} chat cursors, current ${file.current?.messageId ?? "none"}`,
+			`exported channel-review ${env} state to ${target}: ${file.handled.length} handled, ` +
+				`${Object.keys(file.cursor).length} chat cursors, current ${file.current?.messageId ?? "none"}`,
 		);
 		return 0;
 	} catch (error) {

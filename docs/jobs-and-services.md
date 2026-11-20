@@ -289,8 +289,8 @@ dg owns the clone. On a new commit and after the consent, `update` puts the clon
 clone.
 
 `update` asks no question for a new credential. It prints `next: dg job setup <name>` for each job that lists a new
-credential, required or optional. With `--yes`, a changed credential source applies with no person present; see
-[Refresh a credential](#refresh-a-credential).
+credential, required or optional. With `--yes`, a changed credential source applies with no person present. `update` then removes the job from the "setup
+done" mark and prints `next: dg job setup <name>`; see [Refresh a credential](#refresh-a-credential).
 
 ## Add a local script or folder
 
@@ -414,21 +414,26 @@ binds a credential to an environment variable reads the new value at its next st
 A job that runs can ask for itself. It sends the operation `refresh` of [Service API v1](service-api.md#refresh-a-credential)
 with its grant, and then sends `get` to read the new value.
 
-- The daemon fetches only from the source that the owner saw at `dg job add` or `dg job update`. The request cannot give a
-  secret id, a region, a key, a profile or an argv.
+- The daemon fetches only from the source that the record holds. The request cannot give a secret id, a region, a key, a
+  profile or an argv. For a repository job the owner read that source at the consent of `dg job add` or `dg job update`. Two
+  cases have no such review: a local folder with a `dg` block asks nothing, and `--yes` gives the consent with no person
+  present.
 - A refresh needs a source and one earlier `dg job setup <name>` by a person; the answer is 409 when either is missing, or when
   the record key is not the grant of the job.
 - The fetch uses the recorded profile and the environment of the named job (`envFile`, `passEnv` and the allowlist), not
   the environment of the caller.
-- The daemon allows one fetch for one credential in 60 s. dg starts no refresh on its own.
+- The daemon allows one fetch for one credential in 60 s. dg starts no refresh on its own. A second request in that time gets
+  429 with `retryAfter` in seconds.
+- When `dg job update` changes the source of a credential that a job lists, it removes the job from the "setup done" mark, so
+  `refresh` answers 409 until `dg job setup <name>` runs again.
 - After a 502 the next step is `dg job setup <job> --refresh`, which shows the cause.
 
 Note that the daemon runs no `git` command, starts `aws` only for the operation `refresh` with the fixed argv of the declared
 source, and reads `<data>/jobs/sources.json` only for that operation.
 
-Two limits follow. The mark "setup done" is not reset by `update`, so a changed source that `dg job update --yes` applies can
-be refreshed with no person present. And `refresh` is not a sandbox against a running job: the `envFile` of the job can set
-`PATH` or `AWS_*` for the `aws` process.
+Two limits follow. The grant proves the prefix and not the job, so a holder of the grant can name any job of that prefix in a
+`refresh` request, and jobs that share a prefix trust each other. And `refresh` is not a sandbox against a running job: the
+`envFile` of the job can set `PATH` or `AWS_*` for the `aws` process.
 
 ## Old and new commands
 

@@ -111,6 +111,24 @@ export async function waitUntil(
 	throw new Error("condition not met in time");
 }
 
+/** Waits until `dg job status <name> --json` reports the state, without changing the job. */
+export async function waitForJobState(
+	dgHome: string,
+	port: number,
+	name: string,
+	state: string,
+	timeoutMs = 12_000,
+): Promise<void> {
+	await waitUntil(async () => {
+		const result = await runCli(dgHome, ["job", "status", name, "--json"], { port });
+		try {
+			return (JSON.parse(result.stdout) as { jobs: { state: string }[] }).jobs[0]?.state === state;
+		} catch {
+			return false;
+		}
+	}, timeoutMs);
+}
+
 /** Homes for specs whose commands may start a detached daemon; cleanup stops it first. */
 export function homeTracker() {
 	const homes: string[] = [];

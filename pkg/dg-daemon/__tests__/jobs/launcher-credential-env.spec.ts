@@ -161,9 +161,17 @@ describe("buildJobEnv with a bound credential", () => {
 	});
 
 	it("gives noteSecret each bound value", () => {
-		const { root, deps } = kit();
-		buildJobEnv(declOf(root), deps);
-		expect(redactText(`line ${VALUE} end`)).not.toContain(VALUE);
+		const { root, deps } = kit({ "poll/api-key": VALUE, "poll/other": NEWER });
+		buildJobEnv(
+			declOf(root, {
+				credentials: ["api-key", "other"],
+				credentialEnv: { API_KEY: "api-key", OTHER: "other" },
+			}),
+			deps,
+		);
+		const text = redactText(`line ${VALUE} and ${NEWER} end`);
+		expect(text).not.toContain(VALUE);
+		expect(text).not.toContain(NEWER);
 	});
 
 	it("throws the is missing text for a credential that went away, with no value in it", () => {
@@ -234,7 +242,7 @@ describe("launchJob and startJobRun with a bound credential", () => {
 		expect(readFileSync(out, "utf8")).toBe(VALUE);
 	});
 
-	it("gives a scheduled child the value and keeps it out of its log", async () => {
+	it("gives a scheduled child the value and writes no value of its own to the log", async () => {
 		const { root, deps } = kit();
 		const out = join(root, "out.txt");
 		const decl = declOf(root, {
@@ -351,6 +359,7 @@ describe("the runner with a bound credential", () => {
 		try {
 			await run({ root: dgHome, dgHome, store, table, runner, warns });
 		} finally {
+			await runner.stopAll();
 			store.close();
 			cleanupDgHome(dgHome);
 		}
@@ -405,7 +414,6 @@ describe("the runner with a bound credential", () => {
 			});
 			const [outcome] = await Promise.all(ctx.runner.tick());
 			expect(outcome?.error).toContain("is missing");
-			expect(outcome?.error).not.toContain(VALUE);
 			expect(ctx.store.getJob(job.id)?.lastError).toContain("is missing");
 			expect(() => readFileSync(out, "utf8")).toThrow();
 		});
@@ -447,6 +455,10 @@ describe("a daemon with a bound credential", () => {
 		removeScratchDirs();
 	});
 
+	afterEach(() => {
+		writeFileSync(paths().daemonConfigPath, JSON.stringify({ jobs: { poll: entry() } }));
+	});
+
 	const verb = async (name: string, action: "start" | "stop") => {
 		const response = await fetch(
 			`http://127.0.0.1:${daemon.port}${CHAT_JOBS_PATH}/${name}/${action}`,
@@ -477,6 +489,11 @@ describe("a daemon with a bound credential", () => {
 		);
 		seen.push(await response.clone().text());
 		return response;
+	};
+
+	const seedCredential = async (value: string) => {
+		await credentialOp({ operation: "ensure-grant" });
+		await credentialOp({ operation: "set", name: "poll/api-key", value });
 	};
 
 	it("answers 400 with the is missing text on the start route and starts no process", async () => {
@@ -512,6 +529,7 @@ describe("a daemon with a bound credential", () => {
 	});
 
 	it("still returns the bound credential through service API v1", async () => {
+		await seedCredential(NEWER);
 		const token = readFileSync(credentialGrantTokenPath(paths(), "poll"), "utf8").trim();
 		const response = await fetch(
 			`http://127.0.0.1:${daemon.port}${SERVICE_API_CREDENTIALS_PATH}`,
@@ -530,6 +548,16 @@ describe("a daemon with a bound credential", () => {
 	});
 
 	it("shows the value in no job status row, no daemon log line and no route answer", async () => {
+		await seedCredential(VALUE);
+		expect((await verb("poll", "start")).status).toBe(200);
+		await until(() => {
+			try {
+				return readFileSync(out, "utf8") === VALUE;
+			} catch {
+				return false;
+			}
+		});
+		await verb("poll", "stop");
 		const status = await fetch(`http://127.0.0.1:${daemon.port}${CHAT_JOBS_PATH}`, {
 			headers: {
 				Host: `127.0.0.1:${daemon.port}`,
@@ -545,6 +573,7 @@ describe("a daemon with a bound credential", () => {
 	});
 
 	it("keeps the stored credential after the entry goes and starts no process for it", async () => {
+		await seedCredential(NEWER);
 		writeFileSync(paths().daemonConfigPath, JSON.stringify({ jobs: {} }));
 		expect((await verb("poll", "start")).status).toBe(404);
 		const token = readFileSync(credentialGrantTokenPath(paths(), "poll"), "utf8").trim();

@@ -298,32 +298,46 @@ describe("documented literals are in their source files", () => {
 	const doc = flat(read(JOBS));
 
 	test("each message and question of the documents is in a source file", () => {
-		const literals: Array<[string, string]> = [
-			["consent needs a terminal", "consent needs a terminal"],
-			["holds credentials", "holds credentials"],
-			["is a reserved name", "is a reserved name"],
-			["Update to this commit? [y/N]", "Update to this commit? [y/N]"],
-			["Apply these changes? [y/N]", "Apply these changes? [y/N]"],
-			["replaced <name>.<key>", "replaced ${name}.${key}"],
-			["Add these jobs? [y/N]", "Add these jobs? [y/N]"],
-			["This job can read these credentials. Continue? [y/N]", "This job can read these credentials. Continue? [y/N]"],
-			["Enter <name> by hand? [y/N]", "by hand? [y/N]"],
-			['discarded local changes in the clone of "<source>"', 'discarded local changes in the clone of "${source}"'],
-			["credentials below <prefix>/", "credentials below ${"],
-			["next: dg job setup <name>", "next: dg job setup ${"],
-			["next: dg job restart <name>", "next: dg job restart ${"],
-			["next: dg job enable <name>", "next: dg job enable ${"],
-			["--setup takes a file path or -", "--setup takes a file path or -"],
-			["credential <name> is missing — run dg job setup <job>", "is missing — run dg job setup ${"],
-			["source changed", "source changed — run dg job update ${"],
-			["source missing", "source missing: ${"],
-			["source invalid", "source invalid: ${"],
-			["kept state", "kept state:"],
-			["stored real path", "stored real path"],
-			["build was not run", "build was not run"],
+		const SRC = "dg-daemon/src/commands/";
+		const literals: Array<[string, string, string]> = [
+			["consent needs a terminal", `${SRC}job-source.ts`, "consent needs a terminal"],
+			["consent needs a terminal", `${SRC}job-update.ts`, "consent needs a terminal"],
+			["holds credentials", `${SRC}job-setup.ts`, "holds credentials"],
+			["is a reserved name", `${SRC}job-source.ts`, "is a reserved name"],
+			["Update to this commit? [y/N]", `${SRC}job-update.ts`, "Update to this commit? [y/N]"],
+			["Apply these changes? [y/N]", `${SRC}job-update.ts`, "Apply these changes? [y/N]"],
+			["replaced <name>.<key>", `${SRC}job-update.ts`, "replaced ${name}.${key}"],
+			["Add these jobs? [y/N]", `${SRC}job-source.ts`, "Add these jobs? [y/N]"],
+			[
+				"This job can read these credentials. Continue? [y/N]",
+				`${SRC}job-setup.ts`,
+				"This job can read these credentials. Continue? [y/N]",
+			],
+			["Enter <name> by hand? [y/N]", `${SRC}job-setup.ts`, "by hand? [y/N]"],
+			[
+				'discarded local changes in the clone of "<source>"',
+				`${SRC}job-update.ts`,
+				'discarded local changes in the clone of "${source}"',
+			],
+			["credentials below <prefix>/", `${SRC}job-setup.ts`, "credentials below ${"],
+			["next: dg job setup <name>", `${SRC}job-update.ts`, "next: dg job setup ${"],
+			["next: dg job restart <name>", `${SRC}job-local.ts`, "next: dg job restart ${"],
+			["next: dg job enable <name>", `${SRC}job-update.ts`, "next: dg job enable ${"],
+			["--setup takes a file path or -", `${SRC}jobs.ts`, "--setup takes a file path or -"],
+			[
+				"credential <name> is missing — run dg job setup <job>",
+				"dg-daemon/src/jobs/launcher.ts",
+				"is missing — run dg job setup ${",
+			],
+			["source changed", `${SRC}jobs.ts`, "source changed — run dg job update ${"],
+			["source missing", `${SRC}jobs.ts`, "source missing: ${"],
+			["source invalid", `${SRC}jobs.ts`, "source invalid: ${"],
+			["kept state", `${SRC}jobs.ts`, "kept state:"],
+			["stored real path", `${SRC}job-local.ts`, "stored real path"],
+			["build was not run", `${SRC}job-local.ts`, "build was not run"],
 		];
-		for (const [documented, inSource] of literals) {
-			expect([documented, code.includes(inSource)]).toEqual([documented, true]);
+		for (const [documented, file, inSource] of literals) {
+			expect([documented, file, read(`pkg/${file}`).includes(inSource)]).toEqual([documented, file, true]);
 		}
 		for (const documented of [
 			"consent needs a terminal",
@@ -355,9 +369,10 @@ describe("documented literals are in their source files", () => {
 		const names = [...extensions.matchAll(/"(\.\w+)"/g)].map((m) => m[1]);
 		expect(names).toEqual([".ts", ".js", ".mjs", ".cjs"]);
 		for (const name of names) expect(doc).toContain(`\`${name}\``);
-		expect(code).toContain("REFRESH_WINDOW_MS = 60_000");
-		expect(code).toContain("SETUP_LIMIT_BYTES = 128 * 1024");
-		expect(code).toContain("MAX_ENV_NAME = 64");
+		expect(code).toMatch(/REFRESH_WINDOW_MS\s*=\s*60_000\b/);
+		expect(code).toMatch(/SETUP_LIMIT_KIB\s*=\s*128\b/);
+		expect(code).toMatch(/SETUP_LIMIT_BYTES\s*=\s*SETUP_LIMIT_KIB\s*\*\s*1024\b/);
+		expect(code).toMatch(/MAX_ENV_NAME\s*=\s*64\b/);
 		expect(doc).toContain("128 KiB");
 		expect(doc).toContain("64 characters at most");
 		expect(code).toContain('SOURCE_TYPE = "aws-secretsmanager"');
@@ -387,6 +402,18 @@ describe("documented literals are in their source files", () => {
 		}
 		expect(code).toContain('refresh: ["operation", "name", "job"]');
 		expect(record).toContain("`refresh`");
+	});
+});
+
+describe("the setup mark after a changed credential source", () => {
+	test("each document says that update resets it and that the grant proves the prefix only", () => {
+		for (const file of [JOBS, SERVICE_API, RECORD]) {
+			const text = flat(read(file));
+			expect([file, /setup done|setupDone/.test(text)]).toEqual([file, true]);
+			expect([file, text.includes("dg job setup <")]).toEqual([file, true]);
+			expect([file, text.includes("proves the prefix")]).toEqual([file, true]);
+			expect([file, /never reset|not reset/.test(text)]).toEqual([file, false]);
+		}
 	});
 });
 
@@ -537,7 +564,7 @@ describe("jobs SKILL.md", () => {
 	test("does not answer the consent question and adds no --yes on its own", () => {
 		const text = flat(section);
 		expect(text).toContain("does not answer the consent question and does not add `--yes` on its own");
-		expect(text).toContain("the human runs it, or names the repository for which the agent can use `--yes`");
+		expect(text).toContain("the human runs it. The agent never adds `--yes`");
 		expect(text).toContain("needs one `y` at a terminal, also for an agent");
 	});
 });

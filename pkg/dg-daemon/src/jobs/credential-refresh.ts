@@ -83,7 +83,7 @@ function recordedSource(
 	const found = findRecordByJob(readSourceRecords(paths), job.name);
 	if (!found || found.source !== job.grant) return undefined;
 	if (found.record.setupDone?.includes(job.name) !== true) return undefined;
-	const details = Object.entries(found.record.credentials).find(
+	const details = Object.entries(found.record.credentials).findLast(
 		([key]) => key.toLowerCase() === rest,
 	);
 	return toSource(isRecord(details?.[1]) ? details[1].source : undefined);
@@ -113,7 +113,7 @@ function fetchFailure(job: string, name: string, key: string | undefined, err: u
 		case "invalid-json":
 			return failed(job, `the secret of ${name} is not JSON`);
 		case "no-key":
-			return failed(job, `the secret has no key "${key}"`);
+			return failed(job, `the secret has no key "${sanitize(key ?? "")}"`);
 		case "failed":
 			return failed(job, `aws failed for ${name}: ${sanitize(err.message).slice(0, MAX_LINE)}`);
 	}

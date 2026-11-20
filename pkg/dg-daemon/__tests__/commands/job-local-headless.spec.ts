@@ -9,7 +9,6 @@ import {
 	BIN_RUN,
 	makeFolder,
 	makeScript,
-	readConfig,
 	runJob,
 	type Sandbox,
 	sandbox,

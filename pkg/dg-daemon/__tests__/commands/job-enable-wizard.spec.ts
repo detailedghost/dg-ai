@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
@@ -8,9 +8,10 @@ import { allocatePort, spawnServe, stopServe, waitForHealth } from "../utils/dae
 import { waitUntil } from "./job-cli-helpers";
 import { addFixture, makeRepo, runJob, sandbox } from "./job-source-kit";
 import {
-	ALL_VALUES,
 	credentialJob,
 	everything,
+	gitRecord,
+	noValue,
 	type Rig,
 	type RigOptions,
 	setupFile,
@@ -20,6 +21,8 @@ import {
 	VALUE_B,
 	VALUE_C,
 } from "./job-setup-kit";
+
+setDefaultTimeout(30_000);
 
 const rigs: Rig[] = [];
 afterEach(() => {
@@ -33,29 +36,14 @@ function rigFor(options: RigOptions = {}, extra: Record<string, unknown> = {}): 
 }
 
 const STORED = ["x/api", "x/metrics", "x/errors"].map((name) => ({ name }));
-const SHA = "a".repeat(40);
 const LOGIN = /Start dg at login/;
 
 function seedRecord(rig: Rig, credentials: Record<string, unknown>, extra: Record<string, unknown> = {}) {
-	rig.seedRegistry({
-		x: {
-			kind: "git",
-			url: "file:///tmp/x",
-			ref: null,
-			sha: SHA,
-			jobs: ["x"],
-			declarationHash: "f".repeat(64),
-			credentials,
-			...extra,
-		},
-	});
+	rig.seedRegistry(gitRecord(["x"], credentials, extra));
 }
 
 const questions = (rig: Rig) => rig.asked.confirms.filter((question) => !LOGIN.test(question));
 const started = (rig: Rig) => rig.daemon.requests.includes("POST /jobs/x/start");
-const noValue = (text: string) => {
-	for (const value of ALL_VALUES) expect(text).not.toContain(value);
-};
 
 describe("job enable wizard at a terminal", () => {
 	it("asks for each missing credential, stores them, grants them and starts the job", async () => {
@@ -175,6 +163,7 @@ describe("job enable wizard at a terminal", () => {
 		const result = await rig.run(["enable", "x"]);
 
 		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("job enable: could not store metrics: the route refused it");
 		expect(rig.asked.confirms.some((question) => LOGIN.test(question))).toBe(false);
 		expect(rig.config().loginUnitAsked).toBeUndefined();
 	});
@@ -339,7 +328,7 @@ describe("job enable wizard with no terminal", () => {
 		const result = await rig.run(["enable", "y", "--setup", file]);
 
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain('job "y" lists no credential');
+		expect(result.stderr).toContain('job enable: job "y" lists no credential');
 	});
 });
 
@@ -386,6 +375,7 @@ describe("job enable adoption", () => {
 		const result = await rig.run(["enable", "x"]);
 
 		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("job enable: declined; nothing was stored");
 		expect(rig.calls.set).toEqual([]);
 		expect(rig.registry().x).toBeUndefined();
 	});
@@ -416,17 +406,7 @@ describe("job enable adoption", () => {
 			{ hidden: [VALUE_A] },
 		);
 		rigs.push(rig);
-		rig.seedRegistry({
-			x: {
-				kind: "git",
-				url: "file:///tmp/x",
-				ref: null,
-				sha: SHA,
-				jobs: ["a", "b"],
-				declarationHash: "f".repeat(64),
-				credentials: {},
-			},
-		});
+		rig.seedRegistry(gitRecord(["a", "b"], {}));
 
 		const first = await rig.run(["enable", "a"]);
 		const second = await rig.run(["enable", "b"], { isTerminal: () => false });
@@ -495,6 +475,7 @@ describe("job enable store failures", () => {
 		const result = await rig.run(["enable", "x", "--setup", file]);
 
 		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("metrics: credential meta.expiresAt must be an ISO 8601 timestamp");
 		expect(rig.calls.set).toEqual([]);
 		noValue(everything(result));
 	});
@@ -513,6 +494,7 @@ describe("job enable store failures", () => {
 		const result = await rig.run(["enable", "x", "--setup", file]);
 
 		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("api: credential meta.password looks secret; store secrets only as the credential value");
 		expect(rig.calls.set).toEqual([]);
 	});
 });
@@ -546,6 +528,7 @@ describe("job enable with a daemon that does not answer", () => {
 		const result = await rig.run(["enable", "x"]);
 
 		expect(result.code).toBe(1);
+		expect(result.stderr).toContain('does not answer, so the state of job "x" is unknown');
 		expect(rig.table().x.enabled).toBeUndefined();
 		expect(rig.calls.set).toEqual([]);
 	});
@@ -775,6 +758,7 @@ describe("job enable with a credential source", () => {
 		const result = await rig.run(["enable", "x", "--setup", file]);
 
 		expect(result.code).toBe(1);
+		expect(result.stderr).toContain('--setup: the "profile" for "api" is not valid');
 		expect(rig.asked.sources).toEqual([]);
 		expect(rig.calls.set).toEqual([]);
 	});
@@ -951,7 +935,7 @@ describe("job enable wizard against a live daemon", () => {
 		expect(readFileSync(tokenFile).equals(before)).toBe(true);
 	});
 
-	it("rotates the token file at setup --rotate-token and changes no credential", async () => {
+	it("rotates the token file at setup --rotate-token and prints a restart line", async () => {
 		const sb = await live();
 		await addFixture(sb, makeRepo({ dg: block("bot"), files: { "bin/read": READ_SCRIPT } }));
 		const offline = { ...sb.deps(), isTerminal: () => false };

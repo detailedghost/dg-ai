@@ -723,7 +723,10 @@ async function updateVerb(
 		notFound(name);
 	}
 	if (changes.length === 0 && credentials === undefined) {
-		if (options.yes === true) return;
+		if (options.yes === true) {
+			console.log("nothing to change");
+			return;
+		}
 		stop("give a flag to change");
 	}
 	await withConfigLock(paths, async () => {
@@ -853,7 +856,10 @@ export function registerJobCommands(
 
 	job
 		.command("add")
-		.description("add a job from a repository URL, a local file or folder, or a command: continuous, on a cron schedule, or at an interval")
+		.description(
+			"add a job from a repository URL, a local file or folder, or a command: " +
+				"continuous, on a cron schedule, or at an interval",
+		)
 		.option("--name <name>", "unique name for the job")
 		.addOption(new Option("--label <name>").hideHelp())
 		.option("--cwd <path>", "working directory for the command")

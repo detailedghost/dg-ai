@@ -29,9 +29,11 @@ import {
 	readFolderDeclared,
 	readState,
 	resolveBuild,
+	resetSetupOnSourceChange,
 	resolveJobs,
 	rollBack,
 	snapshotOf,
+	stateFoldersOf,
 	type SourceAddOptions,
 	stop,
 } from "./job-source";
@@ -225,14 +227,6 @@ async function addFolder(
 	}
 }
 
-function stateFoldersOf(paths: DgPaths, names: string[]): Record<string, string> {
-	return Object.fromEntries(
-		names
-			.map((name) => [name, jobStateDir(paths, name)] as const)
-			.filter(([, dir]) => existsSync(dir)),
-	);
-}
-
 /** Adds one local file as a job, or the jobs that the `dg` block of one local folder declares. */
 export async function addLocal(
 	argument: string,
@@ -297,11 +291,13 @@ export async function updateLocal(name: string, deps: JobSourceDeps): Promise<vo
 	}
 	const before = describeCredentials(declaredJobsOf(first.config, record.jobs), record.credentials);
 	const removed = record.jobs.filter((job) => !names.includes(job));
+	const marks = resetSetupOnSourceChange(record, declaration.credentials, declaration.jobs);
 	const next: PathSourceRecord = {
 		...record,
 		declarationHash: declarationHash(pkg.dg),
 		jobs: names,
 		credentials: declaration.credentials,
+		...(marks.setupDone === undefined ? {} : { setupDone: marks.setupDone }),
 	};
 	let outcome = { replaced: [] as string[], created: [] as string[] };
 
@@ -332,6 +328,7 @@ export async function updateLocal(name: string, deps: JobSourceDeps): Promise<vo
 	say(`updated source "${source}" at ${record.path}`);
 	for (const line of outcome.replaced) say(line);
 	for (const job of outcome.created) say(`next: dg job enable ${job}`);
+	for (const job of marks.reset) say(`next: dg job setup ${job}`);
 	if (declaration.build) {
 		say(`build was not run — run ${declaration.build.join(" ")} yourself in ${record.path}`);
 	}

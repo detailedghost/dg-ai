@@ -118,7 +118,16 @@ async function handleRefresh(
 		} catch (err) {
 			return answer("refused", refuse((err as Error).message, 400));
 		}
-		const entry = refresh.readJobs().find((candidate) => candidate.name === job);
+		let jobs: ParsedJob[];
+		try {
+			jobs = refresh.readJobs();
+		} catch (err) {
+			logger.error(
+				`service API refresh could not read the jobs table: ${err instanceof Error ? err.name : typeof err}`,
+			);
+			return answer("500", refuse("could not read the jobs table; check the dg config", 500));
+		}
+		const entry = jobs.find((candidate) => candidate.name === job);
 		if (!entry?.ok || entry.grant?.toLowerCase() !== prefix)
 			return answer("refused", refuse(NOT_ALLOWED, 403));
 		const result = await refreshCredential({

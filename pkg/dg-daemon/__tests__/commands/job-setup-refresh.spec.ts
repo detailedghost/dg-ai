@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
-	ALL_VALUES,
 	credentialJob,
 	everything,
+	gitRecord,
+	noValue,
 	type Rig,
 	type RigOptions,
 	setupRig,
@@ -17,7 +18,6 @@ afterEach(() => {
 });
 
 const SOURCE = { type: "aws-secretsmanager", secretId: "prod/api", region: "us-east-1", profile: "p" };
-const SHA = "a".repeat(40);
 
 function rigFor(options: RigOptions, details: Record<string, unknown>): Rig {
 	const rig = setupRig(
@@ -25,26 +25,12 @@ function rigFor(options: RigOptions, details: Record<string, unknown>): Rig {
 		options,
 	);
 	rigs.push(rig);
-	rig.seedRegistry({
-		x: {
-			kind: "git",
-			url: "file:///tmp/x",
-			ref: null,
-			sha: SHA,
-			jobs: ["x"],
-			declarationHash: "f".repeat(64),
-			credentials: details,
-			prefixAccepted: true,
-		},
-	});
+	rig.seedRegistry(gitRecord(["x"], details, { prefixAccepted: true }));
 	return rig;
 }
 
 const both = { api: { source: SOURCE }, metrics: { source: { ...SOURCE, secretId: "prod/m" } } };
 const byId = (argv: string[]) => argv[argv.indexOf("--secret-id") + 1];
-const noValue = (text: string) => {
-	for (const value of ALL_VALUES) expect(text).not.toContain(value);
-};
 
 describe("job setup --refresh", () => {
 	it("fetches each credential with a source, stores each, asks nothing and needs no terminal", async () => {
@@ -158,17 +144,7 @@ describe("job setup --refresh", () => {
 			{ terminal: false, stored: [{ name: "x/other" }], grant: "ok", source: () => ({ code: 0, stdout: VALUE_A, stderr: "" }) },
 			{ api: { source: SOURCE } },
 		);
-		rig.seedRegistry({
-			x: {
-				kind: "git",
-				url: "file:///tmp/x",
-				ref: null,
-				sha: SHA,
-				jobs: ["x"],
-				declarationHash: "f".repeat(64),
-				credentials: { api: { source: SOURCE } },
-			},
-		});
+		rig.seedRegistry(gitRecord(["x"], { api: { source: SOURCE } }));
 
 		const result = await rig.run(["setup", "x", "--refresh"]);
 

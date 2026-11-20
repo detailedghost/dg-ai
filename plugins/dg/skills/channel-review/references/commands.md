@@ -25,8 +25,8 @@ Runner availability, login, missing thrash, and timeouts have separate codes.
 | `dg-skills channel-review migrate-env` | `--file <path>`, `--dry-run`, `--keep-backup`, `--session <id>` | Move known secrets from `.env` into the credential store and delete only their lines. Writes no backup unless `--keep-backup` is set; then it writes a plain-text copy (mode 0600, original values). Prints variable names only. |
 | `dg-skills channel-review export` | `--env dev\|prod` (required), `--label <job>` (required) | Write the state of that env to `<state>/jobs/<job>/import.json` (mode 0600). The daemon of that env must be stopped. See [Export for the review bot](#export-for-the-review-bot). |
 
-Flags are optional. Commands use the saved environment unless `--env` overrides
-it. Start and run accept runner and chat overrides for that invocation.
+Flags are optional, except for `export`, which needs `--env` and `--label`. Commands use the
+saved environment unless `--env` overrides it. Start and run accept runner and chat overrides for that invocation.
 `--chat-id` replaces the configured `chats` list with that one chat.
 Read [setup](setup.md) before changing config.
 
@@ -56,7 +56,7 @@ Order of work:
    The export refuses to run while that daemon runs, and names the stop command.
    A daemon that starts between the check and the read is not prevented, so
    keep it stopped.
-2. Run the export. It creates `jobStateDir(paths, label)` with mode 0700, also
+2. Run the export. It creates `<state>/jobs/<label>/` with mode 0700, also
    before `dg job add`, and the daemon accepts that folder.
 3. Add the job with `dg job add`. The job gets the folder as `DG_SERVICE_STATE_DIR`
    and finds the file there.

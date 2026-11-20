@@ -105,7 +105,8 @@ type Ctx = {
 type Pending = { name: string; full: string; value: string; meta: CredentialMeta };
 
 const CREATED_BY = "dg job setup";
-const SETUP_LIMIT_BYTES = 128 * 1024;
+const SETUP_LIMIT_KIB = 128;
+const SETUP_LIMIT_BYTES = SETUP_LIMIT_KIB * 1024;
 const ADOPTION_QUESTION = "This job can read these credentials. Continue? [y/N]";
 const SERVICE_LABEL = "AWS Secrets Manager";
 
@@ -137,7 +138,7 @@ async function readStream(stream: ReadableStream<Uint8Array>): Promise<string> {
 	let total = 0;
 	for await (const chunk of stream) {
 		total += chunk.length;
-		if (total > SETUP_LIMIT_BYTES) fail("--setup input is larger than 128 KiB");
+		if (total > SETUP_LIMIT_BYTES) fail(`--setup input is larger than ${SETUP_LIMIT_KIB} KiB`);
 		chunks.push(chunk);
 	}
 	return Buffer.concat(chunks).toString("utf8");
@@ -158,7 +159,7 @@ function readFileLimited(path: string): string {
 			const read = readSync(fd, buffer, length, buffer.length - length, null);
 			if (read === 0) break;
 			length += read;
-			if (length > SETUP_LIMIT_BYTES) fail("--setup input is larger than 128 KiB");
+			if (length > SETUP_LIMIT_BYTES) fail(`--setup input is larger than ${SETUP_LIMIT_KIB} KiB`);
 		}
 		return buffer.subarray(0, length).toString("utf8");
 	} catch (err) {
@@ -195,7 +196,7 @@ function loadJob(paths: DgPaths, name: string, verb: Verb): Loaded {
 	if (!entry) return fail(`no job named "${name}"`);
 	const parsed = parseJobEntry(name, entry);
 	if (!parsed.ok) return fail(`job ${verb}: job "${name}" is not valid: ${parsed.error}`);
-	if (parsed.credentials.length === 0) fail(`job setup: job "${name}" lists no credential`);
+	if (parsed.credentials.length === 0) fail(`job ${verb}: job "${name}" lists no credential`);
 	if (parsed.grant === undefined) fail(`job ${verb}: job "${name}" has no credential prefix`);
 	const found = findMarkRecord(guardConfig(() => readSourceRecords(paths)), name);
 	const stored = found && "credentials" in found.record ? found.record.credentials : {};
@@ -525,7 +526,7 @@ async function commit(ctx: Ctx, stored: string[], enable: boolean): Promise<void
 				}
 			});
 		} catch (err) {
-			rollBack(err, restores, paths, job.recordKey);
+			rollBack(err, restores, paths, job.recordKey, "");
 		}
 	});
 }
@@ -585,14 +586,7 @@ export async function runEnableWizard(
 }
 
 async function rotate(ctx: Ctx): Promise<void> {
-	try {
-		await ctx.client.rotateGrant();
-	} catch (err) {
-		if (describeError(err).includes("has no credential prefix")) {
-			fail(`job setup: job "${ctx.job.name}" has no credential prefix`);
-		}
-		throw err;
-	}
+	await ctx.client.rotateGrant();
 	console.log(`rotated the token of the prefix ${ctx.job.prefix}/`);
 	await nextLines(ctx);
 }

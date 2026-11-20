@@ -443,16 +443,21 @@ describe("POST /service-api/v1/credentials refresh", () => {
 		it("answers 429 for a request during a fetch", async () => {
 			const rig = await makeRig();
 			let release: () => void = () => {};
+			let entered: () => void = () => {};
 			const gate = new Promise<void>((resolve) => {
 				release = resolve;
 			});
+			const started = new Promise<void>((resolve) => {
+				entered = resolve;
+			});
 			const inner = rig.refresh.runSource;
 			rig.refresh.runSource = async (argv, options) => {
+				entered();
 				await gate;
 				return inner(argv, options);
 			};
 			const first = rig.refreshOf();
-			await Bun.sleep(5);
+			await started;
 			const second = await rig.refreshOf();
 			expect(second.status).toBe(429);
 			expect(((await bodyOf(second)).retryAfter as number) >= 1).toBe(true);
@@ -536,7 +541,13 @@ describe("POST /service-api/v1/credentials refresh", () => {
 		it("answers 500 when the jobs table cannot be read", async () => {
 			const rig = await makeRig();
 			rig.state.jobsThrow = true;
-			expect((await rig.refreshOf()).status).toBe(500);
+			const response = await rig.refreshOf();
+			expect(response.status).toBe(500);
+			expect(await bodyOf(response)).toEqual({
+				ok: false,
+				error: "could not read the jobs table; check the dg config",
+			});
+			expect(rig.logs.join("\n")).not.toContain("jobs unreadable");
 		});
 
 		it("answers 500 with the storage text when the credential store is closed", async () => {
@@ -590,6 +601,9 @@ const WRITE_SCRIPT = {
 const { createHash } = require("node:crypto");
 const { readFileSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
+const done = (state) =>
+	writeFileSync(join(process.env.DG_SERVICE_STATE_DIR, process.env.DG_SERVICE_LABEL + ".got"), JSON.stringify(state));
+setTimeout(() => {}, 600000);
 (async () => {
 	const prefix = process.env.DG_CREDENTIAL_GRANT_PREFIX;
 	const token = readFileSync(process.env.DG_CREDENTIAL_GRANT_FILE, "utf8").trim();
@@ -604,15 +618,12 @@ const { join } = require("node:path");
 	const name = prefix + "/token";
 	const refreshed = await call({ operation: "refresh", name, job: process.env.DG_SERVICE_LABEL });
 	const got = await call({ operation: "get", name });
-	writeFileSync(
-		join(process.env.DG_SERVICE_STATE_DIR, process.env.DG_SERVICE_LABEL + ".got"),
-		JSON.stringify({
-			status: refreshed.status,
-			hash: createHash("sha256").update(got.body.value.value).digest("hex"),
-		}),
-	);
-	setTimeout(() => {}, 600000);
-})();
+	done({
+		status: refreshed.status,
+		error: refreshed.body.error,
+		hash: createHash("sha256").update(got.body.value.value).digest("hex"),
+	});
+})().catch((error) => done({ error: String(error) }));
 `,
 	executable: true as const,
 };
@@ -621,7 +632,7 @@ describe("refresh against a live daemon", () => {
 	const box = sandbox(["tool", "sh"]);
 	const procs: ReturnType<typeof spawnServe>[] = [];
 	afterEach(async () => {
-		for (const proc of procs.splice(0)) await stopServe(proc).catch(() => {});
+		for (const proc of procs.splice(0)) await stopServe(proc);
 		box.cleanup();
 	});
 
@@ -661,7 +672,8 @@ describe("refresh against a live daemon", () => {
 		expect(result.code).toBe(0);
 		const got = join(jobStateDir(sb.paths, "bot"), "bot.got");
 		await waitUntil(() => existsSync(got));
-		const seen = JSON.parse(readFileSync(got, "utf8")) as { status: number; hash: string };
+		const seen = JSON.parse(readFileSync(got, "utf8")) as { status: number; hash: string; error?: string };
+		expect(seen.error).toBeUndefined();
 		expect(seen.status).toBe(200);
 		expect(seen.hash).toBe(createHash("sha256").update(VALUE).digest("hex"));
 	});

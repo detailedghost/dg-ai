@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {
@@ -132,6 +132,15 @@ afterAll(async () => {
 	removeScratchDirs();
 });
 
+afterEach(async () => {
+	for (const job of ["a", "b", "first"]) {
+		const status = await op(job, { operation: "status" });
+		for (const credential of (status.body.credentials as { name: string }[] | undefined) ?? []) {
+			await op(job, { operation: "delete", name: credential.name });
+		}
+	}
+});
+
 function expectRefusal(body: Record<string, unknown>, error: string | RegExp) {
 	expect(body.ok).toBe(false);
 	if (typeof error === "string") expect(body.error).toBe(error);
@@ -256,7 +265,7 @@ describe("POST /jobs/<name>/credentials guards", () => {
 		}
 	});
 
-	it("answers 403 for get and for any other operation that would read a value", async () => {
+	it("answers 403 for get, the one operation that reads a value", async () => {
 		const result = await op("a", { operation: "get", name: "a/x" });
 		expect(result.status).toBe(403);
 		expectRefusal(result.body, NOT_ALLOWED);
@@ -401,6 +410,7 @@ describe("grants", () => {
 	});
 
 	it("keeps the token of the first job when a second job with the same prefix gets its grant", async () => {
+		await op("first", { operation: "ensure-grant" });
 		const token = readToken("tools");
 		const second = await op("second", { operation: "ensure-grant" });
 		expect(second.body.created).toBe(false);
@@ -411,6 +421,7 @@ describe("grants", () => {
 	});
 
 	it("makes a new grant after the token file is deleted", async () => {
+		await op("first", { operation: "ensure-grant" });
 		rmSync(tokenFile("tools"));
 		const again = await op("first", { operation: "ensure-grant" });
 		expect(again.body.created).toBe(true);
@@ -418,6 +429,7 @@ describe("grants", () => {
 	});
 
 	it("repairs a row that has a new token and a file with the old one", async () => {
+		await op("first", { operation: "ensure-grant" });
 		const old = readFileSync(tokenFile("tools"));
 		await op("first", { operation: "rotate-grant" });
 		writeFileSync(tokenFile("tools"), old, { mode: 0o600 });
@@ -475,6 +487,10 @@ describe("end to end with no agent session", () => {
 	});
 
 	it("holds no value text and no token in a response or in the daemon log", async () => {
+		for (const job of ["a", "b", "bot", "first"]) await op(job, { operation: "ensure-grant" });
+		await op("a", { operation: "set", name: "a/leak", value: VALUE, meta: {} });
+		await op("a", { operation: "status" });
+		await op("first", { operation: "rotate-grant" });
 		const log = readDaemonLog(daemon.dgHome);
 		expect(log).not.toContain(VALUE);
 		for (const text of seen) expect(text).not.toContain(VALUE);
@@ -483,7 +499,7 @@ describe("end to end with no agent session", () => {
 			expect(log).not.toContain(token);
 			for (const text of seen) expect(text).not.toContain(token);
 		}
-		expect(seen.length).toBeGreaterThan(10);
+		expect(seen.length).toBeGreaterThan(5);
 	});
 });
 

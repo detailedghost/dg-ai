@@ -55,7 +55,8 @@ function checkPathRecord(
 	if (!Array.isArray(raw.jobs) || !raw.jobs.every((job) => typeof job === "string" && isJobName(job))) {
 		bad('has "jobs" that is not an array of job names');
 	}
-	if (raw.declarationHash !== undefined && !(typeof raw.declarationHash === "string" && HASH.test(raw.declarationHash))) {
+	const hash = raw.declarationHash;
+	if (hash !== undefined && !(typeof hash === "string" && HASH.test(hash))) {
 		bad('has a "declarationHash" that is not 64 hexadecimal characters');
 	}
 	if (!isRecord(raw.credentials)) bad('has "credentials" that is not an object');

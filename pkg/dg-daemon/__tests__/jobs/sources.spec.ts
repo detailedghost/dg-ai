@@ -10,6 +10,7 @@ import {
 	readSourceRecords,
 	updateMarks,
 	writeSource,
+	type RecordRegistry,
 } from "../../src/jobs/sources";
 import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
 
@@ -293,7 +294,7 @@ describe("path records", () => {
 	});
 
 	it("finds a path record by its job and gives its marks to findMarkRecord", () => {
-		const registry = { tools: { ...folder(), setupDone: ["a"] } } as never;
+		const registry: RecordRegistry = { tools: { ...folder(), setupDone: ["a"] } };
 		expect(findRecordByJob(registry, "a")?.source).toBe("tools");
 		expect(findMarkRecord(registry, "a")?.record.setupDone).toEqual(["a"]);
 	});

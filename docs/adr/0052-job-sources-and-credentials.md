@@ -58,7 +58,10 @@ Service API v1 gets one new operation, `refresh`, with the body keys `operation`
 as [ADR 0043](0043-outside-services.md) allows for an addition. The daemon starts an `aws` process only for `refresh`, with the
 fixed argv of the declared source, and it reads `<data>/jobs/sources.json` only for that operation. The request cannot give a
 secret id, a region, a key, a profile or an argv. `refresh` answers 409 unless a person ran `dg job setup <name>` once and the
-record key equals the grant of the job. The fetch uses the recorded profile and the environment of the named job. It allows
+record key equals the grant of the job. `update` removes the job from `setupDone` when it changes the `source` of a credential
+that the job lists, so a changed source needs `dg job setup <name>` again. The source that `refresh` reads was reviewed by
+the owner only for a repository job with a terminal consent; a local folder with a `dg` block asks nothing, and `--yes`
+gives the consent with no person present. The fetch uses the recorded profile and the environment of the named job. It allows
 one fetch for one credential in 60 s, and dg starts no refresh on its own. After a 502 the next step is
 `dg job setup <job> --refresh`.
 
@@ -77,8 +80,9 @@ sets at every start. The child and its children see that variable.
 - **Bad:** a local job needs no consent, and a repository can name an AWS secret. The request text shows the secret.
 - **Bad:** the owner token can write the credentials of a job. A grant is not a sandbox, and one job of a source can read the
   credentials of the other jobs of that source.
-- **Bad:** `setupDone` is not reset by `update`, so a changed source that `update --yes` applies can be refreshed with no
-  person present.
+- **Bad (accepted risk):** `refresh` trusts the `job` name of the request. The grant proves the prefix and not the job, so a
+  holder of the grant can ask for a refresh that uses the `PATH` and `envFile` of another job of the same prefix. Jobs that
+  share a prefix trust each other, as with one token for one prefix; the 60 s limit slows this and does not stop it.
 - **Bad:** `refresh` is not a sandbox against a running job: its `envFile` can set `PATH` or `AWS_*` for the `aws` process.
 - **Neutral:** the service API names keep the word `SERVICE`, and a refreshed value reaches an environment variable at the
   next start of the job.

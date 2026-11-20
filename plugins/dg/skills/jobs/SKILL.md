@@ -165,8 +165,8 @@ from the human that names the job or the login unit.
 `job add <url>` takes a repository (`<git-url>[@ref]`) and `job add <path>` takes a script or a
 folder. A repository job asks for consent: `add` and `update` print the request and ask at a
 terminal. This skill does not answer the consent question and does not add `--yes` on its own.
-It gives the command, and the human runs it, or names the repository for which the agent can use
-`--yes`. A local path asks nothing, but run it only on a request that names the path.
+It gives the command, and the human runs it. The agent never adds `--yes`, because with `--yes` a
+process runs repository code with no question. A local path asks nothing, but run it only on a request that names the path.
 
 `job setup <name>` asks questions at a terminal, so give the command to the human.
 `job setup <name> --refresh` fetches each credential of the job again from its declared

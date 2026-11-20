@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import { describeError, isRecord, noteSecret } from "@dg/common";
 import { sanitize } from "./sanitize";
 
@@ -139,7 +140,7 @@ export async function fetchSecret(source: SecretSource, deps: SecretFetchDeps): 
 		}
 	}
 	const aws = deps.which("aws", { PATH: deps.env.PATH });
-	if (aws === null) throw new SecretFetchError("not-installed");
+	if (aws === null || !isAbsolute(aws)) throw new SecretFetchError("not-installed");
 	const argv = [
 		aws,
 		"secretsmanager",

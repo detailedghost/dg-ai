@@ -1,4 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	defaultRunSource,
 	fetchSecret,
@@ -147,12 +150,25 @@ describe("fetchSecret", () => {
 		expect(err.message).not.toContain("v2");
 	});
 
-	it("refuses a source field that starts with a dash and starts no process", async () => {
+	it.each(["secretId", "region", "profile"] as const)(
+		"refuses a %s that starts with a dash and starts no process",
+		async (field) => {
+			const { calls, deps } = fake({ stdout: "v1" });
+
+			const err = await kindOf(() => fetchSecret({ ...SOURCE, [field]: "-x" }, deps));
+
+			expect(err.kind).toBe("failed");
+			expect(err.message).toBe(`the source "${field}" is not valid`);
+			expect(calls).toHaveLength(0);
+		},
+	);
+
+	it.each(["aws", "./aws", "bin/aws"])("refuses the aws path %p that is not absolute", async (path) => {
 		const { calls, deps } = fake({ stdout: "v1" });
 
-		const err = await kindOf(() => fetchSecret({ ...SOURCE, profile: "-x" }, deps));
+		const err = await kindOf(() => fetchSecret(SOURCE, { ...deps, which: () => path }));
 
-		expect(err.kind).toBe("failed");
+		expect(err.kind).toBe("not-installed");
 		expect(calls).toHaveLength(0);
 	});
 
@@ -183,6 +199,41 @@ describe("fetchSecret", () => {
 	});
 });
 
+const tmps: string[] = [];
+const tmp = () => {
+	const dir = mkdtempSync(join(tmpdir(), "dg-secret-"));
+	tmps.push(dir);
+	return dir;
+};
+afterEach(() => {
+	for (const dir of tmps.splice(0)) {
+		for (const file of ["pid", "gpid"]) {
+			const path = join(dir, file);
+			if (existsSync(path)) {
+				try {
+					process.kill(Number(readFileSync(path, "utf8")), "SIGKILL");
+				} catch {}
+			}
+		}
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+const alive = (pid: number): boolean => {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+};
+
+async function goneWithin(pid: number, ms = 3000): Promise<void> {
+	const until = Date.now() + ms;
+	while (alive(pid) && Date.now() < until) await Bun.sleep(25);
+	expect(alive(pid)).toBe(false);
+}
+
 describe("defaultRunSource", () => {
 	const program = (code: string) => [process.execPath, "-e", code];
 	const options = (timeoutMs: number) => ({ env: { ...process.env }, timeoutMs });
@@ -203,7 +254,7 @@ describe("defaultRunSource", () => {
 		expect(result.stdout).toBe("[]");
 	});
 
-	it("gives the env of the caller and no shell", async () => {
+	it("gives the env of the caller", async () => {
 		const result = await defaultRunSource(
 			program("process.stdout.write(process.env.ONLY_HERE ?? '')"),
 			{ env: { ONLY_HERE: "yes", PATH: process.env.PATH }, timeoutMs: 10_000 },
@@ -211,15 +262,29 @@ describe("defaultRunSource", () => {
 		expect(result.stdout).toBe("yes");
 	});
 
+	it("passes a shell metacharacter in argv as plain text", async () => {
+		const text = "$(echo hi); `id` | cat";
+		const result = await defaultRunSource(
+			[...program("process.stdout.write(process.argv.at(-1) ?? '')"), text],
+			options(10_000),
+		);
+		expect(result.stdout).toBe(text);
+	});
+
 	it("kills a program that sleeps past the limit and throws the timeout kind", async () => {
 		const started = Date.now();
+		const pidFile = join(tmp(), "pid");
 
 		const err = await kindOf(() =>
-			defaultRunSource(program("setTimeout(() => {}, 60000)"), options(300)),
+			defaultRunSource(
+				program(`require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 60000)`),
+				options(1500),
+			),
 		);
 
 		expect(err.kind).toBe("timeout");
 		expect(Date.now() - started).toBeLessThan(5000);
+		await goneWithin(Number(readFileSync(pidFile, "utf8")));
 	});
 
 	it("stops a program whose stdout passes 128 KiB and throws the failed kind", async () => {
@@ -246,12 +311,14 @@ describe("defaultRunSource", () => {
 
 	it("settles within the limit for a child that ignores TERM and a grandchild that holds stdout", async () => {
 		const started = Date.now();
+		const dir = tmp();
+		const script = `trap '' TERM; (sleep 30 & echo $! > ${join(dir, "gpid")}); echo $$ > ${join(dir, "pid")}; sleep 30`;
 
-		const err = await kindOf(() =>
-			defaultRunSource(["/bin/sh", "-c", "trap '' TERM; (sleep 30 &); sleep 30"], options(300)),
-		);
+		const err = await kindOf(() => defaultRunSource(["/bin/sh", "-c", script], options(1500)));
 
 		expect(err.kind).toBe("timeout");
-		expect(Date.now() - started).toBeLessThan(3000);
+		expect(Date.now() - started).toBeLessThan(4000);
+		await goneWithin(Number(readFileSync(join(dir, "pid"), "utf8")));
+		await goneWithin(Number(readFileSync(join(dir, "gpid"), "utf8")));
 	});
 });
