@@ -21,7 +21,7 @@ A walkthrough is a **container of screens**. A screen can borrow either other sh
 
 ### 0. Pick the location
 
-Plan walkthroughs **always** live in `.agents/prototype/<name>/`, even when throwaway and even under `--light`. The walkthrough is a durable reference while the plan is specced. On first use of `.agents/prototype/`, set up its ignore lines per [local-build.md](local-build.md).
+Plan walkthroughs **always** live in `.agents/prototype/<name>/`, even when throwaway and even under `--light`. The walkthrough is a durable reference while the plan is specced. On first use of `.agents/prototype/`, set up its ignore lines per [local-build.md](local-build.md). The walkthrough files stay local; its path and answer go in the tracked `NOTES.md`.
 
 **Rendering, framework-aware default**
 
