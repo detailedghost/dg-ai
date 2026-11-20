@@ -36,3 +36,11 @@ The [CLI-only installation](install.md#cli-only-install) supports channel review
 without the browser extension. The channel-review process still needs its own
 runner, authentication, relay, and private configuration. Run
 `dg-skills channel-review setup` in a terminal to create that configuration.
+
+## Move to a job
+
+To run the review bot as a [job](jobs-and-services.md) instead, export the state of one env with
+`dg-skills channel-review export --env <env> --label <label>`. The command writes `<state>/jobs/<label>/import.json` with mode
+`0600`: the cursor of each chat, the handled requests, the current review and the automation state. It reads the state and
+changes nothing. The export refuses, with a `channel-review export:` line and exit 1, when the old daemon of that env runs;
+stop it first with `dg-skills channel-review stop --env <env>`.

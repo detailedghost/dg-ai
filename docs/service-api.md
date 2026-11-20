@@ -6,18 +6,16 @@ read. Version 1 is provisional. A breaking change arrives as a new environment k
 
 ## Set up a grant
 
-Run the steps in this order.
+List the credentials of the job in its `credentials` key, then run `dg job enable <name>`.
+It stores each credential, writes the token file and starts the job. See
+[Credentials: enable and setup](jobs-and-services.md#credentials-enable-and-setup).
+The key names keep the word `SERVICE`, such as `DG_SERVICE_API`, although the noun is now job.
 
-1. `dg-agent start`. The credential commands use the `/cli` socket, and the
-   socket needs a dg session. `dg-daemon start` gives no session.
-2. `dg-skills credentials set <prefix>/<name>` for each credential.
-3. `dg-skills credentials grant <prefix>`. This writes the token file.
+dg sets the `grant` of a job that lists credentials. The daemon refuses to start the
+job when the token file is missing.
 
-Declare the service with `"grant": "<prefix>"`. The daemon refuses to start the
-service when the token file is missing.
-
-A new `dg-skills credentials grant <prefix>` replaces the token. The old token
-gives 401. Restart the service, or read the token file again.
+`dg job setup <name> --rotate-token` makes a new token. The old token gives 401.
+Restart the job, or read the token file again.
 
 ## Environment
 

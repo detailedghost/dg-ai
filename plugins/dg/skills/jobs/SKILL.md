@@ -134,8 +134,13 @@ dg-daemon job status [<name>] [--json]
 dg-daemon job add --name <name> --cwd <absolute-path> --continuous -- <command> [args...]
 dg-daemon job add --name <name> --cwd <absolute-path> --every <duration> [--feed] -- <command> [args...]
 dg-daemon job add --name <name> --cwd <absolute-path> --schedule "<cron>" [--feed] -- <command> [args...]
+dg-daemon job add <url>
+dg-daemon job add <path>
 dg-daemon job update <name> --every <duration>
 dg-daemon job enable <name>
+dg-daemon job enable <name> --setup <file|->
+dg-daemon job setup <name>
+dg-daemon job setup <name> --refresh
 dg-daemon job disable <name>
 dg-daemon job start <name>
 dg-daemon job stop <name>
@@ -156,6 +161,19 @@ names it. `update` takes one mode flag (`--continuous`, `--schedule` or
 daemon when none runs. `start`, `stop` and `restart` act now only and need a
 live daemon. `remove`, `disable` and `autostart install|remove` need a request
 from the human that names the job or the login unit.
+
+`job add <url>` takes a repository (`<git-url>[@ref]`) and `job add <path>` takes a script or a
+folder. A repository job asks for consent: `add` and `update` print the request and ask at a
+terminal. This skill does not answer the consent question and does not add `--yes` on its own.
+It gives the command, and the human runs it, or names the repository for which the agent can use
+`--yes`. A local path asks nothing, but run it only on a request that names the path.
+
+`job setup <name>` asks questions at a terminal, so give the command to the human.
+`job setup <name> --refresh` fetches each credential of the job again from its declared
+source; run it only on a request that names the job, and then give the command
+`job restart <name>` that it prints. A prefix that already holds credentials needs one `y` at a terminal, also for an agent,
+so this skill does not answer that question either. `job enable <name> --setup <file|->` takes
+a file path or `-` and never JSON text; never write a secret on a command line.
 
 The first `job enable` at a terminal asks whether to start dg at login. This
 skill does not answer the login unit question of `job enable`: the human

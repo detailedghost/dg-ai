@@ -5,6 +5,7 @@ Date: 2026-11-12
 Topic: Platform
 Amended 2026-11-18: the daemon also injects DG_SERVICE_STATE_DIR and, when it has one, DG_HOME; see docs/service-api.md.
 Amended 2026-11-19: the noun is now job; see [ADR 0049](0049-jobs.md).
+Amended 2026-11-20: service API v1 has the operation refresh; see [ADR 0052](0052-job-sources-and-credentials.md).
 
 ## Context
 
