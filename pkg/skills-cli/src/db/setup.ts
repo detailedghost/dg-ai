@@ -133,6 +133,9 @@ function parseSetup(args: string[]): SetupRequest {
 		);
 		if (absent.length > 0)
 			throw new Error(`--secret aws requires ${absent.map((f) => `--${f}`).join(", ")}`);
+		for (const flag of ["secret-id", "secret-key"] as const)
+			if (/[{}\s]/.test(values[flag] ?? ""))
+				throw new Error(`--${flag} must not hold braces or whitespace`);
 		meta.secretSource = "aws-sm";
 		put(meta, "secretId", values["secret-id"]);
 		put(meta, "secretKey", values["secret-key"]);

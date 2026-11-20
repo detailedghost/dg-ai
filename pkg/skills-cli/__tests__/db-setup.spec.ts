@@ -189,6 +189,16 @@ describe("db setup", () => {
 		expect(h.set).not.toHaveBeenCalled();
 	});
 
+	test("rejects a secret id or key with braces or whitespace", async () => {
+		for (const [id, key] of [["db}}x", "k"], ["i", "pass word"]]) {
+			const h = setupHarness();
+			const code = await h.run([...PG_FLAGS, "--secret", "aws", "--secret-id", id, "--secret-key", key]);
+			expect(code).toBe(1);
+			expect(h.stderr.join("\n")).toMatch(/braces or whitespace/);
+			expect(h.set).not.toHaveBeenCalled();
+		}
+	});
+
 	test("rejects a secret mode with external_browser", async () => {
 		const h = setupHarness();
 		const code = await h.run([

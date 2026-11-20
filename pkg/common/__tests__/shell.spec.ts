@@ -13,3 +13,8 @@ test("single-quotes a value with spaces or expansions", () => {
 test("escapes an embedded single quote", () => {
 	expect(shellValue("it's")).toBe("'it'\\''s'");
 });
+
+test("quotes a value that starts with = or %", () => {
+	expect(shellValue("=ls")).toBe("'=ls'");
+	expect(shellValue("%1")).toBe("'%1'");
+});

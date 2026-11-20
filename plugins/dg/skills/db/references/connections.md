@@ -22,7 +22,7 @@ PostgreSQL supports only `--auth password`. Snowflake `--auth external_browser` 
 
 | Key | Meaning |
 |---|---|
-| `readOnly` | `true` by default. PostgreSQL sessions start read-only, and `--write` is refused. Snowflake `readOnly` is advisory only, so the role is the only guard. |
+| `readOnly` | `true` by default. PostgreSQL sessions start read-only through the `options` startup parameter, and `--write` is refused. A pooler such as PgBouncer can reject that parameter; set `ignore_startup_parameters = options` there, or use a read-only role. Snowflake `readOnly` is advisory only, so the role is the only guard. |
 | `secretSource` | `aws-sm` when the secret lives in AWS Secrets Manager. Absent otherwise. |
 | `secretId` | Secrets Manager secret name or ARN. |
 | `secretKey` | JSON key inside the secret that holds the value. |
