@@ -89,7 +89,7 @@ belong with their owning private tooling repository.
 - [0020 — One `dg` command and binary that supervises channel review](0020-one-dg-command.md)
 - [0043 — Run outside services under the daemon with a provisional service API](0043-outside-services.md)
 - [0049 — One job model for services and scheduled jobs](0049-jobs.md)
-- [0052 — Job sources and credentials](0052-job-sources-and-credentials.md)
+- [0053 — Job sources and credentials](0053-job-sources-and-credentials.md)
 
 ### Security
 

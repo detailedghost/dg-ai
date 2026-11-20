@@ -84,7 +84,7 @@ request cannot give a secret id, a region, a key, a profile or an argv.
   reads its own name from `DG_SERVICE_LABEL`. The grant proves the prefix and
   not the job: each holder of the grant can name any job of that prefix, and
   jobs that share a prefix trust each other. This is an accepted risk; see
-  [ADR 0052](adr/0052-job-sources-and-credentials.md).
+  [ADR 0053](adr/0053-job-sources-and-credentials.md).
 - The credential needs a recorded `source`, and a person must have run
   `dg job setup <job>` once. Without both, the answer is 409. When
   `dg job update` changes the `source` of a credential that a job lists, it

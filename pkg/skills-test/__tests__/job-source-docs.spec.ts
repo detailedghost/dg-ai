@@ -14,7 +14,7 @@ const CHANNEL_REVIEW = "docs/channel-review.md";
 const SECURITY = "SECURITY.md";
 const SKILL = "plugins/dg/skills/jobs/SKILL.md";
 const TOC = "docs/adr/toc.md";
-const RECORD_FILE = "0052-job-sources-and-credentials.md";
+const RECORD_FILE = "0053-job-sources-and-credentials.md";
 const RECORD = `docs/adr/${RECORD_FILE}`;
 const ADR_0043 = "docs/adr/0043-outside-services.md";
 const CHANGED = [JOBS, SERVICE_API, CHANNEL_REVIEW, SECURITY, RECORD];
@@ -467,7 +467,7 @@ describe("the job sources record", () => {
 		const entries = lines.filter((l) => l.startsWith("- ["));
 		const at = entries.findIndex((l) => l.includes(`(${RECORD_FILE})`));
 		expect(at).toBe(entries.findIndex((l) => l.includes("(0049-jobs.md)")) + 1);
-		expect(entries[at]).toMatch(/^- \[0052 — .+\]\(0052-job-sources-and-credentials\.md\)$/);
+		expect(entries[at]).toMatch(/^- \[0053 — .+\]\(0053-job-sources-and-credentials\.md\)$/);
 		for (const line of lines) expect([...line].length).toBeLessThanOrEqual(160);
 		expect(existsSync(join(REPO_ROOT, RECORD))).toBe(true);
 	});
@@ -486,7 +486,7 @@ describe("the job sources record", () => {
 		expect(amended).toHaveLength(2);
 		expect(amended[0]).toContain("operation refresh");
 		expect(amended[1]).toContain("bound to an environment variable");
-		for (const line of amended) expect(line).toContain("](0052-job-sources-and-credentials.md)");
+		for (const line of amended) expect(line).toContain("](0053-job-sources-and-credentials.md)");
 	});
 
 	test("holds the same phrases as the jobs document", () => {

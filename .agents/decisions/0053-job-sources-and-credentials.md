@@ -2,7 +2,7 @@
 covers: ["pkg/dg-daemon/src/jobs/**","pkg/dg-daemon/src/commands/job-*.ts","pkg/dg-daemon/src/server/job-credentials.ts","pkg/dg-daemon/src/server/service-api.ts","pkg/common/src/node/job-credentials-client.ts","docs/jobs-and-services.md","docs/service-api.md"]
 ---
 
-[ADR 0052](../../docs/adr/0052-job-sources-and-credentials.md)
+[ADR 0053](../../docs/adr/0053-job-sources-and-credentials.md)
 
 - Take a job from a repository (pinned to a full commit id, with consent at a terminal or `--yes`) or from a local path (no pin, no question). Keep both in `<data>/jobs/sources.json`.
 - Run `git` and the build in the CLI process. Never run `git` in the daemon.

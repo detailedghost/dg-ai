@@ -128,7 +128,7 @@ not a sandbox, and one job of a source can read the credentials of the other job
 source. A job can ask the daemon for a new fetch from its own declared source, cannot
 change the argv of that fetch, and gets one fetch for one credential in 60 s. See
 [Jobs](docs/jobs-and-services.md#add-a-job-from-a-repository) and
-[ADR 0052](docs/adr/0052-job-sources-and-credentials.md).
+[ADR 0053](docs/adr/0053-job-sources-and-credentials.md).
 
 `<DG_HOME>/agents/memory.db` is plaintext so full-text search can index it.
 Keep secrets out of agent memory. Demo and prototype fill text is stored as
