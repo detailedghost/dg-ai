@@ -22,7 +22,7 @@ PostgreSQL supports only `--auth password`. Snowflake `--auth external_browser` 
 
 | Key | Meaning |
 |---|---|
-| `readOnly` | `true` by default. PostgreSQL sessions start read-only, and `--write` is refused. Snowflake relies on the role. |
+| `readOnly` | `true` by default. PostgreSQL sessions start read-only, and `--write` is refused. Snowflake `readOnly` is advisory only, so the role is the only guard. |
 | `secretSource` | `aws-sm` when the secret lives in AWS Secrets Manager. Absent otherwise. |
 | `secretId` | Secrets Manager secret name or ARN. |
 | `secretKey` | JSON key inside the secret that holds the value. |
@@ -74,7 +74,7 @@ Each connect retry mints a **new** `SAMLRequest`; only the last printed URL is v
 
 ## Snowflake key pair
 
-The credential value is the private-key passphrase. Only the key's path is stored as metadata; the key contents never enter the credential store.
+The credential value is the private-key passphrase, passed to Snowflake as `privateKeyPass` next to `privateKeyPath`. The store requires a non-empty value and the code always sends it as the passphrase, so use an encrypted key. Only the key's path is stored as metadata; the key contents never enter the credential store.
 
 ```bash
 dg-skills credentials set db/my-sf-key \

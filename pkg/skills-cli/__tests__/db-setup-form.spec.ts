@@ -51,7 +51,7 @@ function formHarness(listings: Listings, overrides: Partial<SetupFormDeps> = {})
 		stdout: (line) => stdout.push(line),
 		...overrides,
 	};
-	return { deps, intake, close, open, stdout, sleeps, advance: (ms: number) => (clock += ms) };
+	return { deps, intake, close, open, stdout, sleeps };
 }
 
 describe("runSetupForm", () => {

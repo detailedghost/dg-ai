@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 import { validateCredentialName, type CredentialMeta } from "@dg/common";
 import type { DbCredentialClient } from "./credentials";
+import { shellValue } from "../worktree/shared";
 import { createSetupForm, SecretFormExpiredError } from "./setup-form";
 
 export interface SetupPlan {
@@ -78,8 +79,11 @@ function parseSetup(args: string[]): SetupRequest {
 		if (absent.length > 0)
 			throw new Error(`${engine} setup requires ${absent.map((f) => `--${f}`).join(", ")}`);
 	};
-	if (values.port !== undefined && !/^[1-9][0-9]{0,4}$/.test(values.port))
-		throw new Error("--port must be a positive integer");
+	if (
+		values.port !== undefined &&
+		!(/^[1-9][0-9]{0,4}$/.test(values.port) && Number(values.port) <= 65_535)
+	)
+		throw new Error("--port must be an integer from 1 to 65535");
 
 	const meta: CredentialMeta = { engine };
 	put(meta, "host", values.host);
@@ -118,6 +122,8 @@ function parseSetup(args: string[]): SetupRequest {
 	const secret = values.secret;
 	if (secret !== undefined && !SECRET_MODES.includes(secret as SecretMode))
 		throw new Error("--secret must be aws, form or command");
+	if (external && secret !== undefined)
+		throw new Error("external_browser needs no --secret");
 	if (!external && secret === undefined)
 		throw new Error("--secret aws|form|command required");
 	if (secret !== "aws" && (values["aws-profile"] || values["aws-region"]))
@@ -143,17 +149,11 @@ function parseSetup(args: string[]): SetupRequest {
 	};
 }
 
-function shellQuote(text: string): string {
-	return /^[A-Za-z0-9_@%+=:,./-]+$/.test(text)
-		? text
-		: `'${text.replaceAll("'", `'\\''`)}'`;
-}
-
 function credentialsSetLine(plan: SetupPlan): string {
 	const pairs = Object.entries(plan.meta)
-		.map(([key, value]) => `--meta ${shellQuote(`${key}=${String(value)}`)}`)
+		.map(([key, value]) => `--meta ${shellValue(`${key}=${String(value)}`)}`)
 		.join(" ");
-	return `dg-skills credentials --session ${shellQuote(plan.session)} set db/${plan.name} ${pairs}`;
+	return `dg-skills credentials --session ${shellValue(plan.session)} set db/${plan.name} ${pairs}`;
 }
 
 export async function runSetup(args: string[], deps: SetupDeps): Promise<number> {
@@ -175,7 +175,7 @@ export async function runSetup(args: string[], deps: SetupDeps): Promise<number>
 		} catch (error) {
 			if (!(error instanceof SecretFormExpiredError)) throw error;
 			deps.stdout(error.message);
-			deps.stdout(`Next: dg-skills db setup ${args.map(shellQuote).join(" ")}`);
+			deps.stdout(`Next: dg-skills db setup ${args.map(shellValue).join(" ")}`);
 			return 1;
 		}
 	} else {

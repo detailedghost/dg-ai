@@ -189,6 +189,26 @@ describe("db setup", () => {
 		expect(h.set).not.toHaveBeenCalled();
 	});
 
+	test("rejects a secret mode with external_browser", async () => {
+		const h = setupHarness();
+		const code = await h.run([
+			"sf1", "--engine", "snowflake", "--account", "acme", "--user", "me",
+			"--auth", "external_browser", "--secret", "command",
+		]);
+		expect(code).toBe(1);
+		expect(h.stderr.join("\n")).toContain("external_browser needs no --secret");
+		expect(h.set).not.toHaveBeenCalled();
+	});
+
+	test.each(["0", "65536", "99999", "5432x"])("rejects --port %s", async (port) => {
+		const h = setupHarness();
+		const flags = [...PG_FLAGS];
+		flags[flags.indexOf("--port") + 1] = port;
+		const code = await h.run([...flags, "--secret", "command"]);
+		expect(code).toBe(1);
+		expect(h.stderr.join("\n")).toContain("--port must be an integer from 1 to 65535");
+	});
+
 	test("form mode asks the daemon for the form, so it fails when no daemon runs", async () => {
 		const h = setupHarness();
 		const code = await h.run([...PG_FLAGS, "--secret", "form"]);

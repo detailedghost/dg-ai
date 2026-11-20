@@ -263,6 +263,8 @@ describe("dg-skills install launchers", () => {
 	test("is hidden from the install help", () => {
 		const help = Bun.spawnSync([process.execPath, ENTRY, "install", "--help"], { stdout: "pipe" });
 
+		expect(help.exitCode).toBe(0);
+		expect(help.stdout.toString()).toContain("--local");
 		expect(help.stdout.toString()).not.toContain("write the launchers for the installed release");
 	});
 });

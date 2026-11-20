@@ -76,7 +76,7 @@ describe("createPageCodes with an intent payload", () => {
 		const live = codes.mint(intent);
 		const late = codes.mint(intent);
 
-		time.advance(119_999);
+		time.advance(SECRET_INTENT_TTL_MS - 1);
 		expect(codes.redeem(live)).toEqual(intent);
 		time.advance(2);
 		expect(codes.redeem(late)).toBeUndefined();

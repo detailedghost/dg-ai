@@ -282,7 +282,7 @@ export function credentialChecks(names: string[]): DoctorCheck[] {
 		async run(ctx) {
 			const stored = await storedCredentialNames(ctx);
 			if ("error" in stored)
-				return withFix(`cannot list credentials: ${stored.error}`, stored.fix);
+				return warn(`cannot list credentials: ${stored.error}`, stored.fix);
 			if (stored.names.includes(name)) return ok(`credential ${name} is stored`);
 			return warn(
 				`credential ${name} is not stored`,
@@ -303,9 +303,6 @@ function credentialListFailure(error: unknown): { error: string; fix?: string } 
 		return { error: message, fix: `${CLI_PATH} install` };
 	return { error: message };
 }
-
-const withFix = (detail: string, fix?: string): CheckResult =>
-	fix === undefined ? { status: "warn", detail } : warn(detail, fix);
 
 function storedCredentialNames(ctx: DoctorContext): Promise<CredentialNames> {
 	return ctx.memo("credential-names", async () => {
@@ -329,7 +326,7 @@ export const credentialStoreCheck: DoctorCheck = {
 	async run(ctx) {
 		const stored = await storedCredentialNames(ctx);
 		if ("error" in stored)
-			return withFix(`cannot list credentials: ${stored.error}`, stored.fix);
+			return warn(`cannot list credentials: ${stored.error}`, stored.fix);
 		return ok(`credential store lists ${stored.names.length} credential(s)`);
 	},
 };
@@ -337,7 +334,13 @@ export const credentialStoreCheck: DoctorCheck = {
 export const sessionCheck: DoctorCheck = {
 	id: "session",
 	run(ctx) {
-		const matches = sessionsForCwd(readSessionFiles(ctx.paths.sessionsDir));
+		const records = readSessionFiles(ctx.paths.sessionsDir);
+		const pinned = ctx.env.DG_SESSION_ID;
+		if (pinned)
+			return records.some((record) => record.sessionId === pinned)
+				? ok("the DG_SESSION_ID session is live")
+				: warn("the DG_SESSION_ID session is not live", DAEMON_START);
+		const matches = sessionsForCwd(records);
 		if (matches.length === 1) return ok("one live session matches this directory");
 		if (matches.length === 0)
 			return warn("no live session is registered for this directory", DAEMON_START);

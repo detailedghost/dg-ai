@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CredentialMeta } from "@dg/common";
 import { createDbSpec } from "../src/db";
@@ -7,7 +8,6 @@ import { asmExecArgv, placeholder } from "../src/db/aws-secret";
 import { type DbCredentialClient, getConnection } from "../src/db/credentials";
 
 const NO_OPTS = { json: false, help: false };
-const TMP_ROOT = "/home/detailedghost/.local/state/ai/adhoc/ab5fb84b/db-setup/tmp";
 const FAKE_SECRET = "fake-secret-value-123";
 const PG_META: CredentialMeta = {
 	engine: "postgresql",
@@ -33,8 +33,7 @@ describe("aws-sm secret reference", () => {
 	const saved = { ...process.env };
 
 	beforeEach(() => {
-		mkdirSync(TMP_ROOT, { recursive: true });
-		dir = mkdtempSync(join(TMP_ROOT, "asm-"));
+		dir = mkdtempSync(join(tmpdir(), "asm-"));
 		delete process.env.DG_DB_ASM_CHILD;
 		delete process.env.DG_DB_SECRET;
 	});

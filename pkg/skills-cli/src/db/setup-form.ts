@@ -24,7 +24,7 @@ export interface SetupFormDeps {
 	stdout(line: string): void;
 }
 
-/** Opens a one-time page in the daemon and waits for the human to save the value there; the value never reaches this process. */
+/** Waits for the human to save the value on a one-time daemon page. */
 export async function runSetupForm(
 	plan: SetupPlan,
 	deps: SetupFormDeps,

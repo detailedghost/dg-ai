@@ -356,10 +356,11 @@ describe("POST /secret-intake", () => {
 	});
 
 	it("keeps the submitted value out of the daemon log and the database file", async () => {
-		const { intake, submit } = await boot();
+		const { intake, submit, stored } = await boot();
 		const { code } = await intake();
-		await submit({ code: "never-minted", value: `${VALUE}-refused` });
-		await submit({ code, value: VALUE });
+		expect((await submit({ code: "never-minted", value: `${VALUE}-refused` })).status).toBe(404);
+		expect((await submit({ code, value: VALUE })).status).toBe(204);
+		expect(await stored()).toMatchObject({ value: VALUE });
 
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome! } });
 		const log = readDaemonLog(dgHome!);

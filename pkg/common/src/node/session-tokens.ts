@@ -173,7 +173,7 @@ export function selectSoleSession(
 	if (matches.length === 1 && match) return match;
 	if (matches.length === 0) {
 		throw new SessionResolutionError(
-			`cannot resolve a session for cwd ${cwd}: no live session is registered; run dg-agent start in this directory. Live sessions:\n${describeCandidates(records)}`,
+			`cannot resolve a session for cwd ${cwd}: no live session is registered for this directory; run dg-agent start in this directory. Live sessions:\n${describeCandidates(records)}`,
 		);
 	}
 	throw new SessionResolutionError(
