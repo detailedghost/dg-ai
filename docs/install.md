@@ -165,6 +165,8 @@ Claude Code allow rules in the old form, `Bash(~/.dg/bin/dg-skills <sub>:*)`,
 stop matching. `dg-skills doctor` warns and names the new rule,
 `Bash(dg-skills <sub>:*)`.
 
+Stale skill copies outside the dg install, for example `~/.agents/skills`, can still call `~/.dg/bin` and need a reinstall from their own source.
+
 #### When does it move
 
 | Command | What moves |

@@ -4,7 +4,7 @@ feature_snake_case: velora_dg_fixes
 date: "2026-11-20"
 version: "1.0"
 status: in-progress
-current_slice: 0
+current_slice: 5
 pr_strategy: single
 slices:
   - id: 1
@@ -198,16 +198,16 @@ Fix the dg 6.1.0 rough edges found during the Velora release. Verify and prototy
 ### Slice 5 — legacy-launcher-removal
 
 #### Engineering
-- [ ] syncCompatLaunchers rewrites only a legacy file that already exists; it never creates a launcher in a ~/.dg/bin that has none, so the removal release cannot slide forward
-- [ ] When it removes launchers (or none remain), it also removes the old `<name>.version` leftovers of LEGACY_PROGRAMS so removeIfEmpty can delete ~/.dg/bin
-- [ ] Keep the notice text; it already names the replacement path
-- [ ] docs/install.md: one line that stale skill copies outside the dg install (for example ~/.agents/skills) can still call ~/.dg/bin and need a reinstall from their own source
+- [x] syncCompatLaunchers rewrites only a legacy file that already exists; it never creates a launcher in a ~/.dg/bin that has none, so the removal release cannot slide forward
+- [x] When it removes launchers (or none remain), it also removes the old `<name>.version` leftovers of LEGACY_PROGRAMS so removeIfEmpty can delete ~/.dg/bin
+- [x] Keep the notice text; it already names the replacement path
+- [x] docs/install.md: one line that stale skill copies outside the dg install (for example ~/.agents/skills) can still call ~/.dg/bin and need a reinstall from their own source
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: no file present means no launcher written, at any version
-- [ ] Contract: at or past the removal release, the launcher and `<name>.version` files go away and an otherwise empty ~/.dg/bin is removed
-- [ ] compat-launchers.spec: regression for the drift (launcher removed at release R, a later install with a leftover dg-skills.version does not write a new launcher with a later release)
+- [x] Contract: no file present means no launcher written, at any version
+- [x] Contract: at or past the removal release, the launcher and `<name>.version` files go away and an otherwise empty ~/.dg/bin is removed
+- [x] compat-launchers.spec: regression for the drift (launcher removed at release R, a later install with a leftover dg-skills.version does not write a new launcher with a later release)
 
 #### Acceptance Criteria
 - [ ] After the removal release, ~/.dg/bin stays gone on every later install or update
@@ -231,6 +231,7 @@ Fix the dg 6.1.0 rough edges found during the Velora release. Verify and prototy
 - [ ] Given an update whose doctor run has failed checks, when update finishes, then each failed check and its fix is printed under the summary
 
 ## Slice Summaries
+- Slice 5: syncCompatLaunchers rewrites only launchers that exist and sweeps leftover <name>.version files once no launcher remains, so ~/.dg/bin stays gone after the removal release; docs/install.md notes stale skill copies (R6).
 
 ## Agent Notes
 - (owner, 2026-11-20) R1: verify loads a saved pw state per role (`role.state`), loopback only. Seed checks and the cookie cap stay unchanged.
