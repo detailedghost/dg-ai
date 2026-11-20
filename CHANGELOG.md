@@ -1,5 +1,11 @@
 # Changelog
 
+## v6.3.0 (2026-11-20)
+
+### Features
+
+- feat(dg-daemon): add jobs from a repository or a local path, with credential setup ([#245](https://github.com/detailedghost/dg-ai/pull/245))
+
 ## v6.2.0 (2026-11-20)
 
 ### Features
