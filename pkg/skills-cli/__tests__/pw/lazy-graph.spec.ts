@@ -100,7 +100,7 @@ describe("pw lazy loading", () => {
 		expect(files.has(path.join(SRC, "pw", "browsers.ts"))).toBe(false);
 	});
 
-	test("only the pw and pw-code registrations, the completion tree builder, the doctor registry, the Proton inbox transport and the local demo player import the pw tree outside it", () => {
+	test("only the pw and pw-code registrations, the completion tree builder, the doctor registry, the Proton inbox transport, the local demo player and the verify saved-state readers import the pw tree outside it", () => {
 		const importers = sourceFiles(SRC)
 			.filter((file) => !file.startsWith(path.join(SRC, "pw") + path.sep))
 			.filter((file) => /["'](?:\.\.?\/)+pw\//.test(readFileSync(file, "utf8")))
@@ -119,6 +119,9 @@ describe("pw lazy loading", () => {
 			path.join("doctor", "registry.ts"),
 			path.join("inbox", "proton-pw.ts"),
 			path.join("rerun", "doctor.ts"),
+			path.join("verify", "capture.ts"),
+			path.join("verify", "manifest.ts"),
+			path.join("verify", "playwright-capturer.ts"),
 		]);
 	});
 });

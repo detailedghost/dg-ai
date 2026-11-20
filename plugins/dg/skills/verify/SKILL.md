@@ -13,7 +13,7 @@ dg-skills verify --help >/dev/null 2>&1 ||
 
 Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
-If a step fails, run dg-skills doctor verify.
+If a step fails, run dg-skills doctor verify pw.
 
 # Verify
 
