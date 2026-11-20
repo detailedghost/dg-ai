@@ -168,6 +168,22 @@ describe("runOpen with an explicit chrome or msedge", () => {
 	});
 });
 
+describe("runOpen with an explicit chrome and no browser at all", () => {
+	test("throws BrowserMissingError and launches nothing", async () => {
+		const { deps, launched } = harness({
+			isWSL: () => false,
+			channelPresent: () => false,
+			pickLaunch: () => {
+				throw new BrowserMissingError();
+			},
+		});
+		await expect(
+			runOpen(argsFor(spec, "--browser=chrome"), clientEnv(), deps),
+		).rejects.toBeInstanceOf(BrowserMissingError);
+		expect(launched).toHaveLength(0);
+	});
+});
+
 describe("runOpen with an explicit chromium", () => {
 	test("throws BrowserMissingError when no Chromium-family browser exists", async () => {
 		const { deps, launched } = harness();

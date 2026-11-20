@@ -244,10 +244,17 @@ describe("validateSpec downloaded Chromium", () => {
 		);
 	});
 
-	test("ignores a marker that points outside the browsers dir", () => {
-		const outside = path.join(dgHome.dir, "elsewhere");
+	test("uses a recorded browser path outside the browsers dir", () => {
+		const outside = path.join(dgHome.dir, "brave-browser-beta");
 		writeFileSync(outside, "");
 		writeMarker(outside);
+		expect(validateSpec({ ...base, browser: "chromium" }).executablePath).toBe(
+			outside,
+		);
+	});
+
+	test("ignores a marker whose browser is gone", () => {
+		writeMarker(path.join(dgHome.dir, "missing"));
 		expect(validateSpec({ ...base, browser: "chromium" })).not.toHaveProperty(
 			"executablePath",
 		);

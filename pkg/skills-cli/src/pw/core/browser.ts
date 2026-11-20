@@ -104,7 +104,7 @@ export function pickLaunch(seams: LaunchSeams = DEFAULT_SEAMS): LaunchPick {
 	if (override) return { executablePath: override };
 	for (const channel of ["chrome", "msedge"] as const)
 		if (seams.system(channel)) return { channel };
-	const executablePath = chromiumExecutable(seams);
+	const executablePath = seams.installed?.() ?? seams.downloaded();
 	if (executablePath) return { executablePath };
 	throw new BrowserMissingError();
 }

@@ -2,7 +2,7 @@ const MISSING = /Executable doesn't exist at (.+)/;
 const PRODUCT =
 	/[\\/](chromium_headless_shell|chromium|firefox|webkit|ffmpeg)-\d+[\\/]/;
 
-const OWN_BUILD: Record<string, string> = {
+const OWN_BUILD: Partial<Record<string, string>> = {
 	firefox: "Firefox",
 	webkit: "WebKit",
 };

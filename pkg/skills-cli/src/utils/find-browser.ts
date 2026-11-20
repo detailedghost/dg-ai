@@ -82,7 +82,7 @@ export function searchedLocations(
 	];
 }
 
-/** A Chromium-family binary other than the Chrome and Edge channels. */
+/** A Chromium-family binary on PATH or in the usual app folders. */
 export function findInstalledChromium(
 	seams: FinderSeams = DEFAULT_FINDER_SEAMS,
 ): string | null {

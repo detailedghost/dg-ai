@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { isPathInside, resolveDgPaths } from "@dg/common/node";
+import { resolveDgPaths } from "@dg/common/node";
 
 const MARKER = "chromium.json";
 
@@ -21,9 +21,7 @@ export function downloadedChromium(
 		const { version, executablePath } = marker;
 		if (typeof version !== "string" || typeof executablePath !== "string")
 			return null;
-		return existsSync(executablePath) && isPathInside(executablePath, dir)
-			? { version, executablePath }
-			: null;
+		return existsSync(executablePath) ? { version, executablePath } : null;
 	} catch {
 		return null;
 	}
