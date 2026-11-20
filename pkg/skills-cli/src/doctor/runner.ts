@@ -106,6 +106,18 @@ export function summarizeReport(report: DoctorReport): string {
 	return `${counts.ok} passed, ${counts.info} info, ${counts.warn} to review, ${counts.fail} failed`;
 }
 
+export function formatFailures(report: DoctorReport): string {
+	const lines: string[] = [];
+	for (const entry of report.items) {
+		for (const check of entry.checks) {
+			if (check.status !== "fail") continue;
+			lines.push(`  ${STATUS_ICON.fail} ${entry.item} / ${check.id}: ${check.detail.split("\n")[0]}`);
+			if (check.fix) lines.push(`      Fix: ${check.fix}`);
+		}
+	}
+	return lines.join("\n");
+}
+
 export function formatReport(report: DoctorReport): string {
 	const lines: string[] = [];
 	for (const entry of report.items) {

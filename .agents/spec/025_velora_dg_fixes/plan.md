@@ -4,7 +4,7 @@ feature_snake_case: velora_dg_fixes
 date: "2026-11-20"
 version: "1.0"
 status: in-progress
-current_slice: 5
+current_slice: 6
 pr_strategy: single
 slices:
   - id: 1
@@ -216,21 +216,22 @@ Fix the dg 6.1.0 rough edges found during the Velora release. Verify and prototy
 ### Slice 6 — update-doctor-failures
 
 #### Engineering
-- [ ] Add `formatFailures(report)` to doctor/runner.ts: one line per `fail` check as `  ❌ <item> / <id>: <first detail line>` plus `      Fix: <fix>` when present; empty string when none fail
-- [ ] update's doctor step logs the summary line, then formatFailures output, then the existing `Run dg-skills doctor for details.` pointer
-- [ ] Doctor stays information only; the update exit code does not change
+- [x] Add `formatFailures(report)` to doctor/runner.ts: one line per `fail` check as `  ❌ <item> / <id>: <first detail line>` plus `      Fix: <fix>` when present; empty string when none fail
+- [x] update's doctor step logs the summary line, then formatFailures output, then the existing `Run dg-skills doctor for details.` pointer
+- [x] Doctor stays information only; the update exit code does not change
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: `formatFailures(report: DoctorReport): string` exported from doctor/runner.ts
-- [ ] Contract: the update deps seam returns the report (or summary and failures) so tests need no real doctor run
-- [ ] doctor-runner.spec: only fail checks appear, fix lines included, warn and info excluded
-- [ ] update.spec: four failures print four lines after the summary; zero failures print only the summary
+- [x] Contract: `formatFailures(report: DoctorReport): string` exported from doctor/runner.ts
+- [x] Contract: the update deps seam returns the report (or summary and failures) so tests need no real doctor run
+- [x] doctor-runner.spec: only fail checks appear, fix lines included, warn and info excluded
+- [x] update.spec: four failures print four lines after the summary; zero failures print only the summary
 
 #### Acceptance Criteria
 - [ ] Given an update whose doctor run has failed checks, when update finishes, then each failed check and its fix is printed under the summary
 
 ## Slice Summaries
+- Slice 6: update logs each failed doctor check and its fix under the summary line through the new formatFailures; the update deps seam returns the DoctorReport; exit code unchanged.
 - Slice 5: syncCompatLaunchers rewrites only launchers that exist and sweeps leftover <name>.version files once no launcher remains, so ~/.dg/bin stays gone after the removal release; docs/install.md notes stale skill copies (R6).
 
 ## Agent Notes

@@ -3,7 +3,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { describeError, isRecord } from "@dg/common";
 import { DOCTOR_REGISTRY } from "../doctor/registry";
-import { runDoctor, summarizeReport } from "../doctor/runner";
+import { formatFailures, runDoctor, summarizeReport } from "../doctor/runner";
+import type { DoctorReport } from "../doctor/types";
 import { claudeConfigDir, type Runner, runSync } from "../install/recommended-plugins";
 import { isCliOnly } from "../utils/cli-only";
 import { compareVersions, listReleases, pickBundle, readCurrentVersion, readMarker } from "../utils/lib";
@@ -31,7 +32,7 @@ export type UpdateDeps = {
 	cliOnly(): boolean;
 	which(name: string): string | null;
 	run: Runner;
-	doctorSummary(): Promise<string>;
+	doctor(): Promise<DoctorReport>;
 	log(line: string): void;
 };
 
@@ -280,7 +281,11 @@ export async function runUpdate(opts: UpdateOptions, deps: UpdateDeps): Promise<
 	report(reached(guarded("Codex plugin", () => codexStep(deps)), () => cachedPluginVersion(deps.codexHome), version));
 	if (deps.which("claude")) otherScopes(deps, version);
 	try {
-		deps.log(`Doctor (information only, not part of the exit code): ${await deps.doctorSummary()}. Run dg-skills doctor for details.`);
+		const doctor = await deps.doctor();
+		deps.log(`Doctor (information only, not part of the exit code): ${summarizeReport(doctor)}.`);
+		const failures = formatFailures(doctor);
+		if (failures) deps.log(failures);
+		deps.log("Run dg-skills doctor for details.");
 	} catch (error) {
 		deps.log(`Doctor did not run: ${describeError(error)}`);
 	}
@@ -311,7 +316,7 @@ export function defaultUpdateDeps(): UpdateDeps {
 		cliOnly: isCliOnly,
 		which: (name) => Bun.which(name),
 		run: runSync,
-		doctorSummary: async () => summarizeReport(await runDoctor([], DOCTOR_REGISTRY)),
+		doctor: () => runDoctor([], DOCTOR_REGISTRY),
 		log: (line) => console.log(line),
 	};
 }
