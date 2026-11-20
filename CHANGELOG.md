@@ -1,5 +1,17 @@
 # Changelog
 
+## v6.2.0 (2026-11-20)
+
+### Features
+
+- feat(skills-cli): guided database connection setup ([#243](https://github.com/detailedghost/dg-ai/pull/243))
+- feat(web): web-only skills for Claude chat and a --web-only install ([#212](https://github.com/detailedghost/dg-ai/pull/212))
+
+### Fixes
+
+- fix(chat): sync dg-proto with the proto template ([#244](https://github.com/detailedghost/dg-ai/pull/244))
+- fix(skills-cli): fix Velora dg 6.1.0 rough edges ([#242](https://github.com/detailedghost/dg-ai/pull/242))
+
 ## v6.1.1 (2026-11-20)
 
 ### Fixes
