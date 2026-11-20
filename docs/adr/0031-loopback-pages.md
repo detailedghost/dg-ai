@@ -83,3 +83,13 @@ extension side panel replaces the page.
 - `dg-agent overwatch open --ext` opens `/board`.
 - `--ext` now means the browser must be paired with the extension. The human pairs it from the pairing popup.
 - The page no longer reads its token only from the fragment. A page that holds one live token can also call `POST /attach` with a bearer header. Each call returns the bootstrap of one active agent-role session whose presence is `cli`, other than its own. The Origin check binds browsers only. ADR 0038 states the limits.
+
+## Amended 2026-11-20: the secret page
+
+The text above stays as the record of the first decision. This amendment adds a third page, `/secret`, for typing a secret into a form instead of into chat.
+
+- The daemon serves `/secret` and `/secret.js` under the same CSP as `/chat`.
+- The page never gets a session token or session meta. It holds one intake code, which `dg-skills db setup` mints with the credentials `intake` op ([ADR 0006](0006-credential-store.md)). The code lives 120 seconds and works once.
+- The code travels in the URL fragment, and the page strips it. A code-scoped `GET` names the code in the `X-Dg-Secret-Code` header, so the code never appears in a URL the server sees.
+- `POST /secret-intake` needs a loopback origin or no `Origin` ([ADR 0004](0004-loopback-pairing.md)). The daemon validates the value before it redeems the code, so a bad value does not burn the code.
+- The form learns that a value landed by polling `list` for `updatedAt`. It never calls `get`, so the value never returns to the page.

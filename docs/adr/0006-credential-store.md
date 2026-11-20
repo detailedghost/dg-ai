@@ -52,3 +52,11 @@ sequenceDiagram
 - [pkg/common/src/credentials-format.ts](../../pkg/common/src/credentials-format.ts)
 - [pkg/common/src/node/credential-grants.ts](../../pkg/common/src/node/credential-grants.ts)
 - [pkg/common/src/node/credentials-client.ts](../../pkg/common/src/node/credentials-client.ts)
+
+## Amended 2026-11-20: form intake
+
+The text above stays as the record of the first decision. This amendment adds a second way to write a credential: a form on the loopback `/secret` page ([ADR 0031](0031-loopback-pages.md)).
+
+- A session-authenticated client calls the credentials `intake` op. The daemon mints a code that lives 120 seconds and works once.
+- The page posts the value to `POST /secret-intake` with that code. Grants still cannot write credentials. The code is a narrower write capability for one name.
+- The daemon notes the value for redaction before it refuses a bad post. CLI commands still never print the value.

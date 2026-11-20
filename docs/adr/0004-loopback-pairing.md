@@ -78,3 +78,7 @@ sequenceDiagram
     E->>D: /ws with session capability
     D-->>E: authenticated connection and pinned Origin
 ```
+
+## Amended 2026-11-20: the secret intake route
+
+The text above stays as the record of the first decision. `POST /secret-intake` takes the same loopback-origin check as the other browser routes: a loopback origin or no `Origin`. The `/secret` page holds a single-use intake code ([ADR 0031](0031-loopback-pages.md)) and never a session token, so a valid local connection still grants no session access.
