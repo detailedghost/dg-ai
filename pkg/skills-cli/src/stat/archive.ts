@@ -56,7 +56,9 @@ export async function archiveDone(path: string, dryRun: boolean): Promise<Archiv
 		try {
 			writeChecklist(path, split.model);
 		} catch (error) {
-			truncateSync(archive, archivedBytes);
+			try {
+				truncateSync(archive, archivedBytes);
+			} catch {}
 			throw error;
 		}
 		return report(split);

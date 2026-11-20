@@ -961,6 +961,7 @@ describe("verify with a saved sign-in", () => {
 			});
 			expect(requests.length).toBeGreaterThan(0);
 			expect(requests.every((request) => request.stateName === "app-admin")).toBe(true);
+			expect(captured[0]?.records.length).toBeGreaterThan(0);
 			expect(captured[0]?.records.every((record) => new URL(record.finalUrl).pathname === "/sms")).toBe(true);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
@@ -971,12 +972,8 @@ describe("verify with a saved sign-in", () => {
 		const dir = mkdtempSync(join(tmpdir(), "dg-verify-state-"));
 		try {
 			saveState("app-admin", stateWith());
-			const expired = {
-				...signedInPageFor([]),
-				async shot(request: CaptureRequest): Promise<CaptureShot> {
-					return signedInPageFor([]).shot({ ...request, stateName: undefined });
-				},
-			};
+			const page = signedInPageFor([]);
+			const expired = { ...page, shot: (request: CaptureRequest) => page.shot({ ...request, stateName: undefined }) };
 			const { paths, cwd } = sessionIn(dir);
 			const attempt = captureSession({
 				manifest: manifestFor("app-admin"),

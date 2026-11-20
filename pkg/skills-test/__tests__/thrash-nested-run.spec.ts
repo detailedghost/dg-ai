@@ -61,6 +61,6 @@ describe("nested run pointers", () => {
 	});
 
 	test("review-loop points a subagent at the nested run rule", () => {
-		expect(reviewLoop).toContain("Nested run");
+		expect(reviewLoop).toMatch(/subagent[^.]*"Nested run" rule/);
 	});
 });

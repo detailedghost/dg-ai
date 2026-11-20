@@ -75,7 +75,7 @@ Point every URL at a local server that serves seed accounts.
 
 A role may set `state` to the name of a saved pw state.
 Save one with `dg-skills pw state save <name>`. List them with `dg-skills pw state list`.
-The `playwright` engine loads the state into the browser for every shot of that role.
+The `playwright` engine loads only the loopback cookies and storage of the state into the browser for every shot of that role.
 The page must still be on loopback. The seed header and cookie checks and the 500 character cookie limit do not change.
 The `http` engine refuses a role with `state`: `verify role <id> uses a saved state; it needs the playwright engine`.
 A missing state stops the capture before any page opens.

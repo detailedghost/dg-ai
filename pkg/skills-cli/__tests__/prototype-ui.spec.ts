@@ -543,7 +543,7 @@ describe("prototype ui", () => {
 
 	test("a --state that names no saved pw state fails before the server starts", async () => {
 		const result = await cli(["ui", manifest("missing"), "--no-open", `--port=${port()}`, "--state=no-such-state"]).done;
-		expect(result.exitCode).not.toBe(0);
+		expect(result.exitCode).toBe(1);
 		expect(result.stderr).toContain("pw state list");
 		expect(readState("missing")).toBeUndefined();
 	});
