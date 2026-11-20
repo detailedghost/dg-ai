@@ -127,7 +127,31 @@ describe("the bootstrap scripts install the runtime pin and the bundle, then del
 		expect(copy).toBeGreaterThan(-1);
 		expect(firstDownload).toBeGreaterThan(copy);
 		expect(ps1).not.toContain('$installArgs += "--skills-only"');
-		expect(ps1).toMatch(/if \(\$env:DG_SKILLS_ONLY -eq "1"\) \{ exit 0 \}/);
+		expect(ps1).toMatch(/if \(\$wantSkillsOnly\) \{ exit 0 \}/);
+	});
+
+	test("bootstrap.ps1 takes a switch for every mode, so no environment variable is needed", () => {
+		const params = ps1.slice(ps1.indexOf("param("), ps1.indexOf(")\n$ErrorActionPreference"));
+		for (const name of ["CliOnly", "AgentOnly", "SkillsOnly", "NoCli", "ChatOnly", "Codex"])
+			expect(params).toContain(`[switch]$${name}`);
+		expect(params).toContain("[string]$Dest");
+		expect(ps1).toContain(
+			"& ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -ChatOnly",
+		);
+		expect(ps1).not.toContain("DG_CHAT_ONLY");
+	});
+
+	test("bootstrap.ps1 -ChatOnly verifies and unpacks only the chat skills, before any runtime work", () => {
+		const start = ps1.indexOf("if ($wantChatOnly) {\n\t$chatDest");
+		const block = ps1.slice(start, ps1.indexOf("$arch = if"));
+		expect(start).toBeGreaterThan(-1);
+		expect(block).toContain('Save-DgAsset $rel "SHA256SUMS" $sumsPath');
+		expect(block).toContain("Assert-DgSha256 $zipPath $asset $expected");
+		expect(block).toContain('throw "dg-skills: refusing $entry in $asset"');
+		expect(block.indexOf("Assert-DgSha256")).toBeLessThan(block.indexOf("Expand-Archive"));
+		expect(block).toContain("exit 0");
+		for (const never of ["runtime.json", "dg-lib-", "oven-sh", "dg-skills.cmd"]) expect(block).not.toContain(never);
+		expect(start).toBeLessThan(ps1.indexOf('Save-DgAsset $rel "runtime.json"'));
 	});
 
 	test("bootstrap.ps1 uses Expand-Archive, Get-FileHash and directory junctions", () => {

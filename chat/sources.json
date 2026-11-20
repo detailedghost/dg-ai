@@ -1,0 +1,18 @@
+{
+	"dg-demo": {
+		"source": "plugins/dg/skills/demo",
+		"files": {
+			"SKILL.md": "5b5fa33254e3a7ee546575e8d1f60764366f99c00479d533663ad0570b989067",
+			"references/authoring.md": "76d88ebff395ca1a6291b3240e0eabc9dc54557123bcfa21423d4e60dd6c92a4"
+		}
+	},
+	"dg-proto": {
+		"source": "plugins/dg/skills/proto",
+		"files": {
+			"SKILL.md": "28d7b66dc91bf5fa3af86c493c9e68161050d64df2258a09430b6c4c24872a98",
+			"references/local-ui.md": "65d300f831c3987eb492da12195bb97cfb60805bd9efc663bc3b267a058fe024",
+			"references/local-plan.md": "33e1db07aaa25968ee9fa9a1c0e89815f83ee8ff69fd0e7806c2b25e0aa3a3a5",
+			"references/local-logic.md": "4139f279c48f4e6bd62031a4547eb52397c97359d92a91f98f1f29dd63b5d902"
+		}
+	}
+}

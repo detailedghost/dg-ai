@@ -1,0 +1,76 @@
+/*
+ * DeeGee chat theme for chat artifacts.
+ * Every value is copied from its first-class source; chat-skills.spec.ts fails when one drifts.
+ *   --dg-*       pkg/extension/entrypoints/options/style.css (brand, light and dark)
+ *   --pd-*       plugins/dg/skills/proto/assets/prototype-decision-bar.html (decision bar)
+ *   --dg-tour-*  pkg/skills-cli/src/demo/recorder/overlays.ts (demo recorder, always dark)
+ * Light by default. A `dark` class on <html> switches to dark, the same as the proto templates.
+ */
+:root {
+	--dg-bg: #f4f4f5;
+	--dg-panel: #ffffff;
+	--dg-ink: #0a0a0a;
+	--dg-muted: #52525b;
+	--dg-line: #0a0a0a;
+	--dg-accent: #0891b2;
+	--dg-accent2: #c026d3;
+	--dg-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	--dg-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+	--pd-bg: #ffffff;
+	--pd-fg: #18181b;
+	--pd-border: #cfcfc8;
+	--pd-field: #fafaf8;
+	--pd-muted: #5f5f66;
+	--pd-acc: #0f766e;
+	--pd-acc-soft: #e6f4f2;
+	--pd-ok: #15803d;
+	--pd-ok-soft: #e8f6ec;
+	--pd-bad: #dc2626;
+	--pd-bad-soft: #fdecec;
+	--pd-note: #a16207;
+	--pd-note-soft: #fef6c7;
+	--pd-shadow: 0 8px 24px rgba(15, 23, 42, .18);
+	--pd-scheme: light;
+
+	--dg-tour-panel: #111111;
+	--dg-tour-ink: #e8e8e8;
+	--dg-tour-muted: #8a8a8a;
+	--dg-tour-line: #e8e8e8;
+	--dg-tour-accent: #00f0ff;
+	--dg-tour-setup: #ff8c1a;
+	--dg-tour-scrim: rgba(0, 0, 0, 0.55);
+}
+
+html.dark {
+	--dg-bg: #0a0a0a;
+	--dg-panel: #111111;
+	--dg-ink: #e8e8e8;
+	--dg-muted: #8a8a8a;
+	--dg-line: #e8e8e8;
+	--dg-accent: #00f0ff;
+	--dg-accent2: #ff2bd6;
+
+	--pd-bg: #1b1b1e;
+	--pd-fg: #f4f4f5;
+	--pd-border: #3f3f46;
+	--pd-field: #202024;
+	--pd-muted: #a1a1aa;
+	--pd-acc: #2dd4bf;
+	--pd-acc-soft: #123430;
+	--pd-ok: #4ade80;
+	--pd-ok-soft: #14301f;
+	--pd-bad: #f87171;
+	--pd-bad-soft: #3a1616;
+	--pd-note: #facc15;
+	--pd-note-soft: #36310f;
+	--pd-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+	--pd-scheme: dark;
+}
+
+html, body {
+	background: var(--dg-bg);
+	color: var(--dg-ink);
+	font-family: var(--dg-sans);
+	color-scheme: var(--pd-scheme);
+}

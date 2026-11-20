@@ -2,12 +2,19 @@
 # Install the dg runtime and bundle into the per-OS data dir, then run `dg-skills install`.
 #
 #   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-#   ... | sh -s -- --cli-only    (or DG_CLI_ONLY=1): skip the extension.
-#   ... | sh -s -- --agent-only  (or DG_AGENT_ONLY=1): install for a non-Claude agent that only needs phone.
-#   ... | sh -s -- --skills-only (or DG_SKILLS_ONLY=1): copy the skill files, then install the runtime and
-#       bundle only. It runs no `dg-skills install`, fetches no extension and executes no skill content.
-#       DG_SKILLS_NO_CLI=1 keeps it an offline copy of the skill files (nothing is downloaded from a release).
-#   ... | sh -s -- --version <x.y.z> (also --version=<x.y.z>, or DG_VERSION=<x.y.z>): install that release.
+#   ... | sh -s -- --cli-only    skip the extension.
+#   ... | sh -s -- --agent-only  install for a non-Claude agent that only needs phone.
+#   ... | sh -s -- --skills-only copy the skill files, then install the runtime and bundle only. It runs
+#       no `dg-skills install`, fetches no extension and executes no skill content. Add --no-cli to keep it
+#       an offline copy of the skill files (nothing is downloaded from a release), and --dest <dir> to
+#       choose where they go.
+#   ... | sh -s -- --chat-only    download only the chat skills for Claude chat: the checksum-verified
+#       dg-chat-skills-<x.y.z>.zip unpacked into ./dg-chat-skills (or --dest <dir>), one upload-ready ZIP
+#       per skill. No runtime, no bundle, no launchers, no extension, and nothing it unpacks is run.
+#   ... | sh -s -- --codex       also copy the skills into $CODEX_HOME/skills.
+#   ... | sh -s -- --version <x.y.z> (also --version=<x.y.z>): install that release.
+# Older scripts may still set DG_CLI_ONLY, DG_AGENT_ONLY, DG_SKILLS_ONLY, DG_SKILLS_NO_CLI, DG_SKILLS_DEST,
+# DG_INSTALL_CODEX or DG_VERSION; those keep working, and a flag always wins.
 #
 # Layout: runtime/bun-v<bun>, lib/<release>, runtime/current and lib/current links in the data dir
 # (~/.local/share/dg on Linux, ~/Library/Application Support/dg on macOS, $DG_HOME/data), and the dg, dg-skills,
@@ -19,12 +26,25 @@ set -eu
 CLI_ONLY="${DG_CLI_ONLY:-0}"
 SKILLS_ONLY="${DG_SKILLS_ONLY:-0}"
 AGENT_ONLY="${DG_AGENT_ONLY:-0}"
+NO_CLI="${DG_SKILLS_NO_CLI:-0}"
+INSTALL_CODEX="${DG_INSTALL_CODEX:-0}"
+CHAT_ONLY=0
+DEST_ARG=""
 VERSION_ARG=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --cli-only) CLI_ONLY=1 ;;
     --skills-only) SKILLS_ONLY=1 ;;
     --agent-only) AGENT_ONLY=1 ;;
+    --chat-only) CHAT_ONLY=1 ;;
+    --no-cli) NO_CLI=1 ;;
+    --codex) INSTALL_CODEX=1 ;;
+    --dest=*) DEST_ARG=${1#--dest=} ;;
+    --dest)
+      shift
+      [ "$#" -gt 0 ] || { echo "dg-skills: --dest requires a directory" >&2; exit 1; }
+      DEST_ARG=$1
+      ;;
     --version=*) VERSION_ARG=${1#--version=} ;;
     --version)
       shift
@@ -45,6 +65,15 @@ fi
 if [ "$CLI_ONLY" = "1" ] && [ "$AGENT_ONLY" = "1" ]; then
   echo "dg-skills: pass only one of --cli-only and --agent-only" >&2
   exit 1
+fi
+if [ "$CHAT_ONLY" = "1" ]; then
+  for other in "CLI_ONLY:--cli-only" "SKILLS_ONLY:--skills-only" "AGENT_ONLY:--agent-only" "INSTALL_CODEX:--codex" "NO_CLI:--no-cli"; do
+    eval "set_to=\${${other%%:*}}"
+    if [ "$set_to" = "1" ]; then
+      echo "dg-skills: --chat-only installs nothing but the chat skills; drop ${other#*:}" >&2
+      exit 1
+    fi
+  done
 fi
 
 normalize_version() {
@@ -299,46 +328,6 @@ else
   esac
 fi
 
-if [ "$SKILLS_ONLY" = "1" ]; then
-  skills_tree_source
-  copy_skill_tree "${SKILLS_SRC}" "${DG_SKILLS_DEST:-${ROOT}/skills}"
-  if [ "${DG_SKILLS_NO_CLI:-0}" = "1" ]; then
-    echo "Skipped the dg-skills CLI (DG_SKILLS_NO_CLI=1): offline copy only."
-    exit 0
-  fi
-fi
-
-os=$("$UNAME" -s)
-arch=$("$UNAME" -m)
-case "$os" in
-Linux) family="linux" ;;
-Darwin) family="darwin" ;;
-*) die "unsupported OS '$os' - use bootstrap.ps1 on Windows" ;;
-esac
-case "$arch" in
-x86_64 | amd64) cpu="x64" ;;
-aarch64 | arm64) cpu="arm64" ;;
-*) die "unsupported arch '$arch'" ;;
-esac
-platform="${family}-${cpu}"
-if [ "$platform" = "linux-x64" ]; then
-  cpuinfo="${DG_CPUINFO_FILE:-/proc/cpuinfo}"
-  if [ -r "$cpuinfo" ] && ! grep -qw avx2 "$cpuinfo"; then
-    platform="linux-x64-baseline"
-  fi
-fi
-
-for tool in "$CURL" tar unzip; do
-  command -v "$tool" >/dev/null 2>&1 || die "${tool} is required"
-done
-if command -v sha256sum >/dev/null 2>&1; then
-  SHA_CMD="sha256sum"
-elif command -v shasum >/dev/null 2>&1; then
-  SHA_CMD="shasum -a 256"
-else
-  die "sha256sum or shasum is required"
-fi
-
 sha256_of() {
   $SHA_CMD "$1" | awk '{print $1}' | tr 'A-F' 'a-f'
 }
@@ -374,6 +363,104 @@ sums_entry() {
 json_field() {
   printf '%s' "$1" | sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p"
 }
+
+pick_sha_cmd() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    SHA_CMD="sha256sum"
+  elif command -v shasum >/dev/null 2>&1; then
+    SHA_CMD="shasum -a 256"
+  else
+    die "sha256sum or shasum is required"
+  fi
+}
+
+# The chat skills are data for a chat upload: ZIPs and a Markdown guide. They are verified,
+# unpacked into one folder, and never opened or run.
+install_chat_skills() {
+  dest=$1
+  for tool in "$CURL" unzip; do
+    command -v "$tool" >/dev/null 2>&1 || die "${tool} is required"
+  done
+  pick_sha_cmd
+  resolve_release
+  WORK=$(mktemp -d)
+  track_tmp "${WORK}"
+  asset="dg-chat-skills-${VERSION}.zip"
+  download_asset SHA256SUMS "${WORK}/SHA256SUMS"
+  expected=$(sums_entry "${asset}")
+  [ -n "${expected}" ] || die "SHA256SUMS in ${tag} has no entry for ${asset}"
+  echo "Downloading ${asset}..."
+  download_asset "${asset}" "${WORK}/${asset}"
+  verify_sha256 "${WORK}/${asset}" "${asset}" "${expected}"
+  entries=$(unzip -Z1 "${WORK}/${asset}") || die "${asset} is not a ZIP"
+  [ -n "${entries}" ] || die "${asset} is empty"
+  for entry in ${entries}; do
+    case "${entry}" in
+      UPLOAD.md) ;;
+      dg-*.zip)
+        case "${entry}" in
+          */* | *..*) die "refusing ${entry} in ${asset}" ;;
+        esac
+        ;;
+      *) die "refusing ${entry} in ${asset}" ;;
+    esac
+  done
+  mkdir -p "${dest}"
+  unzip -oq "${WORK}/${asset}" -d "${dest}"
+  for entry in ${entries}; do chmod 644 "${dest}/${entry}"; done
+  echo "Chat skills ${VERSION} are in ${dest}:"
+  for entry in ${entries}; do
+    case "${entry}" in dg-*.zip) echo "  ${entry}" ;; esac
+  done
+  echo "Upload each ZIP as a skill in Claude: Customize, then Skills, then Upload a skill."
+  echo "Turn on code execution in Settings, under Capabilities. A Team or Enterprise owner can add them for everyone."
+  echo "Chat-only install: nothing else was installed and nothing was run."
+}
+
+if [ "$SKILLS_ONLY" = "1" ]; then
+  skills_tree_source
+  copy_skill_tree "${SKILLS_SRC}" "${DEST_ARG:-${DG_SKILLS_DEST:-${ROOT}/skills}}"
+  if [ "${NO_CLI}" = "1" ]; then
+    echo "Skipped the dg-skills CLI (--no-cli): offline copy only."
+    exit 0
+  fi
+fi
+
+if [ "$CHAT_ONLY" = "1" ]; then
+  install_chat_skills "${DEST_ARG:-dg-chat-skills}"
+  exit 0
+fi
+
+os=$("$UNAME" -s)
+arch=$("$UNAME" -m)
+case "$os" in
+Linux) family="linux" ;;
+Darwin) family="darwin" ;;
+*) die "unsupported OS '$os' - use bootstrap.ps1 on Windows" ;;
+esac
+case "$arch" in
+x86_64 | amd64) cpu="x64" ;;
+aarch64 | arm64) cpu="arm64" ;;
+*) die "unsupported arch '$arch'" ;;
+esac
+platform="${family}-${cpu}"
+if [ "$platform" = "linux-x64" ]; then
+  cpuinfo="${DG_CPUINFO_FILE:-/proc/cpuinfo}"
+  if [ -r "$cpuinfo" ] && ! grep -qw avx2 "$cpuinfo"; then
+    platform="linux-x64-baseline"
+  fi
+fi
+
+for tool in "$CURL" tar unzip; do
+  command -v "$tool" >/dev/null 2>&1 || die "${tool} is required"
+done
+if command -v sha256sum >/dev/null 2>&1; then
+  SHA_CMD="sha256sum"
+elif command -v shasum >/dev/null 2>&1; then
+  SHA_CMD="shasum -a 256"
+else
+  die "sha256sum or shasum is required"
+fi
 
 resolve_release
 
@@ -484,7 +571,7 @@ if [ "${CLI_ONLY}" != "1" ] && [ "${AGENT_ONLY}" != "1" ]; then
 fi
 DG_SKILLS_BOOTSTRAP=1 "${BIN}/dg-skills" install${install_args} </dev/null
 
-if [ "${DG_INSTALL_CODEX:-0}" = "1" ]; then
+if [ "${INSTALL_CODEX}" = "1" ]; then
   CODEX_ROOT="${CODEX_HOME:-${HOME}/.codex}"
   tmpdir=$(mktemp -d)
   track_tmp "${tmpdir}"
