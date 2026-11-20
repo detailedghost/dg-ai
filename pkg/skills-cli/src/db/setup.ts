@@ -33,6 +33,8 @@ const OPTIONS = {
 	secret: { type: "string" },
 	"secret-id": { type: "string" },
 	"secret-key": { type: "string" },
+	"aws-profile": { type: "string" },
+	"aws-region": { type: "string" },
 	session: { type: "string" },
 } as const;
 
@@ -117,6 +119,8 @@ function parseSetup(args: string[]): SetupRequest {
 		throw new Error("--secret must be aws, form or command");
 	if (!external && secret === undefined)
 		throw new Error("--secret aws|form|command required");
+	if (secret !== "aws" && (values["aws-profile"] || values["aws-region"]))
+		throw new Error("--aws-profile and --aws-region require --secret aws");
 	if (secret === "aws") {
 		const absent = ["secret-id", "secret-key"].filter(
 			(flag) => !values[flag as keyof typeof values],
@@ -126,6 +130,8 @@ function parseSetup(args: string[]): SetupRequest {
 		meta.secretSource = "aws-sm";
 		put(meta, "secretId", values["secret-id"]);
 		put(meta, "secretKey", values["secret-key"]);
+		put(meta, "awsProfile", values["aws-profile"]);
+		put(meta, "awsRegion", values["aws-region"]);
 	}
 	return {
 		name,

@@ -1,6 +1,7 @@
 import { parseArgs as parseNodeArgs } from "node:util";
 import { parseNonNegativeInteger } from "@dg/common";
 import type { CommandSpec } from "../utils/legacy-command";
+import { rerunUnderAsm } from "./aws-secret";
 import {
 	createDbCredentialClient,
 	type DbCredentialClient,
@@ -72,6 +73,7 @@ export interface DbDeps {
 	sfSchema: typeof sfSchema;
 	sfTest: typeof sfTest;
 	sfDestroy: typeof sfDestroy;
+	rerunUnderAsm: typeof rerunUnderAsm;
 }
 
 const defaultDeps: DbDeps = {
@@ -95,6 +97,7 @@ const defaultDeps: DbDeps = {
 	sfSchema,
 	sfTest,
 	sfDestroy,
+	rerunUnderAsm,
 };
 
 const PARSE_ARGS_OPTIONS = {
@@ -295,6 +298,7 @@ async function runConnectionVerb(
 	const connection = await loadConnection(deps, name, parsed.session);
 	if (parsed.write && connection.readOnly)
 		throw new Error(`connection "${name}" is read-only; --write is refused`);
+	if (connection.awsSecret) return deps.rerunUnderAsm(connection.awsSecret, verb, args);
 	return connection.engine === "snowflake"
 		? runSnowflake(verb, connection, parsed, deps)
 		: runPostgresql(verb, connection, parsed, deps);
@@ -312,6 +316,8 @@ export function createDbSpec(overrides: Partial<DbDeps> = {}): CommandSpec {
 			const name = parsed.positional[0];
 			if (!name) throw new Error("connection name required");
 			const connection = await loadConnection(deps, name, parsed.session);
+			if (connection.awsSecret)
+				return deps.rerunUnderAsm(connection.awsSecret, "test", args);
 			deps.stdout(
 				connection.engine === "snowflake"
 					? await deps.sfTest(connection)

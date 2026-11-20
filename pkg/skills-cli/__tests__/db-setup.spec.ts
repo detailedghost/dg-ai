@@ -115,7 +115,8 @@ describe("db setup", () => {
 	});
 
 	test("aws mode stores secret pointer meta and a placeholder, then tests", async () => {
-		const h = setupHarness();
+		const rerunUnderAsm = mock(async (_ref: unknown, _verb: string, _args: readonly string[]) => 0);
+		const h = setupHarness({ rerunUnderAsm });
 		const code = await h.run([
 			...PG_FLAGS,
 			"--secret", "aws",
@@ -134,20 +135,16 @@ describe("db setup", () => {
 			secretId: "prod/pg",
 			secretKey: "password",
 		});
-		expect(h.pgTest).toHaveBeenCalledTimes(1);
+		expect(rerunUnderAsm).toHaveBeenCalledTimes(1);
+		expect(rerunUnderAsm.mock.calls[0]?.slice(1)).toEqual(["test", ["pg1", "--session", "sess-1"]]);
 		expect(h.stdout.filter((l) => l.startsWith("Next:"))).toEqual(["Next: dg-skills db tables pg1"]);
 		expect(h.createCredentialClient).toHaveBeenCalledWith("sess-1");
 	});
 
 	test("prints one Next line with the fix when the test fails", async () => {
-		const h = setupHarness({
-			pgTest: async () => {
-				throw new Error("connection refused");
-			},
-		});
+		const h = setupHarness({ rerunUnderAsm: async () => 1 });
 		const code = await h.run([...PG_FLAGS, "--secret", "aws", "--secret-id", "i", "--secret-key", "k"]);
 		expect(code).toBe(1);
-		expect(h.stderr.join("\n")).toContain("connection refused");
 		expect(h.stdout.filter((l) => l.startsWith("Next:"))).toHaveLength(1);
 		expect(h.stdout.join("\n")).not.toContain("db tables");
 	});

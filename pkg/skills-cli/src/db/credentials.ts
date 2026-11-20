@@ -6,6 +6,7 @@ import {
 } from "@dg/common/node";
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
+import { type AwsSecretRef, childSecret, isAsmChild } from "./aws-secret";
 
 const CREDENTIAL_PREFIX = "db/";
 
@@ -27,6 +28,7 @@ export interface ConnectionConfig {
 	browserActionTimeout?: number;
 	ssl?: boolean;
 	readOnly?: boolean;
+	awsSecret?: AwsSecretRef;
 }
 
 export type DbCredentialClient = Pick<CredentialClient, "get" | "list" | "set" | "close">;
@@ -107,6 +109,19 @@ function resolvePrivateKeyPath(path: string): string {
 	return expanded;
 }
 
+function awsSecretFromMeta(
+	meta: CredentialMeta,
+	name: string,
+): AwsSecretRef | undefined {
+	if (optionalString(meta, "secretSource", name) !== "aws-sm") return undefined;
+	return {
+		id: requireMetadata(optionalString(meta, "secretId", name), "secretId", name),
+		key: requireMetadata(optionalString(meta, "secretKey", name), "secretKey", name),
+		profile: optionalString(meta, "awsProfile", name),
+		region: optionalString(meta, "awsRegion", name),
+	};
+}
+
 function connectionFromRecord(
 	name: string,
 	record: CredentialRecord,
@@ -118,7 +133,9 @@ function connectionFromRecord(
 			`connection "${name}" has invalid engine "${engine}" — must be postgresql or snowflake`,
 		);
 
-	const secret = record.value; // external_browser stores a non-secret placeholder that must never reach the SDK.
+	const awsSecret = awsSecretFromMeta(meta, name);
+	const inChild = awsSecret !== undefined && isAsmChild();
+	const secret = inChild ? childSecret(name) : record.value; // external_browser stores a non-secret placeholder that must never reach the SDK.
 	const config: ConnectionConfig = {
 		engine,
 		host: optionalString(meta, "host", name),
@@ -139,6 +156,7 @@ function connectionFromRecord(
 		),
 		browserActionTimeout: optionalInteger(meta, "browserActionTimeout", name),
 	};
+	if (awsSecret && !inChild) config.awsSecret = awsSecret;
 
 	if (engine === "postgresql") {
 		config.database = requireMetadata(config.database, "database", name);
