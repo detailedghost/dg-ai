@@ -9,10 +9,10 @@
 	"dg-proto": {
 		"source": "plugins/dg/skills/proto",
 		"files": {
-			"SKILL.md": "28d7b66dc91bf5fa3af86c493c9e68161050d64df2258a09430b6c4c24872a98",
-			"references/local-ui.md": "65d300f831c3987eb492da12195bb97cfb60805bd9efc663bc3b267a058fe024",
-			"references/local-plan.md": "33e1db07aaa25968ee9fa9a1c0e89815f83ee8ff69fd0e7806c2b25e0aa3a3a5",
-			"references/local-logic.md": "4139f279c48f4e6bd62031a4547eb52397c97359d92a91f98f1f29dd63b5d902"
+			"SKILL.md": "487936f82f3417973feb85e29c1387b968e84f406439204da9b9ebaaec612521",
+			"references/local-ui.md": "34d7cf27b90f937d0c0b5573657b1f989c319eead8e28a5a0e2f78cdc0d17a8a",
+			"references/local-plan.md": "3dfdec4f1094fe8ad34d41b60112fe4737fb44176a0fad09204829ff1c2878ce",
+			"references/local-logic.md": "4d6194bcc6ecec93c8ee1182a7407875bb69446065978dbdd9610aac751e39cf"
 		}
 	}
 }

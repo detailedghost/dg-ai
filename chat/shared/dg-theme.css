@@ -30,6 +30,8 @@
 	--pd-bad-soft: #fdecec;
 	--pd-note: #a16207;
 	--pd-note-soft: #fef6c7;
+	--pd-more: #7c3aed;
+	--pd-more-soft: #f3edff;
 	--pd-shadow: 0 8px 24px rgba(15, 23, 42, .18);
 	--pd-scheme: light;
 
@@ -64,6 +66,8 @@ html.dark {
 	--pd-bad-soft: #3a1616;
 	--pd-note: #facc15;
 	--pd-note-soft: #36310f;
+	--pd-more: #c4b5fd;
+	--pd-more-soft: #2a2140;
 	--pd-shadow: 0 8px 24px rgba(0, 0, 0, .35);
 	--pd-scheme: dark;
 }

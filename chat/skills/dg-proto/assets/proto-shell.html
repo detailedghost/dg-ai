@@ -40,7 +40,7 @@
   #proto-decision-approve { color: var(--pd-ok); border-color: var(--pd-ok); background: var(--pd-ok-soft); }
   #proto-decision-approve.with-note { color: var(--pd-note); border-color: var(--pd-note); background: var(--pd-note-soft); }
   #proto-decision-reject { color: var(--pd-bad); border-color: var(--pd-bad); background: var(--pd-bad-soft); }
-  #dg-more { color: var(--pd-acc); border-color: var(--pd-acc); background: var(--pd-acc-soft); }
+  #dg-more { color: var(--pd-more); border-color: var(--pd-more); background: var(--pd-more-soft); }
   #proto-decision-note[aria-pressed="true"], #dg-rounds[aria-expanded="true"] { background: var(--pd-acc-soft); color: var(--pd-acc); border-color: var(--pd-acc); }
   #proto-decision-note.has-note::after {
     content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%;
@@ -81,7 +81,8 @@
   #dg-panel .verdict { font-weight: 600; }
   #dg-panel .verdict.approve, #dg-panel .verdict.accepted { color: var(--pd-ok); }
   #dg-panel .verdict.reject { color: var(--pd-bad); }
-  #dg-panel .verdict.tweak, #dg-panel .verdict.more { color: var(--pd-acc); }
+  #dg-panel .verdict.tweak { color: var(--pd-acc); }
+  #dg-panel .verdict.more { color: var(--pd-more); }
   #dg-panel .note { color: var(--pd-muted); }
   @media (prefers-reduced-motion: reduce) { #proto-decision-toast { transition: none; } }
 </style>
