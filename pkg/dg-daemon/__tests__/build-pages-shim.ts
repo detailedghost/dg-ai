@@ -4,7 +4,14 @@ import { buildPages, OPTIONS_CSS } from "../../pages/build";
 
 const pages = join(import.meta.dir, "../../pages");
 const common = join(import.meta.dir, "../../common");
-const BUILT = ["chat.html", "chat.js", "board.html", "board.js"].map((name) =>
+const BUILT = [
+	"chat.html",
+	"chat.js",
+	"board.html",
+	"board.js",
+	"secret.html",
+	"secret.js",
+].map((name) =>
 	join(pages, "dist", name),
 );
 

@@ -18,6 +18,12 @@ const PAGES = [
 		entry: "src/board/page.ts",
 		css: "src/board/style.css",
 	},
+	{
+		name: "secret",
+		title: "DeeGee - Secret",
+		entry: "src/secret/page.ts",
+		css: "src/secret/style.css",
+	},
 ] as const;
 
 const DECLARATION = "declare const script: string;\nexport default script;\n";
@@ -51,7 +57,7 @@ function renderHtml(title: string, name: string, css: string): string {
 	].join("");
 }
 
-/** Writes dist/{chat,board}.{html,js}; the daemon embeds all four as text. */
+/** Writes dist/{chat,board,secret}.{html,js}; the daemon embeds all six as text. */
 export async function buildPages(): Promise<void> {
 	mkdirSync(dist, { recursive: true });
 	const staging = mkdtempSync(join(root, ".dist-"));

@@ -189,11 +189,12 @@ describe("db setup", () => {
 		expect(h.set).not.toHaveBeenCalled();
 	});
 
-	test("form mode reports it is not available yet", async () => {
+	test("form mode asks the daemon for the form, so it fails when no daemon runs", async () => {
 		const h = setupHarness();
 		const code = await h.run([...PG_FLAGS, "--secret", "form"]);
 		expect(code).toBe(1);
-		expect(h.stderr.join("\n")).toContain("form mode is not available yet");
+		expect(h.stderr.join("\n")).toContain("dg-daemon is not running");
+		expect(h.pgTest).not.toHaveBeenCalled();
 	});
 });
 

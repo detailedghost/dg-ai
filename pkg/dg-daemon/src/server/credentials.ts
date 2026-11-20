@@ -3,8 +3,11 @@ import {
 	CLI_GRANT_TOKEN_HEADER,
 	CLI_SESSION_ID_HEADER,
 	CREDENTIAL_SEALED_PREFIX,
+	type CredentialIntake,
 	type CredentialsCliRequest,
 	credentialNameInPrefix,
+	SECRET_CODE_KEY,
+	SECRET_PAGE_PATH,
 	validateCredentialGrantPrefix,
 } from "@dg/common";
 import { createScrubber } from "@dg/common/node";
@@ -20,6 +23,7 @@ import type { CredentialStore } from "../store/credentials-store";
 import { isExtensionPeer, type SocketState, sendViaQueue } from "./connection";
 import { checkExecAllowlist } from "./exec-allowlist";
 import type { FrameHandlerDeps } from "./frame-handlers";
+import { SECRET_INTENT_TTL_MS } from "./page-codes";
 
 type Socket = ServerWebSocket<SocketState>;
 export type Result =
@@ -156,9 +160,22 @@ function sessionOperation(
 		}
 		case "grant-list":
 			return store.listCredentialGrants();
+		case "intake":
+			return mintIntake(frame, deps);
 		case "exec":
 			throw new Error("exec runs through runExec");
 	}
+}
+
+function mintIntake(
+	frame: CredentialsCliRequest,
+	deps: FrameHandlerDeps,
+): CredentialIntake {
+	const code = deps.secretIntents.mint({ name: frame.name!, meta: frame.meta! });
+	return {
+		url: `http://127.0.0.1:${deps.port}${SECRET_PAGE_PATH}#${SECRET_CODE_KEY}=${code}`,
+		expiresAt: new Date(Date.now() + SECRET_INTENT_TTL_MS).toISOString(),
+	};
 }
 
 class SealedError extends Error {}

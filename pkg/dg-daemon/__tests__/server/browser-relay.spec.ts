@@ -44,6 +44,8 @@ import {
 } from "../../src/server/frame-handlers";
 import type { Logger } from "../../src/server/log";
 import { WS_PAYLOAD_HEADROOM_BYTES } from "../../src/server/http";
+import { createPageCodes } from "../../src/server/page-codes";
+import type { SecretIntent } from "../../src/server/secret-intake";
 import { ChatStore } from "../../src/store";
 import type { CredentialStore } from "../../src/store/credentials-store";
 import { inboxProfile } from "../../../common/__tests__/utils/inbox-fixtures";
@@ -122,6 +124,7 @@ async function world() {
 		noteActivity() {},
 		store,
 		credentials: {} as CredentialStore,
+		secretIntents: createPageCodes<SecretIntent>(),
 		dispatchScheduler: new DispatchScheduler(),
 		port: 0,
 		daemonId: "test-daemon",

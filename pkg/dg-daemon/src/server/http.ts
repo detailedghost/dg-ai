@@ -27,6 +27,7 @@ import {
 	OVERWATCH_SESSION_ID,
 	type OverwatchAction,
 	OWNER_TOKEN_HEADER,
+	SECRET_INTAKE_PATH,
 	SERVICE_API_CREDENTIALS_PATH,
 	type SessionRole,
 	validateAttachRequest,
@@ -80,8 +81,17 @@ import {
 	pinOriginIfUnset,
 	requireLocalPageOrigin,
 } from "./origin";
-import { createPageCodes, type PageCodes } from "./page-codes";
+import {
+	createPageCodes,
+	type PageCodes,
+	SECRET_INTENT_TTL_MS,
+} from "./page-codes";
 import { localPageResponse } from "./pages";
+import {
+	handleSecretIntake,
+	handleSecretName,
+	type SecretIntent,
+} from "./secret-intake";
 import { handleServiceApiCredentials } from "./service-api";
 import { renderStatus, type StatusDeps } from "./status";
 
@@ -236,6 +246,9 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		dispatchScheduler,
 	} = deps;
 
+	const secretIntents = createPageCodes<SecretIntent>({
+		ttlMs: SECRET_INTENT_TTL_MS,
+	});
 	const frameDeps = {
 		registry,
 		connections,
@@ -244,6 +257,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		noteActivity,
 		store,
 		credentials,
+		secretIntents,
 		dispatchScheduler,
 		port,
 		daemonId: deps.daemonId,
@@ -253,6 +267,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 	const attachLimiter = createAttachLimiter();
 	const pageCodes = createPageCodes();
 	const exchangeLimiter = createAttachLimiter();
+	const secretLimiter = createAttachLimiter();
 
 	const boundServer = Bun.serve<SocketState>({
 		hostname: "127.0.0.1",
@@ -354,6 +369,19 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 
 			if (url.pathname === CHAT_EXCHANGE_PATH && req.method === "POST") {
 				return handleChatCodeExchange(req, deps, pageCodes, exchangeLimiter);
+			}
+
+			if (url.pathname === SECRET_INTAKE_PATH && req.method === "GET") {
+				return handleSecretName(req, { port }, secretIntents, secretLimiter);
+			}
+
+			if (url.pathname === SECRET_INTAKE_PATH && req.method === "POST") {
+				return handleSecretIntake(
+					req,
+					{ port, credentials },
+					secretIntents,
+					secretLimiter,
+				);
 			}
 
 			if (url.pathname === CHAT_SESSIONS_CLEAR_PATH && req.method === "POST") {

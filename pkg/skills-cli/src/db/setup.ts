@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 import { validateCredentialName, type CredentialMeta } from "@dg/common";
 import type { DbCredentialClient } from "./credentials";
+import { createSetupForm, SecretFormExpiredError } from "./setup-form";
 
 export interface SetupPlan {
 	name: string;
@@ -158,8 +159,6 @@ function credentialsSetLine(plan: SetupPlan): string {
 export async function runSetup(args: string[], deps: SetupDeps): Promise<number> {
 	const request = parseSetup(args);
 	const { name, meta } = request;
-	if (request.secret === "form" && !deps.form)
-		throw new Error("form mode is not available yet");
 
 	const session = await deps.ensureSession(request.session);
 	const plan: SetupPlan = { name, meta, session };
@@ -170,7 +169,15 @@ export async function runSetup(args: string[], deps: SetupDeps): Promise<number>
 		return 0;
 	}
 	if (request.secret === "form" && !request.external) {
-		await deps.form?.(plan);
+		const form = deps.form ?? createSetupForm(deps.stdout);
+		try {
+			await form(plan);
+		} catch (error) {
+			if (!(error instanceof SecretFormExpiredError)) throw error;
+			deps.stdout(error.message);
+			deps.stdout(`Next: dg-skills db setup ${args.map(shellQuote).join(" ")}`);
+			return 1;
+		}
 	} else {
 		const client = deps.createCredentialClient(session);
 		try {

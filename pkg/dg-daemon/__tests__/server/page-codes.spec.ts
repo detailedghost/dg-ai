@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { createPageCodes } from "../../src/server/page-codes";
+import {
+	createPageCodes,
+	SECRET_INTENT_TTL_MS,
+} from "../../src/server/page-codes";
 
 function clock(start = 1_000_000) {
 	let current = start;
@@ -49,5 +52,57 @@ describe("createPageCodes", () => {
 		codes.mint("session-c");
 
 		expect(codes.redeem(first)).toBeUndefined();
+	});
+});
+
+describe("createPageCodes with an intent payload", () => {
+	const intent = { name: "db/pg1", meta: { engine: "postgresql" } };
+
+	it("redeems a code once for the intent it was minted for", () => {
+		const codes = createPageCodes<typeof intent>({ ttlMs: SECRET_INTENT_TTL_MS });
+
+		const code = codes.mint(intent);
+
+		expect(codes.redeem(code)).toEqual(intent);
+		expect(codes.redeem(code)).toBeUndefined();
+	});
+
+	it("keeps a code redeemable for 120 seconds and refuses it afterwards", () => {
+		const time = clock();
+		const codes = createPageCodes<typeof intent>({
+			now: time.now,
+			ttlMs: SECRET_INTENT_TTL_MS,
+		});
+		const live = codes.mint(intent);
+		const late = codes.mint(intent);
+
+		time.advance(119_999);
+		expect(codes.redeem(live)).toEqual(intent);
+		time.advance(2);
+		expect(codes.redeem(late)).toBeUndefined();
+	});
+
+	it("peeks without consuming the code", () => {
+		const codes = createPageCodes<typeof intent>({ ttlMs: SECRET_INTENT_TTL_MS });
+		const code = codes.mint(intent);
+
+		expect(codes.peek(code)).toEqual(intent);
+		expect(codes.peek(code)).toEqual(intent);
+		expect(codes.redeem(code)).toEqual(intent);
+		expect(codes.peek(code)).toBeUndefined();
+	});
+
+	it("refuses to peek an expired or unknown code", () => {
+		const time = clock();
+		const codes = createPageCodes<typeof intent>({
+			now: time.now,
+			ttlMs: SECRET_INTENT_TTL_MS,
+		});
+		const code = codes.mint(intent);
+
+		time.advance(SECRET_INTENT_TTL_MS + 1);
+
+		expect(codes.peek(code)).toBeUndefined();
+		expect(codes.peek("nope")).toBeUndefined();
 	});
 });
