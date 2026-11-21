@@ -1,0 +1,83 @@
+---
+name: Compiled dg - Build and Smoke
+
+on:
+  pull_request:
+    paths:
+      - pkg/launcher/**
+      - pkg/dg/**
+      - pkg/common/**
+      - bun.lock
+      - .github/actions/smoke-compiled-dg/**
+      - .github/workflows/compiled-dg.yml
+      - .github/workflows/release.yml
+
+concurrency:
+  group: compiled-dg-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Mask secrets in later log output
+        uses: ./.github/actions/mask-secrets
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.1
+
+      - name: Read the version
+        id: version
+        run: echo "version=$(jq -r .version pkg/skills-cli/package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Install
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Build the compiled dg for linux-x64 and windows-x64
+        working-directory: pkg/launcher
+        run: bun run build.ts --outdir dist --compiled linux-x64 --compiled windows-x64
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: compiled-dg
+          path: |
+            pkg/launcher/dist/dg-linux-x64
+            pkg/launcher/dist/dg-windows-x64.exe
+          if-no-files-found: error
+          retention-days: 1
+
+  smoke:
+    needs: build
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            runtime: linux-x64
+          - os: windows-latest
+            runtime: windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/actions
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: compiled-dg
+
+      - name: Smoke the compiled dg
+        uses: ./.github/actions/smoke-compiled-dg
+        with:
+          runtime: ${{ matrix.runtime }}
+          version: ${{ needs.build.outputs.version }}
