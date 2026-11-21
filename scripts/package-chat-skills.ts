@@ -12,18 +12,15 @@
  */
 import { createHash } from "node:crypto";
 import {
-	copyFileSync,
 	existsSync,
 	mkdirSync,
-	mkdtempSync,
 	readdirSync,
 	readFileSync,
-	rmSync,
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
+import { zipEntries } from "./zip";
 
 export const REPO = join(import.meta.dir, "..");
 export const CHAT = join(REPO, "chat");
@@ -187,11 +184,6 @@ export function refreshSources(): Sources {
 	return sources;
 }
 
-function zip(cwd: string, out: string, entries: string[]): void {
-	const result = Bun.spawnSync(["zip", "-q", "-X", "-r", out, ...entries], { cwd, stdout: "pipe", stderr: "pipe" });
-	if (result.exitCode !== 0) throw new Error(`zip ${out}: ${result.stderr.toString()}`);
-}
-
 export function uploadGuide(version: string, names: string[]): string {
 	return [
 		`# DeeGee chat skills ${version}`,
@@ -211,27 +203,22 @@ export function uploadGuide(version: string, names: string[]): string {
 export function packageWebSkills(outDir: string, version: string): string {
 	const names = skillNames();
 	if (names.length === 0) throw new Error("chat/skills holds no skills");
-	const stage = mkdtempSync(join(tmpdir(), "dg-chat-skills-"));
-	try {
-		const zips = join(stage, "zips");
-		mkdirSync(zips);
-		for (const name of names) {
-			const copy = join(stage, "tree", name);
-			for (const file of filesUnder(join(CHAT_SKILLS, name))) {
-				mkdirSync(join(copy, file, ".."), { recursive: true });
-				copyFileSync(join(CHAT_SKILLS, name, file), join(copy, file));
-			}
-			zip(join(stage, "tree"), join(zips, `${name}.zip`), [name]);
-		}
-		writeFileSync(join(zips, "UPLOAD.md"), uploadGuide(version, names));
-		mkdirSync(outDir, { recursive: true });
-		const out = join(outDir, `dg-chat-skills-${version}.zip`);
-		rmSync(out, { force: true });
-		zip(zips, out, [...names.map((name) => `${name}.zip`), "UPLOAD.md"]);
-		return out;
-	} finally {
-		rmSync(stage, { recursive: true, force: true });
-	}
+	const bundle = zipEntries([
+		...names.map((name) => ({
+			name: `${name}.zip`,
+			data: zipEntries(
+				filesUnder(join(CHAT_SKILLS, name)).map((file) => ({
+					name: `${name}/${file}`,
+					data: readFileSync(join(CHAT_SKILLS, name, file)),
+				})),
+			),
+		})),
+		{ name: "UPLOAD.md", data: Buffer.from(uploadGuide(version, names)) },
+	]);
+	mkdirSync(outDir, { recursive: true });
+	const out = join(outDir, `dg-chat-skills-${version}.zip`);
+	writeFileSync(out, bundle);
+	return out;
 }
 
 function main(argv: string[]): number {
