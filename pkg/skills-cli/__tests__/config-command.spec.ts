@@ -6,7 +6,7 @@ import { resolveDgPaths } from "@dg/common/node/dg-paths";
 import { main } from "../src/main";
 import { loadConfig as loadRefs } from "../src/utils/refs";
 
-const FAKE_TOKEN = "ghp_FAKEfakeFAKEfakeFAKEfakeFAKEfake0000";
+const FAKE_TOKEN = `ghp_${"Fake0".repeat(7)}x`;
 
 const realOut = process.stdout.write;
 const realErr = process.stderr.write;
@@ -38,7 +38,8 @@ afterEach(() => {
 	process.stderr.write = realErr;
 	console.error = realConsoleError;
 	process.exitCode = realExitCode ?? 0;
-	process.env.DG_HOME = realHome;
+	if (realHome === undefined) delete process.env.DG_HOME;
+	else process.env.DG_HOME = realHome;
 	if (realEditor === undefined) delete process.env.EDITOR;
 	else process.env.EDITOR = realEditor;
 	if (realVisual !== undefined) process.env.VISUAL = realVisual;
@@ -135,6 +136,17 @@ describe("dg-skills config set", () => {
 		expect(existsSync(file)).toBe(false);
 	});
 
+	test("refuses a parent table of a send switch", async () => {
+		expect(await main(["config", "set", "ssms.google", "{ send_enabled = true }"])).toBe(1);
+		expect(await main(["config", "set", "ssms", "{ allow_send = true }"])).toBe(1);
+
+		expect(existsSync(file)).toBe(false);
+	});
+
+	test("refuses an inherited object name as a key", async () => {
+		expect(await main(["config", "get", "constructor"])).toBe(1);
+	});
+
 	test("exits 1 for an unknown key and writes nothing", async () => {
 		expect(await main(["config", "set", "nope.key", "1"])).toBe(1);
 		expect(existsSync(file)).toBe(false);
@@ -157,6 +169,15 @@ describe("dg-skills config edit", () => {
 		expect(await main(["config", "edit"])).toBe(1);
 		expect(readFileSync(file, "utf8")).toBe("[install]\ncli_only = false\n");
 		expect(stderr()).toContain("install.cli_only must be a boolean");
+	});
+
+	test("keeps a change made while the editor was open", async () => {
+		seed("[install]\ncli_only = false\n");
+		editor(`printf "[install]\\ncli_only = true\\n" > "$1"; printf "[refs.aliases]\\napp = \\"x/y\\"\\n" > "${file}"`);
+
+		expect(await main(["config", "edit"])).toBe(1);
+		expect(readFileSync(file, "utf8")).toBe('[refs.aliases]\napp = "x/y"\n');
+		expect(stderr()).toContain("changed while you edited it");
 	});
 
 	test("keeps the old file when the editor fails", async () => {

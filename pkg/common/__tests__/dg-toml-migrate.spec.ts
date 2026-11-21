@@ -180,6 +180,7 @@ describe("migrateToToml", () => {
 
 		expect(error).toBeInstanceOf(DgCliError);
 		expect((error as Error).message).not.toContain(FAKE_SECRET);
+		expect((error as Error).message).toContain("store down");
 		expect(snapshot()).toEqual(before);
 	});
 

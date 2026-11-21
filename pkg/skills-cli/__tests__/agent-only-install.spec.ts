@@ -39,7 +39,7 @@ describe("dg-skills install --agent-only", () => {
 			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe(VERSION);
 			expect(readFileSync(join(bin, "dg-agent"), "utf8")).toContain(`dg-agent "$@"`);
 
-			expect(readFileSync(join(home, "config", "config.toml"), "utf8")).toContain("cli_only = true");
+			expect(Bun.TOML.parse(readFileSync(join(home, "config", "config.toml"), "utf8"))).toMatchObject({ install: { cli_only: true } });
 			for (const dir of [join(home, "agents"), join(home, "skills"), join(home, "data", "agents"), join(home, "data", "skills")])
 				expect([dir, existsSync(dir)]).toEqual([dir, false]);
 		} finally {

@@ -36,6 +36,7 @@ describe("hooks set", () => {
 		for (const value of localeSpec.values)
 			expect(result.stderr).toContain(value);
 		expect(world.has(world.paths.toml)).toBe(false);
+		expect(world.has(world.paths.config)).toBe(false);
 	});
 
 	test("stores an allowed value in config.toml", async () => {
@@ -325,6 +326,7 @@ describe("hooks cli edge cases", () => {
 		expect(result.stderr).toContain(world.paths.codex);
 		expect(world.text(world.paths.claude)).toBe("{}");
 		expect(world.has(world.paths.toml)).toBe(false);
+		expect(world.has(world.paths.config)).toBe(false);
 	});
 
 	test("a malformed config.json stops enable --set before any runtime is written", async () => {
@@ -356,6 +358,7 @@ describe("hooks cli edge cases", () => {
 		expect(result.stderr).toContain("codex");
 		expect(result.stderr).toContain("changed before the failure: claude");
 		expect(world.has(world.paths.toml)).toBe(false);
+		expect(world.has(world.paths.config)).toBe(false);
 		expect(ownedObjects(world.readJson(world.paths.claude))).toHaveLength(1);
 	});
 

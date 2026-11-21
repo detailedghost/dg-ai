@@ -24,17 +24,17 @@ type Known = { fallback?: unknown; text: boolean };
 
 function knownKey(key: string): Known | undefined {
 	const parts = key.split(".");
-	const [section, a, b, c] = parts;
-	if (key in DG_TOML_DEFAULTS) return { fallback: DG_TOML_DEFAULTS[key], text: false };
+	const [section, name = "", field = "", rest] = parts;
+	if (Object.hasOwn(DG_TOML_DEFAULTS, key)) return { fallback: DG_TOML_DEFAULTS[key], text: false };
 	if (section === "hooks" && parts.length === 3) {
-		const spec = HOOKS.find((hook) => hook.id === a)?.settings?.[b as string];
+		const spec = HOOKS.find((hook) => hook.id === name)?.settings?.[field];
 		return spec ? { fallback: spec.default, text: true } : undefined;
 	}
-	if (key === "refs.default_repo" || (section === "refs" && a === "aliases" && parts.length === 3)) return { text: true };
+	if (key === "refs.default_repo" || (section === "refs" && name === "aliases" && parts.length === 3)) return { text: true };
 	if ((section === "inbox" || section === "ssms") && parts.length >= 2) return { text: false };
-	if (section === "plugins" && parts.length === 3 && b === "enabled") return { fallback: true, text: false };
-	if (section === "plugins" && parts.length === 3 && b === "source") return { text: true };
-	if (section === "plugins" && b === "settings" && c !== undefined) return { text: false };
+	if (section === "plugins" && parts.length === 3 && field === "enabled") return { fallback: true, text: false };
+	if (section === "plugins" && parts.length === 3 && field === "source") return { text: true };
+	if (section === "plugins" && field === "settings" && rest !== undefined) return { text: false };
 	return undefined;
 }
 
@@ -70,7 +70,7 @@ function get(key: string): void {
 
 function set(key: string, value: string | undefined, credential: string | undefined): void {
 	const known = mustKnow(key);
-	if (SEND_SWITCHES.has(key))
+	if ([...SEND_SWITCHES].some((name) => name === key || name.startsWith(`${key}.`)))
 		throw new DgCliError(`dg config: ${key} turns sending on, so dg config set does not change it. Next: run dg config edit.`);
 	if (credential !== undefined && value !== undefined)
 		throw new DgCliError("dg config: pass a value or --credential <name>, not both.");
@@ -79,10 +79,11 @@ function set(key: string, value: string | undefined, credential: string | undefi
 	writeDgToml(key, credential === undefined ? typed(value as string, known) : { credential });
 }
 
-function editorCommand(): string[] {
+function editorCommand(draft: string): string[] {
 	const editor = process.env.VISUAL || process.env.EDITOR;
 	if (!editor) throw new DgCliError("dg config: no editor is set. Next: set EDITOR, or use dg config set <key> <value>.");
-	return editor.split(/\s+/).filter(Boolean);
+	if (process.platform === "win32") return [...editor.split(/\s+/).filter(Boolean), draft];
+	return ["/bin/sh", "-c", `${editor} "$1"`, "dg-config-edit", draft];
 }
 
 function edit(): void {
@@ -94,17 +95,19 @@ function edit(): void {
 			`dg config: ${file} does not exist yet, and older config files still wait to move into it. Next: start dg-daemon if it is stopped, run dg-skills doctor so the move runs, then run this again.`,
 		);
 	const before = exists ? readFileSync(file, "utf8") : "";
-	const command = editorCommand();
 	mkdirSync(dirname(file), { recursive: true });
 	const draft = `${file}.${process.pid}.edit.toml`;
+	const command = editorCommand(draft);
 	writeFileSync(draft, before, { mode: 0o600 });
 	try {
-		const run = Bun.spawnSync([...command, draft], { stdio: ["inherit", "inherit", "inherit"] });
+		const run = Bun.spawnSync(command, { stdio: ["inherit", "inherit", "inherit"] });
 		if (run.exitCode !== 0)
 			throw new DgCliError(`dg config: the editor exited with ${run.exitCode}; ${file} is unchanged. Next: run dg config edit again.`);
 		const after = readFileSync(draft, "utf8");
 		if (after === before) return;
 		parseDgToml(after, file);
+		if ((existsSync(file) ? readFileSync(file, "utf8") : "") !== before)
+			throw new DgCliError(`dg config: ${file} changed while you edited it, so your edit was not saved. Next: run dg config edit again.`);
 		writeFilePreserving(file, after, 0o600);
 	} finally {
 		rmSync(draft, { force: true });

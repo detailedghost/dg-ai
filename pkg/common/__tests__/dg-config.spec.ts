@@ -5,6 +5,7 @@ import {
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	statSync,
@@ -61,7 +62,7 @@ describe("readDgConfig", () => {
 });
 
 describe("writeDgConfig", () => {
-	test("creates config.toml with mode 0600 and the config dir when absent", () => {
+	test.skipIf(process.platform === "win32")("creates config.toml with mode 0600 and the config dir when absent", () => {
 		const fresh = { DG_HOME: join(home, "fresh") };
 
 		writeDgConfig({ hooks: { spelling: { locale: "en-GB" } } }, fresh);
@@ -113,6 +114,13 @@ describe("writeDgConfig", () => {
 });
 
 describe("writeDgConfig file handling", () => {
+	test("leaves no temp file after two writes", () => {
+		writeDgConfig({ hooks: { spelling: { locale: "en-GB" } } }, env);
+		writeDgConfig({ hooks: { spelling: { locale: "en-US" } } }, env);
+
+		expect(readdirSync(dir)).toEqual(["config.toml"]);
+	});
+
 	test.skipIf(process.platform === "win32")("writes through a symlink and keeps the link and the target mode", () => {
 		const target = join(home, "dotfiles", "config.toml");
 		mkdirSync(join(home, "dotfiles"));

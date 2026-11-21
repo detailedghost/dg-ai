@@ -17,7 +17,7 @@ Topic: Platform
 ## Decision
 
 dg keeps its settings in one file, `config.toml`, at `resolveDgPaths().configTomlPath`: `<configDir>/config.toml`. That is
-`~/.config/dg/config.toml` on Linux (`$XDG_CONFIG_HOME/dg/config.toml` when set), `~/Library/Application Support/dg/config.toml`
+`~/.config/dg/config.toml` on Linux (`$XDG_CONFIG_HOME/dg/config.toml` when it is an absolute path), `~/Library/Application Support/dg/config.toml`
 on macOS, `%APPDATA%\dg\config.toml` on Windows, and `<DG_HOME>/config/config.toml` when `DG_HOME` is set, inside
 `DG_PATH_FENCE`. `readDgToml`, `writeDgToml`, `mergeDgToml` and `setting` in `pkg/common/src/node/dg-toml.ts` are the only
 readers and writers. dg parses with `Bun.TOML.parse` and writes with an exact-pinned `smol-toml`, atomically, mode 0600.
@@ -44,7 +44,8 @@ not change `ssms.allow_send` or `ssms.google.send_enabled`. `edit` saves only an
 
 ssms reads `[ssms]` only from the `config.toml` in the config folder under the account's passwd home. This keeps the rule of
 [ADR 0024](0024-ssms-on-dg-skills.md) that `HOME`, `DG_HOME` and `XDG_CONFIG_HOME` cannot choose the send switches; only the
-file name changes from `ssms/config.yaml` to `config.toml`.
+file name changes from `ssms/config.yaml` to `config.toml`. Until that `config.toml` exists, ssms reads `ssms/config.yaml` in the
+same passwd-home folder, so the send switches never come from an env-chosen path during the move.
 
 These stay out of `config.toml`: the daemon jobs table and job sources ([ADR 0049](0049-jobs.md),
 [ADR 0053](0053-job-sources-and-credentials.md)), the exec allowlist (a separate 0600 file only the human edits), channel review

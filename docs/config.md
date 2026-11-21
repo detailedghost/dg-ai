@@ -1,7 +1,8 @@
 # Configuration
 
 dg keeps its settings in one file, `config.toml`, in the dg config folder.
-`dg-skills config` reads and changes it. Secrets never go in this file. They
+`dg-skills config` reads and changes it; error messages name it `dg config`,
+the same command on the flat `dg` surface. Secrets never go in this file. They
 stay in the encrypted credential store, and the file holds only a reference to
 them.
 
@@ -100,10 +101,13 @@ dg-skills config set plugins.example.settings.token --credential example-token
 These fields are secret fields:
 
 - `inbox.gmail.clientSecret` and `inbox.outlook.clientSecret`.
-- Any key under `plugins.<name>.settings` whose name has `secret`, `token`,
-  `password`, `api_key` or `private_key` in it.
-- Any string under `plugins.<name>.settings` that looks like a token, such as a
-  `ghp_` or `sk-` value or a long random string.
+- Any key under `plugins.<name>.settings` whose name ends in `secret`, `token`,
+  `password`, `api_key` or `private_key` and holds a string. A number, such as
+  `max_tokens = 1000`, is not a secret.
+- Any string under `plugins.<name>.settings` that looks like a token: one that
+  starts with `ghp_`, `gho_`, `github_pat_`, `sk-`, `xoxb-`, `glpat-`, `AKIA`,
+  `ASIA`, `AIza` or `ya29.`, or one of 32 or more letters, digits, `_` and `-`
+  that has a lowercase letter, an uppercase letter and a digit.
 
 A plain value in a secret field fails validation, and the error never prints the
 value. A `{{resolve:...}}` placeholder is refused in every field. The file never
@@ -153,6 +157,8 @@ How the move works:
   Start the daemon with `dg-daemon start`, then run `dg-skills doctor` to run the
   move again.
 - It records each source and its sha256 under `[meta.migrated]`.
+- The old inbox file and its backup still hold the client secret in plain
+  text. Delete both once you checked that `dg-skills inbox` works.
 - It leaves every old file in place, so a rollback to an older dg reads its old
   files unchanged. dg no longer reads them once `config.toml` exists.
   `dg-skills doctor config` warns when one of them changes after the move, and

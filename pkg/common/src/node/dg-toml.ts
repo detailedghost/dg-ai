@@ -34,10 +34,10 @@ export const DG_TOML_DEFAULTS: Readonly<Record<string, unknown>> = {
 
 const SECRET_FIELDS: ReadonlySet<string> = new Set(["inbox.gmail.clientSecret", "inbox.outlook.clientSecret"]);
 
-const SECRET_KEY_NAME = /secret|token|password|passwd|api[_-]?key|private[_-]?key/i;
+const SECRET_KEY_NAME = /(?:secret|token|password|passwd|api[_-]?key|private[_-]?key)$/i;
 
 const TOKEN_LIKE =
-	/^(?:gh[pousr]_|github_pat_|sk-|xox[abpr]-|glpat-|AKIA|ASIA|AIza|ya29\.)|^(?=.*[0-9])(?=.*[A-Za-z])[A-Za-z0-9+/_=-]{32,}$/;
+	/^(?:gh[pousr]_|github_pat_|sk-|xox[abpr]-|glpat-|AKIA|ASIA|AIza|ya29\.)|^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])[A-Za-z0-9_-]{32,}={0,2}$/;
 
 const UNSAFE_KEYS: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype"]);
 
@@ -146,13 +146,14 @@ function checkStrings(where: Where, key: string, value: unknown): void {
 }
 
 function checkSecrets(where: Where, key: string, value: unknown): void {
-	if (isSecretKey(key)) {
-		if (!isSecretRef(value)) mustBeSecretRef(where, key);
+	if (isSecretRef(value)) return;
+	if (isSecretKey(key) && (SECRET_FIELDS.has(key) || typeof value === "string" || isRecord(value))) mustBeSecretRef(where, key);
+	if (isRecord(value)) {
+		for (const [name, item] of Object.entries(value)) checkSecrets(where, `${key}.${name}`, item);
 		return;
 	}
-	if (isRecord(value)) {
-		if (isSecretRef(value)) return;
-		for (const [name, item] of Object.entries(value)) checkSecrets(where, `${key}.${name}`, item);
+	if (Array.isArray(value)) {
+		value.forEach((item, index) => checkSecrets(where, `${key}.${index}`, item));
 		return;
 	}
 	if (key.startsWith("plugins.") && key.split(".")[2] === "settings" && typeof value === "string" && TOKEN_LIKE.test(value))
@@ -190,6 +191,8 @@ function onlyKeys(where: Where, key: string, value: Table, allowed: readonly str
 }
 
 function plugin(where: Where, key: string, value: unknown): PluginEntry {
+	if (key.split(".").length !== 2)
+		fail(where, key, `${key} is not a valid plugin name; a plugin name has no dot. ${NEXT_EDIT} plugins.<name>.enabled <value>.`);
 	const entry = table(where, key, value);
 	onlyKeys(where, key, entry, ["enabled", "source", "settings"]);
 	const source = optionalString(where, `${key}.source`, entry.source);
@@ -300,9 +303,9 @@ function unreadable(path: string, kind: string, error: unknown): never {
 }
 
 function readObject(path: string, kind: "JSON" | "YAML"): Table {
-	const text = readFileSync(path, "utf8");
 	let parsed: unknown;
 	try {
+		const text = readFileSync(path, "utf8");
 		parsed = kind === "JSON" ? JSON.parse(text) : Bun.YAML.parse(text);
 	} catch (error) {
 		unreadable(path, kind, error);
@@ -396,12 +399,16 @@ export function dgTomlValue(doc: unknown, key: string): unknown {
 	return node;
 }
 
-function envValue(raw: string, like: unknown): unknown {
+function envValue(name: string, raw: string, like: unknown): unknown {
 	if (typeof like === "boolean") {
 		if (/^(?:1|true|yes|on)$/i.test(raw)) return true;
 		if (/^(?:0|false|no|off)$/i.test(raw)) return false;
+		throw new DgCliError(`dg config: ${name} must be true or false (or 1, 0, yes, no, on, off). Next: fix or unset ${name}.`);
 	}
-	if (typeof like === "number" && raw.trim() !== "" && Number.isFinite(Number(raw))) return Number(raw);
+	if (typeof like === "number") {
+		if (raw.trim() !== "" && Number.isFinite(Number(raw))) return Number(raw);
+		throw new DgCliError(`dg config: ${name} must be a number. Next: fix or unset ${name}.`);
+	}
 	return raw;
 }
 
@@ -413,7 +420,7 @@ export function setting<T>(key: string, { flag, envVar, env = process.env }: Set
 	const fromToml = dgTomlValue(readDgToml(env), key);
 	const fallback = DG_TOML_DEFAULTS[key];
 	const raw = envVar ? env[envVar] : undefined;
-	if (raw !== undefined) return envValue(raw, fallback ?? fromToml) as T;
+	if (envVar && raw !== undefined) return envValue(envVar, raw, fallback ?? fromToml) as T;
 	return (fromToml ?? fallback) as T;
 }
 
@@ -422,8 +429,12 @@ export function stringifyDgToml(doc: Table): string {
 	return `${stringify(doc).trim()}\n`;
 }
 
+function readText(file: string): string {
+	return existsSync(file) ? readFileSync(file, "utf8") : "";
+}
+
 function rawDoc(file: string): { raw: Table; text: string } {
-	const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+	const text = readText(file);
 	const where = { file, text };
 	const raw = parseToml(where);
 	validateDgToml(raw, where);
@@ -463,11 +474,24 @@ function assertMigrated(file: string, env: Env): void {
 /** Sets one key in config.toml; it validates first and never writes a secret value. */
 export function writeDgToml(key: string, value: unknown, env: Env = process.env): DgToml {
 	const file = tomlFile(env);
-	if (isSecretKey(key) && !isSecretRef(value)) mustBeSecretRef({ file, text: "" }, key);
+	if (isSecretKey(key) && typeof value === "string") mustBeSecretRef({ file, text: "" }, key);
 	assertMigrated(file, env);
-	const { raw } = rawDoc(file);
-	setDgTomlValue(raw, key, value);
-	return writeDgTomlDoc(raw, file);
+	return updateDoc(file, (raw) => {
+		setDgTomlValue(raw, key, value);
+		return raw;
+	});
+}
+
+const UPDATE_TRIES = 3;
+
+function updateDoc(file: string, change: (raw: Table) => Table): DgToml {
+	for (let attempt = 1; ; attempt++) {
+		const { raw, text } = rawDoc(file);
+		const next = change(raw);
+		if (readText(file) === text) return writeDgTomlDoc(next, file);
+		if (attempt >= UPDATE_TRIES)
+			throw new DgCliError(`dg config: ${file} kept changing while dg wrote it. Next: run the command again.`);
+	}
 }
 
 function deepMerge(base: Table, patch: Table): Table {
@@ -484,6 +508,5 @@ function deepMerge(base: Table, patch: Table): Table {
 export function mergeDgToml(patch: Table, env: Env = process.env): DgToml {
 	const file = tomlFile(env);
 	assertMigrated(file, env);
-	const { raw } = rawDoc(file);
-	return writeDgTomlDoc(deepMerge(raw, patch), file);
+	return updateDoc(file, (raw) => deepMerge(raw, patch));
 }

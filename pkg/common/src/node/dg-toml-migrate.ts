@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { DgCliError } from "../errors";
+import { DgCliError, describeError } from "../errors";
 import type { DgPaths } from "./dg-paths";
 import { type LegacySeams, legacySources, parseDgToml, readLegacyConfig, stringifyDgToml, writeDgTomlDoc } from "./dg-toml";
 import { withInstallLock, withInstallLockSync } from "./install-lock";
@@ -66,9 +66,10 @@ async function fold(paths: DgPaths, options: MigrateOptions): Promise<MigrateRes
 		for (const secret of steps.legacy.secrets) {
 			try {
 				await options.store?.set(secret.name, secret.value);
-			} catch {
+			} catch (error) {
+				const reason = describeError(error).replaceAll(secret.value, "[redacted]");
 				throw new DgCliError(
-					`dg config: could not store ${secret.key} as credential ${secret.name}. Next: check dg-daemon with dg-skills doctor, then run the command again. Nothing was changed.`,
+					`dg config: could not store ${secret.key} as credential ${secret.name} (${reason}). Next: check dg-daemon with dg-skills doctor, then run the command again. config.toml was not written and no backup was kept; a secret stored before this one stays in the store.`,
 				);
 			}
 		}

@@ -292,7 +292,7 @@ Put every dg command under one flat `dg <command>` surface and ship it as one co
 - [x] Add `configTomlPath: join(configDir, "config.toml")` to DgPaths; it follows XDG_CONFIG_HOME, APPDATA, macOS support and `<DG_HOME>/config`, and DG_PATH_FENCE checks it through the configDir role
 - [x] Parse with `Bun.TOML.parse`; write with a pinned `smol-toml` stringify, atomically through `writeFilePreserving` with mode 0600
 - [x] Schema with sections `[hooks]`, `[install]` (`cli_only`), `[refs.aliases]`, `[inbox]`, `[ssms]`, `[plugins.<name>]` (`enabled`, `source`, `settings`)
-- [x] Precedence helper: CLI flag, then env, then TOML, then default (pending RATIFY)
+- [x] Precedence helper: CLI flag, then env, then TOML, then default
 - [x] Secret fields take only `{ credential = "<name>" }`; a plain string in a secret field, or a value that looks like a token, fails validation
 - [x] Validation errors throw DgCliError: `dg config: <file>:<line>: <key> must be <type>, got <value>. Next: run dg config edit, or dg config set <key> <value>.`
 

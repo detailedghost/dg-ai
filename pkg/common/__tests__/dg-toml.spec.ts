@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DgCliError } from "../src/errors";
 import { readDgToml, setting, writeDgToml } from "../src/node/dg-toml";
 
-const FAKE_TOKEN = "ghp_FAKEfakeFAKEfakeFAKEfakeFAKEfake0000";
+const FAKE_TOKEN = `ghp_${"Fake0".repeat(7)}x`;
 
 let home: string;
 let file: string;
@@ -139,6 +139,30 @@ describe("readDgToml", () => {
 		expect(caught(() => readDgToml(env)).message).toContain("plugins.foo.settings.token must be a credential reference");
 	});
 
+	test("allows a number under a secret-named plugin key and a plain path", () => {
+		writeFileSync(
+			file,
+			["[plugins.foo.settings]", "max_tokens = 1000", "token_count = 4", 'data = "/srv/data/some-long-directory-name-2"', ""].join("\n"),
+		);
+
+		expect(readDgToml(env).plugins.foo?.settings).toEqual({ max_tokens: 1000, token_count: 4, data: "/srv/data/some-long-directory-name-2" });
+	});
+
+	test("checks a token inside an array of plugin settings", () => {
+		writeFileSync(file, ["[plugins.foo.settings]", `accounts = [{ token = "${FAKE_TOKEN}" }]`, ""].join("\n"));
+
+		const error = caught(() => readDgToml(env));
+
+		expect(error.message).toContain("plugins.foo.settings.accounts.0.token must be a credential reference");
+		expect(error.message).not.toContain(FAKE_TOKEN);
+	});
+
+	test("refuses a plugin name with a dot", () => {
+		writeFileSync(file, ['[plugins."a.b".settings]', 'token = "x"', ""].join("\n"));
+
+		expect(() => readDgToml(env)).toThrow(DgCliError);
+	});
+
 	test("reads only the DG_HOME file, never the XDG one", () => {
 		const xdg = mkdtempSync(join(tmpdir(), "dg-toml-xdg-"));
 		try {
@@ -179,6 +203,14 @@ describe("setting", () => {
 		writeFileSync(file, '[refs.aliases]\napp = "acme/app"\n');
 
 		expect(setting<string>("refs.aliases.app", { env })).toBe("acme/app");
+	});
+});
+
+describe("setting env values", () => {
+	test("refuses a boolean env var that does not parse", () => {
+		expect(() => setting<boolean>("install.cli_only", { envVar: "DG_CLI_ONLY", env: { ...env, DG_CLI_ONLY: "flase" } })).toThrow(
+			"DG_CLI_ONLY must be true or false",
+		);
 	});
 });
 

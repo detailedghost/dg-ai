@@ -40,10 +40,16 @@ async function tomlLayer(env: Env, deps: LoadConfigDeps): Promise<PartialAppConf
 	return inbox as PartialAppConfig;
 }
 
+async function readFlagFile(path: string): Promise<PartialAppConfig> {
+	const file = Bun.file(path);
+	if (!(await file.exists())) return {};
+	return (await file.json()) as PartialAppConfig;
+}
+
 /** Inbox settings: defaults, then config.toml [inbox], then env vars, then the --config file. */
 export async function loadConfig(path?: string, deps: LoadConfigDeps = {}): Promise<AppConfig> {
 	const env = deps.env ?? process.env;
-	const flag = path && (await Bun.file(path).exists()) ? ((await Bun.file(path).json()) as PartialAppConfig) : {};
+	const flag = path ? await readFlagFile(path) : {};
 	const merged = [await tomlLayer(env, deps), envOverrides(env), flag].reduce(mergeConfig, inboxDefaults(env));
 	return {
 		...merged,

@@ -124,7 +124,7 @@ export function accountHome(
 	return undefined;
 }
 
-/** The fixed dg config folder under the passwd home, which holds the config.toml that ssms reads; `HOME`, `DG_HOME` and `XDG_CONFIG_HOME` never choose it. */
+/** The dg config folder under the passwd home, whose config.toml holds the ssms send switches. */
 export function allowSendHome(homeDir?: string, platform: NodeJS.Platform = process.platform): string | undefined {
 	const dir = homeDir === undefined ? accountHome() : homeDir;
 	if (!dir) return undefined;

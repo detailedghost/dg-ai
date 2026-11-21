@@ -10,7 +10,7 @@ export function inboxDefaults(env: Env = process.env): AppConfig {
 		configHome:
 			env.EMAIL_ORGANIZER_HOME ??
 			env.EMAIL_ORGANIZER_CONFIG_HOME ??
-			join(resolveDgPaths().stateDir, "inbox", "config"),
+			join(resolveDgPaths({ env }).stateDir, "inbox", "config"),
 		provider: providerFromEnv(env.EMAIL_ORGANIZER_PROVIDER),
 		protonmail: {
 			sessionProfile: "dg-extension",
@@ -137,7 +137,7 @@ export function inboxDefaults(env: Env = process.env): AppConfig {
 
 export const defaultConfig: AppConfig = inboxDefaults(process.env);
 
-const ENV_PATHS: readonly (readonly [string, ...string[]])[] = [
+export const ENV_PATHS: readonly (readonly [string, ...string[]])[] = [
 	["configHome", "EMAIL_ORGANIZER_HOME", "EMAIL_ORGANIZER_CONFIG_HOME"],
 	["provider", "EMAIL_ORGANIZER_PROVIDER"],
 	["protonmail.apiBaseUrl", "PROTONMAIL_API_BASE_URL"],

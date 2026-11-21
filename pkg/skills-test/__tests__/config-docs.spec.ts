@@ -25,7 +25,13 @@ describe("docs/config.md", () => {
 	});
 
 	test("says where each old file went and where its backup is", () => {
-		for (const old of ["config.json", "cli-only", "browser-batch/config.json", "organizer.config.json", "ssms/config.yaml"])
-			expect([old, DOC.includes(`${old}.pre-toml`)]).toEqual([old, true]);
+		const backups = [
+			"<config>/config.json.pre-toml",
+			"<config>/cli-only.pre-toml",
+			"~/.config/browser-batch/config.json.pre-toml",
+			"<state>/inbox/config/organizer.config.json.pre-toml",
+			"<config>/ssms/config.yaml.pre-toml",
+		];
+		for (const backup of backups) expect([backup, DOC.includes(`\`${backup}\``)]).toEqual([backup, true]);
 	});
 });

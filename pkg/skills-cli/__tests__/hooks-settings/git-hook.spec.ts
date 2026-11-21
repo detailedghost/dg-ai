@@ -99,6 +99,7 @@ describe("hooks enable strip-ai-coauthors", () => {
 		expect(result.stderr).toContain("core.hooksPath");
 		expect(readFileSync(repo.hook, "utf8")).toBe(USER_HOOK);
 		expect(world.has(world.paths.toml)).toBe(false);
+		expect(world.has(world.paths.config)).toBe(false);
 	});
 
 	test("refuses a repo whose core.hooksPath is set to an empty value", async () => {

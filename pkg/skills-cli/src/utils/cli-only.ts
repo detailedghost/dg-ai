@@ -7,11 +7,7 @@ import type { Command } from "commander";
 import { cliDest } from "./lib";
 
 export function isCliOnly(): boolean {
-	try {
-		return readDgToml().install.cli_only;
-	} catch {
-		return false;
-	}
+	return readDgToml().install.cli_only;
 }
 
 export function setCliOnly(enabled: boolean): void {
