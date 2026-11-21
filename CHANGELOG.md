@@ -1,5 +1,15 @@
 # Changelog
 
+## v7.0.0 (2026-11-21)
+
+### Breaking
+
+- feat(dg)!: ship one compiled dg with flat commands and remove the old names ([#248](https://github.com/detailedghost/dg-ai/pull/248))
+
+### Fixes
+
+- fix(launcher): run the compiled dg entry without an import.meta.main guard ([#249](https://github.com/detailedghost/dg-ai/pull/249))
+
 ## Unreleased
 
 ### Breaking
