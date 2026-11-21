@@ -88,12 +88,18 @@ never in `--json`. The draft file stores a hash of that token, not the token.
 terminal, or after `--approve` with the token from the terminal. `--yes` does
 not send. The gate blocks accidental and non-interactive sends. Same-user code
 that evades it, for example by allocating its own pty, is out of scope.
-`allow_send` is read only from `ssms/config.yaml` in the dg config folder under
-the account's passwd home: `~/.config/dg/ssms/config.yaml` on Linux and
-`~/Library/Application Support/dg/ssms/config.yaml` on macOS.
+`allow_send` is read only from the `[ssms]` table of `config.toml` in the dg
+config folder under the account's passwd home: `~/.config/dg/config.toml` on
+Linux and `~/Library/Application Support/dg/config.toml` on macOS. Until that
+file exists, ssms reads `ssms/config.yaml` in the same folder. The first
+`dg-skills` command after the upgrade moves `ssms/config.yaml` into `[ssms]`
+and keeps `ssms/config.yaml.pre-toml`; after that, ssms does not read the YAML
+file. `dg-skills config set` does not change `ssms.allow_send` or
+`ssms.google.send_enabled`; edit them with `dg-skills config edit`. See
+[configuration](config.md).
 `XDG_CONFIG_HOME` does not move it. Linux uses `getent` or `/etc/passwd`. macOS uses `id -P` or `dscl`. If
 that home cannot be resolved, send stays off. `$HOME` and `$DG_HOME` do not
-choose it. `--config` cannot set it. `google.send_enabled` in that same file
+choose it. `--config` cannot set it. `ssms.google.send_enabled` in that same file
 defaults to false. Google send is unverified against a signed-in Messages for
 Web session until someone runs it there, so leave the flag false until then.
 `false` means never send, and that is the default when the fixed file is

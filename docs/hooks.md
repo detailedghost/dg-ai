@@ -37,7 +37,7 @@ prints `<runtime>: skipped <id> (not supported)` for a hook a runtime cannot run
 
 `dg-skills hooks enable strip-ai-coauthors` runs in a git repo. It writes
 `.git/hooks/commit-msg`, moves an existing hook to `commit-msg.dg-orig` and runs
-it after the strip, and turns `strip-ai-coauthors.enabled` on in `config.json`.
+it after the strip, and turns `hooks.strip-ai-coauthors.enabled` on in `config.toml`.
 It stops when `core.hooksPath` is set. `disable strip-ai-coauthors` restores the
 old hook and turns the setting off. The setting is global, so `hooks set
 strip-ai-coauthors enabled off` pauses every repo. `DG_STRIP_AI_COAUTHORS=1` or
@@ -56,8 +56,11 @@ package name, so `enable` and `disable` remove a stale `dg-hooks` entry from the
 `plugin` list in `opencode.json`.
 
 Each entry runs `<state>/bin/dg-skills hooks run <id>`. The state folder is
-`~/.dg`, or `$DG_HOME` when set. The `locale` value lives in `config.json` in
-that folder, not in the tool settings.
+`~/.dg`, or `$DG_HOME` when set. Hook settings, such as `locale`, live in the
+`[hooks]` table of `config.toml` in the dg config folder, not in the tool
+settings. `dg-skills hooks set` and `dg-skills config set hooks.<id>.<key>`
+both write there. Older releases kept them in `config.json`; the first
+`dg-skills` command after the upgrade moves them. See [configuration](config.md).
 
 ## The owned marker
 
