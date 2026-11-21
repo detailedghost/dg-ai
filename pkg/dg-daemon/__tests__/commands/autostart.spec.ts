@@ -32,6 +32,7 @@ import {
 	cmdAutostartRemove,
 	cmdAutostartStatus,
 	installDaemonAutostart,
+	rewriteDaemonAutostart,
 } from "../../src/commands/autostart";
 
 type Ran = string[];
@@ -39,9 +40,9 @@ type Reply = { code: number; stdout?: string; stderr?: string };
 type Written = { path: string; data: string | Uint8Array; mode?: number };
 
 const HAND_OVER =
-	"a daemon is already running outside the service manager; run dg-daemon restart to hand it over";
+	"a daemon is already running outside the service manager; run dg daemon restart to hand it over";
 const STOP_FIRST =
-	"hint: run dg-daemon stop first; the service manager has a shorter stop limit";
+	"hint: run dg daemon stop first; the service manager has a shorter stop limit";
 
 let root: string;
 let paths: DgPaths;
@@ -82,7 +83,7 @@ afterEach(() => {
 });
 
 function makeDeps(overrides: Partial<AutostartDeps> = {}): AutostartDeps {
-	const [bun, dgJs] = launcherCommand(paths.dataDir, "dg-daemon", ["serve"]);
+	const [program] = launcherCommand(paths.dataDir, "dg-daemon", ["serve"]);
 	return {
 		platform: "linux",
 		homeDir: join(root, "home"),
@@ -95,7 +96,7 @@ function makeDeps(overrides: Partial<AutostartDeps> = {}): AutostartDeps {
 		},
 		removeFile: (path) => rmSync(path, { force: true }),
 		fileExists: (path) =>
-			path === bun || path === dgJs ? !missing.has(path) : existsSync(path),
+			path === program ? !missing.has(path) : existsSync(path),
 		run: async (argv) => {
 			ran.push(argv);
 			events.push(`run ${argv.join(" ")}`);
@@ -150,7 +151,7 @@ const failure = async (action: Promise<unknown>): Promise<DgCliError> => {
 	return error as DgCliError;
 };
 
-describe("dg-daemon autostart install", () => {
+describe("dg autostart install", () => {
 	it("writes the unit with mode 0600, then reloads, enables with --now and enables linger, in that order", async () => {
 		const deps = makeDeps();
 		const lines = captureLines();
@@ -165,11 +166,11 @@ describe("dg-daemon autostart install", () => {
 			"loginctl enable-linger",
 		]);
 		expect(lines()).toEqual([
-			"autostart installed (systemd): dg-daemon starts at login",
+			"autostart installed (systemd): the dg daemon starts at login",
 		]);
 	});
 
-	it("starts dg-daemon serve through the stable current links", async () => {
+	it("starts dg daemon serve through the stable bin/current link of the compiled program", async () => {
 		const deps = makeDeps();
 
 		await installDaemonAutostart(deps, paths);
@@ -178,11 +179,9 @@ describe("dg-daemon autostart install", () => {
 		const execStart =
 			unit.split("\n").find((line) => line.startsWith("ExecStart=")) ?? "";
 		expect(execStart).toContain(
-			`"${join(paths.dataDir, "runtime", "current", "bun")}"`,
+			`"${join(paths.dataDir, "bin", "current", "dg")}" "daemon" "serve"`,
 		);
-		expect(execStart).toContain(
-			`"${join(paths.dataDir, "lib", "current", "dg.js")}" "dg-daemon" "serve"`,
-		);
+		expect(execStart).not.toContain("dg.js");
 		expect(unit).toContain("RestartPreventExitStatus=3 78");
 	});
 
@@ -205,7 +204,7 @@ describe("dg-daemon autostart install", () => {
 		expect(new Set(written.map((entry) => entry.path)).size).toBe(1);
 	});
 
-	it("on darwin writes the dg-daemon plist and bootstraps it", async () => {
+	it("on darwin writes the dg daemon plist and bootstraps it", async () => {
 		const deps = makeDeps({ platform: "darwin" });
 		const lines = captureLines();
 
@@ -218,7 +217,7 @@ describe("dg-daemon autostart install", () => {
 			join(paths.logDir, "dg-daemon-autostart.log"),
 		);
 		expect(lines()).toEqual([
-			"autostart installed (launchd): dg-daemon starts at login",
+			"autostart installed (launchd): the dg daemon starts at login",
 		]);
 	});
 
@@ -241,7 +240,7 @@ describe("dg-daemon autostart install", () => {
 			windowsTaskXmlPath(paths, "dg-daemon"),
 		);
 		expect(lines()).toEqual([
-			"autostart installed (task): dg-daemon starts at login",
+			"autostart installed (task): the dg daemon starts at login",
 		]);
 	});
 
@@ -325,8 +324,8 @@ describe("dg-daemon autostart install", () => {
 		]);
 	});
 
-	for (const missingIndex of [0, 1]) {
-		it(`exits 1 with no unit file when ${missingIndex === 0 ? "argv[0]" : "the dg.js path"} is absent`, async () => {
+	for (const missingIndex of [0]) {
+		it("exits 1 with no unit file when the compiled program is absent", async () => {
 			const target = launcherCommand(paths.dataDir, "dg-daemon", ["serve"])[
 				missingIndex
 			] as string;
@@ -351,7 +350,7 @@ describe("dg-daemon autostart install", () => {
 		await cmdAutostartInstall(makeDeps());
 
 		expect(lines()).toEqual([
-			"autostart installed (systemd): dg-daemon starts at login",
+			"autostart installed (systemd): the dg daemon starts at login",
 			HAND_OVER,
 		]);
 	});
@@ -365,7 +364,7 @@ describe("dg-daemon autostart install", () => {
 		await cmdAutostartInstall(deps);
 
 		expect(lines()).toEqual([
-			"autostart installed (systemd): dg-daemon starts at login",
+			"autostart installed (systemd): the dg daemon starts at login",
 		]);
 	});
 
@@ -406,7 +405,7 @@ describe("dg-daemon autostart install", () => {
 	});
 });
 
-describe("dg-daemon autostart install with a blocked daemon entry", () => {
+describe("dg autostart install with a blocked daemon entry", () => {
 	it("exits with the block error and writes no unit file", async () => {
 		const from = join(paths.legacyHome, "daemon");
 		mkdirSync(from, { recursive: true });
@@ -425,7 +424,7 @@ describe("dg-daemon autostart install with a blocked daemon entry", () => {
 	});
 });
 
-describe("dg-daemon autostart install in WSL", () => {
+describe("dg autostart install in WSL", () => {
 	const DISTRO = "Ubuntu-22.04";
 	const WIN_PATH = "C:\\state\\dg-daemon-wsl.task.xml";
 	const wslEnv = (distro = DISTRO) => ({
@@ -583,7 +582,7 @@ describe("dg-daemon autostart install in WSL", () => {
 	});
 });
 
-describe("dg-daemon autostart remove", () => {
+describe("dg autostart remove", () => {
 	it("prints autostart: not installed when no unit file exists", async () => {
 		const lines = captureLines();
 
@@ -639,7 +638,7 @@ describe("dg-daemon autostart remove", () => {
 	});
 });
 
-describe("dg-daemon autostart status", () => {
+describe("dg autostart status", () => {
 	it("prints not installed and the JSON null kind when no unit exists", async () => {
 		const lines = captureLines();
 
@@ -681,7 +680,7 @@ describe("dg-daemon autostart status", () => {
 	});
 });
 
-describe("dg-daemon main registration", () => {
+describe("dg daemon main registration", () => {
 	async function autostartCommand(name: string) {
 		const { buildProgram } = await import("../../src/main");
 		const program = await buildProgram();
@@ -706,5 +705,83 @@ describe("dg-daemon main registration", () => {
 		expect(shouldSkip(await autostartCommand("status"), SKIP)).toBe(true);
 		expect(shouldSkip(await autostartCommand("install"), SKIP)).toBe(false);
 		expect(shouldSkip(await autostartCommand("remove"), SKIP)).toBe(false);
+	});
+});
+
+describe("rewriteDaemonAutostart", () => {
+	const OLD_SYSTEMD = (dataDir: string) =>
+		`[Unit]\nDescription=dg-daemon\n\n[Service]\nExecStart="${join(dataDir, "runtime", "current", "bun")}" "${join(dataDir, "lib", "current", "dg.js")}" "dg-daemon" "serve"\nEnvironment="DG_HOME=${paths.legacyHome}"\n`;
+
+	function seedUnit(deps: AutostartDeps, text: string): string {
+		const path =
+			deps.platform === "darwin"
+				? launchdPlistPath(deps.homeDir, "dg-daemon")
+				: deps.platform === "win32"
+					? windowsTaskXmlPath(paths, "dg-daemon")
+					: unitPathFor(deps);
+		mkdirSync(dirname(path), { recursive: true });
+		writeFileSync(path, text);
+		return path;
+	}
+
+	it("rewrites a systemd unit that runs lib/current/dg.js to bin/current/dg daemon serve, keeps a 0600 backup and only reloads", async () => {
+		const deps = makeDeps();
+		const old = OLD_SYSTEMD(paths.dataDir);
+		const unit = seedUnit(deps, old);
+
+		const result = await rewriteDaemonAutostart(deps, paths);
+
+		expect(result).toEqual({ status: "rewritten", path: unit });
+		const text = readFileSync(unit, "utf8");
+		expect(text).toContain(`"${join(paths.dataDir, "bin", "current", "dg")}" "daemon" "serve"`);
+		expect(text).not.toContain("dg.js");
+		expect(readFileSync(`${unit}.pre-compiled`, "utf8")).toBe(old);
+		expect(written.find((entry) => entry.path === `${unit}.pre-compiled`)?.mode).toBe(0o600);
+		expect(ran).toEqual([["systemctl", "--user", "daemon-reload"]]);
+	});
+
+	it("is idempotent: a second run changes nothing and runs nothing", async () => {
+		const deps = makeDeps();
+		seedUnit(deps, OLD_SYSTEMD(paths.dataDir));
+		await rewriteDaemonAutostart(deps, paths);
+		ran = [];
+		written = [];
+
+		const result = await rewriteDaemonAutostart(deps, paths);
+
+		expect(result.status).toBe("current");
+		expect(written).toEqual([]);
+		expect(ran).toEqual([]);
+	});
+
+	it("rewrites a LaunchAgent and runs no launchctl command", async () => {
+		const deps = makeDeps({ platform: "darwin" });
+		const unit = seedUnit(deps, `<plist><string>${join(paths.dataDir, "lib", "current", "dg.js")}</string><key>DG_HOME</key><string>${paths.legacyHome}</string></plist>`);
+
+		const result = await rewriteDaemonAutostart(deps, paths);
+
+		expect(result.status).toBe("rewritten");
+		expect(readFileSync(unit, "utf8")).toContain(join(paths.dataDir, "bin", "current", "dg"));
+		expect(ran).toEqual([]);
+	});
+
+	it("leaves a Windows scheduled task for dg autostart install", async () => {
+		const deps = makeDeps({ platform: "win32", env: {} });
+		const unit = seedUnit(deps, `<Command>C:\\d\\runtime\\current\\bun.exe</Command><Arguments>"C:\\d\\lib\\current\\dg.js" dg daemon serve</Arguments>`);
+
+		const result = await rewriteDaemonAutostart(deps, paths);
+
+		expect(["skipped", "absent"]).toContain(result.status);
+		expect(readFileSync(unit, "utf8")).toContain("dg.js");
+		expect(ran).toEqual([]);
+	});
+
+	it("does nothing with no unit, or while the compiled program is missing", async () => {
+		expect((await rewriteDaemonAutostart(makeDeps(), paths)).status).toBe("absent");
+		const deps = makeDeps();
+		seedUnit(deps, OLD_SYSTEMD(paths.dataDir));
+		missing.add(launcherCommand(paths.dataDir, "dg-daemon", ["serve"])[0] as string);
+		expect((await rewriteDaemonAutostart(deps, paths)).status).toBe("skipped");
+		expect(ran).toEqual([]);
 	});
 });

@@ -17,6 +17,7 @@ import {
 	writeTarget,
 } from "@dg/common/node";
 import { assertNotBlocked } from "@dg/common/node/layout";
+import { rewriteLauncherArgv } from "@dg/common/node/program";
 import { readConfigStrict } from "../server/config-store";
 import type { ChatStore, ScheduledJob } from "../store";
 import { JOBS_CONFIG_KEY, parseJobEntry } from "./config";
@@ -308,4 +309,39 @@ export function migrateScheduledRows(
 		logger?.warn(`scheduled job "${label}" did not move: ${reason}`);
 	}
 	return result;
+}
+
+export const compiledBackupPath = (paths: Pick<DgPaths, "daemonDir">): string =>
+	join(paths.daemonDir, "config.json.pre-compiled");
+
+/**
+ * Rewrites each job argv that runs the 6.3 bundle or an old program name to the compiled dg form, through
+ * `rewriteLauncherArgv`. Keeps one 0600 backup before the first change; a second run changes nothing.
+ * The caller must hold the config lock.
+ */
+export function migrateLauncherArgv(paths: DgPaths): { rewritten: Array<{ name: string; from: string[]; to: string[] }> } {
+	if (!existsSync(paths.daemonConfigPath)) return { rewritten: [] };
+	const config = readConfigStrict(paths);
+	const jobs = config[JOBS_CONFIG_KEY];
+	if (!isRecord(jobs)) return { rewritten: [] };
+	const rewritten: Array<{ name: string; from: string[]; to: string[] }> = [];
+	const next = Object.fromEntries(
+		Object.entries(jobs).map(([name, entry]) => {
+			if (!isRecord(entry) || !Array.isArray(entry.argv) || !entry.argv.every((part) => typeof part === "string")) return [name, entry];
+			const to = rewriteLauncherArgv(entry.argv as string[]);
+			if (!to) return [name, entry];
+			rewritten.push({ name, from: entry.argv as string[], to });
+			return [name, { ...entry, argv: to }];
+		}),
+	);
+	if (rewritten.length === 0) return { rewritten };
+	assertNotBlocked(paths, "daemon");
+	try {
+		writeFileSync(compiledBackupPath(paths), readFileSync(writeTarget(paths.daemonConfigPath)), { flag: "wx", mode: 0o600 });
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+	}
+	writeConfigObject(paths, Object.entries({ ...config, [JOBS_CONFIG_KEY]: next }));
+	chmodSync(writeTarget(paths.daemonConfigPath), 0o600);
+	return { rewritten };
 }

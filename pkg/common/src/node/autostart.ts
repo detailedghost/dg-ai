@@ -412,3 +412,27 @@ export function defaultAutostartDeps(): AutostartDeps {
 		run: runArgv,
 	};
 }
+
+const BUNDLE_MARKER = /lib[\\/]current[\\/]dg\.js/;
+
+export type UnitRewrite = { status: "absent" | "current" | "skipped" | "rewritten"; path?: string };
+
+/**
+ * Rewrites the unit file of `spec.name` when it still runs the 6.3 bundle (`lib/current/dg.js`), with a 0600
+ * `<unit>.pre-compiled` backup. It restarts nothing: systemd only reloads, launchd reads the file at next login.
+ * A Windows task is left for `dg autostart install`. A second run changes nothing.
+ */
+export async function rewriteAutostartFile(deps: AutostartDeps, paths: DgPaths, spec: AutostartSpec): Promise<UnitRewrite> {
+	const location = locationFor(deps, paths, spec.name);
+	if (!location || !deps.fileExists(location.path)) return { status: "absent" };
+	const text = (deps.readFile ?? ((path) => readFileSync(path, "utf8")))(location.path);
+	if (!BUNDLE_MARKER.test(text)) return { status: "current", path: location.path };
+	if (location.kind === "task") return { status: "skipped", path: location.path };
+	const backup = `${location.path}.pre-compiled`;
+	if (!deps.fileExists(backup)) deps.writeFile(backup, text, 0o600);
+	const xdgEnv = spec.name === "dg-phone" ? {} : setXdgEnv(deps.env);
+	assertNoControlCharacters(spec, xdgEnv);
+	deps.writeFile(location.path, unitTextFor(location.kind, spec, xdgEnv), 0o600);
+	if (location.kind === "systemd") await deps.run(["systemctl", "--user", "daemon-reload"]);
+	return { status: "rewritten", path: location.path };
+}
