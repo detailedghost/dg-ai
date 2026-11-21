@@ -1,60 +1,24 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { writeFilePreserving } from "./fs";
 import { resolveDgPaths } from "./dg-paths";
+import { mergeDgToml, readDgToml } from "./dg-toml";
+import { migrateToTomlSync } from "./dg-toml-migrate";
 import { assertNotBlocked } from "./layout";
 
 export type DgConfig = Record<string, unknown>;
 type ConfigEnv = Record<string, string | undefined>;
 
-function configFile(env: ConfigEnv): string {
-	return resolveDgPaths({ env }).configPath;
+function hooksOnly(hooks: Record<string, unknown>): DgConfig {
+	return Object.keys(hooks).length ? { hooks } : {};
 }
 
-const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function merge(base: DgConfig, patch: DgConfig): DgConfig {
-	const out: DgConfig = { ...base };
-	for (const [key, value] of Object.entries(patch)) {
-		if (UNSAFE_KEYS.has(key)) continue;
-		const current = out[key];
-		if (isRecord(value))
-			out[key] = merge(isRecord(current) ? current : {}, value);
-		else out[key] = value;
-	}
-	return out;
-}
-
-/** Missing file reads as empty; invalid JSON throws so a write never clobbers it. */
+/** The [hooks] table of config.toml; an invalid file throws so a write never clobbers it. */
 export function readDgConfig(env: ConfigEnv = process.env): DgConfig {
-	const file = configFile(env);
-	if (!existsSync(file)) return {};
-	const text = readFileSync(file, "utf8");
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(text);
-	} catch (error) {
-		throw new Error(
-			`${file} is not valid JSON (${error instanceof Error ? error.message : String(error)})`,
-		);
-	}
-	if (!isRecord(parsed)) throw new Error(`${file} is not a JSON object`);
-	return parsed;
+	return hooksOnly(readDgToml(env).hooks);
 }
 
-/** Deep-merges the patch into config.json and atomically replaces it through a symlink, keeping its mode. */
-export function writeDgConfig(
-	patch: DgConfig,
-	env: ConfigEnv = process.env,
-): DgConfig {
-	assertNotBlocked(resolveDgPaths({ env }), "config");
-	const next = merge(readDgConfig(env), patch);
-	const file = configFile(env);
-	mkdirSync(dirname(file), { recursive: true });
-	writeFilePreserving(file, `${JSON.stringify(next, null, 2)}\n`, 0o600);
-	return next;
+/** Deep-merges the patch into config.toml, moving the old config files in first. */
+export function writeDgConfig(patch: DgConfig, env: ConfigEnv = process.env): DgConfig {
+	const paths = resolveDgPaths({ env });
+	assertNotBlocked(paths, "config");
+	migrateToTomlSync(paths, { env });
+	return hooksOnly(mergeDgToml(patch, env).hooks);
 }

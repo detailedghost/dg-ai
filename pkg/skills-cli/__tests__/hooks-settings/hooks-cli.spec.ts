@@ -35,14 +35,15 @@ describe("hooks set", () => {
 		expect(result.code).toBe(2);
 		for (const value of localeSpec.values)
 			expect(result.stderr).toContain(value);
+		expect(world.has(world.paths.toml)).toBe(false);
 		expect(world.has(world.paths.config)).toBe(false);
 	});
 
-	test("stores an allowed value in config.json", async () => {
+	test("stores an allowed value in config.toml", async () => {
 		const result = await world.cli(["set", "spelling", "locale", "en-GB"]);
 		expect(result.code).toBe(0);
 		expect(
-			world.readJson<{ hooks: unknown }>(world.paths.config).hooks,
+			world.readToml<{ hooks: unknown }>(world.paths.toml).hooks,
 		).toEqual({
 			spelling: { locale: "en-GB" },
 		});
@@ -60,7 +61,7 @@ describe("hooks set", () => {
 		]);
 		expect(result.code).toBe(0);
 		expect(
-			world.readJson<{ hooks: unknown }>(world.paths.config).hooks,
+			world.readToml<{ hooks: unknown }>(world.paths.toml).hooks,
 		).toEqual({
 			spelling: { locale: "en-GB" },
 		});
@@ -101,7 +102,7 @@ describe("hooks enable defaults", () => {
 });
 
 describe("hooks disable --all", () => {
-	test("leaves no owned command in any runtime file and keeps config.json", async () => {
+	test("leaves no owned command in any runtime file and keeps config.toml", async () => {
 		world.seed(world.paths.claude, {});
 		world.seed(world.paths.codex, {});
 		world.seed(world.paths.opencodeJson, { plugin: ["other-plugin"] });
@@ -119,8 +120,8 @@ describe("hooks disable --all", () => {
 			ownedObjects(world.readJson(world.paths.codex)).length,
 		).toBeGreaterThan(0);
 		expect(world.has(world.paths.opencodePlugin)).toBe(true);
-		const configBefore = world.readJson<{ hooks: Record<string, unknown> }>(
-			world.paths.config,
+		const configBefore = world.readToml<{ hooks: Record<string, unknown> }>(
+			world.paths.toml,
 		);
 
 		const result = await world.cli(["disable", "--all"]);
@@ -135,7 +136,7 @@ describe("hooks disable --all", () => {
 			world.readJson<{ plugin: string[] }>(world.paths.opencodeJson).plugin,
 		).toEqual(["other-plugin"]);
 		expect(
-			world.readJson<{ hooks: Record<string, unknown> }>(world.paths.config).hooks,
+			world.readToml<{ hooks: Record<string, unknown> }>(world.paths.toml).hooks,
 		).toEqual({
 			...configBefore.hooks,
 			"strip-ai-coauthors": { enabled: "off" },
@@ -324,6 +325,7 @@ describe("hooks cli edge cases", () => {
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(world.paths.codex);
 		expect(world.text(world.paths.claude)).toBe("{}");
+		expect(world.has(world.paths.toml)).toBe(false);
 		expect(world.has(world.paths.config)).toBe(false);
 	});
 
@@ -355,6 +357,7 @@ describe("hooks cli edge cases", () => {
 		expect(result.stdout).toContain("claude: enabled spelling");
 		expect(result.stderr).toContain("codex");
 		expect(result.stderr).toContain("changed before the failure: claude");
+		expect(world.has(world.paths.toml)).toBe(false);
 		expect(world.has(world.paths.config)).toBe(false);
 		expect(ownedObjects(world.readJson(world.paths.claude))).toHaveLength(1);
 	});

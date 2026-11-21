@@ -16,3 +16,24 @@ Live-account authentication and mutations need validation in your provider/brows
 For a fixture-only install, see [CLI-only installation](install.md#cli-only-install).
 Live provider profiles need the daemon; [the credential ADR](adr/0006-credential-store.md)
 describes the separate service credential store.
+
+## Settings
+
+Inbox settings live in the `[inbox]` table of `config.toml`, with the same names
+the old `organizer.config.json` used, for example:
+
+```toml
+[inbox.classifier]
+mode = "rules-only"
+
+[inbox.gmail]
+pageSize = 50
+clientSecret = { credential = "dg-config/inbox-gmail-client-secret" }
+```
+
+An env var such as `CLASSIFIER_MODE` wins over the file, and `--config <file>`
+wins over both. A client secret is a credential reference, never a value. The
+first `dg-skills` command after the upgrade moves `organizer.config.json` into
+`config.toml` and its client secrets into the credential store, and keeps a
+`organizer.config.json.pre-toml` backup. Route profiles, mappings and security
+files stay in the inbox config folder. See [configuration](config.md).

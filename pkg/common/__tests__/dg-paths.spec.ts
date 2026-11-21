@@ -392,3 +392,41 @@ describe("normalizeDgHome", () => {
 		expect(env.DG_HOME).toBe("C:\\dg");
 	});
 });
+
+describe("resolveDgPaths configTomlPath", () => {
+	it("is config.toml under DG_HOME/config when DG_HOME is set", () => {
+		const paths = resolveDgPaths({ platform: "linux", homeDir: home, env: { DG_HOME: "/t" } });
+
+		expect(paths.configTomlPath).toBe("/t/config/config.toml");
+	});
+
+	it("follows XDG_CONFIG_HOME on linux", () => {
+		const paths = resolveDgPaths({ platform: "linux", homeDir: home, env: { XDG_CONFIG_HOME: "/xdg" } });
+
+		expect(paths.configTomlPath).toBe("/xdg/dg/config.toml");
+	});
+
+	it("uses ~/.config/dg on linux with no XDG_CONFIG_HOME", () => {
+		const paths = resolveDgPaths({ platform: "linux", homeDir: home, env: {} });
+
+		expect(paths.configTomlPath).toBe("/h/.config/dg/config.toml");
+	});
+
+	it("uses Application Support on macOS", () => {
+		const paths = resolveDgPaths({ platform: "darwin", homeDir: home, env: {} });
+
+		expect(paths.configTomlPath).toBe("/h/Library/Application Support/dg/config.toml");
+	});
+
+	it("uses APPDATA on win32", () => {
+		const paths = resolveDgPaths({ platform: "win32", homeDir: "C:\\Users\\u", env: { APPDATA: "C:\\R" } });
+
+		expect(paths.configTomlPath).toBe("C:\\R\\dg\\config.toml");
+	});
+
+	it("throws when DG_PATH_FENCE is outside DG_HOME", () => {
+		expect(() =>
+			resolveDgPaths({ platform: "linux", homeDir: home, env: { DG_HOME: "/t", DG_PATH_FENCE: "/fence" } }),
+		).toThrow(/dg path fence: .* is outside \/fence/);
+	});
+});

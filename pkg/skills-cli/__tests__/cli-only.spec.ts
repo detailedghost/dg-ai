@@ -15,7 +15,6 @@ import { Command } from "commander";
 import { removeBootstrapDirs, removeBootstrapFixtures, runBootstrap } from "./bootstrap-fixtures";
 import {
 	assertExtensionInstalled,
-	cliOnlyMarker,
 	extensionRequiredMessage,
 	guardExtensionCommands,
 	isCliOnly,
@@ -44,12 +43,34 @@ afterEach(() => {
 	rmSync(home, { recursive: true, force: true });
 });
 
-describe("cli-only marker", () => {
-	test("is absent until a CLI-only install writes it", () => {
+describe("install.cli_only", () => {
+	test("is false until a CLI-only install sets it in config.toml", () => {
 		expect(isCliOnly()).toBe(false);
 		setCliOnly(true);
 		expect(isCliOnly()).toBe(true);
-		expect(cliOnlyMarker()).toBe(join(home, ".dg", "config", "cli-only"));
+		expect(readFileSync(join(home, ".dg", "config", "config.toml"), "utf8")).toContain("cli_only = true");
+		expect(existsSync(join(home, ".dg", "config", "cli-only"))).toBe(false);
+	});
+
+	test("reads config.toml, not an old cli-only marker, once config.toml exists", () => {
+		setCliOnly(false);
+		writeFileSync(join(home, ".dg", "config", "cli-only"), "");
+		expect(isCliOnly()).toBe(false);
+	});
+
+	test("surfaces a broken config.toml instead of reading it as a full install", () => {
+		mkdirSync(join(home, ".dg", "config"), { recursive: true });
+		writeFileSync(join(home, ".dg", "config", "config.toml"), "[install\n");
+		expect(() => isCliOnly()).toThrow("dg config:");
+	});
+
+	test("moves an old cli-only marker into config.toml", () => {
+		mkdirSync(join(home, ".dg", "config"), { recursive: true });
+		writeFileSync(join(home, ".dg", "config", "cli-only"), "");
+		expect(isCliOnly()).toBe(true);
+		setCliOnly(true);
+		expect(readFileSync(join(home, ".dg", "config", "config.toml"), "utf8")).toContain("cli_only = true");
+		expect(existsSync(join(home, ".dg", "config", "cli-only.pre-toml"))).toBe(true);
 	});
 
 	test("is removed by a full install", () => {

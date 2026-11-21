@@ -46,6 +46,7 @@ export function settingsWorld() {
 		opencodeJson: join(home, ".config", "opencode", "opencode.json"),
 		opencodePlugin: join(home, ".config", "opencode", "plugins", "dg-hooks.js"),
 		config: join(dgHome, "config", "config.json"),
+		toml: join(dgHome, "config", "config.toml"),
 	};
 
 	function seed(file: string, content: string | object) {
@@ -59,6 +60,10 @@ export function settingsWorld() {
 
 	function readJson<T = SettingsFile>(file: string): T {
 		return JSON.parse(readFileSync(file, "utf8")) as T;
+	}
+
+	function readToml<T = SettingsFile>(file: string): T {
+		return Bun.TOML.parse(readFileSync(file, "utf8")) as T;
 	}
 
 	function text(file: string): string {
@@ -118,6 +123,7 @@ export function settingsWorld() {
 		paths,
 		seed,
 		readJson,
+		readToml,
 		text,
 		has,
 		cli,

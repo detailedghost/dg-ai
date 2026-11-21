@@ -1,20 +1,19 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync } from "node:fs";
 import { resolveDgPaths } from "@dg/common/node/dg-paths";
+import { readDgToml, writeDgToml } from "@dg/common/node/dg-toml";
+import { migrateToTomlSync } from "@dg/common/node/dg-toml-migrate";
 import { assertEntryMoved } from "./layout-guard";
 import type { Command } from "commander";
 import { cliDest } from "./lib";
 
-export const cliOnlyMarker = (): string => resolveDgPaths().cliOnlyMarker;
-
-export const isCliOnly = (): boolean => existsSync(cliOnlyMarker());
+export function isCliOnly(): boolean {
+	return readDgToml().install.cli_only;
+}
 
 export function setCliOnly(enabled: boolean): void {
-	const marker = cliOnlyMarker();
-	if (!enabled) return rmSync(marker, { force: true });
 	assertEntryMoved("cli-only");
-	mkdirSync(dirname(marker), { recursive: true });
-	writeFileSync(marker, "");
+	migrateToTomlSync(resolveDgPaths());
+	writeDgToml("install.cli_only", enabled);
 }
 
 export function extensionRequiredMessage(subject: string): string {

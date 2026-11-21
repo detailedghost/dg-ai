@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
 	chmodSync,
+	existsSync,
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
@@ -17,150 +18,127 @@ import { readDgConfig, writeDgConfig } from "../src/node/dg-config";
 
 let home: string;
 let dir: string;
+let toml: string;
 let env: Record<string, string>;
 
 beforeEach(() => {
 	home = mkdtempSync(join(tmpdir(), "dg-config-"));
 	dir = join(home, "config");
 	mkdirSync(dir);
+	toml = join(dir, "config.toml");
 	env = { DG_HOME: home };
 });
 afterEach(() => rmSync(home, { recursive: true, force: true }));
 
 describe("readDgConfig", () => {
-	test("reads an empty config when the file is missing", () => {
+	test("reads an empty config when no file exists", () => {
 		expect(readDgConfig(env)).toEqual({});
 	});
 
-	test("reads config.json from the config dir", () => {
-		writeFileSync(
-			join(dir, "config.json"),
-			JSON.stringify({ hooks: { spelling: { locale: "en-GB" } } }),
-		);
-		expect(readDgConfig(env)).toEqual({
-			hooks: { spelling: { locale: "en-GB" } },
-		});
+	test("reads the [hooks] table of config.toml", () => {
+		writeFileSync(toml, '[hooks.spelling]\nlocale = "en-GB"\n');
+
+		expect(readDgConfig(env)).toEqual({ hooks: { spelling: { locale: "en-GB" } } });
 	});
 
-	test("throws on invalid JSON", () => {
+	test("does not open config.json once config.toml exists", () => {
+		writeFileSync(toml, '[hooks.spelling]\nlocale = "en-GB"\n');
 		writeFileSync(join(dir, "config.json"), "{nope");
-		expect(() => readDgConfig(env)).toThrow();
-	});
-});
 
-describe("readDgConfig top-level shape", () => {
-	test.each([
-		["an array", "[1, 2]"],
-		["a string", '"en-GB"'],
-		["a number", "7"],
-		["null", "null"],
-	])("throws when the top level is %s", (_name, text) => {
-		writeFileSync(join(dir, "config.json"), text);
-		expect(() => readDgConfig(env)).toThrow("not a JSON object");
-	});
-});
-
-describe("writeDgConfig top-level shape and keys", () => {
-	test.each([
-		["an array", "[1, 2]"],
-		["a string", '"en-GB"'],
-	])("does not overwrite a config whose top level is %s", (_name, text) => {
-		writeFileSync(join(dir, "config.json"), text);
-		expect(() => writeDgConfig({ a: 1 }, env)).toThrow();
-		expect(readFileSync(join(dir, "config.json"), "utf8")).toBe(text);
+		expect(readDgConfig(env)).toEqual({ hooks: { spelling: { locale: "en-GB" } } });
 	});
 
-	test("does not store a __proto__ key or pollute Object.prototype", () => {
-		const patch = JSON.parse('{"__proto__": {"polluted": true}, "a": 1}');
-		writeDgConfig(patch, env);
-		const stored = readDgConfig(env);
-		expect(Object.hasOwn(stored, "__proto__")).toBe(false);
-		expect(stored["polluted"]).toBeUndefined();
-		expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
-		expect(stored).toEqual({ a: 1 });
+	test("reads the hooks of config.json before migration", () => {
+		writeFileSync(join(dir, "config.json"), JSON.stringify({ hooks: { spelling: { locale: "en-GB" } } }));
+
+		expect(readDgConfig(env)).toEqual({ hooks: { spelling: { locale: "en-GB" } } });
+	});
+
+	test("throws on invalid TOML", () => {
+		writeFileSync(toml, "[hooks\n");
+
+		expect(() => readDgConfig(env)).toThrow("dg config:");
 	});
 });
 
 describe("writeDgConfig", () => {
-	test("creates the file and the config dir when absent", () => {
-		const nested = { DG_HOME: join(home, "fresh") };
-		writeDgConfig({ hooks: { spelling: { locale: "en-GB" } } }, nested);
-		expect(readDgConfig(nested)).toEqual({
-			hooks: { spelling: { locale: "en-GB" } },
-		});
+	test.skipIf(process.platform === "win32")("creates config.toml with mode 0600 and the config dir when absent", () => {
+		const fresh = { DG_HOME: join(home, "fresh") };
+
+		writeDgConfig({ hooks: { spelling: { locale: "en-GB" } } }, fresh);
+
+		expect(readDgConfig(fresh)).toEqual({ hooks: { spelling: { locale: "en-GB" } } });
+		expect(statSync(join(home, "fresh", "config", "config.toml")).mode & 0o777).toBe(0o600);
 	});
 
-	test("keeps unknown keys and merges nested objects", () => {
-		writeFileSync(
-			join(dir, "config.json"),
-			JSON.stringify({ other: 1, hooks: { format: { x: true } } }),
-		);
+	test("merges into the hooks already stored", () => {
+		writeFileSync(toml, '[hooks.format]\nmode = "on"\n');
+
 		writeDgConfig({ hooks: { spelling: { locale: "en-GB" } } }, env);
-		expect(readDgConfig(env)).toEqual({
-			other: 1,
-			hooks: { format: { x: true }, spelling: { locale: "en-GB" } },
-		});
+
+		expect(readDgConfig(env)).toEqual({ hooks: { format: { mode: "on" }, spelling: { locale: "en-GB" } } });
 	});
 
-	test("rewrites the file and leaves no temp file", () => {
-		writeDgConfig({ a: 1 }, env);
-		writeDgConfig({ a: 2 }, env);
-		expect(readdirSync(dir)).toEqual(["config.json"]);
-		expect(JSON.parse(readFileSync(join(dir, "config.json"), "utf8"))).toEqual(
-			{ a: 2 },
-		);
+	test("migrates config.json first and changes only config.toml", () => {
+		const json = join(dir, "config.json");
+		const text = JSON.stringify({ hooks: { format: { mode: "on" } } });
+		writeFileSync(json, text);
+
+		writeDgConfig({ hooks: { spelling: { locale: "en-GB" } } }, env);
+
+		expect(readFileSync(json, "utf8")).toBe(text);
+		expect(readFileSync(`${json}.pre-toml`, "utf8")).toBe(text);
+		expect(readDgConfig(env)).toEqual({ hooks: { format: { mode: "on" }, spelling: { locale: "en-GB" } } });
 	});
 
-	test("does not overwrite a config that is not valid JSON", () => {
-		writeFileSync(join(dir, "config.json"), "{nope");
-		expect(() => writeDgConfig({ a: 1 }, env)).toThrow();
-		expect(readFileSync(join(dir, "config.json"), "utf8")).toBe("{nope");
+	test("refuses a key outside a dg config section", () => {
+		expect(() => writeDgConfig({ other: 1 }, env)).toThrow("not a dg config section");
+		expect(existsSync(toml)).toBe(false);
 	});
 
-	test("does not store a nested __proto__ key", () => {
-		const patch = JSON.parse('{"hooks": {"__proto__": {"x": 1}, "y": 2}}');
+	test("does not store a __proto__ key or pollute Object.prototype", () => {
+		const patch = JSON.parse('{"hooks": {"__proto__": {"polluted": "yes"}, "spelling": {"locale": "en-GB"}}}');
+
 		writeDgConfig(patch, env);
-		const stored = readDgConfig(env) as { hooks: Record<string, unknown> };
-		expect(Object.hasOwn(stored.hooks, "__proto__")).toBe(false);
-		expect(stored.hooks["y"]).toBe(2);
+
+		expect(readDgConfig(env)).toEqual({ hooks: { spelling: { locale: "en-GB" } } });
+		expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+	});
+
+	test("does not overwrite a config.toml that is not valid TOML", () => {
+		writeFileSync(toml, "[hooks\n");
+
+		expect(() => writeDgConfig({ hooks: { spelling: { locale: "en-GB" } } }, env)).toThrow();
+		expect(readFileSync(toml, "utf8")).toBe("[hooks\n");
 	});
 });
 
 describe("writeDgConfig file handling", () => {
-	test.skipIf(process.platform === "win32")(
-		"creates a new config.json with mode 0600",
-		() => {
-			writeDgConfig({ a: 1 }, env);
-			expect(statSync(join(dir, "config.json")).mode & 0o777).toBe(0o600);
-		},
-	);
+	test("leaves no temp file after two writes", () => {
+		writeDgConfig({ hooks: { spelling: { locale: "en-GB" } } }, env);
+		writeDgConfig({ hooks: { spelling: { locale: "en-US" } } }, env);
 
-	test.skipIf(process.platform === "win32")(
-		"writes through a symlink and keeps the link and the target mode",
-		() => {
-			const target = join(home, "dotfiles", "config.json");
-			mkdirSync(join(home, "dotfiles"));
-			writeFileSync(target, JSON.stringify({ keep: true }));
-			chmodSync(target, 0o640);
-			symlinkSync(target, join(dir, "config.json"));
-			writeDgConfig({ a: 1 }, env);
-			expect(lstatSync(join(dir, "config.json")).isSymbolicLink()).toBe(true);
-			expect(JSON.parse(readFileSync(target, "utf8"))).toEqual({
-				keep: true,
-				a: 1,
-			});
-			expect(statSync(target).mode & 0o777).toBe(0o640);
-		},
-	);
+		expect(readdirSync(dir)).toEqual(["config.toml"]);
+	});
 
-	test.skipIf(process.platform === "win32")(
-		"refuses a dangling symlink and keeps the link",
-		() => {
-			symlinkSync(join(home, "missing.json"), join(dir, "config.json"));
-			expect(() => writeDgConfig({ a: 1 }, env)).toThrow(
-				"symlink to a missing file",
-			);
-			expect(lstatSync(join(dir, "config.json")).isSymbolicLink()).toBe(true);
-		},
-	);
+	test.skipIf(process.platform === "win32")("writes through a symlink and keeps the link and the target mode", () => {
+		const target = join(home, "dotfiles", "config.toml");
+		mkdirSync(join(home, "dotfiles"));
+		writeFileSync(target, '[hooks.format]\nmode = "on"\n');
+		chmodSync(target, 0o640);
+		symlinkSync(target, toml);
+
+		writeDgConfig({ hooks: { spelling: { locale: "en-GB" } } }, env);
+
+		expect(lstatSync(toml).isSymbolicLink()).toBe(true);
+		expect(readFileSync(target, "utf8")).toContain('locale = "en-GB"');
+		expect(statSync(target).mode & 0o777).toBe(0o640);
+	});
+
+	test.skipIf(process.platform === "win32")("refuses a dangling symlink and keeps the link", () => {
+		symlinkSync(join(home, "missing.toml"), toml);
+
+		expect(() => writeDgConfig({ hooks: { spelling: { locale: "en-GB" } } }, env)).toThrow("symlink to a missing file");
+		expect(lstatSync(toml).isSymbolicLink()).toBe(true);
+	});
 });

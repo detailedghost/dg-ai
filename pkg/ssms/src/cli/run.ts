@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { resolveDgPaths } from "@dg/common/node/dg-paths";
+import { parseDgToml } from "@dg/common/node/dg-toml";
 import { applyCleanup, conversationToClassifiable, planCleanup } from "../cleanup/apply";
 import { parseCleanupConfig } from "../config/parse";
 import { defaultCleanupConfig, type SmsCleanupConfig } from "../config/types";
@@ -123,7 +124,7 @@ export function accountHome(
 	return undefined;
 }
 
-/** The fixed dg config folder under the passwd home; `HOME`, `DG_HOME` and `XDG_CONFIG_HOME` never choose it. */
+/** The dg config folder under the passwd home, whose config.toml holds the ssms send switches. */
 export function allowSendHome(homeDir?: string, platform: NodeJS.Platform = process.platform): string | undefined {
 	const dir = homeDir === undefined ? accountHome() : homeDir;
 	if (!dir) return undefined;
@@ -134,22 +135,22 @@ export function fixedConfigPath(home: string): string {
 	return join(home, "ssms", "config.yaml");
 }
 
-export function readFixedAllowSend(home: string | undefined): boolean {
-	if (!home) return false;
+function readFixedSsms(home: string | undefined): Record<string, unknown> | null {
+	if (!home) return null;
+	const toml = join(home, "config.toml");
+	if (existsSync(toml)) return parseDgToml(readFileSync(toml, "utf8"), toml).ssms;
 	const path = fixedConfigPath(home);
-	if (!existsSync(path)) return false;
-	const value = parseYaml(readFileSync(path, "utf8")) as { allow_send?: unknown } | null;
-	return value?.allow_send === true;
+	if (!existsSync(path)) return null;
+	return parseYaml(readFileSync(path, "utf8")) as Record<string, unknown> | null;
+}
+
+export function readFixedAllowSend(home: string | undefined): boolean {
+	return readFixedSsms(home)?.allow_send === true;
 }
 
 export function readFixedGoogleSendEnabled(home: string | undefined): boolean {
-	if (!home) return false;
-	const path = fixedConfigPath(home);
-	if (!existsSync(path)) return false;
-	const value = parseYaml(readFileSync(path, "utf8")) as {
-		google?: { send_enabled?: unknown };
-	} | null;
-	return value?.google?.send_enabled === true;
+	const google = readFixedSsms(home)?.google as { send_enabled?: unknown } | undefined;
+	return google?.send_enabled === true;
 }
 
 function loadConfig(path: string | undefined, home: string | undefined): SmsCleanupConfig {

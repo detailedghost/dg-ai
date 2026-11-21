@@ -28,6 +28,35 @@ export function hooksFor(commandName: string, seams: HookSeams = {}): LayoutHook
 	return hooks;
 }
 
+type SecretSink = { set(name: string, value: string): Promise<void> };
+
+const credentialSink = (paths: import("@dg/common/node/dg-paths").DgPaths): SecretSink => ({
+	set: async (name, value) => {
+		const { createCredentialClient } = await import("@dg/common/node");
+		const client = createCredentialClient({ paths });
+		try {
+			await client.set(name, value, { provider: "dg-config" });
+		} finally {
+			client.close();
+		}
+	},
+});
+
+/** Moves the old config files into config.toml once; a failure warns and leaves every file as it was. */
+export async function migrateConfig(write: (text: string) => void = (text) => process.stderr.write(text)): Promise<void> {
+	const [{ resolveDgPaths }, { migrateToToml }, { describeError }] = await Promise.all([
+		import("@dg/common/node/dg-paths"),
+		import("@dg/common/node/dg-toml-migrate"),
+		import("@dg/common"),
+	]);
+	const paths = resolveDgPaths();
+	try {
+		await migrateToToml(paths, { store: credentialSink(paths) });
+	} catch (error) {
+		write(`dg-skills: config.toml was not written: ${describeError(error)}\n`);
+	}
+}
+
 type PhoneOutcome = { kind: string; stopped?: boolean } | undefined;
 
 type ListenerRestartSeams = { phoneOutcome: () => Promise<PhoneOutcome>; restart: () => Promise<void> };
@@ -97,6 +126,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 		skip: SKIP,
 		hooksFor: (action) => hooksFor(action.name()),
 		ensure: ensureLayout,
+		after: () => migrateConfig(),
 	});
 	registerListenerRestart(program, { phoneOutcome: phoneOutcomeOf, restart: restartListener });
 	try {

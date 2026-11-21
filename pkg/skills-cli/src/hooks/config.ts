@@ -15,7 +15,7 @@ export function hookSetting(
 		hooks = readDgConfig(env).hooks as typeof hooks;
 	} catch (error) {
 		warn(
-			`hooks: config.json is unreadable (${error instanceof Error ? error.message : String(error)}); using ${spec.default} for ${hookId}.${key}\n`,
+			`hooks: dg config is unreadable (${error instanceof Error ? error.message : String(error)}); using ${spec.default} for ${hookId}.${key}\n`,
 		);
 		return spec.default;
 	}

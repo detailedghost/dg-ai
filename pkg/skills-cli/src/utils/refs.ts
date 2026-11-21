@@ -1,25 +1,13 @@
 /** Resolve PR/URL refs to GitHub URLs. Shared by `batch-open` and `launch`. */
 
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { readDgToml } from "@dg/common/node/dg-toml";
 
 export type Config = { defaultRepo?: string; aliases?: Record<string, string> };
 
-// Define your own repo aliases in ~/.config/browser-batch/config.json.
-const BUILTIN_ALIASES: Record<string, string> = {};
-
+/** Ref aliases and the default repo from the [refs] table of config.toml. */
 export function loadConfig(): Config {
-	try {
-		return JSON.parse(
-			readFileSync(
-				join(homedir(), ".config", "browser-batch", "config.json"),
-				"utf8",
-			),
-		);
-	} catch {
-		return {};
-	}
+	const { default_repo, aliases } = readDgToml().refs;
+	return { ...(default_repo === undefined ? {} : { defaultRepo: default_repo }), aliases };
 }
 
 export function resolveRef(
@@ -29,7 +17,7 @@ export function resolveRef(
 ): string {
 	if (/^https?:\/\//.test(ref)) return ref;
 
-	const aliases = { ...BUILTIN_ALIASES, ...(cfg.aliases ?? {}) };
+	const aliases = cfg.aliases ?? {};
 
 	const hashMatch = ref.match(/^(.+)#(\d+)$/);
 	if (hashMatch) {

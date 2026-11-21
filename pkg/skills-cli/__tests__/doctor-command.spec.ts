@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	allChecks,
@@ -16,7 +17,7 @@ import {
 	snapshotTree,
 	startFakeCredentialDaemon,
 } from "./doctor-fixtures";
-import { anyToolCheck, cliOnlyCheck, pairingCheck } from "../src/doctor/checks";
+import { anyToolCheck, cliOnlyCheck, migratedSourcesCheck, pairingCheck } from "../src/doctor/checks";
 import { DOCTOR_REGISTRY } from "../src/doctor/registry";
 import { createContext, doctorExitCode, runDoctor } from "../src/doctor/runner";
 import { launcherPathFix, sharedChecks } from "../src/doctor/shared";
@@ -1074,5 +1075,47 @@ describe("dg-skills doctor extension items", () => {
 		const result = await world.run(["doctor", "constructor"]);
 		expect(result.exitCode).toBe(2);
 		expect(result.stderr).not.toContain("TypeError");
+	});
+});
+
+describe("migrated-sources check", () => {
+	let root: string;
+	let env: Record<string, string | undefined>;
+
+	beforeEach(() => {
+		root = mkdtempSync(join(tmpdir(), "dg-doctor-migrated-"));
+		env = { ...process.env, DG_HOME: join(root, "dg") };
+	});
+	afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+	async function migrated(): Promise<string> {
+		const ctx = createContext({ env, home: root });
+		const json = ctx.paths.configPath;
+		mkdirSync(ctx.paths.configDir, { recursive: true });
+		writeFileSync(json, JSON.stringify({ hooks: { spelling: { locale: "en-GB" } } }));
+		const { migrateToToml } = await import("@dg/common/node/dg-toml-migrate");
+		await migrateToToml(ctx.paths, { env, homeDir: root });
+		return json;
+	}
+
+	test("is ok when no moved file changed", async () => {
+		await migrated();
+
+		expect((await migratedSourcesCheck.run(createContext({ env, home: root }))).status).toBe("ok");
+	});
+
+	test("warns and names dg config edit when a moved file changed", async () => {
+		const json = await migrated();
+		writeFileSync(json, JSON.stringify({ hooks: { spelling: { locale: "en-US" } } }));
+
+		const result = await migratedSourcesCheck.run(createContext({ env, home: root }));
+
+		expect(result.status).toBe("warn");
+		expect(result.detail).toContain(json);
+		expect(result.fix).toBe("dg config edit");
+	});
+
+	test("is ok before any move", async () => {
+		expect((await migratedSourcesCheck.run(createContext({ env, home: root }))).status).toBe("ok");
 	});
 });
