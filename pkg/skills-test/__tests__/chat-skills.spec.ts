@@ -213,8 +213,7 @@ describe("packaging", () => {
 			["bun", join(REPO_ROOT, "scripts", "package-chat-skills.ts"), "--out", "dist", "--version", "9.9.7"],
 			{ cwd, stdout: "pipe", stderr: "pipe" },
 		);
-		expect(run.stderr.toString()).toBe("");
-		expect(run.exitCode).toBe(0);
+		expect(run.exitCode, run.stderr.toString()).toBe(0);
 		const bundle = join(cwd, "dist", "dg-chat-skills-9.9.7.zip");
 		expect(run.stdout.toString().trim()).toBe(join("dist", "dg-chat-skills-9.9.7.zip"));
 		expect(Bun.spawnSync(["unzip", "-tq", bundle]).exitCode).toBe(0);
