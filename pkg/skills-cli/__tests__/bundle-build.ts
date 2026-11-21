@@ -37,10 +37,19 @@ export function buildBundle(): BuiltBundle {
 	return built;
 }
 
+const GROUP: Record<string, readonly string[]> = { "dg-skills": ["skills"], "dg-agent": ["agent"], "dg-daemon": ["daemon"], dg: [] };
+
+/** The dg words that run one program: `skills`, `agent`, `daemon`, or none for dg. */
+export function groupWords(program: string): readonly string[] {
+	const words = GROUP[program];
+	if (!words) throw new Error(`unknown program ${program}`);
+	return words;
+}
+
 /** Argv prefix that runs one program of the built bundle. */
 export function bundleCommand(program: string): string[] {
 	const { bun, entry } = buildBundle();
-	return [bun, entry, program];
+	return [bun, entry, ...groupWords(program)];
 }
 
 /** Argv prefix for a copy of the lib dir under a quoted, spaced path. */
@@ -49,20 +58,20 @@ export function relocatedBundleCommand(parent: string, program: string): string[
 	const moved = join(parent, "moved ' install", "lib");
 	mkdirSync(join(moved, ".."), { recursive: true });
 	cpSync(lib, moved, { recursive: true });
-	return [bun, join(moved, "dg.js"), program];
+	return [bun, join(moved, "dg.js"), ...groupWords(program)];
 }
 
 function quote(value: string): string {
 	return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-/** Writes a POSIX dg-skills shim at `path` over a copied lib dir. */
+/** Writes a POSIX shim at `path` that runs the skills tree of a copied lib dir. */
 export function installBundleShim(path: string): string {
 	const { bun, lib } = buildBundle();
 	const moved = join(dirname(path), "lib");
 	mkdirSync(dirname(path), { recursive: true });
 	cpSync(lib, moved, { recursive: true });
-	writeFileSync(path, `#!/bin/sh\nexec ${quote(bun)} ${quote(join(moved, "dg.js"))} dg-skills "$@"\n`);
+	writeFileSync(path, `#!/bin/sh\nexec ${quote(bun)} ${quote(join(moved, "dg.js"))} skills "$@"\n`);
 	chmodSync(path, 0o755);
 	return path;
 }
