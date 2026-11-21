@@ -1,5 +1,11 @@
 # Changelog
 
+## v6.3.1 (2026-11-21)
+
+### Fixes
+
+- fix(release): build chat skill zips in Bun ([#246](https://github.com/detailedghost/dg-ai/pull/246))
+
 ## v6.3.0 (2026-11-20)
 
 ### Features
