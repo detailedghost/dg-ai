@@ -1,15 +1,16 @@
-/** In-process tests for the dg-skills binary helpers, so mutation testing sees them. */
+/** In-process tests for the dg program helpers, so mutation testing sees them. */
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolveDgPaths } from "@dg/common/node";
 import { join } from "node:path";
 import { isPostDryRun } from "../src/thrash/index";
 import {
 	cliBinDir,
-	cliDest,
+	compiledAssetName,
 	expectedSha256,
-	pickBundle,
+	pickProgram,
+	platformKey,
 	readCurrentVersion,
 	verifyReleaseAsset,
 } from "../src/utils/lib";
@@ -32,9 +33,9 @@ function serve(body: string, status = 200): string[] {
 	return urls;
 }
 
-const BYTES = new TextEncoder().encode("fake bundle\n");
+const BYTES = new TextEncoder().encode("fake program\n");
 const HASH = new Bun.CryptoHasher("sha256").update(BYTES).digest("hex");
-const NAME = "dg-lib-1.0.0.tar.gz";
+const NAME = "dg-linux-x64";
 const SUMS_URL = "https://x/SHA256SUMS";
 
 describe("verifyReleaseAsset", () => {
@@ -74,58 +75,111 @@ describe("expectedSha256", () => {
 	});
 });
 
-describe("pickBundle", () => {
+describe("platformKey", () => {
+	const cpuinfo = (flags: string): string => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-cpuinfo-"));
+		const file = join(dir, "cpuinfo");
+		writeFileSync(file, `processor : 0\nflags : ${flags}\n`);
+		return file;
+	};
+
+	test("joins the OS and architecture and names Windows windows", () => {
+		expect(platformKey("darwin", "arm64")).toBe("darwin-arm64");
+		expect(platformKey("win32", "x64")).toBe("windows-x64");
+		expect(platformKey("win32", "arm64")).toBe("windows-arm64");
+		expect(platformKey("linux", "arm64")).toBe("linux-arm64");
+	});
+
+	test("linux-x64 takes the baseline build only without avx2", () => {
+		const modern = cpuinfo("fpu sse4_2 avx avx2");
+		const old = cpuinfo("fpu sse4_2 avx");
+		try {
+			expect(platformKey("linux", "x64", modern)).toBe("linux-x64");
+			expect(platformKey("linux", "x64", old)).toBe("linux-x64-baseline");
+			expect(platformKey("linux", "x64", join(tmpdir(), "dg-no-such-cpuinfo"))).toBe("linux-x64");
+			expect(platformKey("darwin", "x64", old)).toBe("darwin-x64");
+		} finally {
+			for (const file of [modern, old]) rmSync(join(file, ".."), { recursive: true, force: true });
+		}
+	});
+});
+
+describe("compiledAssetName", () => {
+	test("is dg-<key>, with .exe for a windows key", () => {
+		expect(compiledAssetName("linux-x64")).toBe("dg-linux-x64");
+		expect(compiledAssetName("darwin-arm64")).toBe("dg-darwin-arm64");
+		expect(compiledAssetName("windows-x64-baseline")).toBe("dg-windows-x64-baseline.exe");
+	});
+});
+
+describe("pickProgram", () => {
 	const rel = (tag: string, assets: string[]) => ({
 		tag_name: tag,
 		draft: false,
 		assets: assets.map((name) => ({ name, browser_download_url: `https://x/${tag}/${name}` })),
 	});
-	const FULL = (version: string) => [`dg-lib-${version}.tar.gz`, "SHA256SUMS", "runtime.json"];
+	const KEY = "linux-x64";
+	const FULL = ["dg-linux-x64", "dg-darwin-arm64", "SHA256SUMS"];
 
-	test("returns the bundle and SHA256SUMS urls of the newest vX.Y.Z release", () => {
-		const releases = [rel("v1.27.0", FULL("1.27.0")), rel("v1.28.0", FULL("1.28.0"))];
-		expect(pickBundle(releases)).toEqual({
+	test("returns the program and SHA256SUMS urls of the newest vX.Y.Z release for the platform key", () => {
+		const releases = [rel("v1.27.0", FULL), rel("v1.28.0", FULL)];
+		expect(pickProgram(releases, undefined, KEY)).toEqual({
 			version: "1.28.0",
-			assetName: "dg-lib-1.28.0.tar.gz",
-			url: "https://x/v1.28.0/dg-lib-1.28.0.tar.gz",
+			assetName: "dg-linux-x64",
+			url: "https://x/v1.28.0/dg-linux-x64",
 			sumsUrl: "https://x/v1.28.0/SHA256SUMS",
 		});
+		expect(pickProgram(releases, undefined, "darwin-arm64").assetName).toBe("dg-darwin-arm64");
 	});
 
 	test("a pin selects that release, and a missing pin names it", () => {
-		const releases = [rel("v1.27.0", FULL("1.27.0")), rel("v1.28.0", FULL("1.28.0"))];
-		expect(pickBundle(releases, "1.27.0").version).toBe("1.27.0");
-		expect(() => pickBundle(releases, "1.26.9")).toThrow("no release named v1.26.9 found");
+		const releases = [rel("v1.27.0", FULL), rel("v1.28.0", FULL)];
+		expect(pickProgram(releases, "1.27.0", KEY).version).toBe("1.27.0");
+		expect(() => pickProgram(releases, "1.26.9", KEY)).toThrow("no release named v1.26.9 found");
 	});
 
-	test("a release without a dg-lib asset is pre-bundle at any version and names that release's bootstrap", () => {
+	test("a release without the compiled asset names that release's bootstrap", () => {
 		for (const version of ["1.2.3", "1.34.2"]) {
-			expect(() => pickBundle([rel(`v${version}`, ["dg-skills-linux-x64", "SHA256SUMS"])], version)).toThrow(
-				`releases before the dg-lib bundle ship compiled binaries; run that release's bootstrap.sh: curl -fsSL https://github.com/detailedghost/dg-ai/releases/download/v${version}/bootstrap.sh | sh`,
+			expect(() => pickProgram([rel(`v${version}`, [`dg-lib-${version}.tar.gz`, "runtime.json", "SHA256SUMS"])], version, KEY)).toThrow(
+				`v${version} has no dg-linux-x64: releases before the compiled dg ship a bundle; run that release's bootstrap.sh: curl -fsSL https://github.com/detailedghost/dg-ai/releases/download/v${version}/bootstrap.sh | sh`,
 			);
 		}
 	});
 
-	test("the newest release without a dg-lib asset is also reported as pre-bundle", () => {
-		expect(() => pickBundle([rel("v1.40.0", ["dg-skills-linux-x64"])])).toThrow(
-			"releases before the dg-lib bundle ship compiled binaries",
+	test("a release that ships another platform only is refused for this key", () => {
+		expect(() => pickProgram([rel("v1.40.0", ["dg-darwin-arm64", "SHA256SUMS"])], undefined, KEY)).toThrow(
+			"v1.40.0 has no dg-linux-x64",
 		);
 	});
 
-	test("a bundle release without SHA256SUMS or runtime.json is refused", () => {
-		expect(() => pickBundle([rel("v1.27.0", ["dg-lib-1.27.0.tar.gz", "runtime.json"])])).toThrow("SHA256SUMS");
-		expect(() => pickBundle([rel("v1.27.0", ["dg-lib-1.27.0.tar.gz", "SHA256SUMS"])])).toThrow("runtime.json");
+	test("a release without SHA256SUMS is refused, and runtime.json is not needed", () => {
+		expect(() => pickProgram([rel("v1.27.0", ["dg-linux-x64"])], undefined, KEY)).toThrow("v1.27.0 has no SHA256SUMS asset");
+		expect(pickProgram([rel("v1.27.0", ["dg-linux-x64", "SHA256SUMS"])], undefined, KEY).version).toBe("1.27.0");
 	});
 });
 
 describe("readCurrentVersion", () => {
-	test("reads the lib/current link target, and is undefined without one", () => {
+	test("reads the bin/current link target, and is undefined without one", () => {
 		const root = mkdtempSync(join(tmpdir(), "dg-current-version-"));
 		try {
 			expect(readCurrentVersion(root)).toBeUndefined();
-			mkdirSync(join(root, "lib", "1.27.0"), { recursive: true });
-			symlinkSync("1.27.0", join(root, "lib", "current"));
-			expect(readCurrentVersion(root)).toBe("1.27.0");
+			mkdirSync(join(root, "bin", "7.0.0"), { recursive: true });
+			symlinkSync("7.0.0", join(root, "bin", "current"));
+			expect(readCurrentVersion(root)).toBe("7.0.0");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("falls back to the 6.3 lib/current link, and bin/current wins when both exist", () => {
+		const root = mkdtempSync(join(tmpdir(), "dg-current-version-"));
+		try {
+			mkdirSync(join(root, "lib", "6.3.1"), { recursive: true });
+			symlinkSync("6.3.1", join(root, "lib", "current"));
+			expect(readCurrentVersion(root)).toBe("6.3.1");
+			mkdirSync(join(root, "bin", "7.0.0"), { recursive: true });
+			symlinkSync("7.0.0", join(root, "bin", "current"));
+			expect(readCurrentVersion(root)).toBe("7.0.0");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -137,18 +191,6 @@ describe("cliBinDir", () => {
 		expect(cliBinDir({ DG_HOME: "/opt/dg" })).toBe("/opt/dg/bin");
 		expect(cliBinDir({})).toBe(resolveDgPaths({ env: {} }).binDir);
 		expect(cliBinDir({ DG_HOME: "" })).toBe(resolveDgPaths({ env: {} }).binDir);
-	});
-
-	test("cliDest follows DG_HOME and names the shim", () => {
-		const saved = process.env.DG_HOME;
-		const home = join(tmpdir(), "dg-cli-dest-home");
-		process.env.DG_HOME = home;
-		try {
-			expect(cliDest("dg-agent")).toBe(join(home, "bin", `dg-agent${process.platform === "win32" ? ".cmd" : ""}`));
-		} finally {
-			if (saved === undefined) delete process.env.DG_HOME;
-			else process.env.DG_HOME = saved;
-		}
 	});
 });
 

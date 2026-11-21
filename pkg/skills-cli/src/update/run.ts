@@ -9,7 +9,7 @@ import { formatFailures, runDoctor, summarizeReport } from "../doctor/runner";
 import type { DoctorReport } from "../doctor/types";
 import { claudeConfigDir, type Runner, runSync } from "../install/recommended-plugins";
 import { isCliOnly } from "../utils/cli-only";
-import { compareVersions, listReleases, pickBundle, readCurrentVersion, readMarker } from "../utils/lib";
+import { compareVersions, listReleases, pickProgram, readCurrentVersion, readMarker } from "../utils/lib";
 
 export const MARKETPLACE = "detailedghost";
 export const MARKETPLACE_SOURCE = "detailedghost/dg-ai";
@@ -21,7 +21,7 @@ export type StepResult = { name: string; status: StepStatus; detail: string };
 
 export type UpdateOptions = { check?: boolean };
 
-export type InstallTarget = "chrome" | "firefox" | "cli-only" | "bundle";
+export type InstallTarget = "chrome" | "firefox" | "cli-only" | "program";
 
 export type UpdateDeps = {
 	platform: NodeJS.Platform;
@@ -189,12 +189,12 @@ function standaloneNote(deps: UpdateDeps): string {
 		: "";
 }
 
-/** One install per update, so the bundle is fetched and pruned once and the previous one stays for rollback. */
+/** One install per update, so the dg program is fetched and pruned once and the previous one stays for rollback. */
 function installTarget(deps: UpdateDeps): { target: InstallTarget; others: string[] } {
 	if (deps.cliOnly()) return { target: "cli-only", others: [] };
 	const staged = (["chrome", "firefox"] as const).filter((target) => deps.stagedExtensions()[target] !== undefined);
 	const [first, ...others] = staged;
-	return { target: first ?? "bundle", others };
+	return { target: first ?? "program", others };
 }
 
 async function installStep(deps: UpdateDeps, version: string): Promise<StepResult> {
@@ -210,9 +210,9 @@ async function installStep(deps: UpdateDeps, version: string): Promise<StepResul
 			return {
 				name,
 				status: "failed",
-				detail: `${firstLine(layout.stderr) || `launcher step exit ${layout.status ?? "signal"}`}; run dg-skills install`,
+				detail: `${firstLine(layout.stderr) || `launcher step exit ${layout.status ?? "signal"}`}; run dg install`,
 			};
-		const more = others.map((other) => `; run dg-skills install ${other} to refresh the ${other} extension too`).join("");
+		const more = others.map((other) => `; run dg install ${other} to refresh the ${other} extension too`).join("");
 		return { name, status: "ok", detail: `dg ${version} installed${more}` };
 	} catch (error) {
 		return { name, status: "failed", detail: describeError(error) };
@@ -267,7 +267,7 @@ async function check(deps: UpdateDeps): Promise<number> {
 	}
 	const note = codexState(deps.codexHome).enabled ? "" : standaloneNote(deps);
 	if (note) deps.log(`⚠️ Codex${note}`);
-	deps.log(stale ? "Run dg-skills update to bring these up to date." : `Everything is at ${newest}.`);
+	deps.log(stale ? "Run dg update to bring these up to date." : `Everything is at ${newest}.`);
 	return stale ? 1 : 0;
 }
 
@@ -295,7 +295,7 @@ export async function runUpdate(opts: UpdateOptions, deps: UpdateDeps): Promise<
 		deps.log(`Doctor (information only, not part of the exit code): ${summarizeReport(doctor)}.`);
 		const failures = formatFailures(doctor);
 		if (failures) deps.log(failures);
-		deps.log("Run dg-skills doctor for details.");
+		deps.log("Run dg doctor for details.");
 	} catch (error) {
 		deps.log(`Doctor did not run: ${describeError(error)}`);
 	}
@@ -310,12 +310,12 @@ export function defaultUpdateDeps(): UpdateDeps {
 		claudeHome: claudeConfigDir(home),
 		codexHome: process.env.CODEX_HOME ?? join(home, ".codex"),
 		install: async (target, version) => {
-			const { installBundleOnly, runInstall } = await import("../install/cli");
-			if (target === "bundle") await installBundleOnly(version);
+			const { installProgramOnly, runInstall } = await import("../install/cli");
+			if (target === "program") await installProgramOnly(version);
 			else if (target === "cli-only") await runInstall(undefined, { cliOnly: true, version });
 			else await runInstall(target, { version });
 		},
-		newestVersion: async () => pickBundle(await listReleases()).version,
+		newestVersion: async () => pickProgram(await listReleases()).version,
 		installedVersion: () => readCurrentVersion(),
 		finishLayout: () => {
 			const { status, stderr } = runSync([cliLauncher(resolveDgPaths().binDir), "install", "launchers"]);

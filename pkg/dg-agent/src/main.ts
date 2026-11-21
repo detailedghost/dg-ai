@@ -18,7 +18,7 @@ export function hooksFor(action: Command): LayoutHooks {
 	return hooks;
 }
 
-/** The dg-agent program with every command registered and nothing parsed. */
+/** The dg agent program with every command registered and nothing parsed. */
 export async function buildProgram(): Promise<Command> {
 	const [
 		{ Command },
@@ -35,9 +35,9 @@ export async function buildProgram(): Promise<Command> {
 	]);
 	const program = new Command();
 	program
-		.name("dg-agent")
+		.name("dg agent")
 		.description(
-			"CLI an agent drives the dg-daemon with — chat, assets, and session lifecycle.",
+			"CLI an agent drives the dg daemon with — chat, assets, and session lifecycle.",
 		)
 		.showHelpAfterError()
 		.exitOverride();
@@ -121,7 +121,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 		return typeof process.exitCode === "number" ? process.exitCode : 0;
 	} catch (err) {
 		if (err instanceof CommanderError) return err.exitCode;
-		emitRedacted((line) => console.error(line), `dg-agent: ${describeError(err)}`);
+		emitRedacted((line) => console.error(line), `dg agent: ${describeError(err)}`);
 		return err instanceof DgCliError ? err.exitCode : EXIT_GENERAL_FAILURE;
 	}
 }

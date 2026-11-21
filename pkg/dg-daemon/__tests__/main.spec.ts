@@ -45,7 +45,7 @@ afterEach(() => {
 	console.error = realError;
 });
 
-describe("dg-daemon main", () => {
+describe("dg daemon main", () => {
 	it("runs under a temp home", () => {
 		expect(resolveDgPaths().legacyHome.startsWith(tempHome)).toBe(true);
 	});

@@ -10,7 +10,7 @@ export interface Hit {
 
 export function splitJson(args: string[], usage: string): { json: boolean; rest: string[] } {
 	const rest = args.filter((arg) => arg !== "--json");
-	if (rest.length === 0 || rest.some((arg) => arg.startsWith("--"))) die(`usage: dg-skills adr ${usage}`);
+	if (rest.length === 0 || rest.some((arg) => arg.startsWith("--"))) die(`usage: dg adr ${usage}`);
 	return { json: rest.length !== args.length, rest };
 }
 

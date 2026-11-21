@@ -114,7 +114,7 @@ describe("logging paths", () => {
 		const lines: string[] = [];
 		emitRedacted(
 			(line) => lines.push(line),
-			`dg-daemon: boom ${TOKEN} ${EMAIL}`,
+			`dg daemon: boom ${TOKEN} ${EMAIL}`,
 			[TOKEN],
 		);
 		emitRedacted((line) => lines.push(line), `dg-agent: boom ${TOKEN}`, [TOKEN]);

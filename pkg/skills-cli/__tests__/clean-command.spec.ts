@@ -36,7 +36,7 @@ function staticImports(source: string): string[] {
 	return [...source.matchAll(/^import\s+(?!type\b)(?:[^;]*?\sfrom\s+)?["']([^"']+)["']/gm)].map((match) => match[1] ?? "");
 }
 
-describe("dg-skills clean command", () => {
+describe("dg clean command", () => {
 	test("is listed in the root help with its description and is not hidden", async () => {
 		expect(await main(["--help"])).toBe(0);
 
@@ -80,7 +80,7 @@ function wireRegistered() {
 	return { program, ensured };
 }
 
-describe("dg-skills clean preAction registration", () => {
+describe("dg clean preAction registration", () => {
 	test("records one ensure call for clean and the clean body never runs when ensure fails", async () => {
 		const { program, ensured } = wireRegistered();
 
@@ -154,7 +154,7 @@ describe("install/clean source", () => {
 		expect(source()).not.toMatch(/"dg-skills"|"dg-agent"|"dg-daemon"/);
 	});
 
-	test("imports LEGACY_PROGRAMS from ./shims", () => {
-		expect(source()).toMatch(/import\s*\{[^}]*\bLEGACY_PROGRAMS\b[^}]*\}\s*from\s*["']\.\/shims["']/);
+	test("takes the launcher names from PROGRAM_NAMES in @dg/common", () => {
+		expect(source()).toMatch(/import\s*\{[^}]*\bPROGRAM_NAMES\b[^}]*\}\s*from\s*["']@dg\/common\/node\/program["']/);
 	});
 });

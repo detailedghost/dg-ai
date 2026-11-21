@@ -1,15 +1,20 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import {
 	existsSync,
+	linkSync,
+	lstatSync,
 	mkdirSync,
 	readdirSync,
 	readFileSync,
+	readlinkSync,
+	statSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { holdsOtherFile } from "../src/install/dg-launcher";
-import { isDgLauncher, writeShims } from "../src/install/shims";
+import { compiledProgramPath } from "@dg/common/node/program";
+import { versionProgramPath, writeDgLink } from "../src/install/compiled";
+import { holdsOtherFile, isDgLauncher } from "../src/install/dg-launcher";
 import {
 	generatedLauncher,
 	isReplacedLauncher,
@@ -21,7 +26,6 @@ import {
 } from "./dg-launcher-fixtures";
 
 const posix = describe.skipIf(process.platform === "win32");
-const OTHERS = ["dg-skills", "dg-agent", "dg-daemon"] as const;
 
 let area: string;
 let cleanup: () => void;
@@ -37,18 +41,19 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("isDgLauncher", () => {
-	test("is true for a launcher that writeShims wrote and false for a missing path", () => {
-		writeShims(bin, root, "linux", () => {});
+	test("is true for a 6.3 shim and false for a missing path", () => {
+		const path = join(area, "dg");
+		writeFileSync(path, generatedLauncher(area, "dg", "linux"));
 
-		expect(isDgLauncher(join(bin, "dg"), "linux")).toBe(true);
-		expect(isDgLauncher(join(bin, "nothing"), "linux")).toBe(false);
+		expect(isDgLauncher(path, "linux", root)).toBe(true);
+		expect(isDgLauncher(join(bin, "nothing"), "linux", root)).toBe(false);
 	});
 
-	test("is true when the launcher holds an added line", () => {
+	test("is true when the shim holds an added line", () => {
 		const path = join(area, "dg");
 		writeFileSync(path, `${generatedLauncher(area, "dg", "linux")}# added\n`);
 
-		expect(isDgLauncher(path, "linux")).toBe(true);
+		expect(isDgLauncher(path, "linux", root)).toBe(true);
 	});
 
 	test("is false for an empty file, a directory, a foreign script and a file with a NUL byte in its first bytes", () => {
@@ -59,77 +64,109 @@ describe("isDgLauncher", () => {
 		writeFileSync(empty, "");
 		mkdirSync(dir);
 		writeFileSync(script, '#!/bin/sh\nexec dg-skills "$@"\n');
-		writeFileSync(
-			nul,
-			Buffer.concat([Buffer.from([0]), Buffer.from(launcherMarker("linux"))]),
-		);
+		writeFileSync(nul, Buffer.concat([Buffer.from([0]), Buffer.from(launcherMarker("linux"))]));
 
 		for (const path of [empty, dir, script, nul])
-			expect([path, isDgLauncher(path, "linux")]).toEqual([path, false]);
+			expect([path, isDgLauncher(path, "linux", root)]).toEqual([path, false]);
 	});
 
 	test("reads the win32 marker for a dg.cmd and the posix marker otherwise", () => {
 		const cmd = join(area, "dg.cmd");
 		writeFileSync(cmd, generatedLauncher(area, "dg", "win32"));
 
-		expect(isDgLauncher(cmd, "win32")).toBe(true);
-		expect(isDgLauncher(cmd, "linux")).toBe(false);
+		expect(isDgLauncher(cmd, "win32", root)).toBe(true);
+		expect(isDgLauncher(cmd, "linux", root)).toBe(false);
+	});
+
+	test.skipIf(process.platform === "win32")("is true for a link into <root>/bin and false for a link elsewhere", () => {
+		mkdirSync(bin, { recursive: true });
+		const inside = join(bin, "inside");
+		const outside = join(bin, "outside");
+		symlinkSync(join(root, "bin", "current", "dg"), inside);
+		symlinkSync(join(area, "elsewhere", "dg"), outside);
+
+		expect(isDgLauncher(inside, "linux", root)).toBe(true);
+		expect(isDgLauncher(outside, "linux", root)).toBe(false);
+	});
+
+	test("is true for a hard link to an installed dg.exe", () => {
+		const installed = versionProgramPath(root, "7.0.0", "win32");
+		mkdirSync(join(root, "bin", "7.0.0"), { recursive: true });
+		writeFileSync(installed, "MZ");
+		mkdirSync(bin, { recursive: true });
+		linkSync(installed, join(bin, "dg.exe"));
+		writeFileSync(join(bin, "copy.exe"), "MZ");
+
+		expect(isDgLauncher(join(bin, "dg.exe"), "win32", root)).toBe(true);
+		expect(isDgLauncher(join(bin, "copy.exe"), "win32", root)).toBe(false);
 	});
 });
 
-describe("writeShims", () => {
-	test("writes dg, dg-skills, dg-agent and dg-daemon, and the dg launcher runs the current bundle with its own name", () => {
-		writeShims(bin, root, "linux", () => {});
+describe("writeDgLink on win32 paths", () => {
+	test("hard links dg.exe to the installed version and replaces an older hard link", () => {
+		for (const version of ["7.0.0", "7.1.0"]) {
+			mkdirSync(join(root, "bin", version), { recursive: true });
+			writeFileSync(versionProgramPath(root, version, "win32"), `MZ ${version}`);
+		}
 
-		expect(readdirSync(bin).sort()).toEqual(["dg", ...OTHERS].sort());
-		expect(readFileSync(join(bin, "dg"), "utf8")).toContain(
-			`/lib/current/dg.js" dg "$@"`,
-		);
+		writeDgLink(bin, root, "7.0.0", "win32");
+		writeDgLink(bin, root, "7.1.0", "win32");
+
+		expect(statSync(join(bin, "dg.exe")).ino).toBe(statSync(versionProgramPath(root, "7.1.0", "win32")).ino);
+		expect(readFileSync(join(bin, "dg.exe"), "utf8")).toBe("MZ 7.1.0");
 	});
 
-	test("writes the four .cmd launchers on win32", () => {
-		writeShims(bin, root, "win32", () => {});
+	test("keeps a dg.exe that is not a dg launcher, with the kept warning", () => {
+		mkdirSync(bin, { recursive: true });
+		writeFileSync(join(bin, "dg.exe"), "MZ other tool");
+		const warnings: string[] = [];
 
-		expect(readdirSync(bin).sort()).toEqual(
-			["dg.cmd", ...OTHERS.map((name) => `${name}.cmd`)].sort(),
-		);
+		writeDgLink(bin, root, "7.0.0", "win32", (line) => void warnings.push(line));
+
+		expect(readFileSync(join(bin, "dg.exe"), "utf8")).toBe("MZ other tool");
+		expect(warnings).toEqual([KEPT_SENTENCE(join(bin, "dg.exe"))]);
 	});
 
-	test("adds the dg launcher to an install that has the three others when it runs again", () => {
-		mkdirSync(bin);
-		for (const name of OTHERS) writeFileSync(join(bin, name), "old launcher");
+	test("ignores a dg file with no extension: no warning and the file stays", () => {
+		mkdirSync(join(root, "bin", "7.0.0"), { recursive: true });
+		writeFileSync(versionProgramPath(root, "7.0.0", "win32"), "MZ");
+		mkdirSync(bin, { recursive: true });
+		writeFileSync(join(bin, "dg"), "other tool");
+		const warnings: string[] = [];
 
-		writeShims(bin, root, "linux", () => {});
+		writeDgLink(bin, root, "7.0.0", "win32", (line) => void warnings.push(line));
 
-		expect(isDgLauncher(join(bin, "dg"), "linux")).toBe(true);
+		expect(warnings).toEqual([]);
+		expect(readFileSync(join(bin, "dg"), "utf8")).toBe("other tool");
+		expect(existsSync(join(bin, "dg.exe"))).toBe(true);
 	});
 });
 
 describe("holdsOtherFile", () => {
-	test("is false for a missing path and for a launcher that writeShims wrote", () => {
-		expect(holdsOtherFile(join(bin, "dg"), "linux")).toBe(false);
+	test("is false for a missing path and for a link that writeDgLink wrote", () => {
+		expect(holdsOtherFile(join(bin, "dg"), "linux", root)).toBe(false);
 
-		writeShims(bin, root, "linux", () => {});
+		writeDgLink(bin, root, "7.0.0", "linux");
 
-		expect(holdsOtherFile(join(bin, "dg"), "linux")).toBe(false);
+		expect(holdsOtherFile(join(bin, "dg"), "linux", root)).toBe(false);
 	});
 
 	test("is true for a file that is not a dg launcher", () => {
 		mkdirSync(bin, { recursive: true });
 		writeFileSync(join(bin, "dg"), "#!/bin/sh\necho other\n");
 
-		expect(holdsOtherFile(join(bin, "dg"), "linux")).toBe(true);
+		expect(holdsOtherFile(join(bin, "dg"), "linux", root)).toBe(true);
 	});
 
 	test.skipIf(process.platform === "win32")("is false for a dg link with no target", () => {
 		mkdirSync(bin, { recursive: true });
 		symlinkSync(join(area, "missing-target"), join(bin, "dg"));
 
-		expect(holdsOtherFile(join(bin, "dg"), "linux")).toBe(false);
+		expect(holdsOtherFile(join(bin, "dg"), "linux", root)).toBe(false);
 	});
 });
 
-posix("writeShims with a dg path that holds something else", () => {
+posix("writeDgLink with a dg path that holds something else", () => {
 	for (const fixture of LAUNCHER_FIXTURES) {
 		test.skipIf(fixture.skip === true)(
 			`${fixture.outcome === "kept" ? "keeps" : "replaces"} ${fixture.name}`,
@@ -140,32 +177,29 @@ posix("writeShims with a dg path that holds something else", () => {
 				const targets = untouched.map((path) => snapshot(path));
 				const warnings: string[] = [];
 
-				writeShims(bin, root, "linux", (line) => void warnings.push(line));
+				writeDgLink(bin, root, "7.0.0", "linux", (line) => void warnings.push(line));
 
 				expect(untouched.map((path) => snapshot(path))).toEqual(targets);
-				for (const name of OTHERS)
-					expect(isDgLauncher(join(bin, name), "linux")).toBe(true);
 				if (fixture.outcome === "kept") {
 					expect(snapshot(dest)).toEqual(before);
-					expect(warnings.length).toBeGreaterThanOrEqual(1);
-					expect(warnings).toContain(KEPT_SENTENCE(dest));
+					expect(warnings).toEqual([KEPT_SENTENCE(dest)]);
 				} else {
-					expect(isReplacedLauncher(dest, "linux")).toBe(true);
+					expect(isReplacedLauncher(dest, root, "linux")).toBe(true);
 					expect(warnings).toEqual([]);
 				}
 			},
 		);
 	}
 
-	test("a kept dg file keeps its mode and its bytes while dg-skills, dg-agent and dg-daemon are written", () => {
+	test("a kept dg file keeps its mode and its bytes", () => {
 		mkdirSync(bin, { recursive: true });
 		writeFileSync(join(bin, "dg"), "#!/bin/sh\necho other\n", { mode: 0o640 });
 		const before = snapshot(join(bin, "dg"));
 
-		expect(() => writeShims(bin, root, "linux", () => {})).not.toThrow();
+		expect(() => writeDgLink(bin, root, "7.0.0", "linux", () => {})).not.toThrow();
 
 		expect(snapshot(join(bin, "dg"))).toEqual(before);
-		expect(readdirSync(bin).sort()).toEqual(["dg", ...OTHERS].sort());
+		expect(readdirSync(bin)).toEqual(["dg"]);
 	});
 
 	test("the default warning goes to stderr", () => {
@@ -173,7 +207,7 @@ posix("writeShims with a dg path that holds something else", () => {
 		writeFileSync(join(bin, "dg"), "other tool");
 		const spy = spyOn(process.stderr, "write").mockImplementation(() => true);
 		try {
-			writeShims(bin, root);
+			writeDgLink(bin, root, "7.0.0", "linux");
 			const text = spy.mock.calls.map((call) => String(call[0])).join("");
 			expect(text).toContain(KEPT_SENTENCE(join(bin, "dg")));
 		} finally {
@@ -181,67 +215,11 @@ posix("writeShims with a dg path that holds something else", () => {
 		}
 	});
 
-	test("applies the rule to the name dg only: a foreign dg-skills file is replaced with no warning", () => {
-		mkdirSync(bin, { recursive: true });
-		writeFileSync(join(bin, "dg-skills"), "other tool");
-		const warnings: string[] = [];
+	test("links dg to the current program and leaves no staged file behind", () => {
+		writeDgLink(bin, root, "7.0.0", "linux");
 
-		writeShims(bin, root, "linux", (line) => void warnings.push(line));
-
-		expect(isDgLauncher(join(bin, "dg-skills"), "linux")).toBe(true);
-		expect(warnings).toEqual([]);
-	});
-});
-
-describe("writeShims on win32 with files in the launcher folder", () => {
-	test("keeps a dg.cmd that is not a dg launcher, writes the three other .cmd files and warns with the dg.cmd path", () => {
-		mkdirSync(bin, { recursive: true });
-		writeFileSync(join(bin, "dg.cmd"), "@echo other tool\r\n");
-		const warnings: string[] = [];
-
-		writeShims(bin, root, "win32", (line) => void warnings.push(line));
-
-		expect(readFileSync(join(bin, "dg.cmd"), "utf8")).toBe(
-			"@echo other tool\r\n",
-		);
-		for (const name of OTHERS)
-			expect(existsSync(join(bin, `${name}.cmd`))).toBe(true);
-		expect(warnings).toContain(KEPT_SENTENCE(join(bin, "dg.cmd")));
-	});
-
-	test("replaces a dg.cmd of another root with no warning", () => {
-		mkdirSync(bin, { recursive: true });
-		writeFileSync(join(bin, "dg.cmd"), generatedLauncher(area, "dg", "win32"));
-		const warnings: string[] = [];
-
-		writeShims(bin, root, "win32", (line) => void warnings.push(line));
-
-		expect(readFileSync(join(bin, "dg.cmd"), "utf8")).toContain(root);
-		expect(warnings).toEqual([]);
-	});
-
-	test("ignores a dg file with no extension: no warning and the file stays", () => {
-		mkdirSync(bin, { recursive: true });
-		writeFileSync(join(bin, "dg"), "other tool");
-		const warnings: string[] = [];
-
-		writeShims(bin, root, "win32", (line) => void warnings.push(line));
-
-		expect(warnings).toEqual([]);
-		expect(readFileSync(join(bin, "dg"), "utf8")).toBe("other tool");
-		expect(existsSync(join(bin, "dg.cmd"))).toBe(true);
-	});
-
-	test("never removes dg.exe and still removes the exe of the three legacy names", () => {
-		mkdirSync(bin, { recursive: true });
-		writeFileSync(join(bin, "dg.exe"), "MZ other tool");
-		for (const name of OTHERS)
-			writeFileSync(join(bin, `${name}.exe`), "MZ compiled");
-
-		writeShims(bin, root, "win32", () => {});
-
-		expect(readFileSync(join(bin, "dg.exe"), "utf8")).toBe("MZ other tool");
-		for (const name of OTHERS)
-			expect(existsSync(join(bin, `${name}.exe`))).toBe(false);
+		expect(readlinkSync(join(bin, "dg"))).toBe(compiledProgramPath(root, "linux"));
+		expect(lstatSync(join(bin, "dg")).isSymbolicLink()).toBe(true);
+		expect(readdirSync(bin)).toEqual(["dg"]);
 	});
 });

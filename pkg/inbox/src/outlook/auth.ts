@@ -65,7 +65,7 @@ export class EnvironmentMicrosoftTokenProvider implements MicrosoftTokenProvider
 						const set = binding.runtime.authCacheSet;
 						if (!get || !set) {
 							throw new Error(
-								"Outlook login requires dg-ai encrypted profile storage. Start the daemon and use dg-skills inbox with a configured profile.",
+								"Outlook login requires dg-ai encrypted profile storage. Start the daemon and use dg inbox with a configured profile.",
 							);
 						}
 						return {

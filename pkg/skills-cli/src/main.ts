@@ -113,7 +113,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 			import("@dg/common/node/layout-preaction"),
 		]);
 	const program = new Command()
-		.name("dg-skills")
+		.name("dg")
 		.description(
 			"Review inboxes, run channel reviews, group marked tabs, play guided tours, compare live-page prototypes, and review finished changes.",
 		)
@@ -139,7 +139,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 		);
 		emitRedacted(
 			(line) => console.error(line),
-			`dg-skills: ${describeError(err)}`,
+			`dg: ${describeError(err)}`,
 		);
 		return err instanceof DgCliError ? err.exitCode : 1;
 	}

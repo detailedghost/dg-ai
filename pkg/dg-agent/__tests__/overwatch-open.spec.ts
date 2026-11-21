@@ -85,7 +85,7 @@ async function runOpen(
 	return { client, opened, written, errors, minted };
 }
 
-describe("dg-agent overwatch open", () => {
+describe("dg overwatch open", () => {
 	it("opens the local /board page with a one-time code by default", async () => {
 		const { opened, client, minted } = await runOpen([]);
 
@@ -155,7 +155,7 @@ describe("localBootstrap", () => {
 		return program.command("overwatch");
 	}
 
-	it("tells the caller to run dg-agent start first when no daemon is live", async () => {
+	it("tells the caller to run dg agent start first when no daemon is live", async () => {
 		home = mkdtempSync(join(tmpdir(), "dg-overwatch-open-"));
 		process.env.DG_HOME = home;
 
@@ -165,7 +165,7 @@ describe("localBootstrap", () => {
 
 		expect(error).toBeInstanceOf(Error);
 		const message = (error as Error).message;
-		expect(message).toContain("Run dg-agent start first");
+		expect(message).toContain("Run dg agent start first");
 		expect(message).not.toContain("..");
 	});
 

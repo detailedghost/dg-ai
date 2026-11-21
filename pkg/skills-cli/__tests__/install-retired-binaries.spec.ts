@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { removeRetiredBinaries } from "../src/install/cli";
-import { LEGACY_PROGRAMS, writeShims } from "../src/install/shims";
-import { cliDest } from "../src/utils/lib";
-import { scratch, type Scratch } from "./runtime-bundle-fixtures";
+import { PROGRAM_NAMES } from "@dg/common/node/program";
+import { writeDgLink } from "../src/install/compiled";
+import { scratch, type Scratch } from "./release-fixtures";
 
-const NAMES = LEGACY_PROGRAMS;
+const NAMES = PROGRAM_NAMES;
 const posix = describe.skipIf(process.platform === "win32");
 
 let sandbox: Scratch;
@@ -25,26 +25,16 @@ afterEach(() => {
 });
 
 posix("retired compiled binaries", () => {
-	test("cliDest resolves each program to its shim path under <root>/bin", () => {
-		for (const name of NAMES) expect(cliDest(name)).toBe(join(sandbox.root, "bin", name));
-	});
-
-	test("an existing compiled dg-daemon is gone and its version file removed once the shim exists, and the shim survives", () => {
+	test("a retired dg-server binary and the version stamps of the old program names are removed", () => {
 		const bin = join(sandbox.root, "bin");
 		mkdirSync(bin, { recursive: true });
-		for (const name of NAMES) {
-			writeFileSync(join(bin, name), "compiled ELF bytes", { mode: 0o755 });
-			writeFileSync(join(bin, `.${name}.version`), "1.26.0\n");
-		}
+		writeFileSync(join(bin, "dg-server"), "compiled ELF bytes", { mode: 0o755 });
+		for (const name of ["dg-server", ...NAMES]) writeFileSync(join(bin, `.${name}.version`), "1.26.0\n");
 
-		writeShims(bin, join(sandbox.root, "data"));
 		removeRetiredBinaries();
 
-		for (const name of NAMES) {
-			expect(existsSync(join(bin, `.${name}.version`))).toBe(false);
-			expect(readFileSync(join(bin, name), "utf8")).not.toContain("compiled ELF bytes");
-			expect(readFileSync(join(bin, name), "utf8")).toContain(`${name} "$@"`);
-		}
+		expect(existsSync(join(bin, "dg-server"))).toBe(false);
+		for (const name of ["dg-server", ...NAMES]) expect(existsSync(join(bin, `.${name}.version`))).toBe(false);
 	});
 
 	test("a .dg.version file is left alone: no compiled dg binary ever existed", () => {
@@ -57,12 +47,13 @@ posix("retired compiled binaries", () => {
 		expect(readFileSync(join(bin, ".dg.version"), "utf8")).toBe("1.26.0\n");
 	});
 
-	test("the shim writer gives dg no version stamp for removeRetiredBinaries to clear", () => {
+	test("the dg link survives", () => {
 		const bin = join(sandbox.root, "bin");
+		const data = join(sandbox.root, "data");
 
-		writeShims(bin, join(sandbox.root, "data"));
+		writeDgLink(bin, data, "7.0.0", "linux", () => {});
 		removeRetiredBinaries();
 
-		expect(existsSync(join(bin, "dg"))).toBe(true);
+		expect(lstatSync(join(bin, "dg")).isSymbolicLink()).toBe(true);
 	});
 });

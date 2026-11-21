@@ -62,7 +62,7 @@ export function printCommandHelp(group: string, action: string): void {
 			? `${spec.nameAndArgs.split(" ")[0]} ${action}`
 			: spec.nameAndArgs;
 	const program = new Command()
-		.name(`dg-skills inbox ${usage}`)
+		.name(`dg inbox ${usage}`)
 		.description(spec.description)
 		.helpOption("-h, --help", "display help for command");
 	for (const name of helpFlagsFor(spec)) {

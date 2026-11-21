@@ -252,7 +252,7 @@ export async function playLocal(
 	const title = script.title ?? slug;
 	const where = planLabel(plan);
 	console.log(
-		`demo "${title}": recording in ${where}. Results: dg-skills demo status ${slug}`,
+		`demo "${title}": recording in ${where}. Results: dg demo status ${slug}`,
 	);
 	return 0;
 }

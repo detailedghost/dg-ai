@@ -1400,7 +1400,7 @@ export async function renderChatPage(
 		showEmpty(
 			"no-session",
 			"No sessions yet",
-			"Run dg-agent start --open to open this page for an agent.",
+			"Run dg agent start --open to open this page for an agent.",
 		);
 		updateConnectionStatus();
 	} else {

@@ -13,6 +13,11 @@ describe("isOwned", () => {
 		"C:\\Users\\u\\.dg\\bin\\dg-skills.exe hooks run daily-prune",
 		"'/opt/My Apps/dg-skills' hooks run spelling",
 		'"C:\\Users\\Jane Doe\\.dg\\bin\\dg-skills.exe" hooks run format',
+		"/home/u/.local/bin/dg hooks run spelling",
+		"dg hooks run pr-confirm",
+		"C:\\Users\\u\\.dg\\bin\\dg.exe hooks run daily-prune",
+		"'/opt/My Apps/dg' hooks run spelling",
+		'"C:\\Users\\Jane Doe\\bin\\dg.exe" hooks run format',
 	])("matches %s", (command) => {
 		expect(isOwned(command)).toBe(true);
 	});
@@ -27,6 +32,10 @@ describe("isOwned", () => {
 		"dg-skills hooks run spelling; rm -rf /",
 		"rm -rf ~/x; dg-skills hooks run spelling",
 		"true && /opt/dg-skills hooks run format",
+		"mydg hooks run spelling",
+		"dg hooks run spelling; rm -rf /",
+		"true && /opt/dg hooks run format",
+		"dg hooks list",
 	])("rejects %s", (command) => {
 		expect(isOwned(command)).toBe(false);
 	});
@@ -37,6 +46,8 @@ describe("ownedCommand", () => {
 		for (const launcher of [
 			"/home/u/.dg/bin/dg-skills",
 			"C:\\Users\\u\\.dg\\bin\\dg-skills.cmd",
+			"/home/u/.local/bin/dg",
+			"C:\\Users\\u\\bin\\dg.exe",
 		]) {
 			const command = ownedCommand(launcher, "spelling");
 			expect(command).toBe(`${launcher} hooks run spelling`);
@@ -70,6 +81,8 @@ describe("ownedLauncher", () => {
 			'"C:\\Users\\Jane Doe\\.dg\\bin\\dg-skills.exe" hooks run format',
 			"C:\\Users\\Jane Doe\\.dg\\bin\\dg-skills.exe",
 		],
+		["/abs/bin/dg hooks run format", "/abs/bin/dg"],
+		["C:\\bin\\dg.exe hooks run format", "C:\\bin\\dg.exe"],
 	])("extracts the launcher from %s", (command, launcher) => {
 		expect(ownedLauncher(command)).toBe(launcher);
 	});

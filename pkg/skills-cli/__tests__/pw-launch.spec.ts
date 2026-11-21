@@ -6,7 +6,7 @@ const requiredPrefix = (subject: string) =>
 	extensionRequiredMessage(subject).split(" Run ")[0] ?? "";
 
 const REFUSAL =
-	"launch: an extension-only command; add --ext (dg-skills pw launch --ext ...)";
+	"launch: an extension-only command; add --ext (dg pw launch --ext ...)";
 
 describe("pw launch without --ext", () => {
 	test("returns 1, prints the extension-only line and detects no browser on a full install", async () => {
@@ -27,7 +27,7 @@ describe("pw launch without --ext", () => {
 		try {
 			const run = await world.run(["launch", "https://example.test/a"]);
 			expect(run.exitCode).toBe(1);
-			expect(run.stderr).toContain(requiredPrefix("dg-skills pw launch"));
+			expect(run.stderr).toContain(requiredPrefix("dg pw launch"));
 			expect(run.detectCalls).toBe(0);
 		} finally {
 			world.cleanup();
@@ -51,7 +51,7 @@ describe("pw launch --ext", () => {
 		world = extCommandWorld({ cliOnly: true });
 		const run = await world.run(["launch", "--ext", "--list"]);
 		expect(run.exitCode).toBe(1);
-		expect(run.stderr).toContain(requiredPrefix("dg-skills pw launch"));
+		expect(run.stderr).toContain(requiredPrefix("dg pw launch"));
 		expect(run.detectCalls).toBe(0);
 	});
 

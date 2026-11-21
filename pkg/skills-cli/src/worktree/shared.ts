@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { runCapture } from "@dg/common/node";
 
-/** A failure the dispatcher reports as `dg-skills worktree: <message>` with exit 2. */
+/** A failure the dispatcher reports as `dg worktree: <message>` with exit 2. */
 export class WorktreeError extends Error {}
 
 export function fail(message: string): never {
@@ -12,7 +12,7 @@ export function fail(message: string): never {
 export const infoLine = (message: string): string => `${message}\n`;
 
 export const warnLine = (message: string): string =>
-	`dg-skills worktree: ${message}\n`;
+	`dg worktree: ${message}\n`;
 
 export function info(message: string): void {
 	process.stderr.write(infoLine(message));

@@ -3,6 +3,9 @@ import { dirname, join, relative, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { buildPages } from "../pages/build";
 import { hashBundle, playwrightMetadata } from "../skills-cli/build";
+import { compiledAssetName } from "../skills-cli/src/utils/lib";
+
+export { compiledAssetName };
 
 const ROOT = import.meta.dir;
 const PKG = join(ROOT, "..");
@@ -80,8 +83,6 @@ export const COMPILE_TARGETS = {
 } as const;
 
 export type CompileKey = keyof typeof COMPILE_TARGETS;
-
-export const compiledAssetName = (key: string): string => `dg-${key}${key.startsWith("windows-") ? ".exe" : ""}`;
 
 async function sharedOptions() {
 	const plugins = [playwrightMetadata, namedChunks];

@@ -13,7 +13,7 @@ export type Group = {
 	action: FixAction | null;
 };
 
-const RUNNABLE = /^(dg-skills|dg-agent) [\w ./:=@-]+$/;
+const RUNNABLE = /^dg [\w ./:=@-]+$/;
 const STATUS_ORDER: CheckStatus[] = ["fail", "warn", "info", "ok"];
 
 /** The argv of a fix that runs one of dg's own CLIs with plain words; null for any other fix. */

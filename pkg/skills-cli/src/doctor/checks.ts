@@ -68,7 +68,7 @@ const INSTALL_TOOL: Record<string, ToolInstall> = {
 
 export const PLUGIN_INSTALL = "claude plugin install dg@detailedghost";
 export const PLUGIN_UPDATE = `${CLI_PATH} update`;
-const DAEMON_START = "dg-agent start";
+const DAEMON_START = "dg agent start";
 const LOAD_EXTENSION = "open the browser with the DeeGee extension loaded; it links to the daemon on its own";
 
 export interface ToolSpec {
@@ -337,9 +337,9 @@ function credentialListFailure(error: unknown): { error: string; fix?: string } 
 function storedCredentialNames(ctx: DoctorContext): Promise<CredentialNames> {
 	return ctx.memo("credential-names", async () => {
 		const handle = readPidFile(ctx.paths);
-		if (!handle) return { error: "dg-daemon is not running", fix: DAEMON_START };
+		if (!handle) return { error: "dg daemon is not running", fix: DAEMON_START };
 		if (!(await ctx.memo("daemon-live", () => isDaemonLive(handle))))
-			return { error: "dg-daemon is not answering", fix: DAEMON_START };
+			return { error: "dg daemon is not answering", fix: DAEMON_START };
 		const client = createCredentialClient({ paths: ctx.paths, env: ctx.env });
 		try {
 			return { names: (await client.list()).map((entry) => entry.name) };
@@ -385,11 +385,11 @@ export const daemonCheck: DoctorCheck = {
 	id: "daemon",
 	async run(ctx): Promise<CheckResult> {
 		const handle = readPidFile(ctx.paths);
-		if (!handle) return fail("dg-daemon is not running", DAEMON_START);
+		if (!handle) return fail("dg daemon is not running", DAEMON_START);
 		const live = await ctx.memo("daemon-live", () => isDaemonLive(handle));
 		return live
-			? ok(`dg-daemon answers on port ${handle.port}`)
-			: fail(`dg-daemon is not answering on port ${handle.port}`, DAEMON_START);
+			? ok(`dg daemon answers on port ${handle.port}`)
+			: fail(`dg daemon is not answering on port ${handle.port}`, DAEMON_START);
 	},
 };
 
@@ -497,7 +497,7 @@ export const unslopCheck: DoctorCheck = {
 			? ok("unslop is installed")
 			: warn(
 					"unslop is not installed, so polish skips its prose pass",
-					"dg-skills install --with-recommended",
+					"dg install --with-recommended",
 				);
 	},
 };

@@ -83,7 +83,7 @@ describe("service add", () => {
 		expect(result.code).toBe(0);
 		expect(lines(result.stdout)).toEqual([
 			'added service "bot"',
-			"next: dg-daemon start",
+			"next: dg daemon start",
 		]);
 		const entry = storedConfig(dgHome).jobs.bot;
 		expect(entry).toEqual({
@@ -99,7 +99,7 @@ describe("service add", () => {
 		const result = await add(dgHome, "bot", ["--cwd", cwd]);
 		expect(lines(result.stdout)).toEqual([
 			'added service "bot"',
-			"next: dg-daemon start, then dg-daemon service start bot",
+			"next: dg daemon start, then dg service start bot",
 		]);
 		expect(Object.hasOwn(storedConfig(dgHome).jobs.bot, "enabled")).toBe(false);
 	});
@@ -420,7 +420,7 @@ describe("service add", () => {
 		const result = await add(dgHome, "bot", ["--cwd", cwd, "--autostart"]);
 		expect(lines(result.stdout)).toEqual([
 			'added service "bot"',
-			"next: dg-daemon start",
+			"next: dg daemon start",
 		]);
 	});
 });
@@ -474,7 +474,7 @@ describe("service rm", () => {
 			const result = await runCli(dgHome, ["service", "rm", "bot"]);
 			expect(result.code).toBe(1);
 			expect(result.stderr).toContain(
-				`dg-daemon (pid ${silent.pid}) does not answer, so the state of service "bot" is unknown`,
+				`dg daemon (pid ${silent.pid}) does not answer, so the state of service "bot" is unknown`,
 			);
 			expect(Object.keys(storedConfig(dgHome).jobs)).toEqual(["bot"]);
 		} finally {
@@ -678,7 +678,7 @@ describe("service commands with no live daemon", () => {
 			expect(result.code).toBe(1);
 			expect(result.stdout).toBe("");
 			expect(result.stderr).toContain(
-				"no live dg-daemon — services run inside it, so start it with dg-daemon start",
+				"no live dg daemon — services run inside it, so start it with dg daemon start",
 			);
 		},
 	);

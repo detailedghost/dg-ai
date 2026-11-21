@@ -31,7 +31,7 @@ function skill(args: string[], root: string) {
 	});
 }
 
-describe("dg-skills skill", () => {
+describe("dg skill", () => {
 	test("--help documents audit and split", async () => {
 		const root = home();
 		const run = await skill(["--help"], root);

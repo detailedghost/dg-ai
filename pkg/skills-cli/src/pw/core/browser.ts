@@ -39,7 +39,7 @@ export class BrowserMissingError extends Error {
 			[
 				"No Chromium-family browser found. Tried:",
 				...tried.map((location) => `  ${location}`),
-				"Set DG_BROWSER to a browser binary, or ask the user, then run: dg-skills pw install-browser (downloads about 150 MB)",
+				"Set DG_BROWSER to a browser binary, or ask the user, then run: dg pw install-browser (downloads about 150 MB)",
 			].join("\n"),
 		);
 	}

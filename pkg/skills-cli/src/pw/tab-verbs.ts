@@ -19,7 +19,7 @@ export function tabVerbsProgram(setCode: (code: number) => void = () => {}): Com
 			.option("-g, --group <name>", "tab group name (needs --ext)")
 			.option("--print", "print the URLs instead of opening them"),
 	).action(async (refs: string[], opts: BatchOpenOptions) => {
-		if (opts.ext) assertExtensionInstalled("dg-skills pw batch-open");
+		if (opts.ext) assertExtensionInstalled("dg pw batch-open");
 		const { runBatchOpen } = await import("../batch-open/cli");
 		await runBatchOpen(refs, opts);
 	});
@@ -34,7 +34,7 @@ export function tabVerbsProgram(setCode: (code: number) => void = () => {}): Com
 		.option("--list", "list detected browsers and exit")
 		.option("--dry-run", "print the launch command without running it")
 		.action(async (refs: string[], opts: LaunchOptions) => {
-			assertExtensionInstalled("dg-skills pw launch");
+			assertExtensionInstalled("dg pw launch");
 			const { runLaunch } = await import("../launch/cli");
 			setCode(await runLaunch(refs, opts));
 		});

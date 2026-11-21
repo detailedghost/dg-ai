@@ -69,17 +69,17 @@ describe("dg in a bundle", () => {
 		expect(seen.map((call) => call.programName)).toEqual(["dg-skills", "dg-skills"]);
 	});
 
-	test("selfCommand below dg skills builds the same child argv as below dg-skills", async () => {
+	test("selfCommand below dg skills builds the dg skills child argv", async () => {
 		await dispatch(["dg", "skills", "stash"]);
 		await dispatch(["dg-skills", "stash"]);
 		expect(seen).toHaveLength(2);
 		expect(seen[0]?.selfArgv).toEqual(seen[1]?.selfArgv as string[]);
-		expect(seen[0]?.selfArgv).toEqual([process.execPath, Bun.main, "dg-skills", "x"]);
+		expect(seen[0]?.selfArgv).toEqual([process.execPath, Bun.main, "skills", "x"]);
 	});
 
-	test("selfCommand below dg job builds the dg-daemon child argv", async () => {
+	test("selfCommand below dg job builds the dg daemon child argv", async () => {
 		await dispatch(["dg", "job", "list"]);
-		expect(seen[0]?.selfArgv).toEqual([process.execPath, Bun.main, "dg-daemon", "x"]);
+		expect(seen[0]?.selfArgv).toEqual([process.execPath, Bun.main, "daemon", "x"]);
 	});
 
 	test("returns the exit code of the mounted main", async () => {

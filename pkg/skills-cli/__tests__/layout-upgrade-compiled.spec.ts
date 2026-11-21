@@ -22,12 +22,12 @@ setDefaultTimeout(CASE_TIMEOUT_MS);
 type Step = { name: string; run: (home: string, rows: FixtureRows) => Promise<string> };
 
 const slugify: Step = {
-	name: "dg-skills spec slugify",
+	name: "dg spec slugify",
 	run: async (home) => (await runProgram(home, "dg-skills", ["spec", "slugify", "x"])).stderr,
 };
 
 const agent: Step = {
-	name: "dg-agent memory search then phone status",
+	name: "dg memory search then phone status",
 	run: async (home, rows) => {
 		const search = await runProgram(home, "dg-agent", ["memory", "search", rows.token, "--identity", FIXTURE_IDENTITY]);
 		const status = await runProgram(home, "dg-agent", ["phone", "status"]);
@@ -36,7 +36,7 @@ const agent: Step = {
 };
 
 const daemon: Step = {
-	name: "dg-daemon serve until pid file",
+	name: "dg daemon serve until pid file",
 	run: async (home) => (await serveUntilPidFile(home)).stderr,
 };
 

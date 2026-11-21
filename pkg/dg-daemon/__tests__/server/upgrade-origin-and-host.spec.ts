@@ -183,7 +183,7 @@ describe("trust-on-first-use origin pinning", () => {
 			Origin: "moz-extension://other",
 		});
 		expect(resp.status).toBe(400);
-		expect(await resp.text()).toContain("dg-daemon origin clear");
+		expect(await resp.text()).toContain("dg daemon origin clear");
 	});
 
 	it("lets a different origin pin once the previous pin is cleared", async () => {

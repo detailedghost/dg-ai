@@ -85,7 +85,7 @@ function fake(overrides: FakeOptions = {}): Fake {
 	};
 }
 
-describe("dg-skills update", () => {
+describe("dg update", () => {
 	test("installs the newest release pinned, updates both plugins, runs doctor, and exits 0", async () => {
 		claudePlugin("3.0.1");
 		codexConfig("https://github.com/detailedghost/dg-ai.git");
@@ -121,7 +121,7 @@ describe("dg-skills update", () => {
 		await runUpdate({}, d);
 		const at = d.lines.findIndex((line) => line.startsWith("Doctor (information only"));
 		expect(d.lines[at]).toContain("1 passed, 0 info, 0 to review, 0 failed");
-		expect(d.lines[at + 1]).toBe("Run dg-skills doctor for details.");
+		expect(d.lines[at + 1]).toBe("Run dg doctor for details.");
 		expect(d.lines).toHaveLength(at + 3);
 	});
 
@@ -131,17 +131,17 @@ describe("dg-skills update", () => {
 		expect(d.installs).toEqual(["cli-only@3.1.0"]);
 	});
 
-	test("an install with no staged extension refreshes only the runtime and bundle", async () => {
+	test("an install with no staged extension refreshes only the dg program", async () => {
 		const d = fake({ tools: [], stagedExtensions: () => ({}) });
 		expect(await runUpdate({}, d)).toBe(0);
-		expect(d.installs).toEqual(["bundle@3.1.0"]);
+		expect(d.installs).toEqual(["program@3.1.0"]);
 	});
 
 	test("installs once with two browsers staged and names the command for the other", async () => {
 		const d = fake({ tools: [], stagedExtensions: () => ({ chrome: "3.0.1", firefox: "3.0.1" }) });
 		expect(await runUpdate({}, d)).toBe(0);
 		expect(d.installs).toEqual(["chrome@3.1.0"]);
-		expect(d.lines[0]).toContain("run dg-skills install firefox to refresh the firefox extension too");
+		expect(d.lines[0]).toContain("run dg install firefox to refresh the firefox extension too");
 	});
 
 	test("a Firefox-only install refreshes Firefox", async () => {
@@ -261,7 +261,7 @@ describe("dg-skills update", () => {
 			"⬆️ chrome extension: 3.0.1 -> 3.1.0",
 			"⬆️ Claude plugin (user): 1.34.2 -> 3.1.0",
 			"⬆️ Codex plugin: 1.0.1 -> 3.1.0",
-			"Run dg-skills update to bring these up to date.",
+			"Run dg update to bring these up to date.",
 		]);
 	});
 
@@ -358,7 +358,7 @@ describe("codexState", () => {
 	});
 });
 
-describe("dg-skills update launcher layout", () => {
+describe("dg update launcher layout", () => {
 	function withLayout(overrides: FakeOptions = {}, status = 0) {
 		const layouts: string[] = [];
 		const d = fake({
@@ -392,18 +392,18 @@ describe("dg-skills update launcher layout", () => {
 		expect(stuck.layouts).toEqual([]);
 	});
 
-	test("reports a non-zero launcher step as a failed install step that names dg-skills install", async () => {
+	test("reports a non-zero launcher step as a failed install step that names dg install", async () => {
 		const { d } = withLayout({ tools: [] }, 1);
 		expect(await runUpdate({}, d)).toBe(1);
-		expect(d.lines[0]).toBe("❌ CLI, runtime and extension: launchers broke; run dg-skills install");
+		expect(d.lines[0]).toBe("❌ CLI, runtime and extension: launchers broke; run dg install");
 	});
 
-	test("the default finishLayout runs the bin dir dg-skills launcher with the hidden launchers step", () => {
+	test("the default finishLayout runs the bin dir dg launcher with the hidden launchers step", () => {
 		const dgHome = join(home, "dg-home");
 		const bin = join(dgHome, "bin");
 		mkdirSync(bin, { recursive: true });
 		const record = join(home, "argv.txt");
-		writeFileSync(join(bin, "dg-skills"), `#!/bin/sh\nprintf '%s ' "$@" > '${record}'\nexit 3\n`, { mode: 0o755 });
+		writeFileSync(join(bin, "dg"), `#!/bin/sh\nprintf '%s ' "$@" > '${record}'\nexit 3\n`, { mode: 0o755 });
 		const saved = process.env.DG_HOME;
 		process.env.DG_HOME = dgHome;
 		try {

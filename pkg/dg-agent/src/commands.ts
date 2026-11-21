@@ -79,7 +79,7 @@ export async function localBootstrap(command: Command): Promise<SessionBootstrap
 		return await resolveCliSession(selectedSession(command));
 	} catch (error) {
 		throw new DgCliError(
-			`${describeError(error).replace(/\.+$/, "")}. Run dg-agent start first.`,
+			`${describeError(error).replace(/\.+$/, "")}. Run dg agent start first.`,
 		);
 	}
 }
@@ -129,7 +129,7 @@ export function registerRecvCommand(
 						const claimId = result.message.claimId;
 						if (typeof claimId !== "string") {
 							throw new DgCliError(
-								"dg-daemon delivered a message without a claimId",
+								"dg daemon delivered a message without a claimId",
 							);
 						}
 						client.send({ type: "cli-ack", claimId });

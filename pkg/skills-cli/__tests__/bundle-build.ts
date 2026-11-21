@@ -65,13 +65,13 @@ function quote(value: string): string {
 	return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-/** Writes a POSIX shim at `path` that runs the skills tree of a copied lib dir. */
-export function installBundleShim(path: string): string {
+/** Writes a POSIX shim at `path` that runs one program of a copied lib dir; `dg` runs the flat commands. */
+export function installBundleShim(path: string, program = "dg-skills"): string {
 	const { bun, lib } = buildBundle();
 	const moved = join(dirname(path), "lib");
 	mkdirSync(dirname(path), { recursive: true });
 	cpSync(lib, moved, { recursive: true });
-	writeFileSync(path, `#!/bin/sh\nexec ${quote(bun)} ${quote(join(moved, "dg.js"))} skills "$@"\n`);
+	writeFileSync(path, `#!/bin/sh\nexec ${quote(bun)} ${quote(join(moved, "dg.js"))} ${groupWords(program).map(quote).join(" ")} "$@"\n`);
 	chmodSync(path, 0o755);
 	return path;
 }

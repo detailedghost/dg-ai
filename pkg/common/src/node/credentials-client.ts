@@ -20,13 +20,13 @@ import { readCredentialGrantToken } from "./credential-grants";
 import type { DgPaths } from "./dg-paths";
 import { isDaemonLive, readPidFile } from "./pidfile";
 
-export const DG_DAEMON_START_COMMAND = "dg-agent start";
+export const DG_DAEMON_START_COMMAND = "dg agent start";
 const CREDENTIALS_REQUEST_TIMEOUT_MS = 10_000;
 const EXEC_TIMEOUT_MS = 86_400_000;
 
 export class DaemonNotRunningError extends DgCliError {
 	constructor() {
-		super(`dg-daemon is not running; start it with ${DG_DAEMON_START_COMMAND}`);
+		super(`dg daemon is not running; start it with ${DG_DAEMON_START_COMMAND}`);
 	}
 }
 
@@ -46,10 +46,10 @@ export type ResolvedCredential =
 export type CredentialClient = {
 	set(name: string, value: string, meta?: CredentialMeta): Promise<void>;
 	get(name: string): Promise<CredentialRecord | undefined>;
-	/** Has dg-daemon run a command with stored values; only scrubbed output reaches onOutput, and it resolves to the exit code. */
+	/** Has dg daemon run a command with stored values; only scrubbed output reaches onOutput, and it resolves to the exit code. */
 	exec(spec: CredentialExecSpec, onOutput: (stream: "stdout" | "stderr", data: string) => void): Promise<number>;
 	list(): Promise<CredentialSummary[]>;
-	/** Has dg-daemon mint a one-time page where a human types the value for `name`; the value never passes through this client. */
+	/** Has dg daemon mint a one-time page where a human types the value for `name`; the value never passes through this client. */
 	intake(name: string, meta: CredentialMeta): Promise<CredentialIntake>;
 	delete(name: string): Promise<boolean>;
 	grant(prefix: string): Promise<{ prefix: string; path: string }>;
@@ -86,12 +86,12 @@ function readGrantToken(paths: DgPaths, prefix: string): string {
 		return readCredentialGrantToken(paths, prefix);
 	} catch {
 		throw new DgCliError(
-			`no credential grant for ${prefix}; run dg-skills credentials grant ${prefix}`,
+			`no credential grant for ${prefix}; run dg credentials grant ${prefix}`,
 		);
 	}
 }
 
-/** Talks to the dg-daemon credential store over the authenticated loopback CLI socket. */
+/** Talks to the dg daemon credential store over the authenticated loopback CLI socket. */
 export function createCredentialClient(
 	options: CredentialClientOptions,
 ): CredentialClient {
@@ -128,7 +128,7 @@ export function createCredentialClient(
 			} catch {
 				if (grant && (await isDaemonLive(handle)))
 					throw new DgCliError(
-						`dg-daemon refused the credential grant for ${grant.prefix}; run dg-skills credentials grant ${grant.prefix} to rotate it`,
+						`dg daemon refused the credential grant for ${grant.prefix}; run dg credentials grant ${grant.prefix} to rotate it`,
 					);
 				throw new DaemonNotRunningError();
 			}
@@ -166,7 +166,7 @@ export function createCredentialClient(
 		);
 		if (reply.type === "error")
 			throw new DgCliError(
-				"This dg-daemon cannot serve credentials. Run dg-skills install, then restart the daemon.",
+				"This dg daemon cannot serve credentials. Run dg install, then restart the daemon.",
 			);
 		if (!reply.ok)
 			throw new DgCliError(reply.error || "Credential request failed.");

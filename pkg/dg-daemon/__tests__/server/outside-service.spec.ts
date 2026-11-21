@@ -143,7 +143,7 @@ describe("a declared grant with no token file", () => {
 		const response = await serviceAction(port, "start");
 		expect(response.status).toBe(400);
 		expect(await response.text()).toBe(
-			`grant token file not found: ${credentialGrantTokenPath(paths, "bot")} — create it with dg-skills credentials grant bot`,
+			`grant token file not found: ${credentialGrantTokenPath(paths, "bot")} — create it with dg credentials grant bot`,
 		);
 		expect((await serviceStatus(port)).state).toBe("stopped");
 		expect(existsSync(join(paths.logDir, "service-bot.log"))).toBe(false);
@@ -176,7 +176,7 @@ describe("a declared grant with no token file", () => {
 			"the not autostarted log line",
 		);
 		expect(log).toContain(
-			`service bot not autostarted: grant token file not found: ${credentialGrantTokenPath(paths, "bot")} — create it with dg-skills credentials grant bot`,
+			`service bot not autostarted: grant token file not found: ${credentialGrantTokenPath(paths, "bot")} — create it with dg credentials grant bot`,
 		);
 		expect(existsSync(join(paths.logDir, "service-bot.log"))).toBe(false);
 	}, 20_000);

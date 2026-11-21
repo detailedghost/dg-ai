@@ -148,7 +148,7 @@ describe("slice-wave templates", () => {
 	});
 });
 
-describe("dg-skills assign resolve", () => {
+describe("dg assign resolve", () => {
 	test.each(["claude", "codex", "grok"])(
 		"matches the golden for layer 0 on %s",
 		async (runtime) => {
@@ -491,7 +491,7 @@ describe("assign resolve --help", () => {
 	test.each([["--help"], ["-h"]])("%s prints usage and exits 0", async (flag) => {
 		const result = await run(["resolve", flag]);
 		expect(result.status).toBe(0);
-		expect(result.out).toContain("usage: dg-skills assign resolve");
+		expect(result.out).toContain("usage: dg assign resolve");
 	});
 });
 

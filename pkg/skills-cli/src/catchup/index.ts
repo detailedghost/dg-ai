@@ -27,7 +27,7 @@ export async function main(argv: string[]): Promise<number> {
 	for (const arg of argv) {
 		if (arg === "--help" || arg === "-h") {
 			console.log(
-				"Usage: dg-skills catchup [--push | --no-push]\n\nRebase onto origin's default branch, verify build/tests, and push with --force-with-lease.\n\n  --push     Push after verification (default; compatibility option)\n  --no-push  Skip pushing\n  --help, -h Show this help",
+				"Usage: dg catchup [--push | --no-push]\n\nRebase onto origin's default branch, verify build/tests, and push with --force-with-lease.\n\n  --push     Push after verification (default; compatibility option)\n  --no-push  Skip pushing\n  --help, -h Show this help",
 			);
 			return 0;
 		}

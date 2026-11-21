@@ -37,16 +37,34 @@ function shellDirs({ env = process.env, home = homedir() }: CompletionSeams): Di
 const fileName = (shell: CompletionShell, program: string): string =>
 	shell === "zsh" ? `_${program}` : shell === "fish" ? `${program}.fish` : program;
 
-/** Every completion file dg writes; none on Windows. `dg` is left out when `<bin>/dg` is a file of another tool. */
+function filesFor(programs: readonly string[], seams: CompletionSeams): CompletionFile[] {
+	const dirs = shellDirs(seams);
+	return programs.flatMap((program) =>
+		COMPLETION_SHELLS.map((shell) => ({ program, shell, path: join(dirs[shell], fileName(shell, program)) })),
+	);
+}
+
+/** Every completion file dg writes: the `dg` ones, none on Windows or when `<bin>/dg` is a file of another tool. */
 export function completionFiles(seams: CompletionSeams = {}): CompletionFile[] {
 	const platform = seams.platform ?? process.platform;
 	if (platform === "win32") return [];
-	const dirs = shellDirs(seams);
 	const dgLauncher = join(seams.binDir ?? resolveDgPaths().binDir, "dg");
-	const names = holdsOtherFile(dgLauncher, platform) ? PROGRAM_NAMES : (["dg", ...PROGRAM_NAMES] as const);
-	return names.flatMap((program) =>
-		COMPLETION_SHELLS.map((shell) => ({ program, shell, path: join(dirs[shell], fileName(shell, program)) })),
-	);
+	return holdsOtherFile(dgLauncher, platform) ? [] : filesFor(["dg"], seams);
+}
+
+/** The completion files that older releases wrote for the removed program names. */
+function retiredFiles(seams: CompletionSeams): CompletionFile[] {
+	return (seams.platform ?? process.platform) === "win32" ? [] : filesFor(PROGRAM_NAMES, seams);
+}
+
+function removeOwned(files: readonly CompletionFile[], log: (line: string) => void): string[] {
+	return files.flatMap((file) => {
+		const text = readOrUndefined(file.path);
+		if (text === undefined || !text.includes(`${file.program} __complete`)) return [];
+		rmSync(file.path, { force: true });
+		log(`dg: removed ${file.path}`);
+		return [file.path];
+	});
 }
 
 function readOrUndefined(path: string): string | undefined {
@@ -70,8 +88,9 @@ export function zshHint(dir: string, env: Record<string, string | undefined> = p
 	return `zsh: add  fpath=(${dir} $fpath)  to ~/.zshrc before compinit to turn on dg completion`;
 }
 
-/** Writes every completion file that is missing or stale; returns the paths it wrote. */
+/** Writes every completion file that is missing or stale and removes the retired ones; returns the paths it wrote. */
 export function writeCompletions(seams: CompletionSeams = {}, log: (line: string) => void = console.log): string[] {
+	removeOwned(retiredFiles(seams), log);
 	const written = completionFiles(seams).flatMap((file) => {
 		if (completionState(file) === "current") return [];
 		mkdirSync(dirname(file.path), { recursive: true });
@@ -87,11 +106,5 @@ export function writeCompletions(seams: CompletionSeams = {}, log: (line: string
 
 /** Removes the completion files that dg wrote; a file that does not call back into its program stays. */
 export function removeCompletions(seams: CompletionSeams = {}, log: (line: string) => void = console.log): string[] {
-	return completionFiles(seams).flatMap((file) => {
-		const text = readOrUndefined(file.path);
-		if (text === undefined || !text.includes(`${file.program} __complete`)) return [];
-		rmSync(file.path, { force: true });
-		log(`dg: removed ${file.path}`);
-		return [file.path];
-	});
+	return removeOwned([...completionFiles(seams), ...retiredFiles(seams)], log);
 }

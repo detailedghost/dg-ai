@@ -38,7 +38,7 @@ export function requireMatchingProtocol(
 ): void {
 	if (handle.versions.protocol === CHAT_PROTOCOL_VERSION) return;
 	throw new DgCliError(
-		`the dg-daemon on port ${handle.port} speaks protocol v${handle.versions.protocol}, ` +
+		`the dg daemon on port ${handle.port} speaks protocol v${handle.versions.protocol}, ` +
 			`this CLI speaks v${CHAT_PROTOCOL_VERSION}. ${remedy}`,
 		EXIT_PROTOCOL_MISMATCH,
 	);
@@ -78,12 +78,12 @@ export async function resolveLiveDaemon(
 ): Promise<{ handle: DaemonHandle; live: boolean } | undefined> {
 	const handle = readPidFile(paths);
 	if (!handle) {
-		console.log("dg-daemon: no live daemon");
+		console.log("dg daemon: no live daemon");
 		return undefined;
 	}
 	if (await isDaemonLive(handle)) return { handle, live: true };
 	if (isAlive(handle.pid, probe)) return { handle, live: false };
 	removePidFile(paths);
-	console.log("dg-daemon: no live daemon (stale pid file removed)");
+	console.log("dg daemon: no live daemon (stale pid file removed)");
 	return undefined;
 }

@@ -9,7 +9,7 @@ import {
 	writeMarketplaceClone,
 } from "./recommended-fixtures";
 import { unslopCheck } from "../src/doctor/checks";
-import { fetchedUrls, installEnv, runCli, writeReleaseServer } from "./runtime-bundle-fixtures";
+import { fetchedUrls, installEnv, runCli, writeReleaseServer } from "./release-fixtures";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
@@ -479,7 +479,7 @@ describe("installRecommendedForClaude marketplace pin", () => {
 	});
 });
 
-describe("dg-skills install --with-recommended", () => {
+describe("dg install --with-recommended", () => {
 	test("rejects --agent-only before fetching anything", async () => {
 		const root = tempDir("recommended-agent-only");
 		const home = join(root, "home");
@@ -608,6 +608,6 @@ describe("unslopCheck", () => {
 	test("tells the user to run install --with-recommended when unslop is missing", () => {
 		const home = tempDir("recommended-doctor");
 		const result = unslopCheck.run({ home } as never) as { fix?: string; hint?: string };
-		expect(JSON.stringify(result)).toContain("dg-skills install --with-recommended");
+		expect(JSON.stringify(result)).toContain("dg install --with-recommended");
 	});
 });

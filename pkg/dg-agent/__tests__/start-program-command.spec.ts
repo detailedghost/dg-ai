@@ -39,6 +39,6 @@ describe("dg-agent start in bundle mode", () => {
 		);
 		expect(spawned).toHaveLength(1);
 		const { command, args } = spawned[0];
-		expect([command, ...args]).toEqual([process.execPath, Bun.main, "dg-daemon", "serve"]);
+		expect([command, ...args]).toEqual([process.execPath, Bun.main, "daemon", "serve"]);
 	});
 });

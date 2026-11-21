@@ -22,7 +22,7 @@ const NOT_ATTACHED_TITLE = "Agent not attached";
 const NOT_DELIVERED_TEXT =
 	"The daemon did not confirm this message. Check that the agent is running.";
 const EMPTY_STATE_TEXT =
-	"Run dg-agent start --open to open this page for an agent.";
+	"Run dg agent start --open to open this page for an agent.";
 const ACK_TIMEOUT_MS = 5000;
 
 function bootstrapOf(letter: string): SessionBootstrap {

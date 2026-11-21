@@ -8,5 +8,5 @@ export function startNotice(
 ): string {
 	return extensionLinked
 		? `Paired ${agentIdentity} (${sessionId.slice(0, SESSION_ID_PREFIX)}) with the browser extension.`
-		: "No browser extension is connected. Install it with: dg-skills install";
+		: "No browser extension is connected. Install it with: dg install";
 }

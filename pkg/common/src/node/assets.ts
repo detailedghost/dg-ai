@@ -56,7 +56,7 @@ export function readAssetSourceFile(
 	}
 }
 
-/** Stages bytes in the dg-daemon asset store for one session and returns the asset id. */
+/** Stages bytes in the dg daemon asset store for one session and returns the asset id. */
 export async function postAsset(
 	session: { port: number; sessionId: string; token: string },
 	filename: string,
@@ -82,6 +82,6 @@ export async function postAsset(
 	if (!resp.ok) throw new DgCliError(await resp.text());
 	const result = (await resp.json()) as { assetId?: unknown } | null;
 	if (typeof result?.assetId !== "string")
-		throw new DgCliError("dg-daemon returned a malformed asset upload response");
+		throw new DgCliError("dg daemon returned a malformed asset upload response");
 	return result.assetId;
 }

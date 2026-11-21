@@ -19,7 +19,7 @@ function ensureDaemonDir(daemonDir: string): void {
 	const mode = statSync(daemonDir).mode & 0o777;
 	if (mode !== 0o700) {
 		console.warn(
-			`dg-daemon: daemon directory ${daemonDir} had mode ${mode.toString(8)} (expected 0700) — fixing; a permissive directory may have exposed the database or -wal sidecar`,
+			`dg daemon: daemon directory ${daemonDir} had mode ${mode.toString(8)} (expected 0700) — fixing; a permissive directory may have exposed the database or -wal sidecar`,
 		);
 		chmodSync(daemonDir, 0o700);
 	}

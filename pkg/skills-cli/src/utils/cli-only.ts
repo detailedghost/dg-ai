@@ -4,7 +4,6 @@ import { readDgToml, writeDgToml } from "@dg/common/node/dg-toml";
 import { migrateToTomlSync } from "@dg/common/node/dg-toml-migrate";
 import { assertEntryMoved } from "./layout-guard";
 import type { Command } from "commander";
-import { cliDest } from "./lib";
 
 export function isCliOnly(): boolean {
 	return readDgToml().install.cli_only;
@@ -17,10 +16,7 @@ export function setCliOnly(enabled: boolean): void {
 }
 
 export function extensionRequiredMessage(subject: string): string {
-	const toAdd = existsSync(cliDest("dg-agent"))
-		? "the extension and dg-daemon"
-		: "the extension, dg-daemon and dg-agent";
-	return `${subject} needs the dg-ai-extension, but this is a CLI-only install. Run "dg-skills install" to add ${toAdd}.`;
+	return `${subject} needs the dg-ai-extension, but this is a CLI-only install. Run "dg install" to add the extension.`;
 }
 
 export function assertExtensionInstalled(subject: string): void {
@@ -41,7 +37,7 @@ function topLevelName(command: Command): string {
 export function guardExtensionCommands(program: Command): void {
 	program.hook("preAction", (_program, action) => {
 		if (extRequested(action))
-			assertExtensionInstalled(`dg-skills ${topLevelName(action)}`);
+			assertExtensionInstalled(`dg ${topLevelName(action)}`);
 	});
 }
 

@@ -122,7 +122,7 @@ beforeAll(() => {
 
 afterAll(() => disposeSpecContext(context));
 
-describe("compiled dg-skills spec from a relocated plugin", () => {
+describe("compiled dg spec from a relocated plugin", () => {
 	test("scaffold writes plan, initial notes and roundtable shells byte-identical to the legacy output", async () => {
 		const before = utcDay();
 		const run = await compiled([

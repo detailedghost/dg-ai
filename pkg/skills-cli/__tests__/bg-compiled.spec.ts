@@ -68,7 +68,7 @@ function inOwnGroup(file: string) {
 	return { child, exited };
 }
 
-describe("compiled dg-skills bg detachment", () => {
+describe("compiled dg bg detachment", () => {
 	test("a job survives the death of the caller's whole process group", async () => {
 		const dir = world.dir();
 		const out = join(dir, "job.json");
@@ -186,7 +186,7 @@ describe("compiled dg-skills bg detachment", () => {
 	});
 });
 
-describe("compiled dg-skills bg prune", () => {
+describe("compiled dg bg prune", () => {
 	test("a prune of /repo removes its finished jobs and never touches /repo-other or live jobs", async () => {
 		const base = world.dir();
 		const repo = world.mkdir(join(base, "repo"));
@@ -233,7 +233,7 @@ describe("compiled dg-skills bg prune", () => {
 	});
 });
 
-describe("compiled dg-skills bg proxy jobs", () => {
+describe("compiled dg bg proxy jobs", () => {
 	const run = (args: string[]) =>
 		runProxyProcess([...binary, "bg", ...args], installation);
 	async function json(args: string[]) {
@@ -382,7 +382,7 @@ describe("compiled dg-skills bg proxy jobs", () => {
 	}, 20_000);
 });
 
-describe("compiled dg-skills bg from an external cwd", () => {
+describe("compiled dg bg from an external cwd", () => {
 	test("--help runs with only sh on PATH and starts nothing", async () => {
 		const result = await runProxyProcess(
 			[...binary, "bg", "--help"],

@@ -12,7 +12,7 @@ import {
 
 const SOURCE = readFileSync(join(import.meta.dir, "../pw-client.ts"), "utf8");
 const MAIL_URL = "https://mail.proton.me/u/0/inbox";
-const SIGN_IN_COMMAND = "dg-skills inbox proton sign-in";
+const SIGN_IN_COMMAND = "dg inbox proton sign-in";
 
 function seam(options: { url?: string; answer?: unknown } = {}) {
 	const evaluated: { fn: unknown; arg: unknown }[] = [];

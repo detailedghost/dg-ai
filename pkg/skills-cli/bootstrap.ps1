@@ -1,4 +1,4 @@
-# Install the dg runtime and bundle for Windows into %LOCALAPPDATA%\dg, then run `dg-skills install`.
+# Install the compiled dg program for Windows into %LOCALAPPDATA%\dg, then run `dg install`.
 #
 #   irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 #
@@ -8,22 +8,22 @@
 #
 # -CliOnly     skip the extension.
 # -AgentOnly   install for a non-Claude agent that only needs phone.
-# -SkillsOnly  copy the skill files, then the runtime and bundle; no extension and no `dg-skills install`.
+# -SkillsOnly  copy the skill files, then the dg program; no extension and no `dg install`.
 #              Add -NoCli for an offline copy of the skill files that downloads no release, and
 #              -Dest <dir> to choose where they go.
 # -ChatOnly     download only the chat skills for Claude chat: the checksum-verified
 #              dg-chat-skills-<x.y.z>.zip unpacked into .\dg-chat-skills (or -Dest <dir>), one upload-ready
-#              ZIP per skill. No runtime, no bundle, no launchers, no extension, and nothing it unpacks is run.
+#              ZIP per skill. No dg program, no extension, and nothing it unpacks is run.
 # -Codex       also copy the skills into $CODEX_HOME\skills.
 # -Version <x.y.z>  install that release instead of the newest. A leading v is accepted.
 #
 # Older scripts may still set DG_CLI_ONLY, DG_AGENT_ONLY, DG_SKILLS_ONLY, DG_SKILLS_NO_CLI, DG_SKILLS_DEST,
 # DG_INSTALL_CODEX or DG_VERSION; those keep working, and a switch always wins.
 #
-# Layout: runtime\bun-v<bun>, lib\<release>, runtime\current and lib\current junctions, and
-# bin\dg.cmd, bin\dg-skills.cmd, bin\dg-agent.cmd and bin\dg-daemon.cmd launchers (the dg, dg-skills,
-# dg-agent and dg-daemon launchers). Every download is verified
-# against SHA256SUMS or runtime.json before anything is installed. Re-running upgrades in place.
+# Layout: bin\<release>\dg.exe and a bin\current junction in the data dir, and bin\dg.exe as a hard link to
+# the release's dg.exe. The dg-windows-x64.exe style asset is verified against SHA256SUMS and must report
+# the release version before any link changes. Old dg-skills, dg-agent and dg-daemon launchers and dg.cmd are
+# removed. A 6.3 runtime\ and lib\ are left in place. Re-running upgrades in place.
 param(
 	[string]$Version,
 	[switch]$CliOnly,
@@ -49,12 +49,12 @@ $wantChatOnly = $ChatOnly.IsPresent
 function Copy-DgSkillTree {
 	param($Source, $Destination)
 	if (-not (Test-Path -LiteralPath $Source)) {
-		throw "dg-skills: no skills directory at $Source"
+		throw "dg: no skills directory at $Source"
 	}
 	$links = Get-ChildItem -LiteralPath $Source -Recurse -Force | Where-Object {
 		$_.Attributes -band [IO.FileAttributes]::ReparsePoint
 	}
-	if ($links) { throw "dg-skills: refusing to copy a symlink from $Source" }
+	if ($links) { throw "dg: refusing to copy a symlink from $Source" }
 	New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 	$retiredHashes = @{
 		"browser" = @("b969dfcd494d1232535baa69aaea096c45bdd4d7b05d08ba1934848f1725d03d", "d6a0bc0f0be59c15d66071106e9a3f80de76411a859376e70e9c45cecda431bc", "8dbdb20953aadcf2a0f9f6579ed228a7e884b2dd0ac044040ae08fbe606d1eb5", "cd5c05e9e74ceb784c358df6d94dc6d859fd5629abc0c440cdcad3914d3b7ee3", "dcfa9b73b33518527707f4d4cbf1dd6102b02656fb04f933cf4d7d134d6a15ee", "8000b280e0f6b100fed10da775e095ee64233a775753dfcd52af5a514e289384", "c4b44d927c2d44d8db1edb866a6c05cf93d35d9051e540b2cc1a1b6c2ddd7276", "e49882446a5b2fbb5dede1aa196d870377b0621eead0d3c00d8eefe89459bf84", "dda25c04098fc1b8d47287314bb9275f7e7c2d98c841c242ab25ac97d41323cc", "be8b6a3feb55e35abf4f827f36d2552ed977cee9a8cb2d44ba8e348c5c15079c", "ac752084481c4f2243a9957ef886185a758fc531aa7bfed47d3885c0f72ea712", "d4603c4b80e8c79c29abfe4705a6b8ddea19371db81b218f9feea451571c9829", "b0850898d8586b779f016d2cb1d07b79e9fee829e76aa199cba0c2070fa7e85f", "6cbaad37b810c89fb7c67f0a3eb251909ab0dceea67b3539d3d29992cc5f27c1", "2d984bc20bec7a2942d5c5a945447b1ab0bd8fac0db57414748c19054c3c8225", "68fe24a50f58c4519ab5531ca8958c9e1b260e7ab5a46c30e2844bd8a3d8fd3f", "cd7757c1c3d0d37f55937894924a373856ac298e4e967902b6b31f72c047ab49", "a8778e69801e97add7ab360f3bf2de713eaa198d120a13b573b83af866f5159e", "cae1f4cb6dc1542ac09648e92739ba3e85358cd4150ddcea9c02f37d09abf974", "5cc7d86cde958b20f160c5e7464f82b0a950dbdf6536bdfba486cae2208828d7", "3adf53ef20e804bc1c1097ac5ef2f477b206cccef07918b04026c6a7794a621d", "1a96b704aefa69f44264be622c937a0edabbe2929c25452ef724e5adaa170bd8", "0ead03f59800b9f61eda85ebe24c7ae24b9231d149d19f8ae4288e40e9cc3f36", "1661d1c79902c420156a040fc654a2a161c2a039f221fc394b071a5470747355", "8a6902729d3602d5dfef9f45b43b7cd90a4f3532cc169a7746629a92c66dac6f", "3397015189d9466b3709112e71d54644603da9ada241e96f5778ef42c5e22410", "ff38fc419e07fc60efbd24fdeca191c446a10de28de8fd2280bc00d04638f039", "b8f43b137d532362d02e66bd3ec994d7df0117dccac753e473f51d07f6912c23", "2a6a9bf6962b558cf0c418206ba8e942dc1cfa5e69e60d3ef30949238067c903", "4c76b530c8262cf18f34339b77b5abbd3ff5b9adcb7eba4e74944ca06e189689", "926fa3ec0b9a4df41092b7412fce783dd8d9b7b8adce16d40666c19dd466da4d", "d83397cd3e6d119e88b3d7076b1c70dae61dc2303d28f2c54551ef1018b1c189", "dbe38cc5affd5a9646aed5ec3b6cf7996a3a86b39d93f4509c8606873c1839cb", "2b4f458a849518d038d393ce4a95bfe110acad175ad49e4979b65b4369260278", "1f93ee9b3e672eeb85fb63076403db8dc818e010bfe40f0d12841237c2ce6886", "abba20a6b591f8e2782ba7bfc21cd89bac12509eb9ba662a2ead3df273bb5e3f", "87299ac43a0a7e83ccaff96f4a13a6d84771b9a69b058c239ba78230ade54847", "aecd7a52ae736542406fc2923bb1a7285e2f802aba89d3da4a484ba8ddc8128a")
@@ -87,14 +87,14 @@ function Copy-DgSkillTree {
 		New-Item -ItemType Directory -Force -Path $target | Out-Null
 		foreach ($file in Get-ChildItem -LiteralPath $skill.FullName -Recurse -File -Force) {
 			$rel = $file.FullName.Substring($skill.FullName.Length).TrimStart('\', '/')
-			if ($rel -match '(^|[\\/])\.\.([\\/]|$)') { throw "dg-skills: refusing $rel" }
+			if ($rel -match '(^|[\\/])\.\.([\\/]|$)') { throw "dg: refusing $rel" }
 			$out = Join-Path $target $rel
 			New-Item -ItemType Directory -Force -Path (Split-Path -Parent $out) | Out-Null
 			Copy-Item -LiteralPath $file.FullName -Destination $out -Force
 			$manifest += ($skill.Name + "/" + ($rel -replace '\\', '/'))
 		}
 	}
-	if (-not $found) { throw "dg-skills: $Source has no skill directories" }
+	if (-not $found) { throw "dg: $Source has no skill directories" }
 	$manifest | Sort-Object | ForEach-Object { Write-Host $_ }
 	Write-Host "Installed $($manifest.Count) skill files at $Destination."
 	Write-Host "Skills-only install: no skill content was executed."
@@ -133,8 +133,8 @@ function Resolve-DgRelease {
 		$script:rel = $candidates | Sort-Object { [version]$_.tag_name.Substring(1) } -Descending | Select-Object -First 1
 	}
 	if (-not $script:rel) {
-		if ($want) { throw "dg-skills: no release named $want found in the $scanned releases scanned" }
-		throw "dg-skills: no vX.Y.Z release found in the $scanned releases scanned"
+		if ($want) { throw "dg: no release named $want found in the $scanned releases scanned" }
+		throw "dg: no vX.Y.Z release found in the $scanned releases scanned"
 	}
 	return $script:rel
 }
@@ -143,7 +143,7 @@ function Expand-DgSourceArchive {
 	param([string]$Archive, [string]$Destination)
 	Expand-Archive -Path $Archive -DestinationPath $Destination -Force
 	$roots = @(Get-ChildItem -LiteralPath $Destination -Directory)
-	if ($roots.Count -ne 1) { throw "dg-skills: expected one directory in the source archive, found $($roots.Count)" }
+	if ($roots.Count -ne 1) { throw "dg: expected one directory in the source archive, found $($roots.Count)" }
 	return $roots[0].FullName
 }
 
@@ -166,17 +166,17 @@ function Get-DgSkillsSource {
 }
 
 if ($wantSkillsOnly -and $wantCliOnly) {
-	throw "dg-skills: pass only one of -SkillsOnly and -CliOnly"
+	throw "dg: pass only one of -SkillsOnly and -CliOnly"
 }
 if ($wantSkillsOnly -and $wantAgentOnly) {
-	throw "dg-skills: pass only one of -SkillsOnly and -AgentOnly"
+	throw "dg: pass only one of -SkillsOnly and -AgentOnly"
 }
 if ($wantCliOnly -and $wantAgentOnly) {
-	throw "dg-skills: pass only one of -CliOnly and -AgentOnly"
+	throw "dg: pass only one of -CliOnly and -AgentOnly"
 }
 if ($wantChatOnly) {
 	foreach ($other in @(@($wantCliOnly, "-CliOnly"), @($wantSkillsOnly, "-SkillsOnly"), @($wantAgentOnly, "-AgentOnly"), @($wantCodex, "-Codex"), @($wantNoCli, "-NoCli"))) {
-		if ($other[0]) { throw "dg-skills: -ChatOnly installs nothing but the chat skills; drop $($other[1])" }
+		if ($other[0]) { throw "dg: -ChatOnly installs nothing but the chat skills; drop $($other[1])" }
 	}
 }
 
@@ -198,7 +198,7 @@ if ($wantSkillsOnly) {
 		if ($script:skillsTmp) { Remove-Item -Recurse -Force $script:skillsTmp -ErrorAction SilentlyContinue }
 	}
 	if ($wantNoCli) {
-		Write-Host "Skipped the dg-skills CLI (-NoCli): offline copy only."
+		Write-Host "Skipped the dg CLI (-NoCli): offline copy only."
 		exit 0
 	}
 }
@@ -209,9 +209,9 @@ function Get-DgSha256([string]$Path) {
 
 function Assert-DgSha256 {
 	param([string]$Path, [string]$Name, [string]$Expected)
-	if (-not $Expected) { throw "dg-skills: no checksum for $Name" }
+	if (-not $Expected) { throw "dg: no checksum for $Name" }
 	if ((Get-DgSha256 $Path) -ne $Expected.ToLowerInvariant()) {
-		throw "dg-skills: checksum mismatch for $Name"
+		throw "dg: checksum mismatch for $Name"
 	}
 }
 
@@ -228,7 +228,7 @@ function Get-DgSumsEntry {
 function Save-DgAsset {
 	param($Release, [string]$Name, [string]$Destination)
 	$url = $Release.assets | Where-Object { $_.name -eq $Name } | Select-Object -ExpandProperty browser_download_url -First 1
-	if (-not $url) { throw "dg-skills: no $Name asset in $($Release.tag_name)" }
+	if (-not $url) { throw "dg: no $Name asset in $($Release.tag_name)" }
 	Invoke-WebRequest -Headers $headers -Uri $url -OutFile $Destination
 }
 
@@ -259,7 +259,7 @@ if ($wantChatOnly) {
 		$sumsPath = Join-Path $work "SHA256SUMS"
 		Save-DgAsset $rel "SHA256SUMS" $sumsPath
 		$expected = Get-DgSumsEntry $sumsPath $asset
-		if (-not $expected) { throw "dg-skills: SHA256SUMS in $tag has no entry for $asset" }
+		if (-not $expected) { throw "dg: SHA256SUMS in $tag has no entry for $asset" }
 		Write-Host "Downloading $asset..."
 		$zipPath = Join-Path $work $asset
 		Save-DgAsset $rel $asset $zipPath
@@ -267,9 +267,9 @@ if ($wantChatOnly) {
 		Add-Type -AssemblyName System.IO.Compression.FileSystem
 		$archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
 		try { $entries = @($archive.Entries | ForEach-Object { $_.FullName }) } finally { $archive.Dispose() }
-		if ($entries.Count -eq 0) { throw "dg-skills: $asset is empty" }
+		if ($entries.Count -eq 0) { throw "dg: $asset is empty" }
 		foreach ($entry in $entries) {
-			if ($entry -ne "UPLOAD.md" -and $entry -notmatch '^dg-[a-z0-9-]+\.zip$') { throw "dg-skills: refusing $entry in $asset" }
+			if ($entry -ne "UPLOAD.md" -and $entry -notmatch '^dg-[a-z0-9-]+\.zip$') { throw "dg: refusing $entry in $asset" }
 		}
 		New-Item -ItemType Directory -Force -Path $chatDest | Out-Null
 		Expand-Archive -Path $zipPath -DestinationPath $chatDest -Force
@@ -287,6 +287,31 @@ if ($wantChatOnly) {
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
 $platform = "windows-$arch"
 if ($platform -eq "windows-x64" -and -not (Test-DgAvx2)) { $platform = "windows-x64-baseline" }
+$asset = "dg-$platform.exe"
+
+function Test-DgLauncher {
+	param([string]$Path)
+	$item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+	if (-not $item) { return $true }
+	if ($item.LinkType) {
+		if (-not (Test-Path -LiteralPath $Path)) { return $true }
+		foreach ($target in @($item.Target)) {
+			if ($target -and ([string]$target).StartsWith($dgHome, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+		}
+		return $false
+	}
+	if ($item.PSIsContainer) { return $false }
+	try {
+		$head = @([System.IO.File]::ReadAllBytes($item.FullName) | Select-Object -First 4096)
+		if ($head.Count -eq 0 -or ($head -contains 0)) { return $false }
+		return [System.Text.Encoding]::UTF8.GetString([byte[]]$head).Contains('lib\current\dg.js')
+	} catch { return $false }
+}
+
+function Remove-DgFile {
+	param([string]$Path)
+	try { Remove-Item -LiteralPath $Path -Force } catch { Move-Item -LiteralPath $Path -Destination "$Path.$([guid]::NewGuid().ToString('N').Substring(0, 8)).old" }
+}
 
 $rel = Resolve-DgRelease
 $tag = $rel.tag_name
@@ -294,100 +319,81 @@ $releaseVersion = $tag.Substring(1)
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-bootstrap-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 $exitCode = 0
+$stage = $null
+$versionDir = Join-Path $dgHome "bin\$releaseVersion"
+$program = Join-Path $versionDir "dg.exe"
 
 try {
-	$sumsPath = Join-Path $work "SHA256SUMS"
-	$runtimePath = Join-Path $work "runtime.json"
-	Save-DgAsset $rel "SHA256SUMS" $sumsPath
-	Save-DgAsset $rel "runtime.json" $runtimePath
-	Assert-DgSha256 $runtimePath "runtime.json" (Get-DgSumsEntry $sumsPath "runtime.json")
+	if (-not (Test-Path -LiteralPath $program)) {
+		$sumsPath = Join-Path $work "SHA256SUMS"
+		Save-DgAsset $rel "SHA256SUMS" $sumsPath
+		$expected = Get-DgSumsEntry $sumsPath $asset
+		if (-not $expected) { throw "dg: SHA256SUMS in $tag has no entry for $asset" }
+		Write-Host "Downloading $asset..."
+		$downloaded = Join-Path $work $asset
+		Save-DgAsset $rel $asset $downloaded
+		Assert-DgSha256 $downloaded $asset $expected
 
-	$runtime = Get-Content -Raw $runtimePath | ConvertFrom-Json
-	$bunVersion = $runtime.version
-	$bunAsset = $runtime.assets.PSObject.Properties[$platform]
-	if (-not $bunVersion -or -not $bunAsset) { throw "dg-skills: runtime.json in $tag has no bun asset for $platform" }
-	$bunFile = $bunAsset.Value.file
-	$bunDir = Join-Path $dgHome "runtime\bun-v$bunVersion"
-	$libAsset = "dg-lib-$releaseVersion.tar.gz"
-	$libDir = Join-Path $dgHome "lib\$releaseVersion"
-
-	$bunZip = Join-Path $work $bunFile
-	$needBun = -not (Test-Path -LiteralPath (Join-Path $bunDir "bun.exe"))
-	if ($needBun) {
-		Write-Host "Downloading bun $bunVersion ($platform)..."
-		Invoke-WebRequest -Headers $headers -Uri "https://github.com/oven-sh/bun/releases/download/bun-v$bunVersion/$bunFile" -OutFile $bunZip
-		Assert-DgSha256 $bunZip $bunFile $bunAsset.Value.sha256
-	}
-
-	$libTar = Join-Path $work $libAsset
-	$needLib = -not (Test-Path -LiteralPath (Join-Path $libDir "dg.js"))
-	if ($needLib) {
-		Write-Host "Downloading $libAsset..."
-		$expectedLib = Get-DgSumsEntry $sumsPath $libAsset
-		if (-not $expectedLib) { throw "dg-skills: SHA256SUMS in $tag has no entry for $libAsset" }
-		Save-DgAsset $rel $libAsset $libTar
-		Assert-DgSha256 $libTar $libAsset $expectedLib
-	}
-
-	New-Item -ItemType Directory -Force -Path (Join-Path $dgHome "runtime"), (Join-Path $dgHome "lib"), $binDir | Out-Null
-
-	if ($needBun) {
-		$stage = Join-Path $work "bun-stage"
-		Expand-Archive -Path $bunZip -DestinationPath $stage -Force
-		$inner = Join-Path $stage ([System.IO.Path]::GetFileNameWithoutExtension($bunFile))
-		if (-not (Test-Path -LiteralPath (Join-Path $inner "bun.exe"))) { throw "dg-skills: $bunFile has no bun.exe" }
-		if (Test-Path -LiteralPath $bunDir) { Remove-Item -Recurse -Force $bunDir }
-		Copy-Item -Recurse -Path $inner -Destination $bunDir
-	}
-
-	if ($needLib) {
-		$stage = Join-Path $work "lib-stage"
+		New-Item -ItemType Directory -Force -Path (Join-Path $dgHome "bin"), $binDir | Out-Null
+		$stage = Join-Path $dgHome (Join-Path "bin" (".stage." + [guid]::NewGuid().ToString("N").Substring(0, 8)))
 		New-Item -ItemType Directory -Force -Path $stage | Out-Null
-		tar -xzf $libTar -C $stage
-		if ($LASTEXITCODE -ne 0) { throw "dg-skills: could not extract $libAsset" }
-		if (-not (Test-Path -LiteralPath (Join-Path $stage "dg.js"))) { throw "dg-skills: $libAsset has no dg.js" }
-		if (Test-Path -LiteralPath $libDir) { Remove-Item -Recurse -Force $libDir }
-		Copy-Item -Recurse -Path $stage -Destination $libDir
+		$staged = Join-Path $stage "dg.exe"
+		Copy-Item -LiteralPath $downloaded -Destination $staged
+		$reported = & $staged --version 2>$null | Select-Object -First 1
+		if ($LASTEXITCODE -ne 0) { throw "dg: the downloaded $asset did not run" }
+		$first = ("$reported".Trim() -split '\s+')[0]
+		if ($first -ne $releaseVersion) { throw "dg: $asset reports '$first', expected $releaseVersion" }
+		if (Test-Path -LiteralPath $versionDir) { Remove-Item -Recurse -Force $versionDir }
+		Move-Item -LiteralPath $stage -Destination $versionDir
+		$stage = $null
+	}
+	New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+
+	Set-DgJunction (Join-Path $dgHome "bin\current") $versionDir
+
+	$dgExe = Join-Path $binDir "dg.exe"
+	Get-ChildItem -LiteralPath $binDir -Filter ".dg.exe.*.old" -Force -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+	$dgRun = $dgExe
+	$owned = $true
+	if (Test-Path -LiteralPath $dgExe) {
+		$have = Get-DgSha256 $dgExe
+		$owned = $false
+		foreach ($known in Get-ChildItem -LiteralPath (Join-Path $dgHome "bin") -Directory -Force -ErrorAction SilentlyContinue) {
+			$candidate = Join-Path $known.FullName "dg.exe"
+			if ($known.Name -match '^\d+\.\d+\.\d+$' -and (Test-Path -LiteralPath $candidate -PathType Leaf) -and (Get-DgSha256 $candidate) -eq $have) { $owned = $true; break }
+		}
+	}
+	if (-not $owned) {
+		Write-Host "dg: kept $dgExe; it is not a dg launcher. Remove it or rename it, then run the bootstrap again"
+		$dgRun = Join-Path $dgHome "bin\current\dg.exe"
+	} else {
+		$aside = $null
+		if (Test-Path -LiteralPath $dgExe) {
+			$aside = Join-Path $binDir (".dg.exe." + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".old")
+			Rename-Item -LiteralPath $dgExe -NewName (Split-Path -Leaf $aside)
+		}
+		try {
+			New-Item -ItemType HardLink -Path $dgExe -Target $program | Out-Null
+		} catch {
+			if ($aside) { Rename-Item -LiteralPath $aside -NewName "dg.exe" }
+			throw
+		}
+		if ($aside) { Remove-Item -LiteralPath $aside -Force -ErrorAction SilentlyContinue }
 	}
 
-	Set-DgJunction (Join-Path $dgHome "runtime\current") $bunDir
-	Set-DgJunction (Join-Path $dgHome "lib\current") $libDir
+	$oldDgCmd = Join-Path $binDir "dg.cmd"
+	if ((Test-Path -LiteralPath $oldDgCmd) -and (Test-DgLauncher $oldDgCmd)) { Remove-DgFile $oldDgCmd }
 
-	foreach ($program in @("dg-skills", "dg-agent", "dg-daemon", "dg")) {
-		$cmd = Join-Path $binDir "$program.cmd"
-		if ($program -ne "dg") {
-			$old = Join-Path $binDir "$program.exe"
-			if (Test-Path -LiteralPath $old) {
-				try { Remove-Item -LiteralPath $old -Force } catch { Move-Item -LiteralPath $old -Destination "$old.old-$([guid]::NewGuid())" }
-			}
-			Remove-Item -LiteralPath (Join-Path $binDir ".$program.version") -Force -ErrorAction SilentlyContinue
+	foreach ($old in @("dg-skills", "dg-agent", "dg-daemon")) {
+		foreach ($ext in @(".cmd", ".exe")) {
+			$path = Join-Path $binDir "$old$ext"
+			if (-not (Test-Path -LiteralPath $path) -and -not (Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue)) { continue }
+			if (Test-DgLauncher $path) { Remove-DgFile $path }
+			else { Write-Host "dg: kept $path; it is not a dg launcher and dg no longer uses it" }
 		}
-		$dangling = $false
-		try { $final = [System.IO.FileInfo]::new($cmd).ResolveLinkTarget($true); $dangling = $null -ne $final -and -not $final.Exists } catch { $dangling = $false }
-		if ($program -eq "dg" -and -not $dangling -and (Test-Path -LiteralPath $cmd)) {
-			$item = Get-Item -LiteralPath $cmd -Force
-			$isLauncher = $false
-			if (-not $item.PSIsContainer) {
-				try {
-					$bytes = [System.IO.File]::ReadAllBytes($item.FullName)
-					$head = @($bytes | Select-Object -First 4096)
-					if ($head.Count -gt 0 -and ($head -notcontains 0)) {
-						$isLauncher = [System.Text.Encoding]::UTF8.GetString([byte[]]$head).Contains('lib\current\dg.js')
-					}
-				} catch { $isLauncher = $false }
-			}
-			if (-not $isLauncher) {
-				Write-Host "dg: kept $cmd; it is not a dg launcher. Remove it or rename it, then run dg-skills install again"
-				continue
-			}
-		}
-		if ([System.IO.FileInfo]::new($cmd).LinkTarget -or (Get-Item -LiteralPath $cmd -Force -ErrorAction SilentlyContinue).LinkType) {
-			if ((Get-Item -LiteralPath $cmd -Force).PSIsContainer) { [System.IO.Directory]::Delete($cmd) } else { [System.IO.File]::Delete($cmd) }
-		}
-		$shim = "@echo off`r`n`"$dgHome\runtime\current\bun.exe`" `"$dgHome\lib\current\dg.js`" $program %*`r`n"
-		[System.IO.File]::WriteAllText($cmd, $shim)
+		Remove-Item -LiteralPath (Join-Path $binDir ".$old.version") -Force -ErrorAction SilentlyContinue
 	}
-	Write-Host "dg runtime $bunVersion and bundle $releaseVersion installed at $dgHome"
+	Write-Host "dg $releaseVersion installed at $versionDir"
 
 	$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 	$pathParts = @($userPath -split ";" | Where-Object { $_ })
@@ -406,9 +412,10 @@ try {
 	if ($script:pinnedVersion) { $installArgs += @("--version", $script:pinnedVersion) }
 
 	$env:DG_SKILLS_BOOTSTRAP = "1"
-	& (Join-Path $binDir "dg-skills.cmd") @installArgs
+	& $dgRun @installArgs
 	$exitCode = $LASTEXITCODE
 } finally {
+	if ($stage) { Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue }
 	Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 }
 if ($exitCode -ne 0) { exit $exitCode }

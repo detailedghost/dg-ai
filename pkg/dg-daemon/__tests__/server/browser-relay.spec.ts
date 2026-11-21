@@ -210,7 +210,7 @@ function cliResults(ws: FakeSocket): Frame[] {
 }
 
 const NO_PEER = (sessionId: string) =>
-	`No extension peer on session ${sessionId}. Pair the dg-ai-extension with this session, then retry. Run dg-skills doctor pw for the steps.`;
+	`No extension peer on session ${sessionId}. Pair the dg-ai-extension with this session, then retry. Run dg doctor pw for the steps.`;
 const ALREADY_USED =
 	"pw --ext requestId was already used on this session; send a new one.";
 const TOO_MANY =
@@ -1355,7 +1355,7 @@ const INBOX_EXTENSION = "1.11.0";
 function noPeerHint(sessionId: string, required: readonly string[]): RegExp {
 	const lookaheads = [
 		`No extension peer on session ${sessionId}`,
-		"Start the session with dg-agent start\\.",
+		"Start the session with dg agent start\\.",
 		...required,
 	].map((part) => `(?=.*${part})`);
 	return new RegExp(`^(?!.*/start#_chat=)${lookaheads.join("")}.*$`, "s");

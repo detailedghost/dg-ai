@@ -118,7 +118,7 @@ async function putInStore(deps: KeyDeps, id: string, client: KeyClient, sk: Uint
 	const name = keyName(id);
 	const nsec = nip19.nsecEncode(sk);
 	try {
-		await client.set(name, nsec, { createdBy: "dg-agent phone" });
+		await client.set(name, nsec, { createdBy: "dg phone" });
 		await client.grant(GRANT_PREFIX);
 		if (!Buffer.from(await readStore(deps, id)).equals(Buffer.from(sk))) return false;
 		return markKeyInStore(deps.db, id, sk);

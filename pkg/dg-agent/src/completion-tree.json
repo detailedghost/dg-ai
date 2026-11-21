@@ -1,6 +1,6 @@
 {
-	"name": "dg-agent",
-	"description": "CLI an agent drives the dg-daemon with — chat, assets, and session lifecycle.",
+	"name": "dg agent",
+	"description": "CLI an agent drives the dg daemon with — chat, assets, and session lifecycle.",
 	"commands": [
 		{
 			"name": "overwatch",

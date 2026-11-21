@@ -27,7 +27,7 @@ export async function waitForFreshDaemon(
 		await wait(POLL_MS);
 	}
 	throw new DgCliError(
-		"dg-daemon did not become healthy within the startup timeout",
+		"dg daemon did not become healthy within the startup timeout",
 		EXIT_GENERAL_FAILURE,
 	);
 }

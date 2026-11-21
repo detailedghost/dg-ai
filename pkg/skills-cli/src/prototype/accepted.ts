@@ -266,7 +266,7 @@ function repairLine(target: AcceptTarget, url = "<url>"): string {
 		...(target.signIn ? ["--sign-in=<url>"] : []),
 		...(!target.stateName && !target.signIn ? ["--state=<name>"] : []),
 	];
-	return `run: dg-skills prototype fingerprint ${target.name} ${access.join(" ")}`;
+	return `run: dg prototype fingerprint ${target.name} ${access.join(" ")}`;
 }
 
 /** Build the claim hook that records an approve and tells stderr where the record went. */

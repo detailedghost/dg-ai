@@ -15,7 +15,7 @@ import { AGENT_TEMPLATE, fill, missingMarkerMessage, README_INTRO, renderHuman, 
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 const MAX_SLUG = 80;
 
-const USAGE = `usage: dg-skills adr <subcommand> [args]
+const USAGE = `usage: dg adr <subcommand> [args]
 
 Subcommands:
   init [--level <l>]      create docs/adr and .agents/decisions with their indexes
@@ -42,7 +42,7 @@ function parseFlags(args: string[], allowed: readonly string[], usage: string, r
 		}
 		const value = args[i + 1];
 		const repeated = flags.values.has(arg) && !repeatable.includes(arg);
-		if (!allowed.includes(arg) || value === undefined || value.startsWith("--") || repeated) die(`usage: dg-skills adr ${usage}`);
+		if (!allowed.includes(arg) || value === undefined || value.startsWith("--") || repeated) die(`usage: dg adr ${usage}`);
 		flags.values.set(arg, [...(flags.values.get(arg) ?? []), value]);
 		i++;
 	}
@@ -66,7 +66,7 @@ function writeIfAbsent(path: string, text: string): void {
 function initCommand(args: string[]): number {
 	const usage = "init [--level <l>]";
 	const flags = parseFlags(args, ["--level"], usage);
-	if (flags.positional.length > 0) die(`usage: dg-skills adr ${usage}`);
+	if (flags.positional.length > 0) die(`usage: dg adr ${usage}`);
 	const requested = levelFlag(flags);
 	const level = requested ?? DEFAULT_LEVEL;
 	const root = repoRoot();
@@ -127,13 +127,13 @@ function newCommand(args: string[]): number {
 	const rawTitle = flags.positional.join(" ");
 	const title = rawTitle.trim();
 	const [topic] = flags.values.get("--topic") ?? [];
-	if (topic === undefined || topic.trim() === "") die(`--topic is required. usage: dg-skills adr ${usage}`);
+	if (topic === undefined || topic.trim() === "") die(`--topic is required. usage: dg adr ${usage}`);
 	if (title === "") die("title is empty");
 	if (CONTROL_CHARS.test(rawTitle) || CONTROL_CHARS.test(topic)) die("title and topic must not contain control characters");
 	const slug = slugify(title).replaceAll("_", "-").slice(0, MAX_SLUG).replace(/-+$/, "");
 	if (slug === "") die("title has no letters or digits to build a file name from");
 	const level = levelFlag(flags);
-	if ((flags.values.get("--covers") ?? []).some((pattern) => pattern.trim() === "")) die(`--covers must not be blank. usage: dg-skills adr ${usage}`);
+	if ((flags.values.get("--covers") ?? []).some((pattern) => pattern.trim() === "")) die(`--covers must not be blank. usage: dg adr ${usage}`);
 	const key = `${nextNumber(root)}-${slug}`;
 	const covers = flags.values.get("--covers") ?? [];
 	const values: Record<string, string> = { title, date: localDate(), topic: topic.trim(), number: key.slice(0, 4), covers: JSON.stringify(covers), link: `../../${ADR_DIR}/${key}.md` };
@@ -147,7 +147,7 @@ function newCommand(args: string[]): number {
 function indexCommand(args: string[]): number {
 	const root = repoRoot();
 	requireInitialized(root);
-	if (args.length > 0) die("usage: dg-skills adr index");
+	if (args.length > 0) die("usage: dg adr index");
 	writeIndexes(root);
 	return 0;
 }

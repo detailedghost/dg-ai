@@ -7,7 +7,7 @@ export function relevantCommand(args: string[]): number {
 	const usage = "relevant <files...> [--json]";
 	const { json, rest } = splitJson(args, usage);
 	const files = rest.filter((file) => file.trim() !== "");
-	if (files.length === 0) die(`usage: dg-skills adr ${usage}`);
+	if (files.length === 0) die(`usage: dg adr ${usage}`);
 	const root = repoRoot();
 	requireInitialized(root);
 	const hits = matchCovers(loadRecords(root), files, root).map(hitOf);

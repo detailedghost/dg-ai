@@ -85,11 +85,11 @@ describe("relocated compiled catchup", () => {
 		bundle = makeTempDir("dg compiled catchup ");
 		stage = join(bundle, "temporary build stage");
 		home = join(bundle, "relocated installed home");
-		binary = join(home, ".local/bin/dg-skills");
+		binary = join(home, ".local/bin/dg");
 		skills = join(home, "plugins/dg/skills");
 		installedSkill = join(skills, "catchup/SKILL.md");
 		mkdirSync(stage, { recursive: true });
-		installBundleShim(binary);
+		installBundleShim(binary, "dg");
 		const sourceSkill = join(
 			import.meta.dir,
 			"../../../plugins/dg/skills/catchup",

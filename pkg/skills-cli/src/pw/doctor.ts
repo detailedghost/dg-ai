@@ -53,7 +53,7 @@ export function createBrowserCheck(
 				return ok(`browser: chromium ${downloaded.version} (downloaded)`);
 			return warn(
 				"browser: none found, pw cannot open a page",
-				"dg-skills pw install-browser",
+				"dg pw install-browser",
 			);
 		},
 	};

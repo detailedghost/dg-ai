@@ -202,7 +202,7 @@ export function renderReap(report: ReapReport): string {
 	for (const loop of report.stuckLoops) {
 		const how =
 			loop.action === "reported"
-				? `reported; stop it with: dg-skills stat reap --pid ${loop.pid}`
+				? `reported; stop it with: dg stat reap --pid ${loop.pid}`
 				: loop.action.replace("-", " ");
 		lines.push(
 			`stuck loop ${loop.pid} (${loop.session} session, ${formatAge(loop.ageSec)}) waits on ${loop.patterns.map((p) => JSON.stringify(p)).join(", ")}: ${how}`,
@@ -210,7 +210,7 @@ export function renderReap(report: ReapReport): string {
 	}
 	for (const d of report.liveDevDaemons)
 		lines.push(
-			`dev daemon ${d.pid} (${formatAge(d.ageSec)}) from live worktree ${d.script}: not stopped; stop it with: dg-skills stat reap --pid ${d.pid}`,
+			`dev daemon ${d.pid} (${formatAge(d.ageSec)}) from live worktree ${d.script}: not stopped; stop it with: dg stat reap --pid ${d.pid}`,
 		);
 	for (const p of report.longPipes)
 		lines.push(`long pipe ${p.pid} (${formatAge(p.ageSec)}, parent ${p.ppid}): ${p.command}`);

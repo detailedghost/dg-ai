@@ -91,7 +91,7 @@ async function currentKey(deps: PhoneDeps) {
 
 function assertStorageRoom(deps: PhoneDeps, incomingBytes: number): void {
 	if (receiveStorageFull(deps.paths.phoneRoot, incomingBytes)) {
-		throw new DgCliError("receive storage is full (200 MiB across files/ and vault/); remove vault items with dg-agent phone vault rm and try again");
+		throw new DgCliError("receive storage is full (200 MiB across files/ and vault/); remove vault items with dg phone vault rm and try again");
 	}
 }
 

@@ -105,7 +105,7 @@ export function daemonLayoutHooks({
 		"daemon.stop": async (legacyDaemonDir) => {
 			if (platform === "win32") {
 				process.stderr.write(
-					`dg: kept ${legacyDaemonDir}; stop the dg-daemon service, then run dg-skills install again\n`,
+					`dg: kept ${legacyDaemonDir}; stop the dg service, then run dg install again\n`,
 				);
 				return "refused";
 			}

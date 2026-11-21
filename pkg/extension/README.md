@@ -20,7 +20,7 @@ bun run zip:firefox  # build + package for Firefox
 
 ## Loading in Chrome
 
-1. Run `bun run build` (or `dg-skills install --local`)
+1. Run `bun run build` (or `dg install --local`)
 1. Open `chrome://extensions` → Enable Developer Mode
 1. Load Unpacked → select `.output/chrome-mv3/`
 
@@ -40,7 +40,7 @@ remains blocked until setup has handed off to the tutorial.
 
 ## Live-page prototypes
 
-The `/dg:proto --ext` skill mode and `dg-skills proto --ext` commands use the extension to sample
+The `/dg:proto --ext` skill mode and `dg proto --ext` commands use the extension to sample
 a bounded set of page styles, render sanitized HTML/CSS variations in an
 isolated shadow root, collect an explicit approve/reject verdict, and optionally
 save a visible-tab preview. Style guides, verdicts, and previews use the local

@@ -26,7 +26,7 @@ import {
 
 const providers = ["protonmail", "gmail", "outlook"] as const;
 
-describe("dg-skills inbox", () => {
+describe("dg inbox", () => {
 	test("recommend filters --help lists that command's flags", async () => {
 		const h = inboxCliHarness();
 		try {
@@ -153,7 +153,7 @@ describe("dg-skills inbox", () => {
 			expect(result.code).not.toBe(0);
 			expect(result.stderr).toMatch(/daemon|session/i);
 			expect(result.stderr).toMatch(
-				/dg-agent start|dg-skills install|start a.+session/i,
+				/dg agent start|dg install|start a.+session/i,
 			);
 		} finally {
 			h.cleanup();
@@ -161,7 +161,7 @@ describe("dg-skills inbox", () => {
 	});
 });
 
-describe("dg-skills inbox daemon integration", () => {
+describe("dg inbox daemon integration", () => {
 	test("saves helpful Gmail and Outlook settings and lists profiles as model-readable JSON", async () => {
 		const h = inboxCliHarness();
 		const daemon = await bootServe();
@@ -332,7 +332,7 @@ describe("dg-skills inbox daemon integration", () => {
 	}, 20_000);
 });
 
-describe("dg-skills inbox daemon response boundary", () => {
+describe("dg inbox daemon response boundary", () => {
 	test("a missing extension names the session, the start command, reload step, and version", async () => {
 		const h = inboxCliHarness();
 		const server = inboxDaemonFixture(h, (request, reply) => {
@@ -343,7 +343,7 @@ describe("dg-skills inbox daemon response boundary", () => {
 				requestId: request.requestId,
 				ok: false,
 				error:
-					`No extension peer on session ${request.sessionId}. Start the session with dg-agent start. If no extension is connected, install it with dg-skills install. ` +
+					`No extension peer on session ${request.sessionId}. Start the session with dg agent start. If no extension is connected, install it with dg install. ` +
 					"Then open or reload an authenticated Proton Mail tab and retry. " +
 					"Inbox requires dg extension 1.11.0 or newer.",
 			});
@@ -359,8 +359,8 @@ describe("dg-skills inbox daemon response boundary", () => {
 				`No extension peer on session ${server.sessionId}`,
 			);
 			expect(result.stderr).toContain(server.sessionId);
-			expect(result.stderr).toContain("dg-agent start");
-			expect(result.stderr).toContain("dg-skills install");
+			expect(result.stderr).toContain("dg agent start");
+			expect(result.stderr).toContain("dg install");
 			expect(result.stderr).not.toContain("/start");
 			expect(result.stderr).not.toContain("#_chat=");
 			expect(result.stderr).not.toContain(server.token);
@@ -425,7 +425,7 @@ describe("dg-skills inbox daemon response boundary", () => {
 			expect(server.requests).toHaveLength(1);
 			expect(result.timedOut).toBe(false);
 			expect(result.code).not.toBe(0);
-			expect(result.stderr).toMatch(/dg-skills install/);
+			expect(result.stderr).toMatch(/dg install/);
 			expect(result.stderr).toMatch(/restart|stop.+daemon/i);
 			for (const secret of [
 				server.token,
@@ -547,7 +547,7 @@ describe("dg-skills inbox daemon response boundary", () => {
 	);
 });
 
-describe("compiled dg-skills inbox", () => {
+describe("compiled dg inbox", () => {
 	test("runs real help and all three fixture workflows from an unrelated cwd with no Bun on PATH", async () => {
 		const build = inboxCliHarness();
 		const command = relocatedBundleCommand(build.cwd, "dg-skills");
@@ -613,7 +613,7 @@ describe("compiled dg-skills inbox", () => {
 	}, 30_000);
 });
 
-test("dg-skills inbox profile flags store exact helpful Outlook configuration while redacting only public output", async () => {
+test("dg inbox profile flags store exact helpful Outlook configuration while redacting only public output", async () => {
 	const h = inboxCliHarness();
 	const daemon = await bootServe();
 	let client: CliClient | undefined;
@@ -714,7 +714,7 @@ test("dg-skills inbox profile flags store exact helpful Outlook configuration wh
 }, 15_000);
 
 test.each([...providers])(
-	"dg-skills inbox %s redacts provider folder addresses in ambiguity errors while keeping actionable IDs",
+	"dg inbox %s redacts provider folder addresses in ambiguity errors while keeping actionable IDs",
 	async (provider) => {
 		const h = inboxCliHarness();
 		const privateAddresses = ["private@example.test", "another@example.test"];

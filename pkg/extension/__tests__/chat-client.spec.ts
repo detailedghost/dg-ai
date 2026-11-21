@@ -399,7 +399,7 @@ test("a synchronous openSocket throw during a scheduled reconnect attempt still 
 	}
 });
 
-test("rediscovers the daemon over CHAT_DEFAULT_PORT's fallback range via GET /healthz, matching instanceId over a decoy dg-daemon, once the cached port goes stale", async () => {
+test("rediscovers the daemon over CHAT_DEFAULT_PORT's fallback range via GET /healthz, matching instanceId over a decoy dg daemon, once the cached port goes stale", async () => {
 	const sockets: FakeSocket[] = [];
 	const scheduled: Array<() => void> = [];
 	const realSetTimeout = globalThis.setTimeout;

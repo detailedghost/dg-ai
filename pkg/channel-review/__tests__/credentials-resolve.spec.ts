@@ -151,26 +151,26 @@ describe("resolveSecrets", () => {
 			source: createFakeCredentialSource(
 				{ "channel-review/relay/dev": { value: STORE_RELAY } },
 				new DgCliError(
-					"no credential grant for channel-review; run dg-skills credentials grant channel-review",
+					"no credential grant for channel-review; run dg credentials grant channel-review",
 				),
 			),
 		});
 		expect(resolved.env.CHANNEL_REVIEW_RELAY_SECRET_DEV).toBe(ENV_RELAY);
 		expect(resolved.secrets.relay.source).toBe("env");
-		expect(resolved.warning).toContain("dg-agent start");
+		expect(resolved.warning).toContain("dg agent start");
 		expect(resolved.warning).toContain(
-			"dg-skills credentials grant channel-review",
+			"dg credentials grant channel-review",
 		);
 		expect(resolved.warning).not.toContain(ENV_RELAY);
 	});
 
-	test("warns and falls back to env when dg-daemon is not running", async () => {
+	test("warns and falls back to env when dg daemon is not running", async () => {
 		const resolved = await resolveSecrets({
 			envName: "dev",
 			env: { SENTRY_AUTH_TOKEN: "env-sentry" },
 			source: createFakeCredentialSource({}, new DaemonNotRunningError()),
 		});
-		expect(resolved.warning).toContain("dg-daemon is not running");
+		expect(resolved.warning).toContain("dg daemon is not running");
 		expect(resolved.secrets.sentry.source).toBe("env");
 	});
 });
@@ -212,7 +212,7 @@ describe("daemon credential wiring", () => {
 			.map((line) => line.message);
 		expect(
 			warnings.some((line) =>
-				line.includes("dg-skills credentials grant channel-review"),
+				line.includes("dg credentials grant channel-review"),
 			),
 		).toBe(true);
 	});

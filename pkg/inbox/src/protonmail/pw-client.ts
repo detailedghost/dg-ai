@@ -11,7 +11,7 @@ import { sanitizeInboxBrowserResponse } from "./page-operations";
 import { isProtonMailOrigin, type ProtonSessionHeaders } from "./page-session";
 import { buildProtonPageScript } from "./page-script.macro" with { type: "macro" };
 
-export const PROTON_SIGN_IN_COMMAND = "dg-skills inbox proton sign-in";
+export const PROTON_SIGN_IN_COMMAND = "dg inbox proton sign-in";
 export const PROTON_MAIL_URL = "https://mail.proton.me";
 export const PROTON_SESSION_NAME = "inbox-proton";
 

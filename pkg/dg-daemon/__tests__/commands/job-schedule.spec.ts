@@ -91,7 +91,7 @@ describe("job start of a scheduled job", () => {
 		expect(result.stderr).toContain('job "x" already runs');
 	});
 
-	it("exits 1 with no live dg-daemon when no daemon answers", async () => {
+	it("exits 1 with no live dg daemon when no daemon answers", async () => {
 		const { dgHome } = await seedHome({
 			jobsVersion: 2,
 			jobs: { x: tableEntry(workDir(), ["printf", ""]) },
@@ -100,7 +100,7 @@ describe("job start of a scheduled job", () => {
 		const result = await runCli(dgHome, ["job", "start", "x"]);
 
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain("no live dg-daemon");
+		expect(result.stderr).toContain("no live dg daemon");
 	});
 });
 

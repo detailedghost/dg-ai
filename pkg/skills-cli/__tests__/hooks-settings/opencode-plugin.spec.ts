@@ -18,7 +18,7 @@ beforeEach(() => {
 	world = settingsWorld();
 	world.seed(world.paths.opencodeJson, {});
 	launcher = world.seed(
-		join(world.dgHome, "bin", "dg-skills"),
+		join(world.dgHome, "bin", "dg"),
 		`#!/bin/sh
 d="$(dirname "$0")"
 echo "$3" >> "$d/ids.log"

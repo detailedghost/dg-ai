@@ -37,12 +37,12 @@ describe("BrowserMissingError", () => {
 		const lines = new BrowserMissingError(tried).message.split("\n");
 		expect(lines).toContain("  Chrome: /opt/google/chrome/chrome");
 		expect(lines).toContain("  brave-browser on PATH");
-		expect(lines.at(-1)).toContain("dg-skills pw install-browser");
+		expect(lines.at(-1)).toContain("dg pw install-browser");
 	});
 
 	test("names the install-browser command and exits 3", () => {
 		const error = new BrowserMissingError();
-		expect(error.message).toContain("dg-skills pw install-browser (downloads about 150 MB)");
+		expect(error.message).toContain("dg pw install-browser (downloads about 150 MB)");
 		expect(error.exitCode).toBe(3);
 		expect(error).toBeInstanceOf(Error);
 	});

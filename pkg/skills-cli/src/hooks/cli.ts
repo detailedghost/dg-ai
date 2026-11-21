@@ -371,6 +371,10 @@ export async function main(
 ): Promise<number> {
 	const [command, ...rest] = argv;
 	if (command === "run") return runCommand(rest, io);
+	if (command === "--help" || command === "-h") {
+		io.seams.stdout(USAGE);
+		return 0;
+	}
 	if (!command || !COMMANDS.includes(command)) {
 		io.seams.stderr(USAGE);
 		return 2;

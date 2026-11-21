@@ -50,7 +50,7 @@ describe("daemon boot with an autostart service", () => {
 			const text = readDaemonLog(dgHome);
 			return text.includes("service bot started") ? text : undefined;
 		});
-		const listening = log.indexOf("dg-daemon listening on");
+		const listening = log.indexOf("dg daemon listening on");
 		expect(listening).toBeGreaterThanOrEqual(0);
 		expect(listening).toBeLessThan(log.indexOf("service bot started"));
 	}, 20_000);

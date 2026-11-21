@@ -100,7 +100,7 @@ describe("job enable", () => {
 		const out = lines(result.stdout);
 		expect(out[0]).toBe('enabled job "x"');
 		expect(out[1]).toMatch(RUNNING_LINE);
-		expect(result.stdout).not.toContain("dg-daemon started on");
+		expect(result.stdout).not.toContain("dg daemon started on");
 		expect(existsSync(pathsOf(dgHome).pidPath)).toBe(true);
 	});
 
@@ -284,7 +284,7 @@ describe("job enable", () => {
 
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(
-			"this dg-daemon is older than the CLI — run dg daemon restart",
+			"this dg daemon is older than the CLI — run dg daemon restart",
 		);
 	});
 

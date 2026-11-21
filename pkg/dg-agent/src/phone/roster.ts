@@ -49,7 +49,7 @@ export const ROSTER_DEBOUNCE_MAX_S = 30;
 export const ROSTER_FANOUT = 16;
 export const ROSTER_PUSH_SETTING = "roster_push";
 
-/** Kinds a dg-agent that predates rosters already understood. A roster kind must not be one of them. */
+/** Kinds a dg agent that predates rosters already understood. A roster kind must not be one of them. */
 export const LEGACY_CHAT_KINDS = [14, 15] as const;
 export const LEGACY_CONTROL_KINDS = [FILE_REQUEST_KIND, RECEIPT_KIND, PRESENCE_KIND] as const;
 

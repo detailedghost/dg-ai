@@ -158,7 +158,7 @@ export async function stopOtherDaemon(paths: DgPaths, seams: SingleInstanceSeams
 	const warn = seams.warn ?? ((line: string) => console.error(line));
 	const who = `the daemon of ${record.home ?? record.stateDir} (pid ${record.pid}, port ${record.port})`;
 	if (kind) {
-		warn(`dg-daemon: ${who} runs under a ${kind} login unit, so it is left running and two daemons run`);
+		warn(`dg daemon: ${who} runs under a ${kind} login unit, so it is left running and two daemons run`);
 		return;
 	}
 	let failure = "";
@@ -168,10 +168,10 @@ export async function stopOtherDaemon(paths: DgPaths, seams: SingleInstanceSeams
 		failure = `: ${err instanceof Error ? err.message : String(err)}`;
 	}
 	if (await isLive(record)) {
-		warn(`dg-daemon: could not stop ${who}${failure}`);
+		warn(`dg daemon: could not stop ${who}${failure}`);
 		return;
 	}
-	warn(`dg-daemon: stopped ${who} so only one runs`);
+	warn(`dg daemon: stopped ${who} so only one runs`);
 }
 
 /** Stops another home's daemon and records this one, under one lock so concurrent starts take turns. */

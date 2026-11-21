@@ -34,7 +34,7 @@ beforeAll(() => {
 
 afterAll(() => world.cleanup());
 
-describe("compiled dg-skills sniff from an external cwd", () => {
+describe("compiled dg sniff from an external cwd", () => {
 	test("inventories a secret-bearing tree with nothing on PATH and leaks no value", async () => {
 		const root = world.repo(secretBearingTree());
 		const run = await world.sniff([root], cwd, emptyPath);

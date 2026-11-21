@@ -258,7 +258,7 @@ describe("job list and status against an old daemon", () => {
 
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(
-			"this dg-daemon is older than the CLI — run dg daemon restart",
+			"this dg daemon is older than the CLI — run dg daemon restart",
 		);
 	});
 });

@@ -187,11 +187,11 @@ async function startServiceViaHttp(
 	expect(resp.status).toBe(200);
 }
 
-const STOPPED = /^dg-daemon stopped \(pid (\d+)\)\n$/;
+const STOPPED = /^dg daemon stopped \(pid (\d+)\)\n$/;
 const STARTED =
-	/^dg-daemon started on 127\.0\.0\.1:(\d+) \(pid (\d+), version \S+\)\n$/;
+	/^dg daemon started on 127\.0\.0\.1:(\d+) \(pid (\d+), version \S+\)\n$/;
 
-describe("dg-daemon stop", () => {
+describe("dg daemon stop", () => {
 	it("stops a real daemon: pid gone, pid file gone, healthz silent", async () => {
 		const { dgHome, port } = homeWithPort();
 		await dg(dgHome, port, ["start"]);
@@ -201,7 +201,7 @@ describe("dg-daemon stop", () => {
 
 		expect(result.code).toBe(0);
 		expect(result.stdout).toMatch(STOPPED);
-		expect(result.stdout).toBe(`dg-daemon stopped (pid ${pid})\n`);
+		expect(result.stdout).toBe(`dg daemon stopped (pid ${pid})\n`);
 		expect(pidAlive(pid)).toBe(false);
 		expect(
 			existsSync(resolveDgPaths({ env: { DG_HOME: dgHome } }).pidPath),
@@ -215,7 +215,7 @@ describe("dg-daemon stop", () => {
 		const result = await dg(dgHome, port, ["stop"]);
 
 		expect(result.code).toBe(0);
-		expect(result.stdout).toBe("dg-daemon: no live daemon\n");
+		expect(result.stdout).toBe("dg daemon: no live daemon\n");
 	});
 
 	it("removes the pid file of a dead daemon and says so", async () => {
@@ -230,7 +230,7 @@ describe("dg-daemon stop", () => {
 
 		expect(result.code).toBe(0);
 		expect(result.stdout).toBe(
-			"dg-daemon: no live daemon (stale pid file removed)\n",
+			"dg daemon: no live daemon (stale pid file removed)\n",
 		);
 		expect(existsSync(paths.pidPath)).toBe(false);
 	});
@@ -258,7 +258,7 @@ describe("dg-daemon stop", () => {
 
 		expect(result.code).toBe(0);
 		expect(result.stdout).toBe(
-			`dg-daemon stopped (pid ${daemonPid}, forced)\n`,
+			`dg daemon stopped (pid ${daemonPid}, forced)\n`,
 		);
 		expect(Date.now() - startedAt).toBeLessThan(5000);
 		await until(() => !pidAlive(daemonPid) && !pidAlive(servicePid), 1000);
@@ -298,7 +298,7 @@ describe("dg-daemon stop", () => {
 	});
 });
 
-describe("dg-daemon stop seams", () => {
+describe("dg daemon stop seams", () => {
 	function seamHome() {
 		const dgHome = freshDgHome();
 		cleanups.push(() => cleanupDgHome(dgHome));
@@ -396,7 +396,7 @@ describe("dg-daemon stop seams", () => {
 		);
 
 		expect(table.signals()).toEqual([{ pid: 424242, signal: "SIGTERM" }]);
-		expect(lines()).toEqual([`dg-daemon stopped (pid ${fake.daemon.pid})`]);
+		expect(lines()).toEqual([`dg daemon stopped (pid ${fake.daemon.pid})`]);
 	});
 
 	it("exits 1 with no SIGKILL and keeps the pid file when the daemon ignores SIGTERM", async () => {
@@ -436,10 +436,10 @@ describe("dg-daemon stop seams", () => {
 		expect(failure).toBeInstanceOf(DgCliError);
 		expect((failure as DgCliError).exitCode).toBe(1);
 		expect((failure as DgCliError).message).toContain(
-			`dg-daemon (pid ${child.pid}) did not stop within`,
+			`dg daemon (pid ${child.pid}) did not stop within`,
 		);
 		expect((failure as DgCliError).message).toContain(
-			"run dg-daemon stop --force",
+			"run dg daemon stop --force",
 		);
 		expect(recorded).toEqual(["SIGTERM"]);
 		expect(pidAlive(child.pid)).toBe(true);
@@ -473,7 +473,7 @@ describe("dg-daemon stop seams", () => {
 			new Set(["GET /healthz", "GET /jobs", "GET /services"]),
 		);
 		expect(existsSync(paths.pidPath)).toBe(false);
-		expect(lines()).toEqual([`dg-daemon stopped (pid 424242, forced)`]);
+		expect(lines()).toEqual([`dg daemon stopped (pid 424242, forced)`]);
 	});
 
 	function silentPidFile(paths: DgPaths, pid: number): void {
@@ -499,14 +499,14 @@ describe("dg-daemon stop seams", () => {
 		expect(failure).toBeInstanceOf(DgCliError);
 		expect((failure as DgCliError).exitCode).toBe(1);
 		expect((failure as DgCliError).message).toContain(
-			"dg-daemon (pid 424242) does not answer",
+			"dg daemon (pid 424242) does not answer",
 		);
-		expect((failure as DgCliError).message).toContain("dg-daemon stop --force");
+		expect((failure as DgCliError).message).toContain("dg daemon stop --force");
 		expect(table.signals()).toEqual([]);
 		expect(existsSync(paths.pidPath)).toBe(true);
 	});
 
-	it("kills a silent daemon with --force when it is identified as our dg-daemon, and warns that a service can run", async () => {
+	it("kills a silent daemon with --force when it is identified as our dg daemon, and warns that a service can run", async () => {
 		const { paths } = seamHome();
 		const table = fakeProcessTable([424242]);
 		silentPidFile(paths, 424242);
@@ -556,7 +556,7 @@ describe("dg-daemon stop seams", () => {
 			expect(failure).toBeInstanceOf(DgCliError);
 			expect((failure as DgCliError).exitCode).toBe(1);
 			expect((failure as DgCliError).message).toContain(
-				"cannot confirm it is dg-daemon",
+				"cannot confirm it is dg daemon",
 			);
 			expect(table.signals()).toEqual([]);
 			expect(existsSync(paths.pidPath)).toBe(true);
@@ -672,7 +672,7 @@ describe("dg-daemon stop seams", () => {
 			})),
 		]);
 		expect(table.signals()).toEqual([]);
-		expect(lines()).toEqual(["dg-daemon stopped (pid 424242, forced)"]);
+		expect(lines()).toEqual(["dg daemon stopped (pid 424242, forced)"]);
 	});
 
 	it("accepts a /services answer with no instanceId from a daemon before this change", async () => {
@@ -695,7 +695,7 @@ describe("dg-daemon stop seams", () => {
 		expect(new Set(table.calls.map((call) => Math.abs(call.pid)))).toEqual(
 			new Set([424242, 424243]),
 		);
-		expect(lines()).toEqual(["dg-daemon stopped (pid 424242, forced)"]);
+		expect(lines()).toEqual(["dg daemon stopped (pid 424242, forced)"]);
 	});
 
 	it.each([0])(
@@ -768,7 +768,7 @@ describe("dg-daemon stop seams", () => {
 		);
 
 		expect(table.calls).toEqual([]);
-		expect(lines()).toEqual(["dg-daemon: no live daemon"]);
+		expect(lines()).toEqual(["dg daemon: no live daemon"]);
 	});
 
 	it("starts nothing and rejects with exit code 1 when the stop of a restart fails", async () => {
@@ -803,14 +803,14 @@ describe("dg-daemon stop seams", () => {
 
 		expect(failure).toBeInstanceOf(DgCliError);
 		expect((failure as DgCliError).exitCode).toBe(1);
-		expect(lines().some((line) => line.startsWith("dg-daemon started"))).toBe(
+		expect(lines().some((line) => line.startsWith("dg daemon started"))).toBe(
 			false,
 		);
 		expect(readPidFile(dgHome).pid).toBe(child.pid);
 	});
 });
 
-describe("dg-daemon restart", () => {
+describe("dg daemon restart", () => {
 	it("replaces a live daemon: two lines, a new pid, one daemon process", async () => {
 		const { dgHome, port } = homeWithPort();
 		await dg(dgHome, port, ["start"]);
@@ -838,7 +838,7 @@ describe("dg-daemon restart", () => {
 
 		expect(result.code).toBe(0);
 		const [first, second] = result.stdout.trimEnd().split("\n");
-		expect(first).toBe("dg-daemon: no live daemon");
+		expect(first).toBe("dg daemon: no live daemon");
 		expect(`${second}\n`).toMatch(STARTED);
 		await waitForHealth(port);
 	});

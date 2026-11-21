@@ -171,7 +171,7 @@ async function isDown(listening: number): Promise<boolean> {
 	return false;
 }
 
-describe("compiled dg-skills prototype, local mode, from an outside folder", () => {
+describe("compiled dg prototype, local mode, from an outside folder", () => {
 	test("logic route: confirm, status, wait, reject, and the legacy timeout status", async () => {
 		expect((await compiled(["prototype", "status", "logic"])).stdout).toBe(
 			"pending\n",
@@ -396,7 +396,7 @@ describe("compiled dg-skills prototype, local mode, from an outside folder", () 
 	});
 });
 
-describe("compiled dg-skills proto --ext, plan handoff through a fake daemon", () => {
+describe("compiled dg proto --ext, plan handoff through a fake daemon", () => {
 	test("plants the plan through the daemon relay and exports the approved answer", async () => {
 		const slug = "example-test-account-a1b2c3d4";
 		const url = "https://example.test/account";

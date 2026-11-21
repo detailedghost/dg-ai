@@ -1,7 +1,7 @@
 import { readlinkSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 
-export type CurrentKind = "lib" | "runtime";
+export type CurrentKind = "bin" | "lib" | "runtime";
 
 const currentLink = (root: string, kind: CurrentKind): string => join(root, kind, "current");
 

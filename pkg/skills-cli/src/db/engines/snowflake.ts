@@ -202,7 +202,7 @@ export async function sfDescribe(
 		if (value !== undefined) rowEstimate = Number(value);
 	} catch (err) {
 		process.stderr.write(
-			`dg-skills db: could not estimate the row count for ${tableName} via SHOW TABLES LIKE (${(err as Error).message})\n`,
+			`dg db: could not estimate the row count for ${tableName} via SHOW TABLES LIKE (${(err as Error).message})\n`,
 		);
 		rowEstimate = undefined;
 	}

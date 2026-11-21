@@ -592,7 +592,7 @@ describe("acceptanceHook", () => {
 			expect(reason).toContain("the page redirected to /login");
 			expect(stderr.text()).toContain(`prototype: fingerprint skipped: ${reason}\n`);
 			expect(stderr.text()).toContain(
-				"run: dg-skills prototype fingerprint demo --url=http://127.0.0.1:4321/dashboard --state=velora\n",
+				"run: dg prototype fingerprint demo --url=http://127.0.0.1:4321/dashboard --state=velora\n",
 			);
 		} finally {
 			stderr.restore();
@@ -607,7 +607,7 @@ describe("acceptanceHook", () => {
 				{ open: redirectedToSignIn },
 			)(claim);
 			expect(stderr.text()).toContain(
-				"run: dg-skills prototype fingerprint demo --url=http://127.0.0.1:4321/dashboard --sign-in=<url>\n",
+				"run: dg prototype fingerprint demo --url=http://127.0.0.1:4321/dashboard --sign-in=<url>\n",
 			);
 		} finally {
 			stderr.restore();

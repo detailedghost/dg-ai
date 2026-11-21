@@ -24,17 +24,17 @@ an approved answer is preserved under `.agents/prototype/<slug>/`.
 
 ## Inbox cleanup
 
-The installed `dg-skills inbox` command supports Proton Mail through the
+The installed `dg inbox` command supports Proton Mail through the
 extension and Gmail/Outlook through OAuth. Configure encrypted database profiles
 with `inbox profile set`, then use `--account-profile NAME` for workflows.
 `--session ID` selects a daemon session; explicit `--data-path` fixture commands
 work without a daemon. Paging uses lazy async generators and bounded batch writes.
 
 ```sh
-dg-skills inbox --help
-dg-skills inbox profile --help
-dg-skills inbox load folders --account-profile personal --session SESSION_ID
-dg-skills inbox probe --folder Inbox --limit 3000 --account-profile personal
+dg inbox --help
+dg inbox profile --help
+dg inbox load folders --account-profile personal --session SESSION_ID
+dg inbox probe --folder Inbox --limit 3000 --account-profile personal
 ```
 
 Review decisions and run `apply --dry-run` before `apply --confirm`. Read
@@ -43,20 +43,20 @@ Review decisions and run `apply --dry-run` before `apply --confirm`. Read
 
 ## SMS
 
-`dg-skills ssms <provider> <verb>` reads Google Messages for Web and Signal.
+`dg ssms <provider> <verb>` reads Google Messages for Web and Signal.
 `google` uses the CDP browser harness. `signal` wraps `signal-cli` in daemon
 JSON-RPC mode and does not touch Signal Desktop. Sends are `draft`, then
 `send --draft ID` after an interactive yes or `--approve`. `--yes` does not send. See [SMS providers](../../docs/ssms.md).
 
 ```sh
-dg-skills ssms --help
-dg-skills ssms google status
-dg-skills ssms signal link
+dg ssms --help
+dg ssms google status
+dg ssms signal link
 ```
 
 ## Thrash
 
-`dg-skills thrash` runs the steps of a `/dg:thrash` review. See the
+`dg thrash` runs the steps of a `/dg:thrash` review. See the
 [thrash pipeline](../../docs/DEVELOPER.md#thrash-review-pipeline) for the stage order.
 
 - `diff` fetches a diff, plans the review chunks, and writes the plan.
@@ -68,17 +68,17 @@ dg-skills ssms signal link
 
 ## Channel review
 
-The installed `dg-skills channel-review` command runs local thrash reviews for
+The installed `dg channel-review` command runs local thrash reviews for
 Teams requests through a Teams bot relay. Install thrash separately for each runner. Claude
 is the supported default; Codex and Copilot runners are experimental.
 
 ```sh
-dg-skills channel-review status --env dev
-dg-skills channel-review start --env dev
-dg-skills channel-review stop --env dev
-dg-skills channel-review run --env dev
-dg-skills channel-review env dev
-dg-skills channel-review emojis show
+dg channel-review status --env dev
+dg channel-review start --env dev
+dg channel-review stop --env dev
+dg channel-review run --env dev
+dg channel-review env dev
+dg channel-review emojis show
 ```
 
 `start` runs in the background; `run` stays in the foreground. `status` prints
@@ -93,7 +93,7 @@ prerequisites, flags, request tokens, and the exact error catalog.
 
 ## Background jobs
 
-`dg-skills bg` identifies a job by its Linux `/proc` start time.
+`dg bg` identifies a job by its Linux `/proc` start time.
 On other platforms it fails closed: `status` reports the job as `unknown`, and
 `cancel` returns `no-pid` without signaling any process.
 
@@ -129,7 +129,7 @@ manually rather than authored as actions.
 `install --skills-only` copies `plugins/dg/skills` into `--dest` (default
 `$DG_SKILLS_DEST`, else `$DG_HOME/skills` or `~/.dg/skills`). Each immediate
 child directory that contains `SKILL.md` is included, references and all. The
-copy is data: the command does not fetch `dg-skills`, `dg-daemon`, `dg-agent`,
+copy is data: the command does not fetch the `dg` program
 or the extension, and it does not execute skill content. From the repo root,
 `mise run install:skills` is the same command. `bootstrap.sh --skills-only`
 and `bootstrap.ps1 -SkillsOnly` do that copy on a machine without Bun.
@@ -137,9 +137,8 @@ and `bootstrap.ps1 -SkillsOnly` do that copy on a machine without Bun.
 ## Shell completion
 
 `completion <bash|zsh|fish>` prints the completion script.
-`completion --install` writes the files for `dg-skills`, `dg-agent` and
-`dg-daemon`; every bundle install does this too. `completion --uninstall`
-removes them. The scripts call `dg-skills __complete <words>`, a hidden fast
+`completion --install` writes the files for `dg`; every bundle install does this too. `completion --uninstall`
+removes them. The scripts call `dg __complete <words>`, a hidden fast
 path that reads `src/completion/tree.json` and loads no command module. After
 you add or change a command, a subcommand or a flag, regenerate the trees of
 all three programs:
@@ -163,7 +162,7 @@ Each `vX.Y.Z` release in
 platform-independent `dg-lib-X.Y.Z.tar.gz` and a `runtime.json` that pins the
 Bun runtime for each platform. `SHA256SUMS` (GNU `sha256sum` lines,
 `<hash>  <filename>`) lists both. `bootstrap.sh`, `bootstrap.ps1` and
-`dg-skills install` verify them before they change anything.
+`dg install` verify them before they change anything.
 
 ## Development commands
 

@@ -389,7 +389,7 @@ describe("PW_EXT_RELAY table", () => {
 					timeoutMs: 1,
 				}),
 		).toBe(
-			"No extension peer on session s-1. Pair the dg-ai-extension with this session, then retry. Run dg-skills doctor pw for the steps.",
+			"No extension peer on session s-1. Pair the dg-ai-extension with this session, then retry. Run dg doctor pw for the steps.",
 		);
 	});
 

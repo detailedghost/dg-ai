@@ -74,9 +74,9 @@ const BOARD_JSON = JSON.stringify({
 
 const HELD_BOOTSTRAPS_KEY = "dg_local_bootstraps";
 const EMPTY_STATE_TEXT =
-	"Run dg-agent start --open to open this page for an agent.";
+	"Run dg agent start --open to open this page for an agent.";
 const SESSION_ENDED_TEXT =
-	"Your session has ended, so run dg-agent start --open again to get a new link.";
+	"Your session has ended, so run dg agent start --open again to get a new link.";
 
 const LANE_BOARD_JSON = JSON.stringify({
 	lanes: [

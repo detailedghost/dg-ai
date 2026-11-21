@@ -55,7 +55,7 @@ function signalDaemon(
 	} catch (err) {
 		if ((err as NodeJS.ErrnoException).code === "ESRCH") return;
 		throw new DgCliError(
-			`could not send ${signal} to dg-daemon (pid ${pid}): ${describeError(err)}`,
+			`could not send ${signal} to dg daemon (pid ${pid}): ${describeError(err)}`,
 			EXIT_GENERAL_FAILURE,
 		);
 	}
@@ -163,7 +163,7 @@ async function forceStop(
 	);
 	if (!gone) {
 		throw new DgCliError(
-			`dg-daemon (pid ${handle.pid}) or a service did not exit after the kill${
+			`dg daemon (pid ${handle.pid}) or a service did not exit after the kill${
 				listFailure === undefined
 					? ""
 					: `; could not list the services (${listFailure}); a service process can still run`
@@ -178,7 +178,7 @@ async function forceStop(
 			EXIT_GENERAL_FAILURE,
 		);
 	}
-	console.log(`dg-daemon stopped (pid ${handle.pid}, forced)`);
+	console.log(`dg daemon stopped (pid ${handle.pid}, forced)`);
 }
 
 async function regularStop(
@@ -191,12 +191,12 @@ async function regularStop(
 	signalDaemon(kill, handle.pid, "SIGTERM");
 	if (!(await waitUntilGone([handle.pid], waitMs, kill))) {
 		throw new DgCliError(
-			`dg-daemon (pid ${handle.pid}) did not stop within ${Math.round(waitMs / 1000)} s — run dg-daemon stop --force`,
+			`dg daemon (pid ${handle.pid}) did not stop within ${Math.round(waitMs / 1000)} s — run dg daemon stop --force`,
 			EXIT_GENERAL_FAILURE,
 		);
 	}
 	removeOwnPidFile(paths, handle);
-	console.log(`dg-daemon stopped (pid ${handle.pid})`);
+	console.log(`dg daemon stopped (pid ${handle.pid})`);
 }
 
 async function stopSilentDaemon(
@@ -207,7 +207,7 @@ async function stopSilentDaemon(
 ): Promise<void> {
 	if (!options.force) {
 		throw new DgCliError(
-			`dg-daemon (pid ${handle.pid}) does not answer — run dg-daemon stop --force`,
+			`dg daemon (pid ${handle.pid}) does not answer — run dg daemon stop --force`,
 			EXIT_GENERAL_FAILURE,
 		);
 	}
@@ -215,7 +215,7 @@ async function stopSilentDaemon(
 		seams.identify ?? ((pid: number) => isOurDaemon(pid, paths.pidPath));
 	if (identify(handle.pid) !== "ours") {
 		throw new DgCliError(
-			`pid ${handle.pid} does not answer and this CLI cannot confirm it is dg-daemon; nothing was killed`,
+			`pid ${handle.pid} does not answer and this CLI cannot confirm it is dg daemon; nothing was killed`,
 			EXIT_GENERAL_FAILURE,
 		);
 	}

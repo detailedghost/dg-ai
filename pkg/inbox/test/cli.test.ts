@@ -98,7 +98,7 @@ describe("CLI help", () => {
 			config: false,
 		});
 		expect(help.code, help.stderr).toBe(0);
-		expect(help.stdout).toContain("dg-skills inbox recommend filters");
+		expect(help.stdout).toContain("dg inbox recommend filters");
 		expect(help.stdout).toContain("--sample-limit");
 		expect(help.stdout).toContain("--write-archive-decisions");
 		expect(help.stdout).toContain("--account-profile");

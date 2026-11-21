@@ -1,6 +1,6 @@
 /**
  * bootstrap.sh --chat-only: downloads only the checksum-verified chat skills bundle and unpacks it
- * into one folder. No runtime, bundle, launchers or extension, and nothing it unpacks is run.
+ * into one folder. No dg program or extension, and nothing it unpacks is run.
  */
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -49,12 +49,12 @@ describe("bootstrap.sh --chat-only", () => {
 		expect(run.stdout).toContain("Upload a skill");
 		expect(run.stdout).toContain("nothing else was installed and nothing was run");
 
-		expect(run.bunZipRequests).toEqual([]);
+		expect(run.assetRequests).toEqual([]);
 		expect(run.requests.some((url) => url.includes("dg-lib-"))).toBe(false);
 		expect(run.requests.some((url) => url.endsWith("runtime.json"))).toBe(false);
 		expect(run.installCall).toBeUndefined();
 		expect(present(run.root)).toBe(false);
-		expect(present(join(run.home, ".local", "bin", "dg-skills"))).toBe(false);
+		expect(present(join(run.home, ".local", "bin", "dg"))).toBe(false);
 	});
 
 	test("--dest chooses the folder, in both spellings", async () => {

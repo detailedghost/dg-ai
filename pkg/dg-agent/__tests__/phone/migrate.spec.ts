@@ -170,7 +170,7 @@ describe("legacyRootPresent", () => {
 });
 
 describe("runDaemonJobCli", () => {
-	it("runs dg-daemon through the recorded bundle entry and forwards the job arguments", async () => {
+	it("runs dg daemon through the recorded bundle entry and forwards the job arguments", async () => {
 		setProgramName("dg-agent");
 		try {
 			const seen: string[][] = [];
@@ -180,7 +180,7 @@ describe("runDaemonJobCli", () => {
 			});
 			expect(ran).toEqual({ code: 0, stdout: "listed", stderr: "" });
 			expect(seen).toEqual([
-				[process.execPath, Bun.main, "dg-daemon", "job", "list"],
+				[process.execPath, Bun.main, "daemon", "job", "list"],
 			]);
 		} finally {
 			setProgramName(undefined);
@@ -1343,7 +1343,7 @@ describe("disableLegacyDaemonJobs", () => {
 
 	it("ignores a thrown error from the job cli", async () => {
 		const jobCli: JobCli = async () => {
-			throw new Error("dg-daemon not found");
+			throw new Error("dg daemon not found");
 		};
 
 		await expect(disableLegacyDaemonJobs(["default"], jobCli)).resolves.toEqual(
@@ -1586,7 +1586,7 @@ describe("phoneRun: unconverted phone-friend lines", () => {
 			expect(failure).toBeInstanceOf(DgCliError);
 			expect((failure as DgCliError).exitCode).toBe(1);
 			expect((failure as DgCliError).message).toBe(
-				"dg: phone-friend lines wait for conversion; run dg-agent phone status",
+				"dg: phone-friend lines wait for conversion; run dg phone status",
 			);
 			expect(existsSync(PhoneDb.path(paths))).toBe(false);
 			expect(existsSync(migrationLockPath(paths))).toBe(false);

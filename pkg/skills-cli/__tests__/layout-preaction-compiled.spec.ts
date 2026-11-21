@@ -61,10 +61,10 @@ function lines(stderr: string): string[] {
 
 posix("commands that skip the layout move", () => {
 	it.each([
-		["dg-skills hooks run", "dg-skills", ["hooks", "run", "nothing"]],
+		["dg hooks run", "dg-skills", ["hooks", "run", "nothing"]],
 		["dg-skills --help", "dg-skills", ["--help"]],
 		["dg-skills --version", "dg-skills", ["--version"]],
-		["dg-daemon status", "dg-daemon", ["status"]],
+		["dg daemon status", "dg-daemon", ["status"]],
 	] as const)("%s leaves the legacy tree byte-identical and creates no per-OS root", async (_label, program, args) => {
 		const { home, paths, legacy } = await legacyHome();
 		const before = treeOf(legacy);
@@ -75,17 +75,17 @@ posix("commands that skip the layout move", () => {
 		expect(rootsExist(paths)).toEqual([]);
 	});
 
-	it("dg-daemon status exits 1 with the has-not-moved text for daemon", async () => {
+	it("dg daemon status exits 1 with the has-not-moved text for daemon", async () => {
 		const { home, paths, legacy } = await legacyHome();
 
 		const status = await runProgram(home, "dg-daemon", ["status"]);
 
 		expect(status.code).toBe(1);
-		expect(status.stderr).toContain(`dg: ${join(legacy, "daemon")} has not moved to ${paths.daemonDir}; run dg-skills install`);
+		expect(status.stderr).toContain(`dg: ${join(legacy, "daemon")} has not moved to ${paths.daemonDir}; run dg install`);
 		expect(existsSync(paths.dbPath)).toBe(false);
 	});
 
-	it("dg-skills hooks run opens no guarded store", () => {
+	it("dg hooks run opens no guarded store", () => {
 		const sources = readdirSync(SKILLS_SRC, { recursive: true, encoding: "utf8" })
 			.filter((name) => name.endsWith(".ts"))
 			.map((name) => readFileSync(join(SKILLS_SRC, name), "utf8"));
@@ -96,7 +96,7 @@ posix("commands that skip the layout move", () => {
 });
 
 posix("commands that run the layout move", () => {
-	it("dg-skills spec slugify leaves runtime and lib where the legacy launchers read them, without a line", async () => {
+	it("dg spec slugify leaves runtime and lib where the legacy launchers read them, without a line", async () => {
 		const { home, paths, legacy } = await legacyHome();
 		for (const name of ["runtime", "lib"]) {
 			mkdirSync(join(legacy, name, "1.0.0"), { recursive: true });
@@ -113,7 +113,7 @@ posix("commands that run the layout move", () => {
 		expect(lines(run.stderr)).toEqual([]);
 	});
 
-	it("dg-skills spec slugify moves daemon, memory, grants and config and leaves phone and ssms silent", async () => {
+	it("dg spec slugify moves daemon, memory, grants and config and leaves phone and ssms silent", async () => {
 		const { home, paths, legacy } = await legacyHome();
 		mkdirSync(join(legacy, "ssms"), { recursive: true });
 		writeFileSync(join(legacy, "ssms", "config.yaml"), "allow_send: true\n");
@@ -131,7 +131,7 @@ posix("commands that run the layout move", () => {
 		expect(run.stderr).not.toContain(join(legacy, "ssms"));
 	});
 
-	it("dg-daemon serve moves daemon before daemon.db opens and keeps the fixture crypto_meta row", async () => {
+	it("dg daemon serve moves daemon before daemon.db opens and keeps the fixture crypto_meta row", async () => {
 		const { home, paths, legacy } = await legacyHome();
 		const legacyDb = new Database(join(legacy, "daemon", "daemon.db"), { readonly: true });
 		const legacyKey = (legacyDb.query("SELECT key_id FROM crypto_meta WHERE id = 1").get() as { key_id: string }).key_id;
@@ -150,18 +150,18 @@ posix("commands that run the layout move", () => {
 });
 
 posix("a live legacy daemon", () => {
-	it("dg-daemon job list reports the kept text for daemon through the memoized paths, not the has-not-moved text", async () => {
+	it("dg job list reports the kept text for daemon through the memoized paths, not the has-not-moved text", async () => {
 		const { home, paths, legacy } = await legacyHome({ fakeLiveDaemon: true });
 
 		const jobs = await runProgram(home, "dg-daemon", ["job", "list"]);
 
 		expect(jobs.code).not.toBe(0);
-		expect(jobs.stderr).toContain(`dg: kept ${join(legacy, "daemon")}; a process that writes it is running. Stop it, then run dg-skills install again`);
+		expect(jobs.stderr).toContain(`dg: kept ${join(legacy, "daemon")}; a process that writes it is running. Stop it, then run dg install again`);
 		expect(jobs.stderr).not.toContain("has not moved");
 		expect(existsSync(paths.dbPath)).toBe(false);
 	});
 
-	it("dg-agent memory search moves memory and blocks daemon with one stderr line, then dg-daemon serve moves daemon and stops nothing", async () => {
+	it("dg memory search moves memory and blocks daemon with one stderr line, then dg daemon serve moves daemon and stops nothing", async () => {
 		const { home, rows, paths, legacy } = await legacyHome({ fakeLiveDaemon: true });
 		const sleeper = (JSON.parse(readFileSync(join(legacy, "daemon", "daemon.pid"), "utf8")) as { pid: number }).pid;
 
@@ -181,7 +181,7 @@ posix("a live legacy daemon", () => {
 	});
 });
 
-describe("dg-skills hooksFor", () => {
+describe("dg hooksFor", () => {
 	it("install composes daemon.stop and ssms.configDir, and spec composes neither", async () => {
 		const hooksFor = await loadHooksFor();
 		const install = hooksFor("install");
@@ -260,7 +260,7 @@ describe("dg-skills hooksFor", () => {
 		expect(existsSync(join(legacy, "config.yaml"))).toBe(false);
 	});
 
-	it("the compiled dg-skills package resolves @dg/dg-daemon/layout-hooks", () => {
+	it("the compiled dg package resolves @dg/dg-daemon/layout-hooks", () => {
 		expect(() => Bun.resolveSync("@dg/dg-daemon/layout-hooks", SKILLS_SRC)).not.toThrow();
 	});
 });

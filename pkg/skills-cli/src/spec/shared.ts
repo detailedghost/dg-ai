@@ -5,9 +5,9 @@ import { writeFileAtomic } from "@dg/common/node";
 
 export { records } from "../utils/frontmatter";
 
-export const PROGRAM = "dg-skills spec";
+export const PROGRAM = "dg spec";
 
-/** A failure the dispatcher reports as `dg-skills spec: <message>` with its own exit status. */
+/** A failure the dispatcher reports as `dg spec: <message>` with its own exit status. */
 export class SpecError extends Error {
 	constructor(
 		message: string,

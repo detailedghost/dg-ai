@@ -18,7 +18,7 @@ function scoreOf(record: AdrRecord, words: string[]): number {
 export function findCommand(args: string[]): number {
 	const { json, rest } = splitJson(args, "find <words...> [--json]");
 	const words = rest.map((word) => word.toLowerCase()).filter((word) => word !== "");
-	if (words.length === 0) die("usage: dg-skills adr find <words...> [--json]");
+	if (words.length === 0) die("usage: dg adr find <words...> [--json]");
 	const root = repoRoot();
 	requireInitialized(root);
 	const hits: Array<Hit & { score: number }> = loadRecords(root)

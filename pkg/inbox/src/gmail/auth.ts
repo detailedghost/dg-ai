@@ -149,7 +149,7 @@ export class EnvironmentGoogleTokenProvider implements GoogleTokenProvider {
 		}
 		if (!store) {
 			throw new Error(
-				"Gmail browser login requires dg-ai encrypted profile storage. Start the daemon and use dg-skills inbox with a configured profile.",
+				"Gmail browser login requires dg-ai encrypted profile storage. Start the daemon and use dg inbox with a configured profile.",
 			);
 		}
 		const state = oauthState();

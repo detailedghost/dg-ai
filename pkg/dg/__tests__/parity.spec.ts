@@ -2,7 +2,7 @@ import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { buildBundle } from "../../skills-cli/__tests__/bundle-build";
+import { buildBundle, groupWords } from "../../skills-cli/__tests__/bundle-build";
 
 setDefaultTimeout(180_000);
 
@@ -37,7 +37,7 @@ afterAll(() => {
 
 function bundleArgv(program: string, args: string[]): string[] {
 	const { bun, entry } = buildBundle();
-	return [bun, entry, program, ...args];
+	return [bun, entry, ...groupWords(program), ...args];
 }
 
 function invoke(

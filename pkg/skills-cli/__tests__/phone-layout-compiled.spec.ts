@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, setDefaultTimeout } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { bundleCommand } from "./bundle-build";
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { compiledProgramPath } from "@dg/common/node/program";
+import { installBundleShim } from "./bundle-build";
 import {
 	fixtureHome,
 	legacyHomeFixture,
@@ -71,8 +72,8 @@ function sourceFiles(root: string): string[] {
 		.map((name) => join(root, name));
 }
 
-posix("dg-agent phone verbs and the legacy phone folder", () => {
-	it("leaves phone in place with no stderr line under dg-skills spec slugify, then dg-agent phone status moves it", async () => {
+posix("dg phone verbs and the legacy phone folder", () => {
+	it("leaves phone in place with no stderr line under dg spec slugify, then dg phone status moves it", async () => {
 		const { home } = await legacyHome();
 		const paths = perOsPaths(home);
 
@@ -121,7 +122,7 @@ posix("dg-agent phone verbs and the legacy phone folder", () => {
 		const run = await runProgram(home, "dg-agent", ["phone", "listen"]);
 
 		expect(run.code).toBe(1);
-		const text = `dg: ${join(paths.legacyHome, "phone")} has not moved to ${paths.phoneRoot}; run dg-skills install`;
+		const text = `dg: ${join(paths.legacyHome, "phone")} has not moved to ${paths.phoneRoot}; run dg install`;
 		expect(stderrLines(run.stderr).filter((line) => line.includes(text))).toHaveLength(1);
 		expect(existsSync(join(paths.phoneRoot, "phone.db"))).toBe(false);
 	});
@@ -135,7 +136,7 @@ posix("dg-agent phone verbs and the legacy phone folder", () => {
 		const run = await runProgram(home, "dg-agent", ["phone", "listen"]);
 
 		expect(run.code).toBe(1);
-		expect(run.stderr).toContain("dg: phone-friend lines wait for conversion; run dg-agent phone status");
+		expect(run.stderr).toContain("dg: phone-friend lines wait for conversion; run dg phone status");
 		expect(existsSync(join(paths.phoneRoot, "phone.db"))).toBe(false);
 	});
 
@@ -155,20 +156,14 @@ posix("dg-agent phone verbs and the legacy phone folder", () => {
 });
 
 describe.skipIf(process.platform !== "linux")("legacy phone folder with a live listener through the compiled programs", () => {
-	it("stops the live legacy listener, moves phone, and restarts the listener for dg-agent phone status", async () => {
+	it("stops the live legacy listener, moves phone, and restarts the listener for dg phone status", async () => {
 		const home = fixtureHome();
 		homes.push(home);
 		const rows = await legacyHomeFixture(home, { fakeLiveListener: true });
 		const paths = perOsPaths(home);
 		const legacyPidFile = join(paths.legacyHome, "phone", "listener.pid");
 		const newPidFile = join(paths.phoneRoot, "listener.pid");
-		const [bun, entry] = bundleCommand("dg-agent");
-		const runtimeBun = join(paths.dataDir, "runtime", "current", "bun");
-		const libCurrent = join(paths.dataDir, "lib", "current");
-		mkdirSync(dirname(runtimeBun), { recursive: true });
-		mkdirSync(dirname(libCurrent), { recursive: true });
-		symlinkSync(bun, runtimeBun);
-		symlinkSync(dirname(entry), libCurrent);
+		installBundleShim(compiledProgramPath(paths.dataDir), "dg");
 		const legacyPid = (JSON.parse(readFileSync(legacyPidFile, "utf8")) as { pid: number }).pid;
 
 		const status = await runProgram(home, "dg-agent", ["phone", "status"]);

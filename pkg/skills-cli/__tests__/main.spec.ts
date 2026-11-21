@@ -45,7 +45,7 @@ afterEach(() => {
 	process.exitCode = realExitCode ?? 0;
 });
 
-describe("dg-skills main", () => {
+describe("dg main", () => {
 	it("returns 0 for exactly --version without calling process.exit", async () => {
 		const written: string[] = [];
 		const realWrite = process.stdout.write;
@@ -83,7 +83,7 @@ describe("dg-skills main", () => {
 	});
 });
 
-describe("dg-skills main through feature modules that used to exit", () => {
+describe("dg main through feature modules that used to exit", () => {
 	const realLog = console.log;
 	const realStdoutWrite = process.stdout.write;
 	const realStderrWrite = process.stderr.write;

@@ -45,7 +45,7 @@ export type MigrationResult =
 			 * was listening. A failed replacement throws: one `phone listen` is started against the
 			 * kept `phone.db` and the message says so only when that process stays up. */
 			listener: "adopted" | "replaced" | "none";
-			/** Resolves once every `dg-daemon job disable` attempt has settled; the one-time stderr
+			/** Resolves once every `dg job disable` attempt has settled; the one-time stderr
 			 * summary is written when this resolves. Production callers ignore it; tests await it. */
 			jobsDisabled: Promise<string[]>;
 	  };
@@ -325,7 +325,7 @@ function writeMigratedLines(
 	return { numberKeyId, contacts: db.listContacts().length, messages: messageCount };
 }
 
-/** Tries `dg-daemon job disable phone-friend:<line>` for each line, through the daemon's own CLI
+/** Tries `dg job disable phone-friend:<line>` for each line, through the daemon's own CLI
  * against its database file, so no live daemon process is required. Every failure (missing
  * binary, no such job, a locked database) is swallowed; the result lists only what disabling
  * actually confirmed. */
@@ -626,7 +626,7 @@ export function readOnlyLegacyView(paths: DgPaths, alive: (pid: number) => boole
 	};
 }
 
-/** `dg-daemon job …` on this runtime and bundle. Slice 5 uses this to disable each
+/** `dg job …` on this runtime and bundle. Slice 5 uses this to disable each
  * migrated line's old voicemail job. */
 export function runDaemonJobCli(args: string[], run: typeof runArgv = runArgv): Promise<JobCliResult> {
 	return run(programCommand("dg-daemon", args));

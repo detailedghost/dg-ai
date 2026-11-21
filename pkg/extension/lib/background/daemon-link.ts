@@ -92,7 +92,7 @@ const NOT_DRIVING = "This session drives no agent tab.";
 const LINK_RETRY_PERIOD_MINUTES = 0.5;
 const DAEMON_ID_KEY = "daemon:id";
 const DAEMON_UNREACHABLE =
-	"Daemon unreachable. Start it with dg-agent start, then retry.";
+	"Daemon unreachable. Start it with dg agent start, then retry.";
 
 export type ChatBrowserApi = PagesBrowserApi & {
 	runtime: {
@@ -356,18 +356,18 @@ export function registerDaemonLink(
 		entry: { site: string; name: string; value: string; meta: Record<string, unknown> },
 	): Promise<string> {
 		const socket = currentSocket;
-		if (!socket) return Promise.reject(new Error("dg-daemon is not connected; nothing was saved."));
+		if (!socket) return Promise.reject(new Error("dg daemon is not connected; nothing was saved."));
 		const requestId = crypto.randomUUID();
 		return new Promise((resolve, reject) => {
 			const timer = setTimeout(() => {
 				credentialWaiters.delete(requestId);
-				reject(new Error("dg-daemon did not confirm the save in time; check dg-skills credentials list."));
+				reject(new Error("dg daemon did not confirm the save in time; check dg credentials list."));
 			}, CONFIG_ROUND_TRIP_TIMEOUT_MS);
 			credentialWaiters.set(requestId, (reply) => {
 				clearTimeout(timer);
 				credentialWaiters.delete(requestId);
 				if (reply.ok && reply.name) resolve(reply.name);
-				else reject(new Error(reply.error ?? "dg-daemon refused the save; nothing was saved."));
+				else reject(new Error(reply.error ?? "dg daemon refused the save; nothing was saved."));
 			});
 			try {
 				socket.send(
@@ -383,7 +383,7 @@ export function registerDaemonLink(
 			} catch {
 				clearTimeout(timer);
 				credentialWaiters.delete(requestId);
-				reject(new Error("The save could not be sent to dg-daemon; nothing was saved."));
+				reject(new Error("The save could not be sent to dg daemon; nothing was saved."));
 			}
 		});
 	}

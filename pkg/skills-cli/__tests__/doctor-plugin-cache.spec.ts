@@ -57,7 +57,7 @@ describe("doctor install plugin-cache check", () => {
 		expect(result).toEqual({
 			status: "warn",
 			detail: "2 stale version(s), 0 MB reclaimable",
-			fix: `'${join(ctx.paths.binDir, "dg-skills")}' install`,
+			fix: `'${join(ctx.paths.binDir, "dg")}' install`,
 		});
 	});
 

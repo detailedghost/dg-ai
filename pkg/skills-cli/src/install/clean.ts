@@ -13,7 +13,7 @@ import {
 } from "@dg/common/node/layout";
 import { folderUnused } from "@dg/common/node/sqlite-unused";
 import { isCompatLauncher } from "./compat-launchers";
-import { LEGACY_PROGRAMS } from "./shims";
+import { PROGRAM_NAMES as LEGACY_PROGRAMS } from "@dg/common/node/program";
 
 type Table = readonly MoveEntry[];
 

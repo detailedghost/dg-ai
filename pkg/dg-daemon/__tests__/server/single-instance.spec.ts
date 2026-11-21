@@ -126,7 +126,7 @@ describe("stopOtherDaemon", () => {
 			warn: (line) => lines.push(line),
 		});
 		expect(stopped).toEqual([pathsOf(other).stateDir]);
-		expect(lines).toEqual([`dg-daemon: stopped the daemon of ${other} (pid 4242, port 47001) so only one runs`]);
+		expect(lines).toEqual([`dg daemon: stopped the daemon of ${other} (pid 4242, port 47001) so only one runs`]);
 	});
 
 	it("replaces a stale record without stopping anything", async () => {
@@ -195,7 +195,7 @@ describe("stopOtherDaemon", () => {
 			warn: (line) => lines.push(line),
 		});
 		expect(lines).toEqual([
-			`dg-daemon: could not stop the daemon of ${other} (pid 4242, port 47001): did not stop in time`,
+			`dg daemon: could not stop the daemon of ${other} (pid 4242, port 47001): did not stop in time`,
 		]);
 	});
 
@@ -329,7 +329,7 @@ describe("two real daemons of different homes", () => {
 		b.kill("SIGTERM");
 		await b.exited;
 		expect(readActiveDaemon(userSeams)).toBeUndefined();
-		expect(await stderr).toContain(`dg-daemon: stopped the daemon of ${homeA} (pid ${handleA.pid}, port ${portA}) so only one runs`);
+		expect(await stderr).toContain(`dg daemon: stopped the daemon of ${homeA} (pid ${handleA.pid}, port ${portA}) so only one runs`);
 		expect(existsSync(pathsOf(homeA).pidPath)).toBe(false);
 	}, 40_000);
 });

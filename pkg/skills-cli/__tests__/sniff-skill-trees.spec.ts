@@ -36,7 +36,7 @@ function verbsOf(command: string): string[] {
 
 function verbsCalled(text: string, command: string): string[] {
 	return [
-		...text.matchAll(new RegExp(`dg-skills ${command}\\s+([\\w-]+)`, "g")),
+		...text.matchAll(new RegExp(`dg ${command}\\s+([\\w-]+)`, "g")),
 	].map((match) => match[1] ?? "");
 }
 
@@ -91,10 +91,10 @@ describe.each(SCANNED)("packaged %s skill tree", (name) => {
 		}
 	});
 
-	test("every dg-skills call uses the bare launcher name", () => {
+	test("every dg call uses the bare launcher name", () => {
 		for (const { file, text } of treeFiles(name))
 			for (const line of text.split("\n"))
-				if (/dg-skills\s+[a-z]/.test(line))
+				if (/(^|[\s`])dg\s+[a-z]/.test(line))
 					expect([file, line, line.includes(".dg/bin/")]).toEqual([
 						file,
 						line,
@@ -150,7 +150,7 @@ describe("packaged sniff skill", () => {
 	test("probes sniff --help in the bootstrap gate before the first real call", () => {
 		const text = skillText("sniff");
 		expect(text).toContain("--cli-only");
-		expect(text).toContain("dg-skills sniff --help");
+		expect(text).toContain("dg sniff --help");
 		const { gate, call } = firstCallIndex(text);
 		expect(gate).toBeGreaterThan(-1);
 		expect(call).toBeGreaterThan(gate);
@@ -158,7 +158,7 @@ describe("packaged sniff skill", () => {
 
 	test("runs the inventory through the installed CLI with a path argument", () => {
 		const text = treeText("sniff");
-		expect(text).toMatch(/dg-skills sniff (?!--help)\S/);
+		expect(text).toMatch(/dg sniff (?!--help)\S/);
 		for (const span of codeSpans(text))
 			expect([span, /^sniff(\s|$)/.test(span)]).toEqual([span, false]);
 	});
@@ -174,7 +174,7 @@ describe("packaged sniff skill", () => {
 
 	test("writes its output file through the packaged stash, not a bare helper", () => {
 		const text = treeText("sniff");
-		expect(text).toContain("dg-skills stash");
+		expect(text).toContain("dg stash");
 	});
 
 	test("never routes a render through the viz skill, which no longer ships", () => {
@@ -214,7 +214,7 @@ describe("packaged sniff skill", () => {
 			"proven: false",
 		])
 			expect(reference).toContain(needle);
-		expect(reference).toContain("dg-skills sniff");
+		expect(reference).toContain("dg sniff");
 	});
 });
 
@@ -252,8 +252,8 @@ describe("packaged nope skill", () => {
 		expect(text).not.toMatch(/\/home\//);
 	});
 
-	test("needs no CLI, so it makes no dg-skills call", () => {
-		expect(treeText("nope")).not.toContain("dg-skills");
+	test("needs no CLI, so it makes no dg call", () => {
+		expect(treeText("nope")).not.toMatch(/(^|[\s`])dg\s+[a-z]/);
 	});
 });
 
@@ -299,14 +299,14 @@ describe("packaged find-work skill", () => {
 	test("probes the provider and worktree commands in the bootstrap gate", () => {
 		const text = skillText("find-work");
 		expect(text).toContain("--cli-only");
-		expect(text).toContain("dg-skills vcs-provider --help");
-		expect(text).toContain("dg-skills worktree --help");
+		expect(text).toContain("dg vcs-provider --help");
+		expect(text).toContain("dg worktree --help");
 		const { gate, call } = firstCallIndex(text);
 		expect(gate).toBeGreaterThan(-1);
 		expect(call).toBeGreaterThan(gate);
 	});
 
-	test("routes every provider operation through dg-skills vcs-provider", () => {
+	test("routes every provider operation through dg vcs-provider", () => {
 		const text = treeText("find-work");
 		expect(providerVerbs.length).toBeGreaterThan(0);
 		const used = new Set(verbsCalled(text, "vcs-provider"));
@@ -330,7 +330,7 @@ describe("packaged find-work skill", () => {
 		expect(text).not.toMatch(/\b(?:gh pr create|glab mr create)\b/);
 	});
 
-	test("creates and removes worktrees only through dg-skills worktree", () => {
+	test("creates and removes worktrees only through dg worktree", () => {
 		const text = treeText("find-work");
 		expect(worktreeVerbs.length).toBeGreaterThan(0);
 		const used = new Set(verbsCalled(text, "worktree"));
@@ -373,8 +373,8 @@ describe("packaged find-work skill", () => {
 		expect(section).toContain("AskUserQuestion");
 		expect(section).toContain("multiSelect: true");
 		expect(section).toMatch(/At least 1 item selected/);
-		expect(section).not.toContain("dg-skills worktree create");
-		expect(text.indexOf("dg-skills worktree create")).toBeGreaterThan(execute);
+		expect(section).not.toContain("dg worktree create");
+		expect(text.indexOf("dg worktree create")).toBeGreaterThan(execute);
 		expect(skillText("find-work")).toMatch(/Max 4 selectable/);
 	});
 
@@ -391,7 +391,7 @@ describe("packaged find-work skill", () => {
 			expect(section).toContain(option);
 		expect(section).toMatch(/multiSelect: true/);
 		expect(section).toContain("create-pr --draft");
-		const firstCreate = text.search(/dg-skills vcs-provider create-pr/);
+		const firstCreate = text.search(/dg vcs-provider create-pr/);
 		expect(firstCreate).toBeGreaterThan(gate);
 		expect(skillText("find-work")).toMatch(/NEVER skip a gate/);
 	});
@@ -415,16 +415,16 @@ describe("packaged find-work skill", () => {
 	test("hands dependent approved items to chain only after the same approval", () => {
 		const text = phases();
 		const gate = text.indexOf("## Phase 3.5");
-		expect(text.indexOf("dg-skills chain plan")).toBeGreaterThan(gate);
-		expect(text.indexOf("dg-skills chain apply")).toBeGreaterThan(
-			text.indexOf("dg-skills chain plan"),
+		expect(text.indexOf("dg chain plan")).toBeGreaterThan(gate);
+		expect(text.indexOf("dg chain apply")).toBeGreaterThan(
+			text.indexOf("dg chain plan"),
 		);
 	});
 
 	test("probes every subcommand it calls in the bootstrap gate", () => {
 		const text = skillText("find-work");
 		for (const sub of ["vcs-provider", "worktree", "chain"])
-			expect(text).toContain(`dg-skills ${sub} --help`);
+			expect(text).toContain(`dg ${sub} --help`);
 	});
 
 	test("documents the same workflow return and scanner fields the scripts use", () => {
@@ -442,7 +442,7 @@ describe("packaged find-work skill", () => {
 		for (const reference of homeReferences(text))
 			expect([
 				reference,
-				/^(?:dg-skills|\$HOME\/\.local\}?\/bin(?:\/dg-skills)?$|\$HOME\/code|~\/code)/.test(reference),
+				/^(?:dg|\$HOME\/\.local\}?\/bin(?:\/dg)?$|\$HOME\/code|~\/code)/.test(reference),
 			]).toEqual([reference, true]);
 	});
 

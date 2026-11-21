@@ -122,7 +122,7 @@ export function registerCredentials(
 	const credentials = program
 		.command("credentials")
 		.description(
-			"Manage secrets in dg-daemon's encrypted credential store; values are never printed.",
+			"Manage secrets in dg daemon's encrypted credential store; values are never printed.",
 		)
 		.option("--session <id>", "dg session to authenticate with");
 	const withClient = async (
@@ -251,7 +251,7 @@ export function registerCredentials(
 	credentials
 		.command("exec")
 		.description(
-			"Have dg-daemon run a command with credentials in env vars; the CLI never holds a value, output is scrubbed, and pw/ values need the command in the dg exec-allowlist file",
+			"Have dg daemon run a command with credentials in env vars; the CLI never holds a value, output is scrubbed, and pw/ values need the command in the dg exec-allowlist file",
 		)
 		.usage("<name>[=ENV_VAR]... -- <command...>")
 		.argument("[args...]", "credential names, then -- and the command")
@@ -264,7 +264,7 @@ export function registerCredentials(
 			const split = raw.indexOf("--");
 			if (split === -1) throw new Error("Put -- between the credential names and the command.");
 			if (raw.slice(0, split).some((arg) => arg.startsWith("--session")))
-				throw new Error("Put --session before exec, for example: dg-skills credentials --session <id> exec <name> -- <command>.");
+				throw new Error("Put --session before exec, for example: dg credentials --session <id> exec <name> -- <command>.");
 			const bindings = parseBindings(raw.slice(0, split));
 			const argv = raw.slice(split + 1);
 			if (argv.length === 0) throw new Error("Give a command to run after --.");

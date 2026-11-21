@@ -73,7 +73,7 @@ export async function until<T>(
 	return value;
 }
 
-/** Isolated HOME, scratch and state roots plus disposable directories for `dg-skills bg`. */
+/** Isolated HOME, scratch and state roots plus disposable directories for `dg bg`. */
 export function bgWorld(
 	command: string[] = [process.execPath, "run", CLI_ENTRY],
 ) {

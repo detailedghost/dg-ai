@@ -23,8 +23,8 @@ describe("install retires the pre-rename daemon binary", () => {
 		expect(listed).not.toContain('"dg-skills"');
 	});
 
-	test("the removal runs after the shims are written, so a failed bundle install cannot strand the machine binaryless", () => {
-		const body = install.slice(install.indexOf("async function installBundle"));
+	test("the removal runs after the dg link is written, so a failed install cannot strand the machine binaryless", () => {
+		const body = install.slice(install.indexOf("async function installProgramLocked"));
 
 		expect(body.indexOf("finishLauncherLayout(")).toBeGreaterThan(-1);
 		expect(body.indexOf("finishLauncherLayout(")).toBeLessThan(

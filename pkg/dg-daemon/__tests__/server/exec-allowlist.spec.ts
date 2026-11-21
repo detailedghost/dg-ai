@@ -68,7 +68,7 @@ describe("exec allowlist", () => {
 		const text = JSON.stringify(check(file, path, dir));
 		expect(text).toContain('"ok":false');
 		expect(text).toContain("does not exist");
-		expect(text).toContain("dg-skills credentials allow");
+		expect(text).toContain("dg credentials allow");
 		expect(text).not.toContain("curl");
 		expect(text).not.toContain(MARKER);
 	});

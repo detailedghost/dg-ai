@@ -25,6 +25,7 @@ import type { CheckStatus } from "../src/doctor/types";
 import {
 	CLI_PATH,
 	hasAllowRule,
+	hasLegacyAllowRule,
 	isOlder,
 	parseVersion,
 } from "../src/doctor/probes";
@@ -40,7 +41,7 @@ beforeEach(() => {
 
 afterEach(() => world.cleanup());
 
-describe("dg-skills doctor --json shape", () => {
+describe("dg doctor --json shape", () => {
 	test("prints one document with items, checks and ok", async () => {
 		world.healthy(["jot"]);
 		const { run, report } = await world.report(["jot"]);
@@ -91,7 +92,7 @@ describe("dg-skills doctor --json shape", () => {
 	});
 });
 
-describe("dg-skills doctor exit codes", () => {
+describe("dg doctor exit codes", () => {
 	test("exits 0 and reports ok for a healthy item", async () => {
 		world.healthy(["jot"]);
 		const { run, report } = await world.report(["jot"]);
@@ -144,7 +145,7 @@ describe("dg-skills doctor exit codes", () => {
 	});
 });
 
-describe("dg-skills doctor check outcomes", () => {
+describe("dg doctor check outcomes", () => {
 	test("a missing allow rule warns with the exact rule as the Fix", async () => {
 		world.healthy([]);
 		const { report } = await world.report(["jot"]);
@@ -234,14 +235,14 @@ describe("dg-skills doctor check outcomes", () => {
 			const { report } = await world.report([item]);
 			const probes = checksOf(report, item).filter(
 				(check) =>
-					check.status !== "ok" && (check.fix ?? "").includes("dg-agent start"),
+					check.status !== "ok" && (check.fix ?? "").includes("dg agent start"),
 			);
 			expect([item, probes.length > 0]).toEqual([item, true]);
 		}
 	});
 });
 
-describe("dg-skills doctor credential checks", () => {
+describe("dg doctor credential checks", () => {
 	const CREDENTIAL = "channel-review/datadog";
 	let daemon: FakeCredentialDaemon | undefined;
 
@@ -285,7 +286,7 @@ describe("dg-skills doctor credential checks", () => {
 	});
 });
 
-describe("dg-skills doctor shared checks", () => {
+describe("dg doctor shared checks", () => {
 	test("a plugin newer than the installed binary fails once with a re-install Fix", async () => {
 		world.healthy(["jot"]);
 		world.installPlugin(NEWER_PLUGIN_VERSION);
@@ -298,7 +299,7 @@ describe("dg-skills doctor shared checks", () => {
 		);
 		expect(stale).toHaveLength(1);
 		expect(stale[0]?.status).toBe("fail");
-		expect(stale[0]?.fix).toMatch(/dg-skills install|bootstrap\.sh/);
+		expect(stale[0]?.fix).toMatch(/dg install|bootstrap\.sh/);
 	});
 
 	test("the stale-binary failure also shows when only one item is selected", async () => {
@@ -369,7 +370,7 @@ describe("dg-skills doctor shared checks", () => {
 	});
 });
 
-describe("dg-skills doctor text output", () => {
+describe("dg doctor text output", () => {
 	test("prints one line per check with a status icon and an indented Fix line", async () => {
 		world.healthy([]);
 		const result = await world.run(["doctor", "jot"]);
@@ -403,7 +404,7 @@ describe("dg-skills doctor text output", () => {
 	});
 });
 
-describe("dg-skills doctor on a bare machine", () => {
+describe("dg doctor on a bare machine", () => {
 	test("every warning or failure carries a Fix and the run exits 1", async () => {
 		rmSync(join(world.home, ".claude"), { recursive: true, force: true });
 		const { run, report } = await world.report();
@@ -423,7 +424,7 @@ describe("dg-skills doctor on a bare machine", () => {
 
 const dgRoots = () => [world.paths.binDir, world.paths.configDir, world.paths.dataDir, world.paths.stateDir, world.paths.cacheDir];
 
-describe("dg-skills doctor reads and reports only", () => {
+describe("dg doctor reads and reports only", () => {
 	test("starts no daemon, browser or network tool on a full run", async () => {
 		world.healthy(["jot"]);
 		const before = {
@@ -463,7 +464,7 @@ describe("dg-skills doctor reads and reports only", () => {
 	});
 });
 
-describe("dg-skills doctor probe helpers", () => {
+describe("dg doctor probe helpers", () => {
 	test("parseVersion reads the first dotted number from tool output", () => {
 		expect(parseVersion("git version 2.43.0")).toBe("2.43.0");
 		expect(parseVersion("codex-cli 0.9")).toBe("0.9");
@@ -484,9 +485,14 @@ describe("dg-skills doctor probe helpers", () => {
 	});
 
 	test("the CLI is called by its bare name and the allow rule uses that form", () => {
-		expect(CLI_PATH).toBe("dg-skills");
-		expect(allowRule("jot")).toBe("Bash(dg-skills jot:*)");
-		expect(hasAllowRule(["Bash(dg-skills:*)"], "jot")).toBe(true);
+		expect(CLI_PATH).toBe("dg");
+		expect(allowRule("jot")).toBe("Bash(dg jot:*)");
+		expect(hasAllowRule(["Bash(dg:*)"], "jot")).toBe(true);
+		expect(hasAllowRule(["Bash(dg-skills:*)"], "jot")).toBe(false);
+		expect(hasLegacyAllowRule(["Bash(dg-skills:*)"], "jot")).toBe(true);
+		expect(hasLegacyAllowRule(["Bash(dg-skills jot:*)"], "jot")).toBe(true);
+		expect(hasLegacyAllowRule([legacyAllowRule("jot")], "jot")).toBe(true);
+		expect(hasLegacyAllowRule([allowRule("jot")], "jot")).toBe(false);
 	});
 
 	test("an allow rule in only the old ~/.dg/bin form warns and names the replacement rule", async () => {
@@ -515,8 +521,8 @@ describe("dg-skills doctor probe helpers", () => {
 	});
 });
 
-describe("dg-skills doctor edge cases", () => {
-	test("a blanket dg-skills allow rule satisfies every item", async () => {
+describe("dg doctor edge cases", () => {
+	test("a blanket dg allow rule satisfies every item", async () => {
 		world.healthy([]);
 		writeFileSync(
 			join(world.home, ".claude", "settings.json"),
@@ -685,7 +691,7 @@ describe("dg-skills doctor edge cases", () => {
 		const { report } = await world.report(["launch"]);
 		const daemon = checksOf(report, "launch").find((check) => check.id === "daemon");
 		expect(daemon?.status).toBe("fail");
-		expect(daemon?.fix).toContain("dg-agent start");
+		expect(daemon?.fix).toContain("dg agent start");
 	});
 
 	test("a daemon that answers its health probe passes the daemon check", async () => {
@@ -929,7 +935,7 @@ describe("dg-skills doctor edge cases", () => {
 	});
 });
 
-describe("dg-skills doctor runner", () => {
+describe("dg doctor runner", () => {
 	test("a check that throws fails with the check id, the error and a rerun Fix", async () => {
 		const throwing = {
 			id: "boom",
@@ -952,7 +958,7 @@ describe("dg-skills doctor runner", () => {
 	});
 });
 
-describe("dg-skills doctor launcher-on-path", () => {
+describe("dg doctor launcher-on-path", () => {
 	const launcherCheck = () => sharedChecks.find((entry) => entry.id === "launcher-on-path");
 
 	test("passes when no launcher is installed in the bin dir", async () => {
@@ -960,9 +966,9 @@ describe("dg-skills doctor launcher-on-path", () => {
 		expect((await launcherCheck()?.run(ctx))?.status).toBe("ok");
 	});
 
-	test("warns with the PATH line when the bin dir holds dg-skills but is not on PATH", async () => {
+	test("warns with the PATH line when the bin dir holds dg but is not on PATH", async () => {
 		mkdirSync(world.paths.binDir, { recursive: true });
-		writeFileSync(join(world.paths.binDir, "dg-skills"), "");
+		writeFileSync(join(world.paths.binDir, "dg"), "");
 		const ctx = createContext({ home: world.home, env: { HOME: world.home, PATH: "/usr/bin" } });
 		const result = await launcherCheck()?.run(ctx);
 		expect(result?.status).toBe("warn");
@@ -978,7 +984,7 @@ describe("dg-skills doctor launcher-on-path", () => {
 
 	test("passes when the bin dir is on PATH", async () => {
 		mkdirSync(world.paths.binDir, { recursive: true });
-		writeFileSync(join(world.paths.binDir, "dg-skills"), "");
+		writeFileSync(join(world.paths.binDir, "dg"), "");
 		const ctx = createContext({
 			home: world.home,
 			env: { HOME: world.home, PATH: `/usr/bin:${world.paths.binDir}` },
@@ -987,7 +993,7 @@ describe("dg-skills doctor launcher-on-path", () => {
 	});
 });
 
-describe("dg-skills doctor context isolation", () => {
+describe("dg doctor context isolation", () => {
 	test("the state root check reads the context env, not the process env", async () => {
 		const blocker = join(world.home, "blocker");
 		writeFileSync(blocker, "");
@@ -1011,7 +1017,7 @@ describe("dg-skills doctor context isolation", () => {
 		expect(binary?.status).toBe("warn");
 		const dgBin = world.paths.binDir;
 		mkdirSync(dgBin, { recursive: true });
-		writeFileSync(join(dgBin, "dg-skills"), "");
+		writeFileSync(join(dgBin, "dg"), "");
 		const again = await world.report(["install"]);
 		expect(
 			checksOf(again.report, "install").find((check) => check.id === "cli-binary")
@@ -1020,7 +1026,7 @@ describe("dg-skills doctor context isolation", () => {
 	});
 });
 
-describe("dg-skills doctor extension items", () => {
+describe("dg doctor extension items", () => {
 	test("require-extension includes the daemon and pairing checks", async () => {
 		world.healthy(["require-extension"]);
 		const { report } = await world.report(["require-extension"]);

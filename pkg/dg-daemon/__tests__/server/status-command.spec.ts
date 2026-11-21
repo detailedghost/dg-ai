@@ -27,7 +27,7 @@ afterEach(() => {
 	cleanupDgHome(dgHome);
 });
 
-describe("dg-daemon status", () => {
+describe("dg daemon status", () => {
 	it("reports no live daemon when none has ever run", async () => {
 		dgHome = freshDgHome();
 		const result = await runStatus(dgHome);
@@ -148,7 +148,7 @@ describe("dg-daemon status", () => {
 			const result = await runStatus(dgHome);
 			expect(result.exitCode).toBe(0);
 			expect(result.stdout).toContain(
-				`dg-daemon (pid ${sleeper.pid}) does not answer`,
+				`dg daemon (pid ${sleeper.pid}) does not answer`,
 			);
 			expect(existsSync(paths.pidPath)).toBe(true);
 		} finally {

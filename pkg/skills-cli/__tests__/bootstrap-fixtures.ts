@@ -16,18 +16,22 @@ import { fenceEnv } from "./fence-env";
 
 export const BOOTSTRAP = join(import.meta.dir, "..", "bootstrap.sh");
 export const LEGACY_PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon"] as const;
-export const PROGRAMS = ["dg", ...LEGACY_PROGRAMS] as const;
 export const RELEASE_VERSION = "1.27.0";
 
-export type RuntimeAsset = { file: string; sha256: string };
-type RuntimeJson = { version: string; assets: Record<string, RuntimeAsset> };
+export const PLATFORMS = [
+	"linux-x64",
+	"linux-x64-baseline",
+	"linux-arm64",
+	"darwin-x64",
+	"darwin-arm64",
+	"windows-x64",
+	"windows-x64-baseline",
+	"windows-arm64",
+] as const;
 
-export const RUNTIME = JSON.parse(
-	readFileSync(
-		join(import.meta.dir, "..", "..", "launcher", "runtime.json"),
-		"utf8",
-	),
-) as RuntimeJson;
+export function assetName(platform: string): string {
+	return platform.startsWith("windows") ? `dg-${platform}.exe` : `dg-${platform}`;
+}
 
 const CURL_SEAM = `#!/bin/sh
 outfile=""
@@ -67,21 +71,35 @@ case "\${1:-}" in
 esac
 `;
 
-export const FAKE_BUN = `#!/bin/sh
-if [ "$#" -eq 3 ] && [ "$3" = "--version" ]; then
-  basename "$(readlink "$(dirname "$1")")"
-  exit 0
+function fakeProgram(
+	asset: string,
+	reported: string,
+	broken: boolean,
+): string {
+	return `#!/bin/sh
+if [ "\${1:-}" = "--version" ]; then
+  ${broken ? "exit 1" : `printf '%s (fake)\\n' "${reported}"; exit 0`}
 fi
-printf 'FAKE_BUN %s\\n' "$*"
+printf 'FAKE_DG %s\\n' "${asset}"
+printf 'FAKE_ENV %s\\n' "\${DG_SKILLS_BOOTSTRAP:-}"
 for arg in "$@"; do printf 'FAKE_ARG %s\\n' "$arg"; done
 `;
+}
 
-/** Each argument the fake Bun received, one entry per argument. */
-export function fakeBunArgs(stdout: string): string[] {
-	return stdout
-		.split("\n")
-		.filter((line) => line.startsWith("FAKE_ARG "))
-		.map((line) => line.slice("FAKE_ARG ".length));
+export type ProgramRun = { asset: string; env: string; args: string[] };
+
+export function programRun(stdout: string): ProgramRun | undefined {
+	const lines = stdout.split("\n");
+	const asset = lines.find((line) => line.startsWith("FAKE_DG "));
+	if (asset === undefined) return undefined;
+	const env = lines.find((line) => line.startsWith("FAKE_ENV ")) ?? "";
+	return {
+		asset: asset.slice("FAKE_DG ".length),
+		env: env.slice("FAKE_ENV ".length),
+		args: lines
+			.filter((line) => line.startsWith("FAKE_ARG "))
+			.map((line) => line.slice("FAKE_ARG ".length)),
+	};
 }
 
 const ENV_OWNED_BY_BOOTSTRAP = [
@@ -104,12 +122,6 @@ export function sha256(bytes: Uint8Array | string): string {
 	return createHash("sha256").update(bytes).digest("hex");
 }
 
-function run(cmd: string[], cwd?: string): void {
-	const result = Bun.spawnSync(cmd, { cwd, stdout: "pipe", stderr: "pipe" });
-	if (result.exitCode !== 0)
-		throw new Error(`${cmd.join(" ")}: ${result.stderr.toString()}`);
-}
-
 export function present(path: string): boolean {
 	try {
 		lstatSync(path);
@@ -119,8 +131,6 @@ export function present(path: string): boolean {
 	}
 }
 
-let zips: Map<string, { path: string; sha256: string }> | undefined;
-let zipsDir: string | undefined;
 const runDirs: string[] = [];
 
 /** Removes the per-run directories that runBootstrap created. */
@@ -129,45 +139,7 @@ export function removeBootstrapDirs(): void {
 		rmSync(dir, { recursive: true, force: true });
 }
 
-/** Removes the Bun zips shared by every run in this file. */
-export function removeBootstrapFixtures(): void {
-	removeBootstrapDirs();
-	if (zipsDir) rmSync(zipsDir, { recursive: true, force: true });
-	zips = undefined;
-	zipsDir = undefined;
-}
-
-function bunZips(): Map<string, { path: string; sha256: string }> {
-	if (zips) return zips;
-	const dir = mkdtempSync(join(tmpdir(), "dg-bootstrap-zips-"));
-	zipsDir = dir;
-	const built = new Map<string, { path: string; sha256: string }>();
-	for (const { file } of Object.values(RUNTIME.assets)) {
-		const inner = file.replace(/\.zip$/, "");
-		const stage = join(dir, `stage-${inner}`);
-		mkdirSync(join(stage, inner), { recursive: true });
-		writeFileSync(join(stage, inner, "bun"), FAKE_BUN);
-		chmodSync(join(stage, inner, "bun"), 0o755);
-		const path = join(dir, file);
-		run(["zip", "-q", "-r", path, inner], stage);
-		built.set(file, { path, sha256: sha256(readFileSync(path)) });
-	}
-	zips = built;
-	return built;
-}
-
-function buildLibTarball(
-	dir: string,
-	version: string,
-): { path: string; sha256: string } {
-	const stage = join(dir, "lib-stage");
-	mkdirSync(join(stage, "chunks"), { recursive: true });
-	writeFileSync(join(stage, "dg.js"), "export {};\n");
-	writeFileSync(join(stage, "chunks", "main-abcd1234.js"), "export {};\n");
-	const path = join(dir, "serve", `dg-lib-${version}.tar.gz`);
-	run(["tar", "-czf", path, "-C", stage, "dg.js", "chunks"]);
-	return { path, sha256: sha256(readFileSync(path)) };
-}
+export const removeBootstrapFixtures = removeBootstrapDirs;
 
 export function release(
 	tag: string,
@@ -192,8 +164,9 @@ export type BootstrapOptions = {
 	args?: string[];
 	env?: Record<string, string>;
 	dgHome?: string;
-	zipHashMismatch?: boolean;
-	sums?: "complete" | "without-lib" | "wrong-lib" | "wrong-runtime";
+	sums?: "complete" | "without-asset" | "wrong-asset";
+	assetVersion?: string;
+	assetBroken?: boolean;
 	newerEmptyRelease?: boolean;
 	piped?: boolean;
 	script?: string;
@@ -214,7 +187,7 @@ export type BootstrapRun = {
 	root: string;
 	version: string;
 	requests: string[];
-	bunZipRequests: string[];
+	assetRequests: string[];
 	installCall: string | undefined;
 };
 
@@ -231,14 +204,6 @@ function writeSeam(dir: string, name: string, body: string): string {
 	writeFileSync(path, body);
 	chmodSync(path, 0o755);
 	return path;
-}
-
-/** The arguments the installed dg-skills shim received, as the fake Bun printed them. */
-export function shimInvocation(stdout: string): string | undefined {
-	const line = stdout
-		.split("\n")
-		.find((entry) => entry.startsWith("FAKE_BUN "));
-	return line?.replace(/^FAKE_BUN \S*dg\.js /, "");
 }
 
 /**
@@ -261,45 +226,41 @@ export async function runBootstrap(
 	const curl = writeSeam(seams, "curl", CURL_SEAM);
 	const uname = writeSeam(seams, "uname", UNAME_SEAM);
 
-	const built = bunZips();
-	const expectedFile = (
-		RUNTIME.assets[platformKey(os, arch, avx2)] as RuntimeAsset
-	).file;
-	const served: Record<string, RuntimeAsset> = {};
-	for (const [key, asset] of Object.entries(RUNTIME.assets)) {
-		const zip = built.get(asset.file) as { path: string; sha256: string };
-		symlinkSync(zip.path, join(serve, asset.file));
-		const forged = options.zipHashMismatch && asset.file === expectedFile;
-		served[key] = {
-			file: asset.file,
-			sha256: forged ? "0".repeat(64) : zip.sha256,
-		};
-	}
-	const runtimeJson = JSON.stringify({
-		version: RUNTIME.version,
-		assets: served,
-	});
-	writeFileSync(join(serve, "runtime.json"), runtimeJson);
-	for (const [name, source] of Object.entries(options.serve ?? {})) {
-		symlinkSync(source, join(serve, name));
-	}
-
-	const tarball = buildLibTarball(dir, version);
+	const assetFiles: string[] = [];
 	const lines = [
 		`${sha256("sh")}  bootstrap.sh`,
 		`${sha256("ps1")}  bootstrap.ps1`,
-		`${options.sums === "wrong-runtime" ? "0".repeat(64) : sha256(runtimeJson)}  runtime.json`,
 	];
-	if (options.sums !== "without-lib") {
+	for (const platform of PLATFORMS) {
+		const file = assetName(platform);
+		const body = fakeProgram(
+			file,
+			options.assetVersion ?? version,
+			options.assetBroken === true,
+		);
+		writeFileSync(join(serve, file), body);
+		assetFiles.push(file);
+		const mine = file === assetName(platformKey(os, arch, avx2));
 		lines.push(
-			`${options.sums === "wrong-lib" ? "0".repeat(64) : tarball.sha256}  dg-lib-${version}.tar.gz`,
+			`${options.sums === "wrong-asset" && mine ? "0".repeat(64) : sha256(body)}  ${file}`,
 		);
 	}
+	for (const [name, source] of Object.entries(options.serve ?? {})) {
+		symlinkSync(source, join(serve, name));
+	}
+	writeFileSync(join(serve, "runtime.json"), "{}");
+	writeFileSync(join(serve, `dg-lib-${version}.tar.gz`), "lib");
+	lines.push(`${sha256("{}")}  runtime.json`, `${sha256("lib")}  dg-lib-${version}.tar.gz`);
 	for (const [name, hash] of Object.entries(options.extraAssets ?? {}))
 		if (hash !== null) lines.push(`${hash}  ${name}`);
-	writeFileSync(join(serve, "SHA256SUMS"), `${lines.join("\n")}\n`);
+	const listed =
+		options.sums === "without-asset"
+			? lines.filter((line) => !line.endsWith(`  ${assetName(platformKey(os, arch, avx2))}`))
+			: lines;
+	writeFileSync(join(serve, "SHA256SUMS"), `${listed.join("\n")}\n`);
 
 	const assets = [
+		...assetFiles,
 		`dg-lib-${version}.tar.gz`,
 		"runtime.json",
 		"SHA256SUMS",
@@ -373,7 +334,7 @@ export async function runBootstrap(
 		root,
 		version,
 		requests,
-		bunZipRequests: requests.filter((url) => /\/bun-[^/]+\.zip$/.test(url)),
-		installCall: shimInvocation(stdout),
+		assetRequests: requests.filter((url) => /\/dg-(linux|darwin|windows)-/.test(url)),
+		installCall: programRun(stdout)?.args.join(" "),
 	};
 }

@@ -292,7 +292,7 @@ function parseRunner(raw: Rec, cloneRoot: string, home: string): ChannelConfig["
 	]);
 	const scratch = `/${process.env.AI_SCRATCH_DIR ?? "/tmp/ai"}/thrash/**`;
 	const allowedTools = claude.allowedTools ?? [
-		"Bash(dg-skills thrash:*)",
+		"Bash(dg thrash:*)",
 		"Agent",
 		`Read(${scratch})`,
 		"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**)",
@@ -313,7 +313,7 @@ function parseRunner(raw: Rec, cloneRoot: string, home: string): ChannelConfig["
 		"Bash(git:*)",
 		"Bash(gh:*)",
 		"Bash(glab:*)",
-		"Bash(dg-skills address:*)",
+		"Bash(dg address:*)",
 		"Bash(bun:*)",
 		"Bash(npm:*)",
 		"Bash(npx:*)",
@@ -613,7 +613,7 @@ function parseDeps(
 	}
 	const deps = [
 		"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/deps-upgrade/**)",
-		"Bash(dg-skills deps-upgrade:*)",
+		"Bash(dg deps-upgrade:*)",
 		"Bash(git:*)",
 		"Bash(gh:*)",
 	];
@@ -768,7 +768,7 @@ function parseConfig(raw: unknown, seams: SystemSeams): ChannelConfig {
 
 function readText(path: string): string {
 	if (!existsSync(path))
-		throw new DgCliError(`no channel-review config at ${path}; run: dg-skills channel-review setup`);
+		throw new DgCliError(`no channel-review config at ${path}; run: dg channel-review setup`);
 	return readFileSync(path, "utf8");
 }
 

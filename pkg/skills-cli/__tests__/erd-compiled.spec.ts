@@ -22,8 +22,9 @@ beforeAll(async () => {
 	renameSync(entry, join(entry, "..", "dg-real.js"));
 	writeFileSync(
 		entry,
-		`const [program, command, subcommand] = process.argv.slice(2);
-if (program === "dg-skills" && command === "db") {
+		`const args = process.argv.slice(2);
+const [command, subcommand] = args[0] === "skills" ? args.slice(1) : args;
+if (command === "db") {
   if (subcommand === "connections") {
     process.stdout.write("CONNECTIONS: 1\\nname\\tengine\\ttarget\\nmain\\tpostgresql\\tlocalhost\\n");
     process.exit(0);
@@ -56,7 +57,7 @@ afterAll(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-describe("compiled dg-skills erd from an external cwd", () => {
+describe("compiled dg erd from an external cwd", () => {
 	test("generates through current-binary db self-dispatch with no legacy command on PATH", async () => {
 		const outBase = join(root, "artifacts", "map");
 		const proc = Bun.spawn([...binary, "erd", "generate", ".", "--type", "flow", "--out", outBase], {

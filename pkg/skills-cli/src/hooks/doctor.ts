@@ -30,7 +30,7 @@ interface OwnedEntry {
 function writerFor(runtime: HookRuntime, ctx: DoctorContext): SettingsWriter {
 	if (runtime === "claude") return claudeWriter(ctx.home);
 	if (runtime === "codex") return codexWriter(ctx.home, ctx.env.CODEX_HOME);
-	return opencodeWriter(ctx.home, "dg-skills", ctx.env.XDG_CONFIG_HOME);
+	return opencodeWriter(ctx.home, "dg", ctx.env.XDG_CONFIG_HOME);
 }
 
 function commandsIn(doc: JsonObject): string[] {
@@ -47,7 +47,7 @@ function commandsIn(doc: JsonObject): string[] {
 	);
 }
 
-function ownedEntries(
+export function ownedEntries(
 	runtime: HookRuntime,
 	writer: SettingsWriter,
 ): OwnedEntry[] {
@@ -144,18 +144,18 @@ const staleEntriesCheck: DoctorCheck = {
 			}
 		}
 		if (unreadable.length === 0 && stale.size === 0)
-			return ok("every dg hook entry resolves to dg-skills");
+			return ok("every dg hook entry resolves to dg");
 		const details: string[] = [];
 		const fixes: string[] = [];
 		if (stale.size > 0) {
 			const summary = [...stale]
 				.map(([runtime, ids]) => `${runtime}:${ids.join(",")}`)
 				.join(" ");
-			details.push(`dg hook entries point at a missing dg-skills: ${summary}`);
+			details.push(`dg hook entries point at a missing dg: ${summary}`);
 			fixes.push(
 				...[...stale].map(
 					([runtime, ids]) =>
-						`dg-skills hooks disable ${ids.join(" ")} --runtime ${runtime}`,
+						`dg hooks disable ${ids.join(" ")} --runtime ${runtime}`,
 				),
 			);
 		}

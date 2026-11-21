@@ -178,7 +178,7 @@ describe("preflight", () => {
 		const rig = createRig(config, { envName: "prod", noSecret: true });
 		const report = await rig.run();
 		expect(report.secret).toEqual({
-			error: expect.stringContaining("dg-skills channel-review connect relay --env prod"),
+			error: expect.stringContaining("dg channel-review connect relay --env prod"),
 		});
 		expect(report.chats).toBe("skipped");
 		expect(report.reactions).toBe("skipped");

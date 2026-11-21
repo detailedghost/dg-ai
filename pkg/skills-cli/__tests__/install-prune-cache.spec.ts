@@ -14,7 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prunePluginCache } from "../src/install/prune-plugin-cache";
-import { installEnv, writeReleaseServer } from "./runtime-bundle-fixtures";
+import { installEnv, writeReleaseServer } from "./release-fixtures";
 
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
 const HOUR = 60 * 60 * 1000;

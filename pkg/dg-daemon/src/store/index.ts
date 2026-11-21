@@ -603,7 +603,7 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 				keychain,
 			});
 			for (const warning of resolved.warnings) {
-				console.warn(`dg-daemon: ${warning}`);
+				console.warn(`dg daemon: ${warning}`);
 			}
 
 			if (!existingRow) {
@@ -2043,7 +2043,7 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 				rowId,
 			]);
 			console.warn(
-				`dg-daemon: dropped ${table} row ${rowId} from the queue — its body did not decrypt: ${describeError(err)}`,
+				`dg daemon: dropped ${table} row ${rowId} from the queue — its body did not decrypt: ${describeError(err)}`,
 			);
 			return undefined;
 		}

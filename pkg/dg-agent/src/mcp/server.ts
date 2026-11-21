@@ -22,12 +22,12 @@ export const MAX_IN_FLIGHT = 2;
 export const MAX_RECONNECTS = 1;
 const REQUEST_TIMEOUT_MS = PW_EXT_DEFAULT_TIMEOUT_MS + 5_000;
 const NEEDS_NEWER_EXTENSION =
-	"dg-agent mcp needs a newer dg-ai-extension; update and reload it";
-const LOST_SESSION = "dg-agent mcp lost its session; restart it.";
+	"dg mcp needs a newer dg-ai-extension; update and reload it";
+const LOST_SESSION = "dg mcp lost its session; restart it.";
 
 export class McpLinkClosedError extends Error {
 	constructor(readonly submitted = true) {
-		super("dg-daemon closed the CLI connection");
+		super("dg daemon closed the CLI connection");
 	}
 }
 
@@ -84,7 +84,7 @@ function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-/** The dg-agent MCP server: dg_ Web MCP tools of the person's own browser tabs, called through the daemon relay. */
+/** The dg agent MCP server: dg_ Web MCP tools of the person's own browser tabs, called through the daemon relay. */
 export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 	const server = new Server(
 		{ name: "dg-agent", version: DG_AGENT_PACKAGE_VERSION },

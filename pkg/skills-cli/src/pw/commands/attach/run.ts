@@ -20,7 +20,7 @@ const attach: ClientHandler = async (args, env) => {
 	const guarded = protectedCdpOwner(cdpUrl);
 	if (guarded) {
 		env.err(
-			`### Error\npw refuses to attach to the ${guarded.name} browser: it holds a signed-in mailbox. Use dg-skills inbox.`,
+			`### Error\npw refuses to attach to the ${guarded.name} browser: it holds a signed-in mailbox. Use dg inbox.`,
 		);
 		return 1;
 	}

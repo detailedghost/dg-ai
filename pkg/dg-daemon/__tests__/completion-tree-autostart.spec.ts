@@ -3,7 +3,7 @@ import tree from "../src/completion-tree.json";
 
 type Node = { name: string; commands?: Node[] };
 
-describe("the dg-daemon completion tree", () => {
+describe("the dg daemon completion tree", () => {
 	test("holds the autostart group with install, remove and status", () => {
 		const group = (tree as Node).commands?.find((command) => command.name === "autostart");
 

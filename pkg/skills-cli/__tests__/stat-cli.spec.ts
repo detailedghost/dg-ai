@@ -37,7 +37,7 @@ function checklistFile(stateDir: string): string {
 	return hits[0] as string;
 }
 
-describe("dg-skills stat mutations", () => {
+describe("dg stat mutations", () => {
 	test("add rejects an unknown eta and lists every accepted bucket", async () => {
 		await withRoot(async (env, root) => {
 			const run = await stat(["add", "long task", "--eta", "~3 hr"], env, root);
@@ -131,7 +131,7 @@ describe("dg-skills stat mutations", () => {
 	});
 });
 
-describe("dg-skills stat archive", () => {
+describe("dg stat archive", () => {
 	async function seed(env: Record<string, string>, root: string): Promise<void> {
 		for (const args of [
 			["add", "open first"],

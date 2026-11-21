@@ -21,7 +21,7 @@ export function localSecretName(envName: string): string {
 }
 
 export function missingRelaySecretRemedy(envName: string): string {
-	return `no relay secret stored for ${envName}; run dg-skills channel-review connect relay --env ${envName}`;
+	return `no relay secret stored for ${envName}; run dg channel-review connect relay --env ${envName}`;
 }
 
 export type CredentialSource = Pick<CredentialClient, "list" | "get" | "close">;
@@ -84,7 +84,7 @@ async function readStore(
 			records,
 			warning: [
 				`credential store unavailable (${describeError(error)}); using environment variables.`,
-				`To fix: run ${DG_DAEMON_START_COMMAND}, then dg-skills credentials grant ${CREDENTIAL_PREFIX}.`,
+				`To fix: run ${DG_DAEMON_START_COMMAND}, then dg credentials grant ${CREDENTIAL_PREFIX}.`,
 			].join(" "),
 		};
 	} finally {
@@ -166,7 +166,7 @@ export async function resolveSecrets({
 	}
 	const expiredWarning =
 		expiredNames.size > 0
-			? `expired credentials skipped: ${[...expiredNames].join(", ")}; run dg-skills channel-review connect to renew.`
+			? `expired credentials skipped: ${[...expiredNames].join(", ")}; run dg channel-review connect to renew.`
 			: undefined;
 	const allWarnings = [warning, expiredWarning].filter(Boolean).join(" ");
 	return {

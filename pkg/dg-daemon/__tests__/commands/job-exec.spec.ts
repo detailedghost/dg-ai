@@ -85,7 +85,7 @@ describe("job exec", () => {
 		for (const verb of ["run", "exec"]) {
 			const result = await runCli(dgHome, ["job", verb, "x"]);
 			expect(result.code).toBe(1);
-			expect(result.stderr).toContain("no live dg-daemon");
+			expect(result.stderr).toContain("no live dg daemon");
 		}
 	});
 });

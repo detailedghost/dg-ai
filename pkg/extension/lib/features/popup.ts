@@ -20,7 +20,7 @@ const TICK_MS = 2000;
 const LOGO_PIXELS = "44";
 const BACKGROUND_UNREACHABLE =
 	"DeeGee is not responding. Close and reopen this popup.";
-const DAEMON_DOWN = "Daemon not running. Run dg-agent start.";
+const DAEMON_DOWN = "Daemon not running. Run dg agent start.";
 const DAEMON_CHANGED = "The daemon changed";
 const DAEMON_CHANGED_HELP =
 	"A different daemon is running. Trust it to keep using this browser with it.";
@@ -827,7 +827,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 		const note = element(doc, "p", "note");
 		note.setAttribute("role", "status");
 		if (daemonReachable) {
-			note.append("Start an agent with ", element(doc, "code", "", "dg-agent start"), ".");
+			note.append("Start an agent with ", element(doc, "code", "", "dg agent start"), ".");
 		} else {
 			note.textContent = DAEMON_DOWN;
 		}

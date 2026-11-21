@@ -2,8 +2,6 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-export const RUNTIME_JSON = join(import.meta.dir, "..", "..", "launcher", "runtime.json");
-
 export interface FileSpec {
 	content: string;
 	mode?: number;
@@ -76,38 +74,35 @@ export function stubFetch(routes: Record<string, Uint8Array | string>): FetchStu
 	};
 }
 
-export function runtimePinFor(zip: Uint8Array | string, version = "1.4.1") {
-	const real = JSON.parse(readFileSync(RUNTIME_JSON, "utf8")) as {
-		assets: Record<string, { file: string; sha256: string }>;
-	};
-	const assets = Object.fromEntries(
-		Object.keys(real.assets).map((key) => [key, { file: "bun-fake.zip", sha256: sha256(zip) }]),
-	);
-	return { version, assets };
-}
-
-export function bunZipUrl(version: string): string {
-	return `https://github.com/oven-sh/bun/releases/download/bun-v${version}/bun-fake.zip`;
-}
-
-export function fakeBunScript(output: string, exitCode = 0): string {
-	return `#!/bin/sh\necho "${output}"\nexit ${exitCode}\n`;
-}
-
-/** A fake bun that prints the version line of the dg.js it runs, else `fallback`. */
-export function fakeBundleBunScript(fallback: string): string {
-	return `#!/bin/sh\nif [ -f "$1" ]; then sed -n 's#^// version ##p' "$1"; else echo "${fallback}"; fi\n`;
-}
-
 export const RELEASE_BASE = "https://github.com/detailedghost/dg-ai/releases/download";
 
-export type ReleaseKind = "bundle" | "extension" | "runtime" | "sums";
+export const PLATFORM_KEYS = [
+	"linux-x64",
+	"linux-x64-baseline",
+	"linux-arm64",
+	"darwin-x64",
+	"darwin-arm64",
+	"windows-x64",
+	"windows-x64-baseline",
+	"windows-arm64",
+] as const;
+
+export const programAsset = (key: string): string => `dg-${key}${key.startsWith("windows-") ? ".exe" : ""}`;
+
+/** A fake compiled dg: prints `version` for --version, else logs its argv to `argvLog` when given. */
+export function fakeProgramScript(version: string, argvLog?: string, exitCode = 0): string {
+	const log = argvLog ? `printf '%s\\n' "$*" >> '${argvLog}'\n` : "";
+	return `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "${version}"; exit ${exitCode}; fi\n${log}exit ${exitCode}\n`;
+}
+
+export type ReleaseKind = "program" | "extension" | "sums";
 
 export interface ReleaseServerOptions {
 	also?: string[];
 	omit?: ReleaseKind[];
 	absent?: boolean;
 	sums?: (defaults: string) => string;
+	program?: (version: string) => string;
 }
 
 export function writeReleaseServer(
@@ -115,11 +110,7 @@ export function writeReleaseServer(
 	log: string,
 	version: string,
 	opts: ReleaseServerOptions = {},
-): { preload: string; pin: string } {
-	const bunZip = buildArchive("zip", dir, {
-		"bun-fake/bun": { content: fakeBundleBunScript(version), mode: 0o755 },
-	});
-	const runtimeJson = JSON.stringify(runtimePinFor(bunZip));
+): { preload: string } {
 	const routes: Record<string, string> = {};
 	const serveFile = (url: string, name: string, body: Uint8Array | string): void => {
 		const path = join(dir, `served-${name}`);
@@ -130,29 +121,24 @@ export function writeReleaseServer(
 	for (const current of [version, ...(opts.also ?? [])]) {
 		if (current === version && opts.absent) continue;
 		const tag = `v${current}`;
-		const bundleName = `dg-lib-${current}.tar.gz`;
 		const extensionName = `dg-ai-extension-${current}-chrome.zip`;
-		const bundle = buildArchive("tar.gz", dir, { "dg.js": { content: `// version ${current}\nconsole.log('unused');\n` } });
+		const program = (opts.program ?? fakeProgramScript)(current);
 		const extension = buildArchive("zip", dir, {
 			"manifest.json": { content: JSON.stringify({ version: current }) },
 			"background.js": { content: "release build" },
 		});
-		const sums = [
-			[bundleName, sha256(bundle)],
-			[extensionName, sha256(extension)],
-			["runtime.json", sha256(runtimeJson)],
-		]
+		const programs = PLATFORM_KEYS.map((key): [string, string] => [programAsset(key), program]);
+		const sums = [...programs.map(([name, body]) => [name, sha256(body)]), [extensionName, sha256(extension)]]
 			.map(([name, hash]) => `${hash}  ${name}`)
 			.join("\n");
-		const kinds: Record<ReleaseKind, [string, Uint8Array | string]> = {
-			bundle: [bundleName, bundle],
-			extension: [extensionName, extension],
-			runtime: ["runtime.json", runtimeJson],
-			sums: ["SHA256SUMS", current === version && opts.sums ? opts.sums(sums) : sums],
+		const kinds: Record<ReleaseKind, [string, Uint8Array | string][]> = {
+			program: programs,
+			extension: [[extensionName, extension]],
+			sums: [["SHA256SUMS", current === version && opts.sums ? opts.sums(sums) : sums]],
 		};
 		const assets = (Object.keys(kinds) as ReleaseKind[])
 			.filter((kind) => current !== version || !opts.omit?.includes(kind))
-			.map((kind) => kinds[kind]);
+			.flatMap((kind) => kinds[kind]);
 		for (const [name, body] of assets) serveFile(`${RELEASE_BASE}/${tag}/${name}`, `${current}-${name}`, body);
 		releases.push({
 			tag_name: tag,
@@ -160,7 +146,6 @@ export function writeReleaseServer(
 			assets: assets.map(([name]) => ({ name, browser_download_url: `${RELEASE_BASE}/${tag}/${name}` })),
 		});
 	}
-	serveFile(bunZipUrl(JSON.parse(runtimeJson).version), "bun.zip", bunZip);
 	const preload = join(dir, "release-preload.ts");
 	writeFileSync(
 		preload,
@@ -177,7 +162,7 @@ globalThis.fetch = (async (input: unknown) => {
 }) as typeof fetch;
 `,
 	);
-	return { preload, pin: JSON.parse(runtimeJson).version };
+	return { preload };
 }
 
 export function fetchedUrls(log: string): string[] {

@@ -9,7 +9,7 @@ export const CREATE_HELP = `worktree create <slug> [flags]
     WORKTREE_BRANCH=<name>
     WORKTREE_ORIGIN=<abs>
 
-  Consume with: eval "$(dg-skills worktree create my_feature)"
+  Consume with: eval "$(dg worktree create my_feature)"
 
 Flags:
   -p, --prefix <str>   Branch prefix (default: feature/)
@@ -42,7 +42,7 @@ export async function create(args: string[]): Promise<number> {
 		else fail("create takes one slug positional");
 	}
 	if (slug === undefined)
-		fail("create requires a slug (try: dg-skills worktree create my_feature)");
+		fail("create requires a slug (try: dg worktree create my_feature)");
 	const result = await createWorktree(
 		{ slug, prefix, base, seed, resume },
 		(text) => {

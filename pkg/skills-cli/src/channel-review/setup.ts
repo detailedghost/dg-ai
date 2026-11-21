@@ -138,7 +138,7 @@ function writeTemplate(deps: SetupDeps): void {
 	writeFileAtomic(template, `${JSON.stringify(example, null, "\t")}\n`, 0o600);
 	deps.write(`No terminal to ask in. Wrote a template to ${template}.`);
 	deps.write(`Fill in ${REQUIRED_KEYS.join("; ")}, then rename it to ${deps.configPath}.`);
-	deps.write("Or run dg-skills channel-review setup in a terminal.");
+	deps.write("Or run dg channel-review setup in a terminal.");
 }
 
 /** Creates the channel-review config: asks on a terminal, writes a template otherwise. */
@@ -167,9 +167,9 @@ export async function runSetup(flags: SetupFlags, deps: SetupDeps = defaultSetup
 			await deps.connectRelay(config.env.default);
 		} catch (error) {
 			deps.write(`Relay secret not stored: ${describeError(error)}`);
-			deps.write("Run dg-skills channel-review connect relay after aws sso login.");
+			deps.write("Run dg channel-review connect relay after aws sso login.");
 		}
 	}
-	deps.write("Next: dg-skills channel-review start");
+	deps.write("Next: dg channel-review start");
 	return 0;
 }

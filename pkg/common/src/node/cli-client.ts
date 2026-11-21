@@ -95,10 +95,10 @@ export async function resolveCliSession(
 	env: NodeJS.ProcessEnv = process.env,
 ): Promise<ResolvedSession & { agentIdentity: string }> {
 	const handle = readPidFile(paths);
-	if (!handle) throw new DgCliError("no live dg-daemon pid file was found");
+	if (!handle) throw new DgCliError("no live dg daemon pid file was found");
 	requireMatchingProtocol(
 		handle,
-		'Run "dg-skills install" so both binaries come from the same release, ' +
+		'Run "dg install" so both binaries come from the same release, ' +
 			`then stop the daemon (pid ${handle.pid}) once nothing depends on it.`,
 	);
 
@@ -164,7 +164,7 @@ export class CliClient {
 			} catch (error) {
 				reject(
 					new DgCliError(
-						`cannot connect to dg-daemon on port ${session.port}: ${describeError(error)}`,
+						`cannot connect to dg daemon on port ${session.port}: ${describeError(error)}`,
 					),
 				);
 				return;
@@ -183,7 +183,7 @@ export class CliClient {
 				cleanup();
 				reject(
 					new DgCliError(
-						`cannot connect to dg-daemon on port ${session.port}; the daemon may be stopped or the session capability may be invalid`,
+						`cannot connect to dg daemon on port ${session.port}; the daemon may be stopped or the session capability may be invalid`,
 					),
 				);
 			};
@@ -192,7 +192,7 @@ export class CliClient {
 				socket.close();
 				reject(
 					new DgCliError(
-						`timed out connecting to dg-daemon on port ${session.port}`,
+						`timed out connecting to dg daemon on port ${session.port}`,
 					),
 				);
 			}, timeoutMs);
@@ -232,15 +232,15 @@ export class CliClient {
 			};
 			const onClose = () => {
 				cleanup();
-				reject(new DgCliError("dg-daemon closed the CLI connection"));
+				reject(new DgCliError("dg daemon closed the CLI connection"));
 			};
 			const onError = () => {
 				cleanup();
-				reject(new DgCliError("the dg-daemon CLI connection failed"));
+				reject(new DgCliError("the dg daemon CLI connection failed"));
 			};
 			const timer = setTimeout(() => {
 				cleanup();
-				reject(new DgCliError("dg-daemon did not answer the CLI request"));
+				reject(new DgCliError("dg daemon did not answer the CLI request"));
 			}, timeoutMs);
 			this.socket.addEventListener("message", onMessage);
 			this.socket.addEventListener("close", onClose, { once: true });

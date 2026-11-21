@@ -1,6 +1,6 @@
 # @dg/channel-review
 
-The library behind `dg-skills channel-review`. A local daemon watches Teams
+The library behind `dg channel-review`. A local daemon watches Teams
 chats through a Teams bot relay, runs the thrash or address skill on GitHub PRs
 and GitLab MRs that people post, and answers with reactions and replies.
 
@@ -34,7 +34,7 @@ state survive. Cursor-only writes coalesce for up to one second.
 The daemon reads relay, Datadog, and Sentry secrets from the dg credential
 store first; see the [credential store](../../docs/chat.md#credential-store).
 
-Deploy compatible `dg-daemon` and `dg-skills` binaries together: central schema
+Deploy a daemon and a `dg` program from the same release: central schema
 12 is newer than older daemon builds accept. See
 [ADR 0018](../../docs/adr/0018-channel-review-state-in-daemon-db.md) and
 [state and recovery](../../plugins/dg/skills/channel-review/references/setup.md#state-and-recovery).

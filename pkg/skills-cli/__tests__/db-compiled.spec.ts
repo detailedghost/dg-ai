@@ -111,7 +111,7 @@ async function run(args: string[]) {
 	return { stdout, stderr, code };
 }
 
-describe("compiled dg-skills db from an external cwd", () => {
+describe("compiled dg db from an external cwd", () => {
 	test("lists an empty fake credential store without legacy scripts or a database", async () => {
 		const result = await run(["connections"]);
 		expect(result.code, result.stderr).toBe(0);

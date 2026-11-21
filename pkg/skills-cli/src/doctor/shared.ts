@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { scratchRoot, shellCommand, stateRoot } from "@dg/common/node";
+import { compiledProgramPath } from "@dg/common/node/program";
 import { readCurrent } from "../install/current";
 import { isDgLauncher } from "../install/dg-launcher";
 import { bootstrapCommand, PLUGIN_INSTALL, PLUGIN_UPDATE } from "./checks";
@@ -49,20 +50,20 @@ export function dgLauncherCheck(
 	cliOnly: (ctx: DoctorContext) => boolean,
 	platform: NodeJS.Platform = process.platform,
 ): DoctorCheck {
-	const file = platform === "win32" ? "dg.cmd" : "dg";
+	const file = platform === "win32" ? "dg.exe" : "dg";
 	return {
 		id: "dg-launcher",
 		run(ctx) {
-			const { binDir } = ctx.paths;
-			if (!existsSync(cliLauncher(binDir, platform))) return ok(`no dg-skills launcher in ${binDir}`);
-			const launcher = join(binDir, file);
+			const { binDir, dataDir } = ctx.paths;
+			if (!readCurrent(dataDir, "bin")) return ok("no compiled dg installed; running from source");
+			const launcher = cliLauncher(binDir, platform);
 			try {
 				lstatSync(launcher);
 			} catch {
-				return warn(`the dg launcher is missing from ${binDir}`, cliOnly(ctx) ? "dg-skills install --cli-only" : "dg-skills install");
+				return warn(`the dg launcher is missing from ${binDir}`, cliOnly(ctx) ? "dg install --cli-only" : "dg install");
 			}
-			if (!isDgLauncher(launcher, platform))
-				return warn(`${launcher} is not a dg launcher`, `remove or rename ${launcher}, then run dg-skills install`);
+			if (!isDgLauncher(launcher, platform, dataDir))
+				return warn(`${launcher} is not a dg launcher`, `remove or rename ${launcher}, then run dg install`);
 			const onPath = Bun.which(file, { PATH: ctx.env.PATH ?? "" });
 			if (onPath && !sameFile(onPath, launcher))
 				return warn(`dg on PATH is ${onPath}, not ${launcher}`, launcherPathFix(binDir, platform));
@@ -83,32 +84,32 @@ export const sharedChecks: DoctorCheck[] = [
 	{
 		id: "version-match",
 		run(ctx) {
-			const installed = readCurrent(ctx.paths.dataDir, "lib") ?? ctx.installedVersion;
+			const installed = readCurrent(ctx.paths.dataDir, "bin") ?? readCurrent(ctx.paths.dataDir, "lib") ?? ctx.installedVersion;
 			const plugin = installedPlugins(ctx.home)[0];
-			if (!plugin) return ok(`dg-skills ${installed}; no plugin to compare`);
+			if (!plugin) return ok(`dg ${installed}; no plugin to compare`);
 			if (isOlder(installed, plugin.version))
 				return fail(
-					`dg-skills ${installed} is older than the dg plugin ${plugin.version}`,
+					`dg ${installed} is older than the dg plugin ${plugin.version}`,
 					bootstrapCommand(ctx),
 				);
 			if (isOlder(plugin.version, installed))
 				return warn(
-					`the dg plugin ${plugin.version} is older than dg-skills ${installed}`,
+					`the dg plugin ${plugin.version} is older than dg ${installed}`,
 					PLUGIN_UPDATE,
 				);
-			return ok(`dg-skills and the dg plugin are both ${installed}`);
+			return ok(`dg and the dg plugin are both ${installed}`);
 		},
 	},
 	{
-		id: "runtime-present",
+		id: "program-present",
 		run(ctx) {
-			if (!readCurrent(ctx.paths.dataDir, "lib")) return ok("no bundle installed; running from source");
-			const bun = join(ctx.paths.runtimeDir, "current", process.platform === "win32" ? "bun.exe" : "bun");
-			if (!existsSync(bun)) return fail(`the Bun runtime ${bun} is missing`, bootstrapCommand(ctx));
-			const version = toolVersion(bun);
+			if (!readCurrent(ctx.paths.dataDir, "bin")) return ok("no compiled dg installed; running from source");
+			const program = compiledProgramPath(ctx.paths.dataDir);
+			if (!existsSync(program)) return fail(`the dg program ${program} is missing`, bootstrapCommand(ctx));
+			const version = toolVersion(program);
 			return version
-				? ok(`the Bun runtime ${bun} runs (bun ${version})`)
-				: fail(`the Bun runtime ${bun} did not run --version`, bootstrapCommand(ctx));
+				? ok(`the dg program ${program} runs (dg ${version})`)
+				: fail(`the dg program ${program} did not run --version`, bootstrapCommand(ctx));
 		},
 	},
 	{
@@ -122,7 +123,7 @@ export const sharedChecks: DoctorCheck[] = [
 		id: "launcher-on-path",
 		run(ctx) {
 			const launcher = cliLauncher(ctx.paths.binDir);
-			if (!existsSync(launcher)) return ok(`no dg-skills launcher in ${ctx.paths.binDir}`);
+			if (!existsSync(launcher)) return ok(`no dg launcher in ${ctx.paths.binDir}`);
 			if ((ctx.env.PATH ?? "").split(delimiter).includes(ctx.paths.binDir))
 				return ok(`${ctx.paths.binDir} is on PATH`);
 			return warn(

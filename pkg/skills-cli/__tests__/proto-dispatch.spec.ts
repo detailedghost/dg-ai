@@ -45,7 +45,7 @@ describe("dispatchProto", () => {
 	});
 });
 
-describe("dg-skills proto entry point", () => {
+describe("dg proto entry point", () => {
 	let root: string;
 	let env: Record<string, string>;
 	let cwd: string;
@@ -96,7 +96,7 @@ describe("dg-skills proto entry point", () => {
 		const result = await run(["--ext", "cleanup", "some-slug"]);
 		expect(result.exitCode).toBe(1);
 		expect(result.stderr).toContain(
-			"dg-skills proto --ext needs the dg-ai-extension",
+			"dg proto --ext needs the dg-ai-extension",
 		);
 	});
 

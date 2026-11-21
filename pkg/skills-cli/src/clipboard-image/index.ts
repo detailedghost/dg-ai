@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { isWSL, runCapture, writeStdout } from "@dg/common/node";
 
-const USAGE = `Usage: dg-skills clipboard-image [--scratch | -s | <dest.png> | -]
+const USAGE = `Usage: dg clipboard-image [--scratch | -s | <dest.png> | -]
 
 Save the clipboard image as PNG. Without arguments, save under .agents/clipboard.
   --scratch, -s  Keep a temporary PNG and print its path

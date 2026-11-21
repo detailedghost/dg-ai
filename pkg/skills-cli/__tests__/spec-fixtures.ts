@@ -277,7 +277,7 @@ export function splitFrontmatter(text: string): {
 }
 
 export const LEGACY_PROGRAM = "spec-cli";
-const CURRENT_PROGRAM = "dg-skills spec";
+const CURRENT_PROGRAM = "dg spec";
 
 export function renameLegacyProgram(text: string): string {
 	return text.replaceAll(LEGACY_PROGRAM, CURRENT_PROGRAM);

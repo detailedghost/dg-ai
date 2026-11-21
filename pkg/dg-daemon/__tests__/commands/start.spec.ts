@@ -73,7 +73,7 @@ function pidAlive(pid: number): boolean {
 	}
 }
 
-describe("dg-daemon start", () => {
+describe("dg daemon start", () => {
 	it("starts a daemon on a new home and reports it with --json", async () => {
 		const { dgHome, port } = homeWithPort();
 
@@ -111,11 +111,11 @@ describe("dg-daemon start", () => {
 		const handle = readPidFile(dgHome);
 		const where = `127.0.0.1:${port} (pid ${handle.pid}, version ${handle.versions.package})`;
 		expect(first.code).toBe(0);
-		expect(first.stdout).toBe(`dg-daemon started on ${where}\n`);
+		expect(first.stdout).toBe(`dg daemon started on ${where}\n`);
 
 		const second = await dg(dgHome, port, ["start"]);
 		expect(second.code).toBe(0);
-		expect(second.stdout).toBe(`dg-daemon already running on ${where}\n`);
+		expect(second.stdout).toBe(`dg daemon already running on ${where}\n`);
 	});
 
 	it("starts a new daemon when the pid file names a dead process", async () => {
@@ -159,7 +159,7 @@ describe("dg-daemon start", () => {
 
 		expect(result.code).toBe(0);
 		expect(result.stdout).toBe(
-			`dg-daemon already running on 127.0.0.1:${handle.port} (pid ${handle.pid}, version 1.2.3)\n`,
+			`dg daemon already running on 127.0.0.1:${handle.port} (pid ${handle.pid}, version 1.2.3)\n`,
 		);
 	});
 
@@ -199,7 +199,7 @@ describe("dg-daemon start", () => {
 			expect(result.code).toBe(1);
 			expect(result.stdout).toBe("");
 			expect(result.stderr).toContain(
-				"dg-daemon did not become healthy within the startup timeout",
+				"dg daemon did not become healthy within the startup timeout",
 			);
 		}, 30_000);
 	}

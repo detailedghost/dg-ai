@@ -31,7 +31,7 @@ import { cmdStart, startedLine } from "../../src/commands/start";
 import { cmdRestart, cmdStop } from "../../src/commands/stop";
 import { allocatePort, waitForDaemonExit } from "../utils/daemon-harness";
 
-const TIMEOUT_TEXT = "dg-daemon did not become healthy within the startup timeout";
+const TIMEOUT_TEXT = "dg daemon did not become healthy within the startup timeout";
 const OLD_PID = 424242;
 const LABEL = "com.detailedghost.dg-daemon";
 
@@ -221,7 +221,7 @@ const failure = async (action: Promise<unknown>): Promise<DgCliError> => {
 
 const indexAfter = (from: number, prefix: string): number => events.findIndex((event, i) => i > from && event.startsWith(prefix));
 
-describe("dg-daemon start with a login unit", () => {
+describe("dg daemon start with a login unit", () => {
 	it("runs the manager restart one time, spawns nothing, and prints the started line", async () => {
 		const scenario = await withUnit("systemd");
 		const lines = captureLines();
@@ -393,7 +393,7 @@ describe("dg-daemon start with a login unit", () => {
 	});
 });
 
-describe("dg-daemon restart with a login unit", () => {
+describe("dg daemon restart with a login unit", () => {
 	it("stops the daemon with SIGTERM and the wait, then runs the manager command, and prints two lines", async () => {
 		const scenario = await withUnit("systemd");
 		liveOldDaemon();
@@ -408,7 +408,7 @@ describe("dg-daemon restart with a login unit", () => {
 		expect(indexAfter(term, `kill ${OLD_PID} 0`)).toBeLessThan(manager);
 		expect(runs()).toEqual(scenario.startCommands);
 		expect(spawned).toEqual([]);
-		expect(lines()).toEqual([`dg-daemon stopped (pid ${OLD_PID})`, startedLine(liveHandle(), true)]);
+		expect(lines()).toEqual([`dg daemon stopped (pid ${OLD_PID})`, startedLine(liveHandle(), true)]);
 	});
 
 	it("does the force stop of master, then the manager command, with --force", async () => {
@@ -469,7 +469,7 @@ describe("dg-daemon restart with a login unit", () => {
 	});
 });
 
-describe("dg-daemon stop with a login unit", () => {
+describe("dg daemon stop with a login unit", () => {
 	it("on POSIX a regular stop sends SIGTERM and runs no manager command", async () => {
 		for (const kind of ["systemd", "launchd"] as const) {
 			events.length = 0;

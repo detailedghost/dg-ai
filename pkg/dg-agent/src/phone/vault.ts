@@ -120,12 +120,12 @@ export function vaultStorageFullText(handle: string): string {
 }
 
 function unreachable(): DgCliError {
-	return new DgCliError("the vault needs the dg credential store, which is not reachable; start it with dg-agent start");
+	return new DgCliError("the vault needs the dg credential store, which is not reachable; start it with dg agent start");
 }
 
 /** A failure to reach the daemon, not a rejection of a request the daemon could answer. */
 function storeDown(err: unknown): boolean {
-	return err instanceof Error && /not reachable|dg-daemon is not running|no live dg-daemon pid file|cannot connect to dg-daemon|timed out connecting to dg-daemon/.test(err.message);
+	return err instanceof Error && /not reachable|dg daemon is not running|no live dg daemon pid file|cannot connect to dg daemon|timed out connecting to dg daemon/.test(err.message);
 }
 
 function grantMiss(err: unknown): boolean {
@@ -208,7 +208,7 @@ async function makePeriodKey(deps: VaultKeyDeps, period: string): Promise<Buffer
 	const value = randomBytes(KEY_BYTES).toString("hex");
 	const made = await sessionWork(deps, async (client) => {
 		try {
-			await client.set(name, value, { createdBy: "dg-agent phone vault" });
+			await client.set(name, value, { createdBy: "dg phone vault" });
 			await client.grant(VAULT_GRANT_PREFIX);
 			return await readPeriodKey(deps, period);
 		} catch (err) {

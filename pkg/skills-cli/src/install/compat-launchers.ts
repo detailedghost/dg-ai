@@ -1,24 +1,9 @@
-import {
-	chmodSync,
-	existsSync,
-	readdirSync,
-	readFileSync,
-	renameSync,
-	rmdirSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { DgPaths } from "@dg/common/node/dg-paths";
-import { versionGte } from "../utils/lib";
-import { LEGACY_PROGRAMS } from "./shims";
+import { PROGRAM_NAMES } from "@dg/common/node/program";
 
 const RELEASE_IN_TEXT = /this path is removed in (\d+\.\d+\.\d+)/;
-
-export function removalRelease(version: string): string {
-	const [major, minor] = version.split(".").map(Number);
-	return `${major}.${(minor ?? 0) + 2}.0`;
-}
 
 const shQuote = (value: string): string =>
 	`'${value.replaceAll("'", "'\\''")}'`;
@@ -43,29 +28,15 @@ export function compatLauncherText(
 	].join("\n");
 }
 
-/** True when the legacy bin file is the launcher text written by `syncCompatLaunchers` and its replacement exists in the launcher folder. */
+/** True when the legacy bin file is the notice launcher text that an older install wrote. */
 export function isCompatLauncher(paths: DgPaths, file: string, platform: NodeJS.Platform): boolean {
-	const replacement = join(paths.binDir, file);
-	if (!existsSync(replacement)) return false;
 	try {
 		const text = readFileSync(join(paths.legacyHome, "bin", file), "utf8");
 		const release = RELEASE_IN_TEXT.exec(text)?.[1];
 		const name = platform === "win32" ? file.replace(/\.cmd$/, "") : file;
-		return release !== undefined && text === compatLauncherText(name, replacement, release, platform);
+		return release !== undefined && text === compatLauncherText(name, join(paths.binDir, file), release, platform);
 	} catch {
 		return false;
-	}
-}
-
-function writeAtomic(path: string, text: string): void {
-	const staged = `${path}.${process.pid}.tmp`;
-	try {
-		writeFileSync(staged, text);
-		chmodSync(staged, 0o755);
-		renameSync(staged, path);
-	} catch (err) {
-		rmSync(staged, { force: true });
-		throw err;
 	}
 }
 
@@ -73,40 +44,17 @@ function removeIfEmpty(dir: string): void {
 	if (existsSync(dir) && readdirSync(dir).length === 0) rmdirSync(dir);
 }
 
-/**
- * Keeps `<legacyHome>/bin/*` as notice-printing launchers for two minor releases after the move,
- * then removes them. A fresh machine, or a DG_HOME whose bin folder did not move, gets nothing.
- */
-export function syncCompatLaunchers(
-	paths: DgPaths,
-	version: string,
-	platform: NodeJS.Platform = process.platform,
-): void {
+/** Removes the `<legacyHome>/bin/*` notice launchers that older installs wrote; their targets are gone. */
+export function removeCompatLaunchers(paths: DgPaths, platform: NodeJS.Platform = process.platform): void {
 	const legacyBin = join(paths.legacyHome, "bin");
 	if (legacyBin === paths.binDir || !existsSync(legacyBin)) return;
-	const launcherFile = (name: string) => (platform === "win32" ? `${name}.cmd` : name);
-	for (const name of LEGACY_PROGRAMS) {
-		const file = launcherFile(name);
-		const path = join(legacyBin, file);
-		if (!existsSync(path)) continue;
-		const existing = readFileSync(path, "utf8");
-		const release =
-			RELEASE_IN_TEXT.exec(existing)?.[1] ?? removalRelease(version);
-		if (versionGte(version, release)) {
-			rmSync(path, { force: true });
-			continue;
-		}
-		const text = compatLauncherText(
-			name,
-			join(paths.binDir, file),
-			release,
-			platform,
-		);
-		if (existing !== text) writeAtomic(path, text);
+	for (const name of PROGRAM_NAMES) {
+		const file = platform === "win32" ? `${name}.cmd` : name;
+		if (isCompatLauncher(paths, file, platform)) rmSync(join(legacyBin, file), { force: true });
 	}
-	const launchersLeft = LEGACY_PROGRAMS.some((name) => existsSync(join(legacyBin, launcherFile(name))));
+	const launchersLeft = PROGRAM_NAMES.some((name) => existsSync(join(legacyBin, platform === "win32" ? `${name}.cmd` : name)));
 	if (!launchersLeft) {
-		for (const name of LEGACY_PROGRAMS) rmSync(join(legacyBin, `${name}.version`), { force: true });
+		for (const name of PROGRAM_NAMES) rmSync(join(legacyBin, `${name}.version`), { force: true });
 	}
 	removeIfEmpty(legacyBin);
 	removeIfEmpty(paths.legacyHome);

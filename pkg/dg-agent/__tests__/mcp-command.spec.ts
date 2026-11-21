@@ -22,7 +22,7 @@ let dgHome: string;
 let savedHome: string | undefined;
 let savedSession: string | undefined;
 
-describe("dg-agent mcp", () => {
+describe("dg mcp", () => {
 	beforeEach(() => {
 		errors = [];
 		stdout = [];
@@ -52,7 +52,7 @@ describe("dg-agent mcp", () => {
 	it("exits 1 with the session error text and keeps stdout empty when no session resolves", async () => {
 		const code = await main(["mcp"]);
 		expect(code).toBe(1);
-		expect(errors.join("\n")).toContain("no live dg-daemon pid file was found");
+		expect(errors.join("\n")).toContain("no live dg daemon pid file was found");
 		expect(stdout).toEqual([]);
 	});
 
@@ -63,7 +63,7 @@ describe("dg-agent mcp", () => {
 	});
 });
 
-describe("dg-agent mcp session token", () => {
+describe("dg mcp session token", () => {
 	let home: string;
 	let cwd: string;
 

@@ -156,7 +156,7 @@ async function serve(env: Record<string, string>, cwd: string, pidFile: string):
 	const exited = await Promise.race([child.exited, sleep(SERVE_STOP_CAP_MS).then(() => undefined)]);
 	if (exited === undefined) child.kill("SIGKILL");
 	const code = exited ?? (await child.exited);
-	if (!booted) fail(`dg-daemon serve wrote no pid file at ${pidFile}: ${await stderr}`);
+	if (!booted) fail(`dg daemon serve wrote no pid file at ${pidFile}: ${await stderr}`);
 	return { code, port, pidFile, pidFileGone: !existsSync(pidFile), stderr: await stderr };
 }
 
@@ -202,7 +202,7 @@ async function generateTemplate(): Promise<Template> {
 	const env = { ...spawnEnv(generatorHome), DG_HOME: flat };
 	const state = join(flat, "state");
 	const served = await serve(env, generatorHome, join(state, "daemon", "daemon.pid"));
-	if (served.code !== 0 && served.code !== 143 && served.code !== 128 + 15) fail(`dg-daemon serve exited ${served.code}: ${served.stderr}`);
+	if (served.code !== 0 && served.code !== 143 && served.code !== 128 + 15) fail(`dg daemon serve exited ${served.code}: ${served.stderr}`);
 	const token = `fixture-token-${crypto.randomUUID()}`;
 	const written = await run(env, generatorHome, "dg-agent", ["memory", "write", "fixture note", token, "--identity", FIXTURE_IDENTITY]);
 	if (written.code !== 0) fail(`memory write exited ${written.code}: ${written.stderr}`);

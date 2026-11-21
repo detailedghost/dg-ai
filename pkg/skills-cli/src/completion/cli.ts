@@ -3,10 +3,10 @@ import { removeCompletions, writeCompletions } from "./files";
 
 export type CompletionOptions = { install?: boolean; uninstall?: boolean };
 
-/** Prints a completion script, or writes or removes the completion files of every dg program. */
+/** Prints the dg completion script, or writes or removes the dg completion files. */
 export function runCompletion(shell: CompletionShell | undefined, opts: CompletionOptions): number {
 	if (opts.install && opts.uninstall) {
-		process.stderr.write("dg-skills completion: pass only one of --install and --uninstall\n");
+		process.stderr.write("dg completion: pass only one of --install and --uninstall\n");
 		return 2;
 	}
 	if (opts.install) {
@@ -18,9 +18,9 @@ export function runCompletion(shell: CompletionShell | undefined, opts: Completi
 		return 0;
 	}
 	if (!shell) {
-		process.stderr.write("dg-skills completion: name a shell (bash, zsh or fish), or pass --install or --uninstall\n");
+		process.stderr.write("dg completion: name a shell (bash, zsh or fish), or pass --install or --uninstall\n");
 		return 2;
 	}
-	process.stdout.write(completionScript(shell, "dg-skills"));
+	process.stdout.write(completionScript(shell, "dg"));
 	return 0;
 }

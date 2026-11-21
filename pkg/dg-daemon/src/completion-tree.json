@@ -1,5 +1,5 @@
 {
-	"name": "dg-daemon",
+	"name": "dg daemon",
 	"description": "Loopback HTTP+WebSocket daemon hosting many chat sessions for dg:start.",
 	"commands": [
 		{

@@ -71,7 +71,7 @@ describe("isDaemonOf", () => {
 		expect(isDaemonOf(record, cmdline)).toBe(false);
 	});
 
-	test("rejects an unrelated dg-skills command line", () => {
+	test("rejects an unrelated dg command line", () => {
 		expect(
 			isDaemonOf(record, [
 				"/usr/bin/bun",

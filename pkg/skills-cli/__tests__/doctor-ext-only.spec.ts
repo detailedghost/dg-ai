@@ -87,7 +87,7 @@ describe("extOnly", () => {
 	});
 });
 
-describe("dg-skills doctor on a CLI-only home", () => {
+describe("dg doctor on a CLI-only home", () => {
 	const cliOnlyEnv = () => ({ DG_HOME: join(world.home, ".dg") });
 	beforeEach(() => {
 		mkdirSync(join(world.home, ".dg", "config"), { recursive: true });
@@ -134,7 +134,7 @@ describe("dg-skills doctor on a CLI-only home", () => {
 	});
 });
 
-describe("dg-skills doctor batch-open on a full install", () => {
+describe("dg doctor batch-open on a full install", () => {
 	test("exits 0 when the daemon is down and reports the extension checks as info", async () => {
 		const { run, report } = await world.report(["batch-open"], {
 			DG_HOME: join(world.home, ".dg"),
@@ -147,7 +147,7 @@ describe("dg-skills doctor batch-open on a full install", () => {
 	});
 });
 
-describe("dg-skills doctor require-extension on a CLI-only home", () => {
+describe("dg doctor require-extension on a CLI-only home", () => {
 	test("reports the extension checks as info with the --ext only prefix", async () => {
 		mkdirSync(join(world.home, ".dg", "config"), { recursive: true });
 		writeFileSync(join(world.home, ".dg", "config", "cli-only"), "");

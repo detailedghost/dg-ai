@@ -10,7 +10,7 @@ export function authRemedy(config: ChannelConfig, env: ResolvedEnv): string {
 	return [
 		"The relay rejected the secret.",
 		`Check that the AWS secret ${id} (key ${key}) holds the ${env.name} API code,`,
-		`then run: dg-skills channel-review connect relay --env ${env.name}`,
+		`then run: dg channel-review connect relay --env ${env.name}`,
 	].join(" ");
 }
 

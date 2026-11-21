@@ -163,7 +163,7 @@ function requireExtensionOrigin(
 		return new Response(
 			"refused: Origin does not match the pinned extension origin — if the " +
 				"extension moved (e.g. an unpacked reload from a new path), run " +
-				"`dg-daemon origin clear` and reconnect",
+				"`dg daemon origin clear` and reconnect",
 			{ status: 400, headers: NOSNIFF_HEADERS },
 		);
 	}

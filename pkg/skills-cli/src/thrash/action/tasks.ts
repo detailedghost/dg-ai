@@ -109,11 +109,11 @@ export async function dgSkills(args: string[], env?: Record<string, string>): Pr
 		env: env ? { ...process.env, ...env } : process.env,
 	});
 	const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-	if (code !== 0) throw new Error(`dg-skills ${args.slice(0, 2).join(" ")} exited ${code}: ${stdout.trim().slice(-2000)}`);
+	if (code !== 0) throw new Error(`dg ${args.slice(0, 2).join(" ")} exited ${code}: ${stdout.trim().slice(-2000)}`);
 	return stdout;
 }
 
-/** The last JSON object a command printed; dg-skills logs progress lines before it. */
+/** The last JSON object a command printed; dg logs progress lines before it. */
 export function lastJson<T>(stdout: string): T {
 	const lines = stdout.trim().split("\n");
 	for (let i = lines.length - 1; i >= 0; i--) {

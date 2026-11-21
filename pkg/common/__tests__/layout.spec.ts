@@ -305,7 +305,7 @@ posix("ensureLayout fast path", () => {
 		expect(counts.load).toBeGreaterThanOrEqual(1);
 		expect(counts.lock).toBe(0);
 		expect(lines.filter((line) => line.includes("already exists"))).toEqual([
-			`dg: kept ${legacyAt("phone")}; ${paths.phoneRoot} already exists and holds data. dg-skills doctor reports both copies`,
+			`dg: kept ${legacyAt("phone")}; ${paths.phoneRoot} already exists and holds data. dg doctor reports both copies`,
 		]);
 	});
 
@@ -711,7 +711,7 @@ posix("ensureLayout targets", () => {
 		expect(String(outcome?.asideTo).startsWith(`${paths.daemonDir}.empty-`)).toBe(true);
 		expect(existsSync(String(outcome?.asideTo))).toBe(true);
 		expect(readFileSync(join(paths.daemonDir, "daemon.db"), "utf8")).toBe("db bytes");
-		expect(lines).toEqual([`dg: set aside unused ${paths.daemonDir} as ${outcome?.asideTo}; dg-skills clean removes it`]);
+		expect(lines).toEqual([`dg: set aside unused ${paths.daemonDir} as ${outcome?.asideTo}; dg clean removes it`]);
 	});
 
 	test("marks the daemon folder for the keychain step only when it moved over a set-aside target", async () => {
@@ -1005,8 +1005,8 @@ posix("ensureLayout lock", () => {
 
 posix("assertNotBlocked", () => {
 	const kept = (from: string): string =>
-		`dg: kept ${from}; a process that writes it is running. Stop it, then run dg-skills install again`;
-	const notMoved = (from: string, to: string): string => `dg: ${from} has not moved to ${to}; run dg-skills install`;
+		`dg: kept ${from}; a process that writes it is running. Stop it, then run dg install again`;
+	const notMoved = (from: string, to: string): string => `dg: ${from} has not moved to ${to}; run dg install`;
 
 	test("throws the exact kept text after a live-writer block", async () => {
 		put(legacyAt("daemon", "daemon.db"), "db");
@@ -1095,7 +1095,7 @@ posix("assertNotBlocked", () => {
 		const error = thrown(() => assertNotBlocked(paths, "daemon"));
 
 		expect(error).toBeInstanceOf(DgCliError);
-		expect((error as Error).message).toBe(`dg: kept ${legacyAt("daemon")}; a folder inside it did not move. dg-skills doctor names it`);
+		expect((error as Error).message).toBe(`dg: kept ${legacyAt("daemon")}; a folder inside it did not move. dg doctor names it`);
 		expect(readdirSync(paths.daemonDir)).toEqual([]);
 	});
 

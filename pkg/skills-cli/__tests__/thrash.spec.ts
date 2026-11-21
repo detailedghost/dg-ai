@@ -1549,7 +1549,7 @@ describe("compiled thrash workflow", () => {
 		const repo = fixtureRepo();
 		const skill = readFileSync(join(skills, "thrash", "SKILL.md"), "utf8");
 		const bootstrap = skill.match(
-			/```bash\n(\{ dg-skills thrash --help[\s\S]*?)\n```/,
+			/```bash\n(\{ dg thrash --help[\s\S]*?)\n```/,
 		)?.[1];
 		expect(bootstrap).toBeDefined();
 		const proc = Bun.spawnSync(

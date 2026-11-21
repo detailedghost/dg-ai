@@ -26,7 +26,7 @@ async function spawnAgentStart(): Promise<string> {
 		child.exited,
 	]);
 	if (code !== 0)
-		throw new Error(`dg-agent start failed (exit ${code}): ${stderr.trim()}`);
+		throw new Error(`dg agent start failed (exit ${code}): ${stderr.trim()}`);
 	return stdout;
 }
 
@@ -49,7 +49,7 @@ export async function ensureCwdSession(
 	const matches = sessionsForCwd(records, cwd);
 	if (matches.length === 0) {
 		const id = (await deps.spawnAgentStart()).trim();
-		if (!id) throw new Error("dg-agent start printed no session id");
+		if (!id) throw new Error("dg agent start printed no session id");
 		return id;
 	}
 	return selectSoleSession(matches, cwd).sessionId;

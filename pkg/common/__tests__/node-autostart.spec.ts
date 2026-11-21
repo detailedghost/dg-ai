@@ -361,7 +361,7 @@ describe("installAutostart", () => {
 		expect((error as Error).message.endsWith("failed: a\nb")).toBe(true);
 	});
 
-	it("linux: a failing dg-daemon enable --now with an empty stderr reports only the first stdout line", async () => {
+	it("linux: a failing dg daemon enable --now with an empty stderr reports only the first stdout line", async () => {
 		const ran: string[][] = [];
 		const { deps } = fakeDeps({
 			run: recordingRun(ran, (argv) => (argv[2] === "enable" ? { code: 1, stdout: "a\nb" } : { code: 0 })),
@@ -474,7 +474,7 @@ describe("installAutostart", () => {
 		expect(removed).toEqual([written[0]?.path]);
 	});
 
-	it("win32: a failing Run with an empty stderr reports all of stdout for dg-phone and the first line for dg-daemon", async () => {
+	it("win32: a failing Run with an empty stderr reports all of stdout for dg-phone and the first line for dg daemon", async () => {
 		for (const [name, tail] of [["dg-phone", "a\nb"], ["dg-daemon", "a"]] as const) {
 			const { deps } = fakeDeps({
 				platform: "win32",
@@ -634,7 +634,7 @@ describe("listener unit text", () => {
 			launchdPlistText(spec),
 			windowsTaskXml(spec),
 		]) {
-			expect(text).toContain("/home/u/.local/share/dg/runtime/current/bun");
+			expect(text).toContain("/home/u/.local/share/dg/bin/current/dg");
 			expect(text).not.toContain("~");
 			expect(text).not.toContain("$HOME");
 		}
@@ -893,7 +893,7 @@ const unquoteExecStart = (text: string): string[] => {
 	return unquoteSystemdExecStart(line.slice("ExecStart=".length));
 };
 
-describe("dg-daemon autostart contracts", () => {
+describe("dg autostart contracts", () => {
 	let root: string;
 	let daemonPaths: ReturnType<typeof resolveDgPaths>;
 
@@ -956,9 +956,8 @@ describe("dg-daemon autostart contracts", () => {
 
 		expect(unitPath.endsWith("systemd/user/dg-daemon.service")).toBe(true);
 		expect(unquoteExecStart(text)).toEqual([
-			join(daemonPaths.dataDir, "runtime", "current", "bun"),
-			join(daemonPaths.dataDir, "lib", "current", "dg.js"),
-			"dg-daemon",
+			join(daemonPaths.dataDir, "bin", "current", "dg"),
+			"daemon",
 			"serve",
 		]);
 		expect(text).toContain("Description=dg daemon\n");
@@ -992,11 +991,11 @@ describe("dg-daemon autostart contracts", () => {
 			join(daemonPaths.daemonDir, "dg-daemon.task.xml"),
 		);
 		expect(windowsTaskXml(daemonSpec())).toMatch(
-			/<Arguments>.*dg\.js dg-daemon serve<\/Arguments>/,
+			/<Arguments>daemon serve<\/Arguments>/,
 		);
 	});
 
-	it("derives the manager commands of dg-daemon from its name", () => {
+	it("derives the manager commands of dg daemon from its name", () => {
 		expect(managedRestartCommands("systemd", 501, "dg-daemon")).toEqual([
 			["systemctl", "--user", "restart", "dg-daemon.service"],
 		]);
@@ -1006,7 +1005,7 @@ describe("dg-daemon autostart contracts", () => {
 		]);
 	});
 
-	it("bootstraps the plist path before the kickstart on launchd for dg-daemon only", () => {
+	it("bootstraps the plist path before the kickstart on launchd for dg daemon only", () => {
 		const plist = launchdPlistPath("/Users/u", "dg-daemon");
 
 		expect(managedRestartCommands("launchd", 501, "dg-daemon", plist)).toEqual([
@@ -1025,7 +1024,7 @@ describe("dg-daemon autostart contracts", () => {
 		]);
 	});
 
-	it("passes a set DG_HOME in the dg-daemon plist EnvironmentVariables and none when unset", () => {
+	it("passes a set DG_HOME in the dg daemon plist EnvironmentVariables and none when unset", () => {
 		const dgHome = join(root, "dg");
 
 		const withHome = launchdPlistText(daemonSpec({ dgHome }));
@@ -1038,7 +1037,7 @@ describe("dg-daemon autostart contracts", () => {
 		expect(withoutHome).not.toContain("DG_HOME");
 	});
 
-	it("writes no Environment line to the dg-daemon unit when the caller sets none", () => {
+	it("writes no Environment line to the dg daemon unit when the caller sets none", () => {
 		expect(systemdUnitText(daemonSpec())).not.toMatch(/^Environment=/m);
 	});
 
@@ -1069,7 +1068,7 @@ describe("dg-daemon autostart contracts", () => {
 		expect(text).not.toContain("PATH");
 	});
 
-	it("installs and removes dg-daemon without reading, stopping or removing the dg-phone unit, and the reverse", async () => {
+	it("installs and removes dg daemon without reading, stopping or removing the dg-phone unit, and the reverse", async () => {
 		const { deps, ran } = diskDeps();
 		await installAutostart(deps, daemonPaths, GOLDEN_SPEC);
 		await installAutostart(deps, daemonPaths, daemonSpec());
@@ -1255,7 +1254,7 @@ describe("dg-daemon autostart contracts", () => {
 			).toBeUndefined();
 		});
 
-		it("does not report the dg-phone unit as the dg-daemon unit", async () => {
+		it("does not report the dg-phone unit as the dg daemon unit", async () => {
 			const { deps } = diskDeps();
 			await installAutostart(deps, daemonPaths, {
 				...GOLDEN_SPEC,

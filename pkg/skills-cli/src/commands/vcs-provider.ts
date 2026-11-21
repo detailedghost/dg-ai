@@ -6,7 +6,7 @@ export function registerVcsProvider(program: Command): void {
 	registerLazyLegacy(program, {
 		name: "vcs-provider",
 		description:
-			"Query the detected VCS provider (GitHub or GitLab) for repo info, issues, and pull requests. Run dg-skills vcs-provider <subcommand>.",
+			"Query the detected VCS provider (GitHub or GitLab) for repo info, issues, and pull requests. Run dg vcs-provider <subcommand>.",
 		load: async () => (await import("../vcs-provider")).commandSpec,
 	});
 }

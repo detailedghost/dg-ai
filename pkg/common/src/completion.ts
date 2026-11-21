@@ -250,6 +250,6 @@ export function registerCompletionCommand(program: Command): void {
 		.description("print the bash, zsh or fish completion script for this program")
 		.addArgument(program.createArgument("<shell>", "bash, zsh or fish").choices(COMPLETION_SHELLS))
 		.action((shell: CompletionShell) => {
-			process.stdout.write(completionScript(shell, program.name()));
+			process.stdout.write(completionScript(shell, program.name().replaceAll(" ", "-")));
 		});
 }

@@ -44,7 +44,7 @@ const PERSONAS = [
 ].map((name) => `${name}.md`).sort();
 
 const SUMMARY =
-	"Skills-only install: no skill content was executed. Fetching the dg bundle with the dg, dg-skills, dg-agent and dg-daemon launchers (no extension).";
+	"Skills-only install: no skill content was executed. Fetching the dg program (no extension).";
 
 describe("skills-only helpers", () => {
 	test("rejects flags that would fetch binaries or build the extension", () => {

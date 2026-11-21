@@ -4,22 +4,21 @@
  * Chrome/Edge/Brave forbid programmatically installing an unpacked extension, so
  * this stages the built extension to a stable per-OS path and prints guided
  * Load-unpacked steps. Assets come from the CI-built GitHub Release; in a source
- * checkout (dev) it falls back to a local `wxt build`. It also installs the pinned Bun
- * runtime and the dg-lib bundle, and writes the dg, dg-skills, dg-agent and dg-daemon launchers.
+ * checkout (dev) it falls back to a local `wxt build`. It also installs the compiled dg program
+ * and points the dg launcher at it.
  */
 
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { skillDirectoryNames } from "@dg/common";
-import { assertSkillsDestMoved, moveVerified, personasDest, removeSource, resolveDgPaths, run, skillsInstallDest, withInstallLock } from "@dg/common/node";
+import { assertSkillsDestMoved, isDaemonLive, moveVerified, personasDest, readPidFile, removeSource, resolveDgPaths, run, skillsInstallDest, withInstallLock } from "@dg/common/node";
 import { assertNotBlocked } from "@dg/common/node/layout";
 import { writeCompletions } from "../completion/files";
-import { fetchBundle } from "./bundle";
+import { PROGRAM_NAMES } from "@dg/common/node/program";
+import { installCompiled, versionProgramPath } from "./compiled";
 import { refreshPhoneListener } from "./phone-listener";
-import { activateRuntime, fetchRuntimePin, stageRuntime } from "./runtime";
 import { finishLauncherLayout, migrateBeforeInstall } from "./layout";
-import { LEGACY_PROGRAMS } from "./shims";
 import {
 	assertSkillsOnlyFlags,
 	runSkillsOnlyInstall,
@@ -35,8 +34,8 @@ import {
 	extractZip,
 	installRoot,
 	listReleases,
-	pickBundle,
-	type PickedBundle,
+	type PickedProgram,
+	pickProgram,
 	type Release,
 	readCurrentVersion,
 	readMarker,
@@ -140,7 +139,7 @@ function manifestVersion(dir: string): string {
 function printSteps(target: Target, path: string): void {
 	if (target === "firefox") {
 		console.log(
-			"Firefox (temporary add-on — reloads each session; use `dg-skills pw --ext launch` to automate):",
+			"Firefox (temporary add-on — reloads each session; use `dg pw --ext launch` to automate):",
 		);
 		console.log("  1. Open about:debugging#/runtime/this-firefox");
 		console.log('  2. Click "Load Temporary Add-on…"');
@@ -162,7 +161,7 @@ export function currentBinaryLine(
 	version: string,
 	bootstrapped = process.env.DG_SKILLS_BOOTSTRAP === "1",
 ): string {
-	if (bootstrapped && binaryName === "dg-skills") {
+	if (bootstrapped && binaryName === "dg") {
 		return `${binaryName} verified (v${version}).`;
 	}
 	return `${binaryName} already current (v${version}).`;
@@ -179,7 +178,7 @@ export function removeRetiredBinaries(): void {
 				console.log(`removed the retired ${name} binary at ${dest}.`);
 			}
 		}
-		for (const name of [...RETIRED_BINARIES, ...LEGACY_PROGRAMS]) {
+		for (const name of [...RETIRED_BINARIES, ...PROGRAM_NAMES]) {
 			rmSync(join(bin, `.${name}.version`), { force: true });
 		}
 	}
@@ -193,51 +192,58 @@ function installCompletions(): void {
 	}
 }
 
-/** Installs the pinned runtime and the bundle, then points the four launchers at them. */
-async function installBundle(release: PickedBundle): Promise<void> {
+/** Installs the compiled dg of one release, then points the dg launcher at it. */
+async function installProgram(release: PickedProgram): Promise<void> {
 	const root = installRoot();
 	const paths = resolveDgPaths();
-	assertNotBlocked(paths, "runtime");
 	assertNotBlocked(paths, "lib");
-	await withInstallLock(root, () => installBundleLocked(root, release));
+	await withInstallLock(root, () => installProgramLocked(root, release));
 }
 
-/** Installs the runtime and bundle of one release, and nothing else. */
-export async function installBundleOnly(version: string): Promise<void> {
-	await installBundle(pickBundle(await listReleases(), version));
+/** Installs the compiled dg of one release, and nothing else. */
+export async function installProgramOnly(version: string): Promise<void> {
+	await installProgram(pickProgram(await listReleases(), version));
 }
 
-async function installBundleLocked(root: string, release: PickedBundle): Promise<void> {
+async function installProgramLocked(root: string, release: PickedProgram, bridge = false): Promise<void> {
 	const installed = readCurrentVersion(root);
-	const bundleDir = join(root, "lib", release.version);
-	const present = existsSync(join(bundleDir, "dg.js"));
-	const currentBun = join(root, "runtime", "current", process.platform === "win32" ? "bun.exe" : "bun");
-	const pin = present && existsSync(currentBun) ? undefined : await fetchRuntimePin(release);
-	const runtimeBin = pin ? await stageRuntime(root, pin) : currentBun;
-	await fetchBundle(root, release, runtimeBin, pin && (() => activateRuntime(root, pin)));
-	finishLauncherLayout(release.version);
+	const present = existsSync(versionProgramPath(root, release.version));
+	const final = await installCompiled(root, release);
+	await finishLauncherLayout(release.version, { bridge });
 	installCompletions();
 	removeRetiredBinaries();
 	console.log(
 		present && installed === release.version
-			? currentBinaryLine("dg-skills", release.version)
-			: `dg bundle ${installed ? "updated to" : "installed"} v${release.version} at ${bundleDir}`,
+			? currentBinaryLine("dg", release.version)
+			: `dg ${installed ? "updated to" : "installed"} v${release.version} at ${final}`,
 	);
 }
 
-/** The hidden `install launchers` step: the installed release writes its own launcher set. */
-export function writeCurrentLaunchers(): void {
-	const version = readCurrentVersion();
-	if (!version) throw new Error("no dg release is installed; run dg-skills install");
-	finishLauncherLayout(version);
+/**
+ * The hidden `install launchers` step. A 6.3 self-update runs it from the new bundle: it installs the compiled
+ * dg of this build, then points the dg launcher at it and removes the old launchers.
+ */
+export async function writeCurrentLaunchers(): Promise<void> {
+	const version = process.env.DG_BUILD_VERSION ?? readCurrentVersion();
+	if (!version || version === "dev") throw new Error("no dg release is installed; run dg install");
+	const root = installRoot();
+	if (existsSync(versionProgramPath(root, version))) {
+		await withInstallLock(root, () => finishLauncherLayout(version, { bridge: true }));
+	} else {
+		const release = pickProgram(await listReleases(), version);
+		await withInstallLock(root, () => installProgramLocked(root, release, true));
+	}
+	refreshPhoneListener();
+	const handle = readPidFile(resolveDgPaths());
+	if (handle && (await isDaemonLive(handle))) console.log("dg: run dg daemon restart so the running daemon moves to the compiled dg");
 }
 
-/** An unpinned install keeps the old warn-and-continue behavior when the bundle cannot be installed. */
-async function installNewestBundle(releases: Release[]): Promise<void> {
+/** An unpinned install keeps the old warn-and-continue behavior when the dg program cannot be installed. */
+async function installNewestProgram(releases: Release[]): Promise<void> {
 	try {
-		await installBundle(pickBundle(releases));
+		await installProgram(pickProgram(releases));
 	} catch (err) {
-		console.warn(`⚠ dg bundle install skipped: ${err instanceof Error ? err.message : err}`);
+		console.warn(`⚠ dg install skipped: ${err instanceof Error ? err.message : err}`);
 	}
 }
 
@@ -251,12 +257,12 @@ function noteForeignDgHome(): void {
 }
 
 async function installCli(keepCache: boolean): Promise<void> {
-	await installNewestBundle(await listReleases());
+	await installNewestProgram(await listReleases());
 	refreshPhoneListener();
 	pruneClaudePluginCache(keepCache);
 }
 
-/** Skills-only installs fetch the bundle so the skills can run dg-skills; never the extension. */
+/** Skills-only installs fetch the compiled dg so the skills can run it; never the extension. */
 async function installSkillsCli(version?: string, releases?: Release[]): Promise<void> {
 	let resolved: Release[];
 	if (releases) {
@@ -265,18 +271,18 @@ async function installSkillsCli(version?: string, releases?: Release[]): Promise
 		try {
 			resolved = await listReleases();
 		} catch (err) {
-			console.warn(`⚠ dg-skills install skipped: ${err instanceof Error ? err.message : err}`);
+			console.warn(`⚠ dg install skipped: ${err instanceof Error ? err.message : err}`);
 			return;
 		}
 	}
-	if (version) await installBundle(pickBundle(resolved, version));
-	else await installNewestBundle(resolved);
+	if (version) await installProgram(pickProgram(resolved, version));
+	else await installNewestProgram(resolved);
 }
 
 async function installCliOnly(keepCache: boolean, version?: string): Promise<void> {
 	const releases = await listReleases();
-	if (version) await installBundle(pickBundle(releases, version));
-	else await installNewestBundle(releases);
+	if (version) await installProgram(pickProgram(releases, version));
+	else await installNewestProgram(releases);
 	assertSkillsDestMoved(process.env, homedir());
 	const skillsDest = skillsInstallDest(process.env, homedir());
 	const personas = installPackagedPersonas(skillsDest);
@@ -285,19 +291,19 @@ async function installCliOnly(keepCache: boolean, version?: string): Promise<voi
 		`Installed ${personas.length} personas at ${personasDest(skillsDest)}.`,
 	);
 	console.log(
-		'CLI-only install: the extension was skipped. Run "dg-skills install" to add it.',
+		'CLI-only install: the extension was skipped. Run "dg install" to add it.',
 	);
 	pruneClaudePluginCache(keepCache);
 }
 
-/** For a non-Claude agent that only needs phone: the bundle and shims, no extension. */
+/** For a non-Claude agent that only needs phone: the compiled dg, no extension. */
 async function installAgentOnly(keepCache: boolean, version?: string): Promise<void> {
 	const releases = await listReleases();
-	if (version) await installBundle(pickBundle(releases, version));
-	else await installNewestBundle(releases);
+	if (version) await installProgram(pickProgram(releases, version));
+	else await installNewestProgram(releases);
 	setCliOnly(true);
 	console.log(
-		'Agent-only install: the extension was skipped. Run "dg-skills install" to add it.',
+		'Agent-only install: the extension was skipped. Run "dg install" to add it.',
 	);
 	refreshPhoneListener();
 	pruneClaudePluginCache(keepCache);
@@ -324,14 +330,14 @@ function finishExtensionStage(
 	console.log(`dg-ai-extension (${target}) set up (v${version}).`);
 }
 
-/** A pinned default install: resolves the bundle and the extension before changing anything. */
+/** A pinned default install: resolves the dg program and the extension before changing anything. */
 async function installPinnedAll(target: Target, pin: string, keepCache: boolean): Promise<void> {
 	const dest = extensionDest(target);
 	const releases = await listReleases();
 
-	const bundle = pickBundle(releases, pin);
+	const program = pickProgram(releases, pin);
 	const release = await downloadReleaseAsset(target, pin);
-	await installBundle(bundle);
+	await installProgram(program);
 
 	retireLegacyExtensions();
 	const moved = moveStagedExtension(target, dest);
@@ -405,7 +411,7 @@ async function install(
 
 	finishExtensionStage(target, dest, version, markerVersion, stage, moved);
 
-	// Also keep the bundle current (skip in --local dev, where we run source).
+	// Also keep the dg program current (skip in --local dev, where we run source).
 	if (!forceLocal) await installCli(keepCache);
 	setCliOnly(false);
 }
@@ -414,7 +420,7 @@ function withCurrentPins(step: () => void): void {
 	const moved = bundleChangedTo(process.env.DG_BUILD_VERSION ?? "dev", readCurrentVersion());
 	if (!moved) return step();
 	console.log(
-		`⚠ recommended plugins skipped: dg-skills is now v${moved}. Run the same dg-skills install command again to install them at its pins.`,
+		`⚠ recommended plugins skipped: dg is now v${moved}. Run the same dg install command again to install them at its pins.`,
 	);
 }
 
@@ -449,7 +455,7 @@ export async function runInstall(
 		let releases: Release[] | undefined;
 		if (opts.version) {
 			releases = await listReleases();
-			pickBundle(releases, opts.version);
+			pickProgram(releases, opts.version);
 		}
 		const result = runSkillsOnlyInstall({
 			repo: opts.repo,

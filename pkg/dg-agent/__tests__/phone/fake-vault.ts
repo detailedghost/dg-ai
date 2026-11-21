@@ -3,7 +3,7 @@ import { DaemonNotRunningError } from "@dg/common/node";
 import type { KeyClient } from "../../src/phone/keys";
 import type { VaultClient, VaultDeps, VaultKeyDeps } from "../../src/phone/vault";
 
-/** An in-memory credential store standing in for dg-daemon; tests never reach the real one. */
+/** An in-memory credential store standing in for dg daemon; tests never reach the real one. */
 export type FakeCredentials = {
 	store: Map<string, string>;
 	up: boolean;

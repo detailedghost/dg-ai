@@ -100,7 +100,7 @@ describe("formatSchedule", () => {
 	});
 });
 
-describe("dg-daemon job add", () => {
+describe("dg job add", () => {
 	it("stores the job and reports its next run", async () => {
 		await withHome(async (dgHome) => {
 			const result = await dg(
@@ -253,7 +253,7 @@ describe("dg-daemon job add", () => {
 	});
 });
 
-describe("dg-daemon job add --cron", () => {
+describe("dg job add --cron", () => {
 	it("stores a cron expression instead of an interval", async () => {
 		await withHome(async (dgHome) => {
 			const result = await dg(
@@ -399,7 +399,7 @@ describe("dg-daemon job add --cron", () => {
 	});
 });
 
-describe("dg-daemon job list", () => {
+describe("dg job list", () => {
 	it("says so plainly when nothing is scheduled", async () => {
 		await withHome(async (dgHome) => {
 			const result = await dg(dgHome, "job", "list");
@@ -432,7 +432,7 @@ describe("dg-daemon job list", () => {
 	});
 });
 
-describe("dg-daemon job enable, disable, rm and run", () => {
+describe("dg job enable, disable, rm and run", () => {
 	async function addOne(dgHome: string, label = "j"): Promise<void> {
 		await dg(
 			dgHome,

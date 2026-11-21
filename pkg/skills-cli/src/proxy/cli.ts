@@ -79,7 +79,7 @@ export async function main(argv: string[]): Promise<number | void> {
 	const { positionals, flags, listBackends, plan, help } = parsed;
 	if (help) {
 		console.log(
-			"Usage: dg-skills proxy <backend> (--prompt <text> | --prompt-file <path>) [--plan|-p] [flags]\n\nFlags: --list-backends, --model <model>, --effort <effort>, --tier <haiku|sonnet|opus|fable>, --cwd <path>, --resume <id>, --subagent <name>, --spec <plan>, --slice <id>\nBackground commands (see dg-skills bg): run, list, prune, status, cancel, kill, update, drain",
+			"Usage: dg proxy <backend> (--prompt <text> | --prompt-file <path>) [--plan|-p] [flags]\n\nFlags: --list-backends, --model <model>, --effort <effort>, --tier <haiku|sonnet|opus|fable>, --cwd <path>, --resume <id>, --subagent <name>, --spec <plan>, --slice <id>\nBackground commands (see dg bg): run, list, prune, status, cancel, kill, update, drain",
 		);
 		return 0;
 	}
@@ -116,7 +116,7 @@ export async function main(argv: string[]): Promise<number | void> {
 
 	if (!backendName) {
 		console.error(
-			"usage: dg-skills proxy <backend> (--prompt <text> | --prompt-file <path>) [--plan|-p] [flags]",
+			"usage: dg proxy <backend> (--prompt <text> | --prompt-file <path>) [--plan|-p] [flags]",
 		);
 		return 1;
 	}

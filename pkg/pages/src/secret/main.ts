@@ -4,7 +4,7 @@ import {
 	SECRET_INTAKE_PATH,
 } from "@dg/common";
 
-const RERUN = "Run the dg-skills db setup command again to get a new link.";
+const RERUN = "Run the dg db setup command again to get a new link.";
 const TEXT = {
 	missingCode: `This link has no code. ${RERUN}`,
 	expired: `This link has expired or was already used. ${RERUN}`,

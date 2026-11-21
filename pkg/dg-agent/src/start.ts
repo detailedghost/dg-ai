@@ -92,9 +92,9 @@ async function attachToRunningDaemon(existing: DaemonHandle): Promise<number> {
 	if (existing.versions.protocol !== CHAT_PROTOCOL_VERSION) {
 		const status = await fetchStatus(existing.port);
 		throw new DgCliError(
-			`dg-daemon: the running daemon speaks protocol v${existing.versions.protocol}, ` +
+			`dg daemon: the running daemon speaks protocol v${existing.versions.protocol}, ` +
 				`this CLI speaks v${CHAT_PROTOCOL_VERSION}. Refusing to attach — stopping it would ` +
-				`end ${status?.sessionCount ?? "an unknown number of"} live session(s); dg-daemon ` +
+				`end ${status?.sessionCount ?? "an unknown number of"} live session(s); dg daemon ` +
 				"never auto-restarts a shared daemon. Stop it yourself once nothing depends on it.",
 			EXIT_PROTOCOL_MISMATCH,
 		);
@@ -105,14 +105,14 @@ async function attachToRunningDaemon(existing: DaemonHandle): Promise<number> {
 function requireFreshDaemonProtocol(handle: DaemonHandle): number {
 	requireMatchingProtocol(
 		handle,
-		"The dg-daemon binary beside this dg-agent is from another release. " +
-			'Run "dg-skills install" so both come from the same one, then stop the ' +
+		"The dg daemon binary beside this dg agent is from another release. " +
+			'Run "dg install" so both come from the same one, then stop the ' +
 			`daemon this command started (pid ${handle.pid}).`,
 	);
 	return handle.port;
 }
 
-/** Open a dg-agent URL; on WSL the Windows browser needs DG_OPEN_WINDOWS=1. */
+/** Open a dg agent URL; on WSL the Windows browser needs DG_OPEN_WINDOWS=1. */
 export function tryOpenAgentUrl(
 	url: string,
 	seams: OpenSeams = {},

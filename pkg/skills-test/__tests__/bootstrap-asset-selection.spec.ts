@@ -1,27 +1,26 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import {
-	chmodSync,
 	lstatSync,
 	mkdirSync,
+	readdirSync,
 	readFileSync,
+	readlinkSync,
 	realpathSync,
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import {
-	fakeBunArgs,
-	platformKey,
-	type RuntimeAsset,
+	assetName,
 	LEGACY_PROGRAMS,
-	PROGRAMS,
-	RUNTIME,
+	PLATFORMS,
+	platformKey,
 	present,
+	programRun,
 	removeBootstrapDirs,
 	removeBootstrapFixtures,
 	runBootstrap,
-	shimInvocation,
 } from "../../skills-cli/__tests__/bootstrap-fixtures";
-import { makeTempDir, removeTempDirs } from "./test-support";
+import { makeTempDir, readRepoFile, removeTempDirs } from "./test-support";
 
 afterEach(() => {
 	removeTempDirs();
@@ -29,216 +28,192 @@ afterEach(() => {
 });
 afterAll(removeBootstrapFixtures);
 
-describe("bootstrap.sh installs the pinned runtime and the release bundle", () => {
-	test("a default run lays out runtime, lib, current links and shims, then ends in dg-skills install", async () => {
+describe("bootstrap.sh installs the compiled dg program", () => {
+	test("a default run stages bin/<version>/dg, links bin/current and ${BIN}/dg, then ends in dg install", async () => {
 		const result = await runBootstrap();
+		const binDir = join(result.root, "data", "bin");
 
 		expect(result.code, result.stderr).toBe(0);
-		expect(
-			present(join(result.root, "data", "runtime", `bun-v${RUNTIME.version}`, "bun")),
-		).toBe(true);
-		expect(realpathSync(join(result.root, "data", "runtime", "current"))).toBe(
-			realpathSync(join(result.root, "data", "runtime", `bun-v${RUNTIME.version}`)),
+		expect(lstatSync(join(binDir, result.version, "dg")).mode & 0o777).toBe(0o755);
+		expect(readlinkSync(join(binDir, "current"))).toBe(result.version);
+		expect(readlinkSync(join(result.root, "bin", "dg"))).toBe(
+			join(result.root, "data", "bin", "current", "dg"),
 		);
-		expect(present(join(result.root, "data", "lib", result.version, "dg.js"))).toBe(
-			true,
+		expect(readdirSync(binDir).sort()).toEqual([result.version, "current"]);
+		expect(programRun(result.stdout)).toEqual({
+			asset: "dg-linux-x64",
+			env: "1",
+			args: ["install"],
+		});
+		expect(result.stdout).toContain(
+			`dg ${result.version} installed at ${join(result.root, "data", "bin", result.version)}`,
 		);
-		expect(realpathSync(join(result.root, "data", "lib", "current"))).toBe(
-			realpathSync(join(result.root, "data", "lib", result.version)),
-		);
-		for (const program of PROGRAMS) {
-			expect(
-				lstatSync(join(result.root, "bin", program)).mode & 0o111,
-			).not.toBe(0);
-		}
-		expect(shimInvocation(result.stdout)).toBe("dg-skills install");
 	});
 
-	test("each shim runs the current bundle with its own program name first", async () => {
+	test("it downloads SHA256SUMS and the one asset, and no runtime.json, Bun zip or dg-lib tarball", async () => {
 		const result = await runBootstrap();
+		const downloads = result.requests.filter((url) => url.includes("/download/"));
 
-		expect(result.code, result.stderr).toBe(0);
-		for (const program of PROGRAMS) {
-			const shim = Bun.spawnSync(
-				[join(result.root, "bin", program), "probe", "two words"],
-				{
-					stdout: "pipe",
-					stderr: "pipe",
-				},
-			);
-			expect(shim.exitCode).toBe(0);
-			const [entry, ...rest] = fakeBunArgs(shim.stdout.toString());
-			expect(entry).toEndWith(join("lib", "current", "dg.js"));
-			expect(rest).toEqual([program, "probe", "two words"]);
-		}
+		expect(downloads.map((url) => url.split("/").pop()).sort()).toEqual([
+			"SHA256SUMS",
+			"dg-linux-x64",
+		]);
+		expect(downloads.every((url) => url.includes(`/v${result.version}/`))).toBe(true);
 	});
 
-	test("a second run over an existing install succeeds and keeps the links valid", async () => {
+	test("a second run over the same version downloads no asset and keeps the links", async () => {
 		const first = await runBootstrap();
 		const second = await runBootstrap({ dgHome: first.root });
 
 		expect(second.code, second.stderr).toBe(0);
-		expect(realpathSync(join(first.root, "data", "lib", "current"))).toBe(
-			realpathSync(join(first.root, "data", "lib", first.version)),
+		expect(second.assetRequests).toEqual([]);
+		expect(second.requests.filter((url) => url.includes("/download/"))).toEqual([]);
+		expect(realpathSync(join(first.root, "data", "bin", "current"))).toBe(
+			realpathSync(join(first.root, "data", "bin", first.version)),
 		);
-		expect(realpathSync(join(first.root, "data", "runtime", "current"))).toBe(
-			realpathSync(join(first.root, "data", "runtime", `bun-v${RUNTIME.version}`)),
-		);
-	});
-
-	test("it resolves the newest vX.Y.Z release and downloads the bundle and runtime pin from that tag", async () => {
-		const result = await runBootstrap();
-		const downloads = result.requests.filter((url) =>
-			url.includes("/releases/download/"),
-		);
-
-		expect(downloads).toContain(
-			`https://github.com/o/r/releases/download/v${result.version}/dg-lib-${result.version}.tar.gz`,
-		);
-		expect(
-			downloads.some((url) => url.endsWith(`/v${result.version}/runtime.json`)),
-		).toBe(true);
-		expect(
-			downloads.some((url) => url.endsWith(`/v${result.version}/SHA256SUMS`)),
-		).toBe(true);
+		expect(programRun(second.stdout)?.args).toEqual(["install"]);
 	});
 
 	test("it runs when piped to sh, with no script file on disk", async () => {
 		const result = await runBootstrap({ piped: true });
 
 		expect(result.code, result.stderr).toBe(0);
-		expect(shimInvocation(result.stdout)).toBe("dg-skills install");
+		expect(result.installCall).toBe("install");
+	});
+
+	test("it needs neither tar nor unzip for a normal install", () => {
+		const script = readRepoFile("pkg", "skills-cli", "bootstrap.sh");
+		const start = script.indexOf('ASSET="dg-${platform}"');
+
+		expect(start).toBeGreaterThan(-1);
+		expect(script.slice(start)).not.toMatch(/\b(unzip|tar -)/);
 	});
 });
 
 describe("bootstrap.sh uses the per-OS layout", () => {
-	test("a Linux run without DG_HOME writes the launchers to ~/.local/bin and the bundle to ~/.local/share/dg", async () => {
+	test("a Linux run without DG_HOME links ~/.local/bin/dg to ~/.local/share/dg/bin/current/dg", async () => {
 		const result = await runBootstrap({ withoutDgHome: true });
 
 		expect(result.code, result.stderr).toBe(0);
 		const data = join(result.home, ".local", "share", "dg");
-		for (const program of PROGRAMS) {
-			const shim = readFileSync(join(result.home, ".local", "bin", program), "utf8");
-			expect(shim).toContain(join(data, "lib", "current", "dg.js"));
-		}
-		expect(realpathSync(join(data, "lib", "current"))).toBe(realpathSync(join(data, "lib", result.version)));
+		expect(readlinkSync(join(result.home, ".local", "bin", "dg"))).toBe(
+			join(data, "bin", "current", "dg"),
+		);
+		expect(readlinkSync(join(data, "bin", "current"))).toBe(result.version);
 		expect(present(join(result.home, ".dg"))).toBe(false);
 		expect(result.stdout).toContain(`export PATH="${join(result.home, ".local", "bin")}:$PATH"`);
 	});
 
-	test("a Linux run ignores a relative XDG_DATA_HOME and writes the bundle to ~/.local/share/dg", async () => {
+	test("a Linux run ignores a relative XDG_DATA_HOME", async () => {
 		const result = await runBootstrap({ withoutDgHome: true, env: { XDG_DATA_HOME: "rel-data" } });
 
 		expect(result.code, result.stderr).toBe(0);
-		const data = join(result.home, ".local", "share", "dg");
-		expect(readFileSync(join(result.home, ".local", "bin", "dg-skills"), "utf8")).toContain(join(data, "lib", "current", "dg.js"));
-		expect(realpathSync(join(data, "lib", "current"))).toBe(realpathSync(join(data, "lib", result.version)));
+		expect(present(join(result.home, ".local", "share", "dg", "bin", result.version, "dg"))).toBe(true);
 	});
 
-	test("a macOS run without DG_HOME writes the launchers to ~/.local/bin and the bundle to Application Support", async () => {
+	test("a macOS run without DG_HOME uses Application Support for the program", async () => {
 		const result = await runBootstrap({ withoutDgHome: true, os: "Darwin", arch: "arm64" });
 
 		expect(result.code, result.stderr).toBe(0);
 		const data = join(result.home, "Library", "Application Support", "dg");
-		expect(readFileSync(join(result.home, ".local", "bin", "dg-skills"), "utf8")).toContain(
-			`"${join(data, "lib", "current", "dg.js")}"`,
+		expect(readlinkSync(join(result.home, ".local", "bin", "dg"))).toBe(
+			join(data, "bin", "current", "dg"),
 		);
-		expect(present(join(data, "runtime", "current"))).toBe(true);
+		expect(programRun(result.stdout)?.asset).toBe("dg-darwin-arm64");
 	});
 
-	test("a DG_HOME run writes the launchers to <DG_HOME>/bin and the bundle to <DG_HOME>/data", async () => {
+	test("a DG_HOME run writes <DG_HOME>/bin and <DG_HOME>/data and nothing under HOME", async () => {
 		const result = await runBootstrap();
 
 		expect(result.code, result.stderr).toBe(0);
-		expect(readFileSync(join(result.root, "bin", "dg-skills"), "utf8")).toContain(
-			join(result.root, "data", "lib", "current", "dg.js"),
-		);
+		expect(readdirSync(join(result.root, "bin"))).toEqual(["dg"]);
 		expect(present(join(result.home, ".local"))).toBe(false);
 	});
 });
 
-describe("bootstrap.sh picks the bun asset from uname and the cpu flags", () => {
+describe("bootstrap.sh picks the asset from uname and the cpu flags", () => {
 	const cases: {
-		name: string;
+		key: (typeof PLATFORMS)[number];
 		os: "Linux" | "Darwin";
 		arch: string;
 		avx2: boolean;
 	}[] = [
-		{ name: "linux x86_64 with avx2", os: "Linux", arch: "x86_64", avx2: true },
-		{ name: "linux aarch64", os: "Linux", arch: "aarch64", avx2: false },
-		{ name: "darwin x86_64", os: "Darwin", arch: "x86_64", avx2: true },
-		{ name: "darwin arm64", os: "Darwin", arch: "arm64", avx2: false },
+		{ key: "linux-x64", os: "Linux", arch: "x86_64", avx2: true },
+		{ key: "linux-x64-baseline", os: "Linux", arch: "x86_64", avx2: false },
+		{ key: "linux-arm64", os: "Linux", arch: "aarch64", avx2: false },
+		{ key: "darwin-x64", os: "Darwin", arch: "x86_64", avx2: true },
+		{ key: "darwin-arm64", os: "Darwin", arch: "arm64", avx2: false },
 	];
 
-	for (const { name, os, arch, avx2 } of cases) {
-		test(`${name} downloads exactly its runtime.json asset from oven-sh`, async () => {
+	for (const { key, os, arch, avx2 } of cases) {
+		test(`${key} downloads exactly dg-${key} and runs that program`, async () => {
 			const result = await runBootstrap({ os, arch, avx2 });
-			const expected = (
-				RUNTIME.assets[platformKey(os, arch, avx2)] as RuntimeAsset
-			).file;
 
 			expect(result.code, result.stderr).toBe(0);
-			expect(result.bunZipRequests).toEqual([
-				`https://github.com/oven-sh/bun/releases/download/bun-v${RUNTIME.version}/${expected}`,
+			expect(platformKey(os, arch, avx2)).toBe(key);
+			expect(result.assetRequests).toEqual([
+				`https://github.com/o/r/releases/download/v${result.version}/dg-${key}`,
 			]);
+			expect(programRun(result.stdout)?.asset).toBe(`dg-${key}`);
 		});
 	}
 
-	test("Contract: picks bun-linux-x64-baseline.zip when the cpu flags lack avx2", async () => {
-		const result = await runBootstrap({
-			os: "Linux",
-			arch: "x86_64",
-			avx2: false,
-		});
-
-		expect(result.code, result.stderr).toBe(0);
-		expect(RUNTIME.assets["linux-x64-baseline"]?.file).toBe(
-			"bun-linux-x64-baseline.zip",
-		);
-		expect(result.bunZipRequests.map((url) => url.split("/").pop())).toEqual([
-			"bun-linux-x64-baseline.zip",
+	test("the release asset names are the eight the release workflow publishes", () => {
+		expect(PLATFORMS.map(assetName)).toEqual([
+			"dg-linux-x64",
+			"dg-linux-x64-baseline",
+			"dg-linux-arm64",
+			"dg-darwin-x64",
+			"dg-darwin-arm64",
+			"dg-windows-x64.exe",
+			"dg-windows-x64-baseline.exe",
+			"dg-windows-arm64.exe",
 		]);
 	});
 });
 
-describe("bootstrap.sh verifies every download before it installs", () => {
-	test("Contract: exits 1 with 'checksum mismatch' when the bun zip hash differs and leaves no runtime/current", async () => {
-		const result = await runBootstrap({ zipHashMismatch: true });
+describe("bootstrap.ps1 picks the asset", () => {
+	const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
 
-		expect(result.code).toBe(1);
-		expect(result.stderr).toContain("checksum mismatch");
-		expect(present(join(result.root, "data", "runtime", "current"))).toBe(false);
-		expect(result.stdout).not.toContain("FAKE_BUN");
+	test("the platform is windows-x64, windows-x64-baseline without AVX2, or windows-arm64, and the asset adds .exe", () => {
+		expect(ps1).toContain('$platform = "windows-$arch"');
+		expect(ps1).toContain('$platform = "windows-x64-baseline"');
+		expect(ps1).toContain("Test-DgAvx2");
+		expect(ps1).toContain('"arm64" } else { "x64" }');
+		expect(ps1).toContain('$asset = "dg-$platform.exe"');
 	});
 
-	test("Contract: exits 1 when dg-lib-<v>.tar.gz is absent from SHA256SUMS", async () => {
-		const result = await runBootstrap({ sums: "without-lib" });
-
-		expect(result.code).toBe(1);
-		expect(present(join(result.root, "data", "lib", "current"))).toBe(false);
-		expect(result.stdout).not.toContain("FAKE_BUN");
-	});
-
-	test("a runtime.json that does not match SHA256SUMS exits 1 before any bun download", async () => {
-		const result = await runBootstrap({ sums: "wrong-runtime" });
-
-		expect(result.code).toBe(1);
-		expect(result.stderr).toContain("checksum mismatch");
-		expect(result.bunZipRequests).toEqual([]);
-		expect(present(join(result.root, "data", "runtime", "current"))).toBe(false);
-	});
-
-	test("a wrong tarball hash exits 1 with 'checksum mismatch' and leaves no lib/current", async () => {
-		const result = await runBootstrap({ sums: "wrong-lib" });
-
-		expect(result.code).toBe(1);
-		expect(result.stderr).toContain("checksum mismatch");
-		expect(present(join(result.root, "data", "lib", "current"))).toBe(false);
-		expect(result.stdout).not.toContain("FAKE_BUN");
+	test("it downloads no runtime.json, Bun zip or dg-lib tarball", () => {
+		expect(ps1).not.toContain("runtime.json");
+		expect(ps1).not.toContain("dg-lib-");
+		expect(ps1).not.toContain("bun.exe");
 	});
 });
 
-describe("bootstrap.sh ends by invoking the shim with the install flags of its mode", () => {
+describe("bootstrap.sh verifies the asset before it installs", () => {
+	test("a checksum mismatch exits 1 and changes nothing", async () => {
+		const result = await runBootstrap({ sums: "wrong-asset" });
+
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("dg: checksum mismatch for dg-linux-x64");
+		expect(present(join(result.root, "data", "bin", "current"))).toBe(false);
+		expect(present(join(result.root, "bin", "dg"))).toBe(false);
+		expect(programRun(result.stdout)).toBeUndefined();
+		expect(readdirSync(join(result.root, "data", "bin"))).toEqual([]);
+	});
+
+	test("an asset missing from SHA256SUMS exits 1 and changes nothing", async () => {
+		const result = await runBootstrap({ sums: "without-asset" });
+
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("has no entry for dg-linux-x64");
+		expect(result.assetRequests).toEqual([]);
+		expect(present(join(result.root, "data", "bin", "current"))).toBe(false);
+		expect(present(join(result.root, "bin", "dg"))).toBe(false);
+	});
+});
+
+describe("bootstrap.sh ends by invoking dg with the install flags of its mode", () => {
 	const modes: {
 		name: string;
 		args: string[];
@@ -247,11 +222,7 @@ describe("bootstrap.sh ends by invoking the shim with the install flags of its m
 	}[] = [
 		{ name: "default", args: [], install: "install" },
 		{ name: "--cli-only", args: ["--cli-only"], install: "install --cli-only" },
-		{
-			name: "--agent-only",
-			args: ["--agent-only"],
-			install: "install --agent-only",
-		},
+		{ name: "--agent-only", args: ["--agent-only"], install: "install --agent-only" },
 		{
 			name: "DG_CLI_ONLY=1",
 			args: [],
@@ -261,15 +232,15 @@ describe("bootstrap.sh ends by invoking the shim with the install flags of its m
 	];
 
 	for (const { name, args, env, install } of modes) {
-		test(`${name} runs dg-skills ${install}`, async () => {
+		test(`${name} runs dg ${install}`, async () => {
 			const result = await runBootstrap({ args, env });
 
 			expect(result.code, result.stderr).toBe(0);
-			expect(shimInvocation(result.stdout)).toBe(`dg-skills ${install}`);
+			expect(result.installCall).toBe(install);
 		});
 	}
 
-	test("--skills-only copies the skill files, installs the runtime, bundle and shims, and runs no dg-skills install", async () => {
+	test("--skills-only copies the skill files, installs the dg program and runs no dg install", async () => {
 		const source = makeTempDir("dg-bootstrap-skills-src-");
 		mkdirSync(join(source, "demo"), { recursive: true });
 		writeFileSync(join(source, "demo", "SKILL.md"), "---\nname: demo\n---\n");
@@ -282,17 +253,18 @@ describe("bootstrap.sh ends by invoking the shim with the install flags of its m
 
 		expect(result.code, result.stderr).toBe(0);
 		expect(readFileSync(join(dest, "demo", "SKILL.md"), "utf8")).toContain("name: demo");
-		expect(realpathSync(join(result.root, "data", "lib", "current"))).toBe(
-			realpathSync(join(result.root, "data", "lib", result.version)),
+		expect(realpathSync(join(result.root, "data", "bin", "current"))).toBe(
+			realpathSync(join(result.root, "data", "bin", result.version)),
 		);
-		for (const program of PROGRAMS) expect(present(join(result.root, "bin", program))).toBe(true);
+		expect(present(join(result.root, "bin", "dg"))).toBe(true);
+		for (const old of LEGACY_PROGRAMS) expect(present(join(result.root, "bin", old))).toBe(false);
 		expect(result.installCall).toBeUndefined();
 		expect(result.stdout.indexOf("Installed 1 skill files")).toBeLessThan(
 			result.stdout.indexOf("Downloading"),
 		);
 	});
 
-	test("--version <x.y.z> installs that release, ignores a newer one and runs dg-skills install --version", async () => {
+	test("--version <x.y.z> installs that release, ignores a newer one and runs dg install --version", async () => {
 		const result = await runBootstrap({
 			version: "1.26.0",
 			args: ["--version", "1.26.0"],
@@ -300,13 +272,9 @@ describe("bootstrap.sh ends by invoking the shim with the install flags of its m
 		});
 
 		expect(result.code, result.stderr).toBe(0);
-		expect(present(join(result.root, "data", "lib", "1.26.0", "dg.js"))).toBe(true);
-		expect(realpathSync(join(result.root, "data", "lib", "current"))).toBe(
-			realpathSync(join(result.root, "data", "lib", "1.26.0")),
-		);
-		expect(shimInvocation(result.stdout)).toBe(
-			"dg-skills install --version 1.26.0",
-		);
+		expect(present(join(result.root, "data", "bin", "1.26.0", "dg"))).toBe(true);
+		expect(readlinkSync(join(result.root, "data", "bin", "current"))).toBe("1.26.0");
+		expect(result.installCall).toBe("install --version 1.26.0");
 	});
 
 	test("--version=<x.y.z> behaves like the two-word form", async () => {
@@ -316,9 +284,7 @@ describe("bootstrap.sh ends by invoking the shim with the install flags of its m
 		});
 
 		expect(result.code, result.stderr).toBe(0);
-		expect(shimInvocation(result.stdout)).toBe(
-			"dg-skills install --version 1.26.0",
-		);
+		expect(result.installCall).toBe("install --version 1.26.0");
 	});
 
 	test("two conflicting mode flags exit 1 before any download", async () => {
@@ -326,30 +292,5 @@ describe("bootstrap.sh ends by invoking the shim with the install flags of its m
 
 		expect(result.code).toBe(1);
 		expect(result.requests).toEqual([]);
-	});
-});
-
-describe("bootstrap.sh retires the compiled dg-skills, dg-agent and dg-daemon binaries", () => {
-	const OLD_BINARY = "OLD COMPILED BINARY";
-
-	test("each old binary becomes a shim for its own name and loses its version stamp", async () => {
-		const result = await runBootstrap({
-			seed: (root) => {
-				mkdirSync(join(root, "bin"), { recursive: true });
-				for (const program of LEGACY_PROGRAMS) {
-					writeFileSync(join(root, "bin", program), OLD_BINARY);
-					chmodSync(join(root, "bin", program), 0o755);
-					writeFileSync(join(root, "bin", `.${program}.version`), "1.0.0\n");
-				}
-			},
-		});
-
-		expect(result.code, result.stderr).toBe(0);
-		for (const program of LEGACY_PROGRAMS) {
-			const shim = readFileSync(join(result.root, "bin", program), "utf8");
-			expect(shim).not.toContain(OLD_BINARY);
-			expect(shim).toContain(program);
-			expect(present(join(result.root, "bin", `.${program}.version`))).toBe(false);
-		}
 	});
 });

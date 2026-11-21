@@ -41,7 +41,7 @@ function request(
 		};
 		const timer = setTimeout(() => {
 			cleanup();
-			reject(new Error("dg-daemon did not answer the credential request."));
+			reject(new Error("dg daemon did not answer the credential request."));
 		}, timeoutMs);
 		socket.addEventListener("message", onMessage);
 		socket.send(

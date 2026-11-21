@@ -12,7 +12,7 @@ describe("startNotice", () => {
 
 	it("points at the installer when no extension is linked", () => {
 		expect(startNotice({ agentIdentity: "claude-js", sessionId: SESSION }, false)).toBe(
-			"No browser extension is connected. Install it with: dg-skills install",
+			"No browser extension is connected. Install it with: dg install",
 		);
 	});
 });

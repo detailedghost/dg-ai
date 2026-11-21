@@ -177,7 +177,7 @@ export function resolveJot(ref: string): {
 } {
 	const name = path.basename(ref).replace(/\.md$/, "");
 	if (!JOT_NAME_PATTERN.test(name))
-		throw new Error(`no jot named ${ref}; run dg-skills jot ls`);
+		throw new Error(`no jot named ${ref}; run dg jot ls`);
 	for (const { kind, dir } of readDirs()) {
 		if (
 			path.isAbsolute(ref) &&
@@ -190,5 +190,5 @@ export function resolveJot(ref: string): {
 		if (existsSync(path.join(folder, INDEX_FILE)))
 			return { kind, target: folder, isFolder: true };
 	}
-	throw new Error(`no jot named ${ref}; run dg-skills jot ls`);
+	throw new Error(`no jot named ${ref}; run dg jot ls`);
 }

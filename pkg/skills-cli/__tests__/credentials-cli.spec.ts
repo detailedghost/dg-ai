@@ -69,7 +69,7 @@ function fakeCli(
 	return { run, lines, calls, closed: () => closed };
 }
 
-describe("dg-skills credentials", () => {
+describe("dg credentials", () => {
 	test("list shows metadata and flags expired and soon-to-expire entries", async () => {
 		const cli = fakeCli({
 			list: [
@@ -335,7 +335,7 @@ describe("dg-skills credentials", () => {
 		}
 	});
 
-	test("the built entry names the start command when dg-daemon is not running", async () => {
+	test("the built entry names the start command when dg daemon is not running", async () => {
 		const h = inboxCliHarness();
 		try {
 			const proc = Bun.spawn(
@@ -353,7 +353,7 @@ describe("dg-skills credentials", () => {
 			]);
 			expect(code).not.toBe(0);
 			expect(stderr).toContain(
-				"dg-daemon is not running; start it with dg-agent start",
+				"dg daemon is not running; start it with dg agent start",
 			);
 		} finally {
 			h.cleanup();
