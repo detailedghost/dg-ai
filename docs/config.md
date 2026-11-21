@@ -103,12 +103,12 @@ These fields are secret fields:
 - `inbox.gmail.clientSecret` and `inbox.outlook.clientSecret`.
 - Any key under `plugins.<name>.settings` whose name ends in `secret`, `token`,
   `password`, `api_key` or `private_key` and holds a string, a table or a list.
-  A number, such as
-  `max_tokens = 1000`, is not a secret.
+  A number, such as `max_tokens = 1000`, is not a secret.
 - Any string under `plugins.<name>.settings` that looks like a token: one that
-  starts with a known token prefix such as `ghp_`, `github_pat_`, `sk-`, `xoxb-`, `glpat-`, `AKIA`,
-  `ASIA`, `AIza` or `ya29.`, or one of 32 or more letters, digits, `_` and `-`
-  that has a lowercase letter, an uppercase letter and a digit.
+  starts with `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`, `sk-`,
+  `xoxa-`, `xoxb-`, `xoxp-`, `xoxr-`, `glpat-`, `AKIA`, `ASIA`, `AIza` or
+  `ya29.`, or one of 32 or more letters, digits, `_` and `-` that has a
+  lowercase letter, an uppercase letter and a digit.
 
 A plain value in a secret field fails validation, and the error never prints the
 value. A `{{resolve:...}}` placeholder is refused in every field. The file never
@@ -138,7 +138,7 @@ Before this release, dg kept its settings in several files. The first
 | `<config>/config.json` | `hooks` goes to `[hooks]`. Other keys stay only in the backup. | `<config>/config.json.pre-toml` |
 | `<config>/cli-only` | `install.cli_only = true` | `<config>/cli-only.pre-toml` |
 | `~/.config/browser-batch/config.json` | `defaultRepo` goes to `refs.default_repo`; `aliases` goes to `[refs.aliases]` | `~/.config/browser-batch/config.json.pre-toml` |
-| `<state>/inbox/config/organizer.config.json` | `[inbox]`, with the same names. `clientSecret` values move to the credential store as `dg-config/inbox-gmail-client-secret` and `dg-config/inbox-outlook-client-secret`. | `<state>/inbox/config/organizer.config.json.pre-toml` |
+| `<state>/inbox/config/organizer.config.json` | `[inbox]`, with the same names. `clientSecret` values move to the credential store as `dg-config/inbox-gmail-client-secret` and `dg-config/inbox-outlook-client-secret`; an empty one is dropped. | `<state>/inbox/config/organizer.config.json.pre-toml` |
 | `<config>/ssms/config.yaml` | `[ssms]`, with the same names | `<config>/ssms/config.yaml.pre-toml` |
 
 `<config>` is the dg config folder above. `<state>` is the dg state folder:

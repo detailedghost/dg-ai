@@ -222,7 +222,6 @@ describe("setting env values", () => {
 			);
 	});
 
-
 	test("refuses a boolean env var that does not parse", () => {
 		expect(() => setting<boolean>("install.cli_only", { envVar: "DG_CLI_ONLY", env: { ...env, DG_CLI_ONLY: "flase" } })).toThrow(
 			"DG_CLI_ONLY must be true or false",
