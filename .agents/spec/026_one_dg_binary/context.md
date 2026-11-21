@@ -8,8 +8,8 @@ current_slice: 8
 pr_strategy: "single"
 execution:
   profile: "balance"
-bundle: "/home/detailedghost/code/worktrees/dg-ai-config-toml/.agents/spec/026_one_dg_binary"
-plan_path: "/home/detailedghost/code/worktrees/dg-ai-config-toml/.agents/spec/026_one_dg_binary/plan.md"
+bundle: "/home/detailedghost/code/worktrees/dg-ai-one-dg/.agents/spec/026_one_dg_binary"
+plan_path: "/home/detailedghost/code/worktrees/dg-ai-one-dg/.agents/spec/026_one_dg_binary/plan.md"
 slices:
   - id: 1
     name: "decision-records"
@@ -200,11 +200,11 @@ slices:
 
 ## === school pointers ===
 
-- /home/detailedghost/code/worktrees/dg-ai-config-toml/.agents/school/security.md
-- /home/detailedghost/code/worktrees/dg-ai-config-toml/.agents/school/performance.md
-- /home/detailedghost/code/worktrees/dg-ai-config-toml/.agents/school/engineering.md
-- /home/detailedghost/code/worktrees/dg-ai-config-toml/.agents/school/quality.md
-- /home/detailedghost/code/worktrees/dg-ai-config-toml/.agents/school/tooling.md
+- /home/detailedghost/code/worktrees/dg-ai-one-dg/.agents/school/security.md
+- /home/detailedghost/code/worktrees/dg-ai-one-dg/.agents/school/performance.md
+- /home/detailedghost/code/worktrees/dg-ai-one-dg/.agents/school/engineering.md
+- /home/detailedghost/code/worktrees/dg-ai-one-dg/.agents/school/quality.md
+- /home/detailedghost/code/worktrees/dg-ai-one-dg/.agents/school/tooling.md
 
 ## Slice Summaries
 

@@ -162,7 +162,7 @@ describe("migrateToToml", () => {
 		const error = await migrate({}).catch((caught: unknown) => caught);
 
 		expect(error).toBeInstanceOf(DgCliError);
-		expect((error as Error).message).toContain("dg-daemon");
+		expect((error as Error).message).toContain("dg daemon start");
 		expect((error as Error).message).not.toContain(FAKE_SECRET);
 		expect(snapshot()).toEqual(before);
 	});

@@ -20,6 +20,7 @@ describe("resolveRoute", () => {
 		["install", "dg-skills", ["install"]],
 		["doctor", "dg-skills", ["doctor"]],
 		["update", "dg-skills", ["update"]],
+		["config", "dg-skills", ["config"]],
 		["phone", "dg-agent", ["phone"]],
 		["overwatch", "dg-agent", ["overwatch"]],
 		["memory", "dg-agent", ["memory"]],

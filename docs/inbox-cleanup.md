@@ -33,7 +33,7 @@ clientSecret = { credential = "dg-config/inbox-gmail-client-secret" }
 
 An env var such as `CLASSIFIER_MODE` wins over the file, and `--config <file>`
 wins over both. A client secret is a credential reference, never a value. The
-first `dg-skills` command after the upgrade moves `organizer.config.json` into
+first `dg` command after the upgrade moves `organizer.config.json` into
 `config.toml` and its client secrets into the credential store, and keeps a
 `organizer.config.json.pre-toml` backup. Route profiles, mappings and security
 files stay in the inbox config folder. See [configuration](config.md).

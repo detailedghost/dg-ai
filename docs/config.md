@@ -1,8 +1,7 @@
 # Configuration
 
 dg keeps its settings in one file, `config.toml`, in the dg config folder.
-`dg-skills config` reads and changes it; error messages name it `dg config`,
-the same command on the flat `dg` surface. Secrets never go in this file. They
+`dg config` reads and changes it. Secrets never go in this file. They
 stay in the encrypted credential store, and the file holds only a reference to
 them.
 
@@ -15,7 +14,7 @@ them.
 | Windows | `%APPDATA%\dg\config.toml` |
 | Any, with `DG_HOME` set | `$DG_HOME/config/config.toml` |
 
-`dg-skills config path` prints the path for this machine. The path comes from
+`dg config path` prints the path for this machine. The path comes from
 `resolveDgPaths().configTomlPath`, the same source as every other dg path
 (ADR 0025).
 
@@ -33,7 +32,7 @@ default.
 | --- | --- | --- | --- |
 | `hooks.<id>.<setting>` | string | the hook's default | A hook setting, for example `hooks.spelling.locale = "en-GB"`. See [hooks](hooks.md). |
 | `install.cli_only` | boolean | `false` | `true` on an install made with `--cli-only`, which has no extension. |
-| `refs.default_repo` | string | none | The repo that a bare PR number means in `dg-skills pw batch-open`. |
+| `refs.default_repo` | string | none | The repo that a bare PR number means in `dg pw batch-open`. |
 | `refs.aliases.<name>` | string | none | A short name for a repo, so `app#12` opens `acme/app` PR 12. |
 | `inbox.<group>.<setting>` | any | the inbox default | Inbox settings, with the same names as the old `organizer.config.json`, for example `inbox.classifier.mode`. See [inbox cleanup](inbox-cleanup.md). |
 | `ssms.allow_send` | boolean | `false` | Lets ssms send a text after the approval gate. See [ssms](ssms.md). |
@@ -78,7 +77,7 @@ dg config: /home/me/.config/dg/config.toml:5: install.cli_only must be a boolean
 
 A setting comes from the first of these that sets it:
 
-1. A command-line flag, such as `dg-skills inbox --config <file>`.
+1. A command-line flag, such as `dg inbox --config <file>`.
 2. An environment variable, such as `CLASSIFIER_MODE` for `inbox.classifier.mode`.
 3. `config.toml`.
 4. The built-in default.
@@ -94,8 +93,8 @@ token = { credential = "example-token" }
 Store the value first, then point the field at it:
 
 ```sh
-dg-skills credentials set example-token
-dg-skills config set plugins.example.settings.token --credential example-token
+dg credentials set example-token
+dg config set plugins.example.settings.token --credential example-token
 ```
 
 These fields are secret fields:
@@ -118,11 +117,11 @@ holds a secret, so you can read it, copy it and share it.
 
 | Command | What it does |
 | --- | --- |
-| `dg-skills config path` | Prints the path of `config.toml`. |
-| `dg-skills config get <key>` | Prints the value, or the default when the key is unset. An unknown key exits 1. |
-| `dg-skills config set <key> <value>` | Changes one key, after it validates the result. |
-| `dg-skills config set <key> --credential <name>` | Points a secret field at a credential store entry. |
-| `dg-skills config edit` | Opens the file in `$VISUAL` or `$EDITOR`. dg saves the edit only when it validates, and keeps the old file when it does not. |
+| `dg config path` | Prints the path of `config.toml`. |
+| `dg config get <key>` | Prints the value, or the default when the key is unset. An unknown key exits 1. |
+| `dg config set <key> <value>` | Changes one key, after it validates the result. |
+| `dg config set <key> --credential <name>` | Points a secret field at a credential store entry. |
+| `dg config edit` | Opens the file in `$VISUAL` or `$EDITOR`. dg saves the edit only when it validates, and keeps the old file when it does not. |
 
 `config set` rewrites the file and drops its comments. `config edit` keeps your
 text as you wrote it. `config set` does not change `ssms.allow_send` or
@@ -131,7 +130,7 @@ text as you wrote it. `config set` does not change `ssms.allow_send` or
 ## Migration from older files
 
 Before this release, dg kept its settings in several files. The first
-`dg-skills` command after the upgrade moves them into `config.toml` once:
+`dg` command after the upgrade moves them into `config.toml` once:
 
 | Old file | Where its values went | Backup |
 | --- | --- | --- |
@@ -153,21 +152,21 @@ How the move works:
 - It copies each source to `<file>.pre-toml` with mode 0600 and compares the
   copy before it writes `config.toml`. An existing `.pre-toml` that differs
   stops the move, so an older backup is never overwritten.
-- A secret value moves into the credential store first. When dg-daemon is not
+- A secret value moves into the credential store first. When the daemon is not
   running, or the store refuses the write, the move stops and writes nothing.
-  Start the daemon with `dg-daemon start`, then run `dg-skills doctor` to run the
+  Start the daemon with `dg daemon start`, then run `dg doctor` to run the
   move again.
 - It records each source and its sha256 under `[meta.migrated]`.
 - The old inbox file and its backup still hold the client secret in plain
-  text. Delete both once you checked that `dg-skills inbox` works.
+  text. Delete both once you checked that `dg inbox` works.
 - It leaves every old file in place, so a rollback to an older dg reads its old
   files unchanged. dg no longer reads them once `config.toml` exists.
-  `dg-skills doctor config` warns when one of them changes after the move, and
+  `dg doctor config` warns when one of them changes after the move, and
   names `dg config edit` as the fix.
 - A second run changes nothing.
 
 Until the move runs, dg reads the old files, with secret values left out. If you
-delete `config.toml`, the next `dg-skills` command moves the old files again.
+delete `config.toml`, the next `dg` command moves the old files again.
 
 ## What stays out
 

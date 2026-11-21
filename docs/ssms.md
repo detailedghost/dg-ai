@@ -92,10 +92,10 @@ that evades it, for example by allocating its own pty, is out of scope.
 config folder under the account's passwd home: `~/.config/dg/config.toml` on
 Linux and `~/Library/Application Support/dg/config.toml` on macOS. Until that
 file exists, ssms reads `ssms/config.yaml` in the same folder. The first
-`dg-skills` command after the upgrade moves `ssms/config.yaml` into `[ssms]`
+`dg` command after the upgrade moves `ssms/config.yaml` into `[ssms]`
 and keeps `ssms/config.yaml.pre-toml`; after that, ssms does not read the YAML
-file. `dg-skills config set` does not change `ssms.allow_send` or
-`ssms.google.send_enabled`; edit them with `dg-skills config edit`. See
+file. `dg config set` does not change `ssms.allow_send` or
+`ssms.google.send_enabled`; edit them with `dg config edit`. See
 [configuration](config.md).
 `XDG_CONFIG_HOME` does not move it. Linux uses `getent` or `/etc/passwd`. macOS uses `id -P` or `dscl`. If
 that home cannot be resolved, send stays off. `$HOME` and `$DG_HOME` do not

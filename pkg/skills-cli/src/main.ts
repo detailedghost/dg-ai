@@ -53,7 +53,7 @@ export async function migrateConfig(write: (text: string) => void = (text) => pr
 	try {
 		await migrateToToml(paths, { store: credentialSink(paths) });
 	} catch (error) {
-		write(`dg-skills: config.toml was not written: ${describeError(error)}\n`);
+		write(`dg: config.toml was not written: ${describeError(error)}\n`);
 	}
 }
 
