@@ -90,6 +90,7 @@ belong with their owning private tooling repository.
 - [0043 — Run outside services under the daemon with a provisional service API](0043-outside-services.md)
 - [0049 — One job model for services and scheduled jobs](0049-jobs.md)
 - [0053 — Job sources and credentials](0053-job-sources-and-credentials.md)
+- [0054 — One config.toml for dg](0054-one-config-toml-for-dg.md)
 
 ### Security
 
