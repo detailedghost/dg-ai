@@ -1,0 +1,356 @@
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { parse as parseStrict, stringify } from "smol-toml";
+import { CREDENTIAL_NAME_PATTERN } from "../credentials-format";
+import { DgCliError } from "../errors";
+import { resolveDgPaths } from "./dg-paths";
+import { writeFilePreserving } from "./fs";
+
+type Env = Record<string, string | undefined>;
+type Table = Record<string, unknown>;
+
+export type SecretRef = { credential: string };
+
+export type PluginEntry = { enabled: boolean; source?: string; settings: Table };
+
+export type DgToml = {
+	hooks: Record<string, Record<string, string>>;
+	install: { cli_only: boolean };
+	refs: { default_repo?: string; aliases: Record<string, string> };
+	inbox: Table;
+	ssms: Table;
+	plugins: Record<string, PluginEntry>;
+	meta: { migrated: Record<string, string> };
+};
+
+export const DG_TOML_SECTIONS = ["hooks", "install", "refs", "inbox", "ssms", "plugins", "meta"] as const;
+
+export const DG_TOML_DEFAULTS: Readonly<Record<string, unknown>> = {
+	"install.cli_only": false,
+	"ssms.allow_send": false,
+	"ssms.google.send_enabled": false,
+};
+
+const SECRET_FIELDS: ReadonlySet<string> = new Set(["inbox.gmail.clientSecret", "inbox.outlook.clientSecret"]);
+
+const SECRET_KEY_NAME = /secret|token|password|passwd|api[_-]?key|private[_-]?key/i;
+
+const TOKEN_LIKE =
+	/^(?:gh[pousr]_|github_pat_|sk-|xox[abpr]-|glpat-|AKIA|ASIA|AIza|ya29\.)|^(?=.*[0-9])(?=.*[A-Za-z])[A-Za-z0-9+/_=-]{32,}$/;
+
+const UNSAFE_KEYS: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype"]);
+
+const NEXT_EDIT = "Next: run dg config edit, or dg config set";
+
+export function isRecord(value: unknown): value is Table {
+	return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Date);
+}
+
+export function isSecretRef(value: unknown): value is SecretRef {
+	return (
+		isRecord(value) &&
+		Object.keys(value).length === 1 &&
+		typeof value.credential === "string" &&
+		CREDENTIAL_NAME_PATTERN.test(value.credential)
+	);
+}
+
+/** True for a key whose value must be a credential reference. */
+export function isSecretKey(key: string): boolean {
+	if (SECRET_FIELDS.has(key)) return true;
+	const parts = key.split(".");
+	return parts[0] === "plugins" && parts[2] === "settings" && parts.length > 3 && SECRET_KEY_NAME.test(parts.at(-1) ?? "");
+}
+
+function splitKey(raw: string): string[] {
+	const parts: string[] = [];
+	let current = "";
+	let quote = "";
+	for (const char of raw) {
+		if (quote) {
+			if (char === quote) quote = "";
+			else current += char;
+		} else if (char === '"' || char === "'") quote = char;
+		else if (char === ".") {
+			parts.push(current.trim());
+			current = "";
+		} else current += char;
+	}
+	parts.push(current.trim());
+	return parts;
+}
+
+/** The 1-based line that sets `key` in `text`, or 1 when no line names it. */
+export function lineOfKey(text: string, key: string): number {
+	const lines = text.split(/\r?\n/);
+	let table: string[] = [];
+	let near = 0;
+	for (const [index, line] of lines.entries()) {
+		const raw = line.trim();
+		const header = /^\[\[?([^\]]+)\]\]?/.exec(raw);
+		if (header) {
+			table = splitKey(header[1] ?? "");
+			const name = table.join(".");
+			if (name === key) return index + 1;
+			if (!near && key.startsWith(`${name}.`)) near = index + 1;
+			continue;
+		}
+		const assign = /^((?:"[^"]*"|'[^']*'|[A-Za-z0-9_.\s-])+?)\s*=/.exec(raw);
+		if (!assign) continue;
+		const full = [...table, ...splitKey(assign[1] ?? "")].join(".");
+		if (full === key) return index + 1;
+		if (key.startsWith(`${full}.`)) near = index + 1;
+	}
+	return near || 1;
+}
+
+function shown(value: unknown): string {
+	const text = JSON.stringify(value) ?? String(value);
+	return text.length > 60 ? `${text.slice(0, 57)}...` : text;
+}
+
+type Where = { file: string; text: string };
+
+function fail(where: Where, key: string, message: string): never {
+	throw new DgCliError(`dg config: ${where.file}:${lineOfKey(where.text, key)}: ${message}`);
+}
+
+function mustBe(where: Where, key: string, type: string, value: unknown): never {
+	fail(where, key, `${key} must be ${type}, got ${shown(value)}. ${NEXT_EDIT} ${key} <value>.`);
+}
+
+function mustBeSecretRef(where: Where, key: string): never {
+	fail(
+		where,
+		key,
+		`${key} must be a credential reference { credential = "<name>" }, got a plain value. Next: store the value with dg credentials set <name>, then run dg config set ${key} --credential <name>.`,
+	);
+}
+
+function checkStrings(where: Where, key: string, value: unknown): void {
+	if (typeof value === "string") {
+		if (value.includes("{{resolve:"))
+			fail(where, key, `${key} must not hold a {{resolve:...}} placeholder. ${NEXT_EDIT} ${key} <value>.`);
+		return;
+	}
+	if (Array.isArray(value)) {
+		value.forEach((item, index) => checkStrings(where, `${key}.${index}`, item));
+		return;
+	}
+	if (!isRecord(value)) return;
+	for (const [name, item] of Object.entries(value)) {
+		if (UNSAFE_KEYS.has(name)) fail(where, `${key}.${name}`, `${key}.${name} is not an allowed key. ${NEXT_EDIT} ${key} <value>.`);
+		checkStrings(where, `${key}.${name}`, item);
+	}
+}
+
+function checkSecrets(where: Where, key: string, value: unknown): void {
+	if (isSecretKey(key)) {
+		if (!isSecretRef(value)) mustBeSecretRef(where, key);
+		return;
+	}
+	if (isRecord(value)) {
+		if (isSecretRef(value)) return;
+		for (const [name, item] of Object.entries(value)) checkSecrets(where, `${key}.${name}`, item);
+		return;
+	}
+	if (key.startsWith("plugins.") && key.split(".")[2] === "settings" && typeof value === "string" && TOKEN_LIKE.test(value))
+		mustBeSecretRef(where, key);
+}
+
+function table(where: Where, key: string, value: unknown): Table {
+	if (value === undefined) return {};
+	if (!isRecord(value)) mustBe(where, key, "a table", value);
+	return value;
+}
+
+function stringTable(where: Where, key: string, value: unknown): Record<string, string> {
+	const out = table(where, key, value);
+	for (const [name, item] of Object.entries(out))
+		if (typeof item !== "string") mustBe(where, `${key}.${name}`, "a string", item);
+	return out as Record<string, string>;
+}
+
+function optionalBoolean(where: Where, key: string, value: unknown, fallback: boolean): boolean {
+	if (value === undefined) return fallback;
+	if (typeof value !== "boolean") mustBe(where, key, "a boolean", value);
+	return value;
+}
+
+function optionalString(where: Where, key: string, value: unknown): string | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "string") mustBe(where, key, "a string", value);
+	return value;
+}
+
+function onlyKeys(where: Where, key: string, value: Table, allowed: readonly string[]): void {
+	for (const name of Object.keys(value))
+		if (!allowed.includes(name)) fail(where, `${key}.${name}`, `${key}.${name} is not a dg config key. ${NEXT_EDIT} ${key}.<key> <value>.`);
+}
+
+function plugin(where: Where, key: string, value: unknown): PluginEntry {
+	const entry = table(where, key, value);
+	onlyKeys(where, key, entry, ["enabled", "source", "settings"]);
+	const source = optionalString(where, `${key}.source`, entry.source);
+	return {
+		enabled: optionalBoolean(where, `${key}.enabled`, entry.enabled, true),
+		...(source === undefined ? {} : { source }),
+		settings: table(where, `${key}.settings`, entry.settings),
+	};
+}
+
+/** Checks a parsed config.toml and fills every section with its default. */
+export function validateDgToml(raw: unknown, where: Where): DgToml {
+	const root = isRecord(raw) ? raw : {};
+	for (const name of Object.keys(root))
+		if (!(DG_TOML_SECTIONS as readonly string[]).includes(name))
+			fail(where, name, `${name} is not a dg config section. ${NEXT_EDIT} <section>.<key> <value>.`);
+	for (const [name, value] of Object.entries(root)) {
+		checkStrings(where, name, value);
+		checkSecrets(where, name, value);
+	}
+	const hooksTable = table(where, "hooks", root.hooks);
+	const hooks: DgToml["hooks"] = {};
+	for (const [id, value] of Object.entries(hooksTable)) hooks[id] = stringTable(where, `hooks.${id}`, value);
+	const install = table(where, "install", root.install);
+	onlyKeys(where, "install", install, ["cli_only"]);
+	const refs = table(where, "refs", root.refs);
+	onlyKeys(where, "refs", refs, ["default_repo", "aliases"]);
+	const defaultRepo = optionalString(where, "refs.default_repo", refs.default_repo);
+	const ssms = table(where, "ssms", root.ssms);
+	optionalBoolean(where, "ssms.allow_send", ssms.allow_send, false);
+	optionalBoolean(where, "ssms.google.send_enabled", table(where, "ssms.google", ssms.google).send_enabled, false);
+	const plugins: DgToml["plugins"] = {};
+	for (const [name, value] of Object.entries(table(where, "plugins", root.plugins)))
+		plugins[name] = plugin(where, `plugins.${name}`, value);
+	const meta = table(where, "meta", root.meta);
+	onlyKeys(where, "meta", meta, ["migrated"]);
+	return {
+		hooks,
+		install: { cli_only: optionalBoolean(where, "install.cli_only", install.cli_only, false) },
+		refs: { ...(defaultRepo === undefined ? {} : { default_repo: defaultRepo }), aliases: stringTable(where, "refs.aliases", refs.aliases) },
+		inbox: table(where, "inbox", root.inbox),
+		ssms,
+		plugins,
+		meta: { migrated: stringTable(where, "meta.migrated", meta.migrated) },
+	};
+}
+
+function syntaxLine(text: string): number {
+	try {
+		parseStrict(text);
+	} catch (error) {
+		const line = (error as { line?: unknown }).line;
+		if (typeof line === "number" && line > 0) return line;
+	}
+	return 1;
+}
+
+function parseToml(where: Where): Table {
+	try {
+		return Bun.TOML.parse(where.text) as Table;
+	} catch (error) {
+		const reason = (error instanceof Error ? error.message : String(error)).replace(/^TOML Parse error:\s*/, "");
+		throw new DgCliError(`dg config: ${where.file}:${syntaxLine(where.text)}: ${reason}. ${NEXT_EDIT} <key> <value>.`);
+	}
+}
+
+function tomlFile(env: Env): string {
+	return resolveDgPaths({ env }).configTomlPath;
+}
+
+/** Parses and checks a config.toml text, naming `file` in each error. */
+export function parseDgToml(text: string, file: string): DgToml {
+	const where = { file, text };
+	return validateDgToml(parseToml(where), where);
+}
+
+/** The config.toml values, with defaults for a missing file. */
+export function readDgToml(env: Env = process.env): DgToml {
+	const file = tomlFile(env);
+	return parseDgToml(existsSync(file) ? readFileSync(file, "utf8") : "", file);
+}
+
+function keyParts(key: string): string[] {
+	const parts = key.split(".");
+	if (parts.some((part) => part === "" || UNSAFE_KEYS.has(part)))
+		throw new DgCliError(`dg config: ${key} is not a valid key. Next: use dotted names such as install.cli_only.`);
+	return parts;
+}
+
+/** The value at a dotted key, or undefined. */
+export function dgTomlValue(doc: unknown, key: string): unknown {
+	let node: unknown = doc;
+	for (const part of keyParts(key)) {
+		if (!isRecord(node)) return undefined;
+		node = node[part];
+	}
+	return node;
+}
+
+function envValue(raw: string, like: unknown): unknown {
+	if (typeof like === "boolean") {
+		if (/^(?:1|true|yes|on)$/i.test(raw)) return true;
+		if (/^(?:0|false|no|off)$/i.test(raw)) return false;
+	}
+	if (typeof like === "number" && raw.trim() !== "" && Number.isFinite(Number(raw))) return Number(raw);
+	return raw;
+}
+
+export type SettingOptions<T> = { flag?: T; envVar?: string; env?: Env };
+
+/** A setting from the CLI flag, then the env var, then config.toml, then the schema default. */
+export function setting<T>(key: string, { flag, envVar, env = process.env }: SettingOptions<T> = {}): T {
+	if (flag !== undefined) return flag;
+	const fromToml = dgTomlValue(readDgToml(env), key);
+	const fallback = DG_TOML_DEFAULTS[key];
+	const raw = envVar ? env[envVar] : undefined;
+	if (raw !== undefined) return envValue(raw, fallback ?? fromToml) as T;
+	return (fromToml ?? fallback) as T;
+}
+
+/** The TOML text of `doc`. */
+export function stringifyDgToml(doc: Table): string {
+	return `${stringify(doc).trim()}\n`;
+}
+
+function rawDoc(file: string): { raw: Table; text: string } {
+	const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+	const where = { file, text };
+	const raw = parseToml(where);
+	validateDgToml(raw, where);
+	return { raw, text };
+}
+
+/** Writes `value` at `key` in `raw`, making tables on the way. */
+export function setDgTomlValue(raw: Table, key: string, value: unknown): void {
+	const parts = keyParts(key);
+	let node = raw;
+	for (const part of parts.slice(0, -1)) {
+		const next = node[part];
+		if (next === undefined) node[part] = {};
+		else if (!isRecord(next) || isSecretRef(next))
+			throw new DgCliError(`dg config: ${key} is inside ${part}, which is not a table. Next: run dg config edit.`);
+		node = node[part] as Table;
+	}
+	node[parts.at(-1) as string] = value;
+}
+
+/** Writes a validated config.toml for `raw` atomically with mode 0600. */
+export function writeDgTomlDoc(raw: Table, env: Env = process.env): DgToml {
+	const file = tomlFile(env);
+	const text = stringifyDgToml(raw);
+	const doc = parseDgToml(text, file);
+	mkdirSync(dirname(file), { recursive: true });
+	writeFilePreserving(file, text, 0o600);
+	return doc;
+}
+
+/** Sets one key in config.toml; it validates first and never writes a secret value. */
+export function writeDgToml(key: string, value: unknown, env: Env = process.env): DgToml {
+	const file = tomlFile(env);
+	if (isSecretKey(key) && !isSecretRef(value)) mustBeSecretRef({ file, text: "" }, key);
+	const { raw } = rawDoc(file);
+	setDgTomlValue(raw, key, value);
+	return writeDgTomlDoc(raw, env);
+}

@@ -87,6 +87,16 @@ describe("no workspace package pins a dependency to a moving tag", () => {
 	});
 });
 
+describe("the TOML writer is pinned to one exact version", () => {
+	test("pkg/common pins smol-toml with no range", () => {
+		const common = JSON.parse(readRepoFile("pkg", "common", "package.json")) as {
+			dependencies: Record<string, string>;
+		};
+
+		expect(common.dependencies["smol-toml"]).toMatch(/^\d+\.\d+\.\d+$/);
+	});
+});
+
 describe("the bun version is pinned to one value everywhere", () => {
 	const runtime = JSON.parse(readRepoFile("pkg", "launcher", "runtime.json")) as {
 		version: string;

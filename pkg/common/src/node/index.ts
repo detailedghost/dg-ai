@@ -9,6 +9,7 @@ export * from "./daemon-id";
 export * from "./daemon-start";
 export * from "./dg-config";
 export * from "./dg-paths";
+export * from "./dg-toml";
 export * from "./file-lock";
 export * from "./fs";
 export * from "./install-lock";

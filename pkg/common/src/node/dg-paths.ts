@@ -20,6 +20,7 @@ export type DgRoots = {
 
 export type DgPaths = DgRoots & {
 	configPath: string;
+	configTomlPath: string;
 	/** Commands that credentials exec may run with pw/ values; only the human edits it. */
 	execAllowlistPath: string;
 	cliOnlyMarker: string;
@@ -181,6 +182,7 @@ function computeDgPaths(platform: NodeJS.Platform, home: string, env: Env): DgPa
 	return {
 		...r,
 		configPath: path.join(r.configDir, "config.json"),
+		configTomlPath: path.join(r.configDir, "config.toml"),
 		execAllowlistPath: path.join(r.configDir, "exec-allowlist"),
 		cliOnlyMarker: path.join(r.configDir, "cli-only"),
 		runtimeDir: path.join(r.dataDir, "runtime"),

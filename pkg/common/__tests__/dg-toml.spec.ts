@@ -1,0 +1,227 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DgCliError } from "../src/errors";
+import { readDgToml, setting, writeDgToml } from "../src/node/dg-toml";
+
+const FAKE_TOKEN = "ghp_FAKEfakeFAKEfakeFAKEfakeFAKEfake0000";
+
+let home: string;
+let file: string;
+let env: Record<string, string>;
+
+beforeEach(() => {
+	home = mkdtempSync(join(tmpdir(), "dg-toml-"));
+	mkdirSync(join(home, "config"));
+	file = join(home, "config", "config.toml");
+	env = { DG_HOME: home };
+});
+afterEach(() => rmSync(home, { recursive: true, force: true }));
+
+function caught(fn: () => unknown): DgCliError {
+	try {
+		fn();
+	} catch (error) {
+		expect(error).toBeInstanceOf(DgCliError);
+		return error as DgCliError;
+	}
+	throw new Error("expected a DgCliError");
+}
+
+describe("readDgToml", () => {
+	test("returns defaults for a missing file", () => {
+		const doc = readDgToml(env);
+
+		expect(doc.install.cli_only).toBe(false);
+		expect(doc.hooks).toEqual({});
+		expect(doc.refs.aliases).toEqual({});
+		expect(doc.plugins).toEqual({});
+	});
+
+	test("reads each section from config.toml", () => {
+		writeFileSync(
+			file,
+			[
+				"[hooks.spelling]",
+				'locale = "en-GB"',
+				"[install]",
+				"cli_only = true",
+				"[refs]",
+				'default_repo = "acme/app"',
+				"[refs.aliases]",
+				'app = "acme/app"',
+				"[plugins.foo]",
+				"enabled = false",
+				'source = "github:acme/foo"',
+				"[plugins.foo.settings]",
+				"depth = 3",
+				"",
+			].join("\n"),
+		);
+
+		const doc = readDgToml(env);
+
+		expect(doc.hooks).toEqual({ spelling: { locale: "en-GB" } });
+		expect(doc.install.cli_only).toBe(true);
+		expect(doc.refs).toEqual({ default_repo: "acme/app", aliases: { app: "acme/app" } });
+		expect(doc.plugins.foo).toEqual({ enabled: false, source: "github:acme/foo", settings: { depth: 3 } });
+	});
+
+	test("throws a DgCliError with file, line, key and a next step for a wrong type", () => {
+		writeFileSync(file, ["[hooks.spelling]", 'locale = "en-US"', "", "[install]", 'cli_only = "yes"', ""].join("\n"));
+
+		const error = caught(() => readDgToml(env));
+
+		expect(error.message).toBe(
+			`dg config: ${file}:5: install.cli_only must be a boolean, got "yes". Next: run dg config edit, or dg config set install.cli_only <value>.`,
+		);
+	});
+
+	test("throws a DgCliError with the line of a TOML syntax error", () => {
+		writeFileSync(file, ["[install]", "cli_only = ", ""].join("\n"));
+
+		const error = caught(() => readDgToml(env));
+
+		expect(error.message).toStartWith(`dg config: ${file}:2: `);
+		expect(error.message).toContain("Next: run dg config edit");
+	});
+
+	test("refuses an unknown section", () => {
+		writeFileSync(file, ["[nope]", "x = 1", ""].join("\n"));
+
+		expect(caught(() => readDgToml(env)).message).toContain(`${file}:1: nope is not a dg config section`);
+	});
+
+	test("refuses a plain token in plugin settings without printing it", () => {
+		writeFileSync(file, ["[plugins.foo.settings]", `token = "${FAKE_TOKEN}"`, ""].join("\n"));
+
+		const error = caught(() => readDgToml(env));
+
+		expect(error.message).toContain(`${file}:2: plugins.foo.settings.token must be a credential reference`);
+		expect(error.message).toContain("dg credentials set");
+		expect(error.message).not.toContain(FAKE_TOKEN);
+	});
+
+	test("refuses a token-like value under a plain plugin key without printing it", () => {
+		writeFileSync(file, ["[plugins.foo.settings]", `endpoint = "${FAKE_TOKEN}"`, ""].join("\n"));
+
+		const error = caught(() => readDgToml(env));
+
+		expect(error.message).toContain("plugins.foo.settings.endpoint must be a credential reference");
+		expect(error.message).not.toContain(FAKE_TOKEN);
+	});
+
+	test("accepts a credential reference in plugin settings", () => {
+		writeFileSync(file, ["[plugins.foo.settings]", 'token = { credential = "foo-token" }', ""].join("\n"));
+
+		expect(readDgToml(env).plugins.foo?.settings).toEqual({ token: { credential: "foo-token" } });
+	});
+
+	test("refuses a plain inbox client secret without printing it", () => {
+		writeFileSync(file, ["[inbox.gmail]", 'clientSecret = "fake-client-secret-value"', ""].join("\n"));
+
+		const error = caught(() => readDgToml(env));
+
+		expect(error.message).toContain("inbox.gmail.clientSecret must be a credential reference");
+		expect(error.message).not.toContain("fake-client-secret-value");
+	});
+
+	test("refuses a resolve placeholder anywhere", () => {
+		writeFileSync(file, ["[refs.aliases]", 'app = "{{resolve:secretsmanager:x}}"', ""].join("\n"));
+
+		expect(caught(() => readDgToml(env)).message).toContain("refs.aliases.app must not hold a {{resolve:...}} placeholder");
+	});
+
+	test("refuses a credential reference with a bad name", () => {
+		writeFileSync(file, ["[plugins.foo.settings]", 'token = { credential = "Bad Name" }', ""].join("\n"));
+
+		expect(caught(() => readDgToml(env)).message).toContain("plugins.foo.settings.token must be a credential reference");
+	});
+
+	test("reads only the DG_HOME file, never the XDG one", () => {
+		const xdg = mkdtempSync(join(tmpdir(), "dg-toml-xdg-"));
+		try {
+			mkdirSync(join(xdg, "dg"));
+			writeFileSync(join(xdg, "dg", "config.toml"), "[install]\ncli_only = true\n");
+
+			expect(readDgToml({ ...env, XDG_CONFIG_HOME: xdg }).install.cli_only).toBe(false);
+		} finally {
+			rmSync(xdg, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("setting", () => {
+	test("returns the default when nothing sets the key", () => {
+		expect(setting<boolean>("install.cli_only", { env })).toBe(false);
+	});
+
+	test("prefers TOML over the default", () => {
+		writeFileSync(file, "[install]\ncli_only = true\n");
+
+		expect(setting<boolean>("install.cli_only", { env })).toBe(true);
+	});
+
+	test("prefers env over TOML", () => {
+		writeFileSync(file, "[install]\ncli_only = true\n");
+
+		expect(setting<boolean>("install.cli_only", { envVar: "DG_CLI_ONLY", env: { ...env, DG_CLI_ONLY: "false" } })).toBe(false);
+	});
+
+	test("prefers the flag over env", () => {
+		expect(
+			setting<boolean>("install.cli_only", { flag: true, envVar: "DG_CLI_ONLY", env: { ...env, DG_CLI_ONLY: "0" } }),
+		).toBe(true);
+	});
+
+	test("reads a nested TOML value", () => {
+		writeFileSync(file, '[refs.aliases]\napp = "acme/app"\n');
+
+		expect(setting<string>("refs.aliases.app", { env })).toBe("acme/app");
+	});
+});
+
+describe("writeDgToml", () => {
+	test("writes a value with mode 0600 and reads it back", () => {
+		writeDgToml("refs.aliases.app", "acme/app", env);
+
+		expect(readDgToml(env).refs.aliases).toEqual({ app: "acme/app" });
+		expect(statSync(file).mode & 0o777).toBe(0o600);
+	});
+
+	test("keeps the other values in the file", () => {
+		writeDgToml("install.cli_only", true, env);
+		writeDgToml("hooks.spelling.locale", "en-GB", env);
+
+		const doc = readDgToml(env);
+		expect(doc.install.cli_only).toBe(true);
+		expect(doc.hooks.spelling).toEqual({ locale: "en-GB" });
+	});
+
+	test("validates before it writes and leaves the file unchanged on failure", () => {
+		writeDgToml("install.cli_only", true, env);
+		const before = readFileSync(file, "utf8");
+
+		expect(() => writeDgToml("install.cli_only", "yes", env)).toThrow(DgCliError);
+		expect(readFileSync(file, "utf8")).toBe(before);
+	});
+
+	test("never writes a secret value", () => {
+		const error = caught(() => writeDgToml("plugins.foo.settings.token", FAKE_TOKEN, env));
+
+		expect(error.message).not.toContain(FAKE_TOKEN);
+		expect(() => statSync(file)).toThrow();
+	});
+
+	test("writes a credential reference to a secret field", () => {
+		writeDgToml("plugins.foo.settings.token", { credential: "foo-token" }, env);
+
+		expect(readFileSync(file, "utf8")).toContain('credential = "foo-token"');
+		expect(readDgToml(env).plugins.foo?.settings.token).toEqual({ credential: "foo-token" });
+	});
+
+	test("refuses an unknown section", () => {
+		expect(() => writeDgToml("nope.x", 1, env)).toThrow(DgCliError);
+	});
+});
