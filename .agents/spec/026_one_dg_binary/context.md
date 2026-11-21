@@ -207,3 +207,10 @@ slices:
 - /home/detailedghost/code/worktrees/dg-ai-config-toml/.agents/school/tooling.md
 
 ## Slice Summaries
+
+- (slice 1, config half) ADR 0054 "One config.toml for dg" and its decision rules; `adr lint --all` exits 0.
+- (slice 9) `configTomlPath` in DgPaths; `dg-toml.ts` with readDgToml, setting, writeDgToml, validation with file:line and a next step, secret references; smol-toml 1.9.1 pinned exactly.
+- (slice 10) `migrateToToml` and `migrateToTomlSync`: backups as `.pre-toml` (0600), secrets to the credential store, `[meta.migrated]` sha256, idempotent, write nothing on any failure.
+- (slice 11) `dg-skills config path|get|set|edit`, a config doctor item, the completion tree.
+- (slice 12) hooks, cli-only, refs, doctor, inbox and ssms read config.toml; migration runs after the layout preAction; doctor warns on a changed migrated source.
+- (slice 13) docs/config.md plus hooks, inbox and ssms docs; config-docs.spec.ts.

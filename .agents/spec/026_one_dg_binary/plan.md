@@ -153,8 +153,8 @@ Put every dg command under one flat `dg <command>` surface and ship it as one co
 #### Engineering
 - [ ] Run `dg-skills adr new "One dg program with flat commands" --topic Platform` and write it: flat surface, collision rule, compiled program, links for old names, stored-argv rewrite, `v<x>` tag stays, two-minor bridge for the bundle tarball and runtime, rollback
 - [ ] State that it supersedes ADR 0020 and its amendment where they disagree; add one link line to ADR 0020, and `Superseded in part by` lines to ADRs 0025 (skills call dg-skills), 0032 (runtime plus bundle shims) and 0049 (`dg job` runs `dg-daemon job`)
-- [ ] Run `dg-skills adr new "One config.toml for dg" --topic Platform`: path from resolveDgPaths().configDir, sections, precedence, migration and backup, secret references, `[plugins]`, what stays out (jobs table, exec-allowlist, channel review) as ratified
-- [ ] Run `dg-skills adr index` and `dg-skills adr lint`
+- [x] Run `dg-skills adr new "One config.toml for dg" --topic Platform`: path from resolveDgPaths().configDir, sections, precedence, migration and backup, secret references, `[plugins]`, what stays out (jobs table, exec-allowlist, channel review) as ratified
+- [x] Run `dg-skills adr index` and `dg-skills adr lint`
 
 #### Testing Criteria
 ##### Contracts
@@ -289,86 +289,93 @@ Put every dg command under one flat `dg <command>` surface and ship it as one co
 ### Slice 9 — config-core
 
 #### Engineering
-- [ ] Add `configTomlPath: join(configDir, "config.toml")` to DgPaths; it follows XDG_CONFIG_HOME, APPDATA, macOS support and `<DG_HOME>/config`, and DG_PATH_FENCE checks it through the configDir role
-- [ ] Parse with `Bun.TOML.parse`; write with a pinned `smol-toml` stringify, atomically through `writeFilePreserving` with mode 0600
-- [ ] Schema with sections `[hooks]`, `[install]` (`cli_only`), `[refs.aliases]`, `[inbox]`, `[ssms]`, `[plugins.<name>]` (`enabled`, `source`, `settings`)
-- [ ] Precedence helper: CLI flag, then env, then TOML, then default (pending RATIFY)
-- [ ] Secret fields take only `{ credential = "<name>" }`; a plain string in a secret field, or a value that looks like a token, fails validation
-- [ ] Validation errors throw DgCliError: `dg config: <file>:<line>: <key> must be <type>, got <value>. Next: run dg config edit, or dg config set <key> <value>.`
+- [x] Add `configTomlPath: join(configDir, "config.toml")` to DgPaths; it follows XDG_CONFIG_HOME, APPDATA, macOS support and `<DG_HOME>/config`, and DG_PATH_FENCE checks it through the configDir role
+- [x] Parse with `Bun.TOML.parse`; write with a pinned `smol-toml` stringify, atomically through `writeFilePreserving` with mode 0600
+- [x] Schema with sections `[hooks]`, `[install]` (`cli_only`), `[refs.aliases]`, `[inbox]`, `[ssms]`, `[plugins.<name>]` (`enabled`, `source`, `settings`)
+- [x] Precedence helper: CLI flag, then env, then TOML, then default (pending RATIFY)
+- [x] Secret fields take only `{ credential = "<name>" }`; a plain string in a secret field, or a value that looks like a token, fails validation
+- [x] Validation errors throw DgCliError: `dg config: <file>:<line>: <key> must be <type>, got <value>. Next: run dg config edit, or dg config set <key> <value>.`
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: `readDgToml(env?): DgToml` returns defaults for a missing file and throws DgCliError with file, line, key and a next step for a bad one
-- [ ] Contract: `setting<T>(key, { flag?, envVar? }): T` follows flag, env, TOML, default
-- [ ] Contract: `writeDgToml(key: string, value: unknown, env?)` validates before it writes and never writes a secret value
-- [ ] Contract: `resolveDgPaths({ env: { DG_HOME: d } }).configTomlPath` is `d/config/config.toml`; with DG_PATH_FENCE set outside it, resolveDgPaths throws
-- [ ] `[plugins.foo.settings]` with a `token = "abc..."` string fails; with `token = { credential = "foo-token" }` passes
+- [x] Contract: `readDgToml(env?): DgToml` returns defaults for a missing file and throws DgCliError with file, line, key and a next step for a bad one
+- [x] Contract: `setting<T>(key, { flag?, envVar? }): T` follows flag, env, TOML, default
+- [x] Contract: `writeDgToml(key: string, value: unknown, env?)` validates before it writes and never writes a secret value
+- [x] Contract: `resolveDgPaths({ env: { DG_HOME: d } }).configTomlPath` is `d/config/config.toml`; with DG_PATH_FENCE set outside it, resolveDgPaths throws
+- [x] `[plugins.foo.settings]` with a `token = "abc..."` string fails; with `token = { credential = "foo-token" }` passes
 
 #### Acceptance Criteria
-- [ ] Given a test that sets DG_HOME to a temp folder, when it reads config, then it never reads ~/.config/dg
+- [x] Given a test that sets DG_HOME to a temp folder, when it reads config, then it never reads ~/.config/dg
 
 ### Slice 10 — config-migrate
 
 #### Engineering
-- [ ] On the first read with no config.toml, fold `config.json` (hooks), the `cli-only` marker, `~/.config/browser-batch/config.json` aliases, the inbox organizer config and `ssms/config.yaml` into one config.toml, under the install lock
-- [ ] Copy each source to `<file>.pre-toml` (0600) and check the copy before writing the TOML; leave the source in place during the bridge
-- [ ] Move a secret value found in a source into the credential store and write a reference; on a failed store write, stop and write nothing
-- [ ] Record migrated sources and their sha256 in `[meta.migrated]`
+- [x] On the first read with no config.toml, fold `config.json` (hooks), the `cli-only` marker, `~/.config/browser-batch/config.json` aliases, the inbox organizer config and `ssms/config.yaml` into one config.toml, under the install lock
+- [x] Copy each source to `<file>.pre-toml` (0600) and check the copy before writing the TOML; leave the source in place during the bridge
+- [x] Move a secret value found in a source into the credential store and write a reference; on a failed store write, stop and write nothing
+- [x] Record migrated sources and their sha256 in `[meta.migrated]`
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: `migrateToToml(paths): { wrote: boolean; sources: string[]; backups: string[] }` is idempotent
-- [ ] Each source key appears in the TOML with the same value (round-trip test per source)
-- [ ] A broken JSON source leaves every file as it was and throws a DgCliError with a next step
+- [x] Contract: `migrateToToml(paths): { wrote: boolean; sources: string[]; backups: string[] }` is idempotent
+- [x] Each source key appears in the TOML with the same value (round-trip test per source)
+- [x] A broken JSON source leaves every file as it was and throws a DgCliError with a next step
 
 #### Acceptance Criteria
-- [ ] Given a 6.3 config folder, when any dg command first reads config, then config.toml holds every value, each source has a backup, and no secret is in the TOML
+- [x] Given a 6.3 config folder, when any dg command first reads config, then config.toml holds every value, each source has a backup, and no secret is in the TOML
 
 ### Slice 11 — config-command
 
 #### Engineering
-- [ ] Register `config` with `get <key>`, `set <key> <value>` (plus `--credential <name>` for secret fields), `edit` (opens $EDITOR, validates on save, keeps the old file on failure) and `path`
-- [ ] Regenerate the completion trees with scripts/completion-trees.ts
+- [x] Register `config` with `get <key>`, `set <key> <value>` (plus `--credential <name>` for secret fields), `edit` (opens $EDITOR, validates on save, keeps the old file on failure) and `path`
+- [x] Regenerate the completion trees with scripts/completion-trees.ts
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: `dg-skills config path` prints `resolveDgPaths().configTomlPath`
-- [ ] Contract: `config set` of a secret field with a plain value exits 1 and names `dg credentials` as the next step
-- [ ] `config get` of an unset key prints the default and exits 0; of an unknown key exits 1
+- [x] Contract: `dg-skills config path` prints `resolveDgPaths().configTomlPath`
+- [x] Contract: `config set` of a secret field with a plain value exits 1 and names `dg credentials` as the next step
+- [x] `config get` of an unset key prints the default and exits 0; of an unknown key exits 1
 
 #### Acceptance Criteria
-- [ ] Given slice 2 has landed, when the user runs `dg config path`, then it prints the same path as `dg-skills config path`
+- [x] Given slice 2 has landed, when the user runs `dg config path`, then it prints the same path as `dg-skills config path`
 
 ### Slice 12 — config-consumers
 
 #### Engineering
-- [ ] Make readDgConfig and writeDgConfig read and write the `[hooks]` table of config.toml
-- [ ] Read `cli_only`, ref aliases, inbox and ssms settings from config.toml
-- [ ] Add a doctor check that warns when a migrated source changed after migration and names `dg config edit`
+- [x] Make readDgConfig and writeDgConfig read and write the `[hooks]` table of config.toml
+- [x] Read `cli_only`, ref aliases, inbox and ssms settings from config.toml
+- [x] Add a doctor check that warns when a migrated source changed after migration and names `dg config edit`
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: every reader goes through readDgToml; no reader opens config.json, cli-only or browser-batch config after migration
-- [ ] Hooks toggles round-trip through `dg-skills hooks` with config.toml
-- [ ] Doctor warns when a source sha256 differs from `[meta.migrated]`
+- [x] Contract: every reader goes through readDgToml; no reader opens config.json, cli-only or browser-batch config after migration
+- [x] Hooks toggles round-trip through `dg-skills hooks` with config.toml
+- [x] Doctor warns when a source sha256 differs from `[meta.migrated]`
 
 #### Acceptance Criteria
-- [ ] Given a migrated install, when the user changes a hook toggle, then only config.toml changes
+- [x] Given a migrated install, when the user changes a hook toggle, then only config.toml changes
 
 ### Slice 13 — config-docs
 
 #### Engineering
-- [ ] Write docs/config.md: path per OS, DG_HOME and DG_PATH_FENCE isolation, sections, precedence, secret references, `[plugins]`, migration and backups, `dg config`
-- [ ] Point hooks, inbox and ssms docs at config.toml
+- [x] Write docs/config.md: path per OS, DG_HOME and DG_PATH_FENCE isolation, sections, precedence, secret references, `[plugins]`, migration and backups, `dg config`
+- [x] Point hooks, inbox and ssms docs at config.toml
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: every key in the schema appears in docs/config.md
+- [x] Contract: every key in the schema appears in docs/config.md
 
 #### Acceptance Criteria
-- [ ] Given a user with an old config folder, when they read docs/config.md, then they know where each old value went and where its backup is
+- [x] Given a user with an old config folder, when they read docs/config.md, then they know where each old value went and where its backup is
 
 ## Slice Summaries
+
+- (slice 1, config half) ADR 0054 "One config.toml for dg" and its decision rules; `adr lint --all` exits 0.
+- (slice 9) `configTomlPath` in DgPaths; `dg-toml.ts` with readDgToml, setting, writeDgToml, validation with file:line and a next step, secret references; smol-toml 1.9.1 pinned exactly.
+- (slice 10) `migrateToToml` and `migrateToTomlSync`: backups as `.pre-toml` (0600), secrets to the credential store, `[meta.migrated]` sha256, idempotent, write nothing on any failure.
+- (slice 11) `dg-skills config path|get|set|edit`, a config doctor item, the completion tree.
+- (slice 12) hooks, cli-only, refs, doctor, inbox and ssms read config.toml; migration runs after the layout preAction; doctor warns on a changed migrated source.
+- (slice 13) docs/config.md plus hooks, inbox and ssms docs; config-docs.spec.ts.
 
 ## Agent Notes
 
