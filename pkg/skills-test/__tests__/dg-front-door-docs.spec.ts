@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { ROUTES } from "../../dg/src/main";
+import { resolveRoute } from "../../dg/src/flat";
 import { codeRegions, dgCommandForms, dgGroups, runDgHelp } from "./docs-help-kit";
 import { count, REPO_ROOT, readRepoFile } from "./test-support";
 
@@ -19,8 +19,9 @@ const CHANGED_DOCS = [
 	"docs/adr/0049-jobs.md",
 	TOC_PATH,
 ];
-const ROUTE_NAMES = Object.keys(ROUTES);
-const ALLOWED_FIRST_WORDS = [...ROUTE_NAMES, "completion", "help", "--help", "--version"];
+const FRONT_DOOR = ["job", "autostart", "daemon", "skills", "agent", "extension", "install", "upgrade", "doctor"];
+const OWN_WORDS = ["completion", "help", "--help", "--version"];
+const allowedFirstWord = (name: string): boolean => resolveRoute(name) !== undefined || OWN_WORDS.includes(name);
 const RETIRED_IN_AMENDMENT = ["review", "service"];
 
 const read = (path: string): string => {
@@ -155,9 +156,9 @@ describe("ADR 0020 amendment", () => {
 		for (const m of text.matchAll(/\((?:\.\/)?(\d{4})-[^)]*\.md\)/g)) expect(Number(m[1])).toBeLessThanOrEqual(49);
 	});
 
-	test("code spans show only dg names of ROUTES, apart from the retired names it corrects", () => {
+	test("code spans show only dg names that resolve, apart from the retired names it corrects", () => {
 		const bad = dgCommandForms(text.replace(/`[^`\n]*dg-daemon has no[^`\n]*`/g, "")).filter(
-			([name]) => ![...ALLOWED_FIRST_WORDS, ...RETIRED_IN_AMENDMENT].includes(name),
+			([name]) => !allowedFirstWord(name) && !RETIRED_IN_AMENDMENT.includes(name),
 		);
 		expect(bad).toEqual([]);
 	});
@@ -357,7 +358,7 @@ describe("README.md dg table", () => {
 	const rows = lines.filter((l) => /^\| `dg (\w+)` \|/.test(l));
 
 	test("has one table of the nine names after the install paragraph and before the skills table", () => {
-		expect(rows.length).toBe(ROUTE_NAMES.length);
+		expect(rows.length).toBe(FRONT_DOOR.length);
 		const at = lines.indexOf(rows[0]);
 		expect(at).toBeGreaterThan(lines.findIndex((l) => l === "## Install"));
 		expect(at).toBeLessThan(lines.findIndex((l) => l.startsWith("| Skill | Use | Guide |")));
@@ -369,12 +370,15 @@ describe("README.md dg table", () => {
 		expect(above.startsWith("|")).toBe(false);
 	});
 
-	test("each target cell equals the ROUTES program and command", () => {
+	test("each target cell equals the resolved program and command", () => {
 		const table = rows.map((l) => l.split("|").map((c) => c.trim()).filter(Boolean));
 		for (const cells of table) expect(cells.length).toBe(2);
 		const byName = Object.fromEntries(table.map(([n, t]) => [n.replace(/`/g, "").replace(/^dg /, ""), t.replace(/`/g, "")]));
 		const expected = Object.fromEntries(
-			Object.entries(ROUTES).map(([name, r]) => [name, [r.program, ...r.command].join(" ")]),
+			FRONT_DOOR.map((name) => {
+				const r = resolveRoute(name);
+				return [name, r ? [r.program, ...r.command].join(" ") : ""];
+			}),
 		);
 		expect(byName).toEqual(expected);
 	});
@@ -456,11 +460,11 @@ describe("changed documents", () => {
 		[`${ADR_PATH} amendment`, dgCommandForms(amendment())],
 	];
 
-	test("each dg name in a code span or fence is a ROUTES name", () => {
+	test("each dg name in a code span or fence resolves", () => {
 		const bad = shown().flatMap(([f, forms]) =>
 			forms
 				.map((w) => w[0])
-				.filter((name) => !ALLOWED_FIRST_WORDS.includes(name) && !(f.includes("amendment") && RETIRED_IN_AMENDMENT.includes(name)))
+				.filter((name) => !allowedFirstWord(name) && !(f.includes("amendment") && RETIRED_IN_AMENDMENT.includes(name)))
 				.map((name) => `${f}: dg ${name}`),
 		);
 		expect(bad).toEqual([]);
@@ -472,7 +476,7 @@ describe("changed documents", () => {
 	});
 
 	test("bun pkg/dg/src/index.ts <group> --help exits 0 for each group a document shows", async () => {
-		const groups = [...new Set(CHANGED_DOCS.flatMap((f) => dgGroups(read(f))).filter((g) => ROUTE_NAMES.includes(g)))];
+		const groups = [...new Set(CHANGED_DOCS.flatMap((f) => dgGroups(read(f))).filter((g) => resolveRoute(g) !== undefined))];
 		expect(groups.length).toBeGreaterThan(0);
 		const runs = await Promise.all(groups.map(async (g) => [g, (await runDgHelp([g])).code] as const));
 		expect(runs.filter(([, code]) => code !== 0)).toEqual([]);

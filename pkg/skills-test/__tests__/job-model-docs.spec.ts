@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { ROUTES } from "../../dg/src/main";
+import { resolveRoute } from "../../dg/src/flat";
 import { codeRegions, dgCommandForms, runDgHelp } from "./docs-help-kit";
 import { ADR_SECTIONS, adrTitle, count, REPO_ROOT, readRepoFile, UNNUMBERED_TITLE } from "./test-support";
 
@@ -181,7 +181,7 @@ describe("docs/jobs-and-services.md job model", () => {
 	test("each dg command in a code block passes its --help form", async () => {
 		const forms = [...new Set(dgCommandForms(doc).map((w) => commandWords(w.join(" ")).join(" ")))];
 		expect(forms.length).toBeGreaterThan(5);
-		for (const form of forms) expect([form, Object.keys(ROUTES).includes(form.split(" ")[0])]).toEqual([form, true]);
+		for (const form of forms) expect([form, resolveRoute(form.split(" ")[0] ?? "") !== undefined]).toEqual([form, true]);
 		const runs = await Promise.all(forms.map(async (f) => [f, (await runDgHelp(f.split(" "))).code] as const));
 		expect(runs.filter(([, code]) => code !== 0)).toEqual([]);
 	}, 120_000);

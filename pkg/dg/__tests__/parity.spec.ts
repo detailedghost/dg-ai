@@ -86,6 +86,9 @@ const HELP_ROWS: ReadonlyArray<readonly [string, string, string[]]> = [
 	["install", "dg-skills", ["install"]],
 	["upgrade", "dg-skills", ["update"]],
 	["doctor", "dg-skills", ["doctor"]],
+	["pw", "dg-skills", ["pw"]],
+	["phone", "dg-agent", ["phone"]],
+	["service", "dg-daemon", ["service"]],
 ];
 
 describe.each(MODES)("dg against the mounted programs (%s)", (mode) => {
@@ -141,6 +144,29 @@ describe.each(MODES)("dg against the mounted programs (%s)", (mode) => {
 		},
 	);
 
+	test("dg help pw prints the same text as dg pw --help", () => {
+		const home = freshHome();
+		const help = invoke(mode, "dg", ["help", "pw"], home);
+		const direct = invoke(mode, "dg", ["pw", "--help"], home);
+		expect(help.stdout).toBe(direct.stdout);
+		expect(help.stdout.length).toBeGreaterThan(0);
+	});
+
+	test("dg __complete pw completes the skills pw subcommands", () => {
+		const home = freshHome();
+		const complete = (program: string, args: string[]) => invoke(mode, program, args, home).stdout;
+		const viaDg = complete("dg", ["__complete", "pw", ""]);
+		expect(viaDg).toBe(complete("dg-skills", ["__complete", "pw", ""]));
+		expect(viaDg.length).toBeGreaterThan(0);
+	});
+
+	test("dg start exits 1 with a hint that names dg daemon start and dg agent start", () => {
+		const result = invoke(mode, "dg", ["start"], freshHome());
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("dg daemon start");
+		expect(result.stderr).toContain("dg agent start");
+	});
+
 	test("dg nope exits 1 with the unknown-command error", () => {
 		const result = invoke(mode, "dg", ["nope"], freshHome());
 		expect(result.exitCode).toBe(1);
@@ -152,7 +178,7 @@ describe.each(MODES)("dg against the mounted programs (%s)", (mode) => {
 		const outside = freshHome();
 		const result = invoke(mode, "dg", ["--help"], outside, { DG_PATH_FENCE: join(outside, "fence-elsewhere") });
 		expect(result.exitCode).toBe(0);
-		for (const name of ["job", "autostart", "daemon", "skills", "agent", "extension", "install", "upgrade", "doctor"])
+		for (const name of ["job", "autostart", "daemon", "skills", "agent", "extension", "install", "upgrade", "doctor", "pw", "phone"])
 			expect(result.stdout).toContain(name);
 	});
 

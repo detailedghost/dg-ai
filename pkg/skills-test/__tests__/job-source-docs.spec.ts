@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { ROUTES } from "../../dg/src/main";
+import { resolveRoute } from "../../dg/src/flat";
 import { parseJobDeclaration } from "../../dg-daemon/src/jobs/declaration";
 import { parseSetupAnswers } from "../../dg-daemon/src/jobs/setup-answers";
 import { RESERVED_CREDENTIAL_PREFIXES } from "../../common/src/credentials-format";
@@ -18,7 +18,6 @@ const RECORD_FILE = "0053-job-sources-and-credentials.md";
 const RECORD = `docs/adr/${RECORD_FILE}`;
 const ADR_0043 = "docs/adr/0043-outside-services.md";
 const CHANGED = [JOBS, SERVICE_API, CHANNEL_REVIEW, SECURITY, RECORD];
-const ROUTE_NAMES = Object.keys(ROUTES);
 
 const SOURCE_FILES = [
 	"dg-daemon/src/commands/jobs.ts",
@@ -251,7 +250,7 @@ describe("each documented command passes its --help form", () => {
 		expect(forms.length).toBeGreaterThan(8);
 		const byCommand = new Map<string, Set<string>>();
 		for (const form of forms) {
-			expect(ROUTE_NAMES).toContain(form[0]);
+			expect(resolveRoute(form[0] ?? "")).toBeDefined();
 			const key = helpWords(form).join(" ");
 			const flags = form.filter((word) => /^--[a-z][a-z-]*$/.test(word));
 			byCommand.set(key, new Set([...(byCommand.get(key) ?? []), ...flags]));
@@ -282,11 +281,11 @@ describe("each documented command passes its --help form", () => {
 		}
 	}, 120_000);
 
-	test("each dg name in a code span or fence of the changed documents is a ROUTES name", () => {
+	test("each dg name in a code span or fence of the changed documents resolves through resolveRoute", () => {
 		const bad = CHANGED.flatMap((file) =>
 			dgCommandForms(read(file))
 				.map((words) => words[0])
-				.filter((name) => !ROUTE_NAMES.includes(name) && !["completion", "help", "--help", "--version"].includes(name))
+				.filter((name) => resolveRoute(name) === undefined && !["completion", "help", "--help", "--version"].includes(name))
 				.map((name) => `${file}: dg ${name}`),
 		);
 		expect(bad).toEqual([]);

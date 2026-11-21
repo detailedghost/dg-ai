@@ -1,90 +1,87 @@
 import type { CompletionNode, CompletionShell } from "@dg/common/completion";
 import type { ProgramName } from "@dg/common/node/program";
+import type { FlatRoute } from "./flat";
 
 export type MountName = Exclude<ProgramName, "dg">;
 
 export type Mounts = Record<MountName, () => Promise<{ main(argv: string[]): Promise<number> }>>;
 
-interface Route {
-	program: MountName;
-	command: readonly string[];
-	description: string;
-}
-
-export const ROUTES = {
-	job: { program: "dg-daemon", command: ["job"], description: "schedule and run recurring jobs (runs dg-daemon job)" },
-	autostart: { program: "dg-daemon", command: ["autostart"], description: "start the daemon when you log in (runs dg-daemon autostart)" },
-	daemon: { program: "dg-daemon", command: [], description: "run the dg-daemon program (runs dg-daemon)" },
-	skills: { program: "dg-skills", command: [], description: "run the dg-skills program (runs dg-skills)" },
-	agent: { program: "dg-agent", command: [], description: "run the dg-agent program (runs dg-agent)" },
-	extension: {
-		program: "dg-skills",
-		command: ["install"],
-		description: "stage the browser extension (runs dg-skills install)",
-	},
-	install: {
-		program: "dg-skills",
-		command: ["install"],
-		description: "install the dg skills and the browser extension (runs dg-skills install)",
-	},
-	upgrade: { program: "dg-skills", command: ["update"], description: "update the dg skills (runs dg-skills update)" },
-	doctor: { program: "dg-skills", command: ["doctor"], description: "check the dg install (runs dg-skills doctor)" },
-} as const satisfies Record<string, Route>;
-
-type RouteName = keyof typeof ROUTES;
-
 const SHELLS: readonly CompletionShell[] = ["bash", "zsh", "fish"];
-const EXTRAS = [
-	{ name: "completion", description: "print the bash, zsh or fish completion script" },
-	{ name: "help", description: "show help for dg or for one command" },
-] as const;
-const NAME_WIDTH = 12;
+const NAME_WIDTH = 20;
+const AREAS: ReadonlyArray<readonly [MountName, string]> = [
+	["dg-skills", "Skills commands"],
+	["dg-agent", "Agent commands"],
+	["dg-daemon", "Daemon commands"],
+];
 
-const isRoute = (name: string | undefined): name is RouteName => name !== undefined && Object.hasOwn(ROUTES, name);
-
-function usage(): string {
+async function usage(): Promise<string> {
+	const { ALIASES, flatRows, GROUPS, OWN } = await import("./flat");
 	const row = (name: string, description: string) => `  ${name.padEnd(NAME_WIDTH)}${description}`;
+	const rows = flatRows();
+	const area = ([program, title]: readonly [MountName, string]) => [
+		`${title}:`,
+		...rows.filter((entry) => entry.program === program).map((entry) => row(entry.name, entry.description)),
+		"",
+	];
 	return [
 		"Usage: dg <command> [arguments]",
 		"",
-		"Commands:",
-		...Object.entries(ROUTES).map(([name, route]) => row(name, route.description)),
-		row("completion", "print the bash, zsh or fish completion script (dg completion <shell>)"),
+		...AREAS.flatMap(area),
+		"Groups:",
+		...Object.entries(GROUPS).map(([name, group]) => row(name, group.description)),
+		"",
+		"Aliases:",
+		...Object.entries(ALIASES).map(([name, alias]) => row(name, alias.description)),
+		"",
+		"Other:",
+		...Object.entries(OWN).map(([name, description]) => row(name, description)),
 		"",
 		"Run dg <command> --help for the options of one command.",
 		"",
 	].join("\n");
 }
 
-function unknown(word: string): number {
-	process.stderr.write(`dg: unknown command "${word}"; run dg --help\n`);
+async function unknown(word: string): Promise<number> {
+	const { groupedPaths } = await import("./flat");
+	const paths = groupedPaths(word);
+	process.stderr.write(
+		paths.length > 0
+			? `dg: "${word}" stays under its group; run ${paths.join(" or ")}\n`
+			: `dg: unknown command "${word}"; run dg --help\n`,
+	);
 	return 1;
 }
 
-async function runRoute(
-	name: RouteName,
-	args: readonly string[],
-	mounts: Mounts,
-	prefix: readonly string[] = [],
-): Promise<number> {
-	const route: Route = ROUTES[name];
+async function route(word: string | undefined): Promise<FlatRoute | undefined> {
+	if (word === undefined) return undefined;
+	const { resolveRoute } = await import("./flat");
+	return resolveRoute(word);
+}
+
+async function runRoute(found: FlatRoute, args: readonly string[], mounts: Mounts, prefix: readonly string[] = []): Promise<number> {
 	const { mountProgram } = await import("@dg/common/node/program");
-	mountProgram(route.program);
-	const { main } = await mounts[route.program]();
-	return main([...prefix, ...route.command, ...args]);
+	mountProgram(found.program);
+	const { main } = await mounts[found.program]();
+	return main([...prefix, ...found.command, ...args]);
 }
 
 async function completion(words: readonly string[], mounts: Mounts): Promise<number> {
 	if (words.length > 1) {
 		const [name, ...rest] = words;
-		return isRoute(name) ? runRoute(name, rest, mounts, ["__complete"]) : 0;
+		const found = await route(name);
+		return found ? runRoute(found, rest, mounts, ["__complete"]) : 0;
 	}
-	const { printCompletions } = await import("@dg/common/completion");
+	const [{ printCompletions }, { ALIASES, flatRows, GROUPS, OWN }] = await Promise.all([
+		import("@dg/common/completion"),
+		import("./flat"),
+	]);
 	const root: CompletionNode = {
 		name: "dg",
 		commands: [
-			...Object.entries(ROUTES).map(([name, route]) => ({ name, description: route.description })),
-			...EXTRAS,
+			...flatRows().map(({ name, description }) => ({ name, description })),
+			...Object.entries(GROUPS).map(([name, group]) => ({ name, description: group.description })),
+			...Object.entries(ALIASES).map(([name, alias]) => ({ name, description: alias.description })),
+			...Object.entries(OWN).map(([name, description]) => ({ name, description })),
 		],
 	};
 	return printCompletions(root, words.length ? words : [""]);
@@ -94,14 +91,17 @@ export async function main(argv: readonly string[], mounts: Mounts): Promise<num
 	const [first, ...rest] = argv;
 	const helpTopic = first === "help" && (rest.length === 0 || rest[0] === "help" || rest[0] === "completion");
 	if (first === undefined || first === "--help" || first === "-h" || helpTopic) {
-		process.stdout.write(usage());
+		process.stdout.write(await usage());
 		return 0;
 	}
 	if (first === "--version") {
 		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
 		return 0;
 	}
-	if (first === "help") return isRoute(rest[0]) ? runRoute(rest[0], ["--help"], mounts) : unknown(rest[0] ?? "");
+	if (first === "help") {
+		const found = await route(rest[0]);
+		return found ? runRoute(found, ["--help"], mounts) : unknown(rest[0] ?? "");
+	}
 	if (first === "completion") {
 		const shell = rest[0];
 		const known = SHELLS.find((candidate) => candidate === shell);
@@ -114,5 +114,6 @@ export async function main(argv: readonly string[], mounts: Mounts): Promise<num
 		return 0;
 	}
 	if (first === "__complete") return completion(rest, mounts);
-	return isRoute(first) ? runRoute(first, rest, mounts) : unknown(first);
+	const found = await route(first);
+	return found ? runRoute(found, rest, mounts) : unknown(first);
 }
