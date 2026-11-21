@@ -163,6 +163,11 @@ jobs:
       RUNTIME_KEY: ${{ matrix.runtime }}
       VERSION: ${{ needs.build-bundle.outputs.version }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/actions
+          persist-credentials: false
+
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: bundle
@@ -237,45 +242,11 @@ jobs:
             fi
           done
 
-      - name: Run the compiled dg for this platform
-        shell: bash
-        run: |
-          set -euo pipefail
-          program="./dg-${RUNTIME_KEY}"
-          if [ "${RUNNER_OS}" = Windows ]; then
-            program="${program}.exe"
-          else
-            chmod +x "$program"
-          fi
-          home="$(mktemp -d)"
-          export DG_HOME="$home/dg" HOME="$home/home" USERPROFILE="$home/home"
-          mkdir -p "$HOME"
-          version="$("$program" --version)"
-          skills="$("$program" skills --version)"
-          if [ "$version" != "$VERSION" ] || [ "$skills" != "$VERSION" ]; then
-            echo "::error::the compiled dg printed '${version}' and '${skills}', expected ${VERSION}"
-            exit 1
-          fi
-          pw_help="$("$program" pw --help)"
-          grep -q "Usage: pw" <<<"$pw_help"
-          "$program" phone --help >/dev/null
-          "$program" job --help >/dev/null
-          if "$program" start 2>/dev/null; then
-            echo "::error::dg start must exit 1 with a hint"
-            exit 1
-          fi
-
-      - name: Check that an old name gives the removed-name notice
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          set -euo pipefail
-          ln -s "$PWD/dg-${RUNTIME_KEY}" dg-skills
-          if out="$(./dg-skills --version 2>&1)"; then
-            echo "::error::dg-skills must exit 1"
-            exit 1
-          fi
-          grep -q "the dg-skills command is removed" <<<"$out"
+      - name: Smoke the compiled dg
+        uses: ./.github/actions/smoke-compiled-dg
+        with:
+          runtime: ${{ matrix.runtime }}
+          version: ${{ needs.build-bundle.outputs.version }}
 
   build-ext:
     needs: [detect, blt-ext]

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { resolve } from "node:path";
-import { dispatch } from "../src/dg";
+import { dispatch } from "../src/dispatch";
 
 let saved: string | undefined;
 

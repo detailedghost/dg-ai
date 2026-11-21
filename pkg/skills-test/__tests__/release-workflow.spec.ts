@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isReleaseCommit } from "../../../scripts/release-version";
 import { SUPPORTED_PLATFORMS } from "./supported-platforms";
+import { readRepoFile } from "./test-support";
 import {
 	createStepSandbox,
 	findStep,
@@ -10,6 +11,7 @@ import {
 	parseWorkflow,
 	type StepSandbox,
 	type WorkflowJob,
+	type WorkflowStep,
 	stepText,
 	workflowFiles,
 	workflowText,
@@ -842,6 +844,13 @@ function uploadedNames(jobId: string): string[] {
 		.map((path) => (path.split("/").pop() ?? "").replaceAll(VERSION_EXPR, "<v>"));
 }
 
+const SMOKE_ACTION = "./.github/actions/smoke-compiled-dg";
+const smokeActionRuns = (
+	Bun.YAML.parse(readRepoFile(".github", "actions", "smoke-compiled-dg", "action.yml")) as { runs: { steps: WorkflowStep[] } }
+).runs.steps
+	.map((s) => s.run ?? "")
+	.join("\n");
+
 function smokeJobIds(): string[] {
 	return Object.keys(workflow.jobs).filter((id) => id.startsWith("smoke"));
 }
@@ -864,14 +873,24 @@ describe("the release builds one bundle and smokes it on all six platforms", () 
 		expect(text).toContain(`dg-lib-${VERSION_EXPR}.tar.gz`);
 	});
 
-	test("the smoke job runs the compiled dg of its platform and checks the removed-name notice", () => {
+	test("the smoke job runs the compiled dg of its platform through the shared smoke action", () => {
 		const id = smokeJobIds()[0] as string;
-		const runs = (workflow.jobs[id]?.steps ?? []).map((s) => s.run ?? "").join("\n");
-		expect(runs).toContain('program="./dg-${RUNTIME_KEY}"');
-		expect(runs).toContain('"$program" --version');
-		expect(runs).toContain('"$program" skills --version');
-		expect(runs).toContain('"$program" pw --help');
-		expect(runs).toContain("the dg-skills command is removed");
+		const smoke = (workflow.jobs[id]?.steps ?? []).find((s) => s.uses === SMOKE_ACTION);
+		expect(smoke?.with).toEqual({ runtime: "${{ matrix.runtime }}", version: "${{ needs.build-bundle.outputs.version }}" });
+	});
+
+	test("the smoke action runs --version, skills --version and pw --help, and checks the removed-name notice", () => {
+		expect(smokeActionRuns).toContain('program="./dg-${RUNTIME_KEY}"');
+		expect(smokeActionRuns).toContain("run_dg --version");
+		expect(smokeActionRuns).toContain("run_dg skills --version");
+		expect(smokeActionRuns).toContain("run_dg pw --help");
+		expect(smokeActionRuns).toContain("the dg-skills command is removed");
+	});
+
+	test("the smoke action prints the exit code and stderr of each dg call, so a failure is never silent", () => {
+		expect(smokeActionRuns).toContain('out="$("$program" "$@" 2>"$err")" || code=$?');
+		expect(smokeActionRuns).toContain('echo "dg $* exited ${code}"');
+		expect(smokeActionRuns).toContain('cat "$err"');
 	});
 
 	test("one smoke job runs a six-runner matrix, one native runner per supported platform", () => {

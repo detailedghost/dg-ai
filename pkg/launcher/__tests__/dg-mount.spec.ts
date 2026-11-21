@@ -27,7 +27,7 @@ mock.module("../src/programs/skills", recorder);
 mock.module("../src/programs/daemon", recorder);
 mock.module("../src/programs/agent", recorder);
 
-const { dispatch } = await import("../src/dg");
+const { dispatch } = await import("../src/dispatch");
 
 beforeEach(() => {
 	seen = [];
