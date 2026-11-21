@@ -391,7 +391,8 @@ release ships one compiled program, `dg`, and removes the other three names.
 Only this section and the [Roll back](#roll-back) steps that follow deal with the old names and releases.
 
 On a 6.3 install, run `dg upgrade`. The command `dg-skills update` does the
-same.
+same. 6.4 updates the same way, so each step below that names 6.3 also holds
+for 6.4.
 
 ```bash
 dg upgrade
@@ -468,15 +469,16 @@ ln -sfn <previous version> ~/.local/share/dg/bin/current
 
 Restart the daemon after a rollback with `dg daemon restart`.
 
-To roll back to 6.3, run the 6.3 bootstrap. 6.3 skills come back with it:
+To roll back to the last release before the compiled program, run the 6.4.0
+bootstrap. Its skills come back with it:
 
 ```bash
-curl -fsSL https://github.com/detailedghost/dg-ai/releases/download/v6.3.1/bootstrap.sh | sh
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/download/v6.4.0/bootstrap.sh | sh
 ```
 
 Then reinstall the daemon login unit with `dg-daemon autostart install` and add
-again each job that names `dg`. Those two commands use the 6.3 names, because
-the 6.3 install has no other.
+again each job that names `dg`. Those two commands use the old names, because
+the 6.4 install has no other.
 
 A version from before the compiled program needs that release's own bootstrap
 script, as the error message says.

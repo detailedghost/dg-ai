@@ -366,7 +366,8 @@ describe("docs/install.md", () => {
 		expect(text).toContain("dg: the dg-skills command is removed; run dg <args>");
 		expect(text).toMatch(/dg daemon restart/);
 		expect(text).toMatch(/`dg install --version <previous version>` points `<data>\/bin\/current`/);
-		expect(text).toContain("releases/download/v6.3.1/bootstrap.sh");
+		expect(text).toContain("releases/download/v6.4.0/bootstrap.sh");
+		expect(text).toContain("6.4 updates the same way");
 		for (const asset of [
 			"dg-linux-x64",
 			"dg-linux-x64-baseline",
