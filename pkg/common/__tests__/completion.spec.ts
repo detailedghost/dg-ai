@@ -1,7 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { Argument, Command, Option } from "commander";
-import { type CompletionNode, completeWords, completionScript, FILES_DIRECTIVE, registerCompletionCommand, treeOf } from "../src/completion";
-import { spyOn } from "bun:test";
+import {
+	type CompletionNode,
+	completeWords,
+	completionScript,
+	FILES_DIRECTIVE,
+	registerCompletionCommand,
+	treeOf,
+} from "../src/completion";
 
 const tree: CompletionNode = {
 	name: "dg-skills",

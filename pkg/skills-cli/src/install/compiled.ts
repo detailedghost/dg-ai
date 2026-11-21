@@ -102,7 +102,13 @@ export function isOwnedLauncher(path: string, root: string, platform: NodeJS.Pla
 }
 
 function sweepAside(binDir: string): void {
-	for (const name of readdirSync(binDir)) {
+	let names: string[];
+	try {
+		names = readdirSync(binDir);
+	} catch {
+		return;
+	}
+	for (const name of names) {
 		if (!name.startsWith(".dg.exe.") || !name.endsWith(".old")) continue;
 		try {
 			rmSync(join(binDir, name), { force: true });
@@ -135,7 +141,9 @@ export function writeDgLink(
 			if (moved) {
 				try {
 					renameSync(aside, dest);
-				} catch {}
+				} catch {
+					throw new Error(`could not link ${dest}; the old dg.exe is at ${aside}, rename it back`, { cause: err });
+				}
 			}
 			throw err;
 		}
