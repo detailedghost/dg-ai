@@ -3,6 +3,7 @@
 Status: Accepted
 Date: 2026-11-03
 Topic: Installation
+Superseded in part by [ADR 0055](0055-one-dg-program-with-flat-commands.md): skills and docs call `dg`, not `dg-skills`, and install writes no old-name launcher.
 
 ## Context
 

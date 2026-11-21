@@ -3,6 +3,7 @@
 Status: Accepted
 Date: 2026-11-03
 Topic: Installation
+Superseded in part by [ADR 0055](0055-one-dg-program-with-flat-commands.md): one compiled `dg` replaces the runtime, the bundle and the four shims; the bundle stays only as the 6.3 bridge.
 
 ## Context
 
