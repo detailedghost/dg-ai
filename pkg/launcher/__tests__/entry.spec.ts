@@ -11,9 +11,8 @@ describe("compiled dg entry", () => {
 		expect(entry).toContain("dispatch(process.argv.slice(2), process.argv0)");
 	});
 
-	test("dispatch lives in a module with no top-level side effect, so tests can import it", () => {
-		const module = readFileSync(join(SRC, "dispatch.ts"), "utf8");
-		expect(module).not.toContain("exitAfterDrain");
-		expect(module).toContain("export async function dispatch(");
+	test("dispatch imports without running, so tests can call it", async () => {
+		const { dispatch } = await import("../src/dispatch");
+		expect(typeof dispatch).toBe("function");
 	});
 });

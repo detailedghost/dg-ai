@@ -7,6 +7,7 @@ on:
       - pkg/launcher/**
       - pkg/dg/**
       - pkg/common/**
+      - pkg/skills-cli/package.json
       - bun.lock
       - .github/actions/smoke-compiled-dg/**
       - .github/workflows/compiled-dg.yml
@@ -37,7 +38,7 @@ jobs:
 
       - name: Read the version
         id: version
-        run: echo "version=$(jq -r .version pkg/skills-cli/package.json)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(jq -er .version pkg/skills-cli/package.json)" >> "$GITHUB_OUTPUT"
 
       - name: Install
         run: bun install --frozen-lockfile --ignore-scripts
@@ -71,6 +72,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/actions
+          persist-credentials: false
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:

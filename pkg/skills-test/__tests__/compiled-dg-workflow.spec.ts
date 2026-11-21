@@ -9,12 +9,13 @@ describe("compiled-dg.yml smokes the compiled dg on pull requests without a rele
 		expect(Object.keys(workflow.on)).toEqual(["pull_request"]);
 	});
 
-	test("it runs only when the launcher, dg, common, the smoke action or a workflow that builds dg changes", () => {
+	test("its path filter covers the launcher, dg, common, the version file, the smoke action and the workflows that build dg", () => {
 		expect(pullRequest?.paths).toEqual(
 			expect.arrayContaining([
 				"pkg/launcher/**",
 				"pkg/dg/**",
 				"pkg/common/**",
+				"pkg/skills-cli/package.json",
 				".github/actions/smoke-compiled-dg/**",
 				".github/workflows/compiled-dg.yml",
 				".github/workflows/release.yml",
@@ -40,6 +41,10 @@ describe("compiled-dg.yml smokes the compiled dg on pull requests without a rele
 			{ os: "ubuntu-latest", runtime: "linux-x64" },
 			{ os: "windows-latest", runtime: "windows-x64" },
 		]);
+		expect(smoke?.needs).toBe("build");
+		expect((workflow.jobs.build as { outputs?: Record<string, string> }).outputs?.version).toBe(
+			"${{ steps.version.outputs.version }}",
+		);
 		const step = (smoke?.steps ?? []).find((s) => s.uses === "./.github/actions/smoke-compiled-dg");
 		expect(step?.with).toEqual({ runtime: "${{ matrix.runtime }}", version: "${{ needs.build.outputs.version }}" });
 	});

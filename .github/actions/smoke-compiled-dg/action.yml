@@ -1,5 +1,5 @@
 name: Smoke the compiled dg
-description: Run the compiled dg for this runner and check its version, its command trees and the removed-name notice. Every failed call prints its exit code and stderr.
+description: Run the compiled dg for this runner and check its version, its command trees and the removed-name notice. Each dg call prints its exit code and stderr.
 inputs:
   runtime:
     description: The runtime.json platform key; the program is ./dg-<runtime>, with .exe on Windows.
@@ -46,11 +46,17 @@ runs:
           exit 1
         fi
         run_dg pw --help
-        grep -q "Usage: pw" <<<"$out"
+        if ! grep -q "Usage: pw" <<<"$out"; then
+          echo "::error::dg pw --help printed no pw usage:"
+          echo "$out"
+          exit 1
+        fi
         run_dg phone --help
         run_dg job --help
-        if run_dg start; then
-          echo "::error::dg start must exit 1 with a hint"
+        code=0
+        run_dg start || code=$?
+        if [ "$code" != 1 ] || ! grep -q "stays under its group" "$err"; then
+          echo "::error::dg start must exit 1 with a hint, got exit ${code}"
           exit 1
         fi
 
