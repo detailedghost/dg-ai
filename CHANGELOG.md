@@ -1,5 +1,11 @@
 # Changelog
 
+## v6.4.0 (2026-11-21)
+
+### Features
+
+- feat(config): keep dg settings in one config.toml ([#247](https://github.com/detailedghost/dg-ai/pull/247))
+
 ## v6.3.1 (2026-11-21)
 
 ### Fixes
