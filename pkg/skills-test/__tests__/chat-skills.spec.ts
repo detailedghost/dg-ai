@@ -207,6 +207,25 @@ describe("packaging", () => {
 		expect(readFileSync(join(unpack, "UPLOAD.md"), "utf8")).toContain("Upload a skill");
 	});
 
+	test("the release command writes a valid bundle to a relative --out", () => {
+		const cwd = makeTempDir("dg-chat-pack-cli-");
+		const run = Bun.spawnSync(
+			["bun", join(REPO_ROOT, "scripts", "package-chat-skills.ts"), "--out", "dist", "--version", "9.9.7"],
+			{ cwd, stdout: "pipe", stderr: "pipe" },
+		);
+		expect(run.stderr.toString()).toBe("");
+		expect(run.exitCode).toBe(0);
+		const bundle = join(cwd, "dist", "dg-chat-skills-9.9.7.zip");
+		expect(run.stdout.toString().trim()).toBe(join("dist", "dg-chat-skills-9.9.7.zip"));
+		expect(Bun.spawnSync(["unzip", "-tq", bundle]).exitCode).toBe(0);
+
+		const unpack = join(cwd, "unpacked");
+		mkdirSync(unpack);
+		expect(Bun.spawnSync(["unzip", "-q", bundle, "-d", unpack]).exitCode).toBe(0);
+		for (const name of skillNames())
+			expect(Bun.spawnSync(["unzip", "-tq", join(unpack, `${name}.zip`)]).exitCode, name).toBe(0);
+	});
+
 	test("packaging copies, never changes, the skill folders", () => {
 		const before = skillNames().map((name) => readFileSync(join(CHAT_SKILLS, name, "SKILL.md"), "utf8"));
 		packageWebSkills(makeTempDir("dg-chat-pack-"), "9.9.8");
