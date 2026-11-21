@@ -8,15 +8,15 @@ revoke.
 
 ## How an agent reaches Web MCP
 
-- `dg-agent mcp` serves the `dg_` tools of your own open tabs as an MCP server
-  on stdio. Each tool call goes through the dg-daemon to the paired
+- `dg mcp` serves the `dg_` tools of your own open tabs as an MCP server
+  on stdio. Each tool call goes through the dg daemon to the paired
   dg-ai-extension. It needs no pw --ext session and no agent tab group. It
   shows no "Agent is driving" banner and asks no pw --ext site question.
-- `dg-skills pw --ext tools` and `dg-skills pw --ext call <tool> <json-args>`
+- `dg pw --ext tools` and `dg pw --ext call <tool> <json-args>`
   still run a tool in a tab of the agent's own tab group, inside a pw --ext
   session.
 
-### Which tabs `dg-agent mcp` uses
+### Which tabs `dg mcp` uses
 
 - It looks only at tabs whose site an enabled built-in script or a running
   approved third-party script covers, such as a signed-in Outlook tab when the
@@ -50,7 +50,7 @@ class:
 | `each` | send, delete, reply, forward, event changes, unknown `dg_` tools, third-party tools, and any tool without a `dg_` name | Asks every time |
 
 - The approval popup names the tool, the site, the agent and the arguments.
-  For a `dg-agent mcp` call it also names the tab title. On a mail site the
+  For a `dg mcp` call it also names the tab title. On a mail site the
   title is masked, so no subject line shows.
   Deny, no answer in 60 seconds, or a closed window runs nothing.
 - A site is the scheme and registrable domain, the same key that the pw --ext
@@ -66,9 +66,9 @@ class:
   a mailbox tab.
 - `tools` asks nothing. It shows the tool list of any page in the agent's
   group, also a page the tab reached by a link or a redirect. The
-  `dg-agent mcp` list also asks nothing. It shows only the `dg_` tool names and
+  `dg mcp` list also asks nothing. It shows only the `dg_` tool names and
   descriptions, not your tab titles or addresses.
-- The MCP session is the dg session that `dg-agent mcp` is paired with. A
+- The MCP session is the dg session that `dg mcp` is paired with. A
   `session` grant holds for repeat calls in that dg session and ends when the
   session ends.
 
@@ -153,7 +153,7 @@ grant shows as "mail (list and search)", and a mail-body area grant shows as
 the extension's own popup and Options pages can list or revoke grants.
 
 pw --ext Stop, on the banner or in the toolbar popup, ends browser control
-and the Web MCP calls of that dg session, also `dg-agent mcp` calls on your own
+and the Web MCP calls of that dg session, also `dg mcp` calls on your own
 tabs. It does not revoke Web MCP grants. They stay until the session ends or
 you revoke them.
 

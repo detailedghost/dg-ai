@@ -15,7 +15,7 @@ Run `bun install` at the repo root. It links the `@dg/*` workspace packages. See
 Use Conventional Commits with a scope, like `feat(skills): add the doctor command`.
 
 Use these types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`. Write the scope in lowercase kebab-case. Reuse a scope that exists
-in the history, such as `skills`, `skills-cli`, `dg-agent`, `channel-review`, `proto`, or `deps`.
+in the history, such as `skills`, `skills-cli`, `channel-review`, `proto`, or `deps`.
 
 The release workflow makes its own commit, `chore(release): cut X.Y.Z`. Do not write one by hand. See "How does it get to users?".
 
@@ -26,7 +26,7 @@ Bots that commit or submit a review use the address in the [bot-commit-email ski
 1. The code change.
 1. Tests that import the real production code.
 1. Updated docs, if anything a user or developer sees has changed.
-1. An ADR (Architecture Decision Record) if the PR introduces or changes an architectural decision. Run `dg-skills adr new "<title>" --topic <topic>`, or
+1. An ADR (Architecture Decision Record) if the PR introduces or changes an architectural decision. Run `dg adr new "<title>" --topic <topic>`, or
    use `/dg:adr`. The command writes the pair and refreshes [the index](adr/toc.md).
 
 Write an ADR when a change adds a wire contract, frame type, store, table, state file, trust boundary, secret path, or a wider gate or allowlist. Routine docs,
@@ -39,7 +39,7 @@ Each decision is a pair with one number and one slug, each for a different reade
 - `.agents/decisions/` is for agents. It holds terse rules, `covers:` globs in the frontmatter, and a link to the matching ADR. A decision with no agent rules
   says `No agent rules.`
 
-`dg-skills adr new` writes both files. `/dg:adr` holds the rules. `dg-skills adr lint` checks a repo that ran `dg-skills adr init`.
+`dg adr new` writes both files. `/dg:adr` holds the rules. `dg adr lint` checks a repo that ran `dg adr init`.
 
 Write `docs/` pages and ADRs in simple English: short sentences, common words, active voice. Write `AGENTS.md` files and everything under `.agents/` dense and
 terse: fragments, precise technical terms, no filler.
@@ -73,7 +73,7 @@ When all four are true:
 
 ## How does it get to users?
 
-- A release ships four things as one matched set: the extension, `dg-skills`, `dg-daemon`, and `dg-agent`. All four `package.json` files and both plugin
+- A release ships two things as one matched set: the extension and the compiled `dg` program. Every program `package.json` and both plugin
   manifests carry the same version. Nobody bumps a version by hand.
 - Each push to `master` runs the `Release` workflow. It reads the commits since the last release and picks the next version:
   - `feat` bumps the minor version.
@@ -84,7 +84,8 @@ When all four are true:
 - When a release is due, the workflow runs the BLT checks again, builds every binary and the extension, and runs each binary on its own platform.
   Then the `release` job stamps the version into the matched set, writes the `CHANGELOG.md` entry, and pushes one `chore(release): cut X.Y.Z` commit by
   `dg-release` to `master`, together with the tag `vX.Y.Z`.
-- The `release` job publishes one GitHub release for that tag. It holds every binary, the extension zips, `bootstrap.sh`, `bootstrap.ps1`, and one `SHA256SUMS`.
+- The `release` job publishes one GitHub release for that tag. It holds every compiled `dg` program, the extension zips, `bootstrap.sh`, `bootstrap.ps1`,
+  and one `SHA256SUMS`.
   It marks the release Latest and moves the `latest` tag to the release commit, unless a higher `vX.Y.Z` release exists.
 - To run the workflow by hand, open Actions, pick **Release**, and choose **Run workflow**. Pick `auto`, or force `patch`, `minor`, or `major`.
   Run it on a release commit to publish again a release whose upload failed.
@@ -92,9 +93,9 @@ When all four are true:
 - Manual step, once. The release job pushes to `master` with a deploy key, because a personal-account repo cannot make the GitHub Actions app a ruleset bypass actor.
   Add a write deploy key to the repo, store its private key as the `RELEASE_DEPLOY_KEY` secret, and add deploy keys as a bypass actor on the `main protection` ruleset.
   A push with a deploy key starts workflows, so the release workflow skips a push whose head is its own release commit.
-- The first release under this scheme also publishes a `skills-vX.Y.Z` release. It holds the `dg-skills` binaries only and is never marked Latest.
-  It lets `dg-skills` 1.21.1 and older find the new release once.
-- Users install a release with the bootstrap script or `dg-skills install`. See [docs/install.md](install.md).
+- The first release under this scheme also publishes a `skills-vX.Y.Z` release. It holds the old compiled skills binaries only and is never marked Latest.
+  It lets a skills binary of 1.21.1 or older find the new release once.
+- Users install a release with the bootstrap script or `dg install`. See [docs/install.md](install.md).
 
 ## What if I am stuck?
 
@@ -136,8 +137,8 @@ Ask a person. Do not turn off a check to get past it.
 - **Skill Flags table.** A skill whose `**Usage:**` line shows flags needs a `## Flags` table. The table has four columns: Flag, Short, Effect, Default. Every
   flag in Usage must appear in the table. `skill-flags.spec.ts` checks this.
 
-- **Doctor coverage.** Every command that `dg-skills` registers needs doctor checks and an allow-rule check. Every skill that calls `dg-skills` needs this line,
-  with the items it uses: `If a step fails, run dg-skills doctor <items>.` `doctor-coverage.spec.ts` checks this.
+- **Doctor coverage.** Every command that the skills tree registers needs doctor checks and an allow-rule check. Every skill that calls `dg` needs this line,
+  with the items it uses: `If a step fails, run dg doctor <items>.` `doctor-coverage.spec.ts` checks this.
 
 - **Secrets.** Do not commit a secret. The `gitleaks` check scans every PR. To scan locally, run `mise run security:scan`.
 
@@ -145,15 +146,16 @@ Ask a person. Do not turn off a check to get past it.
 
 - Keep it for shared types and pure functions. The root export (`@dg/common`) holds no Node-only code.
 - Put Node-only code under `src/node` and import it as `@dg/common/node`. Put shared database code in `@dg/common/daemon-db`.
-- Declare the CLI wire types in `src/cli-wire.ts`. `dg-daemon` and `dg-agent` import them from `@dg/common` and keep no private copy.
+- Declare the CLI wire types in `src/cli-wire.ts`. `pkg/dg-daemon` and `pkg/dg-agent` import them from `@dg/common` and keep no private copy.
   `package-boundaries.spec.ts` checks this.
 - A change here runs all four BLT workflows, because every package depends on it.
 
 ### pkg/skills-cli
 
-- One entry point, `src/index.ts`, registers every `dg-skills` command.
+- One entry point, `src/index.ts`, registers every skills command.
 - Give each command a `doctor.ts` with its checks. The doctor coverage guard fails without one.
-- Ship `dg-skills` as a compiled binary (`bun build.ts`). Commands that must work compiled have a `*-compiled.spec.ts` test.
+- Ship the commands inside the compiled `dg` program (`bun pkg/launcher/build.ts --compiled <key>`).
+  Commands that must work compiled have a `*-compiled.spec.ts` test.
 - The `skills-cli` tests build and load the extension. CI sets `DG_VERIFY_NO_SANDBOX=1` for them.
 
 ### pkg/skills-test
@@ -209,7 +211,8 @@ Ask a person. Do not turn off a check to get past it.
 ### pkg/dg-agent
 
 - Import the wire types from `@dg/common`. Do not declare them here.
-- Ship `dg-agent` next to `dg-daemon` in the same directory. Each finds the other there.
+- A new command in the agent tree needs no routing edit. `pkg/dg/src/flat.ts` routes it as `dg <command>`,
+  or as `dg agent <command>` when a daemon verb shares the name.
 - Keep secrets out of the failure log. `log-redact.spec.ts` tests it.
 - Build with `bun run build`. It compiles one binary.
 - A change in `pkg/dg-agent` or `pkg/dg-daemon` runs the `dg-agent-blt` check.
@@ -217,10 +220,10 @@ Ask a person. Do not turn off a check to get past it.
 ### plugins/dg/skills
 
 - Give each skill a folder with a `SKILL.md`. Use the cross-host frontmatter that `skill-manifests.spec.ts` checks.
-- Call the CLI by its bare name, `dg-skills` or `dg-agent`, after the generated first-run block
+- Call the CLI by its bare name, `dg`, after the generated first-run block
   (`bun scripts/skill-bootstrap-block.ts --write`). Do not resolve it through a shell variable. Do not branch on
   `CLAUDE_PLUGIN_ROOT`. Do not run the TypeScript entry point.
 - Name other skills with the `dg:` prefix, such as `/dg:polish`. Name shipped agents as `dg:<agent>`.
 - Add the `## Flags` table and the doctor line described above.
-- Do not add a retired helper command. Use the matching `dg-skills` command.
+- Do not add a retired helper command. Use the matching `dg` command.
 - Keep paths, hosts, and names that belong to one person or company out of the skill text.

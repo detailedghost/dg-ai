@@ -20,7 +20,7 @@ codex plugin add dg@detailedghost
 ```
 
 Start a new Codex thread so it discovers the plugin's skills. On first use, a
-skill downloads the `dg-skills` CLI if needed. Run `dg-skills install`
+skill downloads the `dg` program if needed. Run `dg install`
 to stage the companion extension and print the browser's manual
 **Load unpacked** steps.
 
@@ -46,9 +46,9 @@ shared browser, demo, proto, chat, inbox-cleanup, channel-review, and google-sms
 ## CLI-only install
 
 Use this when the user wants the CLI skills without the browser extension, the
-extension pairing, `dg-daemon` or `dg-agent`. It installs `dg-skills` and writes
+extension pairing. It installs `dg` and writes
 the marker `~/.dg/cli-only`. Run it before the plugin skills, so their
-bootstrap gate sees `dg-skills` and skips the full install.
+bootstrap gate sees `dg` and skips the full install.
 
 ```bash
 curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
@@ -60,31 +60,30 @@ On Windows PowerShell:
 & ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -CliOnly
 ```
 
-`dg-skills install --cli-only` does the same from an installed `dg-skills`.
+`dg install --cli-only` does the same from an installed `dg`.
 Combined with `--codex` (`-Codex`), only
 the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills`.
 
-- CLI-only skills: `channel-review`, `google-sms-cleanup` (`dg-skills ssms`;
+- CLI-only skills: `channel-review`, `google-sms-cleanup` (`dg ssms`;
   it drives Messages for Web and can wrap `signal-cli`), `inbox-cleanup` with explicit
   `--data-path` fixtures, `proto` and `demo`, whose default local modes need no
   extension. Only `proto --ext` and `demo --ext` need the dg-ai-extension.
 - Extension use: no SKILL.md declares `requires: [extension]`. Every skill runs
   locally by default, and `--ext` opts in to the extension. Only `pw launch`
   always needs it. `chat` and
-  `overwatch` open a page that `dg-daemon` serves on loopback, which needs
-  `dg-agent` and `dg-daemon` but no extension. A CLI-only install has both,
-  because one bundle holds all four program names. `pw batch-open` runs locally by
-  default: `dg-skills pw batch-open` opens plain tabs and needs the extension only
+  `overwatch` open a page that the dg daemon serves on loopback. That needs the
+  daemon but no extension. A CLI-only install has it, because `dg` holds every command. `pw batch-open` runs locally by
+  default: `dg pw batch-open` opens plain tabs and needs the extension only
   with `--ext`. `pw launch` is `--ext`-only. In a CLI-only install,
   `pw batch-open --ext`, `pw launch`, `demo --ext`, `rerun --ext`, `proto --ext`,
   `chat --ext` and `overwatch --ext` stop with: the command needs the
-  dg-ai-extension, and `dg-skills install` adds it.
+  dg-ai-extension, and `dg install` adds it.
 - The extension stays required for every `--ext` command. Each one starts with
-  the gate `--ext only: dg-skills require-extension <skill> || exit 1`.
+  the gate `--ext only: dg require-extension <skill> || exit 1`.
   `chat --ext` and `overwatch --ext` open the same local page as without
   `--ext`. The extension then pairs with each new session on its own. See
   [Pair the browser with an agent session](#pair-the-browser-with-an-agent-session).
-- To add the extension later, run `dg-skills install`. It installs the extension
+- To add the extension later, run `dg install`. It installs the extension
   and removes the marker. Then follow Step 2 below
   for the manual **Load unpacked** step.
 - The extension folder is in the dg data root, for example
@@ -99,9 +98,9 @@ the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills
 ## Agent-only install
 
 Use this for a non-Claude agent (for example a Grok Bot) that only needs the
-`phone` skill. It installs `dg-agent`, plus `dg-skills` (which fetches
-it), and writes the same `~/.dg/cli-only` marker as the CLI-only install.
-It never fetches `dg-daemon` or the extension, and never installs personas,
+`phone` skill. It installs `dg` and writes the same `~/.dg/cli-only` marker
+as the CLI-only install.
+It never fetches the extension, and never installs personas,
 which only the Claude-side CLI uses.
 
 ```bash
@@ -114,8 +113,8 @@ On Windows PowerShell:
 & ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -AgentOnly
 ```
 
-`dg-skills install --agent-only` does the same from an installed `dg-skills`. It accepts neither `--cli-only` nor
-`--skills-only` at the same time. After this, `dg-agent phone
+`dg install --agent-only` does the same from an installed `dg`. It accepts neither `--cli-only` nor
+`--skills-only` at the same time. After this, `dg phone
 accept <card>` works; see [docs/phone.md](phone.md).
 
 ## Skills-only install
@@ -123,9 +122,9 @@ accept <card>` works; see [docs/phone.md](phone.md).
 Use this when the user wants the skill instruction files without the extension. The installer copies each directory under `plugins/dg/skills` that
 contains a `SKILL.md` — the instruction file and its references, including
 `google-sms-cleanup` — and does not execute that text. The checkout
-commands below do not download the runtime, the bundle or the extension. The
-`--skills-only` bootstrap also installs the runtime and the bundle, so the
-skills can run `dg-skills`; add `--no-cli` to copy the files only.
+commands below do not download the program or the extension. The
+`--skills-only` bootstrap also installs `dg`, so the
+skills can run it; add `--no-cli` to copy the files only.
 
 From a checkout of this repository:
 
@@ -139,7 +138,7 @@ The same copy from source:
 bun pkg/skills-cli/src/index.ts install --skills-only --dest "${DG_SKILLS_DEST:-$HOME/.dg/skills}"
 ```
 
-`dg-skills install --skills-only` is the flag on an already installed `dg-skills`.
+`dg install --skills-only` is the flag on an already installed `dg`.
 Pass `--repo <checkout>` so it can read `plugins/dg/skills`. `--dest` overrides
 the default directory, which is `$DG_SKILLS_DEST`, otherwise `$DG_HOME/skills`,
 otherwise `~/.dg/skills`.
@@ -158,9 +157,10 @@ On Windows PowerShell:
 
 This is separate
 from `--cli-only`, which writes `~/.dg/cli-only`. Every skills-only path also
-installs the `dg-skills` CLI from the latest `vX.Y.Z` release into
-the launcher folder ([install layout](install.md#where-dg-keeps-its-files)), checked against the release's `SHA256SUMS`, because the
-skills run it. It fetches no `dg-daemon`, `dg-agent` or extension, leaves the
+installs the compiled `dg` program from the latest `vX.Y.Z` release into
+the dg data folder and links it into the launcher folder
+([install layout](install.md#where-dg-keeps-its-files)), checked against the release's `SHA256SUMS`, because the
+skills run it. It fetches no extension, leaves the
 `cli-only` marker untouched, and never executes skill content. Add
 `--no-cli` (`-NoCli`) for an offline copy that skips the CLI.
 
@@ -170,7 +170,7 @@ Use this when the user wants DeeGee in Claude chat, or another chat bot that tak
 uploaded skills, rather than in Claude Code or Codex. It downloads only
 `dg-chat-skills-<x.y.z>.zip`, checks it against the release's `SHA256SUMS`, and
 unpacks one upload-ready ZIP per skill into `./dg-chat-skills` (or `--dest <dir>`).
-It installs no runtime, bundle, launchers or extension, and runs nothing.
+It installs no program, launcher or extension, and runs nothing.
 
 ```bash
 curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --chat-only
@@ -191,8 +191,8 @@ Claude has no way to add a skill to an account from inside a chat. See
 Use this when the user wants a specific release instead of the newest, for
 example to match a pinned CI job or roll back after a bad upgrade. Add
 `--version <x.y.z>` (shell) or `-Version <x.y.z>` (PowerShell); it combines
-with `--cli-only`/`--agent-only` and carries through to `dg-skills install`, so
-`dg-daemon`, `dg-agent` and the extension install from that same release too.
+with `--cli-only`/`--agent-only` and carries through to `dg install`, so
+the program and the extension install from that same release too.
 
 ```bash
 curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --version X.Y.Z
@@ -204,13 +204,14 @@ On Windows PowerShell:
 & ([scriptblock]::Create((irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1))) -Version X.Y.Z
 ```
 
-`dg-skills install --version X.Y.Z` is the flag on an already installed
-`dg-skills`. Leaving it unset installs the newest release.
+`dg install --version X.Y.Z` is the flag on an already installed
+`dg`. When `<data>/bin/X.Y.Z` already exists, it relinks `<data>/bin/current`
+and downloads nothing. Leaving it unset installs the newest release.
 
-Replace `X.Y.Z` with a `vX.Y.Z` release that lists `dg-lib-X.Y.Z.tar.gz` and
-`runtime.json`. If that release does not exist or lacks one of its parts, the
-whole install fails and names it, before it touches the runtime, the bundle or
-the extension. A release from before the bundle fails the same way and prints
+Replace `X.Y.Z` with a `vX.Y.Z` release that lists a `dg-<platform>` asset. If
+that release does not exist or lacks one of its parts, the
+whole install fails and names it, before it touches the program or
+the extension. A release from before the compiled program fails the same way and prints
 that release's own bootstrap command.
 Leaving the version unset keeps today's behavior: install the newest of
 each, warning and skipping one that can't be reached.
@@ -259,13 +260,13 @@ the `/dg:*` skills are available.
 
 ## Step 2 — Install the CLI + extension (agent-runnable + one manual step)
 
-The skills run `dg-skills`, `dg-agent` and `dg-daemon`, and `dg` runs any of them, from one bundle on a
-pinned Bun runtime. Bootstrap once — this installs the runtime, the bundle and the four launchers in
-the per-OS folders ([install layout](install.md#where-dg-keeps-its-files)), **then runs `dg-skills install`**,
+The skills run `dg`, one compiled program. Bootstrap once — this installs the
+program and the `dg` launcher in
+the per-OS folders ([install layout](install.md#where-dg-keeps-its-files)), **then runs `dg install`**,
 which stages the extension and prints the exact **Load unpacked** path:
 
 ```bash
-if ! command -v dg-skills >/dev/null 2>&1 && [ ! -x "${DG_HOME:-$HOME/.local}/bin/dg-skills" ]; then
+if ! command -v dg >/dev/null 2>&1 && [ ! -x "${DG_HOME:-$HOME/.local}/bin/dg" ]; then
   PLUGIN_ROOT="${DG_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
   LOCAL_BOOTSTRAP="${PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
   if [ -n "$PLUGIN_ROOT" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
@@ -286,24 +287,22 @@ Claude Code sets `CLAUDE_PLUGIN_ROOT`. Other agent runtimes can set
 `DG_PLUGIN_ROOT` to the same checkout. When neither variable points at the
 bundled script, the snippet downloads `bootstrap.sh` from the repository.
 
-- No Bun of your own is needed — the installer brings a pinned Bun and never uses
-  one on PATH. Bun is only required for the `--local` source build.
-- Re-run `dg-skills install` anytime to update the extension, the runtime
-  and the bundle together; each part is skipped when already current. For Firefox:
-  `dg-skills install firefox`. Default target is **chrome** (also serves
+- No Bun of your own is needed — `dg` is a compiled program. Bun is only
+  required for the `--local` source build.
+- Re-run `dg install` anytime to update the extension and the program
+  together; each part is skipped when already current. For Firefox:
+  `dg install firefox`. Default target is **chrome** (also serves
   Brave/Edge/Vivaldi).
-- The chat skill runs `dg-agent`, and `dg-agent start` starts
-  `dg-daemon` from the same bundle and runtime. Its own bootstrap gate tests for `dg-agent`, not `dg-skills` — a
-  machine that already used `pw`, `demo` or `proto` has `dg-skills`
-  already, so gating on that would skip the download the gate exists for.
+- The chat skill runs `dg agent`, and `dg agent start` starts
+  the daemon from the same program.
 - On **WSL**, the daemon needs **mirrored** networking mode. Under NAT the
-  Windows-side browser cannot reach the loopback port; `dg-daemon` exits with
+  Windows-side browser cannot reach the loopback port; `dg daemon serve` exits with
   code 3 rather than pretending to be reachable.
 - The state root holds two independent trees. On Linux it is
   `~/.local/state/dg`; `resolveDgPaths` gives the other OSes. `daemon/` holds
   the encrypted `daemon.db` behind the chat commands. `agents/` holds session
-  files and the plain-text `memory.db` behind `dg-agent memory`. An agent can also send
-  another agent identity a message with `dg-agent send --to <identity>`
+  files and the plain-text `memory.db` behind `dg memory`. An agent can also send
+  another agent identity a message with `dg agent send --to <identity>`
   instead of the human. Neither needs the daemon running: `memory` opens
   `agents/memory.db` directly.
 - Add `--local` to **build the extension from source** (requires a repository checkout
@@ -324,29 +323,29 @@ manual `chrome://extensions` step entirely — the browser must be fully closed
 first:
 
 ```bash
-dg-skills pw --ext launch --browser brave --group "PRs" <refs...>
+dg pw --ext launch --browser brave --group "PRs" <refs...>
 ```
 
 ## Step 3 — Verify
 
 ```bash
-dg-skills --help
+dg --help
 ```
 
 Should list `install`, `pw`, `demo`, `rerun`, and `channel-review`, and
-`dg-skills pw --help` should list `batch-open` and `launch`. Then confirm
+`dg pw --help` should list `batch-open` and `launch`. Then confirm
 grouping/tours work with the pw or demo skill. For the chat harness:
 
 ```bash
-dg-agent --help
-dg-daemon status
+dg agent --help
+dg daemon status
 ```
 
-If a bare name does not answer, call `${DG_HOME:-$HOME/.local}/bin/<name>` instead.
+If a bare name does not answer, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
 
-`dg-agent --help` should list `start`, `recv`, `send`, `progress`,
-`spawn`, `stage`, `close`, `manifest` and `memory`. `status` is a `dg-daemon` command,
-not a `dg-agent` one. `dg-daemon status` reports that no daemon is running
+`dg agent --help` should list `start`, `recv`, `send`, `progress`,
+`spawn`, `stage`, `close` and `manifest`. `memory` is a flat command, `dg memory`.
+`status` is a daemon verb, so it runs as `dg daemon status`, never as `dg status`. `dg daemon status` reports that no daemon is running
 yet, though `memory` works regardless. It opens `agents/memory.db` in the
 state root (`~/.local/state/dg/agents/memory.db` on Linux)
 directly rather than asking the daemon. Claude Code uses the
@@ -357,9 +356,8 @@ ______________________________________________________________________
 
 ### Shell completion
 
-The install also writes bash, zsh and fish completion files for `dg` and the
-three other programs to the per-user shell folders. It does not edit a shell startup file.
-`dg-skills doctor completion` reports their state. zsh needs one `fpath` line
+The install also writes bash, zsh and fish completion files for `dg` to the per-user shell folders. It does not edit a shell startup file.
+`dg doctor completion` reports their state. zsh needs one `fpath` line
 in `~/.zshrc`; the installer prints it, and an agent must not add it without
 the human's yes. See [Shell completion](install.md#shell-completion).
 
@@ -369,15 +367,15 @@ the human's yes. See [Shell completion](install.md#shell-completion).
 | ------------------------------------------------------------------ | ---------------------------- |
 | `claude plugin marketplace add` / `install` / `update` | Yes, with user authorization |
 | `bootstrap.sh` (install CLI + extension) | Yes |
-| `dg-skills install` (stage extension + refresh the runtime and the bundle) | Yes |
-| `dg-agent start` (register a chat session; the extension pairs on its own) | Yes |
-| `dg-agent start --open` (open the chat page) | Yes (default browser; on WSL only with `DG_OPEN_WINDOWS=1`) |
-| Read a human's chat reply (`dg-agent recv --block`) | Yes — it waits for them |
+| `dg install` (stage extension + refresh the program) | Yes |
+| `dg agent start` (register a chat session; the extension pairs on its own) | Yes |
+| `dg agent start --open` (open the chat page) | Yes (default browser; on WSL only with `DG_OPEN_WINDOWS=1`) |
+| Read a human's chat reply (`dg agent recv --block`) | Yes — it waits for them |
 | `chat --ext` / `overwatch --ext` (open the local page; the extension is required) | Yes, once the human has loaded the extension |
-| `dg-agent spawn -- <command>` (run a command in a new session, with `DG_SESSION_ID` set) | Yes |
+| `dg agent spawn -- <command>` (run a command in a new session, with `DG_SESSION_ID` set) | Yes |
 | Click Unpair, or click Trust this daemon after a daemon home reset | No, the human does it in the popup |
 | Switch WSL to mirrored networking mode | No — manual host config |
-| Add `dg-daemon-blt` and `dg-agent-blt` to branch protection | No — repo admin |
+| Add the `dg-daemon-blt` and `dg-agent-blt` checks to branch protection | No — repo admin |
 | Load unpacked in the browser (the only routine human step) | No — manual browser UI |
 | `pw launch` cold-start with extension (`--ext` only) | Yes (browser fully closed) |
 | `pw batch-open --ext` / `demo --ext` / `rerun --ext` | Yes (extension loaded) |
@@ -386,7 +384,7 @@ the human's yes. See [Shell completion](install.md#shell-completion).
 
 ## Google SMS cleanup
 
-The shared google-sms-cleanup skill runs `dg-skills ssms`. `ssms google` drives
+The shared google-sms-cleanup skill runs `dg ssms`. `ssms google` drives
 Messages for Web through the CDP browser harness. `ssms signal` wraps
 `signal-cli` and does not open Signal Desktop. The defaults never delete a
 conversation or message, never send without explicit per-message approval, and
@@ -397,16 +395,16 @@ those. See [SMS providers](ssms.md).
 
 ## Inbox cleanup
 
-The shared inbox-cleanup skill runs the dg-skills inbox command. Update
-`dg`, `dg-skills`, `dg-agent`, `dg-daemon`, and the extension together with `dg-skills install`.
+The shared inbox-cleanup skill runs the dg inbox command. Update
+`dg` and the extension together with `dg install`.
 Start a dg session before configuring encrypted inbox profiles. Proton also
 requires one connected extension and a signed-in Proton mail tab. A headless
-agent cannot rely on `dg-agent start --open`. Run `dg-agent start
+agent cannot rely on `dg agent start --open`. Run `dg agent start
 --print-session-id` to print the session id. The extension pairs with the
 session on its own. If the command prints that no extension is connected,
-run `dg-skills install` and ask the human to load the extension. Reload the
+run `dg install` and ask the human to load the extension. Reload the
 Proton Mail tab. Pass the session id as `--session` on inbox commands. Run
-`dg-skills inbox bootstrap-url --session <id>` for a chat URL with a one-time
+`dg inbox bootstrap-url --session <id>` for a chat URL with a one-time
 code. That URL works once, within 60 seconds. Gmail and
 Outlook need a registered OAuth client and the provider's delegated permissions.
 Explicit --data-path fixtures work without those services. Read
@@ -415,7 +413,7 @@ Explicit --data-path fixtures work without those services. Read
 
 ## Channel review
 
-The shared channel-review skill runs the `dg-skills channel-review`
+The shared channel-review skill runs the `dg channel-review`
 command. It needs no browser extension. Install thrash separately for each
 runner on every machine; dg does not ship it. Claude is the supported default.
 Read [setup](../plugins/dg/skills/channel-review/references/setup.md) and
@@ -431,7 +429,7 @@ changing config.
 | Approve the fun-pool GIF list | Human: review the list before each release. |
 | `status`, `env`, `start`, `stop`, `run` | Agent: run the requested operation and report its output. |
 | `emojis show`, `emojis set` | Agent: inspect slots or save the supplied custom ID. |
-| Invoke `/dg:channel-review` in Claude Code for the live bootstrap check | Human: verify the installed skill runs status through the installed `dg-skills`. |
+| Invoke `/dg:channel-review` in Claude Code for the live bootstrap check | Human: verify the installed skill runs status through the installed `dg`. |
 
 Start with `status --env dev` in a test chat. If the service mailbox is
 absent from the chat, set `chat.id` from the Teams **Copy link** URL. Status
@@ -450,14 +448,14 @@ extension once with **Load unpacked**. That is the only routine human step.
 
 An agent pairs a session in one step:
 
-1. Run `dg-agent start`.
-1. Read the line on stderr. `Paired <identity> (<id8>) with the browser extension.` means the extension adopted the session. `No browser extension is connected. Install it with: dg-skills install` means none is loaded. Run `dg-skills install` and ask the human to load the extension.
+1. Run `dg agent start`.
+1. Read the line on stderr. `Paired <identity> (<id8>) with the browser extension.` means the extension adopted the session. `No browser extension is connected. Install it with: dg install` means none is loaded. Run `dg install` and ask the human to load the extension.
 
-`dg-agent start` prints nothing on stdout. `--print-session-id` prints the session id. `--json` prints `{sessionId, port, extensionLinked}`. `--open` opens the chat page through a one-time code and prints no URL. `dg-agent overwatch open` also uses a one-time code. A code works once, within 60 seconds.
+`dg agent start` prints nothing on stdout. `--print-session-id` prints the session id. `--json` prints `{sessionId, port, extensionLinked}`. `--open` opens the chat page through a one-time code and prints no URL. `dg overwatch open` also uses a one-time code. A code works once, within 60 seconds.
 
-To run a command inside a new session, use `dg-agent spawn -- <command...>`. It runs the command with `DG_SESSION_ID` set and exits with the exit code of that command. The CLI picks its session from `--session`, then `DG_SESSION_ID`, then the one session for the current directory.
+To run a command inside a new session, use `dg agent spawn -- <command...>`. It runs the command with `DG_SESSION_ID` set and exits with the exit code of that command. The CLI picks its session from `--session`, then `DG_SESSION_ID`, then the one session for the current directory.
 
-The pill reads Connected only while the agent's CLI holds the session socket open. Commands such as `dg-agent recv` open that socket. Right after `dg-agent start`, the pill reads Idle.
+The pill reads Connected only while the agent's CLI holds the session socket open. Commands such as `dg agent recv` open that socket. Right after `dg agent start`, the pill reads Idle.
 
 The daemon pins the extension origin on first contact. The extension pins the daemon id on first contact and refuses a port that reports another id. After a daemon home reset, the popup shows "The daemon changed" with **Trust this daemon**. The human clicks it once to pin the new daemon. This step is rare.
 
@@ -484,7 +482,7 @@ Under each agent, the popup lists its tab group with the group color. The popup 
 
 The popup menu in the header holds **Settings** and **Record demo**. The Options page opens from **Settings**.
 
-For local extension changes, run `dg-skills install --local --repo <checkout>`.
+For local extension changes, run `dg install --local --repo <checkout>`.
 This rebuilds and replaces the installed extension even when its version is unchanged.
 Reload DeeGee in `brave://extensions` and refresh any connected application tabs.
 
@@ -494,11 +492,11 @@ ______________________________________________________________________
 
 Older releases paired through pages inside the extension. The first release with the pairing popup removes those pages. Follow these steps in order:
 
-1. Run `dg-skills install`. It updates the daemon before the extension.
-1. Restart the daemon. Run `dg-daemon restart`. It stops the running daemon, ends each session, and starts the new daemon.
+1. Run `dg install`. It updates the daemon before the extension.
+1. Restart the daemon. Run `dg daemon restart`. It stops the running daemon, ends each session, and starts the new daemon.
 1. Reload the extension in `chrome://extensions`, then open the popup.
-1. In each agent session, run `dg-agent start`. The extension adopts the session.
-1. Run `dg-skills pw --ext open <url>`, or click **Add this tab** in the popup, so the agent has a tab.
+1. In each agent session, run `dg agent start`. The extension adopts the session.
+1. Run `dg pw --ext open <url>`, or click **Add this tab** in the popup, so the agent has a tab.
 
 Restart the daemon right after the upgrade. A channel-review run can apply schema 13 while an old daemon still runs. The old daemon's `saveSession` then fails until you restart it.
 
@@ -506,16 +504,16 @@ Restart the daemon right after the upgrade. A channel-review run can apply schem
 
 | Removed | Replacement |
 | --- | --- |
-| The extension side panel | The daemon `/chat` page. Run `dg-agent start --open`, or click **Open chat** in the popup. |
-| The extension dashboard page | `dg-daemon job list` and `dg-daemon job run <label>` manage jobs. A job with `--notify` sends new feed items to an agent as messages. |
-| The extension overwatch page | The daemon `/board` page. Run `dg-agent overwatch open`. |
-| `dg-agent attach` | `dg-agent start`. The extension adopts the session. |
-| `dg-agent start --fresh` and `dg-agent start -s <id>` | `dg-agent start` registers the session and the extension adopts it. |
+| The extension side panel | The daemon `/chat` page. Run `dg agent start --open`, or click **Open chat** in the popup. |
+| The extension dashboard page | `dg job list` and `dg job run <label>` manage jobs. A job with `--notify` sends new feed items to an agent as messages. |
+| The extension overwatch page | The daemon `/board` page. Run `dg overwatch open`. |
+| `dg agent attach` | `dg agent start`. The extension adopts the session. |
+| `dg agent start --fresh` and `dg agent start -s <id>` | `dg agent start` registers the session and the extension adopts it. |
 | `GET /start` | The `/chat` page. |
-| `POST /sessions` and `GET /sessions` | `dg-agent start` registers sessions. |
+| `POST /sessions` and `GET /sessions` | `dg agent start` registers sessions. |
 | `/attach { intent: "create" }` | `/attach { intent: "attach" }`, which the `/chat` switcher sends with a page bearer. |
 | `POST /pair`, and the offer and claim routes that replaced it | None. The extension adopts each session that the daemon pushes. |
-| The `pair` command of `dg-agent` and `dg-daemon`, and the popup code, QR and paste form | None. Run `dg-agent start`. |
+| The `pair` command, and the popup code, QR and paste form | None. Run `dg agent start`. |
 | `DG_SESSION_TOKEN` | None. Pass `-s <id>` to name a session. The CLI asks the daemon for that session's token. |
 | `DG_UNCLAIMED_TTL_MS` | None. No session waits for an agent. |
 | The waiting presence | None. A session has a CLI, or it is idle or gone. |
@@ -526,7 +524,7 @@ The toolbar button opens the popup, not the Options page. Record demo moved to t
 
 The Options page is slim. The Pairing page, the navigation and the theme toggle are gone. The page ignores a stored theme value and follows the browser theme. Privacy and Kudos are folded sections at the bottom.
 
-`dg-agent start --ext` requires the extension and behaves like `dg-agent start`. `--open` opens the daemon `/chat` page through a one-time code. `dg-agent overwatch open --ext` opens `/board`. Neither opens a page inside the extension.
+`dg agent start --ext` requires the extension and behaves like `dg agent start`. `--open` opens the daemon `/chat` page through a one-time code. `dg overwatch open --ext` opens `/board`. Neither opens a page inside the extension.
 
 The daemon trusts any process of the same user on this machine, without a prompt. Origin headers can be faked by local programs. The daemon id pin stops a process on a free port, not a proxy that copies the live daemon.
 
@@ -534,15 +532,15 @@ The `/chat` header reads `Talking to <identity> · <id8> · <presence>`. The swi
 
 Pairings persist. After a session starts, the extension reconnects on its own until you click **Unpair** or the daemon expires the session.
 
-`dg-skills pw --ext` acts on the agent's own tab group, not the active tab. A new agent has no tab, so a verb that needs a tab says "This agent has no tab yet." Run `dg-skills pw --ext open <url>` or `dg-skills pw --ext new <url>`. Or click **Add this tab** in the popup. Manage the group with `dg-skills pw --ext tabs`, `dg-skills pw --ext select <tabId>` and `dg-skills pw --ext close [tabId]`. Add `--tab <id>` to any verb to target one tab once. `current` no longer lists tabs. Use `tabs`.
+`dg pw --ext` acts on the agent's own tab group, not the active tab. A new agent has no tab, so a verb that needs a tab says "This agent has no tab yet." Run `dg pw --ext open <url>` or `dg pw --ext new <url>`. Or click **Add this tab** in the popup. Manage the group with `dg pw --ext tabs`, `dg pw --ext select <tabId>` and `dg pw --ext close [tabId]`. Add `--tab <id>` to any verb to target one tab once. `current` no longer lists tabs. Use `tabs`.
 
-**Clear disconnected** left with the side panel. `dg-daemon sessions clear` still closes sessions that have no CLI.
+**Clear disconnected** left with the side panel. `dg daemon sessions clear` still closes sessions that have no CLI.
 
 ### Mixed versions
 
-- **Old extension, new daemon.** An extension older than the floor posts to routes that now return 404, so it cannot pair. The daemon refuses `dg-skills pw --ext` with the update text. The refusal text reads: "pw --ext requires dg-ai-extension 1.44.0 or newer; update the extension, reload it, and reconnect this session."
+- **Old extension, new daemon.** An extension older than the floor posts to routes that now return 404, so it cannot pair. The daemon refuses `dg pw --ext` with the update text. The refusal text reads: "pw --ext requires dg-ai-extension 1.44.0 or newer; update the extension, reload it, and reconnect this session."
 - **New extension, old daemon.** An old daemon does not push sessions, so the extension adopts none. Update the daemon first.
-- **Mixed binaries.** Update dg-agent, dg-daemon and the extension together. An old `dg-agent start` fails on `GET /sessions?waiting=1`. A new extension rejects a `session-list` that carries `waiting` until the old daemon reaps it.
+- **Mixed binaries.** Update `dg` and the extension together. An old `dg agent start` fails on `GET /sessions?waiting=1`. A new extension rejects a `session-list` that carries `waiting` until the old daemon reaps it.
 
 ### Roll back the database
 
@@ -554,7 +552,7 @@ database schema user_version 13 is newer than this binary's supported version 12
 
 Before it runs step 13, the daemon writes `pre-migration-v13-<ts>-<rand>.db` into the daemon folder that holds `daemon.db`, `<state>/daemon`. The [install guide](install.md#where-dg-keeps-its-files) lists `<state>` for each OS. To roll back:
 
-1. Stop every process that holds the database. That means the daemon and any channel-review process. Run `dg-daemon stop` for the daemon. Stop channel-review with `dg-skills channel-review stop --env dev` or `--env prod`.
+1. Stop every process that holds the database. That means the daemon and any channel-review process. Run `dg daemon stop` for the daemon. Stop channel-review with `dg channel-review stop --env dev` or `--env prod`.
 1. Delete `daemon.db-wal` and `daemon.db-shm` from the daemon folder. The daemon runs SQLite in WAL mode, and a leftover journal from the schema-13 database corrupts the restored file.
 1. Install the older release.
 1. Restore that snapshot as `daemon.db`.
@@ -562,6 +560,6 @@ Before it runs step 13, the daemon writes `pre-migration-v13-<ts>-<rand>.db` int
 
 You lose the sessions that you made after the upgrade.
 
-Rows with `awaiting_agent = 1` at upgrade become ordinary sessions with no CLI. The idle TTL reaps them. You can also clear them with `dg-daemon sessions clear`.
+Rows with `awaiting_agent = 1` at upgrade become ordinary sessions with no CLI. The idle TTL reaps them. You can also clear them with `dg daemon sessions clear`.
 
 The release process generates CHANGELOG.md. Do not edit it by hand.

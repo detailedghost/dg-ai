@@ -433,7 +433,7 @@ describe("the move to a job in docs/channel-review.md", () => {
 
 	test("gives the command, the path and the refusal rule from export.ts", () => {
 		expect(doc).toContain("## Move to a job");
-		expect(doc).toContain("`dg-skills channel-review export --env <env> --label <label>`");
+		expect(doc).toContain("`dg channel-review export --env <env> --label <label>`");
 		expect(doc).toContain("`<state>/jobs/<label>/import.json`");
 		expect(doc).toContain("`channel-review export:`");
 		expect(doc).toContain("when the old daemon of that env runs");
@@ -560,16 +560,16 @@ describe("jobs SKILL.md", () => {
 	const skill = read(SKILL);
 	const section = heading(skill, "Job verbs");
 
-	test("lists the new commands in the dg-daemon form", () => {
+	test("lists the new commands in the flat dg form", () => {
 		for (const line of [
-			"dg-daemon job add <url>",
-			"dg-daemon job add <path>",
-			"dg-daemon job setup <name>",
-			"dg-daemon job setup <name> --refresh",
-			"dg-daemon job enable <name> --setup <file|->",
+			"dg job add <url>",
+			"dg job add <path>",
+			"dg job setup <name>",
+			"dg job setup <name> --refresh",
+			"dg job enable <name> --setup <file|->",
 		])
 			expect([line, section.includes(line)]).toEqual([line, true]);
-		expect(section).not.toMatch(/\bdg job\b/);
+		expect(section).not.toMatch(/\bdg-daemon\b/);
 	});
 
 	test("does not answer the consent question and adds no --yes on its own", () => {

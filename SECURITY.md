@@ -6,28 +6,26 @@ artifact. Install the latest tag to receive them.
 
 ## Supported versions
 
-Every binary, the extension, and the install scripts ship together in one
-`vX.Y.Z` release. Channel-review ships inside the `dg-skills` binary. The skill
+The compiled `dg` program, the extension, and the install scripts ship together
+in one `vX.Y.Z` release. Channel-review ships inside `dg`. The skill
 tree and the install scripts install from the latest release. Fixes still land
 on `master` first.
 
 | Artifact | Tag | Supported release |
 | --- | --- | --- |
-| `dg-skills` (inbox and channel-review included) | `v*` | Latest tag |
-| `dg-daemon` | `v*` | Latest tag |
-| `dg-agent` | `v*` | Latest tag |
+| `dg-<os>-<arch>[-baseline][.exe]`, the compiled `dg` (daemon, agent, inbox and channel-review included) | `v*` | Latest tag |
+| `dg-lib-<v>.tar.gz` and `runtime.json` (the 6.3 self-update bridge only) | `v*` | Latest tag |
 | `dg-ai-extension` zip | `v*` | Latest tag |
 | Skill tree (`plugins/dg/skills`) | `v*` | Latest tag |
 | `pkg/skills-cli/bootstrap.sh` and `bootstrap.ps1` | `v*` | Latest tag |
 
-`dg-skills install` refreshes the extension zip, `dg-skills`, `dg-daemon`, and
-`dg-agent`, and skips an artifact that is already current. Re-run it, or the
+`dg install` refreshes the extension zip and the `dg` program, and skips an
+artifact that is already current. Re-run it, or the
 bootstrap script from the latest `v*` tag, after a security release. The extension update
 is the unpacked zip from the same release.
 
-Installed binary versions are recorded in `.dg-skills.version`,
-`.dg-daemon.version`, and `.dg-agent.version` in the launcher folder
-(`~/.local/bin` on Linux and macOS, `%LOCALAPPDATA%\dg\bin` on Windows). The
+The installed `dg` version is the folder that `<data>/bin/current` points at,
+and `dg --version` prints it. The
 extension version is the `version` field of the loaded extension manifest.
 
 ## Reporting a vulnerability
@@ -55,7 +53,7 @@ before sending details.
 - A status update at least every 7 days while the report stays open.
 - An accepted report is fixed on `master`, then published as a new release tag
   for each affected artifact. The advisory is published after that release is
-  available. `dg-skills install` picks up the new binaries and extension zip.
+  available. `dg install` picks up the new program and extension zip.
 - A report that is out of scope, or that is not a vulnerability, gets a short
   explanation.
 
@@ -68,19 +66,19 @@ Report vulnerabilities in these parts of this repository:
 
 - **Extension.** The WXT extension in `pkg/extension` (`dg-ai-extension`), for
   Chromium browsers and Firefox 139+. It groups tabs, runs demos and
-  prototypes, and talks to `dg-daemon` on loopback after the extension origin
+  prototypes, and talks to the dg daemon on loopback after the extension origin
   is pinned.
-- **Daemons and command-line tools.** `dg-daemon` (loopback HTTP and
-  WebSocket, encrypted `daemon.db`, scheduled jobs, and supervised services),
-  `dg-agent`, and the `dg-skills` binary built from `pkg/skills-cli`.
+- **Daemon and command-line tool.** The compiled `dg` program: the daemon
+  (`dg daemon serve`: loopback HTTP and WebSocket, encrypted `daemon.db`,
+  scheduled jobs, and supervised services), `dg agent`, and every `dg` command.
 - **Credential store.** The encrypted `credentials.db`, grant tokens, and the
-  `dg-skills credentials` commands.
+  `dg credentials` commands.
 - **Channel-review daemon.** The local daemon in `pkg/channel-review` that
-  `dg-skills channel-review` runs. It watches a Teams bot relay and keeps state
+  `dg channel-review` runs. It watches a Teams bot relay and keeps state
   under `<DG_HOME>/channel-review`.
 - **Install scripts.** `pkg/skills-cli/bootstrap.sh`,
   `pkg/skills-cli/bootstrap.ps1`, and the GitHub release downloads performed by
-  `dg-skills install`.
+  `dg install`.
 
 A dependency vulnerability is in scope when a shipped artifact includes it.
 
@@ -94,7 +92,7 @@ Git ignores `.env`. `DG_HOME` defaults to `~/.dg`. Keep live values in a
 local `.env` file, or in the credential store. `.env.example` lists variable
 names with empty values.
 
-`dg-skills credentials set` reads the secret from stdin or a hidden prompt and
+`dg credentials set` reads the secret from stdin or a hidden prompt and
 stores it in `<DG_HOME>/daemon/credentials.db` (file mode `0600`, directory
 mode `0700`). The value is encrypted. The data key is wrapped by the OS
 keychain, or by `<DG_HOME>/daemon/key` when no keychain is available. The key
@@ -103,7 +101,7 @@ prints names, metadata, and grants, and omits the secret. Metadata is
 plaintext. The store rejects a metadata key named `value`, `secret`, `token`,
 or `password`.
 
-`dg-skills credentials grant` writes a token to
+`dg credentials grant` writes a token to
 `<DG_HOME>/grants/<prefix>.token` (mode `0600`, directory mode `0700`). The
 daemon stores only the SHA-256 hash of that token.
 

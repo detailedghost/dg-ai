@@ -298,11 +298,11 @@ describe("AGENT-INSTALL upgrade section", () => {
 		expect(steps.length).toBeGreaterThanOrEqual(5);
 		const joined = steps.join("\n");
 		const order = [
-			"dg-skills install",
+			"dg install",
 			"chrome://extensions",
 			"popup",
-			"dg-agent start",
-			"dg-skills pw --ext open",
+			"dg agent start",
+			"dg pw --ext open",
 		].map((needle) => joined.indexOf(needle));
 		for (const index of order) expect(index).toBeGreaterThanOrEqual(0);
 		expect([...order].sort((a, b) => a - b)).toEqual(order);
@@ -327,7 +327,7 @@ describe("AGENT-INSTALL upgrade section", () => {
 			"side panel",
 			"dashboard page",
 			"overwatch page",
-			"dg-agent attach",
+			"dg agent attach",
 			"--fresh",
 			"GET /start",
 			"POST /sessions",
@@ -378,7 +378,7 @@ describe("AGENT-INSTALL upgrade section", () => {
 			["side panel", [{ scope: /^pkg\/extension\//, pattern: /side_panel|sidePanel|sidepanel/i }]],
 			["dashboard page", [{ scope: /^pkg\/extension\//, pattern: /dashboard\.html|entrypoints\/dashboard/i }]],
 			["overwatch page", [{ scope: /^pkg\/extension\//, pattern: /overwatch\.html|entrypoints\/overwatch/i }]],
-			["`dg-agent attach`", [{ pattern: /\.command\("attach"/ }]],
+			["`dg agent attach`", [{ pattern: /\.command\("attach"/ }]],
 			["--fresh", []],
 			["`GET /start`", [{ pattern: /CHAT_START_PATH[^\n]*method === "GET"|method === "GET"[^\n]*CHAT_START_PATH/ }]],
 			["`POST /sessions`", [{ pattern: /CHAT_SESSIONS_PATH\b|handleSessionCatalog|pathname === "\/sessions"/ }]],
@@ -406,7 +406,7 @@ describe("AGENT-INSTALL upgrade section", () => {
 			.filter((file) => /side-?panel|dashboard|overwatch/i.test(file))
 			.map((file) => `removed page entry ${file}`);
 		const startSurvivors = /--fresh|\.option\("-s,/.test(startBlock)
-			? ["dg-agent start still declares --fresh or -s"]
+			? ["dg agent start still declares --fresh or -s"]
 			: [];
 		expect([...survivors, ...pageSurvivors, ...startSurvivors]).toEqual([]);
 	});
@@ -425,7 +425,7 @@ describe("AGENT-INSTALL upgrade section", () => {
 		for (const needle of [
 			"GET /sessions?waiting=1",
 			"Clear disconnected",
-			"dg-daemon sessions clear",
+			"dg daemon sessions clear",
 			"Alt+Shift+D",
 			"Unpair",
 			"/board",
@@ -462,7 +462,7 @@ describe("AGENT-INSTALL upgrade section", () => {
 	});
 
 	test("the extension stays required for the --ext only gate rows", () => {
-		expect(doc).toMatch(/--ext only: dg-skills require-extension/);
+		expect(doc).toMatch(/--ext only: dg require-extension/);
 		const rows = doc
 			.split("\n")
 			.filter((l) => /^\|.*(chat|overwatch) --ext/.test(l));
@@ -473,11 +473,11 @@ describe("AGENT-INSTALL upgrade section", () => {
 		}
 	});
 
-	test("commands readers type use dg-skills pw --ext", () => {
+	test("commands readers type use dg pw --ext", () => {
 		const bare = doc
 			.split("\n")
 			.filter((line) => /(^|[^-\w])pw --ext/.test(line))
-			.filter((line) => !/dg-skills pw --ext/.test(line));
+			.filter((line) => !/dg pw --ext/.test(line));
 		expect(bare.filter((line) => !/refus|error|asks|text/i.test(line))).toEqual(
 			[],
 		);
@@ -493,22 +493,22 @@ describe("AGENT-INSTALL upgrade section", () => {
 });
 
 describe("CLI surface named by the docs", () => {
-	test("dg-agent spawn --help shows the command argument and the docs name the -- form", async () => {
+	test("dg agent spawn --help shows the command argument and the docs name the -- form", async () => {
 		const { code, text } = await runHelp([AGENT_ENTRY, "spawn", "--help"]);
 		expect(code).toBe(0);
 		expect(text).toMatch(/\[command\.\.\.\]/);
 		expect(text).toContain("DG_SESSION_ID");
 		const doc = readRepoFile("docs", "AGENT-INSTALL.md");
-		expect(doc).toContain("dg-agent spawn -- <command");
+		expect(doc).toContain("dg agent spawn -- <command");
 		expect(doc).toContain("DG_SESSION_ID");
 	});
 
-	test("dg-agent has no pair command", async () => {
+	test("dg agent has no pair command", async () => {
 		const { text } = await runHelp([AGENT_ENTRY, "--help"]);
 		expect(text).not.toMatch(/^\s+pair\b/m);
 	});
 
-	test("dg-agent start and overwatch open expose --ext", async () => {
+	test("dg agent start and overwatch open expose --ext", async () => {
 		const start = await runHelp([AGENT_ENTRY, "start", "--help"]);
 		expect(start.text).toContain("--ext");
 		expect(start.text).not.toMatch(/--fresh|-s, --session/);
@@ -516,25 +516,25 @@ describe("CLI surface named by the docs", () => {
 		expect(open.text).toContain("--ext");
 	});
 
-	test("dg-skills pw --ext lists every verb and flag the docs name", async () => {
+	test("dg pw --ext lists every verb and flag the docs name", async () => {
 		const { code, text } = await runHelp([SKILLS_ENTRY, "pw", "--ext", "--help"]);
 		expect(code).toBe(0);
 		const doc = readRepoFile("docs", "AGENT-INSTALL.md");
 		for (const verb of ["tabs", "new", "select", "close"]) {
 			expect(text).toMatch(new RegExp(`^\\s+${verb}\\b`, "m"));
-			expect(doc).toMatch(new RegExp(`dg-skills pw --ext ${verb}\\b|\`${verb}\``));
+			expect(doc).toMatch(new RegExp(`dg pw --ext ${verb}\\b|\`${verb}\``));
 		}
 		expect(text).toContain("--tab");
 		expect(doc).toContain("--tab");
 	});
 
-	test("every dg-agent subcommand AGENT-INSTALL.md types is registered", async () => {
+	test("every dg agent subcommand AGENT-INSTALL.md types is registered", async () => {
 		const doc = withoutSections(
 			readRepoFile("docs", "AGENT-INSTALL.md"),
 			new RegExp(UPGRADE_HEADING),
 		);
 		const subs = new Set(
-			[...doc.matchAll(/dg-agent ([a-z][a-z-]*)/g)].map((m) => m[1]),
+			[...doc.matchAll(/dg agent ([a-z][a-z-]*)/g)].map((m) => m[1]),
 		);
 		expect(subs.has("attach")).toBe(false);
 		for (const sub of subs) {
@@ -620,7 +620,7 @@ describe("stale terms across docs, extension README and skills", () => {
 	test("jobs-and-services.md has no dashboard page and names real commands", () => {
 		const text = readRepoFile("docs", "jobs-and-services.md");
 		expect(text).not.toMatch(/a page for that is the next step/);
-		expect(text).toMatch(/dg-daemon job\b/);
+		expect(text).toMatch(/dg job\b/);
 		expect(text).not.toMatch(/(?<!>)\/jobs|\/feed/);
 	});
 

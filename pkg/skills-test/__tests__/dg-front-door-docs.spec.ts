@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { resolveRoute } from "../../dg/src/flat";
+import { GROUPED, resolveRoute } from "../../dg/src/flat";
 import { codeRegions, dgCommandForms, dgGroups, runDgHelp } from "./docs-help-kit";
 import { count, REPO_ROOT, readRepoFile } from "./test-support";
 
@@ -19,9 +19,12 @@ const CHANGED_DOCS = [
 	"docs/adr/0049-jobs.md",
 	TOC_PATH,
 ];
-const FRONT_DOOR = ["job", "autostart", "daemon", "skills", "agent", "extension", "install", "upgrade", "doctor"];
-const OWN_WORDS = ["completion", "help", "--help", "--version"];
-const allowedFirstWord = (name: string): boolean => resolveRoute(name) !== undefined || OWN_WORDS.includes(name);
+const ADR_0055 = "docs/adr/0055-one-dg-program-with-flat-commands.md";
+const OLD_NAMES = /\bdg-(skills|agent|daemon)\b/;
+const OWN_WORDS = ["completion", "help", "__complete", "--help", "--version"];
+const GROUP_VERBS: readonly string[] = Object.values(GROUPED).flat();
+const allowedFirstWord = (name: string): boolean =>
+	resolveRoute(name) !== undefined || OWN_WORDS.includes(name) || GROUP_VERBS.includes(name);
 const RETIRED_IN_AMENDMENT = ["review", "service"];
 
 const read = (path: string): string => {
@@ -73,7 +76,7 @@ const startAtLogin = (): string => heading(read(JOBS), "Start at login");
 
 describe("changed files", () => {
 	test("each changed file exists", () => {
-		for (const f of [...CHANGED_DOCS, ADR_PATH, "docs/service-api.md"]) expect([f, existsSync(join(REPO_ROOT, f))]).toEqual([f, true]);
+		for (const f of [...CHANGED_DOCS, ADR_PATH, ADR_0055, "docs/service-api.md"]) expect([f, existsSync(join(REPO_ROOT, f))]).toEqual([f, true]);
 	});
 });
 
@@ -208,13 +211,13 @@ describe("ADR 0043 amendment line", () => {
 describe("docs/jobs-and-services.md front door", () => {
 	const doc = read(JOBS);
 
-	test("uses dg job and dg autostart, and keeps dg-daemon for service and the daemon itself", () => {
-		expect(doc).not.toMatch(/dg-daemon job (?!exec)/);
+	test("uses flat dg job, dg autostart and dg service, and dg daemon for the daemon lifecycle", () => {
+		expect(doc).not.toMatch(OLD_NAMES);
 		expect(doc).toMatch(/dg job (add|list|run|enable|disable|rm)/);
 		expect(doc).toMatch(/dg autostart (install|remove|status)/);
-		for (const w of ["job exec", "service add", "service rm", "dg-daemon service start", "service status --json"])
+		for (const w of ["job exec", "service add", "service rm", "dg service start", "service status --json"])
 			expect(doc).toContain(w);
-		for (const w of ["dg-daemon start", "dg-daemon stop", "dg-daemon restart", "dg-daemon status"]) expect(doc).toContain(w);
+		for (const w of ["dg daemon start", "dg daemon stop", "dg daemon restart", "dg daemon status"]) expect(doc).toContain(w);
 	});
 
 	test("Start at login follows Run, stop and restart, after the four run literals, and is linked from the top", () => {
@@ -227,7 +230,7 @@ describe("docs/jobs-and-services.md front door", () => {
 		const link = doc.indexOf("#start-at-login");
 		expect(link).toBeGreaterThanOrEqual(0);
 		expect(link).toBeLessThan(doc.indexOf("service add"));
-		for (const lit of ["service add", "dg-daemon start", "dg-daemon service start", "service status --json"])
+		for (const lit of ["service add", "dg daemon start", "dg service start", "service status --json"])
 			expect(doc.indexOf(lit)).toBeLessThan(login);
 	});
 
@@ -245,9 +248,9 @@ describe("docs/jobs-and-services.md front door", () => {
 
 	test("Start at login states the three login-unit rules", () => {
 		const s = flat(startAtLogin());
-		expect(s).toMatch(/`dg-daemon start` and `dg-daemon restart` start the daemon through the service manager/);
+		expect(s).toMatch(/`dg daemon start` and `dg daemon restart` start the daemon through the service manager/);
 		expect(s).toMatch(/environment of the login unit/);
-		expect(s).toMatch(/`dg-daemon stop` and `dg-daemon stop --force` leave the daemon stopped until the next login or the next `dg-daemon start`/);
+		expect(s).toMatch(/`dg daemon stop` and `dg daemon stop --force` leave the daemon stopped until the next login or the next `dg daemon start`/);
 	});
 
 	test("Start at login states the PATH, envFile, passEnv, win32, XDG, 90 s, wslpath and exit 78 rules", () => {
@@ -323,22 +326,23 @@ describe("docs/install.md", () => {
 		expect(doc).toContain("two daemon folders hold data");
 		const text = flat(doc);
 		expect(text).toMatch(/move `<state>\/daemon` to a different name/i);
-		expect(text).toMatch(/dg-daemon serve[^.]*exits? 78/);
+		expect(text).toMatch(/dg daemon serve[^.]*exits? 78/);
 		expect(text).toMatch(/systemd unit does not start it again/);
 		expect(text).toMatch(/dg merges nothing/);
 	});
 
 	test("message table has the set-aside row from its source", () => {
 		expect(source("common", "src", "node", "layout-work.ts")).toContain("dg copied no file from it");
-		expect(doc).toContain("dg: set aside <dest> as <aside>; dg copied no file from it, and dg-skills clean keeps it");
+		expect(doc).toContain("dg: set aside <dest> as <aside>; dg copied no file from it, and dg clean keeps it");
 	});
 
 	test("documents the dg launcher result", () => {
-		expect(source("skills-cli", "src", "install", "shims.ts")).toContain("it is not a dg launcher");
+		expect(source("skills-cli", "src", "install", "compiled.ts")).toContain("it is not a dg launcher");
 		expect(source("skills-cli", "src", "doctor", "shared.ts")).toContain('"dg-launcher"');
 		expect(doc).toContain("dg: kept <path>; it is not a dg launcher.");
 		expect(doc).toContain("dg-launcher");
-		expect(flat(doc)).toMatch(/launcher[^.]*first `dg-skills install` or bootstrap of the new release/);
+		expect(flat(doc)).toMatch(/link it into the launcher folder/);
+		expect(flat(doc)).toMatch(/`<bin>\/dg` is the launcher/);
 		expect(doc).not.toMatch(/clean[^.\n]*launcher folder/i);
 	});
 
@@ -346,46 +350,66 @@ describe("docs/install.md", () => {
 		expect(doc).toContain("dg completion <shell>");
 	});
 
-	test("says dg writes no dg file into the legacy folder and keeps three names there", () => {
+	test("says dg writes no dg file into the legacy folder and the upgrade removes the notice launchers", () => {
 		expect(flat(doc)).toMatch(/dg writes no `dg` file into the legacy `~\/\.dg\/bin` folder/);
-		expect(flat(doc)).toMatch(/`~\/\.dg\/bin` keeps small launchers for `dg-skills`, `dg-agent` and `dg-daemon`/);
+		expect(flat(doc)).toMatch(/notice launchers[^.]*in `~\/\.dg\/bin`\. The upgrade removes them/);
+	});
+
+	test("documents the compiled program layout, the bridge and both rollbacks", () => {
+		const text = flat(doc);
+		expect(text).toContain("<data>/bin/<version>/dg");
+		expect(text).toContain("<data>/bin/current");
+		expect(text).toMatch(/symlink to `<data>\/bin\/current\/dg`/);
+		expect(text).toMatch(/hard link/);
+		expect(text).toContain("install launchers");
+		expect(text).toContain("config.json.pre-compiled");
+		expect(text).toContain("dg: the dg-skills command is removed; run dg <args>");
+		expect(text).toMatch(/dg daemon restart/);
+		expect(text).toMatch(/`dg install --version <previous version>` points `<data>\/bin\/current`/);
+		expect(text).toContain("releases/download/v6.3.1/bootstrap.sh");
+		for (const asset of [
+			"dg-linux-x64",
+			"dg-linux-x64-baseline",
+			"dg-linux-arm64",
+			"dg-darwin-x64",
+			"dg-darwin-arm64",
+			"dg-windows-x64.exe",
+			"dg-windows-x64-baseline.exe",
+			"dg-windows-arm64.exe",
+		])
+			expect([asset, text.includes(asset)]).toEqual([asset, true]);
 	});
 });
 
-describe("README.md dg table", () => {
+describe("README.md flat commands", () => {
 	const readme = read("README.md");
-	const lines = readme.split("\n");
-	const rows = lines.filter((l) => /^\| `dg (\w+)` \|/.test(l));
+	const install = heading(readme, "Install");
 
-	test("has one table of the nine names after the install paragraph and before the skills table", () => {
-		expect(rows.length).toBe(FRONT_DOOR.length);
-		const at = lines.indexOf(rows[0]);
-		expect(at).toBeGreaterThan(lines.findIndex((l) => l === "## Install"));
-		expect(at).toBeLessThan(lines.findIndex((l) => l.startsWith("| Skill | Use | Guide |")));
-		let top = at;
-		while (lines[top - 1]?.startsWith("|")) top--;
-		const above = lines.slice(0, top).reverse().find((l) => l.trim() !== "") ?? "";
-		const install = heading(readme, "Install");
-		expect(install).toContain(above);
-		expect(above.startsWith("|")).toBe(false);
+	test("says dg is the only command and lists both collision groups in the install section", () => {
+		const text = flat(install);
+		expect(text).toMatch(/`dg` is the only command/);
+		for (const verb of ["serve", "status", "restart", "sessions", "origin", "recv", "spawn", "manifest"])
+			expect([verb, text.includes(`\`${verb}\``)]).toEqual([verb, true]);
+		expect(text).toMatch(/bare `dg start` exits 1 and names `dg agent start` and `dg daemon start`/);
+		expect(text).toContain("`dg upgrade` runs `dg update`");
+		expect(text).toContain("`dg extension` runs `dg install`");
+		expect(text).toContain("#upgrade-from-63");
 	});
 
-	test("each target cell equals the resolved program and command", () => {
-		const table = rows.map((l) => l.split("|").map((c) => c.trim()).filter(Boolean));
-		for (const cells of table) expect(cells.length).toBe(2);
-		const byName = Object.fromEntries(table.map(([n, t]) => [n.replace(/`/g, "").replace(/^dg /, ""), t.replace(/`/g, "")]));
-		const expected = Object.fromEntries(
-			FRONT_DOOR.map((name) => {
-				const r = resolveRoute(name);
-				return [name, r ? [r.program, ...r.command].join(" ") : ""];
-			}),
-		);
-		expect(byName).toEqual(expected);
+	test("names no old program outside the removal pointer", () => {
+		expect(readme).not.toMatch(OLD_NAMES);
+	});
+
+	test("each collision verb resolves to its group and each alias to its target", () => {
+		for (const verb of ["serve", "status", "start", "stop", "restart", "sessions", "origin", "send", "recv", "progress", "spawn", "stage", "close", "manifest"])
+			expect([verb, resolveRoute(verb)]).toEqual([verb, undefined]);
+		for (const [alias, target] of [["upgrade", "update"], ["extension", "install"]] as const)
+			expect(resolveRoute(alias)?.command).toEqual(resolveRoute(target)?.command ?? [target]);
+		for (const name of ["job", "autostart", "service", "phone", "pw", "doctor"])
+			expect([name, resolveRoute(name) !== undefined]).toEqual([name, true]);
 	});
 
 	test("stays clear of the jobs bullet pair and holds no review or viz code span", () => {
-		const bullet = lines.indexOf("- [Service API v1 (provisional)](docs/service-api.md)");
-		expect(lines.slice(bullet - 3, bullet + 3).join("\n")).not.toContain("| `dg job` |");
 		for (const f of ["README.md", "docs/install.md"])
 			expect(read(f)).not.toMatch(/`(review|viz)`/);
 	});
@@ -398,7 +422,7 @@ describe("docs/DEVELOPER.md", () => {
 		expect(heading(doc, "Repository Layout")).toMatch(/^ {2}dg\/ /m);
 		expect(doc.split("\n").find((l) => l.startsWith("| `skills-blt`")) ?? "").toContain("dg,");
 		expect(doc).toMatch(/^### pkg\/dg\b/m);
-		expect(flat(doc)).toMatch(/`dg` mounts the three command trees/);
+		expect(flat(doc)).toMatch(/`dg` routes every command of the three command trees as `dg <command>`/);
 	});
 
 	test("states the stamp and the 1.0.0 version of pkg/dg next to the @dg/common sentence", () => {

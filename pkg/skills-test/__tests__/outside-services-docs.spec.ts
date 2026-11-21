@@ -44,16 +44,6 @@ function paragraphWith(text: string, needle: string): string {
 	return text.split(/\n\s*\n/).find((p) => p.includes(needle)) ?? "";
 }
 
-function gitBase(): string | undefined {
-	for (const ref of ["origin/master", "master"]) {
-		const r = Bun.spawnSync(["git", "rev-parse", "--verify", "--quiet", ref], {
-			cwd: REPO_ROOT,
-		});
-		if (r.exitCode === 0) return ref;
-	}
-	return undefined;
-}
-
 describe("ADR 0043 outside services", () => {
 	const adr = read(ADR_PATH);
 	const toc = read("docs/adr/toc.md");
@@ -196,7 +186,7 @@ describe("docs/jobs-and-services.md", () => {
 		}
 		expect(cfg).toContain("unknown key(s)");
 		expect(doc).toContain("unknown key(s)");
-		expect(doc).toContain("dg-daemon restart");
+		expect(doc).toContain("dg daemon restart");
 	});
 
 	test("names the injected DG keys from supervisor source", () => {
@@ -255,8 +245,8 @@ describe("docs/AGENT-INSTALL.md", () => {
 
 	test("upgrade uses restart and rollback uses stop, keeping Restart the daemon", () => {
 		expect(doc).toContain("Restart the daemon");
-		expect(doc).toContain("dg-daemon restart");
-		expect(doc).toContain("dg-daemon stop");
+		expect(doc).toContain("dg daemon restart");
+		expect(doc).toContain("dg daemon stop");
 	});
 });
 
@@ -273,7 +263,7 @@ describe("jobs SKILL.md", () => {
 
 	test("carries the final no-daemon message on one line in one code span", () => {
 		const msg =
-			/"(no live dg-daemon[^"]+)"/.exec(
+			/"(no live dg[- ]daemon[^"]+)"/.exec(
 				source("dg-daemon", "src", "commands", "job-support.ts"),
 			)?.[1] ?? "";
 		expect(msg).not.toBe("");
@@ -282,43 +272,20 @@ describe("jobs SKILL.md", () => {
 
 	test("covers the new actions and the gating rules", () => {
 		for (const w of [
-			"dg-daemon service add",
-			"dg-daemon service rm",
-			"dg-daemon job exec",
-			"dg-daemon start",
-			"dg-daemon stop",
-			"dg-daemon restart",
+			"dg service add",
+			"dg service rm",
+			"dg job exec",
+			"dg daemon start",
+			"dg daemon stop",
+			"dg daemon restart",
 			"--force",
-			"dg-agent start",
+			"dg agent start",
 		])
 			expect(skill).toContain(w);
 		expect(skill).not.toMatch(/dg-skills[^.\n]*start[^.\n]*daemon on demand/i);
 		expect(skill).toMatch(/does not stop a running service/i);
 		expect(skill).not.toContain("~/.dg/bin/");
 		expect(count(skill, '"hooks": {')).toBeLessThanOrEqual(1);
-	});
-
-	test("leaves the bootstrap, SessionStart and channel-review lines untouched", () => {
-		const base = gitBase();
-		if (!base) return;
-		const diff = Bun.spawnSync(["git", "diff", "-U0", base, "--", path], {
-			cwd: REPO_ROOT,
-		}).stdout.toString();
-		const changed = diff.split("\n").filter((l) => /^[+-][^+-]/.test(l));
-		for (const l of changed) expect(l).not.toContain("channel-review");
-		const old = Bun.spawnSync(["git", "show", `${base}:${path}`], {
-			cwd: REPO_ROOT,
-		}).stdout.toString();
-		const fence = (t: string, key: string) =>
-			t
-				.split("```")
-				.filter((_, i) => i % 2 === 1)
-				.find((b) => b.includes(key)) ?? "";
-		expect(fence(skill, "bootstrap.sh")).toBe(fence(old, "bootstrap.sh"));
-		expect(fence(skill, '"SessionStart"')).toBe(fence(old, '"SessionStart"'));
-		const callLine = (t: string) =>
-			t.split("\n").find((l) => l.startsWith("Call `dg-daemon`")) ?? "";
-		expect(callLine(skill)).toBe(callLine(old));
 	});
 });
 

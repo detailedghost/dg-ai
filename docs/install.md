@@ -12,9 +12,8 @@ The `unslop` plugin is optional. It installs the upstream `theclaymethod/unslop`
 when present. To install every recommended plugin at its pinned commit, see
 [Recommended plugins](#recommended-plugins).
 
-**Standalone — one command installs `dg`, `dg-skills`, `dg-daemon` and `dg-agent`
-_and_ the browser extension** (no Bun needed; the installer brings its own pinned
-runtime):
+**Standalone — one command installs `dg` _and_ the browser extension.** `dg` is
+one compiled program with every command, so you need no Bun of your own:
 
 macOS / Linux (x64 or arm64):
 
@@ -32,37 +31,50 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 
 <!-- markdownlint-enable MD013 -->
 
-Both install the pinned Bun runtime and the release bundle into the dg data
-folder, write the `dg`, `dg-skills`, `dg-agent` and `dg-daemon` launchers into the
-launcher folder (see [Where dg keeps its files](#where-dg-keeps-its-files)),
-then run `dg-skills install`. That
-stages the extension and prints the **Load unpacked** steps. Re-run
-`dg-skills install` anytime to update. A part that is already current is
+Both download the `dg` program for your platform into the dg data folder, check
+it against the release's `SHA256SUMS`, and link it into the launcher folder (see
+[Where dg keeps its files](#where-dg-keeps-its-files)). Then they run `dg install`.
+That stages the extension and prints the **Load unpacked** steps. Re-run
+`dg install` anytime to update. A part that is already current is
 skipped. (Building the extension from source with `--local` needs
 [Bun](https://bun.sh).)
 
-The `dg` launcher appears with the first `dg-skills install` or bootstrap of
-the new release. It runs the command tree of one program: `dg job` runs
-`dg-daemon job`, `dg upgrade` runs `dg-skills update`, and so on. See the
-[README](../README.md) for the nine names. When a `dg` file in the launcher
-folder is not a dg launcher, install keeps the file and prints
-`dg: kept <path>; it is not a dg launcher. Remove it or rename it, then run dg-skills install again`.
-The check `dg-launcher` in `dg-skills doctor` warns about the same file, and
+`dg` is the only command. Every command runs as `dg <command>`: `dg pw`, `dg phone`,
+`dg job`, `dg doctor`. Run `dg --help` for the list. Two groups share verbs, so
+these verbs keep a group name:
+
+- Daemon lifecycle verbs run as `dg daemon <verb>`: `serve`, `status`, `start`,
+  `stop`, `restart`, `sessions` and `origin`.
+- Agent session verbs run as `dg agent <verb>`: `start`, `send`, `recv`,
+  `progress`, `spawn`, `stage`, `close` and `manifest`.
+
+A bare `dg start` exits 1 and names `dg agent start` and `dg daemon start`.
+`dg skills <command>`, `dg agent <command>` and `dg daemon <command>` also work as
+full paths. `dg upgrade` is an alias of `dg update`, and `dg extension` is an alias
+of `dg install`.
+
+The three older program names are removed. Install writes no file with those
+names. See [Upgrade from 6.3](#upgrade-from-63).
+
+When a `dg` file in the launcher
+folder is not the dg program, install keeps the file and prints
+`dg: kept <path>; it is not a dg launcher. Remove it or rename it, then run dg install again`.
+The check `dg-launcher` in `dg doctor` warns about the same file, and
 about a missing `dg` launcher. dg writes no `dg` file into the legacy
 `~/.dg/bin` folder.
 
 ## Where dg keeps its files
 
-dg follows the conventions of each OS. Install puts the launchers in a
+dg follows the conventions of each OS. Install puts the `dg` launcher in a
 user-writable folder and the rest under four roots, one for each role.
 
 <!-- markdownlint-disable MD013 -->
 
 | Role | Linux | macOS | Windows | `DG_HOME` set |
 | --- | --- | --- | --- | --- |
-| Launchers | `~/.local/bin` | `~/.local/bin` | `%LOCALAPPDATA%\dg\bin` | `$DG_HOME/bin` |
+| Launcher: `dg` | `~/.local/bin` | `~/.local/bin` | `%LOCALAPPDATA%\dg\bin` | `$DG_HOME/bin` |
 | Config: `config.json`, the CLI-only marker, channel-review config | `$XDG_CONFIG_HOME/dg` (`~/.config/dg`) | `~/Library/Application Support/dg` | `%APPDATA%\dg` | `$DG_HOME/config` |
-| Data: runtime, bundle, skills, personas, browsers, job sources | `$XDG_DATA_HOME/dg` (`~/.local/share/dg`) | `~/Library/Application Support/dg` | `%LOCALAPPDATA%\dg` | `$DG_HOME/data` |
+| Data: the program in `bin/`, skills, personas, browsers, job sources | `$XDG_DATA_HOME/dg` (`~/.local/share/dg`) | `~/Library/Application Support/dg` | `%LOCALAPPDATA%\dg` | `$DG_HOME/data` |
 | State: daemon, phone, grants, agent sessions and memory, job state | `$XDG_STATE_HOME/dg` (`~/.local/state/dg`) | `~/Library/Application Support/dg/state` | `%LOCALAPPDATA%\dg\state` | `$DG_HOME/state` |
 | Cache: prototypes, demos | `$XDG_CACHE_HOME/dg` (`~/.cache/dg`) | `~/Library/Caches/dg` | `%LOCALAPPDATA%\dg\cache` | `$DG_HOME/cache` |
 | Logs | `<state>/log` | `~/Library/Logs/dg` | `%LOCALAPPDATA%\dg\log` | `$DG_HOME/log` |
@@ -75,9 +87,9 @@ For example, the phone state is in `~/.local/state/dg/phone` on Linux and in
 `~/Library/Application Support/dg/state/phone` on macOS.
 
 When the launcher folder is not on `PATH`, `bootstrap.sh` and
-`dg-skills install` print the line to add. `bootstrap.ps1` adds
+`dg install` print the line to add. `bootstrap.ps1` adds
 `%LOCALAPPDATA%\dg\bin` to the user `PATH` once and says so. Skills call
-`dg-skills` by name and fall back to `${DG_HOME:-$HOME/.local}/bin/dg-skills`,
+`dg` by name and fall back to `${DG_HOME:-$HOME/.local}/bin/dg`,
 the launcher path, also in the step right after the bootstrap.
 
 ### DG_HOME
@@ -90,7 +102,7 @@ second install. Each role then gets its own subfolder: `$DG_HOME/bin`,
 ### Move from ~/.dg
 
 Releases before this layout kept everything in `~/.dg` (or flat in `DG_HOME`).
-Any start of `dg-skills`, `dg-agent` or `dg-daemon` moves what is left, before
+Any start of `dg` moves what is left, before
 the command runs. When nothing is left, the check is one folder listing.
 [ADR 0036](adr/0036-one-layout-module.md) records the design.
 
@@ -108,25 +120,25 @@ The move follows these rules:
    copy has the same files and bytes, and only then removes the old copy.
    When the check fails, dg keeps the old copy and names it.
 2. dg never writes over a target that holds data. It keeps the old copy, keeps
-   the target, and says so. `dg-skills doctor install` then names both copies.
+   the target, and says so. `dg doctor install` then names both copies.
 3. When the target exists and is unused, dg sets it aside as
-   `<name>.empty-<ts>`, then moves the old copy in. `dg-skills clean` removes
+   `<name>.empty-<ts>`, then moves the old copy in. `dg clean` removes
    the set-aside copy only when it is unused, and keeps a copy that holds
    files. See [Clean up](#clean-up).
-4. When an old folder is still in use after the copy, for example the runtime
-   that runs install on Windows, dg leaves it. The next start of any dg
+4. When an old folder is still in use after the copy, for example the program
+   file that runs install on Windows, dg leaves it. The next start of any dg
    program removes it and prints one line.
 5. When a process that writes a folder is still running, dg blocks that entry.
-   Only the daemon's own start and `dg-skills install` stop an old daemon.
+   Only the daemon's own start and `dg install` stop an old daemon.
    On Linux and macOS they send SIGTERM. When the old daemon is hung and does
    not answer its health check, they first confirm the pid is the dg daemon
    that wrote the pid file, then send SIGTERM and, if it stays, SIGKILL; a pid
    that another program reused gets no signal, and a pid dg cannot identify
    blocks the move. On Windows dg never stops it: it
-   prints the service line, and you stop the `dg-daemon` service, then run
-   `dg-skills install` again.
-6. The phone state moves on any `dg-agent phone` command and on
-   `dg-skills install`. See [phone](phone.md#where-the-phone-state-lives).
+   prints the service line, and you stop the dg daemon service, then run
+   `dg install` again.
+6. The phone state moves on any `dg phone` command and on
+   `dg install`. See [phone](phone.md#where-the-phone-state-lives).
 7. On Linux and macOS, the daemon moves its key in the OS keychain to an
    account named after the new state root. The move runs only when the daemon
    starts to serve, not at the first open. It copies the key, reads it back,
@@ -141,7 +153,7 @@ The move follows these rules:
    once, remove the old `dg-ai-extension` entry, and load unpacked from the
    new folder. Later installs update that folder in place.
 9. `ssms` state moves to the state root. Its fixed `config.yaml` moves to
-   the config folder under the passwd home, and only `dg-skills install`
+   the config folder under the passwd home, and only `dg install`
    moves it. See [ssms](ssms.md).
 10. dg leaves files it does not know in `~/.dg`.
 11. A symlinked `~/.dg` keeps its link. dg moves the contents and never
@@ -154,16 +166,12 @@ The move follows these rules:
     data, dg blocks the entry and stops the start of the daemon. See
     [Two daemon folders hold data](#two-daemon-folders-hold-data).
 
-`~/.dg/bin` keeps small launchers for `dg-skills`, `dg-agent` and
-`dg-daemon`. Each prints one line on stderr that names the new launcher and
-the release that removes it, then runs the new launcher. The removal release
-is two minor releases after the release that moved the data: a move by 1.34.x
-names 1.36.0. Install deletes these launchers when it installs that release or
-a later one. `dg-skills clean` removes them earlier.
+Earlier releases kept small notice launchers for the three older program names
+in `~/.dg/bin`. The upgrade removes them, and `dg clean` removes them earlier. See
+[Upgrade from 6.3](#upgrade-from-63).
 
-Claude Code allow rules in the old form, `Bash(~/.dg/bin/dg-skills <sub>:*)`,
-stop matching. `dg-skills doctor` warns and names the new rule,
-`Bash(dg-skills <sub>:*)`.
+Claude Code allow rules for a launcher path in `~/.dg/bin` stop matching.
+`dg doctor` warns and names the new rule, `Bash(dg <sub>:*)`.
 
 Stale skill copies outside the dg install, for example `~/.agents/skills`, can still call `~/.dg/bin` and need a reinstall from their own source.
 
@@ -172,13 +180,13 @@ Stale skill copies outside the dg install, for example `~/.agents/skills`, can s
 | Command | What moves |
 | --- | --- |
 | `--help`, `-h` anywhere before a `--`, `--version` | Nothing. |
-| `dg-skills hooks run`, `dg-agent phone listen`, `dg-daemon status` | Nothing. These commands skip the move. |
-| `dg-skills install` | Everything. It stops an old daemon and an old phone listener, moves `runtime/` and `lib/`, then rewrites the launchers and restarts the listener, also when the install fails. |
-| `dg-skills doctor` | What it can, before it reports. The `layout` check then lists what is left. |
-| `dg-skills clean` | What it can, then it removes the leftovers. |
-| `dg-skills spec`, `dg-agent memory` and other commands | The daemon, memory, grants and config. They leave `runtime/`, `lib/`, `phone/` and the ssms config until install (or, for `phone/`, a `dg-agent phone` command) runs. Old `~/.dg/bin` launchers read `runtime/` and `lib/`, and only install rewrites them. |
-| `dg-agent phone <verb>` | The phone folder, then the phone-friend lines. |
-| `dg-agent start` | The same as `dg-agent` commands. It starts `dg-daemon`, and the daemon's own start moves the daemon folder. |
+| `dg hooks run`, `dg phone listen`, `dg daemon status` | Nothing. These commands skip the move. |
+| `dg install` | Everything. It stops an old daemon and an old phone listener, moves `runtime/` and `lib/`, then rewrites the launcher and restarts the listener, also when the install fails. |
+| `dg doctor` | What it can, before it reports. The `layout` check then lists what is left. |
+| `dg clean` | What it can, then it removes the leftovers. |
+| `dg spec`, `dg memory` and other commands | The daemon, memory, grants and config. They leave `runtime/`, `lib/`, `phone/` and the ssms config until install (or, for `phone/`, a `dg phone` command) runs. |
+| `dg phone <verb>` | The phone folder, then the phone-friend lines. |
+| `dg agent start` | The same as other `dg agent` commands. It starts the daemon, and the daemon's own start moves the daemon folder. |
 
 The keychain key moves only when the daemon serves. The daemon folder can move
 days before the key does.
@@ -192,21 +200,21 @@ dg prints each line once for each process.
 
 | Line | Cause | Fix |
 | --- | --- | --- |
-| `dg: kept <from>; a process that writes it is running. Stop it, then run dg-skills install again` | A live writer holds the entry. dg blocked it. | Stop the process, then run `dg-skills install`. |
-| `dg: kept <from>; stop the dg-daemon service, then run dg-skills install again` | On Windows, dg never stops the daemon. | Stop the `dg-daemon` service, then run `dg-skills install`. |
-| `dg: <from> has not moved to <to>; run dg-skills install` | A program tried to open an entry that has not moved. This command lacks a step the move needs, such as the phone check or the ssms config folder. | Run `dg-skills install`, or for the phone any `dg-agent phone` command. |
+| `dg: kept <from>; a process that writes it is running. Stop it, then run dg install again` | A live writer holds the entry. dg blocked it. | Stop the process, then run `dg install`. |
+| `dg: kept <from>; stop the dg daemon service, then run dg install again` | On Windows, dg never stops the daemon. | Stop the dg daemon service, then run `dg install`. |
+| `dg: <from> has not moved to <to>; run dg install` | A program tried to open an entry that has not moved. This command lacks a step the move needs, such as the phone check or the ssms config folder. | Run `dg install`, or for the phone any `dg phone` command. |
 | `dg: copied <from> to <to>; it is in use, so the next dg start removes it` | The copy is complete, but dg could not remove the old copy. The removal is scheduled. | Nothing. The next dg start removes it. |
 | `dg: removed <from>; its copy at <to> was complete` | A scheduled removal finished on a later start. | Nothing. |
 | `dg: kept <from>; its copy at <to> no longer holds every file` | A scheduled removal found the copy incomplete. | Compare the two folders before you remove either. |
 | `dg: two daemon folders hold data: <from> and <to>. dg does not choose one and does not merge them. Move the folder that you do not want to a different name, then run the command again` | The old daemon folder and `<state>/daemon` both hold data. dg blocked the entry. | See [Two daemon folders hold data](#two-daemon-folders-hold-data). |
-| `dg: set aside <dest> as <aside>; dg copied no file from it, and dg-skills clean keeps it` | The old daemon folder held data, and the target held files but no data. dg renamed the target and moved the old copy in. | Compare the set-aside copy with the new folder, then remove it by hand. `dg-skills clean` keeps it. |
-| `dg: set aside unused <to> as <to>.empty-<ts>; dg-skills clean removes it` | The target was unused, so dg renamed it and moved the old copy in. | Run `dg-skills clean` when you want the set-aside copy gone. |
-| `dg: kept <from>; <to> already exists and holds data. dg-skills doctor reports both copies` | Both copies hold data. | Run `dg-skills doctor install`, compare the copies, then remove one. |
-| `dg: kept <from>; <to> already exists` | A target existed when the copy began. | Run `dg-skills doctor install`, then compare the copies. |
-| `dg: kept <from>; the copy failed its check: <problem>` | The copy did not pass the check, for example the phone key check. dg removed the copy. | Fix the problem named, then run `dg-skills install`. |
-| `dg: kept <from>; moving it to <to> failed: <reason>` | The copy or its byte check failed. dg removed the copy. | Fix the reason, then run `dg-skills install`. |
-| `dg: kept <from>; setting aside <to> failed: <reason>` | dg could not rename the unused target. | Fix the reason, then run `dg-skills install`. |
-| `dg: phone-friend lines wait for conversion; run dg-agent phone status` | `dg-agent phone listen` found old phone-friend lines that no command has converted. It exits 1. | Run `dg-agent phone status`. |
+| `dg: set aside <dest> as <aside>; dg copied no file from it, and dg clean keeps it` | The old daemon folder held data, and the target held files but no data. dg renamed the target and moved the old copy in. | Compare the set-aside copy with the new folder, then remove it by hand. `dg clean` keeps it. |
+| `dg: set aside unused <to> as <to>.empty-<ts>; dg clean removes it` | The target was unused, so dg renamed it and moved the old copy in. | Run `dg clean` when you want the set-aside copy gone. |
+| `dg: kept <from>; <to> already exists and holds data. dg doctor reports both copies` | Both copies hold data. | Run `dg doctor install`, compare the copies, then remove one. |
+| `dg: kept <from>; <to> already exists` | A target existed when the copy began. | Run `dg doctor install`, then compare the copies. |
+| `dg: kept <from>; the copy failed its check: <problem>` | The copy did not pass the check, for example the phone key check. dg removed the copy. | Fix the problem named, then run `dg install`. |
+| `dg: kept <from>; moving it to <to> failed: <reason>` | The copy or its byte check failed. dg removed the copy. | Fix the reason, then run `dg install`. |
+| `dg: kept <from>; setting aside <to> failed: <reason>` | dg could not rename the unused target. | Fix the reason, then run `dg install`. |
+| `dg: phone-friend lines wait for conversion; run dg phone status` | `dg phone listen` found old phone-friend lines that no command has converted. It exits 1. | Run `dg phone status`. |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -216,7 +224,7 @@ When the old daemon folder and `<state>/daemon` both hold data, two daemon
 folders with data stop the start of the daemon. The message names the two
 folders. dg does not choose one, and dg merges nothing.
 
-`dg-daemon serve` exits 78 for this block, and the systemd unit does not start
+`dg daemon serve` exits 78 for this block, and the systemd unit does not start
 it again. The `dg job` verbs that write the config exit 78 too.
 
 To fix it, move `<state>/daemon` to a different name when the legacy folder
@@ -225,7 +233,7 @@ move the legacy folder instead. Compare the two first.
 
 #### Layout check in doctor
 
-`dg-skills doctor install` runs a check with the id `layout`. The check only
+`dg doctor install` runs a check with the id `layout`. The check only
 reads. It writes nothing.
 
 When every file is in its per-OS folder, the check reports `ok`:
@@ -234,13 +242,13 @@ line for each entry that is left:
 
 | Warn line | Meaning | Who acts |
 | --- | --- | --- |
-| `<from> has not moved to <to>; run dg-skills install` | dg has not moved the entry. | `dg-skills install` fixes it. |
-| `dg: kept <from>; a process that writes it is running. Stop it, then run dg-skills install again` | A live writer blocks the entry. | Stop the process, then `dg-skills install` fixes it. |
-| `<from> is copied and waits for removal` | The copy is complete. The old copy waits for removal. | `dg-skills install` or any dg start removes it. |
+| `<from> has not moved to <to>; run dg install` | dg has not moved the entry. | `dg install` fixes it. |
+| `dg: kept <from>; a process that writes it is running. Stop it, then run dg install again` | A live writer blocks the entry. | Stop the process, then `dg install` fixes it. |
+| `<from> is copied and waits for removal` | The copy is complete. The old copy waits for removal. | `dg install` or any dg start removes it. |
 | `<from> is copied but the copy is incomplete; dg keeps it` | The copy lacks files. dg keeps the old copy. | A human decides. Check both folders first. |
 | `<from> and <to> both hold data; compare them, then remove the one you do not need` | A split: both copies hold data. | A human decides. Compare, then remove one. |
 
-The fix line of the warn is `dg-skills install`. On Windows with a live
+The fix line of the warn is `dg install`. On Windows with a live
 daemon, it is the service line instead.
 
 #### Keychain warnings
@@ -261,7 +269,7 @@ Each line starts with `dg: keychain secret chat-store-kek`. None holds the key.
 
 ### Clean up
 
-`dg-skills clean` removes what the move left behind. It moves what it can
+`dg clean` removes what the move left behind. It moves what it can
 first, then removes these paths:
 
 - Each unused `<name>.empty-<ts>` copy that a move set aside, such as
@@ -276,18 +284,14 @@ dg: removed <path>
 dg: removed 2 path(s)
 ```
 
-When it removes `~/.dg/bin`, it also prints one notice:
-
-```text
-dg: ~/.dg/bin/dg-skills, ~/.dg/bin/dg-agent and ~/.dg/bin/dg-daemon stop working; the launchers are in <launcher folder>
-```
+When it removes `~/.dg/bin`, it also prints one notice that names each removed
+launcher and says that the launcher folder holds `dg`.
 
 The `~/.dg/bin/<name>` paths stop working now, not at the removal release.
-Claude Code allow rules in the old form, `Bash(~/.dg/bin/dg-skills <sub>:*)`,
-stop matching. `dg-skills doctor` names the new rule. A later install does not
-bring `~/.dg/bin` back.
+Claude Code allow rules for a path in `~/.dg/bin` stop matching. `dg doctor`
+names the new rule. A later install does not bring `~/.dg/bin` back.
 
-`dg-skills clean` leaves these paths in place:
+`dg clean` leaves these paths in place:
 
 - `dg-ai-*` folders. Install removes them.
 - A set-aside copy that holds data. It prints
@@ -301,50 +305,55 @@ When a removal fails, it prints
 
 It refuses to run while a folder has not moved or an old writer is running. It
 prints the fix lines from [Layout lines](#layout-lines), then
-`dg: cleaned nothing; fix the lines above, then run dg-skills clean again`,
+`dg: cleaned nothing; fix the lines above, then run dg clean again`,
 and exits 1. When nothing is left, it prints `dg: nothing to clean`. It is
 safe to run again.
 
 ## Install layout
 
-One release is one bundle. The four program names share it and one runtime. On
-Linux the data folder is `~/.local/share/dg`:
+One release is one compiled program. Install keeps each version it downloads, so
+a rollback needs no download. On Linux the data folder is `~/.local/share/dg`:
 
 ```text
 <data>/
-  runtime/bun-v1.4.1/bun              the pinned Bun runtime (bun.exe on Windows)
-  runtime/current -> bun-v1.4.1       symlink, or a directory junction on Windows
-  lib/<version>/dg.js                 the dispatcher; chunks/ holds each program's code
-  lib/current -> <version>            the version the launchers run
+  bin/<version>/dg        the compiled program (dg.exe on Windows)
+  bin/current -> <version>  symlink, or a directory junction on Windows
 ```
 
-Each launcher in the launcher folder (`.cmd` files on Windows) runs
-`<data>/runtime/current/bun <data>/lib/current/dg.js <program>`. The
-installer never uses a `bun` on your PATH. It replaces `current` by renaming a
-new link over the old one, so a running program keeps working during an
-update. The previous version directory stays in `lib/` until the next
-successful install, for rollback.
+`<bin>/dg` is the launcher, with `<bin>` the launcher folder from the
+[layout table](#where-dg-keeps-its-files). On Linux and macOS it is a symlink to
+`<data>/bin/current/dg`. On Windows it is a hard link,
+`%LOCALAPPDATA%\dg\bin\dg.exe`, to the file in `<data>\bin\<version>`, so each
+update links it again. Install writes no other launcher and no `.cmd`
+file. It replaces `current` by creating a new link and renaming it over the old
+one, so a running program keeps working during an update. The version that the
+install replaces stays in `bin/` for rollback.
 
-Every download is checked before anything changes. `SHA256SUMS` lists
-`runtime.json` and `dg-lib-<version>.tar.gz`, and `runtime.json` lists the
-sha256 of each Bun zip. The installer also runs the new bundle's
-`dg-skills --version` before it moves `lib/current`. A failed check prints
-`checksum mismatch` or the self-check error and leaves the old install as it
-was.
+The program embeds its own runtime. The installer never uses a `bun` on your
+`PATH`.
 
-On Linux x64 without AVX2, the installer picks Bun's `-baseline` build.
+Every download is checked before anything changes. `SHA256SUMS` lists each
+`dg-<platform>` asset, and install compares the sha256 of the file it fetched.
+Install also runs the new program with `--version` before it moves `current`. A
+failed check prints `checksum mismatch` or the self-check error and leaves the
+old install as it was.
+
+The release has one asset for each platform: `dg-linux-x64`,
+`dg-linux-x64-baseline`, `dg-linux-arm64`, `dg-darwin-x64`, `dg-darwin-arm64`,
+`dg-windows-x64.exe`, `dg-windows-x64-baseline.exe` and `dg-windows-arm64.exe`.
+On x64 without AVX2, install picks the `-baseline` asset.
 
 ## Shell completion
 
-Every install and update writes tab completion for `dg`, `dg-skills`,
-`dg-agent` and `dg-daemon` in bash, zsh and fish. That includes a CLI-only, agent-only
-or skills-only install. The installer does not edit a shell startup file.
+Every install and update writes tab completion for `dg` in bash, zsh and fish.
+That includes a CLI-only, agent-only or skills-only install. The installer does
+not edit a shell startup file.
 
 | Shell | File | Loaded by |
 | ----- | ---- | --------- |
-| bash | `~/.local/share/bash-completion/completions/<program>` | bash-completion, on first use |
-| zsh | `~/.local/share/zsh/site-functions/_<program>` | `compinit`, when the folder is on `fpath` |
-| fish | `~/.config/fish/completions/<program>.fish` | fish, on first use |
+| bash | `~/.local/share/bash-completion/completions/dg` | bash-completion, on first use |
+| zsh | `~/.local/share/zsh/site-functions/_dg` | `compinit`, when the folder is on `fpath` |
+| fish | `~/.config/fish/completions/dg.fish` | fish, on first use |
 
 `XDG_DATA_HOME` replaces `~/.local/share` and `XDG_CONFIG_HOME` replaces
 `~/.config`. With `DG_HOME` set, the files go to `$DG_HOME/share/...` and
@@ -360,52 +369,117 @@ fpath=(~/.local/share/zsh/site-functions $fpath)
 ```
 
 The scripts call the program back for each word
-(`dg-skills __complete <words>`), so new commands complete as soon as an
+(`dg __complete <words>`), so new commands complete as soon as an
 update installs them. To write, refresh or remove the files by hand:
 
 ```bash
-dg-skills completion --install
-dg-skills completion --uninstall
+dg skills completion --install
+dg skills completion --uninstall
 ```
 
 To load a script for the current shell only, without files, run
-`source <(dg-skills completion bash)` (or `zsh`), or
-`dg-skills completion fish | source` in fish. `dg completion <shell>`,
-`dg-agent completion <shell>` and `dg-daemon completion <shell>` print their
-own scripts.
-`dg-skills doctor completion` reports missing or old files and names the fix.
+`source <(dg completion bash)` (or `zsh`), or
+`dg completion fish | source` in fish. `dg completion <shell>` prints the
+script for every `dg` command.
+`dg doctor completion` reports missing or old files and names the fix.
 
-## Update from a compiled-binary install
+## Upgrade from 6.3
 
-The bootstrap URLs above never change. Each release publishes `bootstrap.sh`
-and `bootstrap.ps1` as assets, and `releases/latest` always points at the
-newest one.
+Release 6.3 and earlier shipped four programs, `dg-skills`, `dg-agent`,
+`dg-daemon` and `dg`, as launchers over one bundle and one Bun runtime. This
+release ships one compiled program, `dg`, and removes the other three names.
+Only this section names them.
 
-Releases before the bundle shipped three compiled binaries. A compiled
-`dg-skills install` cannot find the new assets, so update once by re-running
-bootstrap:
+On a 6.3 install, run `dg upgrade`. The command `dg-skills update` does the
+same.
+
+```bash
+dg upgrade
+```
+
+Then restart the daemon, so a running daemon picks up the new program:
+
+```bash
+dg daemon restart
+```
+
+The update steps, in order:
+
+1. The 6.3 `update` downloads the new bundle tarball, `dg-lib-<v>.tar.gz`, and
+   `runtime.json`, checks both against `SHA256SUMS`, and runs the new bundle's
+   self-check. The release keeps both assets for two minor releases, only for
+   this step.
+1. It runs the hidden step `install launchers` of the new bundle. That step
+   installs the compiled `dg` of the new version at `<data>/bin/<version>/dg`,
+   links `<data>/bin/current`, and links `<bin>/dg`.
+1. The same step rewrites the argv that dg stored: the login unit of the daemon
+   (`dg autostart`) and the phone listener unit. It also rewrites each
+   `dg-skills hooks run` line in agent settings and git hooks to `dg hooks run`.
+1. It removes the old launchers `dg-skills`, `dg-agent` and `dg-daemon` from the
+   launcher folder, and the notice launchers in `~/.dg/bin`.
+1. On Windows, the old `.cmd` files are in use during the update. The next
+   `dg install`, `dg update` or daemon start removes them.
+1. The daemon rewrites job argv that names `lib/current/dg.js` or an old program
+   name, once, at its next start. It keeps a copy of the old file as
+   `config.json.pre-compiled` in the daemon folder, with mode 0600.
+
+Each rewrite is safe to run again. When a file with an old name is not a dg
+launcher, install keeps it and prints
+`dg: kept <path>; it is not a dg launcher. dg no longer uses that name`.
+
+A stale 6.3 shim still runs, through the bundle bridge. It prints one line,
+then runs the command:
+
+```text
+dg: the dg-skills command is removed; run dg <args>
+```
+
+A compiled `dg` started under an old name prints the same line and exits 1. Fix
+the script or the job that names the old program. Each old command is now
+`dg <command>`:
+
+| Old form | New form |
+| --- | --- |
+| `dg-skills <command>` | `dg <command>` |
+| `dg-agent phone`, `overwatch`, `memory`, `mcp` | `dg phone`, `dg overwatch`, `dg memory`, `dg mcp` |
+| `dg-agent start`, `send`, `recv`, `progress`, `spawn`, `stage`, `close`, `manifest` | `dg agent <verb>` |
+| `dg-daemon job`, `autostart`, `service` | `dg job`, `dg autostart`, `dg service` |
+| `dg-daemon serve`, `status`, `start`, `stop`, `restart`, `sessions`, `origin` | `dg daemon <verb>` |
+
+Releases from before the bundle shipped three compiled binaries. A compiled
+`dg-skills install` of that age cannot find the new assets, so update once by
+re-running bootstrap:
 
 ```bash
 curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
-On Windows, re-run the `bootstrap.ps1` command above. The new install replaces
-the compiled `dg-skills`, `dg-agent` and `dg-daemon` files with launchers, writes a `dg` launcher, and
-removes their `.version` stamps. After that, `dg-skills install` updates as
-usual.
+On Windows, re-run the `bootstrap.ps1` command above.
 
 ## Roll back
 
-`dg-skills install --version <previous version>` points `lib/current` at that
-version. While its directory is still in `lib/`, nothing is downloaded. To roll
-back by hand (Linux path shown):
+`dg install --version <previous version>` points `<data>/bin/current` at that
+version. While `<data>/bin/<previous version>` exists, nothing is downloaded. To
+roll back by hand (Linux path shown), replace the link:
 
 ```bash
-ln -sfn <previous version> ~/.local/share/dg/lib/current
+ln -sfn <previous version> ~/.local/share/dg/bin/current
 ```
 
-A version from before the bundle needs that release's own bootstrap script, as
-the error message says.
+Restart the daemon after a rollback with `dg daemon restart`.
+
+To roll back to 6.3, run the 6.3 bootstrap. 6.3 skills come back with it:
+
+```bash
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/download/v6.3.1/bootstrap.sh | sh
+```
+
+Then reinstall the daemon login unit with `dg-daemon autostart install` and add
+again each job that names `dg`. Those two commands use the 6.3 names, because
+the 6.3 install has no other.
+
+A version from before the compiled program needs that release's own bootstrap
+script, as the error message says.
 
 ### Roll back to a release that uses ~/.dg
 
@@ -413,12 +487,12 @@ No command copies the data back. A release from before the per-OS layout reads
 `~/.dg`, so you copy each folder back by hand.
 
 1. Stop every writer.
-   - Daemon: run `dg-daemon stop`. An older release has no `stop`
+   - Daemon: run `dg daemon stop`. An older release has no `stop`
      command: send SIGTERM to the pid in `<state>/daemon/daemon.pid` (Linux
      and macOS).
-   - Phone: run `dg-agent phone close`.
-   - Channel review: run `dg-skills channel-review stop --env <env>`.
-   - ssms: `dg-skills ssms` has no stop command. Let a running `dg-skills ssms`
+   - Phone: run `dg phone close`.
+   - Channel review: run `dg channel-review stop --env <env>`.
+   - ssms: `dg ssms` has no stop command. Let a running `dg ssms`
      command end.
 2. Copy each folder back to its `~/.dg` name with a copy that keeps
    attributes. On Linux and macOS, use `cp -a <from> <to>`. On Windows, use
@@ -426,7 +500,7 @@ No command copies the data back. A release from before the per-OS layout reads
    paths. `resolveDgPaths` in `pkg/common/src/node/dg-paths.ts` gives the other
    OSes. `memory.db`, `memory.db-wal` and `memory.db-shm` move together. Create
    `~/.dg` with mode 0700 when it does not exist.
-3. Run `dg-skills install --version <old>` right away. Every later start on
+3. Run the bootstrap of that release right away. Every later start on
    the new release logs kept lines until you remove the copies.
 
 | Entry | Per-OS path on Linux | Copy it to |
@@ -464,7 +538,7 @@ copy. The older release writes its own launchers to `~/.dg/bin`.
 
 After a rollback, the old release owns `~/.dg`. Before you upgrade again,
 remove the per-OS copies you no longer want. Otherwise dg keeps both, and
-`dg-skills doctor install` reports a split.
+`dg doctor install` reports a split.
 
 The keychain move is one-way. A daemon from before the per-OS layout (#136)
 cannot read the key. The encrypted credentials in `daemon.db` do not decrypt.
@@ -481,29 +555,28 @@ bun scripts/bump-runtime.ts 1.4.2
 It reads Bun's `SHASUMS256.txt` for that tag and rewrites
 `pkg/launcher/runtime.json`, the `bun` pin in `.mise/config.toml` and every
 `setup-bun` version in the workflows. `dependency-pinning.spec.ts` fails when
-they disagree. The next release ships the new `runtime.json`.
-`dg-skills install` then downloads the new runtime once, checks the bundle on
-it, and points `runtime/current` at it.
+they disagree. The next release builds the compiled programs with the new Bun,
+and ships the new `runtime.json` for the 6.3 bridge.
 
 ## Update everything
 
 One command brings every dg part to the newest release:
 
 ```bash
-dg-skills update --check   # print installed and newest versions; change nothing
-dg-skills update           # update, then run doctor
+dg update --check   # print installed and newest versions; change nothing
+dg update           # update, then run doctor
 ```
 
 `update` runs these steps in order. A failed step does not stop the rest, and
 the command exits 1 when any step failed:
 
-1. The Bun runtime, the dg bundle, the launchers, and the staged
+1. The `dg` program, the launcher link, and the staged
    dg-ai-extension, pinned to the newest release. A CLI-only install stays
    CLI-only, the staged browser extension is refreshed (with both Chrome and
    Firefox staged, Chrome is refreshed and the step names the command for
-   Firefox, so the bundle is fetched once), and an install with no
-   staged extension (such as a skills-only install) gets only the runtime and
-   bundle. The step fails
+   Firefox), and an install with no
+   staged extension (such as a skills-only install) gets only the program.
+   The step fails
    when the installed version is not the newest afterward.
 2. The Claude plugin: `claude plugin marketplace update detailedghost`, then
    `claude plugin update dg@detailedghost` (or `install` when it is missing).
@@ -513,7 +586,7 @@ the command exits 1 when any step failed:
    `codex plugin marketplace upgrade detailedghost`, then
    `codex plugin add dg@detailedghost`. A marketplace that points at a local
    folder is replaced with `detailedghost/dg-ai` first.
-4. `dg-skills doctor`, as one summary line. It is information only. Doctor
+4. `dg doctor`, as one summary line. It is information only. Doctor
    also reports things `update` does not own, such as a stopped daemon, so it
    does not change the exit code.
 
@@ -525,7 +598,7 @@ The Claude step updates the user scope. A project or local install that is
 still behind gets a warning line with the command to run in that project.
 
 `update` always goes to the newest release, because the plugins follow their
-marketplace. To install one exact release, use `dg-skills install --version
+marketplace. To install one exact release, use `dg install --version
 <x.y.z>`. Restart Claude Code and Codex
 sessions afterward, and reload the extension. The `/dg:update` skill runs
 `--check`, asks, and then runs the update.
@@ -562,21 +635,21 @@ curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/boots
 
 <!-- markdownlint-enable MD013 -->
 
-This pins the bundle, the runtime pin and the extension to that `vX.Y.Z`
+This pins the program and the extension to that `vX.Y.Z`
 release, and combines with `--cli-only`/`--agent-only`. An installed
-`dg-skills` accepts the same flag: `dg-skills install --version X.Y.Z`.
+An installed `dg` accepts the same flag: `dg install --version X.Y.Z`.
 Leaving it unset installs the newest release.
 
 If the pinned release does not exist, the whole install fails and names it. It
 checks every part first and changes nothing, so a pin never leaves some parts
-updated and others not. A pin to a release from before the bundle fails the
+updated and others not. A pin to a release from before the compiled program fails the
 same way and prints that release's own bootstrap command.
 
 ## Plugin cache
 
 Claude Code keeps every dg plugin version under
 `~/.claude/plugins/cache/<marketplace>/dg/<version>/` and removes orphaned ones
-about 14 days after it marks them. `dg-skills install` reclaims that space now,
+about 14 days after it marks them. `dg install` reclaims that space now,
 in every mode except `--skills-only` and `--local`, which is a dev build that
 never touches release binaries. It prints one line, for example
 `plugin cache: removed 1.20.0, 1.21.0 (58 MB); kept 1.24.0 (active)`.
@@ -593,11 +666,11 @@ Install skips the step and prints a reason when `installed_plugins.json` is
 unreadable. It never follows a symlink and never touches other plugins or the
 marketplace clones. Pass `--keep-cache` to leave the cache alone.
 
-`dg-skills doctor install` reports stale versions and how much space they use.
+`dg doctor install` reports stale versions and how much space they use.
 
 When `DG_HOME` is set to something other than `~/.dg`, install prints
 `note: DG_HOME=<path>; installing there` to stderr before it changes anything,
-and `dg-skills doctor` warns.
+and `dg doctor` warns.
 
 ## Recommended plugins
 
@@ -615,19 +688,19 @@ branch head.
 ### Install
 
 ```bash
-dg-skills install --with-recommended
+dg install --with-recommended
 ```
 
 The flag is off by default. It works with the default install, `--cli-only` and
 `--skills-only`. With `--agent-only`, the command exits 1 before it changes
 anything.
 
-With the default install or `--cli-only`, `dg-skills` runs the `claude` CLI to
+With the default install or `--cli-only`, `dg` runs the `claude` CLI to
 install each plugin. It first refreshes the `detailedghost` marketplace once.
 Claude Code installs the commit that its own `detailedghost` marketplace clone
-pins, and that clone follows `master`. `dg-skills` checks the
+pins, and that clone follows `master`. `dg` checks the
 installed sha against that marketplace pin. When the marketplace pin differs
-from the pin in this `dg-skills`, it prints a `note:` line that names both.
+from the pin in this `dg`, it prints a `note:` line that names both.
 When the clone cannot be read, it checks against its own pin. When an installed
 sha differs from the expected pin, it uninstalls and installs again. Only
 user-scope installs count.
@@ -642,10 +715,10 @@ from a dg-ai checkout, so pass `--repo` with its path, or run the command
 inside the checkout:
 
 ```bash
-dg-skills install --skills-only --repo ~/code/dg-ai --dest ~/.config/opencode/skills --with-recommended
+dg install --skills-only --repo ~/code/dg-ai --dest ~/.config/opencode/skills --with-recommended
 ```
 
-`dg-skills` fetches each pinned commit with git. It copies only the regular
+`dg` fetches each pinned commit with git. It copies only the regular
 tracked files of the declared skill folders that hold a `SKILL.md`. `unslop`
 installs as `<dest>/unslop/`. A symlink in the source stops the plugin.
 
@@ -663,17 +736,17 @@ for that plugin. If a failure happens while the skills move into place, the
 warning reads `⚠ <plugin> failed: <reason>` instead. The dg skills still
 install and the command continues.
 
-With the `claude` CLI, `dg-skills` checks the user-scope sha after each install.
-If it differs from the pin, `dg-skills` uninstalls the plugin and prints
+With the `claude` CLI, `dg` checks the user-scope sha after each install.
+If it differs from the pin, `dg` uninstalls the plugin and prints
 `⚠ <plugin> removed: installed <sha>, expected <pin>`. If that uninstall fails,
 the line reads `⚠ <plugin> skipped: installed <sha>, expected <pin>; uninstall
 failed: <reason>`. If the sha cannot be read, the line reads `⚠ <plugin>
 installed, but its commit could not be verified`, and the plugin stays.
 
-When the same command also moves `dg-skills` to another version, the running
+When the same command also moves `dg` to another version, the running
 binary still holds the old pins. It then installs no recommended plugin and
-prints `⚠ recommended plugins skipped: dg-skills is now v<version>. Run the
-same dg-skills install command again to install them at its pins.`
+prints `⚠ recommended plugins skipped: dg is now v<version>. Run the
+same dg install command again to install them at its pins.`
 
 ### Bump a pin
 
@@ -688,7 +761,7 @@ The script reads the ref with `git ls-remote`, rewrites the sha in
 `.claude-plugin/marketplace.json` and prints `<name>: <old> -> <new>`. It exits
 1 for an unknown name or bad ref, 2 for a missing file and 3 when the repo is
 unreachable. Claude Code does not act on a sha change alone, so the next
-`dg-skills install --with-recommended` uninstalls and installs the plugin
+`dg install --with-recommended` uninstalls and installs the plugin
 again.
 
 ### Retired and private copies
@@ -710,7 +783,7 @@ Then reinstall the pinned plugin for your agent.
 Claude Code:
 
 ```bash
-dg-skills install --with-recommended
+dg install --with-recommended
 ```
 
 Codex and OpenCode need a dg-ai checkout, as above. Replace `~/code/dg-ai`
@@ -719,14 +792,14 @@ with its path.
 Codex:
 
 ```bash
-dg-skills install --skills-only --repo ~/code/dg-ai --dest ~/.codex/skills --with-recommended
-dg-skills install --skills-only --repo ~/code/dg-ai --dest ~/.agents/skills --with-recommended
+dg install --skills-only --repo ~/code/dg-ai --dest ~/.codex/skills --with-recommended
+dg install --skills-only --repo ~/code/dg-ai --dest ~/.agents/skills --with-recommended
 ```
 
 OpenCode:
 
 ```bash
-dg-skills install --skills-only --repo ~/code/dg-ai --dest ~/.config/opencode/skills --with-recommended
+dg install --skills-only --repo ~/code/dg-ai --dest ~/.config/opencode/skills --with-recommended
 ```
 
 dg marks each recommended skill folder with a `.dg-recommended` file. It
@@ -737,9 +810,9 @@ folder, then run the command again.
 
 ## CLI-only install
 
-Install the runtime, the bundle and the skills that run without the browser
+Install the program and the skills that run without the browser
 extension. This skips the extension and its pairing. Run it before using the
-plugin so its skills find `dg-skills` and do not start a full install.
+plugin so its skills find `dg` and do not start a full install.
 
 <!-- markdownlint-disable MD013 -->
 
@@ -757,7 +830,7 @@ Windows, in PowerShell:
 
 <!-- markdownlint-enable MD013 -->
 
-An installed `dg-skills` accepts `dg-skills install --cli-only`. Add `--codex`
+An installed `dg` accepts `dg install --cli-only`. Add `--codex`
 (`-Codex` in PowerShell) to copy only the CLI skills into `$CODEX_HOME/skills`.
 
 | Skill | CLI-only |
@@ -770,15 +843,15 @@ An installed `dg-skills` accepts `dg-skills install --cli-only`. Add `--codex`
 | `jot`, `bg`, `cls`, `stat`, `sniff`, `find-work`, `doctor` | Yes — they call other skills and tools that must be available |
 | `db`, `erd` | Yes |
 | `pw` | Yes — needs Bun 1.4.0 or later and Chrome, Edge, or a Chromium from `install-browser`; `pw launch` and `pw batch-open --ext` need the extension |
-| `adr` | Yes — `dg-skills adr`; `ask` mode needs a repo that ran `dg-skills adr init` |
+| `adr` | Yes — `dg adr`; `ask` mode needs a repo that ran `dg adr init` |
 | `eli5` | Yes for `-v`/`-p` (stash) or `--erd`; a plain `/dg:eli5 <thing>` needs no CLI |
 | `ticket` | Yes — needs a stored `ticket/jira` credential |
 | `test-live` | Yes — needs Git and an authenticated `gh` (GitHub only) |
 | `nope` | No CLI needed — it calls no CLI and no other skill |
-| `google-sms-cleanup` | Yes — `dg-skills ssms`; live Google needs a CDP browser, live Signal needs `signal-cli` |
-| `inbox-cleanup` | Yes for explicit `--data-path` fixtures; live profiles need `dg-daemon` |
+| `google-sms-cleanup` | Yes — `dg ssms`; live Google needs a CDP browser, live Signal needs `signal-cli` |
+| `inbox-cleanup` | Yes for explicit `--data-path` fixtures; live profiles need the dg daemon |
 | `proto`, `demo` | No — local by default; `--ext` needs the extension |
-| `chat`, `overwatch` | No — needs `dg-agent` and `dg-daemon`, which serve the local page on loopback; `--ext` also needs the extension |
+| `chat`, `overwatch` | No — needs the dg daemon, which serves the local page on loopback; `--ext` also needs the extension |
 
 On WSL, the default `demo` uses the Windows browser. The CLI controls it through a
 remote-debugging port on 127.0.0.1, and the port stays open while the run is live. To
@@ -795,15 +868,15 @@ skills still need to be available.
 Every skill runs locally by default; only `pw launch` always needs the
 extension. A skill run with `--ext` stops with a message that names the fix
 when the extension is missing. To add the extension later, run
-`dg-skills install` (or the full bootstrap command above). That removes the
+`dg install` (or the full bootstrap command above). That removes the
 CLI-only marker in the dg config folder.
 
 ## Skills-only install
 
-Copy the skill instruction files plus the `dg-skills` CLI they call. This path writes
+Copy the skill instruction files plus the `dg` program they call. This path writes
 `plugins/dg/skills` (each `SKILL.md` plus the reference files next to it,
 including `google-sms-cleanup`) into a directory you choose. Bootstrap copies
-the files before any download. It then installs the runtime and the bundle from
+the files before any download. It then installs the `dg` program from
 the latest `vX.Y.Z` release, checked against that release's `SHA256SUMS`, and
 stops. It does not download the extension, and it does not run the text inside
 a skill.
@@ -820,7 +893,7 @@ Or, with Bun:
 bun pkg/skills-cli/src/index.ts install --skills-only
 ```
 
-An installed `dg-skills` accepts the same flag. Pass `--repo <checkout>`
+An installed `dg` accepts the same flag. Pass `--repo <checkout>`
 when it is not running inside this repository.
 
 <!-- markdownlint-disable MD013 -->
@@ -847,7 +920,7 @@ downloads nothing. The skills root `README.md` is not installed.
 ## Chat-only install
 
 Download only the chat-safe chat skills, ready to upload to Claude chat. This
-installs no runtime, no bundle, no launchers and no extension, and runs nothing
+installs no program, no launcher and no extension, and runs nothing
 it downloads. See [chat install](chat-install.md) for what the skills do and how to
 upload them.
 
@@ -872,7 +945,7 @@ the script runs as a script block, as in the commands above.
 | --- | --- | --- |
 | `--cli-only` | `-CliOnly` | Skip the browser extension |
 | `--agent-only` | `-AgentOnly` | Install for a non-Claude agent that only needs phone |
-| `--skills-only` | `-SkillsOnly` | Copy the skill files, then the runtime and bundle |
+| `--skills-only` | `-SkillsOnly` | Copy the skill files, then the `dg` program |
 | `--no-cli` | `-NoCli` | With `--skills-only`: copy the files only, download nothing |
 | `--chat-only` | `-ChatOnly` | Download only the chat skills for Claude chat |
 | `--dest <dir>` | `-Dest <dir>` | Where `--skills-only` or `--chat-only` writes |
@@ -922,12 +995,12 @@ extension’s URL markers and browser-specific behavior.
 
 ## Browser download for pw
 
-`dg-skills pw` uses a system Chrome or Edge first. With neither, it exits 3 and
-names `dg-skills pw install-browser`. Run that command only when you agree to a
+`dg pw` uses a system Chrome or Edge first. With neither, it exits 3 and
+names `dg pw install-browser`. Run that command only when you agree to a
 download of about 150 MB. It stores Chromium under `browsers/` in the dg data
 folder and records it in `chromium.json`.
 
-`dg-skills doctor pw` reports the result on one line, such as
+`dg doctor pw` reports the result on one line, such as
 `browser: chrome (system)`. To remove the download, run
-`dg-skills pw install-browser --remove`. It deletes the `browsers/` directory
+`dg pw install-browser --remove`. It deletes the `browsers/` directory
 and nothing else.

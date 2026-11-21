@@ -35,7 +35,7 @@ The daemon sets these keys for each service. They win over `envFile` and
 The environment holds no token. Read the file.
 
 The daemon gives its own `DG_HOME` to each service when it has one, so a
-`dg-skills` or `dg-agent` call of the service uses the same dg home. The state
+`dg` call of the service uses the same dg home. The state
 folder is yours to keep files in: the daemon does not read it.
 
 A later transport arrives as a new environment key. It does not change v1.

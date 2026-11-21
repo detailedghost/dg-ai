@@ -9,14 +9,14 @@ Codex:      $dg:verify
 
 The agent writes a manifest of finished items.
 Each item has a before URL and an after URL on localhost, the roles to sign in as seed users, and the name of the agent who owns the change.
-A role can also name a saved sign-in with `state`. Save one with `dg-skills pw state save <name>`.
+A role can also name a saved sign-in with `state`. Save one with `dg pw state save <name>`.
 Verify loads only its loopback cookies and storage in the browser, so a role with `state` needs the `playwright` engine; the `http` engine refuses it. The cookies never reach the board, the session files, or the logs.
 A page that lands on a different path, such as a sign-in page, stops the capture and says how to save a state.
 When a prototype is already running, its URL is a third column.
 
-`dg-skills verify capture <name> --manifest=<file>` captures desktop (1440), tablet (768), and mobile (390), light and dark.
+`dg verify capture <name> --manifest=<file>` captures desktop (1440), tablet (768), and mobile (390), light and dark.
 It includes scrolled pages and open menus.
-`dg-skills verify serve <name>` opens one local board.
+`dg verify serve <name>` opens one local board.
 The board steps through one round of one item at a time.
 Dante approves, approves with a note, sends back with a note, or skips. On a round with versions, Dante can also ask for more versions.
 The browser tab and its icon show how many rounds wait. Needs attention also turns on desktop alerts.
@@ -24,9 +24,9 @@ A round can hold more than one version. Dante flips between them and approves th
 The board checks for changes every 5 seconds and shows light or dark screenshots to match its theme.
 
 ```bash
-dg-skills verify status <name>
-dg-skills verify wait <name>
-dg-skills verify rerun <name>
+dg verify status <name>
+dg verify wait <name>
+dg verify rerun <name>
 ```
 
 `status` prints one line per item.

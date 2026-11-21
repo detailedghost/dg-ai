@@ -15,7 +15,8 @@ A job is a command that the daemon runs for you. A job has one of three modes:
 - `schedule`: the daemon runs it at the times of a `cron` expression.
 - `every`: the daemon runs it at a fixed interval, such as `15m`.
 
-`dg job` runs `dg-daemon job`, and the longer form still works. Each `dg job`
+`job` is a flat command: `dg job`, `dg autostart` and `dg service` need no group
+name. Each `dg job`
 verb prints the dg home and the daemon on stderr, so you can see which home and
 which daemon it uses.
 
@@ -81,13 +82,13 @@ The verbs that write take a lock on the config file, so two runs at once do not
 lose an entry. You can also edit the file by hand. Only a command declared
 there can start, and `argv` runs with no shell.
 
-Phone (`dg-agent phone`) does not deliver through a job: `phone open` keeps its
+Phone (`dg phone`) does not deliver through a job: `phone open` keeps its
 own always-on listener running through the service manager of the OS. See
 [Phone](phone.md).
 
 One daemon runs for each user, whatever `DG_HOME` says. A daemon that starts
-for another `DG_HOME` stops the old one first and prints `dg-daemon: stopped
-the daemon of <home> (pid N, port P) so only one runs`. The same home keeps
+for another `DG_HOME` stops the old one first and prints a line that starts
+with `stopped the daemon of <home> (pid N, port P)` and ends with `so only one runs`. The same home keeps
 the "already running" answer. A daemon that a login unit manages stays running,
 and the line says so, because its manager would restart it.
 
@@ -122,7 +123,7 @@ holds the token. The names keep the word `SERVICE`, because
 - `feed`, `notify` and `timeoutMs` are valid only for a scheduled job.
 
 A daemon that ran before the upgrade reports a new key as `unknown key(s)`
-until `dg-daemon restart` runs.
+until `dg daemon restart` runs.
 
 ### Where dg keeps the files
 
@@ -136,6 +137,15 @@ the noun.
 | Config | `<state>/daemon/config.json` | `~/.local/state/dg/daemon/config.json` |
 | Log | `<log>/service-<name>.log` | `~/.local/state/dg/log/service-<name>.log` |
 | Pid file | `<state>/daemon/services/<name>.pid` | `~/.local/state/dg/daemon/services/<name>.pid` |
+
+### Jobs from 6.3
+
+A job that a 6.3 install stored can name `lib/current/dg.js` or an old program
+name in `argv`. The daemon rewrites that argv to `dg` once, at its start. It
+keeps the old file as `<state>/daemon/config.json.pre-compiled`, with mode 0600.
+The rewrite is safe to run again. Run `dg daemon restart` after an upgrade, so
+a running daemon picks up the new program. See
+[Upgrade from 6.3](install.md#upgrade-from-63).
 
 ## Job verbs
 
@@ -439,17 +449,17 @@ Two limits follow. The grant proves the prefix and not the job, so a holder of t
 
 | Old command | New command |
 | --- | --- |
-| `dg-daemon service add <label> --cwd <path> -- <command>` | `dg job add --name <name> --cwd <path> --continuous -- <command>` |
-| `dg-daemon service rm <label>` | `dg job remove <name>` |
-| `dg-daemon service status` | `dg job status` |
-| `dg-daemon service status --json` | `dg job status --json` |
-| `dg-daemon service start <label>` | `dg job start <name>` |
-| `dg-daemon service stop <label>` | `dg job stop <name>` |
-| `dg-daemon service add --autostart` | the `enabled` key, set by `dg job enable <name>` |
-| `dg-daemon service add --env-file <path>` | `dg job add --env-file <path>` |
-| `dg-daemon service add --pass-env <NAME>` | `dg job add --env <NAME>` |
-| `dg-daemon service add --stop-timeout <duration>` | `dg job add --stop-timeout <duration>` |
-| `dg-daemon service add --grant <prefix>` | the `grant` key; the old option stays on `dg-daemon service add` |
+| `dg service add <label> --cwd <path> -- <command>` | `dg job add --name <name> --cwd <path> --continuous -- <command>` |
+| `dg service rm <label>` | `dg job remove <name>` |
+| `dg service status` | `dg job status` |
+| `dg service status --json` | `dg job status --json` |
+| `dg service start <label>` | `dg job start <name>` |
+| `dg service stop <label>` | `dg job stop <name>` |
+| `dg service add --autostart` | the `enabled` key, set by `dg job enable <name>` |
+| `dg service add --env-file <path>` | `dg job add --env-file <path>` |
+| `dg service add --pass-env <NAME>` | `dg job add --env <NAME>` |
+| `dg service add --stop-timeout <duration>` | `dg job add --stop-timeout <duration>` |
+| `dg service add --grant <prefix>` | the `grant` key; the old option stays on `dg service add` |
 | `dg job add --label <name>` | `dg job add --name <name>` |
 | `dg job add --cron "<cron>"` | `dg job add --schedule "<cron>"` |
 | `dg job add --pass-env <NAME>` | `dg job add --env <NAME>` |
@@ -458,7 +468,7 @@ Two limits follow. The grant proves the prefix and not the job, so a holder of t
 
 The old forms still work, and the alias forms of `dg job` print a note on
 stderr that names the new form. They end in the next major release. The
-`dg-daemon service` group keeps working until then.
+`dg service` group keeps working until then.
 
 ## Run rules
 
@@ -489,15 +499,15 @@ A scheduled run has no pid file guard, so a run that stays alive after a
 SIGKILL of the daemon can overlap the next run.
 
 Without a login unit, nothing starts the daemon at login. See
-[Start at login](#start-at-login), or run `dg-daemon start`, or `dg-agent start`
-in an agent session. `dg-daemon start` is idempotent: it starts the daemon in
-the background, or reports the one that runs. `dg-daemon status` reports the
+[Start at login](#start-at-login), or run `dg daemon start`, or `dg agent start`
+in an agent session. `dg daemon start` is idempotent: it starts the daemon in
+the background, or reports the one that runs. `dg daemon status` reports the
 daemon without starting it.
 The daemon exits at its idle timeout only with no active session, no open
 connection and no enabled job.
 
-`dg-daemon stop` sends SIGTERM and waits for the daemon. A regular stop waits
-for the `stopTimeoutMs` of each job, 240 s at most. `dg-daemon stop --force`
+`dg daemon stop` sends SIGTERM and waits for the daemon. A regular stop waits
+for the `stopTimeoutMs` of each job, 240 s at most. `dg daemon stop --force`
 kills the daemon and the process tree of each job that runs immediately. It
 does not kill a dispatch command that runs at that time. On Windows, each stop
 of the daemon is a forced stop.
@@ -511,19 +521,19 @@ gives no answer within 3 s, `--force` still kills the daemon and reports the
 list failure.
 
 If the pid in the pid file still runs but `/healthz` does not answer (a hung or
-stopped daemon), `dg-daemon stop` keeps the pid file and exits 1 with
-`does not answer`. `dg-daemon stop --force` then kills that pid only if it is the
-`dg-daemon serve` process that wrote the pid file: its command line names
-`dg-daemon serve` and it started no later than the pid file. This check works
+stopped daemon), `dg daemon stop` keeps the pid file and exits 1 with
+`does not answer`. `dg daemon stop --force` then kills that pid only if it is the
+`dg daemon serve` process that wrote the pid file: its command line names
+`dg daemon serve` and it started no later than the pid file. This check works
 on Linux and macOS; on Windows, and for a process it cannot identify, it kills
 nothing. It cannot list the jobs, so it exits 1 and says that a job process can
 still run.
 
-`dg-daemon restart` stops the daemon, which ends each session, then starts it
+`dg daemon restart` stops the daemon, which ends each session, then starts it
 again. The restart starts only the enabled jobs (the `autostart` services of
 the release before), and it prints `started on` or `already running on` with
 the port. The new daemon has the environment of the caller, with no login unit;
-that environment is the source of the `passEnv` values. Run `dg-daemon restart`
+that environment is the source of the `passEnv` values. Run `dg daemon restart`
 after an upgrade so that the running daemon reads the new keys. `restart` takes
 `--force` too.
 
@@ -555,7 +565,7 @@ path with `wslpath`, and registers the task with `schtasks.exe`. The task runs
 `wsl.exe -d <distro> --exec sleep infinity` at login. The task keeps the
 distribution running, because a systemd service alone does not, so the unit
 stays up. `dg autostart remove` deletes the task too. The `dg-phone`
-unit that `dg-agent phone open` installs is a different unit. The two units have
+unit that `dg phone open` installs is a different unit. The two units have
 different names.
 
 `dg autostart install` fails on win32 with `DG_HOME` set, because a scheduled
@@ -569,11 +579,11 @@ A login unit has a minimal environment, and these rules follow from it:
   its `envFile`.
 - A job under a login unit gets `envFile` values and grants, not `passEnv`
   values, because a login unit has a minimal environment.
-- With a login unit, `dg-daemon start` and `dg-daemon restart` start the daemon
+- With a login unit, `dg daemon start` and `dg daemon restart` start the daemon
   through the service manager. This daemon has the environment of the login
   unit, not the environment of the shell that ran the command.
-- With a login unit, `dg-daemon stop` and `dg-daemon stop --force` leave the
-  daemon stopped until the next login or the next `dg-daemon start`.
+- With a login unit, `dg daemon stop` and `dg daemon stop --force` leave the
+  daemon stopped until the next login or the next `dg daemon start`.
 - systemd stops a unit after 90 s by default, so a logout or a shutdown can end
   a job before its stop limit. This is accepted.
 - The systemd unit does not start the daemon again after exit 3 or exit 78.
