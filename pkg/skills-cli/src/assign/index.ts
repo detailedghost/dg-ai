@@ -17,9 +17,9 @@ import { RUNTIMES, type Runtime } from "../tiers";
 import { resolveSkillAsset } from "../utils/skill-assets";
 import { type ResolvedStage, resolveStages } from "./stages";
 
-const PROGRAM = "dg-skills assign";
+const PROGRAM = "dg assign";
 const USAGE =
-	"usage: dg-skills assign resolve <plan.md> [--layer N | --slices <id,id>] [--runtime claude|codex|grok] [--scratch <file>] [--wave <scratch-dir>] [--cwd <dir>]\n";
+	"usage: dg assign resolve <plan.md> [--layer N | --slices <id,id>] [--runtime claude|codex|grok] [--scratch <file>] [--wave <scratch-dir>] [--cwd <dir>]\n";
 const REMINDER =
 	"Workflow return contract: you run unattended under a forced schema. Map intent into the return object instead of acting on it: [SPEC]/[TEST] ambiguity that needs a decision goes in deferrals[] as SPEC or TEST; a change the orchestrator should see but need not decide (for example an assertion you changed) goes in deferrals[] as CONFIRM, which never blocks; do not edit the spec or report unticked checkboxes, the orchestrator ticks them; [NOTE-DURABLE]/[NOTE-SCRATCH] go in notes.durable[]/notes.scratch[], every file you touch goes in the changed-file list. Never call AskUserQuestion: it cannot pause a workflow, and this rule overrides any template that says to ask or pause. Put every unresolved question in deferrals[] and stop that part of the work.";
 const TEMPLATE_FILES = {

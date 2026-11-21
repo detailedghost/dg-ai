@@ -1,19 +1,19 @@
 # Running Custom Playwright Code
 
-Use `dg-skills pw-code` to execute arbitrary Playwright code for advanced scenarios not covered by CLI commands.
+Use `dg pw-code` to execute arbitrary Playwright code for advanced scenarios not covered by CLI commands.
 
 ## Approval
 
-`dg-skills pw-code` is its own command, not a `dg-skills pw` subcommand. `dg-skills pw run-code` prints `run-code moved to pw-code (it needs your approval each time).` and exits 2.
+`dg pw-code` is its own command, not a `dg pw` subcommand. `dg pw run-code` prints `run-code moved to pw-code (it needs your approval each time).` and exits 2.
 
-Code passed to `dg-skills pw-code` runs in the daemon with full access to the page, the browser context, and the file system. The `Bash(dg-skills pw *)` allow rule does not match `dg-skills pw-code`, and the skill does not list it in `allowed-tools`, so Claude Code asks you before every run. This keeps one approved `dg-skills pw` rule from also approving arbitrary code. The daemon accepts code only from the `dg-skills pw-code` client; a `dg-skills pw` command cannot reach it.
+Code passed to `dg pw-code` runs in the daemon with full access to the page, the browser context, and the file system. The `Bash(dg pw *)` allow rule does not match `dg pw-code`, and the skill does not list it in `allowed-tools`, so Claude Code asks you before every run. This keeps one approved `dg pw` rule from also approving arbitrary code. The daemon accepts code only from the `dg pw-code` client; a `dg pw` command cannot reach it.
 
-Do not add `dg-skills pw-code` to an allow rule.
+Do not add `dg pw-code` to an allow rule.
 
 ## Syntax
 
 ```bash
-dg-skills pw-code [-s=<name>] [--raw] "async page => {
+dg pw-code [-s=<name>] [--raw] "async page => {
   // Your Playwright code here
   // Access page.context() for browser context operations
 }"
@@ -22,17 +22,17 @@ dg-skills pw-code [-s=<name>] [--raw] "async page => {
 ## Geolocation
 
 ```bash
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.context().grantPermissions(['geolocation']);
   await page.context().setGeolocation({ latitude: 37.7749, longitude: -122.4194 });
 }"
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.context().grantPermissions(['geolocation']);
   await page.context().setGeolocation({ latitude: 51.5074, longitude: -0.1278 });
 }"
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.context().clearPermissions();
 }"
 ```
@@ -40,7 +40,7 @@ dg-skills pw-code "async page => {
 ## Permissions
 
 ```bash
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.context().grantPermissions([
     'geolocation',
     'notifications',
@@ -49,7 +49,7 @@ dg-skills pw-code "async page => {
   ]);
 }"
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.context().grantPermissions(['clipboard-read'], {
     origin: 'https://example.com'
   });
@@ -59,19 +59,19 @@ dg-skills pw-code "async page => {
 ## Media Emulation
 
 ```bash
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.emulateMedia({ colorScheme: 'dark' });
 }"
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.emulateMedia({ colorScheme: 'light' });
 }"
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
 }"
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.emulateMedia({ media: 'print' });
 }"
 ```
@@ -79,19 +79,19 @@ dg-skills pw-code "async page => {
 ## Wait Strategies
 
 ```bash
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.waitForLoadState('networkidle');
 }"
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.locator('.loading').waitFor({ state: 'hidden' });
 }"
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.waitForFunction(() => window.appReady === true);
 }"
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.locator('.result').waitFor({ timeout: 10000 });
 }"
 ```
@@ -99,12 +99,12 @@ dg-skills pw-code "async page => {
 ## Frames and Iframes
 
 ```bash
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   const frame = page.locator('iframe#my-iframe').contentFrame();
   await frame.locator('button').click();
 }"
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   const frames = page.frames();
   return frames.map(f => f.url());
 }"
@@ -113,7 +113,7 @@ dg-skills pw-code "async page => {
 ## File Downloads
 
 ```bash
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('link', { name: 'Download' }).click();
   const download = await downloadPromise;
@@ -125,12 +125,12 @@ dg-skills pw-code "async page => {
 ## Clipboard
 
 ```bash
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.context().grantPermissions(['clipboard-read']);
   return await page.evaluate(() => navigator.clipboard.readText());
 }"
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.evaluate(text => navigator.clipboard.writeText(text), 'Hello clipboard!');
 }"
 ```
@@ -138,19 +138,19 @@ dg-skills pw-code "async page => {
 ## Page Information
 
 ```bash
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   return await page.title();
 }"
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   return page.url();
 }"
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   return await page.content();
 }"
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   return page.viewportSize();
 }"
 ```
@@ -158,7 +158,7 @@ dg-skills pw-code "async page => {
 ## JavaScript Execution
 
 ```bash
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   return await page.evaluate(() => {
     return {
       userAgent: navigator.userAgent,
@@ -168,7 +168,7 @@ dg-skills pw-code "async page => {
   });
 }"
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   const multiplier = 5;
   return await page.evaluate(m => document.querySelectorAll('li').length * m, multiplier);
 }"
@@ -177,7 +177,7 @@ dg-skills pw-code "async page => {
 ## Error Handling
 
 ```bash
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   try {
     await page.getByRole('button', { name: 'Submit' }).click({ timeout: 1000 });
     return 'clicked';
@@ -191,7 +191,7 @@ dg-skills pw-code "async page => {
 ## Complex Workflows
 
 ```bash
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   await page.goto('https://example.com/login');
   await page.getByRole('textbox', { name: 'Email' }).fill('user@example.com');
   await page.getByRole('textbox', { name: 'Password' }).fill('secret');
@@ -199,9 +199,9 @@ dg-skills pw-code "async page => {
   await page.waitForURL('**/dashboard');
   return 'Login successful';
 }"
-dg-skills pw state save app-login
+dg pw state save app-login
 
-dg-skills pw-code "async page => {
+dg pw-code "async page => {
   const results = [];
   for (let i = 1; i <= 3; i++) {
     await page.goto(\`https://example.com/page/\${i}\`);

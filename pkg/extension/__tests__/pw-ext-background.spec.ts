@@ -3656,7 +3656,7 @@ describe("pw --ext storage, fetch and credential save", () => {
 			approval: "allow",
 			tabs: [MAIL_TAB],
 			cookies: { S: { value: MARKER } },
-			store: async () => Promise.reject(new Error("dg-daemon did not confirm the save in time")),
+			store: async () => Promise.reject(new Error("dg daemon did not confirm the save in time")),
 			mainResult: hook((action) => (action.kind === "read" ? { entries: [echoed] } : { entries: [] })),
 		});
 		expect((await h.run({ verb: "credential", name: "n", source: "cookie", key: "S" })).ok).toBe(false);

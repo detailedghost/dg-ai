@@ -155,7 +155,7 @@ function credentialsSetLine(plan: SetupPlan): string {
 	const pairs = Object.entries(plan.meta)
 		.map(([key, value]) => `--meta ${shellValue(`${key}=${String(value)}`)}`)
 		.join(" ");
-	return `dg-skills credentials --session ${shellValue(plan.session)} set db/${plan.name} ${pairs}`;
+	return `dg credentials --session ${shellValue(plan.session)} set db/${plan.name} ${pairs}`;
 }
 
 export async function runSetup(args: string[], deps: SetupDeps): Promise<number> {
@@ -167,7 +167,7 @@ export async function runSetup(args: string[], deps: SetupDeps): Promise<number>
 
 	if (request.secret === "command") {
 		deps.stdout(credentialsSetLine(plan));
-		deps.stdout(`Next: dg-skills db test ${name}`);
+		deps.stdout(`Next: dg db test ${name}`);
 		return 0;
 	}
 	if (request.secret === "form") {
@@ -177,7 +177,7 @@ export async function runSetup(args: string[], deps: SetupDeps): Promise<number>
 		} catch (error) {
 			if (!(error instanceof SecretFormExpiredError)) throw error;
 			deps.stdout(error.message);
-			deps.stdout(`Next: dg-skills db setup ${args.map(shellValue).join(" ")}`);
+			deps.stdout(`Next: dg db setup ${args.map(shellValue).join(" ")}`);
 			return 1;
 		}
 	} else {
@@ -198,9 +198,9 @@ export async function runSetup(args: string[], deps: SetupDeps): Promise<number>
 	);
 	const code = await deps.runTest([name, "--session", session]);
 	if (code) {
-		deps.stdout(`Next: fix the error above, then run dg-skills db test ${name}`);
+		deps.stdout(`Next: fix the error above, then run dg db test ${name}`);
 		return 1;
 	}
-	deps.stdout(`Next: dg-skills db tables ${name}`);
+	deps.stdout(`Next: dg db tables ${name}`);
 	return 0;
 }

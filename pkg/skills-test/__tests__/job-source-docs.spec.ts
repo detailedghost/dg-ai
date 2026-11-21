@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { ROUTES } from "../../dg/src/main";
+import { resolveRoute } from "../../dg/src/flat";
 import { parseJobDeclaration } from "../../dg-daemon/src/jobs/declaration";
 import { parseSetupAnswers } from "../../dg-daemon/src/jobs/setup-answers";
 import { RESERVED_CREDENTIAL_PREFIXES } from "../../common/src/credentials-format";
-import { dgCommandForms, runDgHelp } from "./docs-help-kit";
+import { dgCommandForms, OWN_WORDS, runDgHelp } from "./docs-help-kit";
 import { ADR_SECTIONS, count, REPO_ROOT, readRepoFile } from "./test-support";
 
 const JOBS = "docs/jobs-and-services.md";
@@ -18,7 +18,6 @@ const RECORD_FILE = "0053-job-sources-and-credentials.md";
 const RECORD = `docs/adr/${RECORD_FILE}`;
 const ADR_0043 = "docs/adr/0043-outside-services.md";
 const CHANGED = [JOBS, SERVICE_API, CHANNEL_REVIEW, SECURITY, RECORD];
-const ROUTE_NAMES = Object.keys(ROUTES);
 
 const SOURCE_FILES = [
 	"dg-daemon/src/commands/jobs.ts",
@@ -251,7 +250,7 @@ describe("each documented command passes its --help form", () => {
 		expect(forms.length).toBeGreaterThan(8);
 		const byCommand = new Map<string, Set<string>>();
 		for (const form of forms) {
-			expect(ROUTE_NAMES).toContain(form[0]);
+			expect(resolveRoute(form[0] ?? "")).toBeDefined();
 			const key = helpWords(form).join(" ");
 			const flags = form.filter((word) => /^--[a-z][a-z-]*$/.test(word));
 			byCommand.set(key, new Set([...(byCommand.get(key) ?? []), ...flags]));
@@ -282,11 +281,11 @@ describe("each documented command passes its --help form", () => {
 		}
 	}, 120_000);
 
-	test("each dg name in a code span or fence of the changed documents is a ROUTES name", () => {
+	test("each dg name in a code span or fence of the changed documents resolves through resolveRoute", () => {
 		const bad = CHANGED.flatMap((file) =>
 			dgCommandForms(read(file))
 				.map((words) => words[0])
-				.filter((name) => !ROUTE_NAMES.includes(name) && !["completion", "help", "--help", "--version"].includes(name))
+				.filter((name) => resolveRoute(name) === undefined && !OWN_WORDS.includes(name))
 				.map((name) => `${file}: dg ${name}`),
 		);
 		expect(bad).toEqual([]);
@@ -434,7 +433,7 @@ describe("the move to a job in docs/channel-review.md", () => {
 
 	test("gives the command, the path and the refusal rule from export.ts", () => {
 		expect(doc).toContain("## Move to a job");
-		expect(doc).toContain("`dg-skills channel-review export --env <env> --label <label>`");
+		expect(doc).toContain("`dg channel-review export --env <env> --label <label>`");
 		expect(doc).toContain("`<state>/jobs/<label>/import.json`");
 		expect(doc).toContain("`channel-review export:`");
 		expect(doc).toContain("when the old daemon of that env runs");
@@ -561,16 +560,16 @@ describe("jobs SKILL.md", () => {
 	const skill = read(SKILL);
 	const section = heading(skill, "Job verbs");
 
-	test("lists the new commands in the dg-daemon form", () => {
+	test("lists the new commands in the flat dg form", () => {
 		for (const line of [
-			"dg-daemon job add <url>",
-			"dg-daemon job add <path>",
-			"dg-daemon job setup <name>",
-			"dg-daemon job setup <name> --refresh",
-			"dg-daemon job enable <name> --setup <file|->",
+			"dg job add <url>",
+			"dg job add <path>",
+			"dg job setup <name>",
+			"dg job setup <name> --refresh",
+			"dg job enable <name> --setup <file|->",
 		])
 			expect([line, section.includes(line)]).toEqual([line, true]);
-		expect(section).not.toMatch(/\bdg job\b/);
+		expect(section).not.toMatch(/\bdg-daemon\b/);
 	});
 
 	test("does not answer the consent question and adds no --yes on its own", () => {

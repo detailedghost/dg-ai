@@ -8,7 +8,7 @@ import { join } from "node:path";
 import {
 	cliBinDir,
 	expectedSha256,
-	cliDest,
+	compiledAssetName,
 	installRoot,
 	pickExtAsset,
 	pickRelease,
@@ -119,21 +119,13 @@ describe("install paths and checksum parsing", () => {
 		expect(cliBinDir({ DG_HOME: "" })).toBe(resolveDgPaths({ env: {} }).binDir);
 	});
 
-	test("installRoot is the data dir that holds runtime and lib", () => {
+	test("installRoot is the data dir that holds bin/<version>/dg", () => {
 		expect(installRoot({ DG_HOME: "/opt/dg-home" })).toBe("/opt/dg-home/data");
 	});
 
-	test("cliDest lands in the DG_HOME bin directory, one shim per program", () => {
-		const saved = process.env.DG_HOME;
-		const home = join(tmpdir(), "dg-install-logic-home");
-		process.env.DG_HOME = home;
-		try {
-			expect(cliDest("dg-agent")).toStartWith(join(home, "bin", "dg-agent"));
-			expect(cliDest("dg-agent")).not.toBe(cliDest("dg-daemon"));
-		} finally {
-			if (saved === undefined) delete process.env.DG_HOME;
-			else process.env.DG_HOME = saved;
-		}
+	test("compiledAssetName names the release asset of each platform key", () => {
+		expect(compiledAssetName("linux-x64")).toBe("dg-linux-x64");
+		expect(compiledAssetName("windows-x64-baseline")).toBe("dg-windows-x64-baseline.exe");
 	});
 
 	test("expectedSha256 reads GNU text and binary-mode lines and lowercases the hash", () => {

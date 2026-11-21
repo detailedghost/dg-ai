@@ -4,7 +4,7 @@ The per-slice TDD pipeline runs as a background **Workflow** (`references/templa
 
 **Caller inputs.** This file is caller-agnostic; the invoking skill supplies:
 
-- `SPEC_PATH` + `SCRATCH_PATH` — `/dg:sdlc` sets them in setup.md (`$(dg-skills stash -s sdlc)/`); /dg:spec and /dg:pickup pass their durable spec + scratchpad, with their own deltas (cross-repo setup, QUICK_MODE) layered on top.
+- `SPEC_PATH` + `SCRATCH_PATH` — `/dg:sdlc` sets them in setup.md (`$(dg stash -s sdlc)/`); /dg:spec and /dg:pickup pass their durable spec + scratchpad, with their own deltas (cross-repo setup, QUICK_MODE) layered on top.
 - Commit gate — `permissions.slice_commits` from the spec frontmatter.
 - `cwd` — the working tree every agent prompt carries.
 
@@ -22,7 +22,7 @@ From `slices[]` + `depends_on`, compute the pending set (slices with no completi
 1. Resolve the pending slices and write the runner in one call. Workflow refuses a `scriptPath` outside the working directory and the directories added to the session, and the installed plugin cache is outside both, so the helper writes into the session scratchpad (`<scratchpad>`):
 
 ```
-dg-skills assign resolve "$SPEC_PATH" --scratch "$SCRATCH_PATH" --wave <scratchpad> --cwd "$cwd"
+dg assign resolve "$SPEC_PATH" --scratch "$SCRATCH_PATH" --wave <scratchpad> --cwd "$cwd"
 ```
 
    The helper picks every pending slice and each slice's stages from `plugins/dg/skills/assign/references/model-tiers.json`: the primary agent (honoring `agents.effort` and `agents.model` as the per-slice tier override), each `agents.qa[]` reviewer, and the shared `dg:qa-writer`, `dg:wave` and `dg:security` roles. It reads the profile from `execution.profile`; `WAVE_ARGS.profile` is informational and only feeds the start-of-run log line. It inlines the five templates (`qa-writer-red.md`, `slice-engineering.md`, `qa-writer-green.md`, `wave.md`, `correction.md`), plus `slice-engineering-proxy.md` when a slice sets `agents.proxy`, each behind the return-contract reminder below. It bakes the result into the runner as `const WAVE_ARGS` and prints the file path. Exit 1 means a slice has no `agents.primary` (run `/dg:assign`), an explicit layer selection is empty, or `agents.model` asks for `fable` on a primary that is not `dg:arch`, `dg:design` or `dg:foreman`. Add `--runtime codex|grok` to resolve for another runtime. Without `--wave` it prints the `WAVE_ARGS` JSON instead. When the default selection has nothing pending, the helper prints `no pending slices`, exits 0 and writes no runner; make no Workflow call then.
@@ -41,7 +41,7 @@ It returns `{ slices: [{ sliceId, status, changedFiles, deferrals, residualFindi
 
 ## 4.3 Per-slice orchestrator post-processing
 
-Walk the returned slices in the `layer N:` order that `dg-skills spec lint-waves` prints, because the runner returns them in input order, so commits never race. Set `current_slice` per slice here:
+Walk the returned slices in the `layer N:` order that `dg spec lint-waves` prints, because the runner returns them in input order, so commits never race. Set `current_slice` per slice here:
 
 1. **Deferrals first.** Any `SPEC`, `TEST` or `CRITICAL` deferral (or `status: blocked`) → pause and resolve with the user (`AskUserQuestion`): `SPEC` → clarify + update spec; `TEST` → reconcile against the spec's Contracts block; `CONFIRM` never blocks and needs no user answer (see below); `CRITICAL`/HIGH-security → user decision. Do not commit a `blocked`, `blocked-upstream` or `unverified` slice, or a slice in `droppedSlices`. Re-run those slices after resolving (see **Re-run** below).
    - **Resume after settling.** Write each answer as a line under `## Agent Notes` (and, for one slice only, in that slice's `notes` string in `WAVE_ARGS`, which the runner puts in that slice's prompts only). Add the deferral text prefixes you settled to `WAVE_ARGS.resolved`; the runner then drops matching `SPEC`/`TEST` deferrals from the result, so they neither block nor reappear. If red already finished, add `WAVE_ARGS.redDone` as `{ "<sliceId>": ["<test file>", ...] }`; that slice skips red and yellow receives those files.

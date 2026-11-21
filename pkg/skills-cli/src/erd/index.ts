@@ -217,9 +217,9 @@ const defaultDeps: ErdDeps = {
 
 const DIAGRAM_TYPES = new Set<DiagramType>(["er", "flow", "sequence", "state", "class"]);
 
-const USAGE = `Usage: dg-skills erd resolve <concept-or-path>
-       dg-skills erd generate [scope] [--depth N] [--out <path>] [--type er|flow] [--html]
-       dg-skills erd render --type <er|flow|sequence|state|class> --data <file|-> [--out <path>] [--html]
+const USAGE = `Usage: dg erd resolve <concept-or-path>
+       dg erd generate [scope] [--depth N] [--out <path>] [--type er|flow] [--html]
+       dg erd render --type <er|flow|sequence|state|class> --data <file|-> [--out <path>] [--html]
 `;
 
 interface ParsedOptions {

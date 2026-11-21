@@ -45,7 +45,7 @@ export async function createCliContext(
 			args.group !== "init"
 		)
 			throw new Error(
-				"Inbox account profile was not found. Configure it with dg-skills inbox profile set before accessing mail.",
+				"Inbox account profile was not found. Configure it with dg inbox profile set before accessing mail.",
 			);
 	}
 	if (providerFlag) config.provider = resolveProvider(config, providerFlag);

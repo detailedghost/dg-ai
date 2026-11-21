@@ -1,7 +1,7 @@
 # SMS providers
 
-`dg-skills ssms` reads and cleans SMS through a provider. The command lives on
-`dg-skills`, the same binary as `dg-skills inbox`. `dg-agent` stays the chat
+`dg ssms` reads and cleans SMS through a provider. The command is a
+`dg skills` command, like `dg inbox`. `dg agent` stays the chat
 client. [ADR 0024](adr/0024-ssms-on-dg-skills.md) records that split.
 
 Command lines, matching `ssms --help`:
@@ -20,19 +20,19 @@ Command lines, matching `ssms --help`:
 - `ssms google cleanup [--dry-run] [--config PATH]`
 
 ```sh
-dg-skills ssms --help
-dg-skills ssms google status
-dg-skills ssms google list
-dg-skills ssms google classify
-dg-skills ssms google cleanup --dry-run
-dg-skills ssms google draft --conversation ID --text "hello"
-dg-skills ssms google send --draft ID
-dg-skills ssms signal link
-dg-skills ssms signal list
-dg-skills ssms signal read CONVERSATION --limit 20
-dg-skills ssms signal receive --limit 20
-dg-skills ssms signal draft --conversation ID --emoji "👍" --target-timestamp 123 --target-author ID
-dg-skills ssms signal send --draft ID
+dg ssms --help
+dg ssms google status
+dg ssms google list
+dg ssms google classify
+dg ssms google cleanup --dry-run
+dg ssms google draft --conversation ID --text "hello"
+dg ssms google send --draft ID
+dg ssms signal link
+dg ssms signal list
+dg ssms signal read CONVERSATION --limit 20
+dg ssms signal receive --limit 20
+dg ssms signal draft --conversation ID --emoji "👍" --target-timestamp 123 --target-author ID
+dg ssms signal send --draft ID
 ```
 
 ## Providers
@@ -69,7 +69,7 @@ on `PATH`.
 
 `<state>` is the dg state root: `~/.local/state/dg` on Linux,
 `~/Library/Application Support/dg/state` on macOS, or `$DG_HOME/state`. Older
-releases kept everything in `~/.dg/ssms`. The first `dg-skills install` after
+releases kept everything in `~/.dg/ssms`. The first `dg install` after
 the per-OS layout moves the state there and the fixed `config.yaml` to the
 config folder named below. Each move copies, checks the copy, and only then
 deletes the old file. It never writes over a file that already exists, and it
@@ -92,10 +92,10 @@ that evades it, for example by allocating its own pty, is out of scope.
 config folder under the account's passwd home: `~/.config/dg/config.toml` on
 Linux and `~/Library/Application Support/dg/config.toml` on macOS. Until that
 file exists, ssms reads `ssms/config.yaml` in the same folder. The first
-`dg-skills` command after the upgrade moves `ssms/config.yaml` into `[ssms]`
+`dg` command after the upgrade moves `ssms/config.yaml` into `[ssms]`
 and keeps `ssms/config.yaml.pre-toml`; after that, ssms does not read the YAML
-file. `dg-skills config set` does not change `ssms.allow_send` or
-`ssms.google.send_enabled`; edit them with `dg-skills config edit`. See
+file. `dg config set` does not change `ssms.allow_send` or
+`ssms.google.send_enabled`; edit them with `dg config edit`. See
 [configuration](config.md).
 `XDG_CONFIG_HOME` does not move it. Linux uses `getent` or `/etc/passwd`. macOS uses `id -P` or `dscl`. If
 that home cannot be resolved, send stays off. `$HOME` and `$DG_HOME` do not

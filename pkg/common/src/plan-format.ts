@@ -219,7 +219,7 @@ export function toPlanMarkdown(script: TourScript): string {
 	const lines = [
 		...fm,
 		"",
-		"<!-- Play/record: dg-skills demo <this-file>  ·  Replay: dg-skills rerun <this-file> -->",
+		"<!-- Play/record: dg demo <this-file>  ·  Replay: dg rerun <this-file> -->",
 		"<!-- Edit the steps below; the CLI derives the runnable script from them. -->",
 		"",
 	];

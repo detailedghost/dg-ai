@@ -38,9 +38,9 @@ function smokeMatrix(): Array<Record<string, string>> {
 	return release.jobs[id ?? ""]?.strategy?.matrix?.include ?? [];
 }
 
-describe("the release ships one platform-independent bundle, not compiled binaries", () => {
-	test("release.yml compiles nothing and names no per-platform dg binary", () => {
-		expect(releaseText).not.toContain("--compile");
+describe("the release builds the compiled dg in the bundle job, and no per-program binaries", () => {
+	test("release.yml compiles the eight dg assets and names no per-program binary", () => {
+		expect(releaseText).toContain("--compiled all");
 		expect(releaseText).not.toMatch(/dg-(skills|daemon|agent)-(linux|macos|windows)/);
 	});
 
@@ -89,14 +89,14 @@ describe("the retired dg-server name reaches no new release", () => {
 	});
 });
 
-describe("the bootstrap scripts install the runtime pin and the bundle, then delegate to install", () => {
+describe("the bootstrap scripts install the compiled dg, then delegate to install", () => {
 	const sh = readRepoFile("pkg", "skills-cli", "bootstrap.sh");
 	const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
 
 	for (const [name, source] of [["bootstrap.sh", sh], ["bootstrap.ps1", ps1]] as const) {
-		test(`${name} reads runtime.json, fetches the bundle tarball and never a compiled binary`, () => {
-			expect(source).toContain("runtime.json");
-			expect(source).toContain("dg-lib-");
+		test(`${name} fetches the compiled dg asset with SHA256SUMS, and never runtime.json or the bundle`, () => {
+			expect(source).not.toContain("runtime.json");
+			expect(source).not.toContain("dg-lib-");
 			expect(source).toContain("SHA256SUMS");
 			expect(source).not.toContain("dg-daemon-linux");
 			expect(source).not.toContain("dg-daemon-windows");
@@ -104,20 +104,19 @@ describe("the bootstrap scripts install the runtime pin and the bundle, then del
 			expect(source).not.toContain("dg-skills-windows");
 		});
 
-		test(`${name} downloads bun from oven-sh and links runtime and lib current`, () => {
-			expect(source).toContain("oven-sh/bun");
-			expect(source).toMatch(/runtime/);
-			expect(source).toMatch(/current/);
+		test(`${name} downloads no bun and links bin/current`, () => {
+			expect(source).not.toContain("oven-sh/bun");
+			expect(source).toMatch(/bin[\\/]current|"current"/);
 		});
 	}
 
-	test("bootstrap.sh links runtime/current and lib/current by name", () => {
-		expect(sh).toContain("runtime/current");
-		expect(sh).toContain("lib/current");
+	test("bootstrap.sh links bin/current by name", () => {
+		expect(sh).toContain("/bin/current");
 	});
 
-	test("bootstrap.sh ends by calling the dg-skills shim with install", () => {
-		expect(sh).toMatch(/\$\{BIN\}\/dg-skills"?\s+install/);
+	test("bootstrap.sh ends by calling dg with install", () => {
+		expect(sh).toMatch(/dg"?\s+install/);
+		expect(sh).not.toMatch(/dg-skills"?\s+install/);
 	});
 
 	test("bootstrap.ps1 skills-only copies the skill files before any release download and runs no dg-skills install", () => {
@@ -147,11 +146,10 @@ describe("the bootstrap scripts install the runtime pin and the bundle, then del
 		expect(start).toBeGreaterThan(-1);
 		expect(block).toContain('Save-DgAsset $rel "SHA256SUMS" $sumsPath');
 		expect(block).toContain("Assert-DgSha256 $zipPath $asset $expected");
-		expect(block).toContain('throw "dg-skills: refusing $entry in $asset"');
+		expect(block).toContain('throw "dg: refusing $entry in $asset"');
 		expect(block.indexOf("Assert-DgSha256")).toBeLessThan(block.indexOf("Expand-Archive"));
 		expect(block).toContain("exit 0");
 		for (const never of ["runtime.json", "dg-lib-", "oven-sh", "dg-skills.cmd"]) expect(block).not.toContain(never);
-		expect(start).toBeLessThan(ps1.indexOf('Save-DgAsset $rel "runtime.json"'));
 	});
 
 	test("bootstrap.ps1 uses Expand-Archive, Get-FileHash and directory junctions", () => {
@@ -170,7 +168,7 @@ describe("the bootstrap scripts install the runtime pin and the bundle, then del
 		expect(rename).toBeGreaterThan(remove);
 	});
 
-	test("bootstrap.ps1 writes .cmd shims for the four programs and appends the bin dir to the user PATH once", () => {
+	test("bootstrap.ps1 names the old .cmd launchers it removes and appends the bin dir to the user PATH once", () => {
 		expect(ps1).toContain(".cmd");
 		for (const program of ["dg", "dg-skills", "dg-agent", "dg-daemon"]) {
 			expect(ps1).toContain(program);

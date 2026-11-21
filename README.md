@@ -19,9 +19,9 @@ Windows (x64 or arm64), in PowerShell:
 irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
-These install a pinned Bun runtime, one bundle with `dg`, `dg-skills`, `dg-agent` and
-`dg-daemon`, and the extension; you need no Bun of your own. The extension, the
-bundle, and both plugin manifests share one release version.
+These install one program, `dg`, and the extension. `dg` is a compiled
+executable, so you need no Bun of your own. The program, the extension, and both
+plugin manifests share one release version.
 Follow the printed **Load unpacked** steps to load the extension.
 See [install and update](docs/install.md) for Claude Code and Codex plugins,
 standalone skills, updates, **[CLI-only installation](docs/install.md#cli-only-install)**,
@@ -48,20 +48,22 @@ See [chat install](docs/chat-install.md).
 To add the optional `unslop` skill that `/dg:polish` calls when present, and other pinned third-party
 plugins, see [Recommended plugins](docs/install.md#recommended-plugins).
 
-The `dg` command is the entry to the three programs. Each name runs one program
-and command:
+`dg` is the only command. Every command runs as `dg <command>`, for example
+`dg pw`, `dg phone`, `dg job` and `dg doctor`. Run `dg --help` for the list.
 
-| `dg` name | Runs |
+Two groups of commands share verbs, so these verbs keep a group name:
+
+| Verbs | Run them as |
 | --- | --- |
-| `dg job` | `dg-daemon job` |
-| `dg autostart` | `dg-daemon autostart` |
-| `dg skills` | `dg-skills` |
-| `dg agent` | `dg-agent` |
-| `dg daemon` | `dg-daemon` |
-| `dg extension` | `dg-skills install` |
-| `dg install` | `dg-skills install` |
-| `dg upgrade` | `dg-skills update` |
-| `dg doctor` | `dg-skills doctor` |
+| `serve`, `status`, `start`, `stop`, `restart`, `sessions`, `origin` | `dg daemon <verb>` |
+| `start`, `send`, `recv`, `progress`, `spawn`, `stage`, `close`, `manifest` | `dg agent <verb>` |
+
+A bare `dg start` exits 1 and names `dg agent start` and `dg daemon start`.
+Two aliases exist: `dg upgrade` runs `dg update`, and `dg extension` runs
+`dg install`.
+
+The three older program names are removed. See
+[Upgrade from 6.3](docs/install.md#upgrade-from-63) to move a script or a job.
 
 ## Skills
 
@@ -75,7 +77,7 @@ Claude Code uses `/dg:<skill>`; Codex uses `$dg:<skill>`.
 | `chat` | Talk to a person or another agent on a local page; keep agent memory | [Chat](docs/chat.md) |
 | `overwatch` | Track work across parallel chats on a local board page | [Skill commands](plugins/dg/skills/overwatch/SKILL.md) |
 | `inbox-cleanup` | Review and organize Proton Mail, Gmail, or Outlook | [Inbox cleanup](docs/inbox-cleanup.md) |
-| `google-sms-cleanup` | Organize Google Messages, or Signal, with `dg-skills ssms` | [SMS providers](docs/ssms.md) |
+| `google-sms-cleanup` | Organize Google Messages, or Signal, with `dg ssms` | [SMS providers](docs/ssms.md) |
 | `channel-review` | Review PRs and MRs posted in Teams | [Channel review](docs/channel-review.md) |
 | `phone` | Chat in private with one or more other agents over Nostr | [Phone](docs/phone.md) |
 
@@ -86,43 +88,43 @@ Claude Code also accepts the bare `/<name>`.
 
 | Skill | Use |
 | --- | --- |
-| `adr` | Write a paired plain-English ADR and agent decision, or answer from the ADRs at a reading level; `dg-skills adr` |
+| `adr` | Write a paired plain-English ADR and agent decision, or answer from the ADRs at a reading level; `dg adr` |
 | `agent-seed` | Set up a project's `.agents/` folder and a minimal `CLAUDE.md` |
 | `assign` | Pick the best-fit agent for a piece of work or for each spec slice |
-| `bg` | Run a task in the background; `dg-skills bg` tracks the jobs |
+| `bg` | Run a task in the background; `dg bg` tracks the jobs |
 | `clipboard-img` | Save the clipboard image as a PNG |
 | `cls` | Close out a git worktree and return to the main repo |
-| `db` | Query PostgreSQL and Snowflake with read-safe defaults; `dg-skills db` |
-| `doctor` | Check what the dg skills need and walk through the fixes; `dg-skills doctor` |
+| `db` | Query PostgreSQL and Snowflake with read-safe defaults; `dg db` |
+| `doctor` | Check what the dg skills need and walk through the fixes; `dg doctor` |
 | `eli5` | Explain a concept, file, error, or codebase as if the reader is five |
 | `erd` | Generate an architecture map or any Mermaid diagram from code, imports, or a database |
 | `find-work` | Find actionable work, run each item in a parallel worktree, and open PRs in batch |
 | `grill-me` | Interview the user about a design until every branch is resolved |
 | `hook-comment-disable` | Turn off the American-English hook for one session |
 | `hunt` | Find the root cause of a bug with parallel evidence gathering |
-| `jobs` | List and control the dg-daemon and channel-review daemons |
-| `jot` | Save a short note or a session handoff; `dg-skills jot` |
+| `jobs` | List and control the dg daemon and channel-review daemons |
+| `jot` | Save a short note or a session handoff; `dg jot` |
 | `land` | Take a ready PR through Codex review rounds and green CI to "ready for your review"; it merges only on your answer, or right away with `--auto` |
 | `kick`, `pickup`, `prd` | Park a planned spec, resume it, or hand it off |
 | `monolith` | Consolidate a codebase's domain vocabulary into `.agents/monolith.md` |
 | `nope` | Reset to the correct file-search defaults and record a feedback note |
 | `polish` | Clean up a diff for reuse, simplification, and hygiene, then apply the fixes |
-| `pw` | Drive a browser with `dg-skills pw`, and open or group PR tab batches; `pw-code` always needs approval. See [Pw](docs/pw.md) and [Browser tabs](docs/browser.md) |
+| `pw` | Drive a browser with `dg pw`, and open or group PR tab batches; `pw-code` always needs approval. See [Pw](docs/pw.md) and [Browser tabs](docs/browser.md) |
 | `proxy` | Delegate to one of five external CLI agents with persona and background support |
 | `pushup` | Push the branch, open its PR, and open the PR in a tab group |
 | `refactor` | Find refactor candidates, verify each against the code, and discuss the chosen one |
 | `rename-session` | Suggest names for the current session |
 | `review-loop` | Loop Copilot or a local backend over a branch and address the findings |
 | `sdlc` | Run a feature brief through worktree, slice waves, review, and a draft PR |
-| `sniff` | Inventory what an app needs to run, with cited evidence; `dg-skills sniff` |
+| `sniff` | Inventory what an app needs to run, with cited evidence; `dg sniff` |
 | `spec` | Plan a durable feature spec or execute one |
 | `spring-break` | Consolidate `.agents/school/` into topic clusters |
 | `standard-test` | Language-agnostic rules for writing and reviewing tests |
 | `stash` | Resolve scratch, state, or repository artifact paths |
 | `stat` | Show this session's in-flight work, status, and ETA in one table |
-| `test-live` | Deploy the current branch to dev, stage, or prod, then clean up; `dg-skills test-live` |
+| `test-live` | Deploy the current branch to dev, stage, or prod, then clean up; `dg test-live` |
 | `ticket` | File a Jira ticket using the registered project, assignee, sprint, and issue types |
-| `update` | Update every dg part to the newest release; `dg-skills update` |
+| `update` | Update every dg part to the newest release; `dg update` |
 | `walk` | Go through the open questions one at a time |
 | `wayfinder` | Map work too big for one session as decision tickets |
 | `what-changed` | Write release notes from tags, PRs, and commits |
@@ -133,12 +135,12 @@ Claude Code also accepts the bare `/<name>`.
 Use the installed CLI from a terminal:
 
 ```bash
-dg-skills stash -u review findings.md
-dg-skills stash -a review findings.md
-dg-skills vcs-provider detect
-dg-skills vcs-provider list-prs --limit 10
-dg-skills proxy --list-backends
-dg-skills proxy codex --prompt "Review the current changes"
+dg stash -u review findings.md
+dg stash -a review findings.md
+dg vcs-provider detect
+dg vcs-provider list-prs --limit 10
+dg proxy --list-backends
+dg proxy codex --prompt "Review the current changes"
 ```
 
 `stash` prints an absolute path and creates its parent. Its default scratch scope
@@ -154,19 +156,19 @@ and all ten `vcs-provider` verbs for GitHub and GitLab.
 `--prompt-file`, `--resume`, and persona selection through `--subagent` or an
 explicit `--spec <plan> --slice <id>`. Set `DG_PERSONAS_DIR` (or `DG_AGENTS_DIR`)
 for persona files. `--plan` prints a quoted detached launch command; run that
-command, then inspect it with `dg-skills bg status <id>` or `list`.
+command, then inspect it with `dg bg status <id>` or `list`.
 The `spec` and `bg` commands are public and `proxy` uses them directly, so
 it needs no legacy helper. Detached launch needs a POSIX `sh`.
 Job identity comes from the Linux `/proc` start time. Elsewhere the helper fails closed: `status` shows `unknown` and `cancel` signals nothing.
 Read the [proxy skill](plugins/dg/skills/proxy/SKILL.md) for result and resume rules.
 
-`dg-skills clipboard-image <dest.png>` captures through WSL (`wslpath` and
+`dg clipboard-image <dest.png>` captures through WSL (`wslpath` and
 `powershell.exe`), Wayland (`wl-paste`), or X11 (`xclip`); `-` writes PNG bytes to
 stdout. The clipboard skill resolves its default destination through stash.
 
-`dg-skills skill audit [dirs] [--threshold N] [--json] [--fix]` reports token weight and hygiene issues for skill folders, and
-`dg-skills skill split --list <dir>` / `--apply <manifest.json>` moves `SKILL.md` sections into reference files after a backup
-under the AI state root. Run `dg-skills skill --help` for the manifest shape and exit codes.
+`dg skill audit [dirs] [--threshold N] [--json] [--fix]` reports token weight and hygiene issues for skill folders, and
+`dg skill split --list <dir>` / `--apply <manifest.json>` moves `SKILL.md` sections into reference files after a backup
+under the AI state root. Run `dg skill --help` for the manifest shape and exit codes.
 
 Maintainers follow the [post-merge cutover](docs/DEVELOPER.md#manual-post-merge-cutover) steps after each wave.
 

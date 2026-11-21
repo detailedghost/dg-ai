@@ -1,19 +1,20 @@
 /**
- * `install --agent-only` installs the runtime, the bundle and the four shims, so a
- * non-Claude agent that only needs phone has `dg-agent`. It never fetches the extension,
+ * `install --agent-only` installs the compiled dg and links `<bin>/dg`, so a
+ * non-Claude agent that only needs phone has `dg agent`. It never fetches the extension,
  * and never installs personas, which only the Claude-side CLI uses.
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { fetchedUrls, installEnv, runCli, writeReleaseServer } from "./runtime-bundle-fixtures";
+import { compiledAssetName, platformKey } from "../src/utils/lib";
+import { fetchedUrls, installEnv, runCli, writeReleaseServer } from "./release-fixtures";
 
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
 const VERSION = "9.9.9";
 
-describe("dg-skills install --agent-only", () => {
-	test("installs the bundle and shims, skips the extension, and marks cli-only", async () => {
+describe("dg install --agent-only", () => {
+	test("installs the compiled dg and its link, skips the extension, and marks cli-only", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-agent-only-"));
 		const home = join(directory, "home");
 		mkdirSync(home, { recursive: true });
@@ -26,18 +27,19 @@ describe("dg-skills install --agent-only", () => {
 			expect(result.code).toBe(0);
 			expect(result.stderr).not.toContain("skipped");
 			expect(result.stdout).toContain(
-				'Agent-only install: the extension was skipped. Run "dg-skills install" to add it.',
+				'Agent-only install: the extension was skipped. Run "dg install" to add it.',
 			);
 
 			const urls = fetchedUrls(fetchLog);
 			expect(urls.some((url) => url.includes("/releases?"))).toBe(true);
-			expect(urls.some((url) => url.endsWith(`/v${VERSION}/dg-lib-${VERSION}.tar.gz`))).toBe(true);
+			expect(urls.some((url) => url.endsWith(`/v${VERSION}/${compiledAssetName(platformKey())}`))).toBe(true);
 			expect(urls.filter((url) => /extension/.test(url))).toEqual([]);
 
 			const bin = join(home, "bin");
-			expect(readdirSync(bin).sort()).toEqual(["dg", "dg-agent", "dg-daemon", "dg-skills"]);
-			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe(VERSION);
-			expect(readFileSync(join(bin, "dg-agent"), "utf8")).toContain(`dg-agent "$@"`);
+			expect(readdirSync(bin)).toEqual(["dg"]);
+			expect(readlinkSync(join(bin, "dg"))).toBe(join(home, "data", "bin", "current", "dg"));
+			expect(basename(readlinkSync(join(home, "data", "bin", "current")))).toBe(VERSION);
+			expect(urls.filter((url) => /runtime\.json|dg-lib-|bun-.*\.zip/.test(url))).toEqual([]);
 
 			expect(Bun.TOML.parse(readFileSync(join(home, "config", "config.toml"), "utf8"))).toMatchObject({ install: { cli_only: true } });
 			for (const dir of [join(home, "agents"), join(home, "skills"), join(home, "data", "agents"), join(home, "data", "skills")])

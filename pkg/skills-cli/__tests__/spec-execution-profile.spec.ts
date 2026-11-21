@@ -61,7 +61,7 @@ function spec(args: string[], cwd = context.root): Promise<SpecRun> {
 	return runSourceSpec(args, { cwd, env: baseEnv(context) });
 }
 
-describe("dg-skills spec validate execution.profile", () => {
+describe("dg spec validate execution.profile", () => {
 	test("reports one enum_violation on execution.profile for a profile outside the enum", async () => {
 		put("plan.md", plan({ execution: "execution:\n  profile: turbo" }));
 		const run = await spec(["validate", "plan.md"]);
@@ -110,7 +110,7 @@ describe("dg-skills spec validate execution.profile", () => {
 	});
 });
 
-describe("dg-skills spec set execution.profile", () => {
+describe("dg spec set execution.profile", () => {
 	test("adds an execution block to a plan without one and changes nothing else", async () => {
 		const original = plan();
 		put("plan.md", original);
@@ -125,7 +125,7 @@ describe("dg-skills spec set execution.profile", () => {
 	});
 });
 
-describe("dg-skills spec context execution and complexity", () => {
+describe("dg spec context execution and complexity", () => {
 	function projection(text: string) {
 		return splitFrontmatter(text).data as {
 			execution?: { profile?: string };
@@ -168,7 +168,7 @@ describe("dg-skills spec context execution and complexity", () => {
 	});
 });
 
-describe("dg-skills spec ready --cwd", () => {
+describe("dg spec ready --cwd", () => {
 	const SPEC_TEXT = `---
 slices:
   - id: 1

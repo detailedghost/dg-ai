@@ -117,7 +117,7 @@ function runOverwatch(args: string[]) {
 	return runOverwatchWithClient(args, new StubClient());
 }
 
-describe("dg-agent overwatch", () => {
+describe("dg overwatch", () => {
 	it("sends one set frame with every parsed lane field", async () => {
 		const { client } = await runOverwatch([
 			"set",
@@ -244,11 +244,11 @@ describe("dg-agent overwatch", () => {
 	it("requires an explicit successful open response", async () => {
 		const client = new StubClient();
 		client.openResult = new DgCliError(
-			"dg-daemon did not answer the CLI request",
+			"dg daemon did not answer the CLI request",
 		);
 
 		await expect(runOverwatchWithClient(["open", "--ext"], client)).rejects.toThrow(
-			"dg-daemon did not answer the CLI request",
+			"dg daemon did not answer the CLI request",
 		);
 		expect(client.frames).toEqual([{ type: "cli-overwatch-open" }]);
 	});

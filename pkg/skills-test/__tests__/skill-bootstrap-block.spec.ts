@@ -33,7 +33,7 @@ describe("skill-bootstrap-block --check", () => {
 	test("tells the agent to use the launcher path whenever the bare name does not answer", () => {
 		const text = readFileSync(join(SKILLS_DIR, "worktree", "SKILL.md"), "utf8");
 		expect(text).toContain(
-			"Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.",
+			"Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints \"run dg upgrade\", run `dg upgrade`, then run the step again.",
 		);
 	});
 
@@ -42,7 +42,7 @@ describe("skill-bootstrap-block --check", () => {
 		cpSync(SKILLS_DIR, copy, { recursive: true });
 		const skill = join(copy, "worktree", "SKILL.md");
 		const text = readFileSync(skill, "utf8");
-		writeFileSync(skill, text.replace(/^ {2}"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg-skills".*\n/m, ""));
+		writeFileSync(skill, text.replace(/^ {2}"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg".*\n/m, ""));
 
 		const result = check(copy);
 
@@ -54,7 +54,7 @@ describe("skill-bootstrap-block --check", () => {
 		const copy = makeTempDir("dg-skill-block-");
 		cpSync(SKILLS_DIR, copy, { recursive: true });
 		const reference = join(copy, "jot", "SKILL.md");
-		writeFileSync(reference, `${readFileSync(reference, "utf8")}\nRun ~/.dg/bin/dg-skills jot list.\n`);
+		writeFileSync(reference, `${readFileSync(reference, "utf8")}\nRun ~/.dg/bin/dg jot list.\n`);
 
 		expect(check(copy).code).toBe(1);
 	});
@@ -73,8 +73,8 @@ describe("packaged skills call the bare launcher", () => {
 		expect(skills.length).toBeGreaterThan(40);
 		for (const path of skills) {
 			const text = readFileSync(path, "utf8");
-			expect([path, /^ *(?:\{ )?"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg-[a-z]+"/m.test(text)]).toEqual([path, true]);
-			expect([path, /Call `dg-[a-z]+`(?: and `dg-[a-z]+`)* in every later step\./.test(text)]).toEqual([path, true]);
+			expect([path, /^ *(?:\{ )?"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg"/m.test(text)]).toEqual([path, true]);
+			expect([path, /Call `dg` in every later step\./.test(text)]).toEqual([path, true]);
 		}
 	});
 });
@@ -89,7 +89,7 @@ describe("first-run blocks after the bootstrap", () => {
 				const at = lines.findIndex((line) => /bootstrap\.sh \| sh/.test(line));
 				if (at < 0) continue;
 				for (const line of lines.slice(at + 1))
-					if (/^\s*dg-(skills|agent|daemon)\b/.test(line)) hits.push(`${path}: ${line.trim()}`);
+					if (/^\s*dg\s/.test(line)) hits.push(`${path}: ${line.trim()}`);
 			}
 		}
 		expect(hits).toEqual([]);
@@ -97,9 +97,9 @@ describe("first-run blocks after the bootstrap", () => {
 
 	test("probe the DG_HOME launcher folder before the default one", () => {
 		const text = readFileSync(join(SKILLS_DIR, "catchup", "SKILL.md"), "utf8");
-		expect(text).toContain('  "${DG_HOME:-$HOME/.local}/bin/dg-skills" catchup --help >/dev/null 2>&1 ||\n');
+		expect(text).toContain('  "${DG_HOME:-$HOME/.local}/bin/dg" catchup --help >/dev/null 2>&1 ||\n');
 		expect(text).toContain(
-			'\nif dg-skills catchup --help >/dev/null 2>&1; then dg-skills catchup; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" catchup; fi\n',
+			'\nif dg catchup --help >/dev/null 2>&1; then dg catchup; else "${DG_HOME:-$HOME/.local}/bin/dg" catchup; fi\n',
 		);
 	});
 
@@ -109,8 +109,8 @@ describe("first-run blocks after the bootstrap", () => {
 		const home = join(dir, "home");
 		mkdirSync(bin);
 		mkdirSync(join(home, ".local", "bin"), { recursive: true });
-		writeFileSync(join(bin, "dg-skills"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
-		writeFileSync(join(home, ".local", "bin", "dg-skills"), '#!/bin/sh\necho "fallback $*"\n', { mode: 0o755 });
+		writeFileSync(join(bin, "dg"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+		writeFileSync(join(home, ".local", "bin", "dg"), '#!/bin/sh\necho "fallback $*"\n', { mode: 0o755 });
 		const text = readFileSync(join(SKILLS_DIR, "catchup", "SKILL.md"), "utf8");
 		const block = /```bash\n([\s\S]*?)```/.exec(text)?.[1] ?? "";
 
@@ -124,11 +124,28 @@ describe("first-run blocks after the bootstrap", () => {
 		expect(run.stdout.toString()).toBe("fallback catchup\n");
 	});
 
+	test("print run dg upgrade when the installed dg does not know the command", () => {
+		const dir = makeTempDir("dg-skill-upgrade-");
+		const bin = join(dir, "bin");
+		mkdirSync(bin);
+		writeFileSync(join(bin, "dg"), '#!/bin/sh\n[ "$1" = "--version" ] && echo 1.2.3 && exit 0\nexit 1\n', { mode: 0o755 });
+		const text = readFileSync(join(SKILLS_DIR, "catchup", "SKILL.md"), "utf8");
+		const block = /```bash\n([\s\S]*?)```/.exec(text)?.[1] ?? "";
+
+		const run = Bun.spawnSync(["sh", "-c", block], {
+			env: { PATH: `${bin}:/usr/bin:/bin`, HOME: join(dir, "home") },
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+
+		expect(run.stdout.toString()).toContain("run dg upgrade");
+	});
+
 	test("run the follow-up command through PATH when only PATH has the launcher", () => {
 		const dir = makeTempDir("dg-skill-trailer-");
 		const bin = join(dir, "bin");
 		mkdirSync(bin);
-		writeFileSync(join(bin, "dg-skills"), '#!/bin/sh\necho "path $*"\n', { mode: 0o755 });
+		writeFileSync(join(bin, "dg"), '#!/bin/sh\necho "path $*"\n', { mode: 0o755 });
 		const text = readFileSync(join(SKILLS_DIR, "catchup", "SKILL.md"), "utf8");
 		const block = /```bash\n([\s\S]*?)```/.exec(text)?.[1] ?? "";
 

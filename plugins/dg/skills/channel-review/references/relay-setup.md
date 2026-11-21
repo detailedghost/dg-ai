@@ -48,20 +48,20 @@ that the relay registered for this client, and the secret.
    `relay.secret.key`, `relay.secret.region`, and `envs.<name>.awsProfile`.
    Never put the secret value in config or a chat. The daemon reads it into
    memory at start and never writes it to disk in plaintext.
-1. Run `dg-skills channel-review connect relay --env <env>` once per
+1. Run `dg channel-review connect relay --env <env>` once per
    environment. It prints the AWS CLI command to fetch that env's secret and
    prompts you to paste the result; it never runs the AWS CLI itself. It then
    stores the pasted value in the dg credential store as
-   `channel-review/relay/<env>`. dg-daemon must run. The command also creates
+   `channel-review/relay/<env>`. The dg daemon must run. The command also creates
    the `channel-review` grant the daemon reads through.
    `CHANNEL_REVIEW_RELAY_SECRET_<ENV>` in the git-ignored `.env` still works as
    a fallback when the store is unavailable. Keep `.env` at mode 600, and
    never commit it. To move an existing value into the store, run
-   `dg-skills channel-review migrate-env`.
+   `dg channel-review migrate-env`.
 
 ## 4. Local setup
 
-1. Install `dg-skills` with the bootstrap in SKILL.md. To run your local
+1. Install `dg` with the bootstrap in SKILL.md. To run your local
    changes, then run `mise run remote:install` in the dg repository.
 1. Copy `.env.example` to `.env` in the dg repository and set `DG_HOME`,
    `DG_SKILLS`, and `CR_ENV` for this machine.
@@ -97,9 +97,9 @@ that the relay registered for this client, and the secret.
 Skip this step unless the person wants the daemon to watch an error tracker or
 to upgrade dependencies on a schedule. Both stay off until enabled.
 
-1. Store the credentials for each sink: `dg-skills channel-review connect datadog` or `dg-skills channel-review connect sentry --org <slug>`. A
+1. Store the credentials for each sink: `dg channel-review connect datadog` or `dg channel-review connect sentry --org <slug>`. A
    **human** signs in to the browser window that opens. The Datadog token
-   expires in 1 year; run `connect datadog` again before then (`dg-skills credentials list` flags it 14 days ahead). See
+   expires in 1 year; run `connect datadog` again before then (`dg credentials list` flags it 14 days ahead). See
    [setup](setup.md#credentials). The `.env` variables (`DATADOG_ACCESS_TOKEN`,
    `DATADOG_SITE`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_BASE_URL`) still
    work as fallbacks.
@@ -120,8 +120,8 @@ to upgrade dependencies on a schedule. Both stay off until enabled.
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `The relay rejected the secret` or `rejected the API code (HTTP 401)` | Wrong secret, `relay.secret.key`, `relay.appName`, or env. Fetch the secret again and run `dg-skills channel-review connect relay --env <env>` to paste a fresh value. |
-| `no relay secret stored for <env>` | Run `dg-skills channel-review connect relay --env <env>`. If the AWS CLI reports an expired SSO session while you fetch the value to paste, sign in to that profile with the AWS CLI first. |
+| `The relay rejected the secret` or `rejected the API code (HTTP 401)` | Wrong secret, `relay.secret.key`, `relay.appName`, or env. Fetch the secret again and run `dg channel-review connect relay --env <env>` to paste a fresh value. |
+| `no relay secret stored for <env>` | Run `dg channel-review connect relay --env <env>`. If the AWS CLI reports an expired SSO session while you fetch the value to paste, sign in to that profile with the AWS CLI first. |
 | `<bot> is not a member of this chat, or the chat id is wrong` | Add the bot to the chat, or fix the chat `id`. |
 | `Chat "<topic>" not found` | The relay's service mailbox is not in the chat. Add it, or set the chat `id`. |
 | `reaction id "<id>" is not in the Teams reaction catalog` | The configured id is not a Teams reaction. Use a catalog id or capture a custom one. |
@@ -138,11 +138,11 @@ Two slots can use a tenant's custom emoji: `progress` (`reactions.inProgress`)
 and `approved` (`reactions.approved`). The other slots use built-in reactions
 unless you set them.
 
-- `dg-skills channel-review emojis capture --slot progress` (or `--slot approved`) posts a prompt through the bot. A **human** reacts to that prompt
+- `dg channel-review emojis capture --slot progress` (or `--slot approved`) posts a prompt through the bot. A **human** reacts to that prompt
   with the custom emoji; the CLI saves the id. Restart the daemon to apply.
 - In the chat, the owner can send `@<bot> <owner.token> $emoji <slot>` and
   react to the bot's reply. The daemon saves and applies the id at once.
-- `dg-skills channel-review emojis set approved '<id>'` saves a known id.
+- `dg channel-review emojis set approved '<id>'` saves a known id.
 
 A custom id looks like `name;0-<region>-d<n>-<32hex>`, such as
 `party;0-wus-d4-0123456789abcdef0123456789abcdef`. Quote it in the shell. The

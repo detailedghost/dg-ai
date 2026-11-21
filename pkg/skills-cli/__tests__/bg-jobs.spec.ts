@@ -62,7 +62,7 @@ function proxyJob(sessionId: string, sleepSeconds = 0) {
 	};
 }
 
-describe("dg-skills bg run and status", () => {
+describe("dg bg run and status", () => {
 	test("records the command's own exit code once done", async () => {
 		const cwd = world.dir();
 		const job = await world.launch("sleep 0.2; exit 3", cwd);
@@ -97,7 +97,7 @@ describe("dg-skills bg run and status", () => {
 		expect(log).toContain("to-stderr");
 	});
 
-	test("puts the dg launcher folder first on PATH, so a job can call dg-skills by name", async () => {
+	test("puts the dg launcher folder first on PATH, so a job can call dg by name", async () => {
 		const cwd = world.dir();
 		const dgHome = world.dir("bg-dg-home-");
 		const job = await world.launch('printf "%s\\n" "$PATH"', cwd, [], { DG_HOME: dgHome, PATH: "/usr/bin:/bin" });
@@ -175,7 +175,7 @@ describe("dg-skills bg run and status", () => {
 	);
 });
 
-describe("dg-skills bg list", () => {
+describe("dg bg list", () => {
 	test("includes every launched job with its derived state", async () => {
 		const cwd = world.dir();
 		const a = await world.launch("exit 0", cwd);
@@ -249,7 +249,7 @@ describe("dg-skills bg list", () => {
 	});
 });
 
-describe("dg-skills bg cancel", () => {
+describe("dg bg cancel", () => {
 	test.each(["cancel", "kill"])(
 		"%s stops a running job and flips it to canceled",
 		async (verb) => {
@@ -283,7 +283,7 @@ describe("dg-skills bg cancel", () => {
 	});
 });
 
-describe("dg-skills bg update", () => {
+describe("dg bg update", () => {
 	test("refuses a plain shell job because there is no session to update", async () => {
 		const cwd = world.dir();
 		const job = await world.launch("sleep 30", cwd);
@@ -410,7 +410,7 @@ describe("dg-skills bg update", () => {
 	});
 });
 
-describe("dg-skills bg prune", () => {
+describe("dg bg prune", () => {
 	test("drops a finished job in the tree and keeps a sibling that only shares a path prefix", async () => {
 		const base = world.dir();
 		const tree = world.mkdir(join(base, "repo"));
@@ -612,7 +612,7 @@ describe("dg-skills bg prune", () => {
 	});
 });
 
-describe("dg-skills bg help", () => {
+describe("dg bg help", () => {
 	test("lists every job verb without creating a job", async () => {
 		const result = await world.bg(["--help"], world.dir());
 		expect(result.exitCode).toBe(0);

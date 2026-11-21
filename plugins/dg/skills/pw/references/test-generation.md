@@ -2,14 +2,14 @@
 
 ## Generate test code
 
-Add `--codegen` to a command, or `dg-skills pw open --codegen` for the whole session, and each action prints the matching Playwright TypeScript code. Copy it into test files. Without the flag the code section is off to save context.
+Add `--codegen` to a command, or `dg pw open --codegen` for the whole session, and each action prints the matching Playwright TypeScript code. Copy it into test files. Without the flag the code section is off to save context.
 
 ```bash
-dg-skills pw open --codegen https://example.com/login
-dg-skills pw snapshot
-dg-skills pw fill e1 "user@example.com"
-dg-skills pw fill e2 "password123"
-dg-skills pw click e3
+dg pw open --codegen https://example.com/login
+dg pw snapshot
+dg pw fill e1 "user@example.com"
+dg pw fill e2 "password123"
+dg pw click e3
 ```
 
 The snapshot shows `e1 [textbox "Email"]`, `e2 [textbox "Password"]`, `e3 [button "Sign In"]`. Each action prints its code, for example:
@@ -43,7 +43,7 @@ test('login flow', async ({ page }) => {
 
 ## Run Playwright tests
 
-Use `npx playwright test` or a package manager script. Set `PLAYWRIGHT_HTML_OPEN=never` to skip the interactive HTML report. These are not `dg-skills pw` commands and are outside this skill's allowed tools, so the user approves each run.
+Use `npx playwright test` or a package manager script. Set `PLAYWRIGHT_HTML_OPEN=never` to skip the interactive HTML report. These are not `dg pw` commands and are outside this skill's allowed tools, so the user approves each run.
 
 ```bash
 PLAYWRIGHT_HTML_OPEN=never npx playwright test
@@ -52,6 +52,6 @@ PLAYWRIGHT_HTML_OPEN=never npm run special-test-command
 
 ## Debug a failing test
 
-`dg-skills pw` has no `attach <name>` and no `pause-at`, `resume`, or `step-over`. For `--debug=cli` sessions, use legacy `playwright-cli attach <session>`. It is outside this skill's allowed tools, so the user approves each run. To add these commands to `dg-skills pw`, see "Extending" in `commands.md`.
+`dg pw` has no `attach <name>` and no `pause-at`, `resume`, or `step-over`. For `--debug=cli` sessions, use legacy `playwright-cli attach <session>`. It is outside this skill's allowed tools, so the user approves each run. To add these commands to `dg pw`, see "Extending" in `commands.md`.
 
-`dg-skills pw attach --cdp=<url>` still drives a running Chromium by CDP endpoint.
+`dg pw attach --cdp=<url>` still drives a running Chromium by CDP endpoint.

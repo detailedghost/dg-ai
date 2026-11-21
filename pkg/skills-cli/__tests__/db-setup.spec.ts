@@ -26,7 +26,7 @@ describe("ensureCwdSession", () => {
 		expect(spawnAgentStart).not.toHaveBeenCalled();
 	});
 
-	test("spawns dg-agent start once on zero matches and returns its trimmed output", async () => {
+	test("spawns dg agent start once on zero matches and returns its trimmed output", async () => {
 		const spawnAgentStart = mock(async () => "s-new\n");
 		const id = await ensureCwdSession(undefined, {
 			env: {},
@@ -98,12 +98,12 @@ describe("db setup", () => {
 		const h = setupHarness();
 		const code = await h.run([...PG_FLAGS, "--secret", "command", "--session", "sess-9"]);
 		expect(code ?? 0).toBe(0);
-		const line = h.stdout.find((l) => l.startsWith("dg-skills credentials"));
+		const line = h.stdout.find((l) => l.startsWith("dg credentials"));
 		expect(line).toBe(
-			"dg-skills credentials --session sess-9 set db/pg1 --meta engine=postgresql --meta host=127.0.0.1 --meta port=5433 --meta database=app --meta user=ro --meta readOnly=true",
+			"dg credentials --session sess-9 set db/pg1 --meta engine=postgresql --meta host=127.0.0.1 --meta port=5433 --meta database=app --meta user=ro --meta readOnly=true",
 		);
-		expect(h.stdout.filter((l) => l.startsWith("dg-skills credentials"))).toHaveLength(1);
-		expect(h.stdout.filter((l) => l.startsWith("Next:"))).toEqual(["Next: dg-skills db test pg1"]);
+		expect(h.stdout.filter((l) => l.startsWith("dg credentials"))).toHaveLength(1);
+		expect(h.stdout.filter((l) => l.startsWith("Next:"))).toEqual(["Next: dg db test pg1"]);
 		expect(h.set).not.toHaveBeenCalled();
 		expect(h.pgTest).not.toHaveBeenCalled();
 	});
@@ -137,7 +137,7 @@ describe("db setup", () => {
 		});
 		expect(rerunUnderAsm).toHaveBeenCalledTimes(1);
 		expect(rerunUnderAsm.mock.calls[0]?.slice(1)).toEqual(["test", ["pg1", "--session", "sess-1"]]);
-		expect(h.stdout.filter((l) => l.startsWith("Next:"))).toEqual(["Next: dg-skills db tables pg1"]);
+		expect(h.stdout.filter((l) => l.startsWith("Next:"))).toEqual(["Next: dg db tables pg1"]);
 		expect(h.createCredentialClient).toHaveBeenCalledWith("sess-1");
 	});
 
@@ -167,7 +167,7 @@ describe("db setup", () => {
 			"--auth", "keypair", "--private-key-path", "/keys/k.p8", "--secret", "command",
 		]);
 		expect(code ?? 0).toBe(0);
-		const line = h.stdout.find((l) => l.startsWith("dg-skills credentials")) ?? "";
+		const line = h.stdout.find((l) => l.startsWith("dg credentials")) ?? "";
 		expect(line).toContain("--meta privateKeyPath=/keys/k.p8");
 		expect(line).not.toContain("passphrase");
 	});
@@ -223,7 +223,7 @@ describe("db setup", () => {
 		const h = setupHarness();
 		const code = await h.run([...PG_FLAGS, "--secret", "form"]);
 		expect(code).toBe(1);
-		expect(h.stderr.join("\n")).toContain("dg-daemon is not running");
+		expect(h.stderr.join("\n")).toContain("dg daemon is not running");
 		expect(h.pgTest).not.toHaveBeenCalled();
 	});
 });

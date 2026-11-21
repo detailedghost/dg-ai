@@ -58,7 +58,7 @@ function isRunning(exe: string): boolean {
 export async function runLaunch(refs: string[], opts: LaunchOptions): Promise<number> {
 	if (!opts.ext) {
 		console.error(
-			"launch: an extension-only command; add --ext (dg-skills pw launch --ext ...)",
+			"launch: an extension-only command; add --ext (dg pw launch --ext ...)",
 		);
 		return 1;
 	}

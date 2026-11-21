@@ -29,20 +29,20 @@ describe("packaged jot skill tree", () => {
 		expectPlainFrontmatter("jot");
 	});
 
-	test("every dg-skills call uses the bare launcher name and a real subcommand", () => {
+	test("every dg call uses the bare launcher name and a real subcommand", () => {
 		const calls = walk(JOT)
 			.map((path) => readFileSync(path, "utf8"))
 			.join("\n")
 			.split("\n")
-			.filter((line) => line.includes("dg-skills jot"));
+			.filter((line) => line.includes("dg jot"));
 		expect(calls.length).toBeGreaterThan(0);
 		for (const line of calls) {
 			expect(line).not.toContain(".dg/bin/");
-			const verb = /dg-skills jot\s+([\w-]+)/.exec(line)?.[1];
+			const verb = /dg jot\s+([\w-]+)/.exec(line)?.[1];
 			if (verb && verb !== "--help") expect(VERBS).toContain(verb);
 		}
 		const used = new Set(
-			[...skill().matchAll(/dg-skills jot\s+([\w-]+)/g)].map((match) => match[1]),
+			[...skill().matchAll(/dg jot\s+([\w-]+)/g)].map((match) => match[1]),
 		);
 		for (const verb of VERBS) expect(used.has(verb)).toBe(true);
 	});
@@ -52,8 +52,8 @@ describe("packaged jot skill tree", () => {
 		const gate = text.indexOf("bootstrap.sh");
 		expect(gate).toBeGreaterThan(-1);
 		expect(text).toContain("--cli-only");
-		expect(text).toContain("dg-skills jot --help");
-		expect(gate).toBeLessThan(text.indexOf("dg-skills jot add"));
+		expect(text).toContain("dg jot --help");
+		expect(gate).toBeLessThan(text.indexOf("dg jot add"));
 	});
 
 	test("documents the legacy flags in a four-column Flags table and the Usage line", () => {

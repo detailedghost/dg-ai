@@ -36,7 +36,7 @@ function isolatedEnv(): Record<string, string> {
 	});
 }
 
-describe("compiled dg-skills test-live from an external cwd, with no legacy scripts on PATH", () => {
+describe("compiled dg test-live from an external cwd, with no legacy scripts on PATH", () => {
 	test("rejects a GitLab origin with no network call and no git mutation", async () => {
 		const cwd = fixtures.tmp("dg-test-live-compiled-gitlab-");
 		runGit(["init", "-q", "-b", "feature/external-cwd"], cwd);

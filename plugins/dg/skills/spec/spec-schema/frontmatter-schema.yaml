@@ -1,10 +1,10 @@
 ---
-# Authoritative schema for spec frontmatter consumed by `dg-skills spec`.
+# Authoritative schema for spec frontmatter consumed by `dg spec`.
 #
-# `dg-skills spec validate <spec>` checks each field against this schema's
+# `dg spec validate <spec>` checks each field against this schema's
 # `type`, `mutability` and `mode_conditional` rules; `get` and `set` drive
 # off the same file. Never hand-edit spec frontmatter; go through
-# `dg-skills spec`. Mutability: immutable=set-once-at-creation,
+# `dg spec`. Mutability: immutable=set-once-at-creation,
 # mutable=may be rewritten, append-only=array fields where items are added but
 # never removed. mode_conditional: standard | worktree-only | cross-repo-only |
 # light-only | parked-only | bundle-only.
@@ -87,7 +87,7 @@ fields:
             description: >-
               Optional external backend (codex|copilot|pi|opencode|cortex|grok) to execute this slice's Yellow/Correction
               stages via /dg:proxy instead of an internal agent. Value must be one of the registered
-              names from `dg-skills proxy --list-backends`. Omit for the default (internal agent) execution.
+              names from `dg proxy --list-backends`. Omit for the default (internal agent) execution.
           proxy_skills:
             type: array
             mutability: mutable
@@ -121,7 +121,7 @@ fields:
       prototype:
         type: object
         mutability: mutable
-        description: Accepted /prototype asset for this slice, recorded by `dg-skills spec prototype-ref`.
+        description: Accepted /prototype asset for this slice, recorded by `dg spec prototype-ref`.
         fields:
           path: {type: string, mutability: mutable}
           variant: {type: string, mutability: mutable}
@@ -130,7 +130,7 @@ fields:
   permissions:
     type: object
     mutability: mutable
-    description: Phase-0b permission grants. Toggled via `dg-skills spec perms`/`perms-batch`.
+    description: Phase-0b permission grants. Toggled via `dg spec perms`/`perms-batch`.
     fields:
       run_commands: {type: boolean, mutability: mutable}
       git_push: {type: boolean, mutability: mutable}
@@ -243,7 +243,7 @@ fields:
     type: string
     mode_conditional: parked-only
     mutability: mutable
-    description: Path to the canonical plan file, under the `dg-skills stash -s spec` bucket, backing this parked spec.
+    description: Path to the canonical plan file, under the `dg stash -s spec` bucket, backing this parked spec.
 
   # ---- Captured-context (free-form, append-only) -----------------------
   resolved_open_questions:

@@ -3,6 +3,7 @@
 Status: Accepted
 Date: 2026-11-03
 Topic: Installation
+Superseded in part by [ADR 0055](0055-one-dg-program-with-flat-commands.md): one compiled `dg` replaces the runtime, the bundle and the four shims; the bundle stays only as the 6.3 bridge.
 
 ## Context
 
@@ -99,9 +100,7 @@ sequenceDiagram
 - [build.ts](../../pkg/launcher/build.ts)
 - [runtime.json](../../pkg/launcher/runtime.json)
 - [program.ts](../../pkg/common/src/node/program.ts)
-- [runtime.ts](../../pkg/skills-cli/src/install/runtime.ts)
-- [bundle.ts](../../pkg/skills-cli/src/install/bundle.ts)
-- [shims.ts](../../pkg/skills-cli/src/install/shims.ts)
+- [compiled.ts](../../pkg/skills-cli/src/install/compiled.ts), which replaced runtime.ts, bundle.ts and shims.ts ([ADR 0055](0055-one-dg-program-with-flat-commands.md))
 - [bootstrap.sh](../../pkg/skills-cli/bootstrap.sh)
 - [release.yml](../../.github/workflows/release.yml)
 - [bump-runtime.ts](../../scripts/bump-runtime.ts)

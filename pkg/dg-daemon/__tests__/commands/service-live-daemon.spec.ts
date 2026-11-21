@@ -50,7 +50,7 @@ describe("service commands against a live daemon", () => {
 		const result = await runCli(dgHome, ["service", "rm", "bot"], { port });
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(
-			'service "bot" is running — stop it first with dg-daemon service stop bot',
+			'service "bot" is running — stop it first with dg service stop bot',
 		);
 		expect(readFileSync(configPathOf(dgHome), "utf8")).toBe(before);
 		await post(port, "bot/stop");
@@ -69,7 +69,7 @@ describe("service commands against a live daemon", () => {
 		}
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(
-			'service "bot" is backoff — stop it first with dg-daemon service stop bot',
+			'service "bot" is backoff — stop it first with dg service stop bot',
 		);
 		expect(readFileSync(configPathOf(dgHome), "utf8")).toBe(before);
 		await post(port, "bot/stop");
@@ -117,7 +117,7 @@ describe("service commands against a live daemon", () => {
 		);
 		expect(lines(result.stdout)).toEqual([
 			'added service "bot"',
-			"next: dg-daemon service start bot",
+			"next: dg service start bot",
 		]);
 	});
 

@@ -92,7 +92,7 @@ async function runProtoBrowserRequest(input: {
 		client = await CliClient.connect(resolved);
 	} catch (error) {
 		throw new Error(
-			"Prototype --ext requires a dg daemon session with a connected extension. Run dg-agent start. If no extension is connected, install it with dg-skills install. Then pass --session ID (or use that session's working directory). " +
+			"Prototype --ext requires a dg daemon session with a connected extension. Run dg agent start. If no extension is connected, install it with dg install. Then pass --session ID (or use that session's working directory). " +
 				(error instanceof Error ? error.message : String(error)),
 		);
 	}
@@ -808,7 +808,7 @@ export function dispatchProto(
 }
 
 function buildExtensionProgram(): Command {
-	const proto = new Command("dg-skills proto --ext")
+	const proto = new Command("dg proto --ext")
 		.description("prototype a live page through the dg-ai-extension")
 		.addHelpText(
 			"after",
@@ -884,7 +884,7 @@ function buildExtensionProgram(): Command {
 }
 
 async function runExtension(argv: string[]): Promise<undefined> {
-	assertExtensionInstalled("dg-skills proto --ext");
+	assertExtensionInstalled("dg proto --ext");
 	await buildExtensionProgram().parseAsync(argv, { from: "user" });
 	return undefined;
 }
@@ -893,13 +893,13 @@ function runLocal(argv: string[]): Promise<number | undefined> | number {
 	const verb = argv[0];
 	if (verb && EXTENSION_VERBS.includes(verb)) {
 		process.stderr.write(
-			`proto: "${verb}" is an extension command; add --ext (dg-skills proto --ext ${argv.join(" ")})\n`,
+			`proto: "${verb}" is an extension command; add --ext (dg proto --ext ${argv.join(" ")})\n`,
 		);
 		return 1;
 	}
 	if (!verb || verb === "--help" || verb === "-h") {
 		process.stdout.write(
-			`${PROTOTYPE_USAGE}\nExtension flow: dg-skills proto --ext <scrape|plant|cleanup> [--help]\n`,
+			`${PROTOTYPE_USAGE}\nExtension flow: dg proto --ext <scrape|plant|cleanup> [--help]\n`,
 		);
 		return verb ? 0 : 1;
 	}

@@ -3,19 +3,20 @@ name: proto
 description: Build a throwaway prototype before committing to a design. The local mode, which is the default, routes to a runnable terminal app for state and logic questions, five UI variations toggled from one route (set the count with -n or name them with -o), or a clickable walkthrough across a plan's workflows, with a refine chain and -c resume. Add --ext to prototype app-native variations inside a live page with the dg-ai-extension instead. Use when the user wants to prototype, sanity-check a data model or state machine, mock up a UI, explore design options, review or rework alternatives on a real page, or says "prototype this", "show me all the workflows", "let me play with it". Flags: --ext, -n, -o, -c, --light, --publish, --self-contained, --series.
 ---
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
-dg-skills prototype --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" prototype --help >/dev/null 2>&1 ||
+dg prototype --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" prototype --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
-If a step fails, run dg-skills doctor proto prototype install stash.
+If a step fails, run dg doctor proto prototype install stash.
 
-`dg-skills --version` prints a sha1 of its entry file. If a flag documented here (`--selftest`, `--require-pending`, `--source=`) errors as unknown, the installed binary predates it; refresh it with the curl line above.
+`dg --version` prints a sha1 of its entry file. If a flag documented here (`--selftest`, `--require-pending`, `--source=`) errors as unknown, the installed binary predates it; refresh it with the curl line above.
 
 # Prototype
 
@@ -44,8 +45,8 @@ and rework in that page. The `--ext` mode is documented in [references/extension
 If `-n` and `-o` disagree, `-o` wins. `-n` has no upper limit in the local mode.
 
 **Behavior change.** Plain `/dg:proto` used to run the extension flow. It now runs the local
-mode. Add `--ext` to keep the extension flow. `dg-skills proto scrape|plant|cleanup` now needs
-`--ext` too: `dg-skills proto --ext plant <plan>`.
+mode. Add `--ext` to keep the extension flow. `dg proto scrape|plant|cleanup` now needs
+`--ext` too: `dg proto --ext plant <plan>`.
 
 ## Pick a mode
 
@@ -86,7 +87,7 @@ never fetch one from the network, to satisfy this: use what the project already 
 dependency is genuinely missing, stop and name the one command the user should run (the same way the
 pw skill asks before `pw install-browser`) and let them run it. `--ext` mode never writes a browser
 download either: the extension hands scrape and plant results straight to the CLI over the paired
-dg-daemon session. A `~/Downloads/dg-proto/` folder from an older `dg-skills` version is safe to
+dg session. A `~/Downloads/dg-proto/` folder from an older `dg` version is safe to
 delete; nothing reads or writes it anymore.
 
 A prototype of an existing app's UI renders **in that app**. When the thing being prototyped is a
@@ -95,7 +96,7 @@ app (UI sub-shape A in [references/local-ui.md](references/local-ui.md)). Never 
 look-alike: the user then judges the copy, not the design.
 
 With no host app, or with `--self-contained`, serve the content on the `prototype serve` page
-with `dg-skills prototype ui`. Prose, tables, code, and compare cards are plain HTML inside a
+with `dg prototype ui`. Prose, tables, code, and compare cards are plain HTML inside a
 variant, so no other viewer is needed. See [references/local-formats.md](references/local-formats.md).
 
 Verify the page renders before handing it over. Load it (an already-installed Playwright, through
@@ -109,8 +110,8 @@ this look right?" about a page you have not confirmed renders.
 round, builds no new variants, and shows C again for a pick. `approve C: <note>` makes C the base
 of a new round: `-n` new variants that change only what the note asks. Every round shows in the
 same browser tab: reuse one chain key. The chain ends on an approval with no note, or on "done"
-or "stop" (`dg-skills prototype stop <chain>`). Resume a later session with `/dg:proto -c`.
-`dg-skills prototype status <name>` is the one command for checking a pick, in every
+or "stop" (`dg prototype stop <chain>`). Resume a later session with `/dg:proto -c`.
+`dg prototype status <name>` is the one command for checking a pick, in every
 shape: local, a chain, a series, in-app, and an unclaimed `--ext` verdict.
 
 **Series exception.** When prototypes run one after another (a planned set, such as one screen per

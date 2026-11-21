@@ -3,17 +3,18 @@ name: verify
 description: Review finished work before it lands. Capture before-and-after screenshots of each change at desktop, tablet, and mobile, light and dark, per role, including scrolled pages and open menus, then show them round by round on a local board with test results and an accessibility summary. Dante approves, approves with a note, sends back, or skips each item. Use when an agent has finished a branch, worktree, or page and a person needs to see it, or when the user says "verify this", "show me before and after", or "let me approve the change".
 ---
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
-dg-skills verify --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" verify --help >/dev/null 2>&1 ||
+dg verify --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" verify --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
-If a step fails, run dg-skills doctor verify pw.
+If a step fails, run dg doctor verify pw.
 
 # Verify
 
@@ -62,7 +63,7 @@ Write a JSON file. Every URL must be loopback (`127.0.0.1`, `localhost`, or `::1
 Do not point at production.
 Do not put real sessions, passwords, or access tokens in headers or cookies.
 Use seed roles only.
-A role may name a saved sign-in instead: set `"state": "<name>"`, where `<name>` is a state saved with `dg-skills pw state save <name>`.
+A role may name a saved sign-in instead: set `"state": "<name>"`, where `<name>` is a state saved with `dg pw state save <name>`.
 Verify loads the state and signs in as that user. Only loopback pages are captured.
 A state role needs the `playwright` engine. The `http` engine refuses it.
 The manifest holds the state name only. The cookies stay in the saved state and never reach the board, the session files, or the logs.
@@ -115,9 +116,9 @@ Capture details, viewports, and the accessibility check: [references/capture.md]
 ## Run the review
 
 ```bash
-dg-skills verify capture settings-nav --manifest=review.json
-dg-skills verify serve settings-nav
-dg-skills verify wait settings-nav
+dg verify capture settings-nav --manifest=review.json
+dg verify serve settings-nav
+dg verify wait settings-nav
 ```
 
 Each item becomes a section with the id `<item>-r<round>`.
@@ -179,8 +180,8 @@ A round can hold more than one version, like `/dg:proto` variants.
 Run `add` once per version with the same round id:
 
 ```bash
-dg-skills verify add settings-nav nav-r2 --title="Nav" --follows=nav-r1 --round=2 --variant=A --variant-label="Tabs" --shots=./shots/a
-dg-skills verify add settings-nav nav-r2 --title="Nav" --follows=nav-r1 --round=2 --variant=B --variant-label="Rail" --shots=./shots/b --pending=nav-r2
+dg verify add settings-nav nav-r2 --title="Nav" --follows=nav-r1 --round=2 --variant=A --variant-label="Tabs" --shots=./shots/a
+dg verify add settings-nav nav-r2 --title="Nav" --follows=nav-r1 --round=2 --variant=B --variant-label="Rail" --shots=./shots/b --pending=nav-r2
 ```
 
 A version key is 1 to 16 letters or digits.
@@ -197,13 +198,13 @@ This command does not message anyone itself.
 While the owner works, show it on the board:
 
 ```bash
-dg-skills verify pending add settings-nav settings-r2 --title="Settings" --detail="Fixing the menu" --follows=settings-r1
+dg verify pending add settings-nav settings-r2 --title="Settings" --detail="Fixing the menu" --follows=settings-r1
 ```
 
 After the owner updates the after stack:
 
 ```bash
-dg-skills verify rerun settings-nav --summary="Menu no longer clips"
+dg verify rerun settings-nav --summary="Menu no longer clips"
 ```
 
 `rerun` captures only those items and adds each one as the next round, with `follows` set to the round before.

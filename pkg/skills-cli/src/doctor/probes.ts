@@ -13,11 +13,11 @@ import {
 } from "@dg/common/node";
 import { compareVersions, versionGte } from "../utils/lib";
 
-export const CLI_PATH = "dg-skills";
+export const CLI_PATH = "dg";
 export const LEGACY_CLI_PATH = "~/.dg/bin/dg-skills";
 
 export function cliLauncher(binDir: string, platform: NodeJS.Platform = process.platform): string {
-	return join(binDir, platform === "win32" ? "dg-skills.cmd" : "dg-skills");
+	return join(binDir, platform === "win32" ? "dg.exe" : "dg");
 }
 const VERSION = /\d+\.\d+(?:\.\d+)?/;
 
@@ -113,9 +113,11 @@ export function readAllowRules(home: string): AllowRules {
 	}
 }
 
-/** An allow rule in the `~/.dg/bin/dg-skills` form, which stopped matching once skills called `dg-skills`. */
+const LEGACY_CLI_NAMES = [LEGACY_CLI_PATH, "dg-skills"];
+
+/** An allow rule for `dg-skills` or `~/.dg/bin/dg-skills`, which stopped matching once skills called `dg`. */
 export function hasLegacyAllowRule(rules: readonly string[], sub: string): boolean {
-	return rules.includes(`Bash(${LEGACY_CLI_PATH} ${sub}:*)`) || rules.includes(`Bash(${LEGACY_CLI_PATH}:*)`);
+	return LEGACY_CLI_NAMES.some((name) => rules.includes(`Bash(${name} ${sub}:*)`) || rules.includes(`Bash(${name}:*)`));
 }
 
 export function hasAllowRule(rules: readonly string[], sub: string): boolean {

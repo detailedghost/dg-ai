@@ -482,7 +482,7 @@ async function offerLoginUnit(paths: Paths, deps: JobVerbDeps): Promise<void> {
 			assertNotBlocked(paths, "daemon");
 			const { installDaemonAutostart } = await import("./autostart");
 			const { kind } = await installDaemonAutostart(deps.autostart, paths);
-			console.log(`autostart installed (${kind}): dg-daemon starts at login`);
+			console.log(`autostart installed (${kind}): dg daemon starts at login`);
 		} catch (err) {
 			console.error(`warning: ${describeError(err)}`);
 			return;

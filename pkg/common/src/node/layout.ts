@@ -205,10 +205,10 @@ export const TWO_USED_RENAME = "Move the folder that you do not want to a differ
 export function blockedText({ reason, from, to, refused }: Ends & { reason: BlockReason; refused?: boolean }): string {
 	if (reason === "two-used")
 		return `dg: two daemon folders hold data: ${from} and ${to}. dg does not choose one and does not merge them. ${TWO_USED_RENAME}`;
-	if (reason === "no-hook") return `dg: ${from} has not moved to ${to}; run dg-skills install`;
+	if (reason === "no-hook") return `dg: ${from} has not moved to ${to}; run dg install`;
 	return refused
-		? `dg: kept ${from}; stop the dg-daemon service, then run dg-skills install again`
-		: `dg: kept ${from}; a process that writes it is running. Stop it, then run dg-skills install again`;
+		? `dg: kept ${from}; stop the dg daemon, then run dg install again`
+		: `dg: kept ${from}; a process that writes it is running. Stop it, then run dg install again`;
 }
 
 export const layoutResult = (paths: DgPaths): LayoutResult | undefined => results.get(paths);
@@ -239,7 +239,7 @@ export function assertNotBlocked(paths: DgPaths, name: EntryName): void {
 			throw new DgCliError(blockedText({ reason: "no-hook", from: cached.from, to: cached.to }));
 		}
 		if (cached.kind === "kept" && cached.reason === "child-kept" && exists(cached.from)) {
-			throw new DgCliError(`dg: kept ${cached.from}; a folder inside it did not move. dg-skills doctor names it`);
+			throw new DgCliError(`dg: kept ${cached.from}; a folder inside it did not move. dg doctor names it`);
 		}
 		return;
 	}

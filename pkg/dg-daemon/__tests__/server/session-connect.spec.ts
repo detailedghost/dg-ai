@@ -163,7 +163,7 @@ describe("code pairing is removed", () => {
 		expect(await response.text()).not.toContain(bootstrap.token);
 	});
 
-	it("has no dg-daemon pair command", async () => {
+	it("has no dg daemon pair command", async () => {
 		dgHome = freshDgHome();
 
 		const result = await runDaemonCommand(dgHome, "pair");

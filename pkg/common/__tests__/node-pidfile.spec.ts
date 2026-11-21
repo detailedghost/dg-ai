@@ -48,7 +48,7 @@ describe("resolveLiveDaemon", () => {
 		const { paths, logs, restore } = setup();
 		expect(await resolveLiveDaemon(paths)).toBeUndefined();
 		restore();
-		expect(logs).toEqual(["dg-daemon: no live daemon"]);
+		expect(logs).toEqual(["dg daemon: no live daemon"]);
 	});
 
 	it("removes the pid file of a dead pid and says so", async () => {
@@ -57,7 +57,7 @@ describe("resolveLiveDaemon", () => {
 		expect(await resolveLiveDaemon(paths, dead)).toBeUndefined();
 		restore();
 		expect(logs).toEqual([
-			"dg-daemon: no live daemon (stale pid file removed)",
+			"dg daemon: no live daemon (stale pid file removed)",
 		]);
 		expect(existsSync(paths.pidPath)).toBe(false);
 	});

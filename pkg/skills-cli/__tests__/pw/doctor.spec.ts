@@ -15,7 +15,7 @@ import {
 } from "../../src/pw/doctor";
 import { checksOf, doctorWorld } from "../doctor-fixtures";
 
-const INSTALL_FIX = "dg-skills pw install-browser";
+const INSTALL_FIX = "dg pw install-browser";
 
 let dir: string;
 let world: ReturnType<typeof doctorWorld>;
@@ -182,12 +182,12 @@ describe("doctor pw-code allow-rule guard", () => {
 		expect(run.exitCode).toBe(0);
 	});
 
-	test("warns when the wildcard dg-skills rule covers pw-code", async () => {
+	test("warns when the wildcard dg rule covers pw-code", async () => {
 		world.healthy([]);
 		writeFileSync(
 			path.join(world.home, ".claude", "settings.json"),
 			JSON.stringify({
-				permissions: { allow: ["Bash(dg-skills:*)"] },
+				permissions: { allow: ["Bash(dg:*)"] },
 			}),
 		);
 		const { report } = await world.report(["pw-code"]);

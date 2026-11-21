@@ -5,26 +5,27 @@ description: Temporarily deploy the current feature branch to dev, stage, or pro
 
 # test-live — Live Branch Testing
 
-First run: install or refresh the CLI when it is missing or too old.
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old.
 
 ```bash
-dg-skills test-live --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" test-live --help >/dev/null 2>&1 ||
+dg test-live --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" test-live --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
-If a step fails, run dg-skills doctor test-live.
+If a step fails, run dg doctor test-live.
 
-**Usage:** `dg-skills test-live setup [dev|stage|prod]` (env defaults to `dev`) and `dg-skills test-live cleanup`
+**Usage:** `dg test-live setup [dev|stage|prod]` (env defaults to `dev`) and `dg test-live cleanup`
 
 GitHub only; there is no GitLab port. Hard stops: on `main`/`master`, or no `.github/workflows/` in the current directory.
 
 ## Phase 1 — Deploy
 
 ```bash
-dg-skills test-live setup [dev|stage|prod]
+dg test-live setup [dev|stage|prod]
 ```
 
 Patches the target deploy workflow with `workflow_dispatch` (skipped when already present), dispatches it on the current branch, waits for the run to go live, then exits 0 and prints the GitHub Actions run URL.
@@ -40,7 +41,7 @@ A second `setup` call on a branch that already has a pending patch refuses and n
 After the user confirms done:
 
 ```bash
-dg-skills test-live cleanup
+dg test-live cleanup
 ```
 
 Removes exactly the one commit `setup` made, preserving any later commits on the branch, then force-pushes with `--force-with-lease`. State is scoped to this repository and branch, so `cleanup` must run from the same branch `setup` patched.

@@ -91,6 +91,7 @@ belong with their owning private tooling repository.
 - [0049 — One job model for services and scheduled jobs](0049-jobs.md)
 - [0053 — Job sources and credentials](0053-job-sources-and-credentials.md)
 - [0054 — One config.toml for dg](0054-one-config-toml-for-dg.md)
+- [0055 — One dg program with flat commands](0055-one-dg-program-with-flat-commands.md)
 
 ### Security
 

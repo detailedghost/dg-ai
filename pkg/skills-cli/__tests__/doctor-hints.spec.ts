@@ -125,12 +125,12 @@ describe("credential-store check without a usable session", () => {
 
 	const sessionFile = () => join(world.paths.sessionsDir, `${FAKE_SESSION_ID}.json`);
 
-	test("a missing session warns with dg-agent start and never dg-skills install", async () => {
+	test("a missing session warns with dg agent start and never dg install", async () => {
 		daemon = startFakeCredentialDaemon(world, []);
 		rmSync(sessionFile());
 		const result = await credentialStoreCheck.run(context());
 		expect(result.status).toBe("warn");
-		expect(result.fix).toBe("dg-agent start");
+		expect(result.fix).toBe("dg agent start");
 		expect(result.fix).not.toContain("install");
 	});
 

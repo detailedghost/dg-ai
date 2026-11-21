@@ -86,7 +86,7 @@ function details(group: Group, room: number, columns: number): string[] {
 		shown++;
 	}
 	const hidden = entries.length - shown;
-	if (hidden > 0) lines.push(clip(`${pad}… ${hidden} more; dg-skills doctor --plain lists all`, columns));
+	if (hidden > 0) lines.push(clip(`${pad}… ${hidden} more; dg doctor --plain lists all`, columns));
 	if (group.fix && !rules) lines.push(...wrap(`${pad}Fix: ${group.fix}`, columns, pad));
 	return lines;
 }

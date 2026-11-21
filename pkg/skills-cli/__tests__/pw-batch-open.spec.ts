@@ -30,7 +30,7 @@ describe("pw batch-open on a CLI-only install", () => {
 		const run = await world.run(["batch-open", "--ext", A]);
 		expect(run.exitCode).toBe(1);
 		expect(run.stderr).toContain(
-			"dg-skills pw batch-open needs the dg-ai-extension, but this is a CLI-only install.",
+			"dg pw batch-open needs the dg-ai-extension, but this is a CLI-only install.",
 		);
 		expect(run.opened).toEqual([]);
 	});

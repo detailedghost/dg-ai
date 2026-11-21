@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describeLocalPageSkill } from "./local-page-skill-contract";
 import { REPO_ROOT } from "./test-support";
 
-describeLocalPageSkill("chat", "dg-agent start --ext --open");
+describeLocalPageSkill("chat", "dg agent start --ext --open");
 
 describe("chat skill extension notes", () => {
 	const skillDir = join(REPO_ROOT, "plugins", "dg", "skills", "chat");
@@ -16,10 +16,10 @@ describe("chat skill extension notes", () => {
 
 	test("the extension notes describe zero-touch pairing and never a code or a side panel", () => {
 		for (const text of [skill, reference]) {
-			expect(text).toContain("dg-agent start");
-			expect(text).toContain("dg-skills install");
+			expect(text).toContain("dg agent start");
+			expect(text).toContain("dg install");
 			expect(text).toContain(
-				"No browser extension is connected. Install it with: dg-skills install",
+				"No browser extension is connected. Install it with: dg install",
 			);
 			expect(text).toContain(
 				"Paired <identity> (<id8>) with the browser extension.",

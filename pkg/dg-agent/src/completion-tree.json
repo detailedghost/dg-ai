@@ -1,6 +1,6 @@
 {
-	"name": "dg-agent",
-	"description": "CLI an agent drives the dg-daemon with — chat, assets, and session lifecycle.",
+	"name": "dg agent",
+	"description": "CLI an agent drives the dg daemon with — chat, assets, and session lifecycle.",
 	"commands": [
 		{
 			"name": "overwatch",
@@ -783,7 +783,7 @@
 		},
 		{
 			"name": "completion",
-			"description": "print the bash, zsh or fish completion script for this program",
+			"description": "print the bash, zsh or fish completion script for dg",
 			"values": [
 				"bash",
 				"zsh",

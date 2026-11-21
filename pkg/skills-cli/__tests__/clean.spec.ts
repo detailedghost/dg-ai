@@ -16,11 +16,11 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { type DgPaths, resolveDgPaths, withInstallLock } from "@dg/common/node";
 import { blockedText, ensureLayout, type LayoutResult, moveEntries, withCliLockError } from "@dg/common/node/layout";
-import { compatLauncherText, syncCompatLaunchers } from "../src/install/compat-launchers";
+import { compatLauncherText, removeCompatLaunchers } from "../src/install/compat-launchers";
 import { type CleanSnapshot, pendingCleanPaths, planClean, runClean } from "../src/install/clean";
 import { cleanChecks } from "../src/install/clean-doctor";
 import type { DoctorContext } from "../src/doctor/types";
-import { LEGACY_PROGRAMS } from "../src/install/shims";
+import { PROGRAM_NAMES as LEGACY_PROGRAMS } from "@dg/common/node/program";
 
 const posix = describe.skipIf(process.platform === "win32");
 
@@ -463,14 +463,15 @@ posix("runClean bin launchers", () => {
 		for (const name of LEGACY_PROGRAMS) expect(readFileSync(join(legacyBin(), name), "utf8")).toBe("\x7fELF compiled dg binary");
 	});
 
-	test("keeps a launcher-shaped file whose replacement is missing from the launcher folder", async () => {
+	test("removes a notice launcher whose replacement is missing from the launcher folder", async () => {
 		putLaunchers(legacyBin());
-		rmSync(join(paths.binDir, LEGACY_PROGRAMS[0]));
+		for (const name of LEGACY_PROGRAMS) rmSync(join(paths.binDir, name));
 
-		const { lines } = await run(paths);
+		const { code, lines } = await run(paths);
 
-		expect(lines[0]).toBe(`dg: kept ${legacyBin()}; it holds files that are not dg launchers with a replacement: ${LEGACY_PROGRAMS[0]}`);
-		expect(existsSync(join(legacyBin(), LEGACY_PROGRAMS[0]))).toBe(true);
+		expect(code).toBe(0);
+		expect(lines).toContain(`dg: removed ${legacyBin()}`);
+		expect(existsSync(legacyBin())).toBe(false);
 	});
 
 	test("uses the .cmd names on win32: removes a bin of three .cmd files and keeps one with the bare names", async () => {
@@ -508,11 +509,11 @@ posix("runClean bin launchers", () => {
 		for (const name of LEGACY_PROGRAMS) expect(existsSync(join(flat.binDir, name))).toBe(true);
 	});
 
-	test("lets syncCompatLaunchers create no legacy bin after clean removed it", async () => {
+	test("lets removeCompatLaunchers create no legacy bin after clean removed it", async () => {
 		putLaunchers(legacyBin());
 		await run(paths);
 
-		syncCompatLaunchers(paths, "1.45.0");
+		removeCompatLaunchers(paths, "linux");
 
 		expect(existsSync(legacyBin())).toBe(false);
 		expect(existsSync(paths.legacyHome)).toBe(false);

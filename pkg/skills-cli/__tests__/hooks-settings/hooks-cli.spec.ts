@@ -129,7 +129,7 @@ describe("hooks disable --all", () => {
 
 		for (const file of [world.paths.claude, world.paths.codex]) {
 			expect(ownedObjects(world.readJson(file))).toEqual([]);
-			expect(world.text(file)).not.toMatch(/dg-skills(\.cmd|\.exe)? hooks run/);
+			expect(world.text(file)).not.toMatch(/dg(-skills)?(\.cmd|\.exe)? hooks run/);
 		}
 		expect(world.has(world.paths.opencodePlugin)).toBe(false);
 		expect(
@@ -193,13 +193,13 @@ describe("hooks usage errors", () => {
 		world.seed(world.paths.claude, {});
 		const before = world.text(world.paths.claude);
 		const result = await world.cli(["enable", "format"], {
-			launcher: "bin/dg-skills",
+			launcher: "bin/dg",
 		});
 		expect(result.code).toBe(2);
 		expect(world.text(world.paths.claude)).toBe(before);
 	});
 
-	test("the default launcher on Windows is the dg-skills.cmd shim the installer writes", async () => {
+	test("the default launcher on Windows is the dg.exe the installer links", async () => {
 		world.seed(world.paths.claude, {});
 		const result = await world.cli(["enable", "format"], {
 			launcher: undefined,
@@ -209,13 +209,13 @@ describe("hooks usage errors", () => {
 		const command = world.readJson(world.paths.claude).hooks?.PostToolUse?.[0]
 			?.hooks[0]?.command;
 		expect(command).toBe(
-			`${join(world.dgHome, "bin", "dg-skills.cmd")} hooks run format`,
+			`${join(world.dgHome, "bin", "dg.exe")} hooks run format`,
 		);
 	});
 
 	test("a launcher path with a space is refused or written quoted", async () => {
 		world.seed(world.paths.claude, {});
-		const spaced = join(world.dgHome, "my bin", "dg-skills");
+		const spaced = join(world.dgHome, "my bin", "dg");
 		const result = await world.cli(["enable", "format"], { launcher: spaced });
 		if (result.code !== 0) {
 			expect(world.readJson(world.paths.claude)).toEqual({});
@@ -287,7 +287,7 @@ describe("hooks cli edge cases", () => {
 			stdin: Readable.from([]),
 			env: { DG_HOME: world.dgHome },
 			home: world.home,
-			launcher: ".dg/bin/dg-skills",
+			launcher: ".dg/bin/dg",
 			seams: {
 				run: async () => ({ status: 0, stdout: "", stderr: "" }),
 				which: () => undefined,
@@ -377,6 +377,6 @@ describe("hooks cli edge cases", () => {
 			},
 		});
 		expect(result).toBe(0);
-		expect(world.text(world.paths.claude)).toContain(join(resolve("relative/dg"), "bin", "dg-skills"));
+		expect(world.text(world.paths.claude)).toContain(join(resolve("relative/dg"), "bin", "dg"));
 	});
 });

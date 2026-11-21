@@ -37,7 +37,7 @@ export function settingsWorld() {
 	const fixtures = scratchFixtures();
 	const home = fixtures.tmp("hooks-settings-home-");
 	const dgHome = fixtures.tmp("hooks-settings-dg-");
-	const launcher = join(dgHome, "bin", "dg-skills");
+	const launcher = join(dgHome, "bin", "dg");
 
 	const paths = {
 		claude: join(home, ".claude", "settings.json"),
@@ -131,7 +131,7 @@ export function settingsWorld() {
 }
 
 const OWNED_COMMAND =
-	/(?:^|[\\/])dg-skills(?:\.cmd|\.exe)?["']? hooks run [a-z-]+$/;
+	/(?:^|[\\/])(?:dg|dg-skills)(?:\.cmd|\.exe)?["']? hooks run [a-z-]+$/;
 
 export function ownedObjects(file: SettingsFile): HookObject[] {
 	return Object.values(file.hooks ?? {})

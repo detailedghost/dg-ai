@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { ROUTES } from "../src/main";
+import { ALIASES, flatRows, GROUPS } from "../src/flat";
 import { runDg } from "./fixtures";
 
 let savedVersion: string | undefined;
@@ -23,25 +23,25 @@ describe("dg usage", () => {
 	});
 
 	test("every spelling of help prints the same text", async () => {
-		const texts = await Promise.all([[], ["--help"], ["-h"], ["help"], ["help", "help"], ["help", "completion"]].map((argv) => runDg(argv)));
+		const texts = [];
+		for (const argv of [[], ["--help"], ["-h"], ["help"], ["help", "help"], ["help", "completion"]]) texts.push(await runDg(argv));
 		for (const run of texts) expect(run.stdout).toBe(texts[0]?.stdout as string);
 	});
 
-	test("lists each name of the routing table with its description", async () => {
+	test("lists each flat name with its description under its area", async () => {
 		const { stdout } = await runDg(["--help"]);
 		const lines = stdout.split("\n").map((line) => line.trim());
-		for (const [name, row] of Object.entries(ROUTES)) {
-			expect(lines.some((line) => line.startsWith(`${name} `) && line.endsWith(row.description))).toBe(true);
+		for (const row of flatRows()) {
+			expect(lines.some((line) => line.startsWith(`${row.name} `) && line.endsWith(row.description))).toBe(true);
 		}
+		for (const title of ["Skills commands:", "Agent commands:", "Daemon commands:", "Groups:", "Aliases:", "Other:"])
+			expect(lines).toContain(title);
 	});
 
-	test("names the target program on every row", async () => {
+	test("lists the groups and the aliases", async () => {
 		const { stdout } = await runDg(["--help"]);
-		const lines = stdout.split("\n").map((line) => line.trim());
-		for (const [name, row] of Object.entries(ROUTES)) {
-			const target = [row.program, ...row.command].join(" ");
-			expect(lines.some((line) => line.startsWith(`${name} `) && line.endsWith(`(runs ${target})`))).toBe(true);
-		}
+		const first = stdout.split("\n").map((line) => line.trim().split(/\s+/)[0]);
+		for (const word of [...Object.keys(GROUPS), ...Object.keys(ALIASES), "pw", "phone", "job", "service"]) expect(first).toContain(word);
 	});
 
 	test("lists completion on its own line", async () => {
@@ -49,17 +49,10 @@ describe("dg usage", () => {
 		expect(stdout.split("\n").filter((line) => line.trim().startsWith("completion "))).toHaveLength(1);
 	});
 
-	test("does not list service, start, stop or status as a command", async () => {
+	test("does not list a grouped verb as a command", async () => {
 		const { stdout } = await runDg(["--help"]);
 		const first = stdout.split("\n").map((line) => line.trim().split(/\s+/)[0]);
-		for (const word of ["service", "start", "stop", "status"]) expect(first).not.toContain(word);
-	});
-
-	test("the extension line says it runs dg-skills install", async () => {
-		const { stdout } = await runDg(["--help"]);
-		const lines = stdout.split("\n").map((line) => line.trim());
-		const pattern = /^extension\s+stage the browser extension \(runs dg-skills install\)$/;
-		expect(lines.some((line) => pattern.test(line))).toBe(true);
+		for (const word of ["start", "stop", "status", "serve", "send"]) expect(first).not.toContain(word);
 	});
 });
 

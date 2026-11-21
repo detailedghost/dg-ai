@@ -118,7 +118,7 @@ describe("daemonLayoutHooks daemon.stop", () => {
 
 		expect(result).toBe("refused");
 		expect(signals).toEqual([]);
-		expect(written.join("")).toContain(`dg: kept ${dir}; stop the dg-daemon service, then run dg-skills install again`);
+		expect(written.join("")).toContain(`dg: kept ${dir}; stop the dg daemon, then run dg install again`);
 	});
 
 	test("returns stopped without a signal when the probe fails and the pid is reused by another process", async () => {
@@ -368,14 +368,14 @@ describe("daemonLayoutHooks module", () => {
 	});
 });
 
-describe("dg-daemon hooksFor", () => {
+describe("dg daemon hooksFor", () => {
 	test("serve supplies daemon.stop and passes the injected platform through", async () => {
 		const hooks = hooksFor("serve", { platform: "win32" });
 		await hooks.load?.();
 
 		expect(typeof hooks["daemon.stop"]).toBe("function");
 		expect(await hooks["daemon.stop"]?.(dir)).toBe("refused");
-		expect(written.join("")).toContain("stop the dg-daemon service");
+		expect(written.join("")).toContain("stop the dg daemon");
 	});
 
 	test("serve on linux does not refuse", async () => {

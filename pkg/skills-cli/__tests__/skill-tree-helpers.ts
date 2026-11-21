@@ -134,8 +134,9 @@ export function firstCallIndex(text: string): { gate: number; call: number } {
 		gate: lines.findIndex((line) => line.includes("bootstrap.sh")),
 		call: lines.findIndex(
 			(line) =>
-				line.includes("dg-skills") &&
+				/(^\s*|`|run )dg\s+[a-z]/.test(line) &&
 				!line.includes("--help") &&
+				!line.includes("--version") &&
 				!line.includes("bootstrap.sh"),
 		),
 	};

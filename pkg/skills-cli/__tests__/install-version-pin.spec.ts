@@ -1,19 +1,20 @@
 /**
- * `install --version <x.y.z>` pins the bundle and the extension to that exact vX.Y.Z release instead of
- * the newest one. A missing release, a missing part or a release from before the bundle hard-fails
- * before the runtime, the bundle, the shims or the extension are touched, so a pin never leaves a mixed set.
+ * `install --version <x.y.z>` pins the compiled dg and the extension to that exact vX.Y.Z release instead of
+ * the newest one. A missing release, a missing part or a release from before the compiled dg hard-fails
+ * before the program, the dg link or the extension are touched, so a pin never leaves a mixed set.
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { compiledAssetName, platformKey } from "../src/utils/lib";
 import {
 	fetchedUrls,
 	installEnv,
 	type ReleaseKind,
 	runCli,
 	writeReleaseServer,
-} from "./runtime-bundle-fixtures";
+} from "./release-fixtures";
 
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
 const PIN = "1.27.0";
@@ -34,11 +35,12 @@ function installArgv(preload: string, ...args: string[]): string[] {
 
 function expectNothingInstalled(home: string): void {
 	for (const name of ["lib", "runtime", ".dg", "cli-only"]) expect(existsSync(join(home, name))).toBe(false);
+	expect(existsSync(join(home, "data", "bin"))).toBe(false);
 	for (const name of ["dg", "dg-skills", "dg-agent", "dg-daemon"]) expect(existsSync(join(home, "bin", name))).toBe(false);
 }
 
-describe("dg-skills install --version <x.y.z>", () => {
-	test("--agent-only pins the bundle to that release and never touches the newer one", async () => {
+describe("dg install --version <x.y.z>", () => {
+	test("--agent-only pins the dg program to that release and never touches the newer one", async () => {
 		const { directory, home, fetchLog } = sandbox("pin");
 		try {
 			const { preload } = writeReleaseServer(directory, fetchLog, PIN, { also: [NEWER] });
@@ -47,9 +49,10 @@ describe("dg-skills install --version <x.y.z>", () => {
 
 			expect(result.code).toBe(0);
 			expect(result.stderr).not.toContain("skipped");
-			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe(PIN);
+			expect(basename(readlinkSync(join(home, "data", "bin", "current")))).toBe(PIN);
+			expect(readlinkSync(join(home, "bin", "dg"))).toBe(join(home, "data", "bin", "current", "dg"));
 			expect(fetchedUrls(fetchLog).some((url) => url.includes(NEWER))).toBe(false);
-			expect(readFileSync(join(home, "bin", "dg-agent"), "utf8")).toContain(`dg-agent "$@"`);
+			expect(existsSync(join(home, "data", "bin", NEWER))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -61,37 +64,38 @@ describe("dg-skills install --version <x.y.z>", () => {
 			const { preload } = writeReleaseServer(directory, fetchLog, PIN, { also: [NEWER] });
 			const newest = await runCli(installArgv(preload, "--agent-only"), installEnv(home));
 			expect(newest.code).toBe(0);
-			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe(NEWER);
+			expect(basename(readlinkSync(join(home, "data", "bin", "current")))).toBe(NEWER);
 			writeFileSync(join(home, "bin", ".dg-skills.version"), `${NEWER}\n`);
 
 			const pinned = await runCli(installArgv(preload, "--agent-only", "--version", PIN), installEnv(home));
 
 			expect(pinned.code).toBe(0);
 			expect(pinned.stderr).not.toContain("skipped");
-			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe(PIN);
+			expect(basename(readlinkSync(join(home, "data", "bin", "current")))).toBe(PIN);
+			expect(existsSync(join(home, "data", "bin", NEWER, "dg"))).toBe(true);
 			expect(existsSync(join(home, "bin", ".dg-skills.version"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
 	});
 
-	test("a bundle that fails its checksum leaves runtime/current on the runtime it had", async () => {
-		const { directory, home, fetchLog } = sandbox("runtime-restore");
+	test("a program that fails its checksum leaves bin/current on the version it had and changes nothing", async () => {
+		const { directory, home, fetchLog } = sandbox("checksum");
 		try {
-			const { preload, pin } = writeReleaseServer(directory, fetchLog, PIN, {
-				sums: (defaults) => defaults.replace(/^\S+(\s+dg-lib-)/m, `${"0".repeat(64)}$1`),
+			const { preload } = writeReleaseServer(directory, fetchLog, PIN, {
+				sums: (defaults) => defaults.replace(/^\S+(\s+dg-)/gm, `${"0".repeat(64)}$1`),
 			});
-			const old = join(home, "data", "runtime", "bun-v0.0.1");
+			const old = join(home, "data", "bin", "6.0.0");
 			mkdirSync(old, { recursive: true });
-			writeFileSync(join(old, "bun"), "#!/bin/sh\n", { mode: 0o755 });
-			symlinkSync("bun-v0.0.1", join(home, "data", "runtime", "current"));
+			writeFileSync(join(old, "dg"), "#!/bin/sh\n", { mode: 0o755 });
+			symlinkSync("6.0.0", join(home, "data", "bin", "current"));
 
 			const result = await runCli(installArgv(preload, "--cli-only", "--version", PIN), installEnv(home));
 
 			expect(result.code).not.toBe(0);
-			expect(existsSync(join(home, "data", "runtime", `bun-v${pin}`))).toBe(true);
-			expect(basename(readlinkSync(join(home, "data", "runtime", "current")))).toBe("bun-v0.0.1");
-			expect(existsSync(join(home, "data", "lib", "current"))).toBe(false);
+			expect(basename(readlinkSync(join(home, "data", "bin", "current")))).toBe("6.0.0");
+			expect(existsSync(join(home, "data", "bin", PIN))).toBe(false);
+			expect(existsSync(join(home, "bin", "dg"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -125,7 +129,7 @@ describe("dg-skills install --version <x.y.z>", () => {
 
 			expect(result.code).not.toBe(0);
 			expect(result.stderr).toContain("no release named v1.2.3 found");
-			expect(existsSync(join(home, "data", "lib"))).toBe(false);
+			expect(existsSync(join(home, "data", "bin"))).toBe(false);
 			expect(readFileSync(staleSkillFile, "utf8")).toBe("stale content\n");
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
@@ -133,12 +137,11 @@ describe("dg-skills install --version <x.y.z>", () => {
 	});
 });
 
-describe("dg-skills install --version <x.y.z> (default install, extension included)", () => {
+describe("dg install --version <x.y.z> (default install, extension included)", () => {
 	const cases: [string, ReleaseKind | undefined, string][] = [
 		["the extension zip", "extension", `extension asset found for ${PIN}`],
-		["the bundle", "bundle", `v${PIN} has no dg-lib-${PIN}.tar.gz: releases before the dg-lib bundle ship compiled binaries`],
-		["runtime.json", "runtime", "runtime.json"],
-		["SHA256SUMS", "sums", "SHA256SUMS"],
+		["the compiled dg", "program", `v${PIN} has no ${compiledAssetName(platformKey())}: releases before the compiled dg ship a bundle`],
+		["SHA256SUMS", "sums", `v${PIN} has no SHA256SUMS asset`],
 		["the whole release", undefined, `no release named v${PIN} found`],
 	];
 	for (const [part, omit, message] of cases) {
@@ -157,7 +160,7 @@ describe("dg-skills install --version <x.y.z> (default install, extension includ
 				expect(result.code).not.toBe(0);
 				expect(result.stderr).toContain(message);
 				expectNothingInstalled(home);
-				expect(fetchedUrls(fetchLog).some((url) => /\.(zip|tar\.gz)$/.test(url))).toBe(false);
+				expect(fetchedUrls(fetchLog).some((url) => /\.zip$|\/dg-[a-z0-9-]+(\.exe)?$/.test(url))).toBe(false);
 			} finally {
 				rmSync(directory, { recursive: true, force: true });
 			}
@@ -176,7 +179,7 @@ describe("dg-skills install --version <x.y.z> (default install, extension includ
 			expect(result.code).not.toBe(0);
 			expect(result.stderr).toContain(`no release named v${PIN} found`);
 			expect(existsSync(join(home, "config", "cli-only"))).toBe(true);
-			expect(existsSync(join(home, "data", "lib"))).toBe(false);
+			expect(existsSync(join(home, "data", "bin"))).toBe(false);
 			expect(existsSync(join(home, ".dg", "dg-ai-extension-chrome"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
@@ -184,20 +187,9 @@ describe("dg-skills install --version <x.y.z> (default install, extension includ
 	});
 });
 
-function assetName(binary: string): string {
-	const os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
-	const cpu = process.arch === "arm64" ? "arm64" : "x64";
-	return `${binary}-${os}-${cpu}${os === "windows" ? ".exe" : ""}`;
-}
-
-function writeCompiledOnlyPreload(dir: string, log: string): string {
+function writeBundleOnlyPreload(dir: string, log: string): string {
 	const base = "https://github.com/detailedghost/dg-ai/releases/download";
-	const names = [
-		assetName("dg-skills"),
-		assetName("dg-daemon"),
-		assetName("dg-agent"),
-		"dg-ai-extension-1.2.3-chrome.zip",
-	];
+	const names = ["dg-lib-1.2.3.tar.gz", "runtime.json", "SHA256SUMS", "dg-ai-extension-1.2.3-chrome.zip"];
 	const assets = names.map((name) => ({ name, browser_download_url: `${base}/v1.2.3/${name}` }));
 	const releases = [{ tag_name: "v1.2.3", draft: false, assets }];
 	const path = join(dir, "full-preload.ts");
@@ -216,7 +208,7 @@ globalThis.fetch = (async (input: unknown) => {
 	return path;
 }
 
-describe("dg-skills install --version <pre-E release>", () => {
+describe("dg install --version <release that ships a bundle>", () => {
 	const modes: [string, string[]][] = [
 		["the default install", []],
 		["--cli-only", ["--cli-only"]],
@@ -224,26 +216,26 @@ describe("dg-skills install --version <pre-E release>", () => {
 	];
 	for (const [label, flags] of modes) {
 		test(`${label} fails with the documented bootstrap message and changes nothing`, async () => {
-			const { directory, home, fetchLog } = sandbox("pre-bundle");
+			const { directory, home, fetchLog } = sandbox("pre-compiled");
 			const bin = join(home, "bin");
 			mkdirSync(bin, { recursive: true });
-			writeFileSync(join(bin, "dg-skills"), "compiled dg-skills 1.2.3");
+			writeFileSync(join(bin, "dg-skills"), "foreign dg-skills 1.2.3");
 			writeFileSync(join(bin, ".dg-skills.version"), "1.2.3\n");
 			try {
-				const preload = writeCompiledOnlyPreload(directory, fetchLog);
+				const preload = writeBundleOnlyPreload(directory, fetchLog);
 				const result = await runCli(installArgv(preload, ...flags, "--version", "1.2.3"), installEnv(home));
 
 				expect(result.code).not.toBe(0);
-				expect(result.stderr).toMatch(
-					/releases before the dg-lib bundle ship compiled binaries; run that release's bootstrap\.sh: curl -fsSL https:\/\/github\.com\/[^ ]+\/releases\/download\/v1\.2\.3\/bootstrap\.sh \| sh/,
+				expect(result.stderr).toContain(
+					`v1.2.3 has no ${compiledAssetName(platformKey())}: releases before the compiled dg ship a bundle; run that release's bootstrap.sh: curl -fsSL https://github.com/detailedghost/dg-ai/releases/download/v1.2.3/bootstrap.sh | sh`,
 				);
-				expect(readFileSync(join(bin, "dg-skills"), "utf8")).toBe("compiled dg-skills 1.2.3");
+				expect(readFileSync(join(bin, "dg-skills"), "utf8")).toBe("foreign dg-skills 1.2.3");
 				expect(readFileSync(join(bin, ".dg-skills.version"), "utf8")).toBe("1.2.3\n");
-				for (const name of ["lib", "runtime", ".dg", "cli-only"]) {
+				for (const name of ["lib", "runtime", ".dg", "cli-only", "data"]) {
 					expect(existsSync(join(home, name))).toBe(false);
 				}
-				expect(existsSync(join(bin, "dg-agent"))).toBe(false);
-				expect(fetchedUrls(fetchLog).some((url) => /\.(zip|tar\.gz)$/.test(url))).toBe(false);
+				expect(existsSync(join(bin, "dg"))).toBe(false);
+				expect(fetchedUrls(fetchLog).filter((url) => !url.includes("/releases?"))).toEqual([]);
 			} finally {
 				rmSync(directory, { recursive: true, force: true });
 			}

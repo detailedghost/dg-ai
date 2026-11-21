@@ -1,25 +1,26 @@
 #!/bin/sh
-# Install the dg runtime and bundle into the per-OS data dir, then run `dg-skills install`.
+# Install the compiled dg program into the per-OS data dir, then run `dg install`.
 #
 #   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 #   ... | sh -s -- --cli-only    skip the extension.
 #   ... | sh -s -- --agent-only  install for a non-Claude agent that only needs phone.
-#   ... | sh -s -- --skills-only copy the skill files, then install the runtime and bundle only. It runs
-#       no `dg-skills install`, fetches no extension and executes no skill content. Add --no-cli to keep it
+#   ... | sh -s -- --skills-only copy the skill files, then install the dg program only. It runs
+#       no `dg install`, fetches no extension and executes no skill content. Add --no-cli to keep it
 #       an offline copy of the skill files (nothing is downloaded from a release), and --dest <dir> to
 #       choose where they go.
 #   ... | sh -s -- --chat-only    download only the chat skills for Claude chat: the checksum-verified
 #       dg-chat-skills-<x.y.z>.zip unpacked into ./dg-chat-skills (or --dest <dir>), one upload-ready ZIP
-#       per skill. No runtime, no bundle, no launchers, no extension, and nothing it unpacks is run.
+#       per skill. No dg program, no extension, and nothing it unpacks is run.
 #   ... | sh -s -- --codex       also copy the skills into $CODEX_HOME/skills.
 #   ... | sh -s -- --version <x.y.z> (also --version=<x.y.z>): install that release.
 # Older scripts may still set DG_CLI_ONLY, DG_AGENT_ONLY, DG_SKILLS_ONLY, DG_SKILLS_NO_CLI, DG_SKILLS_DEST,
 # DG_INSTALL_CODEX or DG_VERSION; those keep working, and a flag always wins.
 #
-# Layout: runtime/bun-v<bun>, lib/<release>, runtime/current and lib/current links in the data dir
-# (~/.local/share/dg on Linux, ~/Library/Application Support/dg on macOS, $DG_HOME/data), and the dg, dg-skills,
-# dg-agent and dg-daemon launchers in ~/.local/bin (or $DG_HOME/bin). Every download is verified against
-# SHA256SUMS or runtime.json before anything is installed. Re-running upgrades in place.
+# Layout: bin/<release>/dg and a bin/current link in the data dir (~/.local/share/dg on Linux,
+# ~/Library/Application Support/dg on macOS, $DG_HOME/data), and a dg link to bin/current/dg in
+# ~/.local/bin (or $DG_HOME/bin). The dg-linux-x64 style asset is verified against SHA256SUMS and must
+# report the release version before any link changes. Old dg-skills, dg-agent and dg-daemon launchers are
+# removed. A 6.3 runtime/ and lib/ are left in place. Re-running upgrades in place.
 # Windows: use bootstrap.ps1 instead.
 set -eu
 
@@ -42,35 +43,35 @@ while [ "$#" -gt 0 ]; do
     --dest=*) DEST_ARG=${1#--dest=} ;;
     --dest)
       shift
-      [ "$#" -gt 0 ] || { echo "dg-skills: --dest requires a directory" >&2; exit 1; }
+      [ "$#" -gt 0 ] || { echo "dg: --dest requires a directory" >&2; exit 1; }
       DEST_ARG=$1
       ;;
     --version=*) VERSION_ARG=${1#--version=} ;;
     --version)
       shift
-      [ "$#" -gt 0 ] || { echo "dg-skills: --version requires a value" >&2; exit 1; }
+      [ "$#" -gt 0 ] || { echo "dg: --version requires a value" >&2; exit 1; }
       VERSION_ARG=$1
       ;;
   esac
   shift
 done
 if [ "$SKILLS_ONLY" = "1" ] && [ "$CLI_ONLY" = "1" ]; then
-  echo "dg-skills: pass only one of --skills-only and --cli-only" >&2
+  echo "dg: pass only one of --skills-only and --cli-only" >&2
   exit 1
 fi
 if [ "$SKILLS_ONLY" = "1" ] && [ "$AGENT_ONLY" = "1" ]; then
-  echo "dg-skills: pass only one of --skills-only and --agent-only" >&2
+  echo "dg: pass only one of --skills-only and --agent-only" >&2
   exit 1
 fi
 if [ "$CLI_ONLY" = "1" ] && [ "$AGENT_ONLY" = "1" ]; then
-  echo "dg-skills: pass only one of --cli-only and --agent-only" >&2
+  echo "dg: pass only one of --cli-only and --agent-only" >&2
   exit 1
 fi
 if [ "$CHAT_ONLY" = "1" ]; then
   for other in "CLI_ONLY:--cli-only" "SKILLS_ONLY:--skills-only" "AGENT_ONLY:--agent-only" "INSTALL_CODEX:--codex" "NO_CLI:--no-cli"; do
     eval "set_to=\${${other%%:*}}"
     if [ "$set_to" = "1" ]; then
-      echo "dg-skills: --chat-only installs nothing but the chat skills; drop ${other#*:}" >&2
+      echo "dg: --chat-only installs nothing but the chat skills; drop ${other#*:}" >&2
       exit 1
     fi
   done
@@ -104,7 +105,7 @@ cleanup_tmp() {
 trap cleanup_tmp EXIT
 
 die() {
-  echo "dg-skills: $1" >&2
+  echo "dg: $1" >&2
   exit 1
 }
 
@@ -149,11 +150,11 @@ copy_skill_tree() {
   manifest=$(mktemp)
   track_tmp "$manifest"
   if [ ! -d "$src" ]; then
-    echo "dg-skills: no skills directory at ${src}" >&2
+    echo "dg: no skills directory at ${src}" >&2
     exit 1
   fi
   if find "$src" -type l | grep -q .; then
-    echo "dg-skills: refusing to copy a symlink from ${src}" >&2
+    echo "dg: refusing to copy a symlink from ${src}" >&2
     exit 1
   fi
   refuse_persona_links "$src"
@@ -179,7 +180,7 @@ copy_skill_tree() {
       rel=${rel#/}
       case "$rel" in
         ""|..|../*|*/..|*/../*)
-          echo "dg-skills: refusing ${rel}" >&2
+          echo "dg: refusing ${rel}" >&2
           exit 1
           ;;
       esac
@@ -192,14 +193,14 @@ copy_skill_tree() {
     rm -f "$filelist"
   done
   if [ "$found" -ne 1 ]; then
-    echo "dg-skills: ${src} has no skill directories" >&2
+    echo "dg: ${src} has no skill directories" >&2
     exit 1
   fi
   sort "$manifest"
   count=$(wc -l <"$manifest" | tr -d " ")
   echo "Installed ${count} skill files at ${dest}."
   copy_personas "$src" "$dest"
-  echo "Skills-only install: no skill content was executed. Fetching the dg bundle with the dg, dg-skills, dg-agent and dg-daemon launchers (no extension)."
+  echo "Skills-only install: no skill content was executed. Fetching the dg program (no extension)."
   rm -f "$manifest"
 }
 
@@ -211,7 +212,7 @@ refuse_persona_links() {
   agents_src=$(persona_source "$1") || return 0
   [ -d "$agents_src" ] || return 0
   if find "$agents_src" -type l | grep -q .; then
-    echo "dg-skills: refusing to copy a symlink persona from ${agents_src}" >&2
+    echo "dg: refusing to copy a symlink persona from ${agents_src}" >&2
     exit 1
   fi
 }
@@ -277,13 +278,14 @@ resolve_release() {
 }
 
 extract_source_archive() {
+  command -v tar >/dev/null 2>&1 || die "tar is required"
   archive_file=$1
   extract_dir=$2
   mkdir -p "$extract_dir"
   tar -xzf "$archive_file" -C "$extract_dir"
   set -- "$extract_dir"/*/
   if [ "$#" -ne 1 ] || [ ! -d "$1" ]; then
-    echo "dg-skills: expected one directory in the source archive" >&2
+    echo "dg: expected one directory in the source archive" >&2
     exit 1
   fi
   printf '%s' "${1%/}"
@@ -360,10 +362,6 @@ sums_entry() {
   ' "${WORK}/SHA256SUMS" | tr 'A-F' 'a-f'
 }
 
-json_field() {
-  printf '%s' "$1" | sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p"
-}
-
 pick_sha_cmd() {
   if command -v sha256sum >/dev/null 2>&1; then
     SHA_CMD="sha256sum"
@@ -421,7 +419,7 @@ if [ "$SKILLS_ONLY" = "1" ]; then
   skills_tree_source
   copy_skill_tree "${SKILLS_SRC}" "${DEST_ARG:-${DG_SKILLS_DEST:-${ROOT}/skills}}"
   if [ "${NO_CLI}" = "1" ]; then
-    echo "Skipped the dg-skills CLI (--no-cli): offline copy only."
+    echo "Skipped the dg CLI (--no-cli): offline copy only."
     exit 0
   fi
 fi
@@ -451,108 +449,74 @@ if [ "$platform" = "linux-x64" ]; then
   fi
 fi
 
-for tool in "$CURL" tar unzip; do
-  command -v "$tool" >/dev/null 2>&1 || die "${tool} is required"
-done
-if command -v sha256sum >/dev/null 2>&1; then
-  SHA_CMD="sha256sum"
-elif command -v shasum >/dev/null 2>&1; then
-  SHA_CMD="shasum -a 256"
-else
-  die "sha256sum or shasum is required"
-fi
+command -v "$CURL" >/dev/null 2>&1 || die "$CURL is required"
+pick_sha_cmd
 
 resolve_release
 
-WORK=$(mktemp -d)
-track_tmp "${WORK}"
+ASSET="dg-${platform}"
+VERSION_DIR="${ROOT}/bin/${VERSION}"
+mkdir -p "${ROOT}/bin" "${BIN}"
 
-download_asset SHA256SUMS "${WORK}/SHA256SUMS"
-download_asset runtime.json "${WORK}/runtime.json"
-expected=$(sums_entry runtime.json)
-[ -n "${expected}" ] || die "SHA256SUMS in ${tag} has no entry for runtime.json"
-verify_sha256 "${WORK}/runtime.json" runtime.json "${expected}"
-
-flat=$(tr -d ' \n\t\r' <"${WORK}/runtime.json")
-BUN_VERSION=$(json_field "${flat}" version)
-entry=$(printf '%s' "${flat}" | sed -n "s/.*\"${platform}\":{\([^}]*\)}.*/\1/p")
-BUN_FILE=$(json_field "${entry}" file)
-BUN_SHA=$(json_field "${entry}" sha256)
-[ -n "${BUN_VERSION}" ] && [ -n "${BUN_FILE}" ] && [ -n "${BUN_SHA}" ] ||
-  die "runtime.json in ${tag} has no bun asset for ${platform}"
-
-BUN_DIR="${ROOT}/runtime/bun-v${BUN_VERSION}"
-LIB_DIR="${ROOT}/lib/${VERSION}"
-
-if [ ! -x "${BUN_DIR}/bun" ]; then
-  echo "Downloading bun ${BUN_VERSION} (${platform})..."
-  "$CURL" -fsSL -H "User-Agent: dg-ai" -o "${WORK}/${BUN_FILE}" \
-    "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/${BUN_FILE}"
-  verify_sha256 "${WORK}/${BUN_FILE}" "${BUN_FILE}" "${BUN_SHA}"
-  NEED_BUN=1
-else
-  NEED_BUN=0
-fi
-
-LIB_ASSET="dg-lib-${VERSION}.tar.gz"
-if [ ! -f "${LIB_DIR}/dg.js" ]; then
-  echo "Downloading ${LIB_ASSET}..."
-  expected=$(sums_entry "${LIB_ASSET}")
-  [ -n "${expected}" ] || die "SHA256SUMS in ${tag} has no entry for ${LIB_ASSET}"
-  download_asset "${LIB_ASSET}" "${WORK}/${LIB_ASSET}"
-  verify_sha256 "${WORK}/${LIB_ASSET}" "${LIB_ASSET}" "${expected}"
-  NEED_LIB=1
-else
-  NEED_LIB=0
-fi
-
-mkdir -p "${ROOT}/runtime" "${ROOT}/lib" "${BIN}"
-
-if [ "${NEED_BUN}" = "1" ]; then
-  stage=$(mktemp -d "${ROOT}/runtime/.stage.XXXXXX")
+install_program() {
+  WORK=$(mktemp -d)
+  track_tmp "${WORK}"
+  download_asset SHA256SUMS "${WORK}/SHA256SUMS"
+  expected=$(sums_entry "${ASSET}")
+  [ -n "${expected}" ] || die "SHA256SUMS in ${tag} has no entry for ${ASSET}"
+  echo "Downloading ${ASSET}..."
+  download_asset "${ASSET}" "${WORK}/${ASSET}"
+  verify_sha256 "${WORK}/${ASSET}" "${ASSET}" "${expected}"
+  stage=$(mktemp -d "${ROOT}/bin/.stage.XXXXXX")
   track_tmp "${stage}"
-  unzip -q "${WORK}/${BUN_FILE}" -d "${stage}"
-  inner=${BUN_FILE%.zip}
-  [ -f "${stage}/${inner}/bun" ] || die "${BUN_FILE} has no ${inner}/bun"
-  chmod 755 "${stage}/${inner}/bun"
-  rm -rf "${BUN_DIR}"
-  mv "${stage}/${inner}" "${BUN_DIR}"
-fi
+  cp "${WORK}/${ASSET}" "${stage}/dg"
+  chmod 755 "${stage}" "${stage}/dg"
+  reported=$("${stage}/dg" --version 2>/dev/null) || die "the downloaded ${ASSET} did not run"
+  first=$(printf '%s\n' "${reported}" | awk 'NR == 1 { print $1 }')
+  [ "${first}" = "${VERSION}" ] || die "${ASSET} reports '${first}', expected ${VERSION}"
+  rm -rf "${VERSION_DIR}"
+  mv "${stage}" "${VERSION_DIR}"
+}
 
-if [ "${NEED_LIB}" = "1" ]; then
-  stage=$(mktemp -d "${ROOT}/lib/.stage.XXXXXX")
-  track_tmp "${stage}"
-  tar -xzf "${WORK}/${LIB_ASSET}" -C "${stage}"
-  [ -f "${stage}/dg.js" ] || die "${LIB_ASSET} has no dg.js"
-  rm -rf "${LIB_DIR}"
-  mv "${stage}" "${LIB_DIR}"
-  chmod 755 "${LIB_DIR}"
-fi
-
-link_current "${ROOT}/runtime/current" "bun-v${BUN_VERSION}"
-link_current "${ROOT}/lib/current" "${VERSION}"
-
-for program in dg-skills dg-agent dg-daemon dg; do
-  if [ "${program}" = "dg" ] && { [ -e "${BIN}/dg" ] || [ -L "${BIN}/dg" ]; }; then
-    if [ -L "${BIN}/dg" ] && [ ! -e "${BIN}/dg" ]; then
-      :
-    elif [ -d "${BIN}/dg" ] || [ ! -f "${BIN}/dg" ] || [ ! -r "${BIN}/dg" ] ||
-      [ "$(head -c 4096 "${BIN}/dg" | tr -d '\000' | wc -c)" != "$(head -c 4096 "${BIN}/dg" | wc -c)" ] ||
-      ! head -c 4096 "${BIN}/dg" | grep -qF 'lib/current/dg.js'; then
-      echo "dg: kept ${BIN}/dg; it is not a dg launcher. Remove it or rename it, then run dg-skills install again" >&2
-      continue
-    fi
+is_dg_launcher() {
+  [ -L "$1" ] && [ ! -e "$1" ] && return 0
+  if [ -L "$1" ]; then
+    target=$(readlink "$1" || true)
+    case "$target" in
+      "$2"/*) return 0 ;;
+    esac
   fi
-  shim=$(mktemp "${BIN}/.${program}.XXXXXX")
-  track_tmp "${shim}"
-  printf '#!/bin/sh\nexec "%s/runtime/current/bun" "%s/lib/current/dg.js" %s "$@"\n' \
-    "${ROOT}" "${ROOT}" "${program}" >"${shim}"
-  chmod 755 "${shim}"
-  mv -f "${shim}" "${BIN}/${program}"
-  [ "${program}" = "dg" ] || rm -f "${BIN}/.${program}.version"
+  [ -f "$1" ] && [ -r "$1" ] || return 1
+  [ "$(head -c 4096 "$1" | tr -d '\000' | wc -c)" = "$(head -c 4096 "$1" | wc -c)" ] || return 1
+  head -c 4096 "$1" | grep -qF 'lib/current/dg.js'
+}
+
+if [ ! -x "${VERSION_DIR}/dg" ]; then
+  install_program
+fi
+link_current "${ROOT}/bin/current" "${VERSION}"
+
+DG_CMD="${BIN}/dg"
+if { [ -e "${BIN}/dg" ] || [ -L "${BIN}/dg" ]; } && ! is_dg_launcher "${BIN}/dg" "${ROOT}/bin"; then
+  echo "dg: kept ${BIN}/dg; it is not a dg launcher. Remove it or rename it, then run the bootstrap again" >&2
+  DG_CMD="${ROOT}/bin/current/dg"
+else
+  link_current "${BIN}/dg" "${ROOT}/bin/current/dg"
+fi
+
+for old in dg-skills dg-agent dg-daemon; do
+  if [ -e "${BIN}/${old}" ] || [ -L "${BIN}/${old}" ]; then
+    if is_dg_launcher "${BIN}/${old}" "${ROOT}"; then
+      rm -f "${BIN}/${old}" "${BIN}/.${old}.version"
+    else
+      echo "dg: kept ${BIN}/${old}; it is not a dg launcher and dg no longer uses it" >&2
+    fi
+  else
+    rm -f "${BIN}/.${old}.version"
+  fi
 done
 
-echo "dg runtime ${BUN_VERSION} and bundle ${VERSION} installed at ${ROOT}"
+echo "dg ${VERSION} installed at ${VERSION_DIR}"
 
 case ":${PATH}:" in
 *":${BIN}:"*) ;;
@@ -569,7 +533,7 @@ install_args=""
 if [ "${CLI_ONLY}" != "1" ] && [ "${AGENT_ONLY}" != "1" ]; then
   echo "Setting up the dg-ai-extension..."
 fi
-DG_SKILLS_BOOTSTRAP=1 "${BIN}/dg-skills" install${install_args} </dev/null
+DG_SKILLS_BOOTSTRAP=1 "${DG_CMD}" install${install_args} </dev/null
 
 if [ "${INSTALL_CODEX}" = "1" ]; then
   CODEX_ROOT="${CODEX_HOME:-${HOME}/.codex}"

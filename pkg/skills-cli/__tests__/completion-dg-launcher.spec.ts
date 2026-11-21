@@ -4,10 +4,12 @@ import {
 	mkdirSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { COMPLETION_SHELLS, completionScript } from "@dg/common/completion";
+import { resolveDgPaths } from "@dg/common/node/dg-paths";
 import { PROGRAM_NAMES } from "@dg/common/node/program";
 import { completionChecks } from "../src/completion/doctor";
 import {
@@ -18,9 +20,13 @@ import {
 	writeCompletions,
 } from "../src/completion/files";
 import { createContext } from "../src/doctor/runner";
-import { writeShims } from "../src/install/shims";
 import { makeArea } from "./dg-launcher-fixtures";
 import { fenceEnv } from "./fence-env";
+
+function pathOf(file: { path: string } | undefined): string {
+	if (!file) throw new Error("the completion file is missing");
+	return file.path;
+}
 
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
 const posix = describe.skipIf(process.platform === "win32");
@@ -47,36 +53,35 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
+const linkDg = (bin: string, root: string): void => {
+	mkdirSync(bin, { recursive: true });
+	symlinkSync(join(root, "bin", "current", "dg"), join(bin, "dg"));
+};
+
+const RETIRED_TEXT = (program: string): string => `complete -F _old ${program} __complete\n`;
+
 const dgFiles = (given: Seams = seams) =>
 	completionFiles(given).filter((file) => file.program === "dg");
 
 posix("completionFiles with a dg launcher in the bin folder", () => {
-	test("gives 12 files for dg and the three names of PROGRAM_NAMES in each of the three shells", () => {
+	test("gives only the dg file for each of the three shells", () => {
 		const files = completionFiles(seams);
 
-		expect(files).toHaveLength(12);
-		expect([...new Set(files.map((file) => file.program))]).toEqual([
-			"dg",
-			...PROGRAM_NAMES,
-		]);
-		expect(
-			files.filter((file) => file.program === "dg").map((file) => file.shell),
-		).toEqual([...COMPLETION_SHELLS]);
+		expect(files).toHaveLength(3);
+		expect([...new Set(files.map((file) => file.program))]).toEqual(["dg"]);
+		expect(files.map((file) => file.shell)).toEqual([...COMPLETION_SHELLS]);
 	});
 
-	test("also gives dg when <bin>/dg is a dg launcher", () => {
-		writeShims(seams.binDir, join(area, "root"), "linux", () => {});
+	test("also gives dg when <bin>/dg is the link the installer writes", () => {
+		linkDg(seams.binDir, resolveDgPaths().dataDir);
 
-		expect(completionFiles(seams)).toHaveLength(12);
+		expect(completionFiles(seams)).toHaveLength(3);
 	});
 
-	test("leaves dg out when <bin>/dg is a file of a different tool", () => {
+	test("gives nothing when <bin>/dg is a file of a different tool", () => {
 		writeFileSync(join(seams.binDir, "dg"), FOREIGN);
 
-		const files = completionFiles(seams);
-
-		expect(files).toHaveLength(9);
-		expect(files.some((file) => file.program === "dg")).toBe(false);
+		expect(completionFiles(seams)).toEqual([]);
 	});
 
 	test("writeCompletions writes each dg file equal to completionScript for its shell", () => {
@@ -88,7 +93,7 @@ posix("completionFiles with a dg launcher in the bin folder", () => {
 			);
 	});
 
-	test("writeCompletions writes the files of the three other programs and no dg file for a different tool", () => {
+	test("writeCompletions writes no file at all for a different tool named dg", () => {
 		writeFileSync(join(seams.binDir, "dg"), FOREIGN);
 		const withDg = completionFiles({
 			...seams,
@@ -97,13 +102,18 @@ posix("completionFiles with a dg launcher in the bin folder", () => {
 
 		const written = writeCompletions(seams, () => undefined);
 
-		expect(written).toHaveLength(9);
-		for (const file of withDg) {
-			expect([file.path, existsSync(file.path)]).toEqual([
-				file.path,
-				file.program !== "dg",
-			]);
-		}
+		expect(written).toEqual([]);
+		for (const file of withDg) expect([file.path, existsSync(file.path)]).toEqual([file.path, false]);
+	});
+
+	test("writeCompletions writes no file for the retired program names", () => {
+		writeCompletions(seams, () => undefined);
+
+		for (const program of PROGRAM_NAMES)
+			for (const shell of COMPLETION_SHELLS) {
+				const path = pathOf(completionFiles(seams).find((file) => file.shell === shell));
+				expect(existsSync(path.replace(/dg(\.fish)?$/, `${program}$1`))).toBe(false);
+			}
 	});
 
 	test("writeCompletions and removeCompletions leave an older dg completion file alone for a different tool", () => {
@@ -124,10 +134,68 @@ posix("completionFiles with a dg launcher in the bin folder", () => {
 	});
 });
 
+posix("retired completion files", () => {
+	const retired = (given: Seams = seams) =>
+		PROGRAM_NAMES.flatMap((program) =>
+			COMPLETION_SHELLS.map((shell) => {
+				const dg = completionFiles({ ...given, binDir: join(area, "empty-bin") }).find((file) => file.shell === shell);
+				return { program, path: pathOf(dg).replace(/dg(\.fish)?$/, `${program}$1`) };
+			}),
+		);
+	const seed = (): void => {
+		for (const file of retired()) {
+			mkdirSync(join(file.path, ".."), { recursive: true });
+			writeFileSync(file.path, RETIRED_TEXT(file.program));
+		}
+	};
+
+	test("writeCompletions removes retired files that call back into their program", () => {
+		seed();
+		const lines: string[] = [];
+
+		writeCompletions(seams, (line) => void lines.push(line));
+
+		for (const file of retired()) expect([file.path, existsSync(file.path)]).toEqual([file.path, false]);
+		for (const file of retired()) expect(lines).toContain(`dg: removed ${file.path}`);
+		for (const file of dgFiles()) expect(existsSync(file.path)).toBe(true);
+	});
+
+	test("removeCompletions removes the retired files and the dg files", () => {
+		seed();
+		writeCompletions(seams, () => undefined);
+		seed();
+
+		removeCompletions(seams, () => undefined);
+
+		for (const file of [...retired(), ...dgFiles()]) expect([file.path, existsSync(file.path)]).toEqual([file.path, false]);
+	});
+
+	test("a retired-name file that does not call back stays", () => {
+		const [first] = retired();
+		mkdirSync(join(pathOf(first), ".."), { recursive: true });
+		writeFileSync(pathOf(first), "# mine\n");
+
+		writeCompletions(seams, () => undefined);
+		removeCompletions(seams, () => undefined);
+
+		expect(readFileSync(pathOf(first), "utf8")).toBe("# mine\n");
+	});
+
+	test("a second writeCompletions removes nothing more", () => {
+		seed();
+		writeCompletions(seams, () => undefined);
+		const lines: string[] = [];
+
+		writeCompletions(seams, (line) => void lines.push(line));
+
+		expect(lines).toEqual([]);
+	});
+});
+
 posix(
-	"dg-skills completion --install with a file of a different tool named dg",
+	"dg completion --install with a file of a different tool named dg",
 	() => {
-		test("writes the three other programs, writes no dg file and removes none", () => {
+		test("writes no dg file and removes none", () => {
 			const dgHome = join(area, "dg-home");
 			mkdirSync(join(dgHome, "bin"), { recursive: true });
 			writeFileSync(join(dgHome, "bin", "dg"), FOREIGN);
@@ -158,7 +226,7 @@ posix(
 				existsSync(
 					join(dgHome, "share", "bash-completion", "completions", "dg-skills"),
 				),
-			).toBe(true);
+			).toBe(false);
 			expect(
 				existsSync(join(dgHome, "config", "fish", "completions", "dg.fish")),
 			).toBe(false);
@@ -166,7 +234,7 @@ posix(
 
 		test("writes the dg files when the dg file is a dg launcher", () => {
 			const dgHome = join(area, "dg-home");
-			writeShims(join(dgHome, "bin"), join(dgHome, "data"), "linux", () => {});
+			linkDg(join(dgHome, "bin"), join(dgHome, "data"));
 
 			const run = Bun.spawnSync(
 				[process.execPath, ENTRY, "completion", "--install"],
@@ -196,9 +264,9 @@ posix("doctor completion check files", () => {
 		return { ctx, bin: ctx.paths.binDir };
 	}
 
-	test("reports a dg completion file that is missing, like one of dg-skills, when <bin>/dg is a dg launcher", async () => {
+	test("reports a dg completion file that is missing, like one of dg-skills, when <bin>/dg is the dg link", async () => {
 		const { ctx, bin } = doctorContext();
-		writeShims(bin, join(area, "root"), "linux", () => {});
+		linkDg(bin, ctx.paths.dataDir);
 		const all = { ...seams, binDir: bin };
 		writeCompletions(all, () => undefined);
 		for (const file of dgFiles(all)) rmSync(file.path);
@@ -209,22 +277,22 @@ posix("doctor completion check files", () => {
 		expect(result?.detail).toContain("3 completion file(s) missing");
 		for (const file of dgFiles(all))
 			expect(result?.detail).toContain(file.path);
-		expect(result?.fix).toBe("dg-skills completion --install");
+		expect(result?.fix).toBe("dg completion --install");
 	});
 
-	test("reports a stale dg completion file when <bin>/dg is a dg launcher", async () => {
+	test("reports a stale dg completion file when <bin>/dg is the dg link", async () => {
 		const { ctx, bin } = doctorContext();
-		writeShims(bin, join(area, "root"), "linux", () => {});
+		linkDg(bin, ctx.paths.dataDir);
 		const all = { ...seams, binDir: bin };
 		writeCompletions(all, () => undefined);
 		const [first] = dgFiles(all);
-		writeFileSync(first?.path ?? "", "old");
+		writeFileSync(pathOf(first), "old");
 
 		const result = await files?.run(ctx);
 
 		expect(result?.status).toBe("warn");
 		expect(result?.detail).toContain("1 completion file(s) out of date");
-		expect(result?.detail).toContain(first?.path ?? "");
+		expect(result?.detail).toContain(pathOf(first));
 	});
 
 	test("expects no dg file and reports nothing for it when <bin>/dg is a file of a different tool", async () => {
@@ -235,15 +303,13 @@ posix("doctor completion check files", () => {
 
 		const result = await files?.run(ctx);
 
+		expect(completionFiles({ ...seams, binDir: bin })).toEqual([]);
 		expect(result?.status).toBe("ok");
-		expect(result?.detail).toContain(
-			`for ${completionFiles({ ...seams, binDir: bin }).length / 3} programs`,
-		);
 	});
 
 	test("reports the dg files and the launcher as two warnings before the first install of the new release, and one install repairs both", async () => {
 		const { ctx, bin } = doctorContext();
-		writeShims(bin, join(area, "root"), "linux", () => {});
+		linkDg(bin, ctx.paths.dataDir);
 		const all = { ...seams, binDir: bin };
 		writeCompletions(all, () => undefined);
 		for (const file of dgFiles(all)) rmSync(file.path);
@@ -253,7 +319,7 @@ posix("doctor completion check files", () => {
 
 		expect((await files?.run(ctx))?.status).toBe("ok");
 		expect(completionFiles(all).map(completionState)).toEqual(
-			Array(12).fill("current"),
+			Array(3).fill("current"),
 		);
 	});
 });

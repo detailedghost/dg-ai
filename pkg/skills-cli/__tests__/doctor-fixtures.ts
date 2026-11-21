@@ -81,7 +81,7 @@ export interface DoctorRun {
 }
 
 export function allowRule(sub: string): string {
-	return `Bash(dg-skills ${sub}:*)`;
+	return `Bash(dg ${sub}:*)`;
 }
 
 export function legacyAllowRule(sub: string): string {

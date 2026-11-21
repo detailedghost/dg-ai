@@ -63,7 +63,7 @@ async function loadedModules(argv: string[]): Promise<string[]> {
 
 const memorySearch = ["memory", "search", "token", "--identity", "lazy-agent"];
 
-describe("dg-agent start-up module loading", () => {
+describe("dg agent start-up module loading", () => {
 	it("loads the main module under the recorder", async () => {
 		const loaded = await loadedModules(memorySearch);
 

@@ -93,7 +93,7 @@ function verbs(sent: Sent[]): string[] {
 	return sent.map((entry) => entry.frame.request.verb);
 }
 
-describe("dg-agent mcp server tools/list", () => {
+describe("dg mcp server tools/list", () => {
 	it("reports the server name and version", async () => {
 		const { client } = await connectClient([browser([])]);
 		expect(client.getServerVersion()).toEqual({ name: "dg-agent", version: DG_AGENT_PACKAGE_VERSION });
@@ -132,7 +132,7 @@ describe("dg-agent mcp server tools/list", () => {
 	it("fails with the update message when the reply has no data.tools", async () => {
 		const { client } = await connectClient([() => ({ ok: true, data: { text: "old" } })]);
 		await expect(client.listTools()).rejects.toThrow(
-			"dg-agent mcp needs a newer dg-ai-extension; update and reload it",
+			"dg mcp needs a newer dg-ai-extension; update and reload it",
 		);
 	});
 
@@ -147,7 +147,7 @@ describe("dg-agent mcp server tools/list", () => {
 	});
 });
 
-describe("dg-agent mcp server tools/call", () => {
+describe("dg mcp server tools/call", () => {
 	const listed = browser([tool("dg_outlook_list", LIST_SCHEMA)]);
 
 	function calls(sent: Sent[]) {
@@ -196,7 +196,7 @@ describe("dg-agent mcp server tools/call", () => {
 	});
 });
 
-describe("dg-agent mcp server concurrency", () => {
+describe("dg mcp server concurrency", () => {
 	it("never has more than 2 relay requests in flight across concurrent calls and a list", async () => {
 		let active = 0;
 		let peak = 0;
@@ -219,7 +219,7 @@ describe("dg-agent mcp server concurrency", () => {
 	});
 });
 
-describe("dg-agent mcp server cancellation", () => {
+describe("dg mcp server cancellation", () => {
 	function gated() {
 		const releases: Array<() => void> = [];
 		const handler: Handler = async (request) => {
@@ -285,7 +285,7 @@ describe("dg-agent mcp server cancellation", () => {
 	});
 });
 
-describe("dg-agent mcp server session loss", () => {
+describe("dg mcp server session loss", () => {
 	const closing: Handler = () => {
 		throw new McpLinkClosedError();
 	};
@@ -337,13 +337,13 @@ describe("dg-agent mcp server session loss", () => {
 		for (let i = 0; i < 2; i += 1) {
 			const result = await client.callTool({ name: "dg_outlook_list", arguments: {} });
 			expect(result.isError).toBe(true);
-			expect(textOf(result)).toBe("dg-agent mcp lost its session; restart it.");
+			expect(textOf(result)).toBe("dg mcp lost its session; restart it.");
 		}
 		expect(connectCount()).toBe(2);
 	});
 
 	it("fails tools/list with the lost-session text after a second close", async () => {
 		const { client } = await connectClient([closing]);
-		await expect(client.listTools()).rejects.toThrow("dg-agent mcp lost its session; restart it.");
+		await expect(client.listTools()).rejects.toThrow("dg mcp lost its session; restart it.");
 	});
 });

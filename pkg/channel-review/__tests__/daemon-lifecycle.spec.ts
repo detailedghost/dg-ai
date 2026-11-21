@@ -52,7 +52,7 @@ describe("isOurDaemon", () => {
 	test("rejects a channel-review command line that is not the run subcommand", async () => {
 		const h = setup();
 		h.platform.alive.add(10);
-		h.platform.argsByPid.set(10, "dg-skills channel-review status");
+		h.platform.argsByPid.set(10, "dg channel-review status");
 		expect(await isOurDaemon(10, h.platform)).toBe(false);
 	});
 
@@ -287,7 +287,7 @@ describe("start", () => {
 		expect(spawned[0]!.child.killCalls).toHaveLength(0);
 	});
 
-	test("starts the daemon through the dg-skills program under the shared bundle", async () => {
+	test("starts the daemon through the dg program under the shared bundle", async () => {
 		const h = setup();
 		const { spawn, spawned } = fakeSpawn(h);
 		setProgramName("dg-skills");
@@ -299,7 +299,7 @@ describe("start", () => {
 		expect([spawned[0]!.command, ...spawned[0]!.args]).toEqual([
 			process.execPath,
 			Bun.main,
-			"dg-skills",
+			"skills",
 			"channel-review",
 			"run",
 			"--env",

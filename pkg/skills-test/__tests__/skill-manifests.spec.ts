@@ -133,9 +133,9 @@ describe("no stale paths in the shared skill tree", () => {
 });
 
 describe("CLI-invoking SKILL.md uses the compiled binary", () => {
-	const cliSkills = skillsMentioning("dg-skills ");
+	const cliSkills = skillsMentioning("dg ");
 
-	test("at least one skill invokes the dg-skills binary", () => {
+	test("at least one skill invokes the dg binary", () => {
 		expect(cliSkills.length).toBeGreaterThan(0);
 	});
 
@@ -157,32 +157,31 @@ describe("CLI-invoking SKILL.md uses the compiled binary", () => {
 	}
 });
 
-describe("chat-harness SKILL.md drives the compiled dg-agent binary", () => {
-	const harnessSkills = skillsMentioning("dg-agent recv");
+describe("chat-harness SKILL.md drives the compiled dg binary", () => {
+	const harnessSkills = skillsMentioning("dg agent recv");
 
 	test("at least one skill exposes the chat harness", () => {
 		expect(harnessSkills.length).toBeGreaterThan(0);
 	});
 
 	for (const { name, md } of harnessSkills) {
-		test(`${name}: invokes dg-agent, not the daemon directly`, () => {
-			expect(md).toContain("dg-agent start");
+		test(`${name}: invokes dg agent, not the daemon directly`, () => {
+			expect(md).toContain("dg agent start");
 			expect(md).not.toContain('"$DG_DAEMON" start');
 		});
 
-		test(`${name}: gates its bootstrap on the dg-agent binary, not on dg-skills`, () => {
-			expect(md).toMatch(/^dg-agent --version >\/dev\/null 2>&1 \|\|\n\s+"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg-agent" --version >\/dev\/null 2>&1 \|\|\n\s+curl/m);
-			expect(md).not.toMatch(/dg-skills \S+ --help [^\n]*\|\|\n\s+curl/);
+		test(`${name}: gates its bootstrap on dg agent and hints dg upgrade for an older dg`, () => {
+			expect(md).toMatch(/^dg agent --help >\/dev\/null 2>&1 \|\|\n\s+"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg" agent --help >\/dev\/null 2>&1 \|\|\n\s+\{ \{ dg --version [^\n]*echo "run dg upgrade"; \} \|\|\n\s+curl/m);
 		});
 
-		test(`${name}: pulls both binaries from the one vX.Y.Z release`, () => {
-			expect(md).toMatch(/`dg-agent`[^`]*`dg-daemon`|`dg-daemon`[^`]*`dg-agent`/);
+		test(`${name}: pulls the one dg binary from the vX.Y.Z release`, () => {
+			expect(md).toMatch(/installer pulls `dg`/);
 			expect(md).toMatch(/`vX\.Y\.Z` release/);
 			expect(md).not.toMatch(/(agent|daemon|skills|ext)-v\*/);
 		});
 
-		test(`${name}: says the two binaries must be installed together, which autostart depends on`, () => {
-			expect(md).toMatch(/same directory|next to it|installed together/i);
+		test(`${name}: names the one dg binary that starts the daemon`, () => {
+			expect(md).toMatch(/from the same binary/i);
 		});
 
 		test(`${name}: documents the recv send status spawn stage close loop`, () => {
@@ -213,8 +212,8 @@ describe("demo workflow parity", () => {
 	const demo = readFileSync(join(SKILLS_DIR, "demo", "SKILL.md"), "utf8");
 
 	test("local mode runs verify, then records with one command", () => {
-		expect(demo).toContain("dg-skills demo /tmp/ai/demo/tour.md");
-		expect(demo).toContain("dg-skills demo --verify /tmp/ai/demo/tour.md");
+		expect(demo).toContain("dg demo /tmp/ai/demo/tour.md");
+		expect(demo).toContain("dg demo --verify /tmp/ai/demo/tour.md");
 	});
 
 	test("local mode always records and has no start screen", () => {
@@ -307,7 +306,7 @@ describe("bootstrap URLs are stable", () => {
 		expect(skillDirs.length).toBeGreaterThan(0);
 		for (const name of skillDirs) {
 			const md = readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8");
-			if (!md.includes("/bin/dg-skills")) continue;
+			if (!md.includes('/bin/dg"')) continue;
 			expect(md).toContain(STABLE_BOOTSTRAP_SH);
 		}
 	});

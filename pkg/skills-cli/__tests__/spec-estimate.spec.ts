@@ -48,7 +48,7 @@ function estimate(args: string[]): Promise<SpecRun> {
 	});
 }
 
-describe("dg-skills spec estimate", () => {
+describe("dg spec estimate", () => {
 	test("prints exactly three lines in the order balance, cheap, expensive", async () => {
 		const plan = put("plan.md", planText(THREE_SLICES));
 		const run = await estimate([plan]);

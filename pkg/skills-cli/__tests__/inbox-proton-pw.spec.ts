@@ -26,7 +26,7 @@ import {
 import { inboxCliHarness } from "./inbox-cli-harness";
 import { ProtonRefreshPendingError } from "../src/inbox/proton-request-log";
 
-const SIGN_IN_COMMAND = "dg-skills inbox proton sign-in";
+const SIGN_IN_COMMAND = "dg inbox proton sign-in";
 
 function protonArgs(workspace: string): string[] {
 	return ["load", "folders", "--provider", "protonmail", "--dir", workspace];
@@ -916,7 +916,7 @@ describe("proton-pw runProtonSignIn", () => {
 			);
 			await expect(
 				runProtonSignIn(data.dir, { ...deps, timeoutMs: 0 } as never),
-			).rejects.toThrow(/dg-skills inbox proton sign-in/);
+			).rejects.toThrow(/dg inbox proton sign-in/);
 			expect(existsSync(protonProfilePaths(data.dir).markerPath)).toBe(false);
 			expect(closed()).toBe(1);
 		} finally {

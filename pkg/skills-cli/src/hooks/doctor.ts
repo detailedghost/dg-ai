@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { isAbsolute, win32 } from "node:path";
 import { skillFilesCheck } from "../doctor/checks";
 import { CLI_PATH, readAllowRules, whichBinary } from "../doctor/probes";
@@ -14,56 +14,16 @@ import {
 } from "./defs/strip-ai-coauthors";
 import { claudeWriter } from "./settings/claude";
 import { codexWriter } from "./settings/codex";
-import { type JsonObject, readJsonObject } from "./settings/json-file";
-import { ownedId, ownedLauncher } from "./settings/marker";
 import { opencodeWriter } from "./settings/opencode";
+import { ownedEntries } from "./settings/owned";
 import type { HookRuntime, SettingsWriter } from "./types";
 
 const RUNTIMES: readonly HookRuntime[] = ["claude", "codex", "opencode"];
-const LIST_LINE = /^const HOOKS = (.*);$/m;
-
-interface OwnedEntry {
-	id: string;
-	launcher: string;
-}
 
 function writerFor(runtime: HookRuntime, ctx: DoctorContext): SettingsWriter {
 	if (runtime === "claude") return claudeWriter(ctx.home);
 	if (runtime === "codex") return codexWriter(ctx.home, ctx.env.CODEX_HOME);
-	return opencodeWriter(ctx.home, "dg-skills", ctx.env.XDG_CONFIG_HOME);
-}
-
-function commandsIn(doc: JsonObject): string[] {
-	const hooks = doc.hooks;
-	if (typeof hooks !== "object" || hooks === null) return [];
-	return Object.values(hooks).flatMap((groups) =>
-		(Array.isArray(groups) ? groups : []).flatMap((group) =>
-			Array.isArray(group?.hooks)
-				? group.hooks.flatMap((h: { command?: unknown }) =>
-						typeof h?.command === "string" ? [h.command] : [],
-					)
-				: [],
-		),
-	);
-}
-
-function ownedEntries(
-	runtime: HookRuntime,
-	writer: SettingsWriter,
-): OwnedEntry[] {
-	if (!existsSync(writer.file)) return [];
-	if (runtime === "opencode") {
-		const list = LIST_LINE.exec(readFileSync(writer.file, "utf8"))?.[1];
-		const hooks = list
-			? (JSON.parse(list) as { id: string; argv: string[] }[])
-			: [];
-		return hooks.map((h) => ({ id: h.id, launcher: h.argv[0] ?? "" }));
-	}
-	return commandsIn(readJsonObject(writer.file)).flatMap((command) => {
-		const id = ownedId(command);
-		const launcher = ownedLauncher(command);
-		return id && launcher ? [{ id, launcher }] : [];
-	});
+	return opencodeWriter(ctx.home, "dg", ctx.env.XDG_CONFIG_HOME);
 }
 
 function resolves(launcher: string, ctx: DoctorContext): boolean {
@@ -144,18 +104,18 @@ const staleEntriesCheck: DoctorCheck = {
 			}
 		}
 		if (unreadable.length === 0 && stale.size === 0)
-			return ok("every dg hook entry resolves to dg-skills");
+			return ok("every dg hook entry resolves to dg");
 		const details: string[] = [];
 		const fixes: string[] = [];
 		if (stale.size > 0) {
 			const summary = [...stale]
 				.map(([runtime, ids]) => `${runtime}:${ids.join(",")}`)
 				.join(" ");
-			details.push(`dg hook entries point at a missing dg-skills: ${summary}`);
+			details.push(`dg hook entries point at a missing dg: ${summary}`);
 			fixes.push(
 				...[...stale].map(
 					([runtime, ids]) =>
-						`dg-skills hooks disable ${ids.join(" ")} --runtime ${runtime}`,
+						`dg hooks disable ${ids.join(" ")} --runtime ${runtime}`,
 				),
 			);
 		}

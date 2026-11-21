@@ -298,7 +298,7 @@ async function openSession(
 async function googleBrowser(runtime: SsmsRuntime): Promise<MessagesBrowser> {
 	if (runtime.browser) return runtime.browser;
 	if (runtime.openBrowser) return runtime.openBrowser();
-	throw new Error("google needs the dg-skills browser launcher");
+	throw new Error("google needs the dg browser launcher");
 }
 
 async function signalTransport(

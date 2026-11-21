@@ -3,19 +3,20 @@ name: refactor
 description: Find architectural deepening opportunities in the current codebase. Walks the code, surfaces up to 4 verified high-leverage refactor candidates (or accepts your own), then drops into a /dg:grill-me design conversation on the chosen one. Hands off to /dg:kick when the design converges. Use when the user wants to improve architecture, find refactoring opportunities, consolidate tightly-coupled modules, or make a codebase more testable.
 ---
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
-{ dg-skills stash --help >/dev/null 2>&1 &&
-  dg-skills thrash --help 2>/dev/null | grep -q investigate; } ||
-  { "${DG_HOME:-$HOME/.local}/bin/dg-skills" stash --help >/dev/null 2>&1 &&
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" thrash --help 2>/dev/null | grep -q investigate; } ||
+{ dg stash --help >/dev/null 2>&1 &&
+  dg thrash --help 2>/dev/null | grep -q investigate; } ||
+  { "${DG_HOME:-$HOME/.local}/bin/dg" stash --help >/dev/null 2>&1 &&
+  "${DG_HOME:-$HOME/.local}/bin/dg" thrash --help 2>/dev/null | grep -q investigate; } ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If a bare name does not answer, also after the bootstrap, call it by its `${DG_HOME:-$HOME/.local}/bin` path instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
-If a step fails, run dg-skills doctor stash thrash.
+If a step fails, run dg doctor stash thrash.
 
 # /dg:refactor — Codebase Architecture Improvement
 
@@ -41,7 +42,7 @@ Surface architectural friction and propose **deepening opportunities** — refac
 ## Phase Sequence
 
 1. **Domain context** — read project context files and architecture vocabulary.
-2. **Explore** — launch Explore agent on scope path. Returns 5–10 friction areas ranked by impact. Then run one `dg-skills thrash investigate` call with the files that the Explore agent named. Pass the paths as given, relative to the working directory. Never pass a directory. Pass 40 paths at most, and say how many paths you left out. Attach the dependents, callers and tests to each area. The verb has no time budget. When the call exits non-zero (for example: not a git repository), skip the attach step, say so, and continue.
+2. **Explore** — launch Explore agent on scope path. Returns 5–10 friction areas ranked by impact. Then run one `dg thrash investigate` call with the files that the Explore agent named. Pass the paths as given, relative to the working directory. Never pass a directory. Pass 40 paths at most, and say how many paths you left out. Attach the dependents, callers and tests to each area. The verb has no time budget. When the call exits non-zero (for example: not a git repository), skip the attach step, say so, and continue.
 3. **Verify and present candidates** — synthesize 4 at most candidates. Before you show them, launch one `dg:thrash-verify` agent per candidate, all in one message (one agent for each of the 4 at most). `REPO` is the `root` of the investigate JSON, or the scope path when investigate did not run. Make no checkout. Do not fill the candidates up again after verification. Show only the candidates with a `confirmed` or `adjusted` verdict. Do not show a candidate with a `rejected` verdict or with no verdict. An `adjusted` verdict keeps the candidate, ignores a verdict `tier`, and adds the verdict `reason` to the candidate description. A verdict file counts only when it parses and its `id` is the id of its task. Never resume a verifier. Present the candidates through `AskUserQuestion` (single-select, plus the automatic "Other"):
    - 2 to 4 verified candidates: show them all.
    - 1 verified candidate: `AskUserQuestion` has two options, accept it or give my own.

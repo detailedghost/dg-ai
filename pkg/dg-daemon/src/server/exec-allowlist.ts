@@ -105,7 +105,7 @@ export function checkExecAllowlist({
 	} catch {
 		return {
 			ok: false,
-			error: `credentials exec runs commands with pw/ values only when ${file} lists them. The file does not exist. The person makes a small fixed wrapper script that the agent cannot write, then runs dg-skills credentials allow <script> [glob] and adds the line it prints.`,
+			error: `credentials exec runs commands with pw/ values only when ${file} lists them. The file does not exist. The person makes a small fixed wrapper script that the agent cannot write, then runs dg credentials allow <script> [glob] and adds the line it prints.`,
 		};
 	}
 	const resolved = resolveExecutable(command, cwd, daemonPath);
@@ -129,8 +129,8 @@ export function checkExecAllowlist({
 		return {
 			ok: false,
 			error: names.some((name) => covering(name).every((entry) => entry.sha256 === undefined))
-				? `${file} lists ${resolved} without a sha256 pin. Run dg-skills credentials allow ${resolved} and use the line it prints.`
-				: `The sha256 of ${resolved} changed since ${file} pinned it, so credentials exec refuses it. The person checks the file, then pins it again with dg-skills credentials allow.`,
+				? `${file} lists ${resolved} without a sha256 pin. Run dg credentials allow ${resolved} and use the line it prints.`
+				: `The sha256 of ${resolved} changed since ${file} pinned it, so credentials exec refuses it. The person checks the file, then pins it again with dg credentials allow.`,
 		};
 	if (needsAnyArgs(command, resolved, bytes) && !names.every((name) => pinned(name).some((entry) => entry.allowAnyArgs)))
 		return {

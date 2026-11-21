@@ -13,7 +13,7 @@ import { HUMAN_SECTIONS, TOC_MARKER } from "./templates";
 const MAX_GRADE_BYTES = 1_000_000;
 const MAX_DECISION_LINES = 25;
 
-const USAGE = "usage: dg-skills adr lint (--all | --changed [--base <ref>] | --grade <file|->) [--level <l>] [--json]";
+const USAGE = "usage: dg adr lint (--all | --changed [--base <ref>] | --grade <file|->) [--level <l>] [--json]";
 
 interface Finding {
 	file: string;
@@ -194,7 +194,7 @@ function lintRepo(root: string, records: AdrRecord[]): Finding[] {
 		const path = join(root, file);
 		const text = existsSync(path) ? readFileSync(path, "utf8") : "";
 		const at = text.indexOf(TOC_MARKER);
-		if (at < 0 || text.slice(at + TOC_MARKER.length) !== indexTail(body)) found.push({ file, rule: "stale-index", message: "index is out of date. Run dg-skills adr index" });
+		if (at < 0 || text.slice(at + TOC_MARKER.length) !== indexTail(body)) found.push({ file, rule: "stale-index", message: "index is out of date. Run dg adr index" });
 		if (text !== "") found.push(...brokenLinks(path, text, root));
 	}
 	return found;

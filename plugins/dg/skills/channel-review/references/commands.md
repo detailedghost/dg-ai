@@ -1,6 +1,6 @@
 # Channel review commands
 
-Run the installed `dg-skills` binary. Claude is the supported default runner.
+Run the installed `dg` binary. Claude is the supported default runner.
 Codex, Copilot, and Grok Build are experimental. Codex runs with
 `--dangerously-bypass-approvals-and-sandbox`; Copilot runs with `--allow-all-tools`;
 Grok runs with `--always-approve`. They run on content that PR authors write, so a prompt injection in a PR can run
@@ -14,16 +14,16 @@ Runner availability, login, missing thrash, and timeouts have separate codes.
 
 | Command | Flags or arguments | Result |
 | --- | --- | --- |
-| `dg-skills channel-review setup` | `--force` | Ask for each required setting on a terminal and write `config.json` (mode 0600), then offer to store the relay secret. `--force` replaces an existing file. Without a terminal, write `config.example.json` beside it as a template and exit 1. |
-| `dg-skills channel-review start` | `--env dev\|prod`, `--runner claude\|codex\|copilot\|grok`, `--chat-id <id>` | Start the background daemon. |
-| `dg-skills channel-review stop` | `--env dev\|prod` | Stop the selected environment's daemon. |
-| `dg-skills channel-review status` | `--env dev\|prod` | Print daemon state, watched chats, last event IDs per chat, runner probes, and preflight as JSON; preflight checks each chat when stopped and exits 1 if any check errors. |
-| `dg-skills channel-review run` | `--env dev\|prod`, `--runner claude\|codex\|copilot\|grok`, `--chat-id <id>` | Run the foreground daemon. |
-| `dg-skills channel-review logs` | `--env dev\|prod`, `-n, --lines <n>` (default 40), `-f, --follow` | Print the last lines of the daemon log; with `--follow`, keep printing until Ctrl+C. With no log file, print its path and `no log yet`. |
-| `dg-skills channel-review env` | Optional `dev` or `prod` | Print default env, base URL, and AWS profile; a name saves that default. |
-| `dg-skills channel-review connect` | `datadog\|sentry\|relay`; `--env dev\|prod`, `--site <site>`, `--org <slug>`, `--paste`, `--session <id>` | Store a secret in the dg credential store; see [setup](setup.md#credentials). Never prints the value. |
-| `dg-skills channel-review migrate-env` | `--file <path>`, `--dry-run`, `--keep-backup`, `--session <id>` | Move known secrets from `.env` into the credential store and delete only their lines. Writes no backup unless `--keep-backup` is set; then it writes a plain-text copy (mode 0600, original values). Prints variable names only. |
-| `dg-skills channel-review export` | `--env dev\|prod` (required), `--label <job>` (required) | Write the state of that env to `<state>/jobs/<job>/import.json` (mode 0600). The daemon of that env must be stopped. See [Export for the review bot](#export-for-the-review-bot). |
+| `dg channel-review setup` | `--force` | Ask for each required setting on a terminal and write `config.json` (mode 0600), then offer to store the relay secret. `--force` replaces an existing file. Without a terminal, write `config.example.json` beside it as a template and exit 1. |
+| `dg channel-review start` | `--env dev\|prod`, `--runner claude\|codex\|copilot\|grok`, `--chat-id <id>` | Start the background daemon. |
+| `dg channel-review stop` | `--env dev\|prod` | Stop the selected environment's daemon. |
+| `dg channel-review status` | `--env dev\|prod` | Print daemon state, watched chats, last event IDs per chat, runner probes, and preflight as JSON; preflight checks each chat when stopped and exits 1 if any check errors. |
+| `dg channel-review run` | `--env dev\|prod`, `--runner claude\|codex\|copilot\|grok`, `--chat-id <id>` | Run the foreground daemon. |
+| `dg channel-review logs` | `--env dev\|prod`, `-n, --lines <n>` (default 40), `-f, --follow` | Print the last lines of the daemon log; with `--follow`, keep printing until Ctrl+C. With no log file, print its path and `no log yet`. |
+| `dg channel-review env` | Optional `dev` or `prod` | Print default env, base URL, and AWS profile; a name saves that default. |
+| `dg channel-review connect` | `datadog\|sentry\|relay`; `--env dev\|prod`, `--site <site>`, `--org <slug>`, `--paste`, `--session <id>` | Store a secret in the dg credential store; see [setup](setup.md#credentials). Never prints the value. |
+| `dg channel-review migrate-env` | `--file <path>`, `--dry-run`, `--keep-backup`, `--session <id>` | Move known secrets from `.env` into the credential store and delete only their lines. Writes no backup unless `--keep-backup` is set; then it writes a plain-text copy (mode 0600, original values). Prints variable names only. |
+| `dg channel-review export` | `--env dev\|prod` (required), `--label <job>` (required) | Write the state of that env to `<state>/jobs/<job>/import.json` (mode 0600). The daemon of that env must be stopped. See [Export for the review bot](#export-for-the-review-bot). |
 
 Flags are optional, except for `export`, which needs `--env` and `--label`. Commands use the
 saved environment unless `--env` overrides it. Start and run accept runner and chat overrides for that invocation.
@@ -31,28 +31,28 @@ saved environment unless `--env` overrides it. Start and run accept runner and c
 Read [setup](setup.md) before changing config.
 
 ```sh
-dg-skills channel-review status --env dev
-dg-skills channel-review start --env dev --runner claude --chat-id '<id>'
-dg-skills channel-review stop --env dev
-dg-skills channel-review run --env dev
-dg-skills channel-review logs --env dev -n 100 -f
-dg-skills channel-review env
-dg-skills channel-review connect datadog
-dg-skills channel-review migrate-env --dry-run
-dg-skills channel-review stop --env dev
-dg-skills channel-review export --env dev --label bot
+dg channel-review status --env dev
+dg channel-review start --env dev --runner claude --chat-id '<id>'
+dg channel-review stop --env dev
+dg channel-review run --env dev
+dg channel-review logs --env dev -n 100 -f
+dg channel-review env
+dg channel-review connect datadog
+dg channel-review migrate-env --dry-run
+dg channel-review stop --env dev
+dg channel-review export --env dev --label bot
 ```
 
 ## Export for the review bot
 
-`dg-skills channel-review export --env <env> --label <job>` copies the state of
+`dg channel-review export --env <env> --label <job>` copies the state of
 one env into `import.json`, so the review bot repository can continue where the
 old daemon stopped. `--label` is the name of the job that reads the file. The
 command reads `daemon.db` read-only, writes nothing to it and stops no process.
 
 Order of work:
 
-1. Stop the daemon of that env: `dg-skills channel-review stop --env <env>`.
+1. Stop the daemon of that env: `dg channel-review stop --env <env>`.
    The export refuses to run while that daemon runs, and names the stop command.
    A daemon that starts between the check and the read is not prevented, so
    keep it stopped.
@@ -283,14 +283,14 @@ messages do not count.
 
 | Command | Flags or arguments | Result |
 | --- | --- | --- |
-| `dg-skills channel-review emojis capture` | Required `--slot progress\|approved`; optional `--env dev\|prod`, `--chat-id <id>`, `--timeout <seconds>` | Prompt through the bot in the first configured chat (or `--chat-id`) and save the human's custom reaction. Timeout defaults to 120 seconds. |
-| `dg-skills channel-review emojis set` | `<progress\|approved> <id>` | Save a known custom ID. |
-| `dg-skills channel-review emojis show` | None | Print both slots; mark default IDs with `(built-in fallback)`. |
+| `dg channel-review emojis capture` | Required `--slot progress\|approved`; optional `--env dev\|prod`, `--chat-id <id>`, `--timeout <seconds>` | Prompt through the bot in the first configured chat (or `--chat-id`) and save the human's custom reaction. Timeout defaults to 120 seconds. |
+| `dg channel-review emojis set` | `<progress\|approved> <id>` | Save a known custom ID. |
+| `dg channel-review emojis show` | None | Print both slots; mark default IDs with `(built-in fallback)`. |
 
 ```sh
-dg-skills channel-review emojis capture --slot progress --env dev --timeout 120
-dg-skills channel-review emojis set approved '<id>'
-dg-skills channel-review emojis show
+dg channel-review emojis capture --slot progress --env dev --timeout 120
+dg channel-review emojis set approved '<id>'
+dg channel-review emojis show
 ```
 
 A human reacts to the capture prompt in Teams. IDs use

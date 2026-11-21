@@ -72,14 +72,14 @@ describe.each(["bg", "cls", "stat"])("packaged %s skill tree", (name) => {
 			.split("\n")
 			.map((line, index) => ({ line, index }))
 			.find(
-				({ line }) => line.includes("dg-skills") && !line.includes("--help"),
+				({ line }) => /(^\s*|`)dg\s+[a-z]/.test(line) && !line.includes("--help"),
 			);
 		const gateLine = text.slice(0, gate).split("\n").length - 1;
 		expect(firstCall).toBeDefined();
 		expect(gateLine).toBeLessThan(firstCall?.index ?? 0);
 		for (const line of treeText(name)
 			.split("\n")
-			.filter((value) => /dg-skills\s+[a-z]/.test(value)))
+			.filter((value) => /(^|[\s`(])dg\s+[a-z]/.test(value)))
 			expect(line).not.toContain(".dg/bin/");
 	});
 
@@ -136,9 +136,9 @@ describe("packaged bg skill", () => {
 		}
 	});
 
-	test("manages jobs through every public dg-skills bg verb", () => {
+	test("manages jobs through every public dg bg verb", () => {
 		const used = new Set(
-			[...treeText("bg").matchAll(/dg-skills bg\s+([\w-]+)/g)].map(
+			[...treeText("bg").matchAll(/dg bg\s+([\w-]+)/g)].map(
 				(match) => match[1],
 			),
 		);
@@ -153,8 +153,8 @@ describe("packaged bg skill", () => {
 			join(skillDir("bg"), "references", "other-agent.md"),
 			"utf8",
 		);
-		expect(reference).toContain("dg-skills bg run");
-		expect(reference).toContain("dg-skills proxy");
+		expect(reference).toContain("dg bg run");
+		expect(reference).toContain("dg proxy");
 		expect(reference).toContain("one quoted argument");
 		for (const backend of ["codex", "copilot", "pi", "opencode", "grok"])
 			expect(reference).toContain(backend);
@@ -167,7 +167,7 @@ describe("packaged bg skill", () => {
 		);
 		expect(reference).toContain("run_in_background");
 		expect(reference).toContain("Workflow");
-		expect(reference).toMatch(/Do \*\*not\*\* call .*dg-skills bg/);
+		expect(reference).toMatch(/Do \*\*not\*\* call .*dg bg/);
 	});
 
 	test("documents the job states with the American spelling", () => {
@@ -198,10 +198,10 @@ describe("packaged cls skill", () => {
 		}
 	});
 
-	test("tears down through dg-skills worktree and bg prune and merges fast-forward only", () => {
+	test("tears down through dg worktree and bg prune and merges fast-forward only", () => {
 		const text = treeText("cls");
-		expect(text).toContain("dg-skills worktree remove");
-		expect(text).toContain('dg-skills bg prune --cwd "$TOP"');
+		expect(text).toContain("dg worktree remove");
+		expect(text).toContain('dg bg prune --cwd "$TOP"');
 		expect(text).toContain("ExitWorktree");
 		expect(text).toMatch(/--ff-only/);
 	});
@@ -220,10 +220,10 @@ describe("packaged cls skill", () => {
 		);
 		expect(steps).toMatch(/optional/i);
 		const block = fences(steps).find(({ body }) =>
-			body.includes("dg-skills pw --help"),
+			body.includes("dg pw --help"),
 		);
 		expect(block?.body).toContain(
-			"dg-skills pw --help >/dev/null 2>&1",
+			"dg pw --help >/dev/null 2>&1",
 		);
 		expect(steps).not.toMatch(/command -v pw|pw close-all/);
 	});
@@ -268,14 +268,14 @@ describe("packaged stat skill", () => {
 		).toEqual(["-l", "--long", "-p", "--plain", "--overwatch"]);
 	});
 
-	test("gathers and cleans up through dg-skills subcommands", () => {
+	test("gathers and cleans up through dg subcommands", () => {
 		const text = skillText("stat");
 		for (const call of [
-			"dg-skills vcs-provider list-prs",
-			"dg-skills bg list",
-			"dg-skills bg prune --cwd",
-			"dg-skills worktree list",
-			"dg-skills stat checklist",
+			"dg vcs-provider list-prs",
+			"dg bg list",
+			"dg bg prune --cwd",
+			"dg worktree list",
+			"dg stat checklist",
 		])
 			expect(text).toContain(call);
 	});
@@ -301,18 +301,18 @@ describe("packaged stat skill", () => {
 });
 
 describe("packaged proxy skill background calls", () => {
-	test("reaches background jobs through dg-skills bg and keeps its flags table", () => {
+	test("reaches background jobs through dg bg and keeps its flags table", () => {
 		const text = skillText("proxy");
 		for (const verb of ["status", "list", "update", "cancel"])
 			expect(text).toMatch(
-				new RegExp(`dg-skills bg ${verb}\\b`),
+				new RegExp(`dg bg ${verb}\\b`),
 			);
 		for (const span of codeSpans(text))
 			expect([span, new RegExp(`^(?:${BG_VERBS.join("|")})(?=\\s|$)`).test(span)]).toEqual([
 				span,
 				false,
 			]);
-		expect(text).toContain("dg-skills bg status");
+		expect(text).toContain("dg bg status");
 		expect(text).not.toContain("proxy background");
 		expect(text).toContain("one quoted argument");
 		expect(requiredFlagsTable(text).header).toEqual([
@@ -333,7 +333,7 @@ describe("stat and cls shell blocks degrade safely", () => {
 		const bin = join(home, ".local", "bin");
 		mkdirSync(bin, { recursive: true });
 		writeFileSync(
-			join(bin, "dg-skills"),
+			join(bin, "dg"),
 			[
 				"#!/bin/sh",
 				`printf '%s\\n' "$*" >> '${log}'`,
@@ -348,7 +348,7 @@ describe("stat and cls shell blocks degrade safely", () => {
 				"",
 			].join("\n"),
 		);
-		chmodSync(join(bin, "dg-skills"), 0o755);
+		chmodSync(join(bin, "dg"), 0o755);
 		return log;
 	}
 
@@ -440,7 +440,7 @@ describe("stat and cls shell blocks degrade safely", () => {
 	function closeBlock(): string {
 		const block = fences(
 			readFileSync(join(skillDir("cls"), "references", "steps.md"), "utf8"),
-		).find(({ body }) => body.includes("dg-skills pw --help"));
+		).find(({ body }) => body.includes("dg pw --help"));
 		if (!block) throw new Error("cls has no browser close block");
 		return block.body;
 	}

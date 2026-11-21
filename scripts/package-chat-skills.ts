@@ -36,9 +36,7 @@ export const SKILL_BYTES_MAX = 512 * 1024;
 
 /** Instructions a chat model must never be told to run. Each is a whole-word match. */
 export const FORBIDDEN = [
-	{ pattern: /\bdg-skills\b/, why: "the dg-skills CLI" },
-	{ pattern: /\bdg-agent\b/, why: "the dg-agent CLI" },
-	{ pattern: /\bdg-daemon\b/, why: "the dg-daemon service" },
+	{ pattern: /(^|```|\$\(|\$[ \t]|&&|\|\||[|;"'`])[ \t]*dg[ \t]+[a-z]/m, why: "the dg CLI" },
 	{ pattern: /\bbootstrap\.(sh|ps1)\b/, why: "the installer" },
 	{ pattern: /\bcurl\s/, why: "a curl command" },
 	{ pattern: /\bwget\s/, why: "a wget command" },

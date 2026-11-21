@@ -220,7 +220,7 @@ describe("createJobCredentialClient", () => {
 			expect(failure).toBeInstanceOf(DgCliError);
 			expect(failure).not.toBeInstanceOf(DaemonNotRunningError);
 			expect(failure.message).toBe(
-				'dg-daemon did not answer within 10 s for the credentials of job "bot"; the change may have been stored',
+				'dg daemon did not answer within 10 s for the credentials of job "bot"; the change may have been stored',
 			);
 		} finally {
 			fetchSpy.mockRestore();
@@ -234,7 +234,7 @@ describe("createJobCredentialClient", () => {
 			const failure = (await createJobCredentialClient({ paths, job: "bot" })
 				.status()
 				.catch((error: unknown) => error)) as Error;
-			expect(failure.message).toBe('dg-daemon did not answer within 10 s for the credentials of job "bot"');
+			expect(failure.message).toBe('dg daemon did not answer within 10 s for the credentials of job "bot"');
 		} finally {
 			fetchSpy.mockRestore();
 		}

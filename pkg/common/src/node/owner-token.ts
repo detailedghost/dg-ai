@@ -39,7 +39,7 @@ export function requireOwnerToken(paths: DgPaths): string {
 	const token = readOwnerToken(paths);
 	if (token === undefined) {
 		throw new DgCliError(
-			"No owner token found. Run dg-daemon start, then try again.",
+			"No owner token found. Run dg daemon start, then try again.",
 			EXIT_GENERAL_FAILURE,
 		);
 	}

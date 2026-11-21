@@ -5,19 +5,19 @@ Capture detailed execution traces for debugging and analysis. Traces include DOM
 ## Basic Usage
 
 ```bash
-dg-skills pw open
-dg-skills pw tracing-start
+dg pw open
+dg pw tracing-start
 
-dg-skills pw goto https://example.com
-dg-skills pw click e1
-dg-skills pw fill e2 "test"
+dg pw goto https://example.com
+dg pw click e1
+dg pw fill e2 "test"
 
-dg-skills pw tracing-stop
+dg pw tracing-stop
 ```
 
 ## Trace Output File
 
-`dg-skills pw tracing-stop` saves one zip: `$(dg-skills stash pw trace-<ts>.zip)` (or under `--out=<dir>`). It holds the action log, network log, DOM snapshots, screenshots, and resources. Open it with `npx playwright show-trace <file>`.
+`dg pw tracing-stop` saves one zip: `$(dg stash pw trace-<ts>.zip)` (or under `--out=<dir>`). It holds the action log, network log, DOM snapshots, screenshots, and resources. Open it with `npx playwright show-trace <file>`.
 
 ## What Traces Capture
 
@@ -35,37 +35,37 @@ dg-skills pw tracing-stop
 ### Debugging Failed Actions
 
 ```bash
-dg-skills pw open
-dg-skills pw tracing-start
-dg-skills pw goto https://app.example.com
+dg pw open
+dg pw tracing-start
+dg pw goto https://app.example.com
 
-dg-skills pw click e5
+dg pw click e5
 
-dg-skills pw tracing-stop
+dg pw tracing-stop
 ```
 
 ### Analyzing Performance
 
 ```bash
-dg-skills pw open
-dg-skills pw tracing-start
-dg-skills pw goto https://slow-site.com
-dg-skills pw tracing-stop
+dg pw open
+dg pw tracing-start
+dg pw goto https://slow-site.com
+dg pw tracing-stop
 ```
 
 ### Capturing Evidence
 
 ```bash
-dg-skills pw open
-dg-skills pw tracing-start
+dg pw open
+dg pw tracing-start
 
-dg-skills pw goto https://app.example.com/checkout
-dg-skills pw fill e1 "4111111111111111"
-dg-skills pw fill e2 "12/25"
-dg-skills pw fill e3 "123"
-dg-skills pw click e4
+dg pw goto https://app.example.com/checkout
+dg pw fill e1 "4111111111111111"
+dg pw fill e2 "12/25"
+dg pw fill e3 "123"
+dg pw click e4
 
-dg-skills pw tracing-stop
+dg pw tracing-stop
 ```
 
 ## Trace vs Video vs Screenshot
@@ -84,10 +84,10 @@ dg-skills pw tracing-stop
 ### 1. Start Tracing Before the Problem
 
 ```bash
-dg-skills pw open
-dg-skills pw tracing-start
-dg-skills pw goto https://example.com
-dg-skills pw tracing-stop
+dg pw open
+dg pw tracing-start
+dg pw goto https://example.com
+dg pw tracing-stop
 ```
 
 Run every step that leads to the issue between start and stop.

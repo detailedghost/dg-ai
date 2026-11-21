@@ -17,7 +17,7 @@ async function run(args: string[]): Promise<{ code: number; out: string; err: st
 	return { code, out, err };
 }
 
-describe("dg-skills ssms", () => {
+describe("dg ssms", () => {
 	test("root help registers ssms and ssms help lists both providers", async () => {
 		const root = await run(["--help"]);
 		expect(root.code).toBe(0);

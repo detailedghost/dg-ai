@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { COMPLETION_SHELLS, completionScript, type CompletionShell } from "@dg/common/completion";
 import { programCommand } from "@dg/common/node/program";
-import { type MountName, ROUTES } from "../src/main";
+import { ALIASES, flatRows, GROUPS } from "../src/flat";
+import type { MountName } from "../src/main";
 import { runDg } from "./fixtures";
 
 const EXPECTED_ROUTES: ReadonlyArray<readonly [string, MountName, string[]]> = [
@@ -16,27 +17,17 @@ const EXPECTED_ROUTES: ReadonlyArray<readonly [string, MountName, string[]]> = [
 	["install", "dg-skills", ["install"]],
 	["upgrade", "dg-skills", ["update"]],
 	["doctor", "dg-skills", ["doctor"]],
+	["update", "dg-skills", ["update"]],
+	["pw", "dg-skills", ["pw"]],
+	["phone", "dg-agent", ["phone"]],
+	["service", "dg-daemon", ["service"]],
 ];
 
 const UNKNOWN = (word: string) => `dg: unknown command "${word}"; run dg --help\n`;
 
-describe("ROUTES", () => {
-	test("has the nine names in usage order and no service, start, stop, status, completion or __complete row", () => {
-		expect(Object.keys(ROUTES)).toEqual(EXPECTED_ROUTES.map(([name]) => name));
-		for (const absent of ["service", "start", "stop", "status", "completion", "__complete", "help"])
-			expect(Object.hasOwn(ROUTES, absent)).toBe(false);
-	});
-
-	test("maps each name to its program and command", () => {
-		for (const [name, program, command] of EXPECTED_ROUTES) {
-			expect(ROUTES[name as keyof typeof ROUTES]).toMatchObject({ program, command });
-		}
-		expect(ROUTES.upgrade).toMatchObject({ program: "dg-skills", command: ["update"] });
-		expect(ROUTES.daemon.command).toEqual([]);
-	});
-
-	test("gives each row a non-empty one-line description", () => {
-		for (const row of Object.values(ROUTES)) expect(row.description).toMatch(/^\S.*\S$/);
+describe("main.ts", () => {
+	test("gives each flat row a non-empty one-line description", () => {
+		for (const row of flatRows()) expect(row.description).toMatch(/^\S.*\S$/);
 	});
 
 	test("importing main.ts imports no program and no value statically", () => {
@@ -142,7 +133,6 @@ describe("unknown input", () => {
 		"constructor",
 		"__proto__",
 		"Job",
-		"service",
 		"",
 		"--nope",
 		"dg-skills",
@@ -154,7 +144,25 @@ describe("unknown input", () => {
 		expect(run.loads).toEqual([]);
 	});
 
-	test.each(["nope", "service", "toString"])("dg help %p names an unknown word", async (word) => {
+	test.each([
+		["start", "dg daemon start"],
+		["serve", "dg daemon serve"],
+		["send", "dg agent send"],
+	])("dg %p exits 1 with a hint that names %p", async (word, path) => {
+		const run = await runDg([word]);
+		expect(run.code).toBe(1);
+		expect(run.stderr).toContain(path);
+		expect(run.stdout).toBe("");
+		expect(run.loads).toEqual([]);
+	});
+
+	test("dg start names dg daemon start and dg agent start", async () => {
+		const run = await runDg(["start"]);
+		expect(run.code).toBe(1);
+		expect(run.stderr).toBe('dg: "start" stays under its group; run dg agent start or dg daemon start\n');
+	});
+
+	test.each(["nope", "toString"])("dg help %p names an unknown word", async (word) => {
 		const run = await runDg(["help", word]);
 		expect(run.code).toBe(1);
 		expect(run.stderr).toBe(UNKNOWN(word));
@@ -181,23 +189,32 @@ describe("completion", () => {
 		expect(none.stdout).toBe(bad.stdout);
 	});
 
-	test("dg __complete with one empty word lists the nine names, completion and help with a description", async () => {
+	test("dg __complete with one empty word lists the flat names, groups, aliases, completion and help", async () => {
 		const run = await runDg(["__complete", ""]);
 		expect(run.code).toBe(0);
 		const lines = run.stdout.trimEnd().split("\n");
 		const names = lines.map((line) => line.split("\t")[0]).sort();
-		expect(names).toEqual([...Object.keys(ROUTES), "completion", "help"].sort());
+		const expected = [...flatRows().map((row) => row.name), ...Object.keys(GROUPS), ...Object.keys(ALIASES), "completion", "help"];
+		expect(names).toEqual(expected.sort());
 		for (const line of lines) expect(line).toMatch(/^[^\t]+\t\S/);
-		for (const [name, row] of Object.entries(ROUTES)) {
-			expect(lines).toContain(`${name}\t${row.description.replace(/\s+/g, " ").trim()}`);
-		}
+		for (const row of flatRows()) expect(lines).toContain(`${row.name}\t${row.description}`);
+		expect(names).toContain("pw");
+		expect(names).toContain("phone");
+		expect(names).not.toContain("start");
 		expect(run.loads).toEqual([]);
 	});
 
-	test("dg __complete jo prints only job", async () => {
-		const run = await runDg(["__complete", "jo"]);
+	test("dg __complete pw calls the skills tree with pw", async () => {
+		const run = await runDg(["__complete", "pw", ""]);
+		expect(run.calls.map((call) => ({ program: call.program, argv: call.argv }))).toEqual([
+			{ program: "dg-skills", argv: ["__complete", "pw", ""] },
+		]);
+	});
+
+	test("dg __complete autos prints only autostart", async () => {
+		const run = await runDg(["__complete", "autos"]);
 		expect(run.code).toBe(0);
-		expect(run.stdout.trimEnd().split("\n").map((line) => line.split("\t")[0])).toEqual(["job"]);
+		expect(run.stdout.trimEnd().split("\n").map((line) => line.split("\t")[0])).toEqual(["autostart"]);
 	});
 
 	test.each([
@@ -218,7 +235,7 @@ describe("completion", () => {
 	});
 
 	test("dg __complete with two words and a first word that is not a route prints nothing and exits 0", async () => {
-		for (const words of [["nope", "x"], ["toString", "x"], ["completion", "x"], ["help", "x"], ["service", ""]]) {
+		for (const words of [["nope", "x"], ["toString", "x"], ["completion", "x"], ["help", "x"], ["start", ""]]) {
 			const run = await runDg(["__complete", ...words]);
 			expect(run.code).toBe(0);
 			expect(run.stdout).toBe("");

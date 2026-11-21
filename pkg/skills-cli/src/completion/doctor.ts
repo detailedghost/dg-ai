@@ -4,7 +4,7 @@ import type { CheckResult, DoctorCheck } from "../doctor/types";
 import { ok, warn } from "../doctor/types";
 import { completionFiles, completionState, zshHint } from "./files";
 
-const FIX = "dg-skills completion --install";
+const FIX = "dg completion --install";
 
 function readOr(path: string): string {
 	try {

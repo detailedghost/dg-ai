@@ -71,7 +71,7 @@ export function describeLocalPageSkill(skill: string, followUp: string): void {
 			const lines = text.split("\n");
 			const gate = lines.findIndex(
 				(line) =>
-					line.includes(`--ext only: dg-skills require-extension ${skill}`) &&
+					line.includes(`--ext only: dg require-extension ${skill}`) &&
 					line.includes("|| exit 1"),
 			);
 			expect(gate).toBeGreaterThanOrEqual(0);
@@ -82,7 +82,7 @@ export function describeLocalPageSkill(skill: string, followUp: string): void {
 		test("the --ext section is exactly the gate line and the follow-up command", () => {
 			const lines = text.split("\n");
 			const gate = lines.findIndex((line) =>
-				line.includes(`--ext only: dg-skills require-extension ${skill}`),
+				line.includes(`--ext only: dg require-extension ${skill}`),
 			);
 			expect(gate).toBeGreaterThan(0);
 			expect(lines[gate - 1]).toMatch(/^```/);
@@ -90,8 +90,8 @@ export function describeLocalPageSkill(skill: string, followUp: string): void {
 			expect(lines[gate + 2]).toMatch(/^```/);
 		});
 
-		test("the bootstrap block keeps the dg-agent gate", () => {
-			expect(text).toMatch(/^dg-agent --version >\/dev\/null 2>&1 \|\|\n {2}"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg-agent" --version/m);
+		test("the bootstrap block keeps the dg gate", () => {
+			expect(text).toMatch(/^dg agent --help >\/dev\/null 2>&1 \|\|\n {2}"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg" agent --help/m);
 		});
 
 		test("the extension-specific notes live in references/extension.md", () => {

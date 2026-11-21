@@ -27,16 +27,16 @@ import {
 } from "./job-support";
 
 const RENAME_NOTE =
-	'note: "dg-daemon service" is now "dg job"; this form goes away in the next major release';
+	'note: "dg service" is now "dg job"; this form goes away in the next major release';
 
 function nextStepLine(
 	live: boolean,
 	autostart: boolean,
 	label: string,
 ): string {
-	if (live) return `next: dg-daemon service start ${label}`;
-	if (autostart) return "next: dg-daemon start";
-	return `next: dg-daemon start, then dg-daemon service start ${label}`;
+	if (live) return `next: dg service start ${label}`;
+	if (autostart) return "next: dg daemon start";
+	return `next: dg daemon start, then dg service start ${label}`;
 }
 
 const servicePath = (label: string, verb?: "start" | "stop") =>
@@ -167,7 +167,7 @@ export function registerServiceCommands(program: Command): void {
 				const state = services.find((entry) => entry.label === label)?.state;
 				if (state === "running" || state === "backoff") {
 					throw new DgCliError(
-						`service "${label}" is ${state} — stop it first with dg-daemon service stop ${label}`,
+						`service "${label}" is ${state} — stop it first with dg service stop ${label}`,
 						EXIT_GENERAL_FAILURE,
 					);
 				}

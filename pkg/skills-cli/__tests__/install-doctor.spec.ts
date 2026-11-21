@@ -3,7 +3,7 @@ import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createContext } from "../src/doctor/runner";
 import { sharedChecks } from "../src/doctor/shared";
-import { fakeBunScript, scratch, type Scratch } from "./runtime-bundle-fixtures";
+import { fakeProgramScript, scratch, type Scratch } from "./release-fixtures";
 
 const posix = describe.skipIf(process.platform === "win32");
 
@@ -31,62 +31,85 @@ function check(id: string) {
 	return found;
 }
 
-function installBundle(version: string): void {
-	mkdirSync(join(sandbox.root, "data", "lib", version), { recursive: true });
-	symlinkSync(version, join(sandbox.root, "data", "lib", "current"));
-}
-
-function installRuntime(script: string): void {
-	const dir = join(sandbox.root, "data", "runtime", "bun-v1.4.1");
+function installProgram(version: string, script = fakeProgramScript(version)): void {
+	const dir = join(sandbox.root, "data", "bin", version);
 	mkdirSync(dir, { recursive: true });
-	writeFileSync(join(dir, "bun"), script, { mode: 0o755 });
-	symlinkSync("bun-v1.4.1", join(sandbox.root, "data", "runtime", "current"));
+	writeFileSync(join(dir, "dg"), script, { mode: 0o755 });
+	symlinkSync(version, join(sandbox.root, "data", "bin", "current"));
 }
 
 describe("shared doctor version-match", () => {
-	test("reports the lib/current version instead of the running package version", async () => {
-		installBundle("1.27.0");
+	test("reports the bin/current version instead of the running package version", async () => {
+		installProgram("1.27.0");
 
 		const result = await check("version-match").run(contextFor("0.0.0"));
 
-		expect(result.detail).toContain("dg-skills 1.27.0");
+		expect(result.detail).toContain("dg 1.27.0");
 	});
 
-	test("falls back to the package version when no bundle is installed", async () => {
+	test("reports the lib/current version of a 6.3 install when no compiled dg is installed", async () => {
+		mkdirSync(join(sandbox.root, "data", "lib", "6.3.1"), { recursive: true });
+		symlinkSync("6.3.1", join(sandbox.root, "data", "lib", "current"));
+
 		const result = await check("version-match").run(contextFor("0.0.0"));
 
-		expect(result.detail).toContain("dg-skills 0.0.0");
+		expect(result.detail).toContain("dg 6.3.1");
+	});
+
+	test("prefers bin/current over lib/current", async () => {
+		mkdirSync(join(sandbox.root, "data", "lib", "6.3.1"), { recursive: true });
+		symlinkSync("6.3.1", join(sandbox.root, "data", "lib", "current"));
+		installProgram("7.0.0");
+
+		const result = await check("version-match").run(contextFor("0.0.0"));
+
+		expect(result.detail).toContain("dg 7.0.0");
+	});
+
+	test("falls back to the package version when nothing is installed", async () => {
+		const result = await check("version-match").run(contextFor("0.0.0"));
+
+		expect(result.detail).toContain("dg 0.0.0");
 	});
 });
 
-posix("shared doctor runtime-present", () => {
-	test("passes without a bundle, since a source checkout needs no bundled runtime", async () => {
-		expect((await check("runtime-present").run(contextFor())).status).toBe("ok");
+posix("shared doctor program-present", () => {
+	test("passes without a compiled dg, since a source checkout runs from source", async () => {
+		const result = await check("program-present").run(contextFor());
+
+		expect(result.status).toBe("ok");
+		expect(result.detail).toBe("no compiled dg installed; running from source");
 	});
 
-	test("fails when a bundle is installed but runtime/current/bun is missing", async () => {
-		installBundle("1.27.0");
+	test("fails when bin/current is linked but the program is missing", async () => {
+		mkdirSync(join(sandbox.root, "data", "bin", "1.27.0"), { recursive: true });
+		symlinkSync("1.27.0", join(sandbox.root, "data", "bin", "current"));
 
-		const result = await check("runtime-present").run(contextFor());
+		const result = await check("program-present").run(contextFor());
 
 		expect(result.status).toBe("fail");
 		expect(result.detail).toContain("is missing");
 	});
 
-	test("fails when the runtime does not run --version", async () => {
-		installBundle("1.27.0");
-		installRuntime(fakeBunScript("", 1));
+	test("fails when the program does not run --version", async () => {
+		installProgram("1.27.0", fakeProgramScript("", undefined, 1));
 
-		expect((await check("runtime-present").run(contextFor())).status).toBe("fail");
+		expect((await check("program-present").run(contextFor())).status).toBe("fail");
 	});
 
-	test("passes when the runtime runs --version", async () => {
-		installBundle("1.27.0");
-		installRuntime(fakeBunScript("1.4.1"));
+	test("passes when the program runs --version", async () => {
+		installProgram("1.27.0");
 
-		const result = await check("runtime-present").run(contextFor());
+		const result = await check("program-present").run(contextFor());
 
 		expect(result.status).toBe("ok");
-		expect(result.detail).toContain("bun 1.4.1");
+		expect(result.detail).toContain("dg 1.27.0");
+	});
+
+	test("is registered and runtime-present is gone", () => {
+		const ids = sharedChecks.map((entry) => entry.id);
+
+		expect(ids).toContain("program-present");
+		expect(ids).not.toContain("runtime-present");
 	});
 });

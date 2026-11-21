@@ -1,8 +1,8 @@
 # Extension commands and recovery
 
-These commands run the `--ext` flow. Every one carries `--ext`; without it `dg-skills proto` runs the local mode.
+These commands run the `--ext` flow. Every one carries `--ext`; without it `dg proto` runs the local mode.
 
-If a step fails, run dg-skills doctor proto prototype install stash.
+If a step fails, run dg doctor proto prototype install stash.
 
 ## Extension precondition
 
@@ -14,7 +14,7 @@ Gate this skill before scrape on the installer marker used by
 INSTALL_MARKER="$HOME/.config/dg/extension-installed"
 LEGACY_MARKER="$HOME/.config/dg/browser-batch-installed"
 if [ ! -f "$INSTALL_MARKER" ] && [ ! -f "$LEGACY_MARKER" ]; then
-  echo "dg-ai-extension is not installed; run dg-skills install first."
+  echo "dg-ai-extension is not installed; run dg install first."
   exit 1
 fi
 ```
@@ -23,18 +23,18 @@ This is the extension flow's own precondition. When the marker is absent, stop a
 tell the user; do not attempt scrape and do not fall back to the local mode unasked.
 
 The marker proves the installer completed, not that the extension is enabled in
-the current browser profile, or that it is paired to a live `dg-daemon` session.
+the current browser profile, or that it is paired to a live dg daemon session.
 `scrape` and `plant` run entirely over that daemon relay now: they connect to the
-sole `dg-daemon` session matching the current working directory (pass
+sole dg daemon session matching the current working directory (pass
 `--session <id>` to pick a different one), send the daemon a request, and wait
 for the paired extension to answer. If no daemon is running, or no session is
 registered, or no extension is paired to the session, the command fails fast
 with a message naming the problem — it never falls back to a Downloads
 timeout. If scrape or plant times out anyway, report:
 
-> Prototype scrape timed out. Run `dg-skills install`, confirm
+> Prototype scrape timed out. Run `dg install`, confirm
 > the extension is enabled in the browser that opened, confirm it is paired to
-> this session (run `dg-agent start`; it names the install step when no
+> this session (run `dg agent start`; it names the install step when no
 > extension is connected), and retry.
 
 A typed not-ready error (`login-page`, `http-error`, `redirected`, or
@@ -45,11 +45,11 @@ same login wall or redirect will not help.
 
 ## CLI bootstrap
 
-Use the installed binary at `dg-skills`; install or refresh it when it
-is missing or too old. In a development checkout, rebuild and reinstall it first:
+Use the installed binary at `dg`; install it when it
+is missing, and follow the upgrade hint when it is too old. In a development checkout, rebuild and reinstall it first:
 
 ```bash
-dg-skills proto --ext --help >/dev/null 2>&1 ||
+dg proto --ext --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
@@ -66,7 +66,7 @@ Warn about authenticated/private page inspection and obtain explicit
 confirmation first when applicable. Then run:
 
 ```bash
-STYLE_GUIDE="$(dg-skills proto --ext scrape "$URL")"
+STYLE_GUIDE="$(dg proto --ext scrape "$URL")"
 SLUG="$(basename "$(dirname "$STYLE_GUIDE")")"
 PLAN="/tmp/ai/proto/$SLUG/plan.json"
 mkdir -p "$(dirname "$PLAN")"
@@ -83,7 +83,7 @@ Write the approved ProtoPlan to `$PLAN`, then invoke plant from the target
 project root:
 
 ```bash
-( cd "$TARGET_ROOT" && dg-skills proto --ext plant "$PLAN" )
+( cd "$TARGET_ROOT" && dg proto --ext plant "$PLAN" )
 ```
 
 The command opens the marked page in the paired browser through the daemon relay and blocks for a
@@ -108,7 +108,7 @@ Do not wait on a Downloads folder or fabricate a Verdict; the CLI only waits on 
 After an approve with no notes and only from the target project root, run:
 
 ```bash
-( cd "$TARGET_ROOT" && dg-skills proto --ext cleanup "$SLUG" )
+( cd "$TARGET_ROOT" && dg proto --ext cleanup "$SLUG" )
 ```
 
 Cleanup requires `.agents/prototype/<slug>/NOTES.md`. It removes only the

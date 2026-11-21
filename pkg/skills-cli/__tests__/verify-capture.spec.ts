@@ -333,7 +333,7 @@ describe("layout capture", () => {
 		};
 		const attempt = run(ready, capturer);
 		await expect(attempt).rejects.toThrow("/Login/SignIn");
-		await expect(attempt).rejects.toThrow("dg-skills pw state save <name>");
+		await expect(attempt).rejects.toThrow("dg pw state save <name>");
 		await expect(attempt).rejects.toThrow("add `state` to the role");
 	});
 

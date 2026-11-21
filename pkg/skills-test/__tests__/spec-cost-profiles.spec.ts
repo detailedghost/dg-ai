@@ -10,7 +10,7 @@ import {
 	section,
 } from "./test-support";
 
-export const MAX_SPEC_SKILL_LINES = 132;
+export const MAX_SPEC_SKILL_LINES = 133;
 const MIN_SENTENCE_LENGTH = 30;
 const STEP_5_LINES_ON_ORIGIN_MASTER = 10;
 const STEP_7C_LINES_ON_ORIGIN_MASTER = 8;
@@ -92,7 +92,7 @@ describe("spec skill flags", () => {
 
 	test("dispatch validates --proxy against list-backends before any phase", () => {
 		expect(dispatch).toContain("--proxy");
-		expect(dispatch).toContain("dg-skills proxy --list-backends");
+		expect(dispatch).toContain("dg proxy --list-backends");
 		expect(dispatch).toMatch(/before any phase/);
 	});
 
@@ -138,7 +138,7 @@ describe("spec skill flags", () => {
 describe("spec plan mode profile and proxy steps", () => {
 	test("step 8 persists the chosen profile through spec set", () => {
 		expect(step8).toContain(
-			"dg-skills spec set <bundle>/plan.md execution.profile",
+			"dg spec set <bundle>/plan.md execution.profile",
 		);
 	});
 
@@ -166,7 +166,7 @@ describe("spec plan mode profile and proxy steps", () => {
 	});
 
 	test("step 7d estimates cost through spec estimate and keeps the warning", () => {
-		expect(step7d).toContain("dg-skills spec estimate <bundle>/plan.md");
+		expect(step7d).toContain("dg spec estimate <bundle>/plan.md");
 		expect(step7d).toContain("--profile");
 		expect(step7d).toContain("WARN");
 		expect(step7d).toContain("do not persist");

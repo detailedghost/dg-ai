@@ -45,7 +45,7 @@ afterEach(() => {
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 
-posix("dg-skills writers refuse an unmoved legacy entry", () => {
+posix("dg writers refuse an unmoved legacy entry", () => {
 	test("setCliOnly creates no cli-only marker while the legacy marker holds data", () => {
 		legacy("cli-only");
 

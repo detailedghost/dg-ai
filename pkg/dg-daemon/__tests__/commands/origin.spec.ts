@@ -35,7 +35,7 @@ async function withHome(run: (dgHome: string) => Promise<void>): Promise<void> {
 	}
 }
 
-describe("dg-daemon origin show", () => {
+describe("dg daemon origin show", () => {
 	it("reports that nothing is pinned yet on a fresh install", async () => {
 		await withHome(async (dgHome) => {
 			const result = await dg(dgHome, "origin", "show");
@@ -58,7 +58,7 @@ describe("dg-daemon origin show", () => {
 	});
 });
 
-describe("dg-daemon origin clear", () => {
+describe("dg daemon origin clear", () => {
 	it("removes a pinned origin so a new one can pin", async () => {
 		await withHome(async (dgHome) => {
 			const { writeConfig } = await import("../../src/server/config-store");

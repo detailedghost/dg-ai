@@ -4,7 +4,7 @@ import { isProtonMailOrigin } from "@/lib/features/inbox-proton-observer";
 export const PW_EXT_BLOCKED_ERROR =
 	"pw --ext does not read or change browser settings pages, extension pages, or other non-web pages. Switch to a web page tab and retry.";
 export const PW_EXT_MAILBOX_ERROR =
-	"pw --ext does not read or change the signed-in Proton Mail tab. Use dg-skills inbox.";
+	"pw --ext does not read or change the signed-in Proton Mail tab. Use dg inbox.";
 export const PW_EXT_PRIVATE_ERROR =
 	"pw --ext never reads or changes a tab in a private window.";
 

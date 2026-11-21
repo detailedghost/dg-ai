@@ -43,10 +43,10 @@ describe("sessionCheck", () => {
 		expect((await run()).status).toBe("ok");
 	});
 
-	test("warns with dg-agent start when no session matches", async () => {
+	test("warns with dg agent start when no session matches", async () => {
 		const result = await run();
 		expect(result.status).toBe("warn");
-		expect(result.fix).toBe("dg-agent start");
+		expect(result.fix).toBe("dg agent start");
 	});
 
 	test("is ok when DG_SESSION_ID names a live session, even with two cwd matches", async () => {
@@ -55,12 +55,12 @@ describe("sessionCheck", () => {
 		expect((await run({ DG_SESSION_ID: "two" })).status).toBe("ok");
 	});
 
-	test("warns with dg-agent start when DG_SESSION_ID names a session that is not live", async () => {
+	test("warns with dg agent start when DG_SESSION_ID names a session that is not live", async () => {
 		writeSession("only");
 		const result = await run({ DG_SESSION_ID: "gone" });
 		expect(result.status).toBe("warn");
 		expect(result.detail).toContain("DG_SESSION_ID");
-		expect(result.fix).toBe("dg-agent start");
+		expect(result.fix).toBe("dg agent start");
 	});
 
 	test("warns with --session when two sessions match", async () => {

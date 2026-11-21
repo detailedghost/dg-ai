@@ -41,8 +41,8 @@ type Noun = "service" | "job";
 
 const NO_DAEMON_TEXT: Record<Noun, string> = {
 	service:
-		"no live dg-daemon — services run inside it, so start it with dg-daemon start",
-	job: "no live dg-daemon — jobs run inside it, so start it with dg daemon start",
+		"no live dg daemon — services run inside it, so start it with dg daemon start",
+	job: "no live dg daemon — jobs run inside it, so start it with dg daemon start",
 };
 
 export type JobVerbDeps = {
@@ -132,12 +132,12 @@ export async function ensureMigrated(
 function markMissing(handle: { pid: number; versions: { package: string } }) {
 	if (handle.versions.package === DG_DAEMON_PACKAGE_VERSION) {
 		return new DgCliError(
-			`the daemon config is not migrated — the dg-daemon (pid ${handle.pid}) did not write the mark; see the daemon log`,
+			`the daemon config is not migrated — the dg daemon (pid ${handle.pid}) did not write the mark; see the daemon log`,
 			EXIT_GENERAL_FAILURE,
 		);
 	}
 	return new DgCliError(
-		`the daemon config is not migrated — a dg-daemon from before this release runs (pid ${handle.pid}); run dg daemon restart, then run this command again`,
+		`the daemon config is not migrated — a dg daemon from before this release runs (pid ${handle.pid}); run dg daemon restart, then run this command again`,
 		EXIT_GENERAL_FAILURE,
 	);
 }
@@ -253,9 +253,8 @@ export async function assertDaemonAnswers(
 	const pidHandle = readPidFile(paths);
 	const live = await findLiveDaemon(paths);
 	if (!live && pidHandle && isAlive(pidHandle.pid)) {
-		const stop = noun === "job" ? "dg daemon stop --force" : "dg-daemon stop --force";
 		throw new DgCliError(
-			`dg-daemon (pid ${pidHandle.pid}) does not answer, so the state of ${noun} "${name}" is unknown — run ${stop} first`,
+			`dg daemon (pid ${pidHandle.pid}) does not answer, so the state of ${noun} "${name}" is unknown — run dg daemon stop --force first`,
 			EXIT_GENERAL_FAILURE,
 		);
 	}
@@ -263,7 +262,7 @@ export async function assertDaemonAnswers(
 }
 
 const OLDER_DAEMON =
-	"this dg-daemon is older than the CLI — run dg daemon restart";
+	"this dg daemon is older than the CLI — run dg daemon restart";
 
 /** A 404 whose body does not name a job means the daemon has no such route. */
 export async function callJobRoute(

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Breaking
+
+- feat(dg)!: ship one compiled `dg` program with flat commands; `dg-skills`, `dg-agent` and `dg-daemon` are removed, so run `dg <command>` (daemon lifecycle verbs stay under `dg daemon`, agent session verbs under `dg agent`); upgrade a 6.3 or 6.4 install with `dg upgrade` and see [docs/install.md](docs/install.md#upgrade-from-63)
+
 ## v6.4.0 (2026-11-21)
 
 ### Features

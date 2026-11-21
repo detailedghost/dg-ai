@@ -29,7 +29,7 @@ export async function mintPageCode({
 	}
 	const { code } = (await resp.json()) as { code?: unknown };
 	if (typeof code !== "string" || code.length === 0) {
-		throw new DgCliError("dg-daemon did not issue a page code");
+		throw new DgCliError("dg daemon did not issue a page code");
 	}
 	return code;
 }

@@ -4,7 +4,7 @@ export function registerDoctor(program: Command): void {
 	program
 		.command("doctor")
 		.description(
-			"check that each dg-skills item has the tools, credentials and settings it needs; on a terminal, browse the results and apply a fix after a yes",
+			"check that each dg item has the tools, credentials and settings it needs; on a terminal, browse the results and apply a fix after a yes",
 		)
 		.argument("[item...]", "items to check; all items when omitted")
 		.option("--json", "print the report as JSON")
@@ -15,7 +15,7 @@ export function registerDoctor(program: Command): void {
 			const unknown = unknownItems(items, DOCTOR_REGISTRY);
 			if (unknown.length > 0) {
 				process.stderr.write(
-					`dg-skills doctor: unknown item ${unknown.join(", ")}. Items: ${Object.keys(DOCTOR_REGISTRY).join(", ")}\n`,
+					`dg doctor: unknown item ${unknown.join(", ")}. Items: ${Object.keys(DOCTOR_REGISTRY).join(", ")}\n`,
 				);
 				process.exitCode = 2;
 				return;

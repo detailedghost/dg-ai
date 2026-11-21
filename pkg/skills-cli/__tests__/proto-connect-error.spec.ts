@@ -12,7 +12,7 @@ describe("proto --ext connect error", () => {
 			);
 
 			expect(result.code).not.toBe(0);
-			expect(result.stderr).toContain("Run dg-agent start.");
+			expect(result.stderr).toContain("Run dg agent start.");
 			expect(result.stderr).not.toContain("/start");
 			expect(result.stderr).not.toContain("#_chat=");
 		} finally {

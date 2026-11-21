@@ -33,21 +33,21 @@ async function linkRejecting(error: Error) {
 
 describe("connectCliLink", () => {
 	it.each([
-		"dg-daemon closed the CLI connection",
-		"the dg-daemon CLI connection failed",
+		"dg daemon closed the CLI connection",
+		"the dg daemon CLI connection failed",
 	])("maps %p to McpLinkClosedError", async (message) => {
 		const link = await linkRejecting(new DgCliError(message));
 		await expect(link.request(FRAME, accept, 1)).rejects.toBeInstanceOf(McpLinkClosedError);
 	});
 
 	it("passes a timeout error through unchanged", async () => {
-		const timeout = new DgCliError("dg-daemon did not answer the CLI request");
+		const timeout = new DgCliError("dg daemon did not answer the CLI request");
 		const link = await linkRejecting(timeout);
 		await expect(link.request(FRAME, accept, 1)).rejects.toBe(timeout);
 	});
 
 	it("marks a mid-request close as submitted", async () => {
-		const link = await linkRejecting(new DgCliError("dg-daemon closed the CLI connection"));
+		const link = await linkRejecting(new DgCliError("dg daemon closed the CLI connection"));
 		const error = await link.request(FRAME, accept, 1).catch((value: unknown) => value);
 		expect((error as McpLinkClosedError).submitted).toBe(true);
 	});

@@ -236,7 +236,7 @@ const OPTIONS = {
 } as const;
 const STAGED_PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
 
-export const EXT_HELP = `Usage: dg-skills pw --ext [--session <id>] [--tab <id>] <verb> [args]
+export const EXT_HELP = `Usage: dg pw --ext [--session <id>] [--tab <id>] <verb> [args]
 
 Drive your real browser through the paired dg-ai-extension.
 Passing --ext gives the CLI control of the tabs in the agent's own tab group.
@@ -299,7 +299,7 @@ Write verbs (they change the page):
   credential save <name> --from cookie:<n>|header:<n>|local:<k>|session:<k> [--path a.b]
                           copy a sign-in value of this site straight into the dg credential store as
                           pw/<site>/<name>, after the same Allow; the value is never shown. --path picks a value
-                          inside a JSON value. Use it with dg-skills credentials exec`;
+                          inside a JSON value. Use it with dg credentials exec`;
 
 class ExtUsageError extends Error {}
 
@@ -363,7 +363,7 @@ function parseRequest(
 		parsed = readArgs(argv);
 	} catch (error) {
 		throw new ExtUsageError(
-			`${describeError(error)}\nRun: dg-skills pw --ext --help`,
+			`${describeError(error)}\nRun: dg pw --ext --help`,
 		);
 	}
 	if (parsed.values.help) return "help";
@@ -578,7 +578,7 @@ async function saveImage(dataUrl: string): Promise<string> {
 	return file;
 }
 
-/** Runs `dg-skills pw --ext <verb>` through the dg-daemon relay to the paired extension. */
+/** Runs `dg pw --ext <verb>` through the dg daemon relay to the paired extension. */
 export async function runExt(
 	argv: readonly string[],
 	env: ClientEnv,
@@ -596,7 +596,7 @@ export async function runExt(
 		return 0;
 	}
 	if (deps.cliOnly()) {
-		env.err(extensionRequiredMessage("dg-skills pw --ext"));
+		env.err(extensionRequiredMessage("dg pw --ext"));
 		return 1;
 	}
 	let client: ExtClient;
@@ -604,7 +604,7 @@ export async function runExt(
 		client = await deps.connect(parsed.session);
 	} catch (error) {
 		env.err(
-			`pw --ext needs a dg-daemon session with the paired dg-ai-extension. Run dg-skills doctor pw for the steps. ${redactText(error instanceof Error ? error.message : String(error))}`,
+			`pw --ext needs a dg daemon session with the paired dg-ai-extension. Run dg doctor pw for the steps. ${redactText(error instanceof Error ? error.message : String(error))}`,
 		);
 		return 1;
 	}

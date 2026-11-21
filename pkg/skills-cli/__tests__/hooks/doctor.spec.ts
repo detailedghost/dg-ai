@@ -68,7 +68,7 @@ function pluginWith(argv0: string): string {
 }
 
 const missing = (world: ReturnType<typeof settingsWorld>) =>
-	join(world.dgHome, "gone", "dg-skills");
+	join(world.dgHome, "gone", "dg");
 
 describe("hooksChecks order", () => {
 	test("lists skill files, the three settings checks, stale entries, the allow rule and the strip setting", () => {
@@ -138,13 +138,13 @@ describe("stale-entries", () => {
 		expect(result.status).toBe("warn");
 		expect(result.detail).toContain("claude:format codex:spelling");
 		expect(result.fix).toContain(
-			"hooks disable format --runtime claude; dg-skills hooks disable spelling --runtime codex",
+			"dg hooks disable format --runtime claude; dg hooks disable spelling --runtime codex",
 		);
 	});
 
 	test("is ok when the claude launcher path exists", async () => {
 		const { world, run, claudeWith } = setup();
-		const launcher = world.seed(join(world.dgHome, "bin", "dg-skills"), "x");
+		const launcher = world.seed(join(world.dgHome, "bin", "dg"), "x");
 		claudeWith(ownedCommand(launcher, "format"));
 		expect((await run("stale-entries")).status).toBe("ok");
 	});
@@ -184,7 +184,7 @@ describe("stale-entries", () => {
 		const result = await run("stale-entries");
 		expect(result.status).toBe("warn");
 		expect(result.detail).toBe(
-			"dg hook entries point at a missing dg-skills: claude:format; could not read dg hook entries for: codex",
+			"dg hook entries point at a missing dg: claude:format; could not read dg hook entries for: codex",
 		);
 		expect(result.fix).toContain("hooks disable format --runtime claude");
 		expect(result.fix).toContain("fix the settings file");

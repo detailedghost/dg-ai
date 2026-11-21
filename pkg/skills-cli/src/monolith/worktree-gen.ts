@@ -51,7 +51,7 @@ function usage(): string {
 	return `monolith worktree-gen — emit a worktree-scoped scan.workflow.mjs for /monolith
 
 Usage:
-  dg-skills monolith worktree-gen <worktree-path> [options]
+  dg monolith worktree-gen <worktree-path> [options]
 
 Arguments:
   <worktree-path>     Absolute path to the git worktree to scan.
@@ -222,7 +222,7 @@ export function worktreeGen(argv: string[]): number {
 	body = body.replace(anchorLine, () => `${SCAN_ROOT_LINE}\n${anchorLine}`);
 
 	const consts =
-		"\n// --- worktree-scoped consts (injected by dg-skills monolith worktree-gen) ---\n" +
+		"\n// --- worktree-scoped consts (injected by dg monolith worktree-gen) ---\n" +
 		`const mode = ${JSON.stringify(mode)};\n` +
 		`const monolithPath = ${JSON.stringify(monolithPath)};\n` +
 		`const stagingPath = ${JSON.stringify(stagingPath)};\n` +

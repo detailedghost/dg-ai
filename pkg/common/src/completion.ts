@@ -243,13 +243,13 @@ export function printCompletions(root: CompletionNode, words: readonly string[])
 	return 0;
 }
 
-/** Registers `completion <shell>`, which prints the script for this program. */
+/** Registers `completion <shell>`; every tree prints the `dg` script, which covers every tree. */
 export function registerCompletionCommand(program: Command): void {
 	program
 		.command("completion")
-		.description("print the bash, zsh or fish completion script for this program")
+		.description("print the bash, zsh or fish completion script for dg")
 		.addArgument(program.createArgument("<shell>", "bash, zsh or fish").choices(COMPLETION_SHELLS))
 		.action((shell: CompletionShell) => {
-			process.stdout.write(completionScript(shell, program.name()));
+			process.stdout.write(completionScript(shell, "dg"));
 		});
 }

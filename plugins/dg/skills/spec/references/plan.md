@@ -23,7 +23,7 @@ research persona for this pass, not the interviewer — a subagent has no `AskUs
 cannot meet this step's gate. See [grill.md](grill.md) § *Interview passes run in the MAIN LOOP*
 for the relay contract that applies if you do delegate a leg.
 
-Derive the working `feature` name and `<slug>` (via `dg-skills spec slugify`) from this pass if not
+Derive the working `feature` name and `<slug>` (via `dg spec slugify`) from this pass if not
 already given.
 
 > **GATE:** pass 1's design-tree branches (architecture scope) resolved, zero `[OPEN]`, all
@@ -67,19 +67,19 @@ does the same. Add a `depends_on` edge between them. List generator outputs in t
 (see [decision-blob.md](decision-blob.md)).
 
 > **GATE:** pass 2's design-tree branches (slice ordering) resolved, zero `[OPEN]`, all `[ASSUMED]`
-> confirmed, and `dg-skills spec lint-waves <blob>` exits 0 (run it on the drafted blob; fix every
+> confirmed, and `dg spec lint-waves <blob>` exits 0 (run it on the drafted blob; fix every
 > reported overlap with a `depends_on` edge before step 3).
 
 ## Step 3 — Decision blob → scaffold → assign
 
 - a. foreman emits the compact JSON decision blob per [decision-blob.md](decision-blob.md),
   derived from passes 1 and 2's decision logs. Write it to
-  `$(dg-skills stash -s spec <slug>-blob.json)`. Pass 1.5's structure decisions do
+  `$(dg stash -s spec <slug>-blob.json)`. Pass 1.5's structure decisions do
   **not** go in the blob — its shape is LOCKED and must not grow a `code_structure` key; they land
   in sub-step d below.
-  Run `dg-skills spec lint-waves <blob-path>` on it before sub-step b and fix every overlap.
+  Run `dg spec lint-waves <blob-path>` on it before sub-step b and fix every overlap.
 
-- b. Run `dg-skills spec scaffold --home .agents/spec --slug <slug> --from-json <blob-path>`. It runs
+- b. Run `dg spec scaffold --home .agents/spec --slug <slug> --from-json <blob-path>`. It runs
   `lint-waves` first and refuses on overlap (`--allow-overlap` overrides; do not use it). Prints the
   created bundle's absolute path — this is `<bundle>` for every step below. Computes `<NNN>` by
   scanning `.agents/spec/` for `NNN_`-prefixed directories (pre-existing non-numbered dirs coexist
@@ -96,7 +96,7 @@ does the same. Add a `depends_on` edge between them. List generator outputs in t
   in `Applies to` — and append it:
 
   ```sh
-  dg-skills spec append-section <bundle>/plan.md --section "Code Structure" "<body>"
+  dg spec append-section <bundle>/plan.md --section "Code Structure" "<body>"
   ```
 
   The heading is created at end-of-file if absent; multi-line text is fine (quote at the call
@@ -142,7 +142,7 @@ shape: [templates/slice-review.md](templates/slice-review.md).
 - c. Read [proxy.md](proxy.md) only when `--proxy <backend>` is given, and ask its per-slice question.
   Without the flag, skip this step and set no `agents.proxy`.
 - d. **WARN (don't document)** the execution run's token/context cost: run
-  `dg-skills spec estimate <bundle>/plan.md` (default runtime; without `--profile` it prints one line
+  `dg spec estimate <bundle>/plan.md` (default runtime; without `--profile` it prints one line
   per profile; add `--profile <p>` when a profile flag was given), print its lines, flag anything
   token-heavy per the global token-cost gate, and offer to optimize (split an oversized slice, drop an
   unnecessary `qa` agent, downgrade an `effort` override). This is a printed warning to the user,
@@ -160,8 +160,8 @@ the Cost section, the estimate lines from step 7d, one per profile. Then ask wit
 **Approve (balance)**, **Approve as cheap**, **Approve as expensive** or **Rework**.
 When a profile flag was given, the options are **Approve** and **Rework**.
 Rework means the user says what to change: revise `<bundle>/plan.md`, re-run
-`dg-skills spec estimate <bundle>/plan.md`, print the view again, ask again, and loop until Approve.
-On any Approve, run `dg-skills spec set <bundle>/plan.md execution.profile <chosen>`
+`dg spec estimate <bundle>/plan.md`, print the view again, ask again, and loop until Approve.
+On any Approve, run `dg spec set <bundle>/plan.md execution.profile <chosen>`
 (the flag's value when one was given) before step 9.
 Nothing after this step runs before Approve. `/dg:kick`, `/dg:prd` and `/dg:pickup` reach this gate through plan
 mode and reuse the same view.
@@ -171,7 +171,7 @@ If plan approval (or an earlier step) surfaced a hands-on validation need, build
 acceptance, register it onto the slice:
 
 ```sh
-dg-skills spec prototype-ref <bundle> --slice <N> --path <accepted-asset-path> --variant <k>
+dg spec prototype-ref <bundle> --slice <N> --path <accepted-asset-path> --variant <k>
 ```
 
 For a local prototype, `--path` is the sandbox directory (or its `accepted.json`). The command copies the text-only `slice_<N>_ACCEPTED.md` and a sibling `slice_<N>_accepted.json` into the bundle's `prototype` folder, and it sets `slices[N].prototype.path`, `.variant`, `.accepted`, and `.record`. It refuses an image path, a `--variant` that differs from the record, and a local record with no layout fingerprint. Pass `--no-fingerprint` only as a conscious choice; the reason goes into `ACCEPTED.md`. Link `ACCEPTED.md` from the plan.
@@ -180,7 +180,7 @@ For a local prototype, `--path` is the sandbox directory (or its `accepted.json`
 
 ## Step 9 — Context pack
 
-Run `dg-skills spec context <bundle>`. Writes `<bundle>/context.md` — a frontmatter-first tidy pack
+Run `dg spec context <bundle>`. Writes `<bundle>/context.md` — a frontmatter-first tidy pack
 projecting `plan.md`'s frontmatter (see the schema's bundle-only `bundle`/`plan_path` fields, and
 `execution.profile`) plus `paths.md` + inferred `school/*.md` in the body.
 This is the file execute mode reads instead of the full planning history.

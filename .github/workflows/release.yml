@@ -90,7 +90,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     outputs:
       version: ${{ needs.detect.outputs.version }}
     steps:
@@ -118,18 +118,30 @@ jobs:
       - name: Add the runtime pin next to the bundle
         run: cp pkg/launcher/runtime.json pkg/launcher/dist/runtime.json
 
+      - name: Build the compiled dg for each platform
+        working-directory: pkg/launcher
+        run: bun run build.ts --outdir dist --compiled all
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bundle
           path: |
             pkg/launcher/dist/dg-lib-${{ needs.detect.outputs.version }}.tar.gz
             pkg/launcher/dist/runtime.json
+            pkg/launcher/dist/dg-linux-x64
+            pkg/launcher/dist/dg-linux-x64-baseline
+            pkg/launcher/dist/dg-linux-arm64
+            pkg/launcher/dist/dg-darwin-x64
+            pkg/launcher/dist/dg-darwin-arm64
+            pkg/launcher/dist/dg-windows-x64.exe
+            pkg/launcher/dist/dg-windows-x64-baseline.exe
+            pkg/launcher/dist/dg-windows-arm64.exe
           if-no-files-found: error
           retention-days: 1
 
   smoke-bundle:
     needs: build-bundle
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -224,6 +236,46 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Run the compiled dg for this platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          program="./dg-${RUNTIME_KEY}"
+          if [ "${RUNNER_OS}" = Windows ]; then
+            program="${program}.exe"
+          else
+            chmod +x "$program"
+          fi
+          home="$(mktemp -d)"
+          export DG_HOME="$home/dg" HOME="$home/home" USERPROFILE="$home/home"
+          mkdir -p "$HOME"
+          version="$("$program" --version)"
+          skills="$("$program" skills --version)"
+          if [ "$version" != "$VERSION" ] || [ "$skills" != "$VERSION" ]; then
+            echo "::error::the compiled dg printed '${version}' and '${skills}', expected ${VERSION}"
+            exit 1
+          fi
+          pw_help="$("$program" pw --help)"
+          grep -q "Usage: pw" <<<"$pw_help"
+          "$program" phone --help >/dev/null
+          "$program" job --help >/dev/null
+          if "$program" start 2>/dev/null; then
+            echo "::error::dg start must exit 1 with a hint"
+            exit 1
+          fi
+
+      - name: Check that an old name gives the removed-name notice
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ln -s "$PWD/dg-${RUNTIME_KEY}" dg-skills
+          if out="$(./dg-skills --version 2>&1)"; then
+            echo "::error::dg-skills must exit 1"
+            exit 1
+          fi
+          grep -q "the dg-skills command is removed" <<<"$out"
 
   build-ext:
     needs: [detect, blt-ext]

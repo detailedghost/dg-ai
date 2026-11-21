@@ -1,25 +1,25 @@
 # Pw browser skill
 
-`dg-skills pw` drives a browser through `playwright-core`: open a page, click,
+`dg pw` drives a browser through `playwright-core`: open a page, click,
 fill, snapshot, screenshot, mock requests, record video, and save logins as
-named states. `dg-skills pw-code` runs arbitrary Node code against the page. The
+named states. `dg pw-code` runs arbitrary Node code against the page. The
 skill is `plugins/dg/skills/pw/SKILL.md`.
 
-`dg-skills pw batch-open` and `dg-skills pw --ext launch` open a batch of PR or
+`dg pw batch-open` and `dg pw --ext launch` open a batch of PR or
 URL tabs with no pw session. See [Browser tabs and extension](browser.md).
 
 ## Browser
 
 `pw open` picks `DG_BROWSER` (a browser binary path) when set, then a system Chrome, then Edge, then
 another Chromium-family browser on PATH or in the usual app folders (Brave,
-Chromium, Vivaldi), then a Chromium that `dg-skills pw install-browser`
+Chromium, Vivaldi), then a Chromium that `dg pw install-browser`
 downloaded. `--browser=chromium` uses the same list without the Chrome and Edge
 channels. `--browser=chrome` or `msedge` falls back to the full list when that
 browser is missing, and prints `chrome not found, using <path>`. With none, it exits 3 and prints every location it tried.
 `--browser=firefox` and `webkit` need the Playwright build
 (`bunx playwright-core install firefox`). A system Firefox does not work. The skill tells
 agents to ask first, because the download is about 150 MB.
-`dg-skills pw install-browser --remove` deletes it. See
+`dg pw install-browser --remove` deletes it. See
 [install](install.md#browser-download-for-pw).
 
 ## WSL
@@ -31,9 +31,9 @@ never pass it unless the human asks.
 
 ## Real browser (`--ext`)
 
-`dg-skills pw --ext <verb>` acts on the agent's selected tab in your real
+`dg pw --ext <verb>` acts on the agent's selected tab in your real
 Chromium browser through the paired dg-ai-extension. It needs a running
-dg-daemon session with the extension paired. The extension must be at least the
+dg daemon session with the extension paired. The extension must be at least the
 version in `PW_EXT_MIN_EXTENSION_VERSION` (`pkg/common/src/pw-ext-format.ts`),
 which is the first release with per-agent tab groups. An older extension is
 refused with the update text: `pw --ext requires dg-ai-extension <version> or
@@ -49,14 +49,14 @@ popup.
 | `current` | read | URL and title of the agent's selected tab |
 | `tabs` | read | The tabs in the agent's group, the selected one marked |
 | `snapshot` | read | Accessibility tree with refs, and the visible text, on stdout |
-| `screenshot` | read | Visible part of the tab, saved to `dg-skills stash pw`; brings the tab to the front first |
+| `screenshot` | read | Visible part of the tab, saved to `dg stash pw`; brings the tab to the front first |
 | `selection` | read | Selected text |
 | `console` | read | Errors, and console warnings and errors after the first call |
 | `tools` | read | Web MCP bridge: WebMCP tools the page exposes: name, description, input schema |
 | `count <ref or selector>` | read | How many elements match, with tag, type, id and name for each. An id or name that looks like a generated id shows as `[redacted]`. Test a selector with it before `click`, `fill` or `upload` |
 | `storage [local\|session] [--keys] [--key <k>] [--values]` | read | Keys of the page's localStorage or sessionStorage with type, length and JSON key structure. `--values` shows values after the site Allow; tokens and secrets stay masked |
 | `fetch <path\|url> [--method M] [--json <body>\|--body-stdin] [--header Name:Value]... [--auth page] [--values]` | write | Sends one request from the agent tab to its own origin with the page's cookies. Output has the response shape like `network`. `--auth page` adds the page's own sign-in headers, which the agent never sees |
-| `credential save <name> --from cookie:<n>\|header:<n>\|local:<k>\|session:<k> [--path a.b]` | write | Copies one sign-in value of the site into the dg credential store as `pw/<site>/<name>`. The value is never shown. Use it with `dg-skills credentials exec` |
+| `credential save <name> --from cookie:<n>\|header:<n>\|local:<k>\|session:<k> [--path a.b]` | write | Copies one sign-in value of the site into the dg credential store as `pw/<site>/<name>`. The value is never shown. Use it with `dg credentials exec` |
 | `network [--filter <text>] [--limit N] [--since <ms>\|clear] [--values]` | read | The page's `fetch` and `XMLHttpRequest` calls, shape only: method, address with query values removed, status, header names, and the key structure and value types of JSON bodies. `--values` shows values after one Allow per site and session |
 | `open <url>` | write | Opens an http or https URL in the selected tab, or in a new tab when the agent has none |
 | `new [url]` | write | Opens a new tab in the agent's group and selects it; with no URL it opens a blank tab |
@@ -233,10 +233,10 @@ Rules:
   origin.
 - `credential save` reads a cookie through the browser's cookie API (so
   `HttpOnly` cookies work), a header from the sealed closure, or a storage key,
-  and sends the value in a frame that only dg-daemon reads. The daemon stores
+  and sends the value in a frame that only dg daemon reads. The daemon stores
   it encrypted as `pw/<registrable domain>/<name>` with metadata: site, source,
   capture time and expiry when known. The CLI gets only the name. The
-  extension cannot read it back. `dg-skills credentials exec` uses it without
+  extension cannot read it back. `dg credentials exec` uses it without
   printing it.
 - The extension asks for the `cookies` permission, so Chrome shows a new
   permission prompt once after this update.
@@ -248,7 +248,7 @@ Rules:
   the dg scratch directory or the dg demos directory, never from the home
   folder itself or a working directory with a hidden folder anywhere in its
   path. It refuses hidden files and folders, a file that is a symbolic
-  link, folders, and a file that changes while it is checked. The CLI stages the bytes in the local dg-daemon asset store
+  link, folders, and a file that changes while it is checked. The CLI stages the bytes in the local dg daemon asset store
   before the request; the extension fetches them only for an `https:` page. The
   staged copy is deleted as soon as the extension fetches it, and also when the
   request is canceled, times out or fails.
@@ -267,8 +267,8 @@ Rules:
   keys, such as Escape and the arrow keys, are events only. `press` refuses to
   edit an email or number field, because the browser hides its caret; use
   `fill` there.
-- A CLI newer than a running dg-daemon gets the daemon's validator error for
-  `tabId` or a new verb until you restart `dg-daemon`.
+- A CLI newer than a running dg daemon gets the daemon's validator error for
+  `tabId` or a new verb until you restart the daemon with `dg daemon restart`.
 - Firefox is not supported.
 
 See [ADR 0035](adr/0035-pw-ext-real-browser.md),
@@ -278,31 +278,31 @@ See [ADR 0035](adr/0035-pw-ext-real-browser.md),
 ## Security
 
 `pw-code` is a separate command so the `pw` allow rule does not cover it. Claude
-asks for approval on every call. `dg-skills doctor pw-code` warns when
-`Bash(dg-skills pw-code:*)` or the `Bash(dg-skills:*)`
+asks for approval on every call. `dg doctor pw-code` warns when
+`Bash(dg pw-code:*)` or the `Bash(dg:*)`
 wildcard sits in `~/.claude/settings.json`.
 
 ## Check the setup
 
 ```sh
-dg-skills doctor pw pw-code
+dg doctor pw pw-code
 ```
 
-`dg-skills doctor pw` also reports the extension pairing for `--ext`, as
+`dg doctor pw` also reports the extension pairing for `--ext`, as
 information only.
 
 ## Remove the old ~/scripts copy
 
-After one `dg-skills install`, remove the pre-port copy:
+After one `dg install`, remove the pre-port copy:
 
 1. Run `~/scripts/bin/pw kill-all` to stop old daemons.
 2. Delete `~/scripts/bin/pw`, `~/scripts/bin/pw-daemon`, and `~/scripts/bin/pw-code`.
 3. Delete `~/scripts/ai/skills/pw/`. Remove the `pw`, `pw-daemon`, and `pw-code`
    entries from `TOOLS` in `~/scripts/ai/build.ts`, then rebuild.
 4. Delete `~/.codex/skills/pw` and `~/.config/opencode/skills/pw`.
-   `dg-skills install --skills-only --dest <dir>` installs the plugin copy.
+   `dg install --skills-only --dest <dir>` installs the plugin copy.
 5. Replace `Bash(pw:*)` in `~/.claude/settings.json` with
-   `Bash(dg-skills pw:*)`. Keep `Bash(playwright-cli *)` only if the
+   `Bash(dg pw:*)`. Keep `Bash(playwright-cli *)` only if the
    legacy tool stays.
 6. Optional: `~/.cache/playwright-cli/profiles` holds saved logins and stays
    valid. Delete it only to start clean.

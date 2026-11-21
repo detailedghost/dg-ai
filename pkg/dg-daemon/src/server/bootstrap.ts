@@ -9,6 +9,7 @@ import {
 import { exitAfterDrain } from "@dg/common/async";
 import {
 	checkWslNetworking,
+	defaultAutostartDeps,
 	type DgPaths,
 	ensureDaemonId,
 	ensureOwnerToken,
@@ -23,6 +24,7 @@ import {
 	writePidFileAtomic,
 } from "@dg/common/node";
 import { assertNotBlocked } from "@dg/common/node/layout";
+import { rewriteDaemonAutostart } from "../commands/autostart";
 import { DispatchScheduler } from "../dispatch";
 import { countEnabledScheduled, parseJobs } from "../jobs/config";
 import { createRefreshLimiter } from "../jobs/credential-refresh";
@@ -30,6 +32,8 @@ import { createJobControl } from "../jobs/control";
 import { defaultRunSource } from "../jobs/secret-sources";
 import { isDaemonIdle } from "../jobs/idle";
 import {
+	compiledBackupPath,
+	migrateLauncherArgv,
 	migrateScheduledRows,
 	migrateServicesKey,
 	servicesBackupPath,
@@ -97,7 +101,7 @@ export async function cmdStatus(): Promise<void> {
 	const { handle } = resolved;
 	if (!resolved.live) {
 		console.log(
-			`dg-daemon (pid ${handle.pid}) does not answer — run dg-daemon stop --force`,
+			`dg daemon (pid ${handle.pid}) does not answer — run dg daemon stop --force`,
 		);
 		return;
 	}
@@ -107,6 +111,8 @@ export async function cmdStatus(): Promise<void> {
 	console.log(JSON.stringify(await resp.json(), null, 2));
 }
 
+const launcherHead = (argv: readonly string[]): string => argv.slice(0, 2).join(" ");
+
 function migrateJobsConfig(
 	paths: DgPaths,
 	store: ChatStore,
@@ -115,14 +121,18 @@ function migrateJobsConfig(
 	const file = paths.daemonConfigPath;
 	try {
 		ensurePrivateDir(dirname(file));
-		const { moved, rows } = withInstallLockSync(
+		const { moved, rows, rewritten } = withInstallLockSync(
 			dirname(file),
 			() => ({
 				...migrateServicesKey(paths),
 				rows: migrateScheduledRows(store, paths, logger),
+				...migrateLauncherArgv(paths),
 			}),
 			CONFIG_LOCK,
 		);
+		for (const job of rewritten) {
+			logger.info(`job "${job.name}": program ${job.from[0]} is now ${launcherHead(job.to)}; backup ${compiledBackupPath(paths)}`);
+		}
 		if (moved.length > 0) {
 			logger.info(
 				`moved ${moved.length} service(s) to "jobs"; backup ${servicesBackupPath(paths)}`,
@@ -158,6 +168,12 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 	const dispatchScheduler = new DispatchScheduler();
 	let boundPort: number | undefined;
 	migrateJobsConfig(paths, store, logger);
+	await rewriteDaemonAutostart(defaultAutostartDeps(), paths).then(
+		(result) => {
+			if (result.status === "rewritten") logger.info(`autostart unit ${result.path} now runs the compiled dg; backup ${result.backup}`);
+		},
+		(err: unknown) => logger.warn(`${describeError(err)}; the autostart unit was not rewritten, run dg autostart install`),
+	);
 	const readCredential = (name: string) =>
 		credentials.getCredential(name)?.value;
 	const supervisor = createSupervisor({
@@ -441,7 +457,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 	process.on("SIGINT", () => void shutdown("daemon-shutdown"));
 
 	logger.info(
-		`dg-daemon listening on 127.0.0.1:${boundPortNumber} (instance ${instanceId})`,
+		`dg daemon listening on 127.0.0.1:${boundPortNumber} (instance ${instanceId})`,
 	);
 	supervisor.autostart();
 	return "serving";

@@ -6,7 +6,7 @@ export function registerCredentials(program: Command): void {
 	registerLazyRaw(program, {
 		name: "credentials",
 		description:
-			"Manage secrets in dg-daemon's encrypted credential store; values are never printed.",
+			"Manage secrets in dg daemon's encrypted credential store; values are never printed.",
 		load: () => import("../credentials/cli"),
 	});
 }

@@ -8,7 +8,7 @@ setDefaultTimeout(120_000);
 
 const OVERHEAD_BUDGET_MS = 20;
 const RUNS = 7;
-const PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon", "dg"];
+const PROGRAMS = [[], ["dg-skills"], ["dg-agent"], ["dg-daemon"], ["dg"]];
 
 function warmMedian(bun: string, entry: string, args: string[]): number {
 	const spawn = () => run(bun, entry, args);
@@ -31,9 +31,9 @@ describe("startup budget", () => {
 	afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 	for (const program of PROGRAMS) {
-		test(`${program} --version adds under ${OVERHEAD_BUDGET_MS} ms to a bun process that writes one line (median of ${RUNS} warm runs)`, () => {
+		test(`${["dg.js", ...program].join(" ")} --version adds under ${OVERHEAD_BUDGET_MS} ms to a bun process that writes one line (median of ${RUNS} warm runs)`, () => {
 			const floor = warmMedian(bun, floorEntry, []);
-			const ms = warmMedian(bun, entry, [program, "--version"]);
+			const ms = warmMedian(bun, entry, [...program, "--version"]);
 			console.log(JSON.stringify({ program, floor, ms, over: ms - floor }));
 			expect(ms - floor).toBeLessThan(OVERHEAD_BUDGET_MS * budgetScale());
 		});

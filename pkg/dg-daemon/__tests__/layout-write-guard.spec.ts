@@ -25,7 +25,7 @@ afterEach(() => {
 	rmSync(home, { recursive: true, force: true });
 });
 
-posix("dg-daemon writers refuse an unmoved legacy entry", () => {
+posix("dg daemon writers refuse an unmoved legacy entry", () => {
 	it("writeConfig creates no daemon folder while the legacy daemon folder holds data", () => {
 		const paths = resolveDgPaths({ env: {}, homeDir: home });
 		put(join(paths.legacyHome, "daemon", "daemon.db"), "rows");

@@ -171,7 +171,7 @@ describe("supervisor grant token preflight", () => {
 	}
 
 	const missingText = (path: string) =>
-		`grant token file not found: ${path} — create it with dg-skills credentials grant bot`;
+		`grant token file not found: ${path} — create it with dg credentials grant bot`;
 
 	it("refuses to start a declared grant with no token file and starts no process", () => {
 		const r = grantedRig();

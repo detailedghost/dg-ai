@@ -1,11 +1,11 @@
 # Overwatch through the extension (`--ext`)
 
-Pass `--ext` to `dg-agent overwatch open` to open `/board` in the paired
+Pass `--ext` to `dg overwatch open` to open `/board` in the paired
 browser through the dg-ai-extension instead of the default browser. Gate it first:
 
 ```text
---ext only: dg-skills require-extension overwatch || exit 1
-dg-agent overwatch open --ext
+--ext only: dg require-extension overwatch || exit 1
+dg overwatch open --ext
 ```
 
 The daemon sends the open request to the extension, which opens or focuses the

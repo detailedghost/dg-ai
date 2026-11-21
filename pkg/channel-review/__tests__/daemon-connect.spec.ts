@@ -32,7 +32,7 @@ describe("connect", () => {
 		h.seams.env = {};
 		await expect(
 			connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams }),
-		).rejects.toThrow("dg-skills channel-review connect relay --env prod");
+		).rejects.toThrow("dg channel-review connect relay --env prod");
 	});
 
 	test("ignores another env's local variable", async () => {
@@ -40,7 +40,7 @@ describe("connect", () => {
 		h.seams.env = { CHANNEL_REVIEW_RELAY_SECRET_DEV: "dev-secret" };
 		await expect(
 			connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams }),
-		).rejects.toThrow("dg-skills channel-review connect relay --env prod");
+		).rejects.toThrow("dg channel-review connect relay --env prod");
 	});
 
 	test("treats a blank local variable as unset", async () => {
@@ -48,7 +48,7 @@ describe("connect", () => {
 		h.seams.env = { CHANNEL_REVIEW_RELAY_SECRET_PROD: "  " };
 		await expect(
 			connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams }),
-		).rejects.toThrow("dg-skills channel-review connect relay --env prod");
+		).rejects.toThrow("dg channel-review connect relay --env prod");
 	});
 
 	test("builds the provider with the resolved secret and returns secret, provider, and chats", async () => {
@@ -110,6 +110,6 @@ describe("connect", () => {
 		const h = setup({ resolveError: new RelayAuthError(401) });
 		await expect(
 			connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams }),
-		).rejects.toThrow("dg-skills channel-review connect relay --env dev");
+		).rejects.toThrow("dg channel-review connect relay --env dev");
 	});
 });

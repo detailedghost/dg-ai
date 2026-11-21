@@ -342,7 +342,7 @@ export type PwExtContext = {
 	agentIdentity: string;
 	fetchAsset(assetId: string): Promise<Blob>;
 	deleteAsset(assetId: string): Promise<void>;
-	/** Sends a captured value to dg-daemon's credential store and resolves to its store name; the value goes nowhere else. */
+	/** Sends a captured value to dg daemon's credential store and resolves to its store name; the value goes nowhere else. */
 	storeCredential(entry: { site: string; name: string; value: string; meta: Record<string, unknown> }): Promise<string>;
 };
 
@@ -1468,14 +1468,14 @@ export function createPwExtHandler({
 				try {
 					stored = await context.storeCredential({ site, name: request.name as string, value, meta });
 				} catch (error) {
-					const reason = error instanceof Error ? error.message : "dg-daemon refused the save.";
+					const reason = error instanceof Error ? error.message : "dg daemon refused the save.";
 					return { ok: false, error: clip(redactLiterals(reason, [value]), 300) };
 				}
 				return ok(
 					[
 						"### Result",
 						`Saved ${stored} from the ${label}${request.path === undefined ? "" : ` at ${request.path}`}${expiresAt === undefined ? "" : `, expires ${expiresAt}`}.`,
-						`The value was not shown. Use it with: dg-skills credentials exec ${stored}=NAME -- <command>`,
+						`The value was not shown. Use it with: dg credentials exec ${stored}=NAME -- <command>`,
 					].join("\n"),
 				);
 			}

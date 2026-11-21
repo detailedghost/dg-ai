@@ -349,7 +349,7 @@ export const ACTION_PHASES = Object.keys(PHASES);
 export async function runAction(name: string | undefined): Promise<number> {
 	const phase = PHASES[name ?? ""];
 	if (!phase) {
-		console.error(`usage: dg-skills thrash action <${ACTION_PHASES.join("|")}>`);
+		console.error(`usage: dg thrash action <${ACTION_PHASES.join("|")}>`);
 		return 2;
 	}
 	try {

@@ -6,7 +6,7 @@ import { inboxChecks, protonTransportCheck } from "../src/inbox/doctor";
 import { protonProfilePaths } from "../src/inbox/proton-pw";
 import { doctorWorld } from "./doctor-fixtures";
 
-const SIGN_IN_COMMAND = "dg-skills inbox proton sign-in";
+const SIGN_IN_COMMAND = "dg inbox proton sign-in";
 
 let world: ReturnType<typeof doctorWorld>;
 let dgHome: string;

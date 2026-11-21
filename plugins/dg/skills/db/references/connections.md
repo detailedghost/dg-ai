@@ -1,15 +1,15 @@
 # Connection Credentials
 
-Each connection is one encrypted credential named `db/<conn>`. Use `dg-skills db setup` first. It writes the credential and its meta keys, then runs `dg-skills db test`. The raw `credentials set` recipes below stay for manual use.
+Each connection is one encrypted credential named `db/<conn>`. Use `dg db setup` first. It writes the credential and its meta keys, then runs `dg db test`. The raw `credentials set` recipes below stay for manual use.
 
 ## Setup
 
 ```bash
-dg-skills db setup my-pg --engine postgresql --host 127.0.0.1 --port 5432 \
+dg db setup my-pg --engine postgresql --host 127.0.0.1 --port 5432 \
   --database mydb --user readonly --secret form
-dg-skills db setup my-sf --engine snowflake --account ACCT-ID --user me \
+dg db setup my-sf --engine snowflake --account ACCT-ID --user me \
   --auth keypair --private-key-path ~/.snowflake/rsa_key.p8 --secret command
-dg-skills db setup my-aws --engine postgresql --host 127.0.0.1 --port 5432 \
+dg db setup my-aws --engine postgresql --host 127.0.0.1 --port 5432 \
   --database mydb --user readonly --secret aws \
   --secret-id prod/db --secret-key password --aws-region us-east-1
 ```
@@ -38,7 +38,7 @@ The credential store requires a non-empty value. Snowflake `external_browser` ha
 ## PostgreSQL password
 
 ```bash
-dg-skills credentials set db/my-pg \
+dg credentials set db/my-pg \
   --meta engine=postgresql \
   --meta host=localhost \
   --meta port=5432 \
@@ -49,7 +49,7 @@ dg-skills credentials set db/my-pg \
 ## Snowflake external browser (SSO)
 
 ```bash
-printf '%s\n' external_browser | dg-skills credentials set db/my-sf \
+printf '%s\n' external_browser | dg credentials set db/my-sf \
   --meta engine=snowflake \
   --meta account=ACCT-ID \
   --meta user=user@example.test \
@@ -68,7 +68,7 @@ Auto-launch is best-effort. With no `wslview` on PATH it falls to `explorer.exe`
 
 Each connect retry mints a **new** `SAMLRequest`; only the last printed URL is valid.
 
-`clientStoreTemporaryCredential=true` caches the ID token so later non-interactive callers can skip the browser. Prime it once with `dg-skills db test my-sf`.
+`clientStoreTemporaryCredential=true` caches the ID token so later non-interactive callers can skip the browser. Prime it once with `dg db test my-sf`.
 
 `browserActionTimeout` is measured in milliseconds and defaults to 120000 in the Snowflake SDK. Lower it for automated callers or raise it for slower SSO and MFA.
 
@@ -77,7 +77,7 @@ Each connect retry mints a **new** `SAMLRequest`; only the last printed URL is v
 The credential value is the private-key passphrase, passed to Snowflake as `privateKeyPass` next to `privateKeyPath`. The store requires a non-empty value and the code always sends it as the passphrase, so use an encrypted key. Only the key's path is stored as metadata; the key contents never enter the credential store.
 
 ```bash
-dg-skills credentials set db/my-sf-key \
+dg credentials set db/my-sf-key \
   --meta engine=snowflake \
   --meta account=ACCT-ID \
   --meta user=svc_account \
@@ -94,7 +94,7 @@ The key file must have mode 600 or 400. `~` at the beginning of `privateKeyPath`
 ## Snowflake password
 
 ```bash
-dg-skills credentials set db/my-sf-password \
+dg credentials set db/my-sf-password \
   --meta engine=snowflake \
   --meta account=ACCT-ID \
   --meta user=analyst \

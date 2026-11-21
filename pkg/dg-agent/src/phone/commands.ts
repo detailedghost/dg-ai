@@ -1203,7 +1203,7 @@ export async function phoneStatus(deps: PhoneDeps): Promise<void> {
 }
 
 export async function phoneRun(opts: { onMessage?: string[]; onMessageTimeout?: string }, deps: RunDeps): Promise<void> {
-	if (linesAwaitConversion(deps.paths)) throw new DgCliError("dg: phone-friend lines wait for conversion; run dg-agent phone status");
+	if (linesAwaitConversion(deps.paths)) throw new DgCliError("dg: phone-friend lines wait for conversion; run dg phone status");
 	assertNotBlocked(deps.paths, "phone");
 	await restartStaleListener(deps, { spawn: false });
 	const timeoutSeconds = parseOnMessageTimeoutSeconds(opts.onMessageTimeout);

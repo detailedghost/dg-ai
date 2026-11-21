@@ -69,7 +69,7 @@ posix("MemoryStore.open blocked contract", () => {
 
 		expect(error).toBeInstanceOf(DgCliError);
 		expect((error as Error).message).toBe(
-			`dg: ${legacyAt("agents", "memory.db")} has not moved to ${paths.memoryDbPath}; run dg-skills install`,
+			`dg: ${legacyAt("agents", "memory.db")} has not moved to ${paths.memoryDbPath}; run dg install`,
 		);
 		expect(existsSync(paths.memoryDbPath)).toBe(false);
 		expect(existsSync(paths.agentsDir)).toBe(false);

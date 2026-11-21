@@ -1,7 +1,7 @@
 import { closeSync, fstatSync, openSync, readSync, statSync } from "node:fs";
 import { isPathInside } from "@dg/common/node";
 
-/** The fields of a `dg-skills bg` job that the stall check reads. */
+/** The fields of a `dg bg` job that the stall check reads. */
 export interface JobView {
 	id: string;
 	state: string;

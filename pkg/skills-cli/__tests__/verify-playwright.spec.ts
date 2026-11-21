@@ -982,7 +982,7 @@ describe("verify with a saved sign-in", () => {
 				cwd,
 				targets: [{ itemId: "inbox", sectionId: "inbox-r1" }],
 			});
-			await expect(attempt).rejects.toThrow("save it again with `dg-skills pw state save app-admin`");
+			await expect(attempt).rejects.toThrow("save it again with `dg pw state save app-admin`");
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

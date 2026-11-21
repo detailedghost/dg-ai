@@ -23,7 +23,7 @@ already point each slice's engineer at it, so no extra wiring is needed here.
 Read `execution.profile` from `plan.md` (absent means balance). Read
 [profiles.md](profiles.md) first only when `-s --profile` is given.
 
-On any `-s` run, list open rows with `dg-skills spec issues list "$SPEC_PATH" --open` and keep
+On any `-s` run, list open rows with `dg spec issues list "$SPEC_PATH" --open` and keep
 the rows whose `from` column is `deferral`. Without `--bg`, ask each one first, run
 `issues resolve --id <n>` on it, and append the answer under `## Agent Notes`. With `--bg` and
 open rows present, stop and print them. With `--bg`, read [bg.md](bg.md). Resume follows the
@@ -38,7 +38,7 @@ mode step 9 never ran), stop and tell the user to finish plan mode first — do 
 context pack from the sprawl files.
 
 An execution agent reads a slice's `prototype` asset **only if that slice's frontmatter has a
-`prototype` key** (`slices[N].prototype.path` + `.variant`, set by `dg-skills spec prototype-ref`). Do
+`prototype` key** (`slices[N].prototype.path` + `.variant`, set by `dg spec prototype-ref`). Do
 not inject a prototype reference into a slice's brief when it has none.
 
 When the key also holds `.accepted` and `.record`, the agent reads the `ACCEPTED.md` page and reproduces the
@@ -55,12 +55,12 @@ Opted-in repos (`.agents/decisions/README.md` exists) get the adr decision reads
 alongside `--fast` (see [fast.md](fast.md) F6) — there is no opt-out to honor here. Follow
 [`sdlc/references/setup.md`](../../sdlc/references/setup.md) **Step 1** exactly: derive a slug, then
 create the worktree and work in it exactly as that step describes. Derive the slug from `<NNN>_<slug>` by
-dropping the `<NNN>_` prefix, on the first run and on every resume. `dg-skills worktree create` re-normalizes the slug (setup.md Step 1), so a resume derives
+dropping the `<NNN>_` prefix, on the first run and on every resume. `dg worktree create` re-normalizes the slug (setup.md Step 1), so a resume derives
 the same slug, takes its permissive-resume path, and finds the paused slice's uncommitted files
 still there. The session itself stays at the launch directory — it does not relocate — so every
 command that touches the worktree from here on carries its own `cd "$WORKTREE_PATH" && …` prefix.
 
-**Bundle-visibility gotcha:** `dg-skills worktree create` branches off a freshly fetched `origin/<base>` — it
+**Bundle-visibility gotcha:** `dg worktree create` branches off a freshly fetched `origin/<base>` — it
 does not carry uncommitted `.agents/` changes into the new worktree (it prints exactly this
 warning: `"uncommitted .agents/ changes won't be visible in the worktree until merged"`). Plan
 mode now commits the bundle unconditionally (plan.md step 10), but an older or manually-edited
@@ -68,7 +68,7 @@ bundle may still be ahead of `origin`, so **resolve the bundle against `$WORKTRE
 fresh worktree copy** — the same pattern its predecessor used for its own NNN scan.
 
 ```sh
-SPEC_PATH="$(dg-skills stash -C "$WORKTREE_ORIGIN" -m spec)/<NNN>_<slug>/plan.md"
+SPEC_PATH="$(dg stash -C "$WORKTREE_ORIGIN" -m spec)/<NNN>_<slug>/plan.md"
 ```
 
 This means per-slice `plan.md` writes (current_slice, `## Slice Summaries`, `## Agent Notes`) land
@@ -84,7 +84,7 @@ reboot must not destroy the run's own notes, and the origin repo has to resolve 
 after the worktree is gone, which is what lets `/dg:address` clean it up at merge:
 
 ```sh
-SCRATCH_PATH="$(dg-skills stash -s spec <NNN>_<slug>-scratch.md)"; touch "$SCRATCH_PATH"
+SCRATCH_PATH="$(dg stash -s spec <NNN>_<slug>-scratch.md)"; touch "$SCRATCH_PATH"
 ```
 
 ## 4. SKIP setup.md Step 2 — no slice-derivation, no ephemeral spec
@@ -95,14 +95,14 @@ spec `/dg:sdlc`'s machinery reads and writes. Also skip setup.md Step 3's launch
 half (already done) — but still show the token-cost/permissions confirmation it describes if
 `permissions:` in `plan.md` is empty (a bundle scaffolded straight from `scaffold` has no
 `permissions:` block yet; plan mode doesn't set one). Persist the granted keys with
-`dg-skills spec perms-batch <bundle>/plan.md --grant-all` (or `--from-scratch <slug>` after writing the
+`dg spec perms-batch <bundle>/plan.md --grant-all` (or `--from-scratch <slug>` after writing the
 granular answers) — the same command `/dg:prd` documents for pre-granting permissions.
 
 ## 5. Drive the slice-wave
 
 Run [`sdlc/references/engineering.md`](../../sdlc/references/engineering.md) **4.2–4.3** exactly
 as written, with `SPEC_PATH`/`SCRATCH_PATH` from steps 2–3 above and `--cwd "$WORKTREE_PATH"`. To see
-which slices are done, run `dg-skills spec ready "$SPEC_PATH" <N> --cwd "$WORKTREE_PATH"`.
+which slices are done, run `dg spec ready "$SPEC_PATH" <N> --cwd "$WORKTREE_PATH"`.
 
 **Checkboxes and deferrals:** `plan.md` stays in the origin checkout while agents edit only the worktree, so
 agents never touch the spec. The orchestrator ticks each slice's checkboxes after that slice commits
@@ -133,7 +133,7 @@ review + correction, test-name gate + docs) exactly as written.
 ## 6. Direct PR/MR launch (the last item)
 
 Run `finish.md` **steps 7–8** exactly as written, including step 8's `/dg:spec` deltas (draft
-unconditionally, a best-effort `dg-skills pw batch-open <url>` afterward (when `batch-open` fails, print the PR URL and continue), dependent-PR/MR `dg-skills chain plan`/`dg-skills chain apply`
+unconditionally, a best-effort `dg pw batch-open <url>` afterward (when `batch-open` fails, print the PR URL and continue), dependent-PR/MR `dg chain plan`/`dg chain apply`
 handling). [`/dg:pushup`](../../pushup/SKILL.md) runs the same push → PR → browser-open mechanics for
 an ad-hoc branch. Do not fork to it here: it drops the PR-body template, the permission gating, and
 the worktree bookkeeping that step 8 owns.
@@ -159,7 +159,7 @@ PR body assembly step 8b describes — the body is the reviewer's only briefing.
 Skip this section with `--no-land`. Each skip below prints step 8d's line and then
 `Land it later: gh pr ready <number>, then /dg:land <url>.`
 
-1. **Skip when it cannot land here.** On a GitLab remote (`dg-skills vcs-provider capabilities`
+1. **Skip when it cannot land here.** On a GitLab remote (`dg vcs-provider capabilities`
    reports `kind` other than `github`), skip: `/dg:land` is GitHub only. Under `--bg`, skip: the
    merge gate asks a question, and a `--bg` run asks none. When this session is a
    subagent, skip and report the URL to the caller.

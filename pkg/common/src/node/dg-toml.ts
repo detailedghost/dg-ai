@@ -472,7 +472,7 @@ export function writeDgTomlDoc(raw: Table, file: string): DgToml {
 function assertMigrated(file: string, env: Env): void {
 	if (!existsSync(file) && readLegacyConfig(resolveDgPaths({ env }), { env }).sources.length)
 		throw new DgCliError(
-			`dg config: ${file} does not exist yet, and older config files still wait to move into it. Next: start dg-daemon if it is stopped, run dg-skills doctor so the move runs, then run this again.`,
+			`dg config: ${file} does not exist yet, and older config files still wait to move into it. Next: start the daemon with dg daemon start if it is stopped, run dg doctor so the move runs, then run this again.`,
 		);
 }
 

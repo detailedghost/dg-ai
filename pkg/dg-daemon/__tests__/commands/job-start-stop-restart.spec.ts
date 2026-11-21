@@ -46,7 +46,7 @@ describe("job restart", () => {
 
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(
-			"no live dg-daemon — jobs run inside it, so start it with dg daemon start",
+			"no live dg daemon — jobs run inside it, so start it with dg daemon start",
 		);
 	});
 
@@ -153,7 +153,7 @@ describe("job start and job stop", () => {
 		const result = await runCli(dgHome, ["job", "start", "nightly"]);
 
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain("no live dg-daemon");
+		expect(result.stderr).toContain("no live dg daemon");
 	});
 });
 
@@ -175,6 +175,6 @@ describe("job stop of a scheduled job", () => {
 		const result = await runCli(dgHome, ["job", "stop", "nightly"]);
 
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain("no live dg-daemon");
+		expect(result.stderr).toContain("no live dg daemon");
 	});
 });

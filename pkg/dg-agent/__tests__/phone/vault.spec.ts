@@ -199,10 +199,10 @@ describe("vault period keys", () => {
 	it("keeps the not-reachable message for connection failures only", async () => {
 		for (const message of [
 			"not reachable",
-			"dg-daemon is not running",
-			"no live dg-daemon pid file",
-			"cannot connect to dg-daemon",
-			"timed out connecting to dg-daemon",
+			"dg daemon is not running",
+			"no live dg daemon pid file",
+			"cannot connect to dg daemon",
+			"timed out connecting to dg daemon",
 		]) {
 			creds.failure = new Error(`prefix ${message} suffix`);
 			await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/not reachable/);
@@ -223,7 +223,7 @@ describe("vault period keys", () => {
 	it("reports a connection failure while saving the key as not reachable", async () => {
 		creds.granted = true;
 		creds.beforeSet = async () => {
-			throw new Error("cannot connect to dg-daemon on port 1");
+			throw new Error("cannot connect to dg daemon on port 1");
 		};
 
 		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/not reachable/);
@@ -252,7 +252,7 @@ describe("vault period keys", () => {
 		creds.sessionFailure = new TypeError("credential name must be 1 to 128 letters, digits, dots, underscores, slashes or hyphens, starting with a letter or digit");
 		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/credential name must be/);
 
-		creds.sessionFailure = new Error("cannot connect to dg-daemon on port 1");
+		creds.sessionFailure = new Error("cannot connect to dg daemon on port 1");
 		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/not reachable/);
 	});
 
@@ -295,7 +295,7 @@ describe("vault period keys", () => {
 
 		creds.session = true;
 		creds.failure = new TypeError("credential name must be 1 to 128 letters, digits, dots, underscores, slashes or hyphens, starting with a letter or digit");
-		creds.sessionFailure = new Error("cannot connect to dg-daemon on port 1");
+		creds.sessionFailure = new Error("cannot connect to dg daemon on port 1");
 		await expect(requireVaultStore(deps)).rejects.toThrow(/not reachable/);
 	});
 
@@ -502,7 +502,7 @@ describe("vault items", () => {
 		creds.failure = new DgCliError("credential name must be 1 to 128 letters, digits, dots, underscores, slashes or hyphens, starting with a letter or digit");
 		await expect(openVaultItem(creds.deps(), paths.phoneRoot, row)).rejects.toThrow(/credential name must be/);
 
-		creds.failure = new Error("cannot connect to dg-daemon on port 1");
+		creds.failure = new Error("cannot connect to dg daemon on port 1");
 		await expect(openVaultItem(creds.deps(), paths.phoneRoot, row)).rejects.toThrow(/not reachable/);
 		creds.failure = new Error("boom");
 		await expect(openVaultItem(creds.deps(), paths.phoneRoot, row)).rejects.toThrow(/cannot be opened/);

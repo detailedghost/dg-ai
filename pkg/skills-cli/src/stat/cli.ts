@@ -235,7 +235,7 @@ function registerReap(stat: Command): void {
 function registerLoops(stat: Command): void {
 	stat
 		.command("loops")
-		.description("List running dg-skills bg jobs whose log stopped growing or that ran too long")
+		.description("List running dg bg jobs whose log stopped growing or that ran too long")
 		.option("--json", "print the stalled jobs as JSON")
 		.option("--cwd <dir>", "only jobs started in this directory or below (default: the current directory)")
 		.option("--stall <minutes>", "flag a job whose log has not grown for this long (default 20)")

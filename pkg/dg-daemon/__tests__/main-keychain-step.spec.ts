@@ -31,7 +31,7 @@ async function runMain(command: string, extraEnv: Record<string, string> = {}): 
 	return JSON.parse(stdout);
 }
 
-describe("dg-daemon main keychain step composition", () => {
+describe("dg daemon main keychain step composition", () => {
 	it("runs the child under the temp home", async () => {
 		const { home, dgHome } = await runMain("status");
 

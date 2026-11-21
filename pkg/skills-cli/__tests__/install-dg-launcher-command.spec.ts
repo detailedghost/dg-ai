@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { KEPT_SENTENCE } from "./dg-launcher-fixtures";
-import { installEnv, runCli, writeReleaseServer } from "./runtime-bundle-fixtures";
+import { KEPT_SENTENCE, writeOldShims } from "./dg-launcher-fixtures";
+import { installEnv, runCli, writeReleaseServer } from "./release-fixtures";
 
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
 const VERSION = "9.9.9";
 const FOREIGN = "#!/bin/sh\necho other tool\n";
-const COMPLETION_PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon"] as const;
+const RETIRED_PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon"] as const;
 const bashFile = (home: string, program: string): string => join(home, "share", "bash-completion", "completions", program);
 
 async function install(flag: string, seed?: (bin: string) => void) {
@@ -23,38 +23,39 @@ async function install(flag: string, seed?: (bin: string) => void) {
 	return { ...result, home, bin: join(home, "bin"), cleanup: () => rmSync(directory, { recursive: true, force: true }) };
 }
 
-describe("dg-skills install writes the dg launcher", () => {
+describe("dg install writes the dg link", () => {
 	for (const flag of ["--cli-only", "--agent-only"]) {
-		test(`${flag} writes dg, dg-agent, dg-daemon and dg-skills and the completion files of all four`, async () => {
+		test(`${flag} links dg to the compiled program and writes only the dg completion files`, async () => {
 			const run = await install(flag);
 			try {
 				expect(run.code, run.stderr).toBe(0);
-				expect(readdirSync(run.bin).sort()).toEqual(["dg", "dg-agent", "dg-daemon", "dg-skills"]);
-				for (const program of ["dg", ...COMPLETION_PROGRAMS]) expect(existsSync(bashFile(run.home, program))).toBe(true);
+				expect(readdirSync(run.bin)).toEqual(["dg"]);
+				expect(readlinkSync(join(run.bin, "dg"))).toBe(join(run.home, "data", "bin", "current", "dg"));
+				expect(existsSync(bashFile(run.home, "dg"))).toBe(true);
+				for (const program of RETIRED_PROGRAMS) expect(existsSync(bashFile(run.home, program))).toBe(false);
 			} finally {
 				run.cleanup();
 			}
 		});
 	}
 
-	test("keeps a dg file of a different tool, warns once or more with its path, exits 0 and still writes dg-daemon", async () => {
+	test("keeps a dg file of a different tool, warns with its path, exits 0 and writes no other launcher", async () => {
 		const run = await install("--agent-only", (bin) => writeFileSync(join(bin, "dg"), FOREIGN, { mode: 0o755 }));
 		try {
 			expect(run.code, run.stderr).toBe(0);
 			expect(readFileSync(join(run.bin, "dg"), "utf8")).toBe(FOREIGN);
 			expect(run.stderr).toContain(KEPT_SENTENCE(join(run.bin, "dg")));
-			for (const name of COMPLETION_PROGRAMS) expect(existsSync(join(run.bin, name))).toBe(true);
+			expect(readdirSync(run.bin)).toEqual(["dg"]);
 		} finally {
 			run.cleanup();
 		}
 	});
 
-	test("writes the completion files of the three other programs and no dg completion file for that kept file", async () => {
-		const run = await install("--agent-only", (bin) => writeFileSync(join(bin, "dg"), FOREIGN, { mode: 0o755 }));
+	test("removes an old dg-skills shim from the bin dir", async () => {
+		const run = await install("--agent-only", (bin) => writeOldShims(bin, bin, ["dg-skills", "dg-agent", "dg-daemon"]));
 		try {
-			for (const program of COMPLETION_PROGRAMS) expect(existsSync(bashFile(run.home, program))).toBe(true);
-			expect(existsSync(bashFile(run.home, "dg"))).toBe(false);
-			expect(existsSync(join(run.home, "config", "fish", "completions", "dg.fish"))).toBe(false);
+			expect(run.code, run.stderr).toBe(0);
+			expect(readdirSync(run.bin)).toEqual(["dg"]);
 		} finally {
 			run.cleanup();
 		}

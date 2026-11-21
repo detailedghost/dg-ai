@@ -247,7 +247,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 				tokenPath = credentialGrantTokenPath(deps.paths, decl.grant);
 				if (!statSync(tokenPath).isFile()) throw new Error("not a file");
 			} catch {
-				return `grant token file not found: ${tokenPath} — create it with dg-skills credentials grant ${decl.grant}`;
+				return `grant token file not found: ${tokenPath} — create it with dg credentials grant ${decl.grant}`;
 			}
 		}
 		const bound = readBoundCredentials(decl, deps.readCredential);

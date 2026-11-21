@@ -113,7 +113,7 @@ export const jotSpec: CommandSpec = {
 			args: ["name[/NN]"],
 			async run(args) {
 				const ref = args[0];
-				if (!ref) throw new Error("missing name; run dg-skills jot ls");
+				if (!ref) throw new Error("missing name; run dg jot ls");
 				const [base = ref, part] =
 					ref.includes("/") && !path.isAbsolute(ref)
 						? ref.split("/", 2)

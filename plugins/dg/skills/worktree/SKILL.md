@@ -7,17 +7,18 @@ description: "Manage git worktrees for AI agent workflows — create, list, remo
 
 Front door for git worktree management. Reused by planning and execution workflows for worktree creation; permissions, frontmatter, PR and cwd restore stay in those workflows.
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
-dg-skills worktree --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" worktree --help >/dev/null 2>&1 ||
+dg worktree --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" worktree --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
-If a step fails, run dg-skills doctor worktree.
+If a step fails, run dg doctor worktree.
 
 ## Usage
 
@@ -25,19 +26,19 @@ If a step fails, run dg-skills doctor worktree.
 
 ```sh
 # create or resume a worktree+branch (slug positional)
-dg-skills worktree create <slug> [--prefix feature/] [--base <branch>] [--no-seed] [--no-resume]
+dg worktree create <slug> [--prefix feature/] [--base <branch>] [--no-seed] [--no-resume]
 
 # list linked worktrees (STATUS: clean, dirty, ahead N, no-upstream, MISSING)
-dg-skills worktree list [--porcelain]
+dg worktree list [--porcelain]
 
 # remove a worktree + branch (guards block by default)
-dg-skills worktree remove <slug> [--force] [--keep-branch] [--merged-ok]
+dg worktree remove <slug> [--force] [--keep-branch] [--merged-ok]
 
 # clean up stale records (paths missing on disk)
-dg-skills worktree prune
+dg worktree prune
 ```
 
-Run `dg-skills worktree <subcommand> --help` for per-subcommand details. A bare `dg-skills worktree` prints usage on stderr and exits 1; failures exit 2.
+Run `dg worktree <subcommand> --help` for per-subcommand details. A bare `dg worktree` prints usage on stderr and exits 1; failures exit 2.
 
 ## Flags
 
@@ -57,7 +58,7 @@ Run `dg-skills worktree <subcommand> --help` for per-subcommand details. A bare 
 `create` emits exactly three KEY=value lines on stdout. Consume with:
 
 ```sh
-eval "$(dg-skills worktree create my_feature)"
+eval "$(dg worktree create my_feature)"
 ```
 
 `WORKTREE_PATH`, `WORKTREE_BRANCH` and `WORKTREE_ORIGIN` are now in the environment. All warnings, errors and progress go to stderr, so stdout stays clean for machine consumption. Create output is eval-safe: a value made only of shell-safe characters prints raw, and any other value (spaces, quotes, `$`) is single-quoted. `list --porcelain` values are raw and never quoted; parsers split each line on the first `=`.
@@ -72,7 +73,7 @@ The session stays put. Every command that needs the worktree carries its own `cd
 cd "$WORKTREE_PATH" && git status --porcelain
 ```
 
-The shell's cwd does not persist between tool calls, so prefix every command that must run in the worktree. `ExitWorktree` has no role here; teardown goes through `dg-skills worktree remove`.
+The shell's cwd does not persist between tool calls, so prefix every command that must run in the worktree. `ExitWorktree` has no role here; teardown goes through `dg worktree remove`.
 
 ## Path & branch conventions
 

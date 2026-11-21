@@ -30,7 +30,7 @@ function boot() {
 
 const posix = describe.skipIf(process.platform === "win32");
 
-posix("dg-daemon serve exit code under a service manager", () => {
+posix("dg daemon serve exit code under a service manager", () => {
 	it("exits with code 0 when it gets SIGTERM, so Restart=on-failure does not start it again", async () => {
 		const { port, proc } = boot();
 		await waitForHealth(port);

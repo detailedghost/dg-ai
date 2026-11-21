@@ -75,7 +75,7 @@ export function protectedSessionRefusal(
 	const options = optionArgs(args);
 	const profile = profileFlag(options);
 	if (profile !== undefined && isProtectedProfile(profile))
-		return `${program} refuses the inbox-proton profile: it holds a signed-in mailbox. Use dg-skills inbox.`;
+		return `${program} refuses the inbox-proton profile: it holds a signed-in mailbox. Use dg inbox.`;
 	const session =
 		options
 			.findLast((arg) => arg.startsWith("--session="))
@@ -84,5 +84,5 @@ export function protectedSessionRefusal(
 	const name = program === "pw-code" ? program : commandName(args);
 	if (name !== undefined && program === "pw" && ALLOWED_COMMANDS.has(name))
 		return undefined;
-	return `${program} refuses ${name ?? "this command"} on the ${session} session: it holds a signed-in mailbox. Use dg-skills inbox, or close it with pw -s=${session} close.`;
+	return `${program} refuses ${name ?? "this command"} on the ${session} session: it holds a signed-in mailbox. Use dg inbox, or close it with pw -s=${session} close.`;
 }

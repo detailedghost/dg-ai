@@ -191,12 +191,12 @@ describe("serve startup", () => {
 	test.each([
 		[["Bash(/old/thrash-helper:*)", "Agent"], true],
 		[undefined, false],
-	])("a claude tool list %j that cannot run dg-skills thrash warns: %s", async (allowedTools, warns) => {
+	])("a claude tool list %j that cannot run dg thrash warns: %s", async (allowedTools, warns) => {
 		const h = setup(allowedTools ? { configExtra: { runner: { claude: { allowedTools } } } } : {});
 		const { controller, done } = h.startServe();
 		await started(h);
 		const warnings = h.log.lines.filter((line) => line.level === "warn").map((line) => line.message);
-		expect(warnings.some((m) => m.includes("dg-skills thrash"))).toBe(warns);
+		expect(warnings.some((m) => m.includes("dg thrash"))).toBe(warns);
 		controller.abort();
 		await done;
 	});

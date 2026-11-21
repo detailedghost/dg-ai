@@ -130,7 +130,7 @@ describe("channel-review doctor config check", () => {
 	test("fails with the setup command when the config is missing", async () => {
 		const result = await configCheck.run(context());
 		expect(result.status).toBe("fail");
-		expect(result.fix).toBe("dg-skills channel-review setup");
+		expect(result.fix).toBe("dg channel-review setup");
 	});
 
 	test("fails with the parse error when the config is invalid", async () => {

@@ -127,7 +127,7 @@ function codexKind(argv: string[]): boolean {
 	return false;
 }
 
-/** The dg.js path of a `dg-daemon serve` that does not run from the installed lib directory. */
+/** The dg.js path of a `dg daemon serve` that does not run from the installed lib directory. */
 function devDaemonScript(proc: ProcRow, ctx: ReapContext): string | null {
 	const argv = proc.argv;
 	const i = argv.findIndex((word) => base(word) === "dg.js");

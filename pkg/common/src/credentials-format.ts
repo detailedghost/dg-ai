@@ -89,14 +89,14 @@ export type CredentialsCliRequest = {
 };
 /** Where a human types one credential value; the page url carries a single-use code and never a session token. */
 export type CredentialIntake = { url: string; expiresAt: string };
-/** A command that dg-daemon runs with stored values in env vars; the CLI never receives the values. */
+/** A command that dg daemon runs with stored values in env vars; the CLI never receives the values. */
 export type CredentialExecSpec = {
 	bindings: { name: string; env: string }[];
 	argv: string[];
 	cwd: string;
 	env: Record<string, string>;
 };
-/** One scrubbed chunk of the output of a command that dg-daemon runs for exec. */
+/** One scrubbed chunk of the output of a command that dg daemon runs for exec. */
 export type CredentialsExecOutput = {
 	type: "cli-credentials-exec-output";
 	sessionId: string;

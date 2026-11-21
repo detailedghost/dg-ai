@@ -244,9 +244,9 @@ describe("mountPopup empty state", () => {
 		const { root, handle } = await mounted();
 
 		expect(root.querySelector(".note[role='status']")?.textContent).toBe(
-			"Start an agent with dg-agent start.",
+			"Start an agent with dg agent start.",
 		);
-		expect(root.querySelector(".note code")?.textContent).toBe("dg-agent start");
+		expect(root.querySelector(".note code")?.textContent).toBe("dg agent start");
 		handle.destroy();
 	});
 
@@ -265,7 +265,7 @@ describe("mountPopup empty state", () => {
 		const { root, handle } = await mounted({ port: undefined });
 
 		expect(root.querySelector(".note[role='status']")?.textContent).toBe(
-			"Daemon not running. Run dg-agent start.",
+			"Daemon not running. Run dg agent start.",
 		);
 		handle.destroy();
 	});
@@ -574,7 +574,7 @@ describe("mountPopup actions", () => {
 		const harness = await mounted({
 			...paired(session({ agentIdentity: "alpha" })),
 			replies: {
-				[MSG.openChat]: { ok: false, error: "Daemon unreachable. Start it with dg-agent start, then retry." },
+				[MSG.openChat]: { ok: false, error: "Daemon unreachable. Start it with dg agent start, then retry." },
 			},
 		});
 
@@ -584,7 +584,7 @@ describe("mountPopup actions", () => {
 		await settle();
 
 		expect(cardOf(harness.root, "alpha").textContent).toContain(
-			"Daemon unreachable. Start it with dg-agent start, then retry.",
+			"Daemon unreachable. Start it with dg agent start, then retry.",
 		);
 		harness.handle.destroy();
 	});
@@ -747,7 +747,7 @@ describe("mountPopup daemon down while paired", () => {
 		const harness = await mounted({ ...paired(down), port: undefined });
 
 		const text = harness.root.textContent ?? "";
-		expect(text).toContain("Daemon not running. Run dg-agent start.");
+		expect(text).toContain("Daemon not running. Run dg agent start.");
 		const retry = byText<HTMLElement>(harness.root, "a, button", "Retry");
 		expect(retry).toBeDefined();
 		const banner = [...harness.root.querySelectorAll("*")].find(
@@ -790,7 +790,7 @@ describe("mountPopup daemon down while paired", () => {
 		const harness = await mounted({
 			...paired(down),
 			port: undefined,
-			replies: { [MSG.openChat]: { ok: false, error: "Daemon unreachable. Start it with dg-agent start, then retry." } },
+			replies: { [MSG.openChat]: { ok: false, error: "Daemon unreachable. Start it with dg agent start, then retry." } },
 		});
 
 		harness.root.querySelector<HTMLButtonElement>('[aria-label="Menu for alpha"]')?.click();

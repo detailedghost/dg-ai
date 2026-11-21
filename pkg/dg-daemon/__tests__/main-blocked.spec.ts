@@ -49,7 +49,7 @@ async function blockDaemon(): Promise<void> {
 	});
 }
 
-posix("dg-daemon main with a blocked daemon entry", () => {
+posix("dg daemon main with a blocked daemon entry", () => {
 	it("refuses serve before it writes the owner token or opens a store", async () => {
 		await blockDaemon();
 		const paths = resolveDgPaths();
@@ -73,7 +73,7 @@ function twoUsedHome(): { from: string; to: string } {
 	return { from, to: paths.daemonDir };
 }
 
-posix("dg-daemon main with two used daemon folders", () => {
+posix("dg daemon main with two used daemon folders", () => {
 	it("exits 78 on serve with the two-used text on stderr and writes no pid file", async () => {
 		const { from, to } = twoUsedHome();
 		const errors: string[] = [];

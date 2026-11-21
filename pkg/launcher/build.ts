@@ -1,8 +1,11 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { buildPages } from "../pages/build";
 import { hashBundle, playwrightMetadata } from "../skills-cli/build";
+import { compiledAssetName } from "../skills-cli/src/utils/lib";
+
+export { compiledAssetName };
 
 const ROOT = import.meta.dir;
 const PKG = join(ROOT, "..");
@@ -67,27 +70,64 @@ function revision(): string | undefined {
 	return result.exitCode === 0 ? result.stdout.toString().trim() : undefined;
 }
 
-export async function buildLauncher(outdir: string): Promise<{ lib: string; tarball: string }> {
+/** The bun compile target for each runtime.json platform key; the release asset is `dg-<key>[.exe]`. */
+export const COMPILE_TARGETS = {
+	"linux-x64": "bun-linux-x64",
+	"linux-x64-baseline": "bun-linux-x64-baseline",
+	"linux-arm64": "bun-linux-arm64",
+	"darwin-x64": "bun-darwin-x64",
+	"darwin-arm64": "bun-darwin-arm64",
+	"windows-x64": "bun-windows-x64",
+	"windows-x64-baseline": "bun-windows-x64-baseline",
+	"windows-arm64": "bun-windows-arm64",
+} as const;
+
+export type CompileKey = keyof typeof COMPILE_TARGETS;
+
+async function sharedOptions() {
 	const plugins = [playwrightMetadata, namedChunks];
 	await buildPages();
 	const { version } = JSON.parse(readFileSync(join(PKG, "skills-cli", "package.json"), "utf8")) as { version: string };
 	const sha = process.env.DG_BUILD_SHA ?? revision() ?? (await hashBundle(ENTRY, plugins));
-	const lib = join(outdir, "lib");
-	rmSync(outdir, { recursive: true, force: true });
-	const result = await Bun.build({
+	const options = {
 		entrypoints: [ENTRY],
-		target: "bun",
+		target: "bun" as const,
 		splitting: true,
 		minify: true,
-		outdir: lib,
-		naming: { chunk: "chunks/[name]-[hash].js" },
 		external: EXTERNAL,
 		plugins,
 		define: {
 			"process.env.DG_BUILD_VERSION": JSON.stringify(version),
 			"process.env.DG_BUILD_SHA": JSON.stringify(sha),
 		},
-	});
+	};
+	return { options, version, sha };
+}
+
+type SharedOptions = Awaited<ReturnType<typeof sharedOptions>>;
+
+/** Builds one compiled dg executable for `target` at `outfile`; pass `shared` to reuse one page build across targets. */
+export async function buildCompiled({
+	target,
+	outfile,
+	shared,
+}: {
+	target: CompileKey;
+	outfile: string;
+	shared?: SharedOptions;
+}): Promise<string> {
+	const { options } = shared ?? (await sharedOptions());
+	mkdirSync(dirname(outfile), { recursive: true });
+	const result = await Bun.build({ ...options, compile: { target: COMPILE_TARGETS[target], outfile } });
+	if (!result.success) throw new AggregateError(result.logs, `Compiled dg build failed for ${target}.`);
+	return outfile;
+}
+
+export async function buildLauncher(outdir: string): Promise<{ lib: string; tarball: string }> {
+	const { options, version, sha } = await sharedOptions();
+	const lib = join(outdir, "lib");
+	rmSync(outdir, { recursive: true, force: true });
+	const result = await Bun.build({ ...options, outdir: lib, naming: { chunk: "chunks/[name]-[hash].js" } });
 	if (!result.success) throw new AggregateError(result.logs, "Launcher bundle build failed.");
 
 	writeFileSync(join(lib, "build.json"), `${JSON.stringify({ version, sha })}\n`);
@@ -99,7 +139,24 @@ export async function buildLauncher(outdir: string): Promise<{ lib: string; tarb
 	return { lib, tarball };
 }
 
+const isCompileKey = (key: string): key is CompileKey => Object.hasOwn(COMPILE_TARGETS, key);
+
 if (import.meta.main) {
-	const { values } = parseArgs({ args: Bun.argv.slice(2), options: { outdir: { type: "string" } } });
-	await buildLauncher(values.outdir ?? join(ROOT, "dist"));
+	const { values } = parseArgs({
+		args: Bun.argv.slice(2),
+		options: { outdir: { type: "string" }, compiled: { type: "string", multiple: true } },
+	});
+	const outdir = values.outdir ?? join(ROOT, "dist");
+	if (!values.compiled) await buildLauncher(outdir);
+	else {
+		const keys = values.compiled.includes("all") ? Object.keys(COMPILE_TARGETS) : values.compiled;
+		const targets = keys.map((key) => {
+			if (!isCompileKey(key)) throw new Error(`unknown compile target ${key}; expected all or ${Object.keys(COMPILE_TARGETS).join(", ")}`);
+			return key;
+		});
+		const shared = await sharedOptions();
+		for (const target of targets) {
+			console.log(await buildCompiled({ target, outfile: join(outdir, compiledAssetName(target)), shared }));
+		}
+	}
 }

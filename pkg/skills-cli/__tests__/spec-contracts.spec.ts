@@ -149,7 +149,7 @@ function relocatedSkills(): string {
 	return dir;
 }
 
-describe("dg-skills spec dispatch", () => {
+describe("dg spec dispatch", () => {
 	test("bare spec prints every subcommand on stdout and exits 2", async () => {
 		const run = await spec([]);
 		expect(run.exitCode).toBe(2);
@@ -200,7 +200,7 @@ describe("dg-skills spec dispatch", () => {
 	});
 });
 
-describe("dg-skills spec installed schema lookup", () => {
+describe("dg spec installed schema lookup", () => {
 	test("schema-backed commands fail with the override variable named when no skill is installed", async () => {
 		put("spec.md", SPEC);
 		const run = await spec(["validate", "spec.md"], {
@@ -260,7 +260,7 @@ describe("dg-skills spec installed schema lookup", () => {
 	});
 });
 
-describe("dg-skills spec scaffold date", () => {
+describe("dg spec scaffold date", () => {
 	const blob = JSON.stringify({
 		feature: "Dated",
 		slug: "dated",
@@ -325,7 +325,7 @@ describe("dg-skills spec scaffold date", () => {
 	});
 });
 
-describe("dg-skills spec immutable and append-only fields", () => {
+describe("dg spec immutable and append-only fields", () => {
 	test.each([
 		["feature", "Other"],
 		["date", "2030-01-01"],
@@ -411,7 +411,7 @@ describe("dg-skills spec immutable and append-only fields", () => {
 	});
 });
 
-describe("dg-skills spec field path indices", () => {
+describe("dg spec field path indices", () => {
 	test("a negative index counts from the end of the list for get and set", async () => {
 		put("plan.md", SPEC);
 		const fetched = await spec(["get", "plan.md", "slices[-1].name"]);
@@ -450,7 +450,7 @@ describe("dg-skills spec field path indices", () => {
 	});
 });
 
-describe("dg-skills spec prototype-ref", () => {
+describe("dg spec prototype-ref", () => {
 	const PROTOTYPE_LINES =
 		"    prototype:\n      path: prototype/slice_2_proto.html\n      variant: a\n";
 
@@ -500,7 +500,7 @@ describe("dg-skills spec prototype-ref", () => {
 	});
 });
 
-describe("dg-skills spec prototype-ref with an accepted record", () => {
+describe("dg spec prototype-ref with an accepted record", () => {
 	const reading = {
 		viewport: "desktop",
 		width: 1440,
@@ -687,7 +687,7 @@ describe("dg-skills spec prototype-ref with an accepted record", () => {
 	});
 });
 
-describe("dg-skills spec permissions", () => {
+describe("dg spec permissions", () => {
 	test("perms --deny rewrites a permissions block that is not last in the frontmatter in place", async () => {
 		put("spec.md", MID_PERMISSIONS);
 		const run = await spec(["perms", "spec.md", "--deny"]);
@@ -785,7 +785,7 @@ describe("dg-skills spec permissions", () => {
 	});
 });
 
-describe("dg-skills spec resolve-path hashes", () => {
+describe("dg spec resolve-path hashes", () => {
 	test("--ephemeral keys the state path by the main worktree and pickup scratch by the working directory", async () => {
 		put("seed.txt", "x");
 		initRepo(context.root);
@@ -810,7 +810,7 @@ describe("dg-skills spec resolve-path hashes", () => {
 	});
 });
 
-describe("dg-skills spec lint-waves", () => {
+describe("dg spec lint-waves", () => {
 	const slice = (
 		id: number | string,
 		files: string[],
@@ -990,7 +990,7 @@ describe("dg-skills spec lint-waves", () => {
 	});
 });
 
-describe("dg-skills spec lean context", () => {
+describe("dg spec lean context", () => {
 	test("context <bundle> writes frontmatter plus summaries, never the plan body, and is repeatable", async () => {
 		put("bundle/plan.md", SPEC);
 		put(".agents/paths.md", "# Paths marker\n");
@@ -1026,7 +1026,7 @@ describe("dg-skills spec lean context", () => {
 	});
 });
 
-describe("dg-skills spec roundtable", () => {
+describe("dg spec roundtable", () => {
 	function outputsDir(stdout: string): string {
 		const match = /^_Outputs: (.+)_$/m.exec(stdout);
 		if (!match?.[1]) throw new Error(`no _Outputs line in ${stdout}`);
@@ -1102,7 +1102,7 @@ describe("dg-skills spec roundtable", () => {
 	});
 });
 
-describe("dg-skills spec defects the TypeScript port must not carry over", () => {
+describe("dg spec defects the TypeScript port must not carry over", () => {
 	test("ready blocks a slice whose depends_on dependency is not committed", async () => {
 		put("spec.md", SPEC);
 		initRepo(context.root);

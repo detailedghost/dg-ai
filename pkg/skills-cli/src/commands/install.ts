@@ -5,7 +5,7 @@ export function registerInstall(program: Command): void {
 	const install = program
 		.command("install")
 		.description(
-			"stage the dg-ai-extension for loading + install the pinned Bun runtime, the dg bundle and the dg, dg-skills, dg-agent and dg-daemon launchers, or copy skill instruction files with --skills-only",
+			"stage the dg-ai-extension for loading + install the compiled dg program and its launcher, or copy skill instruction files with --skills-only",
 		)
 		.argument(
 			"[target]",
@@ -15,11 +15,11 @@ export function registerInstall(program: Command): void {
 		.option("--repo <path>", "dg repo to build from (default: search up from cwd)")
 		.option(
 			"--cli-only",
-			"install the runtime, bundle and launchers; skip the extension",
+			"install the dg program and its launcher; skip the extension",
 		)
 		.option(
 			"--agent-only",
-			"install the runtime, bundle and launchers; skip the extension, for a non-Claude agent that only needs phone",
+			"install the dg program and its launcher; skip the extension, for a non-Claude agent that only needs phone",
 		)
 		.option(
 			"--skills-only",
@@ -48,9 +48,9 @@ export function registerInstall(program: Command): void {
 
 	install
 		.command("launchers", { hidden: true })
-		.description("write the launchers for the installed release")
+		.description("install the compiled dg of this release and point the dg launcher at it")
 		.action(async () => {
 			const { writeCurrentLaunchers } = await import("../install/cli");
-			writeCurrentLaunchers();
+			await writeCurrentLaunchers();
 		});
 }

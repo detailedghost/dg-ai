@@ -223,7 +223,7 @@ describe("pw --ext", () => {
 			},
 		});
 		expect(await runExt(["--ext", "current"], env, d.value)).toBe(1);
-		expect(env.stderr.join("\n")).toContain("dg-skills doctor pw");
+		expect(env.stderr.join("\n")).toContain("dg doctor pw");
 	});
 
 	test("rejects an invalid reply from the daemon", async () => {

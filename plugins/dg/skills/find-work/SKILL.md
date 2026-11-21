@@ -7,21 +7,22 @@ description: Discover actionable work items, present for selection, execute each
 
 Scan multiple sources for small/medium actionable work, let the user pick what to tackle, then execute each in an isolated git worktree. Lightweight — no interview, no spec, no roundtable.
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
-{ dg-skills vcs-provider --help >/dev/null 2>&1 &&
-  dg-skills worktree --help >/dev/null 2>&1 &&
-  dg-skills chain --help >/dev/null 2>&1; } ||
-  { "${DG_HOME:-$HOME/.local}/bin/dg-skills" vcs-provider --help >/dev/null 2>&1 &&
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" worktree --help >/dev/null 2>&1 &&
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" chain --help >/dev/null 2>&1; } ||
+{ dg vcs-provider --help >/dev/null 2>&1 &&
+  dg worktree --help >/dev/null 2>&1 &&
+  dg chain --help >/dev/null 2>&1; } ||
+  { "${DG_HOME:-$HOME/.local}/bin/dg" vcs-provider --help >/dev/null 2>&1 &&
+  "${DG_HOME:-$HOME/.local}/bin/dg" worktree --help >/dev/null 2>&1 &&
+  "${DG_HOME:-$HOME/.local}/bin/dg" chain --help >/dev/null 2>&1; } ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If a bare name does not answer, also after the bootstrap, call it by its `${DG_HOME:-$HOME/.local}/bin` path instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
-If a step fails, run dg-skills doctor chain stash vcs-provider worktree.
+If a step fails, run dg doctor chain stash vcs-provider worktree.
 
 ## Usage
 

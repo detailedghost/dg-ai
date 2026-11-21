@@ -33,7 +33,7 @@ Codex:      $dg:proto settings page layout
 The local mode picks the shape from the question. A state or logic question
 becomes a runnable terminal app. A look question becomes five variations by
 default (`-n <count>` or `-o "<a>,<b>"` change that) on one route, served by
-`dg-skills prototype serve` with Approve, Reject, and notes. A multi-workflow
+`dg prototype serve` with Approve, Reject, and notes. A multi-workflow
 plan becomes one clickable walkthrough. Approve with a note starts a new round
 from the pick, `tweak` edits in place, and `-c` resumes an open chain.
 
@@ -54,7 +54,7 @@ Codex:      $dg:proto --ext
 
 The extension workflow asks for a page and design question, samples the page's
 visual styles, presents the proposed comparison, and plants the approved set in
-the browser. Run `dg-skills install` first to load the
+the browser. Run `dg install` first to load the
 companion extension. For authenticated or private pages, review the privacy
 warning before allowing the style scrape. The CLI writes approved answers under
 `.agents/prototype/<slug>/` and removes temporary Downloads and scratch files
@@ -62,7 +62,7 @@ after export.
 
 Plain `/dg:proto` used to run the extension workflow. It now runs the local
 mode, so add `--ext` to keep the extension workflow. The CLI form follows:
-`dg-skills proto --ext plant <plan>`.
+`dg proto --ext plant <plan>`.
 
 See the [demo skill](../plugins/dg/skills/demo/SKILL.md),
 [TourScript authoring guide](../plugins/dg/skills/demo/references/authoring.md),

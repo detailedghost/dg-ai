@@ -5,19 +5,20 @@ description: Close out the current git worktree. Remove the worktree and local b
 
 # /dg:cls: Close out a worktree
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
-dg-skills bg --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" bg --help >/dev/null 2>&1 ||
+dg bg --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" bg --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
-If a step fails, run dg-skills doctor bg pw stash vcs-provider worktree.
+If a step fails, run dg doctor bg pw stash vcs-provider worktree.
 
-Thin orchestration over `dg-skills worktree remove` (linked worktrees, plus a defensive `ExitWorktree({action:"keep"})` first in case `/dg:sdlc` or `/dg:spec` entered one with `EnterWorktree(path=...)`) and `ExitWorktree` (harness sessions). Guards never force-remove unmerged or dirty work without asking.
+Thin orchestration over `dg worktree remove` (linked worktrees, plus a defensive `ExitWorktree({action:"keep"})` first in case `/dg:sdlc` or `/dg:spec` entered one with `EnterWorktree(path=...)`) and `ExitWorktree` (harness sessions). Guards never force-remove unmerged or dirty work without asking.
 
 > **Statusline note.** Only `ExitWorktree` or a focus-file rewrite moves the statusline. A `cd` does not. A bare `cd "$MAIN"` keeps Bash calls off a deleted path but does not repoint the user's terminal.
 

@@ -65,7 +65,7 @@ const INSTALL_ALLOWLIST: { substring: string; reason: string }[] = [
 	{
 		substring: "github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh",
 		reason:
-			"the shared dg-skills CLI bootstrap line every skill's SKILL.md carries; checksum-verified by the installer, not a prototype dependency fetch",
+			"the shared dg CLI bootstrap line every skill's SKILL.md carries; checksum-verified by the installer, not a prototype dependency fetch",
 	},
 ];
 
@@ -139,11 +139,11 @@ describe("proto skill", () => {
 		const commands = skillFile("references/commands.md");
 		const contracts = skillFile("references/contracts.md");
 
-		expect(commands).toContain("dg-skills");
+		expect(commands).toContain("dg proto --ext");
 		expect(commands).toContain("bootstrap.sh");
 		expect(commands).toContain("extension-installed");
 		expect(commands).toContain("browser-batch-installed");
-		expect(commands).toContain("dg-ai-extension is not installed; run dg-skills install first.");
+		expect(commands).toContain("dg-ai-extension is not installed; run dg install first.");
 		expect(commands).toMatch(/timed out|times out/i);
 		for (const command of [
 			"proto --ext scrape",
@@ -231,7 +231,7 @@ describe("proto skill local mode", () => {
 	test("records the behavior change for plain /dg:proto and the --ext command form", () => {
 		const skill = skillFile("SKILL.md");
 		expect(skill).toMatch(/Behavior change[\s\S]*now runs the local\s+mode/);
-		expect(skill).toContain("dg-skills proto --ext plant <plan>");
+		expect(skill).toContain("dg proto --ext plant <plan>");
 	});
 
 	test("has no viz dependency and no private or legacy helper paths", () => {
@@ -383,7 +383,7 @@ describe("proto skill minimum bar and exit codes", () => {
 		expect(build).toMatch(/exits 124/);
 		expect(build).toMatch(/Exit 75/);
 		expect(build).not.toMatch(/timeout[^\n]*exits 1\b/);
-		expect(skillFile("references/local-ui.md")).toContain("run: dg-skills prototype fingerprint <name> --url=<url> --state=<name>");
+		expect(skillFile("references/local-ui.md")).toContain("run: dg prototype fingerprint <name> --url=<url> --state=<name>");
 	});
 });
 

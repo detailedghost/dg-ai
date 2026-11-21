@@ -13,7 +13,7 @@ const check = (id: string, status: CheckReport["status"], detail: string, fix: s
 	fix,
 });
 
-const DAEMON = "dg-agent start";
+const DAEMON = "dg agent start";
 
 function report(): DoctorReport {
 	return {
@@ -26,16 +26,16 @@ function report(): DoctorReport {
 			{
 				item: "inbox",
 				checks: [
-					check("daemon", "fail", "dg-daemon is not answering", DAEMON),
-					check("allow-rule", "warn", "no allow rule for inbox", "Bash(dg-skills inbox:*)"),
+					check("daemon", "fail", "dg daemon is not answering", DAEMON),
+					check("allow-rule", "warn", "no allow rule for inbox", "Bash(dg inbox:*)"),
 					check("extension-paired", "info", "not paired"),
 				],
 			},
 			{
 				item: "db",
 				checks: [
-					check("daemon", "fail", "dg-daemon is not answering", DAEMON),
-					check("allow-rule", "warn", "no allow rule for db", "Bash(dg-skills db:*)"),
+					check("daemon", "fail", "dg daemon is not answering", DAEMON),
+					check("allow-rule", "warn", "no allow rule for db", "Bash(dg db:*)"),
 					check("tool-git", "ok", "git 2.56"),
 				],
 			},
@@ -53,11 +53,11 @@ describe("groupReport", () => {
 			["info", "1 info"],
 			["ok", "2 passed"],
 		]);
-		expect(groups[0]?.action).toEqual({ kind: "run", argv: ["dg-agent", "start"] });
+		expect(groups[0]?.action).toEqual({ kind: "run", argv: ["dg", "agent", "start"] });
 		expect(groups[1]?.action).toBeNull();
 		expect(groups[2]?.action).toEqual({
 			kind: "allow-rule",
-			rules: ["Bash(dg-skills inbox:*)", "Bash(dg-skills db:*)"],
+			rules: ["Bash(dg inbox:*)", "Bash(dg db:*)"],
 		});
 	});
 });
@@ -86,9 +86,9 @@ describe("group titles", () => {
 
 describe("runnableFix", () => {
 	test.each([
-		["dg-agent start", ["dg-agent", "start"]],
-		["dg-skills channel-review setup", ["dg-skills", "channel-review", "setup"]],
-		["dg-skills doctor jot --json", ["dg-skills", "doctor", "jot", "--json"]],
+		["dg agent start", ["dg", "agent", "start"]],
+		["dg channel-review setup", ["dg", "channel-review", "setup"]],
+		["dg doctor jot --json", ["dg", "doctor", "jot", "--json"]],
 	])("runs %s", (fix, argv) => {
 		expect(runnableFix(fix)).toEqual(argv);
 	});
@@ -96,8 +96,8 @@ describe("runnableFix", () => {
 	test.each([
 		"claude plugin update dg@detailedghost",
 		"sudo apt-get install -y git",
-		"dg-skills install; rm -rf ~",
-		"dg-skills credentials set 'x y'",
+		"dg install; rm -rf ~",
+		"dg credentials set 'x y'",
 		"jq . ~/.claude/settings.json",
 	])("does not run %s", (fix) => {
 		expect(runnableFix(fix)).toBeNull();
@@ -137,31 +137,31 @@ describe("runTui", () => {
 		const d = fake(["q"]);
 		await runTui(report(), d);
 		expect(d.ran).toEqual([]);
-		expect(d.screens[0]).toContain("> ❌ daemon (2)    enter: dg-agent start");
+		expect(d.screens[0]).toContain("> ❌ daemon (2)    enter: dg agent start");
 		expect(d.screens[0]).toContain("↑↓ move");
 	});
 
 	test("right expands a group and shows each item and the fix; left collapses it", async () => {
 		const d = fake([KEY.right, KEY.left, "q"]);
 		await runTui(report(), d);
-		expect(d.screens[1]).toContain("inbox · daemon: dg-daemon is not answering");
-		expect(d.screens[1]).toContain("Fix: dg-agent start");
+		expect(d.screens[1]).toContain("inbox · daemon: dg daemon is not answering");
+		expect(d.screens[1]).toContain("Fix: dg agent start");
 		expect(d.screens[2]).not.toContain("inbox · daemon");
 	});
 
 	test("enter then y runs the fix and checks again", async () => {
 		const d = fake([KEY.enter, "y", "x", "q"]);
 		await runTui(report(), d);
-		expect(d.screens[1]).toContain("Run dg-agent start? [y/N]");
-		expect(d.ran).toEqual([["dg-agent", "start"]]);
+		expect(d.screens[1]).toContain("Run dg agent start? [y/N]");
+		expect(d.ran).toEqual([["dg", "agent", "start"]]);
 		expect(d.reruns).toBe(1);
-		expect(d.screens.at(-1)).toContain("dg-agent start exited 0.");
+		expect(d.screens.at(-1)).toContain("dg agent start exited 0.");
 	});
 
 	test("after a fix runs, its output stays until a key press", async () => {
 		const d = fake([KEY.enter, "y", "x", "q"]);
 		await runTui(report(), d);
-		expect(d.screens.some((screen) => screen.includes("dg-agent start exited 0. Press any key to go back to the list."))).toBe(true);
+		expect(d.screens.some((screen) => screen.includes("dg agent start exited 0. Press any key to go back to the list."))).toBe(true);
 		expect(d.reruns).toBe(1);
 	});
 
@@ -169,7 +169,7 @@ describe("runTui", () => {
 		const d = fake([KEY.down, KEY.down, KEY.enter, "n", "q"]);
 		await runTui(report(), d);
 		const question = d.screens.find((screen) => screen.includes("allow rules listed above")) ?? "";
-		expect(question).toContain("Bash(dg-skills inbox:*)");
+		expect(question).toContain("Bash(dg inbox:*)");
 	});
 
 	test("enter then any other key skips the fix", async () => {
@@ -190,7 +190,7 @@ describe("runTui", () => {
 	test("the allow-rules row adds every rule after one yes", async () => {
 		const d = fake([KEY.down, KEY.down, KEY.enter, "y", "q"]);
 		await runTui(report(), d);
-		expect(d.added).toEqual([["Bash(dg-skills inbox:*)", "Bash(dg-skills db:*)"]]);
+		expect(d.added).toEqual([["Bash(dg inbox:*)", "Bash(dg db:*)"]]);
 		expect(d.screens.at(-1)).toContain("Added 2 allow rules.");
 	});
 
@@ -226,7 +226,7 @@ describe("render in a small terminal", () => {
 		ok: false,
 		items: Array.from({ length: 30 }, (_, index) => ({
 			item: `item-${index}`,
-			checks: [check("allow-rule", "warn", `no allow rule for item-${index}`, `Bash(dg-skills item-${index}:*)`)],
+			checks: [check("allow-rule", "warn", `no allow rule for item-${index}`, `Bash(dg item-${index}:*)`)],
 		})),
 	};
 
@@ -235,7 +235,7 @@ describe("render in a small terminal", () => {
 		const screen = render({ groups, cursor: 0, open: new Set([groups[0]?.key ?? ""]), status: "" }, { rows: 12, columns: 200 });
 		const lines = screen.replace("\u001b[2J\u001b[H", "").trimEnd().split("\n");
 		expect(lines.length).toBeLessThanOrEqual(12);
-		expect(screen).toContain("… 23 more; dg-skills doctor --plain lists all");
+		expect(screen).toContain("… 23 more; dg doctor --plain lists all");
 	});
 
 	test("counts wrapped rule rows and always shows the hidden notice in a narrow terminal", () => {
@@ -288,8 +288,8 @@ describe("render fits the terminal", () => {
 
 	test("shows a multi-line detail as one row per line", () => {
 		const detail = "~/.dg/inbox has not moved\n~/.dg/grants has not moved";
-		const two = check("layout", "warn", detail, "dg-skills install");
-		const groups = groupReport({ ok: false, items: [{ item: "install", checks: [two, check("x", "warn", "y", "dg-skills install")] }] });
+		const two = check("layout", "warn", detail, "dg install");
+		const groups = groupReport({ ok: false, items: [{ item: "install", checks: [two, check("x", "warn", "y", "dg install")] }] });
 		const screen = plain(render({ groups, cursor: 0, open: new Set([groups[0]?.key ?? ""]), status: "" }, { rows: 40, columns: 30 }));
 		const lines = screen.split("\n");
 		expect(lines.some((line) => line.startsWith("        ~/.dg/grants"))).toBe(true);
@@ -307,8 +307,8 @@ describe("render fits the terminal", () => {
 		const groups = groupReport(report());
 		const allow = groups.find((g) => g.action?.kind === "allow-rule");
 		const screen = render({ groups, cursor: 2, open: new Set([allow?.key ?? ""]), status: "" }, { rows: 40, columns: 200 });
-		expect(screen).toContain("      Bash(dg-skills inbox:*)");
-		expect(screen).toContain("      Bash(dg-skills db:*)");
+		expect(screen).toContain("      Bash(dg inbox:*)");
+		expect(screen).toContain("      Bash(dg db:*)");
 	});
 });
 
@@ -326,21 +326,21 @@ describe("splitKeys", () => {
 
 describe("allowRulesIn", () => {
 	test("splits several rules in one fix", () => {
-		expect(allowRulesIn("Bash(dg-skills hooks status:*) Bash(dg-skills hooks list:*)")).toEqual([
-			"Bash(dg-skills hooks status:*)",
-			"Bash(dg-skills hooks list:*)",
+		expect(allowRulesIn("Bash(dg hooks status:*) Bash(dg hooks list:*)")).toEqual([
+			"Bash(dg hooks status:*)",
+			"Bash(dg hooks list:*)",
 		]);
 	});
 
 	test("refuses a fix that also holds an instruction", () => {
-		expect(allowRulesIn("replace it with Bash(dg-skills hooks status:*)")).toBeNull();
+		expect(allowRulesIn("replace it with Bash(dg hooks status:*)")).toBeNull();
 		expect(allowRulesIn("jq . ~/.claude/settings.json")).toBeNull();
 	});
 
 	test("an instruction fix on an allow-rule check stays a manual row", () => {
 		const groups = groupReport({
 			ok: true,
-			items: [{ item: "hooks", checks: [check("allow-rule", "warn", "too broad", "replace it with Bash(dg-skills hooks status:*)")] }],
+			items: [{ item: "hooks", checks: [check("allow-rule", "warn", "too broad", "replace it with Bash(dg hooks status:*)")] }],
 		});
 		expect(groups[0]?.action).toBeNull();
 	});
@@ -362,19 +362,19 @@ describe("addAllowRules", () => {
 		const settings = join(home, ".claude", "settings.json");
 		writeFileSync(
 			settings,
-			JSON.stringify({ model: "opus", permissions: { allow: ["Bash(git *)", "Bash(dg-skills db:*)"], deny: ["x"] } }),
+			JSON.stringify({ model: "opus", permissions: { allow: ["Bash(git *)", "Bash(dg db:*)"], deny: ["x"] } }),
 		);
-		await addAllowRules(["Bash(dg-skills db:*)", "Bash(dg-skills inbox:*)"], home);
+		await addAllowRules(["Bash(dg db:*)", "Bash(dg inbox:*)"], home);
 		expect(JSON.parse(readFileSync(settings, "utf8"))).toEqual({
 			model: "opus",
-			permissions: { allow: ["Bash(git *)", "Bash(dg-skills db:*)", "Bash(dg-skills inbox:*)"], deny: ["x"] },
+			permissions: { allow: ["Bash(git *)", "Bash(dg db:*)", "Bash(dg inbox:*)"], deny: ["x"] },
 		});
 	});
 
 	test("creates the file when it is missing", async () => {
-		await addAllowRules(["Bash(dg-skills db:*)"], home);
+		await addAllowRules(["Bash(dg db:*)"], home);
 		expect(JSON.parse(readFileSync(join(home, ".claude", "settings.json"), "utf8"))).toEqual({
-			permissions: { allow: ["Bash(dg-skills db:*)"] },
+			permissions: { allow: ["Bash(dg db:*)"] },
 		});
 	});
 });

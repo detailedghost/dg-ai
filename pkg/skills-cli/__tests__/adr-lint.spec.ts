@@ -420,17 +420,17 @@ describe("adr lint pair rules", () => {
 });
 
 describe("adr lint stale-index", () => {
-	test("a stale toc fails and the message names dg-skills adr index", async () => {
+	test("a stale toc fails and the message names dg adr index", async () => {
 		const repo = await goodRepo();
 		repo.write("docs/adr/toc.md", `${repo.read("docs/adr/toc.md")}\n- stale line\n`);
 		const { run, found } = await findings(repo);
 		expect(run.exitCode).toBe(1);
 		expect(rulesOf(found)).toEqual(["stale-index"]);
 		expect(found[0]?.file.endsWith("docs/adr/toc.md")).toBe(true);
-		expect(found[0]?.message).toContain("dg-skills adr index");
+		expect(found[0]?.message).toContain("dg adr index");
 		const human = await repo.adr(["lint", "--all"]);
 		expect(human.stdout).toContain("stale-index");
-		expect(human.stdout).toContain("dg-skills adr index");
+		expect(human.stdout).toContain("dg adr index");
 	});
 
 	test("a stale decisions README fails", async () => {

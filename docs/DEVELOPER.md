@@ -5,22 +5,22 @@
 ```text
 pkg/
   common/      @dg/common — shared types + pure functions
-  dg/          @dg/dg — the `dg` command; mounts the three command trees
+  dg/          @dg/dg — the `dg` command; routes the three command trees as flat commands
   extension/   WXT MV3 browser extension (was extension-src/)
-  dg-daemon/   loopback HTTP+WS chat daemon — runs from the shared launcher bundle
-  dg-agent/    agent-facing CLI for the daemon — runs from the shared launcher bundle
+  dg-daemon/   loopback HTTP+WS chat daemon — compiled into `dg`
+  dg-agent/    agent-facing CLI for the daemon — compiled into `dg`
   inbox/       reusable inbox providers/workflows, lazy generators, runtime seams
   ssms/        SMS providers (google Messages for Web, signal-cli) and the ssms CLI
   channel-review/ Teams review daemon, runners, reactions, and verdict readers
-  skills-cli/  CLI framework — runs from the shared launcher bundle
-  launcher/    @dg/launcher — dispatcher, bundle build, pinned Bun runtime
+  skills-cli/  CLI framework — compiled into `dg`
+  launcher/    @dg/launcher — compiled program build, bundle tarball for the 6.3 bridge
   skills-test/ smoke tests — skills reference the right packages, install logic
 plugins/dg/
   skills/      AI instruction layer — SKILL.md + references for each skill
                (the canonical tree; both .claude-plugin/plugin.json and
                plugins/dg/.codex-plugin/plugin.json point here)
     channel-review/ SKILL.md and setup/command references
-    google-sms-cleanup/ SKILL.md for Messages for Web cleanup (`dg-skills ssms`)
+    google-sms-cleanup/ SKILL.md for Messages for Web cleanup (`dg ssms`)
 docs/          Documentation
 .github/       CI workflows
 ```
@@ -55,7 +55,7 @@ cd pkg/skills-cli
 bun src/index.ts --help          # run locally
 bun run lint                     # tsc --noEmit
 bun test                         # unit tests
-bun run build                    # build the shared bundle (runs pkg/launcher build)
+bun run build                    # build the bundle tarball (runs pkg/launcher build)
 ```
 
 Skills-only install copies `plugins/dg/skills` and does not fetch release
@@ -64,21 +64,32 @@ binaries. From the repo root, `mise run install:skills` runs
 `filesToInstall` in `@dg/common`; the copy is `installSkillTree` in
 `@dg/common/node`. See [ADR 0001](adr/0001-skills-only-install.md).
 
-### pkg/launcher (runtime bundle)
+### pkg/launcher (compiled program)
 
-`dg`, `dg-skills`, `dg-agent` and `dg-daemon` ship as one minified, code-split bundle
-that runs on a pinned Bun. See [ADR 0032](adr/0032-shared-runtime-bundle.md).
+dg ships one compiled program, `dg`, for each platform. `bun build --compile`
+turns the dispatcher, the three command trees and the code-split chunks into one
+executable. See [ADR 0055](adr/0055-one-dg-program-with-flat-commands.md).
 
 ```bash
 cd pkg/launcher
-bun run build                    # dist/lib/dg.js, dist/lib/chunks/, dist/dg-lib-<v>.tar.gz
-bun build.ts --outdir <dir>      # build somewhere else; tests use their own temp dir
-bun dist/lib/dg.js dg-skills --version
-bun test                         # dispatch, build, size and startup budgets
+bun build.ts --compiled linux-x64 --outdir /tmp/dg-build   # one compiled program: /tmp/dg-build/dg-linux-x64
+bun build.ts --compiled all --outdir /tmp/dg-build         # every platform key
+bun build.ts --outdir /tmp/dg-build                        # no --compiled: the bundle tarball only
+bun test                                                   # dispatch, build, size and startup budgets
 ```
 
+From the repo root, the same builds run as `bun pkg/launcher/build.ts --compiled <key|all> --outdir <dir>`.
+A key is one of `linux-x64`, `linux-x64-baseline`, `linux-arm64`, `darwin-x64`,
+`darwin-arm64`, `windows-x64`, `windows-x64-baseline` and `windows-arm64`. The
+asset is `dg-<key>`, with `.exe` on Windows. A compiled program runs with
+`./dg-linux-x64 --version`.
+
+Without `--compiled`, the build writes `dist/lib/dg.js`, `dist/lib/chunks/` and
+`dist/dg-lib-<v>.tar.gz`. The release ships that tarball and `runtime.json` for
+two minor releases, only so a 6.3 install can update. The tarball has no other use.
+
 The build runs the tour player build (`pkg/tour-ui`) and the local pages build
-(`pkg/pages`) first, because `dg-skills` and `dg-daemon` embed their output.
+(`pkg/pages`) first, because the compiled program embeds their output.
 `playwright-core`, `@dg/inbox` and the phone code (`nostr-tools`) are named
 chunks, so a command that does not need them never loads them.
 
@@ -91,8 +102,8 @@ Two budget tests guard startup:
   `dist/lib` is at most 12 MB, the tarball is at most 4 MB, and `--help` does
   not load the `pw`, `inbox` or `nostr` chunks.
 
-`pkg/launcher/runtime.json` pins the Bun version and the sha256 of each platform
-zip. Change it only with `bun scripts/bump-runtime.ts <version>`; see
+`pkg/launcher/runtime.json` pins the Bun version that builds the compiled programs, and the sha256 of each platform
+zip that the 6.3 bridge still reads. Change it only with `bun scripts/bump-runtime.ts <version>`; see
 [Bump the Bun runtime](install.md#bump-the-bun-runtime).
 
 #### Add a command
@@ -126,14 +137,14 @@ output. A long-lived command keeps `main` pending with `forever()` from
 
 ### Wave 2a CLI commands
 
-These commands run from the installed `dg-skills` on its pinned runtime, without
-a Bun of your own, the extension, or dg-daemon. CLI-only installation includes the stash, proxy, and
+These commands run from the installed `dg` program, without
+a Bun of your own, the extension, or the daemon. CLI-only installation includes the stash, proxy, and
 clipboard skills. `vcs-provider` has no separate skill. Skills-only installation
 copies instructions and references; it does not install these runtime tools.
 
 #### Artifact paths and clipboard capture
 
-`dg-skills stash [flags] <tool> [name]` prints one absolute path and creates its
+`dg stash [flags] <tool> [name]` prints one absolute path and creates its
 parent (the directory itself when you omit the name). Never construct the
 bucket paths yourself.
 
@@ -151,9 +162,9 @@ bucket paths yourself.
 identity; repository scopes require a Git checkout. Usage errors exit 1.
 
 ```bash
-dg-skills stash --state review handoff.md
-dg-skills stash --main review findings.md
-dg-skills clipboard-image "$(dg-skills stash -a -u clipboard .png)"
+dg stash --state review handoff.md
+dg stash --main review findings.md
+dg clipboard-image "$(dg stash -a -u clipboard .png)"
 ```
 
 `clipboard-image` needs `wslpath` plus `powershell.exe` on WSL, `wl-paste` on
@@ -185,7 +196,7 @@ and authenticated: `gh` for GitHub, `glab` for GitLab. Detection recognizes
 self-hosted GitLab host list or `AI_VCS_PROVIDER=github|gitlab` to select a
 provider explicitly. CLI overrides `GH_BIN` and `GLAB_BIN` select executables.
 
-| Subcommand after `dg-skills vcs-provider` | Result or options |
+| Subcommand after `dg vcs-provider` | Result or options |
 | --- | --- |
 | `detect` | Provider/repository JSON; always exits 0, with nulls and a reason when unresolved |
 | `capabilities` | Provider capabilities; fails when no provider resolves |
@@ -204,7 +215,7 @@ with `AI_VCS_GITLAB_REVIEW_BOT`; there is no personal reviewer default.
 
 #### Proxy
 
-`dg-skills proxy <backend> --prompt "<task>"` delegates to one of five external
+`dg proxy <backend> --prompt "<task>"` delegates to one of five external
 executables: `codex`, `copilot`, `pi`, `opencode`, or `grok`. The chosen
 backend needs its own installation, authentication, and service access. A missing
 backend returns installation guidance; the CLI never silently switches backend.
@@ -220,14 +231,14 @@ not inject a persona again. These helpers ship inside proxy and need no public
 spec command.
 
 ```bash
-dg-skills proxy codex --plan --prompt-file task.md --subagent reviewer
+dg proxy codex --plan --prompt-file task.md --subagent reviewer
 ```
 
 `--plan` saves the briefed prompt and prints `{plan, backend, planFile, command}`.
 Execute the exact quoted `command` to launch a detached job, then use
-`dg-skills bg status <id>` or `list`. `update <id> <context>` queues
+`dg bg status <id>` or `list`. `update <id> <context>` queues
 context or resumes a completed session; `cancel <id>` stops the owned job.
-`run`, `drain`, `kill`, and `prune` are `dg-skills bg` subcommands too. Detached launch needs POSIX `sh`;
+`run`, `drain`, `kill`, and `prune` are `dg bg` subcommands too. Detached launch needs POSIX `sh`;
 native Windows execution still needs validation. Result JSON includes the log path,
 exit code, and backend session ID when available. See the
 [proxy skill](../plugins/dg/skills/proxy/SKILL.md) for failure and resume handling.
@@ -240,16 +251,16 @@ lookup; compiled code must not use virtual Bun module paths for external files.
 
 | Stage | Command or agent | Scratch file written |
 | --- | --- | --- |
-| checkout | `dg-skills thrash diff` (also `stack`) | `repo` in the plan file (`root`, `headSha`, `source`) |
-| diff | `dg-skills thrash diff <target>` | `<slug>.diff`, `<slug>.chunk<id>.annotated.diff`, `<slug>.context.md`, plan file |
-| investigate | `dg-skills thrash investigate`, run inside `diff` | `<slug>.chunk<id>.bundle.md` |
+| checkout | `dg thrash diff` (also `stack`) | `repo` in the plan file (`root`, `headSha`, `source`) |
+| diff | `dg thrash diff <target>` | `<slug>.diff`, `<slug>.chunk<id>.annotated.diff`, `<slug>.context.md`, plan file |
+| investigate | `dg thrash investigate`, run inside `diff` | `<slug>.chunk<id>.bundle.md` |
 | review | `dg:thrash` agent, one per chunk | `<slug>.chunk<id>.findings.md` |
-| triage merge | `dg-skills thrash triage --stage merge` | `<slug>.merged.json`, `<slug>.verify.tasks.json`, `<slug>.verify.task.<id>.json` (finding fields, `side`, `class`, `otherPlaces`, `diffPath`, `bundleContextPath`, `verdictPath`) |
+| triage merge | `dg thrash triage --stage merge` | `<slug>.merged.json`, `<slug>.verify.tasks.json`, `<slug>.verify.task.<id>.json` (finding fields, `side`, `class`, `otherPlaces`, `diffPath`, `bundleContextPath`, `verdictPath`) |
 | verify | `dg:thrash-verify` agent, one per task | `<slug>.verdict.<id>.json` (optional `otherPlaces` narrows the grouped places) |
-| triage apply | `dg-skills thrash triage --stage apply` | `<slug>.verdicts.json`, `<slug>.consolidate.input.json` |
+| triage apply | `dg thrash triage --stage apply` | `<slug>.verdicts.json`, `<slug>.consolidate.input.json` |
 | consolidate | `dg:thrash-consolidate` agent | `<slug>.consolidated.md` (one fenced `json` block) |
-| compile | `dg-skills thrash compile` | `<slug>.review.json` |
-| post | `dg-skills thrash post` | `<slug>.posted.json` |
+| compile | `dg thrash compile` | `<slug>.review.json` |
+| post | `dg thrash post` | `<slug>.posted.json` |
 
 `compile` reads its findings from three sources. It uses the first source that exists and parses:
 
@@ -301,10 +312,20 @@ refuses a dg folder outside it.
 
 ### pkg/dg (the dg command)
 
-`dg` mounts the three command trees: `dg job` and `dg autostart` run commands of
-`dg-daemon`, `dg skills`, `dg install`, `dg upgrade` and `dg doctor` run
-commands of `dg-skills`, and `dg agent` runs `dg-agent`. `ROUTES` in
-`pkg/dg/src/main.ts` holds the nine names.
+`dg` routes every command of the three command trees as `dg <command>`.
+`resolveRoute` in `pkg/dg/src/flat.ts` derives the routes from the generated
+completion trees, so a new command needs no edit in `pkg/dg`. The collision rule
+holds the shared names:
+
+- Daemon lifecycle verbs stay under `dg daemon`: `serve`, `status`, `start`,
+  `stop`, `restart`, `sessions` and `origin`.
+- Agent session verbs stay under `dg agent`: `start`, `send`, `recv`,
+  `progress`, `spawn`, `stage`, `close` and `manifest`.
+- A bare `dg start` exits 1 and names `dg agent start` and `dg daemon start`.
+- `dg skills`, `dg agent` and `dg daemon` also take any command by its full path.
+- `dg upgrade` is an alias of `dg update`, and `dg extension` is an alias of `dg install`.
+
+A test fails on any name that two trees share and that no table owns.
 
 ```bash
 cd pkg/dg
@@ -332,8 +353,8 @@ to be reachable.
 The daemon pins the extension's origin the first time it proves itself with a
 valid session token, and refuses every other origin after that. Reloading an
 unpacked extension from a new path changes its origin, which would otherwise
-lock the daemon out for good. Run `dg-daemon origin show` to see what is
-pinned and `dg-daemon origin clear` to forget it, so the next connecting
+lock the daemon out for good. Run `dg daemon origin show` to see what is
+pinned and `dg daemon origin clear` to forget it, so the next connecting
 extension can pin again. `/start` also caps how many sessions can be active
 at once (`DG_MAX_SESSIONS`, default 256), so a runaway local caller cannot
 grow the session directory or the in-memory registry without limit.
@@ -373,7 +394,7 @@ bun test                  # CLI, memory store and agent-to-agent tests
 bun run build             # bundle to dist/lib and dist/dg-lib-<version>.tar.gz
 ```
 
-`dg-agent` depends on `dg-daemon` only in its devDependencies. The chat
+`pkg/dg-agent` depends on `pkg/dg-daemon` only in its devDependencies. The chat
 commands (`recv`, `send`, `progress`, `spawn`, `stage`, `close`, `manifest`)
 need a live daemon on the other end of the loopback socket; `memory` does
 not — `MemoryStore` opens `agents/memory.db` directly, so every memory verb
@@ -417,7 +438,7 @@ bun test       # install logic + skill manifests + CLI smoke
 | `skills-blt` | PR: skills-cli, dg, inbox, ssms, channel-review, dg-agent, dg-daemon, extension, common, skills, skills-test, bun.lock | required |
 | `dg-daemon-blt` | PR: dg-daemon, common | required |
 | `dg-agent-blt` | PR: dg-agent, dg-daemon, common | required |
-| `release` | push master, no path filter; manual dispatch | one `vX.Y.Z` release: `dg-lib-<v>.tar.gz`, `runtime.json`, the demo narration zip, 2 extension zips, both bootstraps, `SHA256SUMS` |
+| `release` | push master, no path filter; manual dispatch | one `vX.Y.Z` release: eight compiled `dg` programs, `dg-lib-<v>.tar.gz` and `runtime.json` (for the 6.3 bridge), the demo narration zip, 2 extension zips, both bootstraps, `SHA256SUMS` |
 
 The skills-cli tests inside `skills-blt` (the workflow that also lints and tests channel-review) run as four shards, `skills-cli (1)` through `skills-cli (4)`.
 Each shard and the job that follows it has a 30 minute backstop.
@@ -435,16 +456,16 @@ PRs to `master` require `ext-blt`, `skills-blt` (including channel-review), `dg-
 
 ## Matched release versions
 
-The extension zip and the bundle that holds `dg`, `dg-skills`, `dg-daemon` and `dg-agent` ship as one matched set.
+The extension zip and the compiled `dg` program ship as one matched set.
 The `release` workflow stamps one version into every file below and tags the release commit `vX.Y.Z`.
 Do not bump a version by hand.
 
 | Artifact | Files the release stamps |
 | --------------------- | ----------------------------------------------------------------------------------- |
 | `dg-ai-extension` zip | `pkg/extension/package.json` |
-| `dg-skills` program | `pkg/skills-cli/package.json`, the source of the current version and the bundle name |
-| `dg-daemon` program | `pkg/dg-daemon/package.json`, `DG_DAEMON_PACKAGE_VERSION` in `src/server/status.ts` |
-| `dg-agent` program | `pkg/dg-agent/package.json`, `DG_AGENT_PACKAGE_VERSION` in `src/version.ts` |
+| skills commands | `pkg/skills-cli/package.json`, the source of the current version and the release asset names |
+| daemon commands | `pkg/dg-daemon/package.json`, `DG_DAEMON_PACKAGE_VERSION` in `src/server/status.ts` |
+| agent commands | `pkg/dg-agent/package.json`, `DG_AGENT_PACKAGE_VERSION` in `src/version.ts` |
 | plugin manifests | `.claude-plugin/plugin.json`, `plugins/dg/.codex-plugin/plugin.json` |
 | lockfile | the workspace versions in `bun.lock` |
 | skill tree | the repository itself, tracked in `master` |
@@ -475,15 +496,17 @@ Only `release` has `contents: write`. It does the steps below in this order:
 To recover from a failed run, run **Release** again from `master`. If the tag exists, the job publishes from the tag.
 If a draft exists, the job deletes the draft and uploads again. No step deletes a tag.
 
-The builds are `build-bundle` (one job: the bundle and `runtime.json`), `build-ext` and `build-narration`.
-`smoke-bundle` installs the pinned runtime on six native runners, one per supported platform, and runs `--version` for all four program names from the bundle.
+The release builds one compiled `dg` program for each of the eight platform keys, the bundle tarball and `runtime.json`
+for the 6.3 bridge, the extension zips and the narration assets.
+A smoke job runs each compiled program on its own platform and checks `dg --version`. It also checks that a compiled
+`dg` started under an old name exits 1 with the removal notice.
 
-`dg-skills install` refreshes the runtime, the bundle and the extension zip from one release in one pass, skipping any part that is already current.
+`dg install` refreshes the program and the extension zip from one release in one pass, skipping any part that is already current.
 
 ## Manual post-merge cutover
 
 After each wave merges, refresh the plugin and install the published matched
-release (`dg-skills install`, or `dg-skills install --cli-only`). Smoke the
+release (`dg install`, or `dg install --cli-only`). Smoke the
 migrated commands from outside the checkout with installed skill resources and
 without legacy helpers on PATH. Only then manually update personal shims and
 references and remove duplicate local skill copies.
@@ -500,29 +523,29 @@ and `polish`. Set `DG_PROSE_CHECK_CMD` to run a prose check on PR bodies from
 and `monolith` from outside the checkout with the installed plugin tree.
 
 Wave 4 adds `jot`, `bg`, `cls`, `stat`, `sniff`, `nope`, `find-work`, and
-`doctor`. The CLI commands are `dg-skills jot`, `dg-skills bg`,
-`dg-skills sniff`, and `dg-skills doctor`; `cls`, `stat`, `nope`, and
+`doctor`. The CLI commands are `dg jot`, `dg bg`,
+`dg sniff`, and `dg doctor`; `cls`, `stat`, `nope`, and
 `find-work` are instruction-only. After the merge, smoke `jot`, `bg`, `sniff`,
 and `doctor` from outside the checkout with the installed plugin tree.
-Run `dg-skills doctor` after an install or upgrade to check every command.
-On a terminal, `dg-skills doctor` opens an interactive list. Failures come
+Run `dg doctor` after an install or upgrade to check every command.
+On a terminal, `dg doctor` opens an interactive list. Failures come
 first, then warnings. Checks that share one fix merge into one row, all
 missing allow rules merge into one row, and info and passed checks fold into
 one row each. Keys: ↑/↓ move, → shows the items in a row, ← hides them, Enter
 offers the row's fix, and q quits. Enter runs a fix only after `y`, and only
-when the fix is a plain `dg-skills` or `dg-agent` command, or the allow-rules
+when the fix is a plain `dg` command, or the allow-rules
 row, which adds the rules to `permissions.allow` in `~/.claude/settings.json`
 and keeps every other rule. Any other fix is shown for you to run. After a
 fix, the checks run again. `--plain` prints the old text report, and `--json`
 and any non-terminal output do not change.
 
 Wave 5 adds `db`, `erd`, `eli5`, `ticket`, and `test-live`. The CLI
-commands are `dg-skills db`, `dg-skills erd`, and `dg-skills test-live`;
+commands are `dg db`, `dg erd`, and `dg test-live`;
 `eli5` and `ticket` are instruction-only. `test-live` is GitHub only and
 has no GitLab port. After the merge, smoke `db`, `erd`, and `test-live`
 from outside the checkout with the installed plugin tree.
 
-Wave 6 adds `pw`. The CLI commands are `dg-skills pw` and `dg-skills pw-code`.
+Wave 6 adds `pw`. The CLI commands are `dg pw` and `dg pw-code`.
 `doctor pw` reports the browser in one line and `doctor pw-code` warns when an
 allow rule covers `pw-code`. Smoke only with `PW_E2E=1`, never on a shared desktop.
 
@@ -550,7 +573,7 @@ work, it does not make a criterion observable.
 ## Inbox integration
 
 @dg/inbox exposes main(argv, runtime), provider types/classes, and public-output
-redaction. dg-skills inbox supplies encrypted profile/cache hooks and an
+redaction. dg inbox supplies encrypted profile/cache hooks and an
 authenticated request-ID/session-bound Proton relay through the CliClient in @dg/common/node.
 The extension retains session headers in a Proton-only MAIN observer and executes
 fixed operations; browser response metadata goes directly back to CLI JSON.
@@ -566,12 +589,12 @@ and prevent a successful incomplete status index.
 Profile/cache schema10 records use the daemon's existing encryption envelope/key.
 The raw conversation archive is ignored local context and must remain unpublished.
 Run bun test and bun run lint in pkg/inbox, then the inbox-cli and inbox-skill
-integration suites. Smoke the installed dg-skills from an unrelated cwd
+integration suites. Smoke the installed dg from an unrelated cwd
 with fixture datasets. See [provider setup](../plugins/dg/skills/inbox-cleanup/references/providers.md).
 
 ## Credential store
 
-dg-daemon keeps secrets in their own SQLite file,
+dg daemon keeps secrets in their own SQLite file,
 `<dg home>/daemon/credentials.db` (mode 0600, in the 0700 `daemon/` directory).
 `CredentialStore` (`pkg/dg-daemon/src/store/credentials-store.ts`) owns it with
 its own schema steps. The file has its own data key in its own `crypto_meta`
@@ -591,13 +614,13 @@ own consumer prefix. `CredentialMeta` types the reserved optional fields
 `provider`, `site`, `scopes`, `expiresAt`, `createdBy` and `note`; other keys
 take any non-secret JSON.
 
-Only dg-daemon opens `credentials.db`. Callers send the
+Only dg daemon opens `credentials.db`. Callers send the
 `cli-credentials-request` frame over the loopback daemon, and three callers
 may read; a background service sends the frame or calls the HTTP route:
 
 | Caller | Authenticates with | May do |
 | --- | --- | --- |
-| A dg session (`dg-skills`, agents) | Session token on `/cli` | `set`, `get`, `list`, `delete`, `grant`, `revoke`, `grant-list` |
+| A dg session (`dg`, agents) | Session token on `/cli` | `set`, `get`, `list`, `delete`, `grant`, `revoke`, `grant-list` |
 | A background service | Service grant token, in the frame or in the `POST /service-api/v1/credentials` headers | `get` and `list` under `<prefix>/` |
 | The paired extension | Its chat socket handshake | `get` and `list` under `extension/` |
 
@@ -606,11 +629,11 @@ name, so it cannot learn whether a name exists. Only a `get` reply carries a
 value. The daemon never logs a value or a token.
 
 ```bash
-printf %s "$SECRET" | dg-skills credentials set consumer/provider --meta provider=example --meta expiresAt=2030-01-01T00:00:00Z
-dg-skills credentials list
-dg-skills credentials delete consumer/provider
-dg-skills credentials grant consumer
-dg-skills credentials revoke consumer
+printf %s "$SECRET" | dg credentials set consumer/provider --meta provider=example --meta expiresAt=2030-01-01T00:00:00Z
+dg credentials list
+dg credentials delete consumer/provider
+dg credentials grant consumer
+dg credentials revoke consumer
 ```
 
 `set` reads the value from stdin, or from a hidden prompt on a TTY. `list`
@@ -633,7 +656,7 @@ socket after its handshake. No extension UI uses it yet.
 `resolveCredential` returns the stored value, else the first non-empty
 environment variable you name, and reports its `source`. A package can move
 from `.env` to the store one secret at a time. A background service without
-a dg session runs `dg-skills credentials grant <consumer>` once, then passes
+a dg session runs `dg credentials grant <consumer>` once, then passes
 `grant`:
 
 ```ts
@@ -649,8 +672,8 @@ A background service can also use the HTTP route
 [Service API v1](service-api.md).
 
 Leave out `grant` to authenticate with the dg session for the working
-directory (or pass `session`). If dg-daemon is not running, the client fails
-with `dg-daemon is not running; start it with dg-agent start`.
+directory (or pass `session`). If dg daemon is not running, the client fails
+with `dg daemon is not running; start it with dg agent start`.
 `resolveCredential` uses an environment variable in that case when one is
 set.
 
@@ -683,7 +706,7 @@ SELECT env, status, count(*) FROM channel_review_requests GROUP BY env, status;
 SELECT * FROM channel_review_current WHERE env = 'dev';
 ```
 
-Build and deploy **both `dg-daemon` and `dg-skills`** with schema 12 support
+Build and deploy one `dg` release with schema 12 support for both the daemon and the CLI
 before allowing the new service to migrate the shared file. Older daemon
 binaries refuse schema 12 on restart. Never run an old JSON writer alongside
 the database-backed service. Retained legacy JSON is a recovery source rather
@@ -695,7 +718,7 @@ CR-205; the service does not reconstruct or rerun the queue.
 through the `channel-review` grant. It builds an env-like map for the relay
 connect and the sinks: unexpired store records first, then the process
 environment. `status` reports each source and flags expired records.
-`dg-skills channel-review connect` drives Chrome through `playwright-core`. It
+`dg channel-review connect` drives Chrome through `playwright-core`. It
 imports the package lazily, so other commands never load it, and the bundle
 build (`pkg/launcher/build.ts`) marks `chromium-bidi` external because the
 CDP flow does not use it. The `playwrightMetadata` plugin in
@@ -733,7 +756,7 @@ and binary distribution contracts. Run `bun run test:all` at the root. Refresh
 `bun.lock` with `bun install`, then verify `bun install --frozen-lockfile`.
 
 The live `/dg:channel-review` bootstrap check in Claude Code is human-only and
-remains pending. Check that the installed skill runs the installed dg-skills and
+remains pending. Check that the installed skill runs the installed dg and
 prints status JSON. Exit 0 requires reachable secret, chat, and reactions while
 stopped; named errors with remedies also pass the bootstrap check. Record the
 exact Claude scratch write rule and WSL restart result during live validation.

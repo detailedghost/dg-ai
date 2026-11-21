@@ -22,7 +22,7 @@ function fromSpec(spec: SpecLike): Shape {
 }
 
 function fromSubtree(register: (program: Command) => void): Shape {
-	const root = new Command("dg-skills");
+	const root = new Command("dg");
 	register(root);
 	const { commands, options } = treeOf(root.commands[0] as Command);
 	return { ...(commands ? { commands } : {}), ...(options ? { options } : {}) };
@@ -96,10 +96,10 @@ export async function shapes(): Promise<Record<string, Shape>> {
 	};
 }
 
-/** The dg-skills completion tree: every registered command, with the subcommands and flags of each. */
+/** The dg completion tree: every registered command, with the subcommands and flags of each. */
 export async function skillsTree(): Promise<CompletionNode> {
 	const [{ registerAll }, extra] = await Promise.all([import("../register-all"), shapes()]);
-	const program = new Command("dg-skills").option("-V, --version", "output the version number").enablePositionalOptions();
+	const program = new Command("dg").option("-V, --version", "output the version number").enablePositionalOptions();
 	registerAll(program);
 	const tree = treeOf(program);
 	return { ...tree, commands: tree.commands?.map((node) => ({ ...node, ...extra[node.name] })) };

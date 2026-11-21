@@ -20,9 +20,9 @@ describe("bootstrap.sh seams", () => {
 });
 
 describe("bootstrap.sh current links", () => {
-	test("replaces runtime/current and lib/current by create-then-rename, not ln -sfn", () => {
+	test("replaces bin/current and the dg link by create-then-rename, not ln -sfn", () => {
 		expect(code).not.toContain("ln -sfn");
-		expect(code).toMatch(/link_current "\$\{ROOT\}\/runtime\/current"/);
-		expect(code).toMatch(/link_current "\$\{ROOT\}\/lib\/current"/);
+		expect(code).toMatch(/link_current "\$\{ROOT\}\/bin\/current"/);
+		expect(code).toMatch(/link_current "\$\{BIN\}\/dg" "\$\{ROOT\}\/bin\/current\/dg"/);
 	});
 });

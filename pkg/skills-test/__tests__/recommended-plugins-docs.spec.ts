@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { importedPlugins, readMarketplace } from "./marketplace-support";
 import { ADR_SECTIONS, adrTitle, REPO_ROOT, readRepoFile, UNNUMBERED_TITLE } from "./test-support";
 
-const INSTALL_FLAG = "dg-skills install --with-recommended";
+const INSTALL_FLAG = "dg install --with-recommended";
 const ADR_PATH = join("docs", "adr", "0027-optional-third-party-plugins.md");
 const RETIRED = ["teach", "wait-what"] as const;
 

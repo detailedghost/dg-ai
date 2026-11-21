@@ -1,17 +1,19 @@
 /**
  * Skills-only install: the real command copies plugins/dg/skills into a temp
- * directory, does not execute skill content, and installs the verified runtime,
- * bundle and shims, never the extension.
+ * directory, does not execute skill content, and installs the verified compiled
+ * dg and its link, never the extension.
  */
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
 	chmodSync,
 	copyFileSync,
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	readlinkSync,
 	rmSync,
 	statSync,
 	symlinkSync,
@@ -21,8 +23,9 @@ import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { INSTALLED_SKILL_FILES } from "../../common/__tests__/installed-skill-files";
 import { zshHint } from "../src/completion/files";
-import { PROGRAMS, RUNTIME, present, removeBootstrapDirs, removeBootstrapFixtures, runBootstrap } from "./bootstrap-fixtures";
-import { fetchedUrls, writeReleaseServer } from "./runtime-bundle-fixtures";
+import { assetName, present, removeBootstrapDirs, runBootstrap } from "./bootstrap-fixtures";
+import { compiledAssetName, platformKey } from "../src/utils/lib";
+import { fetchedUrls, writeReleaseServer } from "./release-fixtures";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
@@ -51,8 +54,9 @@ const PERSONAS = [
 	"thrash-verify",
 	"wave",
 ].map((name) => `${name}.md`).sort();
-const SUMMARY =
-	"Skills-only install: no skill content was executed. Fetching the dg bundle with the dg, dg-skills, dg-agent and dg-daemon launchers (no extension).";
+const BOOTSTRAP_SUMMARY =
+	"Skills-only install: no skill content was executed. Fetching the dg program (no extension).";
+const SUMMARY = BOOTSTRAP_SUMMARY;
 
 const REPO_SKILLS = join(REPO, "plugins", "dg", "skills");
 
@@ -103,9 +107,9 @@ async function run(
 	return { code, stdout, stderr };
 }
 
-const BUNDLE = "dg-lib-9.9.9.tar.gz";
+const PROGRAM = compiledAssetName(platformKey());
 
-/** A fetch that serves one vX.Y.Z release with the bundle and runtime, and logs every URL. */
+/** A fetch that serves one vX.Y.Z release with the compiled dg assets, and logs every URL. */
 function writePreload(dir: string, log: string, opts: { sums?: (defaults: string) => string; offline?: boolean } = {}): string {
 	if (!opts.offline) return writeReleaseServer(dir, log, "9.9.9", { sums: opts.sums }).preload;
 	const path = join(dir, "offline-preload.ts");
@@ -121,13 +125,12 @@ globalThis.fetch = (async (input: unknown) => {
 	return path;
 }
 
-function expectOnlyBundleFetched(log: string): void {
+function expectOnlyProgramFetched(log: string): void {
 	const urls = fetchedUrls(log);
 	expect(urls.some((url) => url.includes("/releases?"))).toBe(true);
-	expect(urls.some((url) => url.endsWith(`/v9.9.9/${BUNDLE}`))).toBe(true);
+	expect(urls.some((url) => url.endsWith(`/v9.9.9/${PROGRAM}`))).toBe(true);
 	expect(urls.some((url) => url.endsWith("/v9.9.9/SHA256SUMS"))).toBe(true);
-	expect(urls.some((url) => url.endsWith("/v9.9.9/runtime.json"))).toBe(true);
-	expect(urls.filter((url) => /extension/.test(url))).toEqual([]);
+	expect(urls.filter((url) => /extension|runtime\.json|dg-lib-|bun-.*\.zip/.test(url))).toEqual([]);
 }
 
 function personasPath(skillsDest: string): string {
@@ -150,6 +153,7 @@ function expectReport(
 	files: string[],
 	persona?: string,
 	trailer: string[] = [],
+	summary: string = SUMMARY,
 ): void {
 	const lines = stdout.trim().split("\n");
 	const summaryAt = lines.findIndex((line) => line.startsWith("Installed ") && line.includes("skill files"));
@@ -160,7 +164,7 @@ function expectReport(
 		expect(lines[next]).toBe(`Installed ${PERSONAS.length} personas at ${persona}.`);
 		next += 1;
 	}
-	expect(lines[next]).toBe(SUMMARY);
+	expect(lines[next]).toBe(summary);
 	expect(lines.slice(next + 1)).toEqual(trailer);
 }
 
@@ -199,7 +203,7 @@ function writeProbe(skills: string, sentinelDir: string): string[] {
 	].sort();
 }
 
-describe("dg-skills install --skills-only", () => {
+describe("dg install --skills-only", () => {
 	test("removes the retired phone-friend skill from the dest and keeps unrelated folders", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-skills-retired-e2e-"));
 		const dest = join(directory, "skills");
@@ -224,7 +228,7 @@ describe("dg-skills install --skills-only", () => {
 		}
 	});
 
-	test("installs the repository skill files and only the verified dg-skills CLI, and runs nothing", async () => {
+	test("installs the repository skill files and only the verified dg program, and runs nothing", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-skills-only-e2e-"));
 		const dest = join(directory, "skills");
 		const fetchLog = join(directory, "fetch.log");
@@ -253,9 +257,9 @@ describe("dg-skills install --skills-only", () => {
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: `note: DG_HOME=${home}; installing there\n` });
 			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, personasPath(dest), [
 				`Add to PATH:  export PATH="${join(home, "bin")}:$PATH"`,
-				"dg: shell completion written for bash, zsh and fish (12 file(s))",
+				"dg: shell completion written for bash, zsh and fish (3 file(s))",
 				...[zshHint(join(home, "share", "zsh", "site-functions"), childEnv(home))].filter((line) => line !== undefined),
-				`dg bundle installed v9.9.9 at ${join(home, "data", "lib", "9.9.9")}`,
+				`dg installed v9.9.9 at ${join(home, "data", "bin", "9.9.9", "dg")}`,
 			]);
 			expectExactCopy(REPO_SKILLS, dest, INSTALLED_SKILL_FILES);
 			expectPersonasInstalled(dest);
@@ -263,9 +267,9 @@ describe("dg-skills install --skills-only", () => {
 				"google-sms-cleanup",
 			);
 			expect(existsSync(join(dest, "README.md"))).toBe(false);
-			expectOnlyBundleFetched(fetchLog);
-			expect(readFileSync(join(home, "bin", "dg-skills"), "utf8")).toContain(`dg-skills "$@"`);
-			expect(readdirSync(join(home, "bin")).sort()).toEqual(["dg", "dg-agent", "dg-daemon", "dg-skills"]);
+			expectOnlyProgramFetched(fetchLog);
+			expect(readlinkSync(join(home, "bin", "dg"))).toBe(join(home, "data", "bin", "current", "dg"));
+			expect(readdirSync(join(home, "bin"))).toEqual(["dg"]);
 			expect(readFileSync(join(home, "config", "cli-only"), "utf8")).toBe("keep");
 			expect(filesUnder(dest).some((file) => /dg-skills|dg-daemon|dg-agent|\.zip$/.test(file))).toBe(
 				false,
@@ -291,7 +295,7 @@ describe("dg-skills install --skills-only", () => {
 			expectPersonasInstalled(join(home, "data", "skills"));
 			expect(existsSync(join(home, ".dg", "skills"))).toBe(false);
 			expect(existsSync(join(home, ".dg", "bin"))).toBe(false);
-			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(true);
+			expect(lstatSync(join(home, "bin", "dg")).isSymbolicLink()).toBe(true);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -321,7 +325,7 @@ describe("dg-skills install --skills-only", () => {
 		}
 	});
 
-	test("refuses a bundle whose checksum does not match SHA256SUMS", async () => {
+	test("refuses a program whose checksum does not match SHA256SUMS", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-skills-only-sums-"));
 		const home = join(directory, "home");
 		mkdirSync(home, { recursive: true });
@@ -329,22 +333,22 @@ describe("dg-skills install --skills-only", () => {
 		writeFileSync(fetchLog, "");
 		try {
 			const preload = writePreload(directory, fetchLog, {
-				sums: (defaults) => defaults.replace(/^[0-9a-f]{64}(  dg-lib-)/m, `${"0".repeat(64)}$1`),
+				sums: (defaults) => defaults.replace(/^[0-9a-f]{64}(\s+dg-)/gm, `${"0".repeat(64)}$1`),
 			});
 			const result = await run(
 				["bun", "--preload", preload, ENTRY, "install", "--skills-only", "--dest", join(directory, "dest")],
 				childEnv(home),
 			);
 			expect(result.code).toBe(0);
-			expect(result.stderr).toContain(`checksum mismatch for ${BUNDLE} in v9.9.9`);
-			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
-			expect(existsSync(join(home, "data", "lib"))).toBe(false);
+			expect(result.stderr).toContain(`checksum mismatch for ${PROGRAM} in v9.9.9`);
+			expect(existsSync(join(home, "bin", "dg"))).toBe(false);
+			expect(readdirSync(join(home, "data", "bin"))).toEqual([]);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
 	});
 
-	test("refuses a SHA256SUMS that omits the runtime.json asset", async () => {
+	test("refuses a SHA256SUMS that omits the compiled asset", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-skills-only-nosum-"));
 		const home = join(directory, "home");
 		mkdirSync(home, { recursive: true });
@@ -355,15 +359,15 @@ describe("dg-skills install --skills-only", () => {
 				sums: (defaults) =>
 					defaults
 						.split("\n")
-						.filter((line) => !line.endsWith("runtime.json"))
+						.filter((line) => !line.endsWith(PROGRAM))
 						.join("\n"),
 			});
 			const result = await run(
 				["bun", "--preload", preload, ENTRY, "install", "--skills-only", "--dest", join(directory, "dest")],
 				childEnv(home),
 			);
-			expect(result.stderr).toContain("SHA256SUMS in v9.9.9 has no entry for runtime.json");
-			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
+			expect(result.stderr).toContain(`SHA256SUMS in v9.9.9 has no entry for ${PROGRAM}`);
+			expect(existsSync(join(home, "bin", "dg"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -382,9 +386,9 @@ describe("dg-skills install --skills-only", () => {
 				childEnv(home),
 			);
 			expect(result.code).toBe(0);
-			expect(result.stderr).toContain("⚠ dg-skills install skipped: fetch failed: offline");
+			expect(result.stderr).toContain("⚠ dg install skipped: fetch failed: offline");
 			expect(filesUnder(dest)).toEqual(INSTALLED_SKILL_FILES);
-			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
+			expect(existsSync(join(home, "bin", "dg"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -436,25 +440,23 @@ describe("skills-only docs", () => {
 
 describe.skipIf(process.env.DG_BOOTSTRAP_E2E !== "1")("bootstrap.sh --skills-only", () => {
 	afterEach(removeBootstrapDirs);
-	afterAll(removeBootstrapFixtures);
 
-	test("copies the repository skills, then installs only the runtime, bundle and shims", async () => {
+	test("copies the repository skills, then installs only the compiled dg program", async () => {
 		const dest = join(mkdtempSync(join(tmpdir(), "dg-skills-boot-")), "skills");
 		try {
 			const result = await runBootstrap({ args: ["--skills-only"], env: { DG_SKILLS_DEST: dest } });
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
 			const lines = result.stdout.trim().split("\n");
-			const summaryAt = lines.indexOf(SUMMARY);
-			expectReport(lines.slice(0, summaryAt + 1).join("\n"), dest, INSTALLED_SKILL_FILES, personasPath(dest));
+			const summaryAt = lines.indexOf(BOOTSTRAP_SUMMARY);
+			expectReport(lines.slice(0, summaryAt + 1).join("\n"), dest, INSTALLED_SKILL_FILES, personasPath(dest), [], BOOTSTRAP_SUMMARY);
 			expect(lines.slice(summaryAt + 1)).toEqual([
-				`Downloading bun ${RUNTIME.version} (linux-x64)...`,
-				`Downloading dg-lib-${result.version}.tar.gz...`,
-				`dg runtime ${RUNTIME.version} and bundle ${result.version} installed at ${join(result.root, "data")}`,
+				`Downloading ${assetName("linux-x64")}...`,
+				`dg ${result.version} installed at ${join(result.root, "data", "bin", result.version)}`,
 				`Add to PATH:  export PATH="${join(result.root, "bin")}:$PATH"`,
 			]);
 			expectExactCopy(REPO_SKILLS, dest, INSTALLED_SKILL_FILES);
 			expectPersonasInstalled(dest);
-			for (const program of PROGRAMS) expect(present(join(result.root, "bin", program))).toBe(true);
+			expect(present(join(result.root, "bin", "dg"))).toBe(true);
 			expect(result.installCall).toBeUndefined();
 			expect(result.requests.filter((url) => /daemon|agent|extension|archive/.test(url))).toEqual([]);
 		} finally {
@@ -476,7 +478,7 @@ describe.skipIf(process.env.DG_BOOTSTRAP_E2E !== "1")("bootstrap.sh --skills-onl
 			expect(existsSync(join(directory, "sentinel.txt"))).toBe(false);
 			expect(existsSync(join(dest, "probe-exec", "executed-by-skill.txt"))).toBe(false);
 			expect(result.installCall).toBeUndefined();
-			expect(present(join(result.root, "bin", "dg-skills"))).toBe(true);
+			expect(present(join(result.root, "bin", "dg"))).toBe(true);
 			expect(result.requests.some((url) => url.includes("archive"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
@@ -492,8 +494,8 @@ describe.skipIf(process.env.DG_BOOTSTRAP_E2E !== "1")("bootstrap.sh --skills-onl
 			});
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
 			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, personasPath(dest), [
-				"Skipped the dg-skills CLI (--no-cli): offline copy only.",
-			]);
+				"Skipped the dg CLI (--no-cli): offline copy only.",
+			], BOOTSTRAP_SUMMARY);
 			expect(result.requests).toEqual([]);
 			expect(existsSync(join(result.root, "bin"))).toBe(false);
 		} finally {
@@ -507,8 +509,8 @@ describe.skipIf(process.env.DG_BOOTSTRAP_E2E !== "1")("bootstrap.sh --skills-onl
 			const result = await runBootstrap({ args: ["--skills-only", "--no-cli", "--dest", dest] });
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
 			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, personasPath(dest), [
-				"Skipped the dg-skills CLI (--no-cli): offline copy only.",
-			]);
+				"Skipped the dg CLI (--no-cli): offline copy only.",
+			], BOOTSTRAP_SUMMARY);
 			expect(result.requests).toEqual([]);
 		} finally {
 			rmSync(join(dest, ".."), { recursive: true, force: true });

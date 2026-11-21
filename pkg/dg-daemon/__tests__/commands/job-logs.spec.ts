@@ -130,7 +130,7 @@ describe("job logs", () => {
 		const result = await runCli(dgHome, ["job", "logs", "x"]);
 
 		expect(result.code).toBe(0);
-		expect(result.stderr).not.toContain("no live dg-daemon");
+		expect(result.stderr).not.toContain("no live dg daemon");
 	});
 });
 

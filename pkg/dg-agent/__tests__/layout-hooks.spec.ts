@@ -356,7 +356,7 @@ describe("PhoneDb.open on a blocked or unmoved phone", () => {
 	it("throws the has-not-moved text and creates no phone.db for an unmoved legacy phone with no cached result", () => {
 		seedPhone(legacyPhone(), true);
 
-		expect(() => PhoneDb.open(paths)).toThrow(`dg: ${legacyPhone()} has not moved to ${paths.phoneRoot}; run dg-skills install`);
+		expect(() => PhoneDb.open(paths)).toThrow(`dg: ${legacyPhone()} has not moved to ${paths.phoneRoot}; run dg install`);
 		expect(existsSync(join(paths.phoneRoot, "phone.db"))).toBe(false);
 	});
 });

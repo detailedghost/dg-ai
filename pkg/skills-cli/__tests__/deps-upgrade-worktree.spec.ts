@@ -140,7 +140,7 @@ describe("createWorktree", () => {
   } finally {
    chmodSync(join(repo, ".env"), 0o600);
   }
-  expect(diagnostics.join("")).toMatch(/dg-skills worktree: could not seed \.env/);
+  expect(diagnostics.join("")).toMatch(/dg worktree: could not seed \.env/);
  });
 
  test.each(["branch", "path", "both"] as const)("resume:false refuses existing %s state", async (state) => {
@@ -309,8 +309,8 @@ describe("deps-upgrade prepare", () => {
   const result = prepare(repo, fixedPrepareTime(root));
   expect(result.exitCode).toBe(1);
   expect(result.stdout).toBe("");
-  expect(result.stderr).toStartWith("error: dg-skills worktree create failed:\n");
-  expect(result.stderr).toContain(`dg-skills worktree: path ${target} exists but no matching branch — investigate manually\n`);
+  expect(result.stderr).toStartWith("error: dg worktree create failed:\n");
+  expect(result.stderr).toContain(`dg worktree: path ${target} exists but no matching branch — investigate manually\n`);
   expect(readFileSync(join(target, "keep.txt"), "utf8")).toBe("existing target contents");
   expect(runGit(["worktree", "list", "--porcelain"], repo).match(/^worktree /gm)).toHaveLength(1);
  });
@@ -331,10 +331,10 @@ describe("deps-upgrade prepare", () => {
   expect(result.exitCode).toBe(1);
   expect(result.stdout).toBe("");
   expect(result.stderr).toBe(
-   `error: dg-skills worktree create failed:\n` +
+   `error: dg worktree create failed:\n` +
    `branch ${branch} exists but worktree missing — recreating at ${target}\n` +
    nativeStderr +
-   `dg-skills worktree: failed to add worktree at ${target}\n\n`,
+   `dg worktree: failed to add worktree at ${target}\n\n`,
   );
   expect(existsSync(target)).toBe(false);
   expect(runGit(["branch", "--show-current"], elsewhere).trim()).toBe(branch);

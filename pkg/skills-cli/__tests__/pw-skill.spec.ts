@@ -13,7 +13,7 @@ import {
 } from "./skill-tree-helpers";
 
 const NAME = "pw";
-const MAX_LINES = 111;
+const MAX_LINES = 112;
 const REFERENCES = [
 	"commands.md",
 	"real-browser.md",
@@ -27,7 +27,7 @@ const REFERENCES = [
 	"video-recording.md",
 	"windows.md",
 ];
-const DOCTOR_LINE = /^If a step fails, run dg-skills doctor ([a-z][a-z -]*)\.?$/m;
+const DOCTOR_LINE = /^If a step fails, run dg doctor ([a-z][a-z -]*)\.?$/m;
 
 function sentences(text: string): string[] {
 	return text
@@ -56,7 +56,7 @@ describe("packaged pw skill tree", () => {
 
 	test("names install-browser and tells the agent to ask the human before running it", () => {
 		const text = skillText(NAME);
-		expect(text).toContain("dg-skills pw install-browser");
+		expect(text).toContain("dg pw install-browser");
 		const asking = sentences(text).filter(
 			(sentence) => sentence.includes("install-browser") && /\bask\b/i.test(sentence),
 		);
@@ -104,7 +104,7 @@ describe("packaged pw skill tree", () => {
 		expect(rule.length).toBeGreaterThan(0);
 	});
 
-	test("keeps the bootstrap gate before the first dg-skills call", () => {
+	test("keeps the bootstrap gate before the first dg call", () => {
 		const text = skillText(NAME);
 		expect(text).toContain("--cli-only");
 		const { gate, call } = firstCallIndex(text);
@@ -112,10 +112,10 @@ describe("packaged pw skill tree", () => {
 		expect(call).toBeGreaterThan(gate);
 	});
 
-	test("calls dg-skills pw from SKILL.md only by the bare launcher name", () => {
+	test("calls dg pw from SKILL.md only by the bare launcher name", () => {
 		const calls = skillText(NAME)
 			.split("\n")
-			.filter((line) => /dg-skills pw(?!-code)\s+[a-z]/.test(line) && !line.includes("`dg-skills pw"));
+			.filter((line) => /dg pw(?!-code)\s+[a-z]/.test(line) && !line.includes("`dg pw"));
 		expect(calls.length).toBeGreaterThan(0);
 		for (const line of calls) expect(line).not.toContain(".dg/bin/");
 	});

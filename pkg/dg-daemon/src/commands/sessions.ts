@@ -19,7 +19,7 @@ export function registerSessionCommands(program: Command): void {
 			const paths = resolveDgPaths();
 			const handle = readPidFile(paths);
 			if (!handle) {
-				console.error("dg-daemon: no daemon is running");
+				console.error("dg daemon: no daemon is running");
 				process.exitCode = 1;
 				return;
 			}
@@ -37,7 +37,7 @@ export function registerSessionCommands(program: Command): void {
 			if (!response.ok) {
 				const body = await response.text();
 				console.error(
-					`dg-daemon: could not clear sessions: ${response.status} ${redactText(body)}`,
+					`dg daemon: could not clear sessions: ${response.status} ${redactText(body)}`,
 				);
 				process.exitCode = 1;
 				return;

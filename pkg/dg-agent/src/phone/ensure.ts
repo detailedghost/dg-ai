@@ -29,7 +29,7 @@ export type EnsureDeps = {
 	sleep: (ms: number) => Promise<void>;
 	isAlive: (pid: number) => boolean;
 	verdict: (pid: number) => ListenerVerdict;
-	/** True when this pid is our dg-agent. False when it is some other program. Undefined when the command line cannot be read. */
+	/** True when this pid is our dg agent. False when it is some other program. Undefined when the command line cannot be read. */
 	ownsProcess: (pid: number) => boolean | undefined;
 	argv: string[];
 	hook: ListenerPid["hook"];

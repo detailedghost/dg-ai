@@ -24,7 +24,7 @@ function baseName(path: string): string {
 	return basename(path.trim()).replace(/\.md$/, "");
 }
 
-describe("dg-skills jot dispatch", () => {
+describe("dg jot dispatch", () => {
 	test("help lists every subcommand and exits 0", async () => {
 		const { main } = world.repo();
 		const run = await world.jot(["--help"], main);

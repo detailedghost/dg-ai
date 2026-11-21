@@ -3,17 +3,18 @@ name: wayfinder
 description: Chart a piece of work too big for one session as a map of decision tickets, then resolve them one per session until the way to the destination is clear. Planning only - it ends in a decision set that /dg:kick or /dg:grill-me takes over. Use for a loose, foggy, multi-session idea, or to resume a map. Adapted from mattpocock/skills.
 ---
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
-dg-skills stash --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" stash --help >/dev/null 2>&1 ||
+dg stash --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" stash --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
-If a step fails, run dg-skills doctor stash.
+If a step fails, run dg doctor stash.
 
 # /dg:wayfinder - Chart the Way, Then Walk It
 
@@ -51,11 +52,11 @@ Wayfinder ends where `/dg:kick` starts. Never build inside a map.
 | Name destination, sketch fog, create tickets | Chart mode | [references/map.md](references/map.md) |
 | Claim, resolve, record, graduate fog | Work mode | [references/work.md](references/work.md) |
 | Map file and ticket file formats | Both | [references/map.md](references/map.md) |
-| List maps (`-l`) | Here | For each directory under `$(dg-skills stash -m wayfinder)/`, print the slug, the count of tickets with `status: open`, and the fog count. The fog count is the number of non-blank lines under `## Not yet specified` in `map.md`. |
+| List maps (`-l`) | Here | For each directory under `$(dg stash -m wayfinder)/`, print the slug, the count of tickets with `status: open`, and the fog count. The fog count is the number of non-blank lines under `## Not yet specified` in `map.md`. |
 
 ## Where the map lives
 
-`$(dg-skills stash -m wayfinder)/<slug>/` holds `map.md` and `tickets/NNN-<slug>.md`. Get the path from `dg-skills stash`. Never build it by hand. `-m` resolves to `<main worktree>/.agents/wayfinder`, inside the repo. Commit the map like a spec bundle, with a plain `git add`; on an ignored-path refusal, follow the `/dg:spec` fallback, never `-f`. For a session handoff, append a `## Handoff` section to `map.md` with the next ticket title and what is still fog. Do not call a separate jot command.
+`$(dg stash -m wayfinder)/<slug>/` holds `map.md` and `tickets/NNN-<slug>.md`. Get the path from `dg stash`. Never build it by hand. `-m` resolves to `<main worktree>/.agents/wayfinder`, inside the repo. Commit the map like a spec bundle, with a plain `git add`; on an ignored-path refusal, follow the `/dg:spec` fallback, never `-f`. For a session handoff, append a `## Handoff` section to `map.md` with the next ticket title and what is still fog. Do not call a separate jot command.
 
 ## Rules
 

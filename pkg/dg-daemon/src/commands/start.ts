@@ -29,7 +29,7 @@ export type DaemonStartSeams = {
 
 export function startedLine(handle: DaemonHandle, started: boolean): string {
 	const state = started ? "started on" : "already running on";
-	return `dg-daemon ${state} 127.0.0.1:${handle.port} (pid ${handle.pid}, version ${handle.versions.package})`;
+	return `dg daemon ${state} 127.0.0.1:${handle.port} (pid ${handle.pid}, version ${handle.versions.package})`;
 }
 
 /** Returns the live daemon; starts one through the login unit when the unit is for this home, else detached. */

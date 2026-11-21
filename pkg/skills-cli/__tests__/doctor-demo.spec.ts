@@ -22,7 +22,7 @@ beforeEach(() => {
 });
 afterEach(() => world.cleanup());
 
-describe("dg-skills doctor demo on a CLI-only home", () => {
+describe("dg doctor demo on a CLI-only home", () => {
 	const env = () => ({ DG_HOME: join(world.home, ".dg") });
 
 	test("exits 0 and shows the browser status line", async () => {

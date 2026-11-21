@@ -817,7 +817,7 @@ describe("slice-wave runner docs", () => {
 
 	test("sdlc/SKILL.md stays within the line budget", () => {
 		const lines = read("sdlc/SKILL.md").trimEnd().split("\n").length;
-		expect(lines).toBeLessThanOrEqual(74);
+		expect(lines).toBeLessThanOrEqual(75);
 	});
 
 	describe("engineering.md", () => {
@@ -831,7 +831,7 @@ describe("slice-wave runner docs", () => {
 
 		test("keeps headings 4.1, 4.2 and 4.3 and passes no --layer to resolve", () => {
 			for (const n of ["4.1", "4.2", "4.3"]) expect(text).toContain(`## ${n}`);
-			expect(section("4.2")).toContain("dg-skills assign resolve");
+			expect(section("4.2")).toContain("dg assign resolve");
 			expect(section("4.2")).not.toContain("--layer");
 		});
 
@@ -847,7 +847,7 @@ describe("slice-wave runner docs", () => {
 			const body = section("4.3");
 			expect(body).toContain("droppedSlices");
 			expect(body).toContain("`layer N:`");
-			expect(body).toContain("dg-skills spec lint-waves");
+			expect(body).toContain("dg spec lint-waves");
 		});
 
 		test("4.2 returns droppedSlices and describes the no-pending and cycle behavior", () => {

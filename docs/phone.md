@@ -9,7 +9,7 @@ Claude Code: /dg:phone
 Codex:      $dg:phone
 ```
 
-`dg-agent phone` is one phone number with many contacts:
+`dg phone` is one phone number with many contacts:
 
 | Command | What it does |
 | --- | --- |
@@ -28,7 +28,7 @@ Codex:      $dg:phone
 | `unread` | Prints unread incoming messages, oldest first, then marks them read, in one transaction: `{id, ts, handle, from, text, call?}`. A group row adds `thread` and `line` in the same `[#handle] +sender: text` form. |
 | `watch [--for <seconds>] [--new]` | Repeats `unread` until `--for` seconds have passed (default 120). It prints the unread backlog, then messages that arrive while it runs. `--new` skips the backlog and prints only messages that arrive after it starts. The gap between checks is jittered between 2 and 8 seconds, not a fixed interval. |
 | `status` | Prints `{as, contacts, pending_voicemail, listener, hook, legacy_root_present, notice, autostart, files, presence, roster}`. `listener` is null or `{pid, since, stale, reason?}`. `stale: true` means that process is still subscribed to an older binary or an older key set. `notice` is the newest unread local message from sender `phone`, or null. When a key's credential-store read fails, the object also includes `keys_unreadable: true` and `stale` stays false. `roster` is `on` or `off`. |
-| `open [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]` | Starts the always-on listener and, where a service manager exists, installs it to restart on login. Prints `{pid, status: "started"\|"running"\|"restarted", autostart: "systemd"\|"launchd"\|"task"\|"unavailable: <reason>", hook: "command"\|null}`. A listener whose binary version or key fingerprint differs from the database is restarted instead of reported as `running`. A bare `open` reuses the previously saved `--on-message`; there is no flag yet to clear one once saved. `--on-message-timeout` with no `--on-message` is ignored. `--ensure` does not talk to systemd. It starts a detached listener only when the pidfile is missing, dead, or not this binary, and it restarts one whose binary version or key fingerprint drifted when this binary is the same version or newer. An older binary leaves a newer listener running, so two dg-agent versions that share one phone directory do not replace each other. It is safe to run from cron. `--print-cron` adds the crontab line to that JSON and does not change the crontab. `--install-cron` writes that line. Neither cron flag is implied by `--ensure`. |
+| `open [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]` | Starts the always-on listener and, where a service manager exists, installs it to restart on login. Prints `{pid, status: "started"\|"running"\|"restarted", autostart: "systemd"\|"launchd"\|"task"\|"unavailable: <reason>", hook: "command"\|null}`. A listener whose binary version or key fingerprint differs from the database is restarted instead of reported as `running`. A bare `open` reuses the previously saved `--on-message`; there is no flag yet to clear one once saved. `--on-message-timeout` with no `--on-message` is ignored. `--ensure` does not talk to systemd. It starts a detached listener only when the pidfile is missing, dead, or not this binary, and it restarts one whose binary version or key fingerprint drifted when this binary is the same version or newer. An older binary leaves a newer listener running, so two dg versions that share one phone directory do not replace each other. It is safe to run from cron. `--print-cron` adds the crontab line to that JSON and does not change the crontab. `--install-cron` writes that line. Neither cron flag is implied by `--ensure`. |
 | `close [--with <+handle> --clear]` | With no flags, stops the listener and removes it from login autostart. Prints `{pid, status: "closed", autostart: "removed"\|"absent"}`. `--with +<handle> --clear` does not stop the listener. It removes contacts that arrived `via: "roster"` from that machine and prints `{machine, removed, status: "cleared"}`. The machine's own hand-added contact stays. |
 
 A message is `{id, ts, from, handle, text}`; the message that paired a new
@@ -276,11 +276,11 @@ An image is a NIP-17 kind 15 message. It is behind the `files` setting,
 which is off by default:
 
 ```bash
-dg-agent phone files               # prints {"files": "on"} or {"files": "off"}
-dg-agent phone files on
-dg-agent phone text +grok --image ./shot.png
-dg-agent phone text '#ops' --image ./shot.png --phi
-dg-agent phone text +grok --phi 'text the human asked you to send'
+dg phone files               # prints {"files": "on"} or {"files": "off"}
+dg phone files on
+dg phone text +grok --image ./shot.png
+dg phone text '#ops' --image ./shot.png --phi
+dg phone text +grok --phi 'text the human asked you to send'
 ```
 
 `text --image` takes one PNG, JPEG, or WebP of 5 MiB at most, and no text.
@@ -318,14 +318,14 @@ is pending. See [ADR 0034](adr/0034-phone-image-messages.md).
 ## The PHI vault
 
 ```bash
-dg-agent phone vault add lab-1 ./result.txt       # or - to read stdin
-dg-agent phone vault add lab-1 -
-dg-agent phone vault list
-dg-agent phone text +grok --vault lab-1
-dg-agent phone vault exec lab-1 --out lab-1-sum -- ./summarize
-dg-agent phone vault exec lab-1 --env LAB_TEXT -- ./check
-dg-agent phone vault rm lab-1
-dg-agent phone vault open lab-1                   # a human at a terminal only
+dg phone vault add lab-1 ./result.txt       # or - to read stdin
+dg phone vault add lab-1 -
+dg phone vault list
+dg phone text +grok --vault lab-1
+dg phone vault exec lab-1 --out lab-1-sum -- ./summarize
+dg phone vault exec lab-1 --env LAB_TEXT -- ./check
+dg phone vault rm lab-1
+dg phone vault open lab-1                   # a human at a terminal only
 ```
 
 | Command | What it does |
@@ -404,6 +404,10 @@ When `DG_HOME` is set, the Windows task passes it to the listener as
 after `/Create` registered the task, that task is deleted. The XML file is
 kept only when the delete fails, so `close` can retry the cleanup.
 
+The unit runs `<data>/bin/current/dg phone listen`. A unit that a 6.3 install
+wrote names the old bundle program. The upgrade rewrites it once (see
+[Upgrade from 6.3](install.md#upgrade-from-63)).
+
 On a machine with no user systemd bus (`DBUS_SESSION_BUS_ADDRESS` and
 `XDG_RUNTIME_DIR` unset, which is common in containers and some shared
 Linux accounts), `open` still reports `autostart: "unavailable: …"` and its
@@ -418,7 +422,7 @@ edit the crontab unless you pass `--install-cron`. `--print-cron` only
 prints the line, for example:
 
 ```text
-*/5 * * * * sleep $(( $(od -An -N2 -tu2 /dev/urandom) / 1093 )); /path/to/dg-agent phone open --ensure >/dev/null 2>&1 # dg-phone-ensure home=
+*/5 * * * * sleep $(( $(od -An -N2 -tu2 /dev/urandom) / 1093 )); /path/to/dg phone open --ensure >/dev/null 2>&1 # dg-phone-ensure home=
 ```
 
 The sleep uses `/dev/urandom`, not `$RANDOM`, because cron runs `/bin/sh`
@@ -431,7 +435,7 @@ whose comment is exactly `# dg-phone-ensure home=<that path>`. A home of
 `/home/a` does not remove `/home/ab`, and an empty home does not remove
 every other home. Blank lines and every other crontab row stay. `--ensure`
 restarts a listener when its recorded version or keys drifted, and only if
-this binary is the same version or newer. Two copies of dg-agent that share
+this binary is the same version or newer. Two copies of dg that share
 one phone directory do not restart each other under `--ensure`.
 
 `close` runs each platform's stop-and-disable command
@@ -450,7 +454,7 @@ Every name of the listener (`phone listen`, the old `phone __run`, or the old
 `phone-friend __run`) is recognized as "ours" by pid, so a running listener
 survives the renames, and there is exactly one autostart unit regardless of
 which name installed it: `listenerArgv` always bakes in `phone listen`.
-`phone refresh`, which `dg-skills install` runs, rewrites an autostart unit
+`phone refresh`, which `dg install` runs, rewrites an autostart unit
 that still names `__run` before it restarts the listener.
 
 The listener's pid, start time, binary version, and a short hash of the keys it
@@ -593,9 +597,9 @@ The phone folder is `phone/` in the dg state root:
 - Windows: `%LOCALAPPDATA%\dg\state\phone`
 - With `DG_HOME` set: `$DG_HOME/state/phone`
 
-Older releases kept it in `~/.dg/phone`. Any `dg-agent phone` command moves
-it, and so does `dg-skills install`. When no listener runs, any other
-`dg-agent` command moves it too. The move has these steps:
+Older releases kept it in `~/.dg/phone`. Any `dg phone` command moves
+it, and so does `dg install`. When no listener runs, any other
+`dg agent` command moves it too. The move has these steps:
 
 1. It stops the listener that runs from the old folder.
 2. It copies the folder to the new root.
@@ -610,8 +614,8 @@ listener stays stopped, so it cannot start a new, empty phone at the new root.
 The move never writes over a phone folder that holds data at the new root.
 
 `phone listen` never moves the folder. On a home that has not moved, it exits
-with `dg: <old folder> has not moved to <new folder>; run dg-skills install`.
-The next phone command or `dg-skills install` fixes it.
+with `dg: <old folder> has not moved to <new folder>; run dg install`.
+The next phone command or `dg install` fixes it.
 
 To go back to an older release, follow
 [Roll back](install.md#roll-back-to-a-release-that-uses-dg) in the install
@@ -620,19 +624,19 @@ guide. A `phone.empty-<ts>` folder is a set-aside copy. See
 
 ## Migration and the `phone-friend` alias
 
-Every `dg-agent phone` command except `listen` converts old phone-friend
+Every `dg phone` command except `listen` converts old phone-friend
 lines first, once, after the phone folder moves. No command body does the
 conversion itself. The conversion runs when an old
 `<state>/phone-friend/<line>/phone-friend.db` exists and
 `<state>/phone/phone.db` does not. A conversion error fails that phone command.
-`phone listen` exits with `dg: phone-friend lines wait for conversion; run dg-agent phone status`
+`phone listen` exits with `dg: phone-friend lines wait for conversion; run dg phone status`
 while old lines still wait. It reads every line before it signals a
 listener, so a database that cannot be read leaves every listener running.
 It copies every line's existing nostr key and never mints one. A line that
 already published a contact, an invite, or an outbound message, and has no
 key, stops the migration before any listener is signaled. The error names the
 line and says to restore that line's nsec, or the credential
-`phone-friend/<line>/nostr-key`, then run `phone open`. `dg-skills install`
+`phone-friend/<line>/nostr-key`, then run `phone open`. `dg install`
 prints that failure as a warning. The number key is
 the `default` line only when that line still has its key; otherwise it is
 the first keyed line by name. Contacts, messages, and read marks are carried
@@ -663,7 +667,7 @@ sees `phone.db` and does nothing further. To use an older release, follow
 `status` reports `"legacy_root_present": true` if the old root is still
 sitting next to the new database.
 
-The `dg-agent phone-friend` alias was removed in 1.23.x; only `phone`
+The `phone-friend` alias was removed in 1.23.x; only `phone`
 works. `dial`, `on`, `off`, and `card` are hidden synonyms for `accept`,
 `open`, `close`, and `number`. They are not listed by `phone --help`.
 `say`, `voicemail`, `inbox`, and `thread` were renamed to `text`, `unread`,

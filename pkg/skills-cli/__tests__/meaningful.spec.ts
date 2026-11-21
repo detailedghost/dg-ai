@@ -854,9 +854,9 @@ describe("relocated compiled meaningful and deps-upgrade", () => {
   stage = join(bundle, "build stage with spaces");
   const install = join(bundle, "relocated installation with spaces");
   skills = join(install, "skills");
-  binary = join(install, "bin", "dg-skills");
+  binary = join(install, "bin", "dg");
   mkdirSync(stage, { recursive: true });
-  installBundleShim(binary);
+  installBundleShim(binary, "dg");
 
   const copiedRepo = join(stage, "synthetic source checkout");
   const bootstrap = join(copiedRepo, "pkg", "skills-cli", "bootstrap.sh");
@@ -896,12 +896,12 @@ describe("relocated compiled meaningful and deps-upgrade", () => {
   const cwd = fixtures.tmp("dg external docs cwd ");
   const bin = join(process.env.HOME!, ".local/bin");
   mkdirSync(bin, { recursive: true });
-  symlinkSync(binary, join(bin, "dg-skills"));
+  symlinkSync(binary, join(bin, "dg"));
   for (const skill of ["meaningful", "deps-upgrade"]) {
    const text = readFileSync(join(skills, skill, "SKILL.md"), "utf8");
    const snippet = text.match(/```bash\n([\s\S]*?)```/)?.[1];
    expect(snippet).toBeTruthy();
-   const proc = Bun.spawnSync(["sh", "-c", `${snippet}\nexec "$HOME/.local/bin/dg-skills" "$@"`, "installed-skill", skill, "--help"], { cwd, env: { ...process.env, PATH: "/usr/bin:/bin", DG_HOME: undefined, DG_SKILLS: undefined, CLAUDE_PLUGIN_ROOT: dirname(skills) } });
+   const proc = Bun.spawnSync(["sh", "-c", `${snippet}\nexec "$HOME/.local/bin/dg" "$@"`, "installed-skill", skill, "--help"], { cwd, env: { ...process.env, PATH: "/usr/bin:/bin", DG_HOME: undefined, DG_SKILLS: undefined, CLAUDE_PLUGIN_ROOT: dirname(skills) } });
    expect(proc.exitCode).toBe(0);
    expect(proc.stdout.toString()).toContain(`Usage: ${skill} <subcommand>`);
    expect(proc.stderr.toString()).toBe("");

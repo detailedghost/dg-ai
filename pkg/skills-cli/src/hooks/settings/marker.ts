@@ -1,4 +1,4 @@
-const BIN = String.raw`dg-skills(?:\.cmd|\.exe)?`;
+const BIN = String.raw`(?:dg|dg-skills)(?:\.cmd|\.exe)?`;
 const OWNED = new RegExp(
 	String.raw`^(?:"[^"]*[\\/]${BIN}"|'[^']*[\\/]${BIN}'|(?:[^\s;&|\x60$<>()"']*[\\/])?${BIN}) hooks run ([a-z][a-z-]*)$`,
 );

@@ -1,21 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { currentBinaryLine } from "../src/install/cli";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, join } from "node:path";
-import { fetchedUrls, installEnv, runCli, writeReleaseServer } from "./runtime-bundle-fixtures";
+import { compatLauncherText } from "../src/install/compat-launchers";
+import { compiledAssetName, platformKey } from "../src/utils/lib";
+import { writeOldShims } from "./dg-launcher-fixtures";
+import { fakeProgramScript, fetchedUrls, installEnv, runCli, writeReleaseServer } from "./release-fixtures";
 
-test("a bootstrap install says verified for dg-skills and already current for the others", () => {
-	expect(currentBinaryLine("dg-skills", "1.12.0", true)).toBe(
-		"dg-skills verified (v1.12.0).",
-	);
-	expect(currentBinaryLine("dg-daemon", "1.12.0", true)).toBe(
-		"dg-daemon already current (v1.12.0).",
-	);
-	expect(currentBinaryLine("dg-skills", "1.12.0", false)).toBe(
-		"dg-skills already current (v1.12.0).",
-	);
+test("a bootstrap install says verified for dg and already current for any other name", () => {
+	expect(currentBinaryLine("dg", "1.12.0", true)).toBe("dg verified (v1.12.0).");
+	expect(currentBinaryLine("dg-daemon", "1.12.0", true)).toBe("dg-daemon already current (v1.12.0).");
+	expect(currentBinaryLine("dg", "1.12.0", false)).toBe("dg already current (v1.12.0).");
 });
 
 interface LocalInstallWorld {
@@ -246,90 +243,118 @@ test("install prints no DG_HOME note when DG_HOME is unset, and notes even the o
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
 const VERSION = "1.27.0";
 
-describe.skipIf(process.platform === "win32")("dg-skills install against a fake release server", () => {
-	test("a full install ends with shims, lib/current and runtime/current links, and no compiled dg-skills", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "dg-install-bundle-"));
+const seedOld63Install = (home: string): void => {
+	const bin = join(home, "bin");
+	const data = join(home, "data");
+	mkdirSync(bin, { recursive: true });
+	writeOldShims(bin, bin, ["dg", "dg-skills", "dg-agent", "dg-daemon"]);
+	for (const name of ["dg-skills", "dg-agent", "dg-daemon"]) writeFileSync(join(bin, `.${name}.version`), "6.3.1\n");
+	mkdirSync(join(data, "lib", "6.3.1"), { recursive: true });
+	writeFileSync(join(data, "lib", "6.3.1", "dg.js"), "bundle");
+	symlinkSync("6.3.1", join(data, "lib", "current"));
+	mkdirSync(join(data, "runtime", "bun-v1.2.0"), { recursive: true });
+	writeFileSync(join(data, "runtime", "bun-v1.2.0", "bun"), "#!/bin/sh\n", { mode: 0o755 });
+	symlinkSync("bun-v1.2.0", join(data, "runtime", "current"));
+};
+
+describe.skipIf(process.platform === "win32")("dg install against a fake release server", () => {
+	test("a full install over a 6.3 install links bin/current and dg, removes the old shims and keeps lib and runtime", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-install-program-"));
 		const home = join(directory, "home");
 		const bin = join(home, "bin");
 		const data = join(home, "data");
-		mkdirSync(bin, { recursive: true });
-		writeFileSync(join(bin, "dg-skills"), "compiled ELF bytes", { mode: 0o755 });
-		writeFileSync(join(bin, ".dg-skills.version"), "1.26.0\n");
+		seedOld63Install(home);
 		try {
 			const log = join(directory, "fetch.log");
 			writeFileSync(log, "");
-			const { preload, pin } = writeReleaseServer(directory, log, VERSION);
+			const { preload } = writeReleaseServer(directory, log, VERSION);
 
 			const result = await runCli(["bun", "--preload", preload, ENTRY, "install"], installEnv(home));
 
-			expect(result.code).toBe(0);
-			expect(readFileSync(join(bin, "dg-skills"), "utf8")).not.toContain("compiled ELF bytes");
-			expect(readFileSync(join(bin, "dg-skills"), "utf8")).toContain(`root='${data}'`);
-			expect(basename(readlinkSync(join(data, "lib", "current")))).toBe(VERSION);
-			expect(basename(readlinkSync(join(data, "runtime", "current")))).toBe(`bun-v${pin}`);
-			expect(existsSync(join(data, "runtime", "current", "bun"))).toBe(true);
-			expect(existsSync(join(bin, ".dg-skills.version"))).toBe(false);
-			for (const name of ["dg-agent", "dg-daemon"]) {
-				expect(readFileSync(join(bin, name), "utf8")).toContain(`${name} "$@"`);
-			}
-			const version = await runCli([join(bin, "dg-skills"), "--version"], installEnv(home));
+			expect(result.code, result.stderr).toBe(0);
+			expect(basename(readlinkSync(join(data, "bin", "current")))).toBe(VERSION);
+			expect(readlinkSync(join(bin, "dg"))).toBe(join(data, "bin", "current", "dg"));
+			expect(readdirSync(bin)).toEqual(["dg"]);
+			expect(readFileSync(join(data, "bin", VERSION, "dg"), "utf8")).toBe(fakeProgramScript(VERSION));
+			expect(readlinkSync(join(data, "lib", "current"))).toBe("6.3.1");
+			expect(existsSync(join(data, "lib", "6.3.1", "dg.js"))).toBe(true);
+			expect(readlinkSync(join(data, "runtime", "current"))).toBe("bun-v1.2.0");
+			const fetched = fetchedUrls(log);
+			expect(fetched.filter((url) => /runtime\.json|bun-.*\.zip|dg-lib-.*\.tar\.gz/.test(url))).toEqual([]);
+			expect(fetched.some((url) => url.endsWith(`/${compiledAssetName(platformKey())}`))).toBe(true);
+			const version = await runCli([join(bin, "dg"), "--version"], installEnv(home));
 			expect(version.stdout.trim()).toBe(VERSION);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
 	});
 
-	test("a bundle that fails verification leaves runtime/current and lib/current unchanged", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "dg-install-atomic-"));
+	test("a foreign dg-skills file stays with a warning and the dg link is still written", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-install-foreign-"));
 		const home = join(directory, "home");
-		mkdirSync(join(home, "data", "runtime", "bun-old"), { recursive: true });
-		mkdirSync(join(home, "data", "lib", "1.0.0"), { recursive: true });
-		symlinkSync("bun-old", join(home, "data", "runtime", "current"));
-		symlinkSync("1.0.0", join(home, "data", "lib", "current"));
+		const bin = join(home, "bin");
+		mkdirSync(bin, { recursive: true });
+		writeFileSync(join(bin, "dg-skills"), "#!/bin/sh\necho mine\n", { mode: 0o755 });
 		try {
 			const log = join(directory, "fetch.log");
 			writeFileSync(log, "");
-			const { preload } = writeReleaseServer(directory, log, VERSION, {
-				sums: (sums) => sums.replace(/^[0-9a-f]{64}/, "0".repeat(64)),
-			});
+			const { preload } = writeReleaseServer(directory, log, VERSION);
 
-			const result = await runCli(["bun", "--preload", preload, ENTRY, "install"], installEnv(home));
+			const result = await runCli(["bun", "--preload", preload, ENTRY, "install", "--cli-only"], installEnv(home));
 
-			expect(result.stderr).toContain("skipped");
-			expect(basename(readlinkSync(join(home, "data", "runtime", "current")))).toBe("bun-old");
-			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe("1.0.0");
+			expect(result.code, result.stderr).toBe(0);
+			expect(readFileSync(join(bin, "dg-skills"), "utf8")).toBe("#!/bin/sh\necho mine\n");
+			expect(result.stderr).toContain(`dg: kept ${join(bin, "dg-skills")}; it is not a dg launcher. dg no longer uses that name`);
+			expect(lstatSync(join(bin, "dg")).isSymbolicLink()).toBe(true);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
 	});
 
-	for (const previousRuntime of [true, false]) {
-		test(`a failed lib/current switch restores runtime/current (${previousRuntime ? "previous runtime" : "no previous runtime"})`, async () => {
-			const directory = mkdtempSync(join(tmpdir(), "dg-install-rollback-link-"));
-			const home = join(directory, "home");
-			mkdirSync(join(home, "data", "lib", "current", "blocker"), { recursive: true });
-			if (previousRuntime) {
-				mkdirSync(join(home, "data", "runtime", "bun-old"), { recursive: true });
-				symlinkSync("bun-old", join(home, "data", "runtime", "current"));
-			}
-			try {
-				const log = join(directory, "fetch.log");
-				writeFileSync(log, "");
-				const { preload } = writeReleaseServer(directory, log, VERSION);
+	test("a program that fails verification leaves bin/current and the dg link unchanged", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-install-atomic-"));
+		const home = join(directory, "home");
+		mkdirSync(join(home, "data", "bin", "1.0.0"), { recursive: true });
+		writeFileSync(join(home, "data", "bin", "1.0.0", "dg"), fakeProgramScript("1.0.0"), { mode: 0o755 });
+		symlinkSync("1.0.0", join(home, "data", "bin", "current"));
+		try {
+			const log = join(directory, "fetch.log");
+			writeFileSync(log, "");
+			const { preload } = writeReleaseServer(directory, log, VERSION, {
+				sums: (sums) => sums.replace(/^[0-9a-f]{64}(\s+dg-)/gm, `${"0".repeat(64)}$1`),
+			});
 
-				const result = await runCli(["bun", "--preload", preload, ENTRY, "install"], installEnv(home));
+			const result = await runCli(["bun", "--preload", preload, ENTRY, "install"], installEnv(home));
 
-				expect(result.stderr).toContain("skipped");
-				const current = join(home, "data", "runtime", "current");
-				if (previousRuntime) expect(basename(readlinkSync(current))).toBe("bun-old");
-				else expect(existsSync(current)).toBe(false);
-			} finally {
-				rmSync(directory, { recursive: true, force: true });
-			}
-		});
-	}
+			expect(result.stderr).toContain("skipped");
+			expect(basename(readlinkSync(join(home, "data", "bin", "current")))).toBe("1.0.0");
+			expect(existsSync(join(home, "data", "bin", VERSION))).toBe(false);
+			expect(existsSync(join(home, "bin", "dg"))).toBe(false);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
 
-	test("install --version <previous release> relinks lib/current with no bundle or runtime download while its directory exists", async () => {
+	test("a failed bin/current switch writes no dg link and leaves the old current in place", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-install-rollback-link-"));
+		const home = join(directory, "home");
+		mkdirSync(join(home, "data", "bin", "current", "blocker"), { recursive: true });
+		try {
+			const log = join(directory, "fetch.log");
+			writeFileSync(log, "");
+			const { preload } = writeReleaseServer(directory, log, VERSION);
+
+			const result = await runCli(["bun", "--preload", preload, ENTRY, "install"], installEnv(home));
+
+			expect(result.stderr).toContain("skipped");
+			expect(existsSync(join(home, "data", "bin", "current", "blocker"))).toBe(true);
+			expect(existsSync(join(home, "bin", "dg"))).toBe(false);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test("install --version <previous release> relinks bin/current with no asset download while its directory exists", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-install-rollback-"));
 		const home = join(directory, "home");
 		mkdirSync(home, { recursive: true });
@@ -338,20 +363,20 @@ describe.skipIf(process.platform === "win32")("dg-skills install against a fake 
 			writeFileSync(log, "");
 			const { preload } = writeReleaseServer(directory, log, VERSION, { also: ["1.28.0"] });
 			const env = installEnv(home);
-			const argv = (...args: string[]) => ["bun", "--preload", preload, ENTRY, "install", ...args];
+			const argv = (...args: string[]) => ["bun", "--preload", preload, ENTRY, "install", "--agent-only", ...args];
 
 			expect((await runCli(argv("--version", VERSION), env)).code).toBe(0);
 			expect((await runCli(argv(), env)).code).toBe(0);
-			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe("1.28.0");
+			expect(basename(readlinkSync(join(home, "data", "bin", "current")))).toBe("1.28.0");
 			const before = fetchedUrls(log).length;
 
 			const rollback = await runCli(argv("--version", VERSION), env);
 
 			expect(rollback.code).toBe(0);
-			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe(VERSION);
-			expect(existsSync(join(home, "data", "lib", "1.28.0", "dg.js"))).toBe(true);
+			expect(basename(readlinkSync(join(home, "data", "bin", "current")))).toBe(VERSION);
+			expect(existsSync(join(home, "data", "bin", "1.28.0", "dg"))).toBe(true);
 			const fetched = fetchedUrls(log).slice(before);
-			expect(fetched.filter((url) => /dg-lib-.*\.tar\.gz$|bun-.*\.zip$/.test(url))).toEqual([]);
+			expect(fetched.filter((url) => !url.includes("/releases?"))).toEqual([]);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -378,8 +403,8 @@ function treeOf(root: string): string[] {
 	return out;
 }
 
-describe.skipIf(process.platform !== "linux")("dg-skills install uses the per-OS layout", () => {
-	test("a fresh install on Linux writes ~/.local/bin/dg-skills and ~/.local/share/dg/lib/current", async () => {
+describe.skipIf(process.platform !== "linux")("dg install uses the per-OS layout", () => {
+	test("a fresh install on Linux links ~/.local/bin/dg to ~/.local/share/dg/bin/current/dg", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-install-xdg-"));
 		const home = join(directory, "home");
 		mkdirSync(home, { recursive: true });
@@ -392,8 +417,9 @@ describe.skipIf(process.platform !== "linux")("dg-skills install uses the per-OS
 
 			expect(result.code, result.stderr).toBe(0);
 			const data = join(home, ".local", "share", "dg");
-			expect(readFileSync(join(home, ".local", "bin", "dg-skills"), "utf8")).toContain(`root='${data}'`);
-			expect(basename(readlinkSync(join(data, "lib", "current")))).toBe(VERSION);
+			expect(readlinkSync(join(home, ".local", "bin", "dg"))).toBe(join(data, "bin", "current", "dg"));
+			expect(readdirSync(join(home, ".local", "bin"))).toEqual(["dg"]);
+			expect(basename(readlinkSync(join(data, "bin", "current")))).toBe(VERSION);
 			expect(Bun.TOML.parse(readFileSync(join(home, ".config", "dg", "config.toml"), "utf8"))).toMatchObject({ install: { cli_only: true } });
 			expect(existsSync(join(home, ".dg"))).toBe(false);
 			expect(result.stdout).toContain(`export PATH="${join(home, ".local", "bin")}:$PATH"`);
@@ -402,13 +428,14 @@ describe.skipIf(process.platform !== "linux")("dg-skills install uses the per-OS
 		}
 	});
 
-	test("an install over a populated ~/.dg moves it and keeps ~/.dg/bin/dg-skills working with one notice line", async () => {
+	test("an install over a populated ~/.dg moves it and removes the ~/.dg/bin notice launchers", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-install-migrate-"));
 		const home = join(directory, "home");
 		const legacy = join(home, ".dg");
 		mkdirSync(join(legacy, "bin"), { recursive: true });
 		mkdirSync(join(legacy, "daemon"), { recursive: true });
-		writeFileSync(join(legacy, "bin", "dg-skills"), "#!/bin/sh\necho old\n", { mode: 0o755 });
+		const target = join(home, ".local", "bin", "dg-skills");
+		writeFileSync(join(legacy, "bin", "dg-skills"), compatLauncherText("dg-skills", target, "1.29.0", "linux"), { mode: 0o755 });
 		writeFileSync(join(legacy, "daemon", "daemon.db"), "db");
 		try {
 			const log = join(directory, "fetch.log");
@@ -419,14 +446,10 @@ describe.skipIf(process.platform !== "linux")("dg-skills install uses the per-OS
 			const result = await runCli(["bun", "--preload", preload, ENTRY, "install", "--cli-only"], env);
 
 			expect(result.code, result.stderr).toBe(0);
-			expect(existsSync(join(home, ".local", "bin", "dg-skills"))).toBe(true);
+			expect(existsSync(join(legacy, "bin", "dg-skills"))).toBe(false);
+			expect(existsSync(join(home, ".local", "bin", "dg-skills"))).toBe(false);
+			expect(lstatSync(join(home, ".local", "bin", "dg")).isSymbolicLink()).toBe(true);
 			expect(readFileSync(join(home, ".local", "state", "dg", "daemon", "daemon.db"), "utf8")).toBe("db");
-			const old = await runCli([join(legacy, "bin", "dg-skills"), "--version"], env);
-			expect(old.code).toBe(0);
-			expect(old.stdout.trim()).toBe(VERSION);
-			expect(old.stderr.trim().split("\n")).toEqual([
-				`dg: ~/.dg/bin/dg-skills is now ${join(home, ".local", "bin", "dg-skills")}; this path is removed in 1.29.0`,
-			]);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -446,7 +469,7 @@ describe.skipIf(process.platform !== "linux")("dg-skills install uses the per-OS
 			const result = await runCli(["bun", "--preload", preload, ENTRY, "install", "--cli-only"], env);
 
 			expect(result.code, result.stderr).toBe(0);
-			expect(existsSync(join(root, "bin", "dg-skills"))).toBe(true);
+			expect(readlinkSync(join(root, "bin", "dg"))).toBe(join(root, "data", "bin", "current", "dg"));
 			expect(treeOf(home).filter((path) => !path.startsWith(join(home, ".bun")))).toEqual([]);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });

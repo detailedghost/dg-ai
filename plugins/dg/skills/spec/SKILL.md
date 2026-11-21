@@ -13,17 +13,18 @@ the whole planning history.
 `.agents/` is tracked agent memory; scratch subfolders are ignored. Bundle adds always pass `':(exclude)<bundle>/roundtable/'`.
 If `git add` refuses an ignored `.agents` path, ask to run `/dg:spring-break`; on no, stop and report the uncommitted bundle. Never `-f`.
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
-dg-skills assign resolve --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" assign resolve --help >/dev/null 2>&1 ||
+dg assign resolve --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" assign resolve --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
-If a step fails, run dg-skills doctor assign batch-open pw chain proxy spec stash vcs-provider worktree.
+If a step fails, run dg doctor assign batch-open pw chain proxy spec stash vcs-provider worktree.
 
 **Usage:** `/dg:spec [--fast [-T]] [-s <NNN>_<slug>] [--profile <profile> | --cheap | --expensive] [--proxy <backend>] [--bg] [--no-land | --auto] "<request>"`.
 
@@ -58,7 +59,7 @@ Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass it
   No positional request is required in this mode.
 - If neither a request nor `-s` is present, ask for the request (one question) before proceeding.
 - `PROFILE`: plan and fast mode read unset as balance; execute mode reads the persisted `execution.profile`. A missing or invalid value after `--profile`/`-p` stops with `--profile must be one of balance, cheap, expensive`. Two profile flags with the same value are allowed.
-- `--proxy <backend>` (plan mode and `-s`): validate it against `dg-skills proxy --list-backends` before any phase, in one Bash call and only when the flag is present. An unknown name stops and lists the valid backends.
+- `--proxy <backend>` (plan mode and `-s`): validate it against `dg proxy --list-backends` before any phase, in one Bash call and only when the flag is present. An unknown name stops and lists the valid backends.
 
 ## Plan-mode pipeline
 
@@ -67,13 +68,13 @@ Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass it
 | 1 | arch `/dg:grill-me` the request `[fable, xhigh]` | references/plan.md, references/grill.md |
 | 1.5 | Structure `/dg:grill-me` — code-surface contracts `[lang agent, sonnet]` | references/templates/structure-grill.md |
 | 2 | `dg:foreman` `/dg:grill-me` on ordering/gaps `[fable, xhigh]` | references/plan.md, references/grill.md |
-| 3 | `dg:foreman` emits decision blob → `dg-skills spec scaffold` → `/dg:assign` → write `## Code Structure` | references/plan.md, references/decision-blob.md |
+| 3 | `dg:foreman` emits decision blob → `dg spec scaffold` → `/dg:assign` → write `## Code Structure` | references/plan.md, references/decision-blob.md |
 | 4 | Checkpoint — bundle now has one `roundtable/slice-<N>.md` per slice | references/plan.md |
 | 5 | Per-slice review fan-out (`sonnet` default) | references/plan.md, references/templates/slice-review.md |
 | 6 | `dg:foreman` synthesis `[fable, xhigh]` + `/dg:grill-me` gaps pass | references/plan.md, references/templates/synthesis.md |
 | 7 | Write `plan.md`; --proxy slices; WARN token/context cost | references/plan.md |
 | 8 | Plan approval gate (plan view; Approve as a profile, or Rework); register accepted prototype assets (built with `/dg:proto`) | references/plan.md |
-| 9 | `dg-skills spec context <bundle>` assembles `context.md` | references/plan.md |
+| 9 | `dg spec context <bundle>` assembles `context.md` | references/plan.md |
 | 10 | Commit bundle; print resume command `/dg:spec -s <NNN>_<slug>` | references/plan.md |
 
 ## Fast-mode pipeline
@@ -84,7 +85,7 @@ Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass it
 | F2 | ONE grill pass, main loop — placement + code surface + slice ordering | references/fast.md, references/grill.md |
 | F3 | Write the plan file, permission set spelled out in it | references/fast.md |
 | F4 | `ExitPlanMode` — the single gate | references/fast.md |
-| F5 | Blob → `dg-skills spec scaffold` → `/dg:assign` → `perms-batch` → `context` → commit | references/fast.md, references/decision-blob.md |
+| F5 | Blob → `dg spec scaffold` → `/dg:assign` → `perms-batch` → `context` → commit | references/fast.md, references/decision-blob.md |
 | F6 | Worktree (or `-T` branch); bind `SPEC_PATH`/`SCRATCH_PATH` | references/fast.md |
 | F7 | Slices sequentially in this chat — red → green → commit → compact | references/fast.md |
 | F8 | `finish.md` 5–8 — final review, docs, draft PR/MR; then ready + `/dg:land` unless `--no-land` | [sdlc finish.md](../sdlc/references/finish.md), references/execute.md §7 |
@@ -98,7 +99,7 @@ spans more than three or four slices or touches unfamiliar architecture.
 Read ONLY `context.md` + `plan.md` — never `initial.md`/`roundtable/*`. Set `SPEC_PATH`/`SCRATCH_PATH`,
 reuse `/dg:sdlc`'s worktree setup, SKIP its slice-derivation (this bundle's `slices[]` + `/dg:assign` already
 ran), then drive [sdlc engineering.md](../sdlc/references/engineering.md) 4.1–4.3 and
-[sdlc finish.md](../sdlc/references/finish.md) steps 5–8 (through the direct PR/MR launch — draft always, then a best-effort `dg-skills pw batch-open <url>` (when `batch-open` fails, print the URL and continue), per `finish.md` step 8's `/dg:spec` deltas).
+[sdlc finish.md](../sdlc/references/finish.md) steps 5–8 (through the direct PR/MR launch — draft always, then a best-effort `dg pw batch-open <url>` (when `batch-open` fails, print the URL and continue), per `finish.md` step 8's `/dg:spec` deltas).
 [references/execute.md](references/execute.md) §6 owns the bookkeeping on top of that (persisting
 the PR/MR URL into `plan.md`, restoring cwd). Then §7 marks the PR ready and runs `/dg:land` with its defaults
 in the main loop; it stops at "ready for your review" and asks (`--auto` merges instead). `--no-land`, `--bg`, and GitLab stop at the draft.
@@ -126,7 +127,7 @@ in the main loop; it stops at "ready for your review" and asks (`--auto` merges 
 - NEVER skip a gate condition (the plan approval gate in plan mode, per-slice triage, `ExitPlanMode` approval in
   fast mode, the `/dg:land` merge gate). No subagent or slice wave ever merges a PR/MR.
 - **Bundle dirs are ALWAYS named `{NNN}_<slug>`** — zero-padded 3-digit prefix + slugified
-  description (e.g. `001_vela_dashboard_favorites`). `dg-skills spec scaffold` enforces this
+  description (e.g. `001_vela_dashboard_favorites`). `dg spec scaffold` enforces this
   unconditionally, deriving `<NNN>` from the max `NNN_`-prefixed **dir** under `.agents/spec/`
   (none → `001`); pre-existing non-numbered dirs are ignored and left untouched. Never create or
   reference a bundle without its prefix — `/dg:spec -s` takes the full `{NNN}_<slug>` dir name.

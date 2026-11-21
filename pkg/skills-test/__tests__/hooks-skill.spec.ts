@@ -34,7 +34,7 @@ describe("hooks skill", () => {
 	test("gives the status, enable and disable commands", () => {
 		const text = skillText();
 		for (const sub of ["status", "enable", "disable"])
-			expect(text).toContain(`dg-skills hooks ${sub}`);
+			expect(text).toContain(`dg hooks ${sub}`);
 	});
 
 	test("tells the agent to report status per runtime", () => {
@@ -60,7 +60,7 @@ describe("hooks skill", () => {
 
 	test("carries the doctor line for hooks", () => {
 		expect(skillText()).toMatch(
-			/^If a step fails, run dg-skills doctor hooks\.$/m,
+			/^If a step fails, run dg doctor hooks\.$/m,
 		);
 	});
 
@@ -74,10 +74,10 @@ describe("hooks skill", () => {
 describe("hook-comment-disable skill", () => {
 	const path = ["plugins", "dg", "skills", "hook-comment-disable", "SKILL.md"];
 
-	test("points at the spelling hook and dg-skills hooks", () => {
+	test("points at the spelling hook and dg hooks", () => {
 		const text = readRepoFile(...path);
 		expect(text).toContain("spelling");
-		expect(text).toContain("dg-skills hooks");
+		expect(text).toContain("dg hooks");
 		expect(text).not.toContain("american-english-hook.sh");
 	});
 

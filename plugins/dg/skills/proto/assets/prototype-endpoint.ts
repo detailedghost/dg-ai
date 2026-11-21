@@ -47,7 +47,7 @@ function validName(name: unknown): name is string {
 }
 
 const WINDOWS = process.platform === "win32";
-const LAUNCHER = WINDOWS ? "dg-skills.cmd" : "dg-skills";
+const LAUNCHER = WINDOWS ? "dg.exe" : "dg";
 const BIN = process.env.DG_SKILLS_BIN;
 
 function defaultBinDir(): string {

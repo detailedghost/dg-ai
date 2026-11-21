@@ -40,7 +40,7 @@ Converge on one branch list covering all three topics. Fast mode has no pass 3, 
 Write the plan into the plan file named in the plan-mode system message. It must carry everything
 the bundle will, so that approving it is approving the real artifact:
 
-- `feature` name + `<slug>` (via `dg-skills spec slugify`).
+- `feature` name + `<slug>` (via `dg spec slugify`).
 - Purpose (2–4 sentences) and scope, in and out.
 - Per slice: `id`, `name`, `depends_on`, `files` globs, the Engineering checklist, Testing Criteria
   opening with `### Contracts` (inputs, outputs, error shapes), and Acceptance items.
@@ -66,24 +66,24 @@ scaffold against an unapproved plan.
 ## F5 — Scaffold the bundle (launch checkout, before any worktree)
 
 - a. Author the decision blob yourself — shape LOCKED, per [decision-blob.md](decision-blob.md) —
-  and write it to `$(dg-skills stash -s spec <slug>-blob.json)`. Full mode routes
+  and write it to `$(dg stash -s spec <slug>-blob.json)`. Full mode routes
   this through foreman; fast mode does not, since F2's log is already yours.
-- a2. `dg-skills spec lint-waves <blob-path>` — same rule as plan.md step 2: slices with no dependency
+- a2. `dg spec lint-waves <blob-path>` — same rule as plan.md step 2: slices with no dependency
   path between them touch disjoint files; slices that run a code generator or edit a shared
   fixture/test harness serialize against each other.
   Fix every overlap with a `depends_on` edge first. `scaffold` refuses on overlap.
-- b. `dg-skills spec scaffold --home .agents/spec --slug <slug> --from-json <blob-path>` → prints
+- b. `dg spec scaffold --home .agents/spec --slug <slug> --from-json <blob-path>` → prints
   `<bundle>` (`.agents/spec/<NNN>_<slug>/`).
-- b2. `dg-skills spec set <bundle>/plan.md execution.profile <profile>` — the profile the approved plan
+- b2. `dg spec set <bundle>/plan.md execution.profile <profile>` — the profile the approved plan
   file names. It persists for a later `-s`, and under `cheap` finish.md step 5 at F8 runs with the
   lower cap.
 - c. `/dg:assign <bundle>/plan.md` — fills `slices[].agents`. Not optional: F7 reads `agents.primary`
   for its escape hatch, and a resumed `/dg:spec -s` needs it.
 - d. Code-structure decisions, if F2 produced any that span more than one slice:
-  `dg-skills spec append-section <bundle>/plan.md --section "Code Structure" "<body>"`.
-- e. `dg-skills spec perms-batch <bundle>/plan.md --grant-all` — persists the set F3 listed and F4
+  `dg spec append-section <bundle>/plan.md --section "Code Structure" "<body>"`.
+- e. `dg spec perms-batch <bundle>/plan.md --grant-all` — persists the set F3 listed and F4
   approved.
-- f. `dg-skills spec context <bundle>` → `context.md`. **Required**, not optional as it might look in a
+- f. `dg spec context <bundle>` → `context.md`. **Required**, not optional as it might look in a
   single-session run: it is what F7 re-orients from after each compaction.
 - g. Commit: `git add .agents/spec/<NNN>_<slug>/ ':(exclude).agents/spec/<NNN>_<slug>/roundtable/' && git commit -m "chore(spec): plan <slug>"`. If it refuses an ignored path, follow the `/dg:spec` SKILL.md fallback; never `-f`.
   Mandatory in worktree mode — a worktree branches off freshly fetched `origin` and cannot see an
@@ -104,7 +104,7 @@ stays at the launch directory; every command that touches the worktree carries i
 origin checkout:
 
 ```sh
-SPEC_PATH="$(dg-skills stash -C "$WORKTREE_ORIGIN" -m spec)/<NNN>_<slug>/plan.md"
+SPEC_PATH="$(dg stash -C "$WORKTREE_ORIGIN" -m spec)/<NNN>_<slug>/plan.md"
 ```
 
 **`-T`/`--no-worktree`.** No worktree. If the current branch is the repo default,
@@ -115,7 +115,7 @@ Scratchpad path either way, computed after the move (see execute.md §3 for why 
 the main worktree rather than the cwd):
 
 ```sh
-SCRATCH_PATH="$(dg-skills stash -s spec <NNN>_<slug>-scratch.md)"; touch "$SCRATCH_PATH"
+SCRATCH_PATH="$(dg stash -s spec <NNN>_<slug>-scratch.md)"; touch "$SCRATCH_PATH"
 ```
 
 Skip `/dg:sdlc` setup.md Step 2 (slice derivation) and Step 3 (assignment) — F2–F5 already did both.
@@ -133,7 +133,7 @@ satisfied trivially.
 Per slice:
 
 1. **Re-orient from disk, not memory.** Read `context.md` and the slice's own blocks
-   (`dg-skills spec slice "$SPEC_PATH" <id>`). After a compaction the earlier slices are gone from
+   (`dg spec slice "$SPEC_PATH" <id>`). After a compaction the earlier slices are gone from
    context — that is the design, and F5f is why it is safe.
 2. **Red.** Write the failing tests from the slice's `### Contracts` first, per `/dg:standard-test`.
 3. **Green.** Implement until they pass; run the project's test and lint commands.
@@ -166,7 +166,7 @@ as written. Fast mode trims planning, never the end gates:
 | 5 | Final review + bounded correction (max 2 rounds), commit fixes |
 | 6 | Test-name gate, then `dg:lore` docs pass, commit docs |
 | 7 | Human review moves onto the PR/MR — no blocking gate |
-| 8 | Push + `dg-skills vcs-provider create-pr --draft` |
+| 8 | Push + `dg vcs-provider create-pr --draft` |
 
 The `/dg:spec` deltas in [execute.md](execute.md) §6 apply unchanged: the PR/MR always opens
 `--draft`, the browser-open in `finish.md` step 8f runs afterward, and step 8d persists the URL to

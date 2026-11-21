@@ -92,7 +92,7 @@ function edit(): void {
 	const exists = existsSync(file);
 	if (!exists && readLegacyConfig(paths).sources.length)
 		throw new DgCliError(
-			`dg config: ${file} does not exist yet, and older config files still wait to move into it. Next: start dg-daemon if it is stopped, run dg-skills doctor so the move runs, then run this again.`,
+			`dg config: ${file} does not exist yet, and older config files still wait to move into it. Next: start the daemon with dg daemon start if it is stopped, run dg doctor so the move runs, then run this again.`,
 		);
 	const before = exists ? readFileSync(file, "utf8") : "";
 	mkdirSync(dirname(file), { recursive: true });

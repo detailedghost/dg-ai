@@ -14,7 +14,7 @@ import { ensureDaemonRunning } from "../src/node/daemon-start";
 import { setProgramName } from "../src/node/program";
 
 const TIMEOUT_TEXT =
-	"dg-daemon did not become healthy within the startup timeout";
+	"dg daemon did not become healthy within the startup timeout";
 
 type Fake = { handle: DaemonHandle; stop: () => void };
 
@@ -152,7 +152,7 @@ describe("ensureDaemonRunning", () => {
 		expect(result.handle.instanceId).not.toBe(dead.handle.instanceId);
 	});
 
-	it("spawns [execPath, Bun.main, dg-daemon, serve] in bundle mode", async () => {
+	it("spawns [execPath, Bun.main, dg daemon, serve] in bundle mode", async () => {
 		setProgramName("dg-agent");
 		const recorder = recordingSpawn(() => live());
 
@@ -162,7 +162,7 @@ describe("ensureDaemonRunning", () => {
 		expect([call.command, ...call.args]).toEqual([
 			process.execPath,
 			Bun.main,
-			"dg-daemon",
+			"daemon",
 			"serve",
 		]);
 	});

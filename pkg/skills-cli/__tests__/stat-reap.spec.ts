@@ -569,7 +569,7 @@ describe("stat reap signaling", () => {
 	});
 });
 
-describe.skipIf(process.platform === "win32")("dg-skills stat reap", () => {
+describe.skipIf(process.platform === "win32")("dg stat reap", () => {
 	test("reaps an orphaned sleep in its own temp dir and nothing else", async () => {
 		const dir = realpathSync(mkdtempSync(join(tmpdir(), "dg-stat-reap-")));
 		let pid = 0;

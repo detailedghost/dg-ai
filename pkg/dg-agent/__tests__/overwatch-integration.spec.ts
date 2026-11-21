@@ -18,7 +18,7 @@ afterEach(() => {
 	dgHome = "";
 });
 
-describe("dg-agent overwatch integration", () => {
+describe("dg overwatch integration", () => {
 	it("publishes a mutation result before an immediate snapshot can run", async () => {
 		const started = await startWithSession();
 		dgHome = started.dgHome;

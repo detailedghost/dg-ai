@@ -1,6 +1,6 @@
 # Write the ADR
 
-`dg-skills adr new` creates `docs/adr/NNNN-slug.md` from the template below. Fill every section. Do not change a heading: `dg-skills adr lint` checks them.
+`dg adr new` creates `docs/adr/NNNN-slug.md` from the template below. Fill every section. Do not change a heading: `dg adr lint` checks them.
 
 ## Rules
 

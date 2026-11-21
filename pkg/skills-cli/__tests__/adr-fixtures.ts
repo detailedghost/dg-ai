@@ -4,7 +4,7 @@ import { dirname, join, relative } from "node:path";
 import { git, makeTempDir } from "./git-repo-fixtures";
 import { CLI_ENTRY, type CliRun, mergeEnv, runCli } from "./module-call";
 
-export const NOT_INITIALIZED = "adr: not initialized. Run dg-skills adr init first.";
+export const NOT_INITIALIZED = "adr: not initialized. Run dg adr init first.";
 export const TOC_MARKER = "<!-- adr:index -->";
 
 export interface AdrRepo {

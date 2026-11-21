@@ -11,8 +11,8 @@ const connections = readFileSync(
 );
 
 describe("db skill setup flow", () => {
-	test("SKILL.md runs dg-skills db setup and names the three secret modes", () => {
-		expect(skill).toContain("dg-skills db setup");
+	test("SKILL.md runs dg db setup and names the three secret modes", () => {
+		expect(skill).toContain("dg db setup");
 		for (const mode of ["--secret aws", "--secret form", "--secret command"]) {
 			expect(skill).toContain(mode);
 		}
@@ -20,7 +20,7 @@ describe("db skill setup flow", () => {
 
 	test("SKILL.md asks the human with AskUserQuestion after db connections", () => {
 		expect(skill).toContain("AskUserQuestion");
-		expect(skill).toContain("dg-skills db connections");
+		expect(skill).toContain("dg db connections");
 	});
 
 	test("SKILL.md never asks for a password in chat", () => {
@@ -33,7 +33,7 @@ describe("db skill setup flow", () => {
 	});
 
 	test("SKILL.md points a failing step at doctor credentials db", () => {
-		expect(skill).toContain("dg-skills doctor credentials db");
+		expect(skill).toContain("dg doctor credentials db");
 	});
 
 	test("connections.md lists the setup meta keys", () => {
@@ -50,8 +50,8 @@ describe("db skill setup flow", () => {
 	});
 
 	test("connections.md documents setup before the raw credentials recipes", () => {
-		const setup = connections.indexOf("dg-skills db setup");
-		const raw = connections.indexOf("dg-skills credentials set");
+		const setup = connections.indexOf("dg db setup");
+		const raw = connections.indexOf("dg credentials set");
 		expect(setup).toBeGreaterThan(-1);
 		expect(setup).toBeLessThan(raw);
 	});

@@ -61,7 +61,7 @@ function editor(script: string): void {
 	process.env.EDITOR = path;
 }
 
-describe("dg-skills config path", () => {
+describe("dg config path", () => {
 	test("prints resolveDgPaths().configTomlPath", async () => {
 		expect(await main(["config", "path"])).toBe(0);
 
@@ -69,7 +69,7 @@ describe("dg-skills config path", () => {
 	});
 });
 
-describe("dg-skills config get", () => {
+describe("dg config get", () => {
 	test("prints a set value", async () => {
 		seed('[refs.aliases]\napp = "acme/app"\n');
 
@@ -100,7 +100,7 @@ describe("dg-skills config get", () => {
 	});
 });
 
-describe("dg-skills config set", () => {
+describe("dg config set", () => {
 	test("writes a value that get reads back", async () => {
 		expect(await main(["config", "set", "install.cli_only", "true"])).toBe(0);
 		out = [];
@@ -153,7 +153,7 @@ describe("dg-skills config set", () => {
 	});
 });
 
-describe("dg-skills config edit", () => {
+describe("dg config edit", () => {
 	test("saves a valid edit", async () => {
 		seed("[install]\ncli_only = false\n");
 		editor('printf "[install]\\ncli_only = true\\n" > "$1"');

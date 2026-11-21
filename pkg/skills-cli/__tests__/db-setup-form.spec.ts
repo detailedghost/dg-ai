@@ -208,7 +208,7 @@ describe("db setup --secret form", () => {
 		expect(h.set).not.toHaveBeenCalled();
 		expect(h.runTest).toHaveBeenCalledWith(["pg1", "--session", "sess-1"]);
 		expect(h.stdout.filter((line) => line.startsWith("Next:"))).toEqual([
-			"Next: dg-skills db tables pg1",
+			"Next: dg db tables pg1",
 		]);
 	});
 
@@ -222,8 +222,8 @@ describe("db setup --secret form", () => {
 		expect(code).toBe(1);
 		expect(h.runTest).not.toHaveBeenCalled();
 		expect(h.stdout.some((line) => line.startsWith("Stored"))).toBe(false);
-		const again = h.stdout.find((line) => line.includes("dg-skills db setup"));
-		expect(again).toBe(`Next: dg-skills db setup ${PG_FORM_ARGS.join(" ")}`);
+		const again = h.stdout.find((line) => line.includes("dg db setup"));
+		expect(again).toBe(`Next: dg db setup ${PG_FORM_ARGS.join(" ")}`);
 	});
 
 	test("quotes an argument with a space when it prints the setup command again", async () => {
@@ -249,7 +249,7 @@ describe("db setup --secret form", () => {
 		const h = setupHarness(undefined);
 
 		await expect(runSetup(PG_FORM_ARGS, h.deps)).rejects.toThrow(
-			/dg-daemon is not running/,
+			/dg daemon is not running/,
 		);
 		expect(h.runTest).not.toHaveBeenCalled();
 	});

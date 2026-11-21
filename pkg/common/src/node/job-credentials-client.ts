@@ -10,7 +10,7 @@ import { loopbackHostHeader, readPidFile } from "./pidfile";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 export const OLDER_DAEMON_TEXT =
-	"this dg-daemon is older than the CLI — run dg daemon restart";
+	"this dg daemon is older than the CLI — run dg daemon restart";
 
 export type JobCredentialStatus = {
 	prefix: string;
@@ -40,7 +40,7 @@ async function parseBody(response: Response): Promise<unknown> {
 	}
 }
 
-/** Writes credentials and makes the grant of one job through the owner-token route of dg-daemon. */
+/** Writes credentials and makes the grant of one job through the owner-token route of the dg daemon. */
 export function createJobCredentialClient(options: {
 	paths: DgPaths;
 	job: string;
@@ -69,7 +69,7 @@ export function createJobCredentialClient(options: {
 			if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
 				const suffix = body.operation === "status" ? "" : "; the change may have been stored";
 				throw new DgCliError(
-					`dg-daemon did not answer within ${REQUEST_TIMEOUT_MS / 1000} s for the credentials of job "${job}"${suffix}`,
+					`dg daemon did not answer within ${REQUEST_TIMEOUT_MS / 1000} s for the credentials of job "${job}"${suffix}`,
 					EXIT_GENERAL_FAILURE,
 				);
 			}
@@ -81,7 +81,7 @@ export function createJobCredentialClient(options: {
 		if (response.status === 404 && error === undefined)
 			throw new DgCliError(OLDER_DAEMON_TEXT, EXIT_GENERAL_FAILURE);
 		throw new DgCliError(
-			error ?? `dg-daemon answered ${response.status} for the credentials of job "${job}"`,
+			error ?? `dg daemon answered ${response.status} for the credentials of job "${job}"`,
 			EXIT_GENERAL_FAILURE,
 		);
 	};

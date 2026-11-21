@@ -25,7 +25,7 @@ import { configPathOf, writeConfigFile } from "../utils/service-daemon";
 import { lines, readConfigFile, runCli } from "./service-cli-helpers";
 
 const NOTE =
-	'note: "dg-daemon service" is now "dg job"; this form goes away in the next major release';
+	'note: "dg service" is now "dg job"; this form goes away in the next major release';
 const NOT_MIGRATED =
 	"the daemon config is not migrated — run dg daemon start, then run this command again";
 
@@ -76,7 +76,7 @@ describe("service add on a migrated config", () => {
 		expect(result.code).toBe(0);
 		expect(lines(result.stdout)).toEqual([
 			'added service "x"',
-			"next: dg-daemon start, then dg-daemon service start x",
+			"next: dg daemon start, then dg service start x",
 		]);
 		expect(noteCount(result.stderr)).toBe(1);
 		expect(jobsOf(dgHome).x).toEqual({
@@ -96,7 +96,7 @@ describe("service add on a migrated config", () => {
 		expect(result.code).toBe(0);
 		expect(lines(result.stdout)).toEqual([
 			'added service "x"',
-			"next: dg-daemon start",
+			"next: dg daemon start",
 		]);
 		expect(jobsOf(dgHome).x).toEqual({
 			argv: [BUN, "run", "bot.ts"],
@@ -245,7 +245,7 @@ describe("service add against a live daemon that left no mark", () => {
 		expect(Date.now() - started).toBeLessThan(25_000);
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(
-			`the daemon config is not migrated — a dg-daemon from before this release runs (pid ${before.pid}); run dg daemon restart, then run this command again`,
+			`the daemon config is not migrated — a dg daemon from before this release runs (pid ${before.pid}); run dg daemon restart, then run this command again`,
 		);
 		expect(readFileSync(configPathOf(boot.dgHome), "utf8")).toBe(body);
 		expect(readPidFile(boot.dgHome)).toEqual(before);
@@ -270,7 +270,7 @@ describe("service add against a live daemon of this release that cannot write th
 		const result = await add(dgHome, port, "x", ["--cwd", cwd]);
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(
-			`the daemon config is not migrated — the dg-daemon (pid ${pid}) did not write the mark; see the daemon log`,
+			`the daemon config is not migrated — the dg daemon (pid ${pid}) did not write the mark; see the daemon log`,
 		);
 		expect(result.stderr).not.toContain("from before this release");
 		expect(readFileSync(configPathOf(dgHome), "utf8")).toBe(body);

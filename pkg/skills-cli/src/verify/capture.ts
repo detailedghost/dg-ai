@@ -50,8 +50,8 @@ const trimmedPath = (url: string): string => new URL(url).pathname.replace(/\/+$
 function assertSamePath(label: string, requested: string, landed: string, stateName?: string): void {
 	if (trimmedPath(requested) === trimmedPath(landed)) return;
 	const repair = stateName
-		? `the saved sign-in may have expired: save it again with \`dg-skills pw state save ${stateName}\``
-		: "save a sign-in with `dg-skills pw state save <name>` and add `state` to the role";
+		? `the saved sign-in may have expired: save it again with \`dg pw state save ${stateName}\``
+		: "save a sign-in with `dg pw state save <name>` and add `state` to the role";
 	throw new Error(
 		`${label}: the page landed on ${new URL(landed).pathname} instead of ${new URL(requested).pathname}. If that is a sign-in page, ${repair}.`,
 	);

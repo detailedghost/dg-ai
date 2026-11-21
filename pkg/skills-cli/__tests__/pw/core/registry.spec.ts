@@ -223,7 +223,7 @@ describe("isDaemonOf", () => {
 			isDaemonOf({ pid: 1, key: "gh" }, [
 				"/bin/zsh",
 				"-c",
-				"pgrep -f dg-skills pw daemon gh",
+				"pgrep -f dg pw daemon gh",
 			]),
 		).toBe(false);
 	});

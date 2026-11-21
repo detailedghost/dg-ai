@@ -5,19 +5,20 @@ description: 'Write a paired architecture decision record (a plain-English ADR i
 
 # /dg:adr — Decision Records
 
-Every decision is two files with one number and one slug. A people-facing ADR lives in `docs/adr/`. A terse agent decision lives in `.agents/decisions/`. `dg-skills adr` does the numbering, scaffolding, indexing, linting and lookup. This skill owns the rules.
+Every decision is two files with one number and one slug. A people-facing ADR lives in `docs/adr/`. A terse agent decision lives in `.agents/decisions/`. `dg adr` does the numbering, scaffolding, indexing, linting and lookup. This skill owns the rules.
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
-dg-skills adr --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" adr --help >/dev/null 2>&1 ||
+dg adr --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" adr --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
-If a step fails, run dg-skills doctor adr.
+If a step fails, run dg doctor adr.
 
 ## Usage
 
@@ -47,10 +48,10 @@ Grade limits: `eli5` 4, `high-school` 10, `college` 14, `phd` and `technical` no
 ## Write mode
 
 1. Apply the three gates. Any "no" stops here: the decision needs no record.
-2. Run `dg-skills adr new '<title>' --topic '<t>' [--covers '<glob>']... [--level <l>]`. Single-quote every user-derived argument and write an embedded single quote as `'\''`. Never pass a title that holds a newline. Repeat `--covers` once per glob. A repo without `.agents/decisions/README.md` needs `dg-skills adr init` first; ask before you run it.
+2. Run `dg adr new '<title>' --topic '<t>' [--covers '<glob>']... [--level <l>]`. Single-quote every user-derived argument and write an embedded single quote as `'\''`. Never pass a title that holds a newline. Repeat `--covers` once per glob. A repo without `.agents/decisions/README.md` needs `dg adr init` first; ask before you run it.
 3. Fill the ADR and the decision file.
-4. Run `dg-skills adr index`, then `dg-skills adr lint --changed`. Fix every finding. Repeat until lint exits 0. `decision-too-long` flags a decision over 25 non-blank lines below its front matter: cut or split it.
+4. Run `dg adr index`, then `dg adr lint --changed`. Fix every finding. Repeat until lint exits 0. `decision-too-long` flags a decision over 25 non-blank lines below its front matter: cut or split it.
 
 ## Ask mode
 
-Answer from the ADRs only. Cite ADR numbers. Quote each word and path as in [ask.md](references/ask.md). Check the answer with `dg-skills adr lint --grade - --level <l>` before you reply. Details: [ask.md](references/ask.md).
+Answer from the ADRs only. Cite ADR numbers. Quote each word and path as in [ask.md](references/ask.md). Check the answer with `dg adr lint --grade - --level <l>` before you reply. Details: [ask.md](references/ask.md).

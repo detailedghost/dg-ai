@@ -5,35 +5,36 @@ description: Query PostgreSQL and Snowflake databases with read-safe defaults an
 
 # Database Queries with db
 
-First run: install or refresh the CLI when it is missing or too old.
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old.
 
 ```bash
-dg-skills db --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" db --help >/dev/null 2>&1 ||
+dg db --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" db --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
-If a step fails, run dg-skills doctor credentials db stash.
+If a step fails, run dg doctor credentials db stash.
 
 ## Quick start
 
 ```bash
-dg-skills db connections
-dg-skills db test my-pg
-dg-skills db query my-pg "SELECT * FROM users LIMIT 10"
+dg db connections
+dg db test my-pg
+dg db query my-pg "SELECT * FROM users LIMIT 10"
 ```
 
 ## Usage
 
-**Usage:** `dg-skills db <setup|query|tables|describe|explain|schema|connections|test> [arguments] [--session ID] [--write] [--limit N] [--format F] [--max-cell N] [--schema S] [--file file.sql]` (see [connections.md](references/connections.md) for the full setup flag list)
+**Usage:** `dg db <setup|query|tables|describe|explain|schema|connections|test> [arguments] [--session ID] [--write] [--limit N] [--format F] [--max-cell N] [--schema S] [--file file.sql]` (see [connections.md](references/connections.md) for the full setup flag list)
 
 ## Flags
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
-| `--session ID` | none | Use this dg-agent session for the credential store. | the session of the current directory |
+| `--session ID` | none | Use this dg session for the credential store. | the session of the current directory |
 | `--write` | none | Allow DML, DDL, multiple statements, and `SELECT INTO`. | off (read-safe statements only) |
 | `--limit N` | none | Limit displayed query rows. | `50` |
 | `--format F` | none | Format query rows as `tsv`, `json`, or `markdown`. | `tsv` |
@@ -46,22 +47,22 @@ An unrecognized flag is rejected with an error. A SQL or table argument that its
 ## Commands
 
 ```bash
-dg-skills db query <conn> "SQL"
-dg-skills db query <conn> -f file.sql
-dg-skills db query <conn> "SQL" --write
-dg-skills db tables <conn>
-dg-skills db describe <conn> <table>
-dg-skills db explain <conn> "SQL"
-dg-skills db schema <conn>
-dg-skills db connections
-dg-skills db test <conn>
+dg db query <conn> "SQL"
+dg db query <conn> -f file.sql
+dg db query <conn> "SQL" --write
+dg db tables <conn>
+dg db describe <conn> <table>
+dg db explain <conn> "SQL"
+dg db schema <conn>
+dg db connections
+dg db test <conn>
 ```
 
-Connections are encrypted credentials named `db/<conn>`. Register them with `dg-skills db setup`; see [connections.md](references/connections.md) for each authentication mode.
+Connections are encrypted credentials named `db/<conn>`. Register them with `dg db setup`; see [connections.md](references/connections.md) for each authentication mode.
 
 ## Setup
 
-Run `dg-skills db connections`. If it lists the connection you need, skip this section.
+Run `dg db connections`. If it lists the connection you need, skip this section.
 
 If it lists none, or the human wants a new one, ask with `AskUserQuestion`:
 
@@ -75,7 +76,7 @@ If it lists none, or the human wants a new one, ask with `AskUserQuestion`:
 Then run ONE command:
 
 ```bash
-dg-skills db setup <name> --engine postgresql --host 127.0.0.1 --port 5432 \
+dg db setup <name> --engine postgresql --host 127.0.0.1 --port 5432 \
   --database <db> --user <user> --secret form
 ```
 
@@ -87,13 +88,13 @@ Never ask for a password, token, or key in chat. Never accept one there. The sec
 | `--secret command` | The host has only a terminal. | none |
 | `--secret aws` | The secret already lives in AWS Secrets Manager. Needs `asm-exec` from the Agent Toolkit for AWS `aws-core` plugin. | `--secret-id`, `--secret-key`, optional `--aws-profile`, `--aws-region` |
 
-`command` mode prints a `dg-skills credentials ... set ...` line. Claude Code `!` mode is not confirmed to give a TTY, so do not print a `!` form. Tell the human to run the printed line in their own terminal. It asks for the secret with a hidden prompt. Then run `dg-skills db test <name>`.
+`command` mode prints a `dg credentials ... set ...` line. Claude Code `!` mode is not confirmed to give a TTY, so do not print a `!` form. Tell the human to run the printed line in their own terminal. It asks for the secret with a hidden prompt. Then run `dg db test <name>`.
 
 Snowflake `--auth external_browser` has no secret. Omit `--secret`.
 
 Setup writes `readOnly=true` by default. PostgreSQL sessions start read-only, and `--write` is refused on such a connection. Snowflake relies on the role. For a writer and a reader, run setup again under a new name such as `<db>-reader`. Pass `--no-read-only` only for the writer.
 
-Setup reuses the session of the current directory, or runs `dg-agent start`. Every db verb accepts `--session`.
+Setup reuses the session of the current directory, or runs `dg agent start`. Every db verb accepts `--session`.
 
 ## Output
 
@@ -108,10 +109,10 @@ Queries are read-safe by default. `SELECT`, `SHOW`, `DESCRIBE`, non-analyzing `E
 The login URL goes to stderr, and the connection blocks until login completes. Run it in the background, poll the log, and relay the **last** `https://` line because each retry creates a new SAML request:
 
 ```bash
-dg-skills db test my-sf > "$(dg-skills stash db sso.log)" 2>&1
+dg db test my-sf > "$(dg stash db sso.log)" 2>&1
 ```
 
-Never pipe through `head` or `grep`, and do not run it in the foreground when an agent must relay the URL; buffering can make the prompt look hung. A user can instead run `dg-skills db test my-sf` once, themselves, to prime the temporary credential cache.
+Never pipe through `head` or `grep`, and do not run it in the foreground when an agent must relay the URL; buffering can make the prompt look hung. A user can instead run `dg db test my-sf` once, themselves, to prime the temporary credential cache.
 
 ## References
 

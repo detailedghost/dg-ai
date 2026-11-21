@@ -39,7 +39,7 @@ Settings: --client-id --client-secret-env --access-token-env --refresh-token-env
   --tenant-id --authority --redirect-uri --auth-mode --scopes --page-size
   --tab-id --account-hint --login-hint
 Use --account-profile NAME for workflows; --session ID selects a dg session.
-Start a session with dg-agent start --open. Profiles and OAuth caches use
+Start a session with dg agent start --open. Profiles and OAuth caches use
 dg-ai's encrypted database. Secrets are environment references only.`;
 
 function stripSession(args: string[]): { args: string[]; session?: string } {
@@ -102,7 +102,7 @@ function daemonRuntime(session?: string) {
 				return client;
 			} catch {
 				throw new Error(
-					"Inbox profile or live mail access requires a dg daemon session. Run dg-agent start --open, then pass --session ID (or use that session's working directory). Run dg-skills install if the binaries need updating.",
+					"Inbox profile or live mail access requires a dg daemon session. Run dg agent start --open, then pass --session ID (or use that session's working directory). Run dg install if the binaries need updating.",
 				);
 			}
 		})());
@@ -131,12 +131,12 @@ function daemonRuntime(session?: string) {
 			);
 		} catch {
 			throw new Error(
-				"Inbox daemon did not complete the request. Check the session, run dg-skills install, then restart the daemon and run dg-agent start --open.",
+				"Inbox daemon did not complete the request. Check the session, run dg install, then restart the daemon and run dg agent start --open.",
 			);
 		}
 		if (result.type === "error")
 			throw new Error(
-				"This daemon cannot complete inbox requests. Run dg-skills install, then restart the daemon and run dg-agent start --open.",
+				"This daemon cannot complete inbox requests. Run dg install, then restart the daemon and run dg agent start --open.",
 			);
 		if (!result.ok) {
 			const error =
@@ -179,7 +179,7 @@ function flags(args: string[]): Map<string, string> {
 		const flag = args[i];
 		if (!flag.startsWith("--"))
 			throw new Error(
-				"Profile settings require named flags. See dg-skills inbox profile --help.",
+				"Profile settings require named flags. See dg inbox profile --help.",
 			);
 		const equal = flag.indexOf("=");
 		const key = flag.slice(2, equal === -1 ? undefined : equal);
@@ -298,7 +298,7 @@ The URL works once, within 60 seconds. Run the command again for a new URL.`;
 /** Session id, the start step, the reload step, and the extension version. The token stays out of this text. */
 function extensionConnectError(session: ResolvedSession): string {
 	return [
-		`No extension peer on session ${session.sessionId}. Start the session with dg-agent start. If no extension is connected, install it with dg-skills install.`,
+		`No extension peer on session ${session.sessionId}. Start the session with dg agent start. If no extension is connected, install it with dg install.`,
 		"Then reload the Proton Mail tab so the extension observes session headers.",
 		"Inbox requires dg extension 1.11.0 or newer.",
 	].join(" ");
@@ -369,12 +369,12 @@ export async function runInbox(rawArgs: string[]): Promise<void> {
 			return;
 		}
 		if (args[1] !== "sign-in" || args.length !== 2)
-			throw new Error("Use dg-skills inbox proton sign-in.");
+			throw new Error("Use dg inbox proton sign-in.");
 		assertEntryMoved("inbox");
 		await runProtonSignIn(protonDataDir());
 		return;
 	}
-	if (ext) assertExtensionInstalled("dg-skills inbox --ext");
+	if (ext) assertExtensionInstalled("dg inbox --ext");
 	if (args[0] === "bootstrap-url") {
 		if (helpRequested(args)) {
 			console.log(bootstrapUrlHelp);

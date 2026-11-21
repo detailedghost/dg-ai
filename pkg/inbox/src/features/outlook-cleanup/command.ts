@@ -716,15 +716,15 @@ export async function visualizeCleanupPolicy(
 		refreshedHtmlPath: htmlPath,
 		nextDryRunCommand:
 			review.verdict === "approve"
-				? `dg-skills inbox apply --provider ${context.config.provider} --dir ${shellQuote(paths.dir)} --dry-run`
+				? `dg inbox apply --provider ${context.config.provider} --dir ${shellQuote(paths.dir)} --dry-run`
 				: undefined,
 		nextApplyCommand:
 			review.verdict === "approve"
-				? `dg-skills inbox apply --provider ${context.config.provider} --dir ${shellQuote(paths.dir)} --confirm`
+				? `dg inbox apply --provider ${context.config.provider} --dir ${shellQuote(paths.dir)} --confirm`
 				: undefined,
 		planPatchCommand:
 			review.verdict === "reject" && patchOperations > 0
-				? `dg-skills inbox cleanup plan-patch --provider ${context.config.provider} --dir ${shellQuote(paths.dir)} --patch-path ${shellQuote(patchPath)}`
+				? `dg inbox cleanup plan-patch --provider ${context.config.provider} --dir ${shellQuote(paths.dir)} --patch-path ${shellQuote(patchPath)}`
 				: undefined,
 	};
 	printJson(reviewSummary);

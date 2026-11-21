@@ -48,7 +48,7 @@ afterEach(() => {
 	cleanupDgHome(dgHome);
 });
 
-describe("dg-agent memory, with no daemon anywhere", () => {
+describe("dg memory, with no daemon anywhere", () => {
 	it("writes a memory and reads it back without ever starting one", async () => {
 		const id = await writeMemory([
 			"port bind race",

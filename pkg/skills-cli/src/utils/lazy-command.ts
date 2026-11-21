@@ -30,13 +30,13 @@ export function registerLazyLegacy(program: Command, spec: LazyLegacy): void {
 	});
 }
 
-/** Runs a feature-owned Commander subtree as `dg-skills <name> ...argv`; its errors reach the main handler. */
+/** Runs a feature-owned Commander subtree as `dg <name> ...argv`; its errors reach the main handler. */
 export async function runSubtree(
 	name: string,
 	register: (program: Command) => void,
 	argv: string[],
 ): Promise<void> {
-	const root = new Command("dg-skills").showHelpAfterError().exitOverride();
+	const root = new Command("dg").showHelpAfterError().exitOverride();
 	root.enablePositionalOptions();
 	register(root);
 	await root.parseAsync([name, ...argv], { from: "user" });

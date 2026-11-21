@@ -6,27 +6,28 @@ description: Sort, archive, and spam-block a Google Messages inbox through Messa
 # Google SMS cleanup
 
 Clean up a Google Messages inbox through Messages for Web. The work runs as
-`ssms` on `dg-skills`: `ssms google <verb>`. `ssms signal <verb>` is the other
+`dg ssms`: `dg ssms google <verb>`. `dg ssms signal <verb>` is the other
 provider and wraps `signal-cli` in daemon JSON-RPC mode. It does not touch
 Signal Desktop. Every behavior below is a configurable default. Override any
 value from the user's instructions, or from notes they asked to keep, before
 starting, and state the effective config back to the user.
 
-The executable is `dg-skills`.
-On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
+The executable is `dg`.
+On first use, the block installs the CLI when it is missing and prints an upgrade hint when it is too old. It needs no Bun at runtime:
 
 ```sh
-dg-skills ssms --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" ssms --help >/dev/null 2>&1 ||
+dg ssms --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" ssms --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
-if dg-skills ssms --help >/dev/null 2>&1; then dg-skills ssms --help; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" ssms --help; fi
+if dg ssms --help >/dev/null 2>&1; then dg ssms --help; else "${DG_HOME:-$HOME/.local}/bin/dg" ssms --help; fi
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
-**Usage:** `dg-skills ssms google <verb> [--config PATH] [--dry-run] [--limit N] [--draft ID] [--approve TOKEN]`
+**Usage:** `dg ssms google <verb> [--config PATH] [--dry-run] [--limit N] [--draft ID] [--approve TOKEN]`
 
-If a step fails, run dg-skills doctor ssms.
+If a step fails, run dg doctor ssms.
 
 ## Flags
 
@@ -45,7 +46,7 @@ If a step fails, run dg-skills doctor ssms.
 
 ## Prerequisites
 
-- `dg-skills ssms --help` runs. If it does not, install or refresh the CLI.
+- `dg ssms --help` runs. If it does not, run the first-run block again.
 - Messages for Web is paired at
   https://messages.google.com/web/u/0/conversations. Google sign-in may be
   required first; the user completes it. The CLI opens that page with the same
@@ -90,15 +91,15 @@ Pass the same map as `--config` when the user overrides a value.
 ## Steps
 
 1. Load the config. Confirm overrides with the user when anything is destructive
-   or unclear. Run `dg-skills ssms google status`.
-2. Run `dg-skills ssms google list`. The command clicks
+   or unclear. Run `dg ssms google status`.
+2. Run `dg ssms google list`. The command clicks
    `Load more conversations` until the end, or until the scope limit.
-3. Run `dg-skills ssms google classify`. It marks each thread keep,
+3. Run `dg ssms google classify`. It marks each thread keep,
    group, archive, spam, or ambiguous. Keep rules always win over archive or
-   spam rules. Open a thread with `ssms google read <conversation> --limit 20`
+   spam rules. Open a thread with `dg ssms google read <conversation> --limit 20`
    when the preview is unclear.
 4. Unless `dry_run` is true, act on clear-cut cases only:
-   `dg-skills ssms google cleanup`. Archive through the thread's
+   `dg ssms google cleanup`. Archive through the thread's
    Options menu. Report spam through Details, then Block & report spam.
    Never touch compose. With `allow_delete` false, never delete a conversation
    or a message. With `allow_send` false, never send; any outgoing text needs
@@ -111,7 +112,7 @@ Pass the same map as `--config` when the user overrides a value.
 5. Leave ambiguous items untouched and list them with the sender, the date, and
    a one-line preview. `flag_ambiguous` stays true unless the user overrides it.
 6. To answer one thread, draft then send that draft only:
-   `dg-skills ssms google draft --conversation ID --text TEXT`. The
+   `dg ssms google draft --conversation ID --text TEXT`. The
    approval token appears on the terminal device only, not in command output.
    On a terminal, `send --draft ID` asks for yes. Off a terminal, the user
    passes `--approve` with the token they saw. `--yes` does not send. The gate
@@ -122,7 +123,7 @@ Pass the same map as `--config` when the user overrides a value.
 
 ## Signal
 
-`ssms signal link` prints a QR and a linking URI for a device named `dg-cli`.
+`dg ssms signal link` prints a QR and a linking URI for a device named `dg-cli`.
 `list`, `read`, `receive`, `draft`, and `send --draft ID` are the same
 shape. Reactions, images, and quotes are drafted, then sent after an
 interactive yes or `--approve`. `--yes` does not send. The approval token

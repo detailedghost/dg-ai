@@ -491,7 +491,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			closeSocketWithoutSessions();
 		}
 		if (frame.type === "error") {
-			disconnectWaiters.get(frame.sessionId)?.reject(new Error("The daemon did not confirm disconnect. Update dg-daemon and retry."));
+			disconnectWaiters.get(frame.sessionId)?.reject(new Error("The daemon did not confirm disconnect. Update dg daemon and retry."));
 			disconnectWaiters.delete(frame.sessionId);
 		}
 
@@ -699,7 +699,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			return new Promise((resolve, reject) => {
 				const timer = setTimeout(() => {
 					disconnectWaiters.delete(sessionId);
-					reject(new Error("Disconnect was not confirmed. Update dg-daemon and retry."));
+					reject(new Error("Disconnect was not confirmed. Update dg daemon and retry."));
 				}, 5000);
 				disconnectWaiters.set(sessionId, {
 					resolve() { clearTimeout(timer); resolve(); },

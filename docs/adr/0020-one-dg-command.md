@@ -3,6 +3,7 @@
 Status: Accepted
 Date: 2026-10-22
 Topic: Platform
+Superseded by [ADR 0055](0055-one-dg-program-with-flat-commands.md) where they disagree: one compiled `dg` with flat commands, and the old program names are removed.
 
 ## Context
 

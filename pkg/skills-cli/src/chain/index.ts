@@ -414,10 +414,10 @@ export async function applyChain(
 function printHelp() {
 	process.stderr.write(
 		[
-			"Usage: dg-skills chain render <layer1> <layer2> ... [--target main] [--mark <ref>] [--repo owner/repo] [--independent ref1,ref2]",
-			"       dg-skills chain plan   <layer1> <layer2> ... [same flags] [--native]  — dry run, no provider calls",
-			"       dg-skills chain base   <layer1> <layer2> ...                         — base retargets only",
-			"       dg-skills chain apply  <layer1> <layer2> ... [same flags] [--native] — base retargets + PR/MR body upsert",
+			"Usage: dg chain render <layer1> <layer2> ... [--target main] [--mark <ref>] [--repo owner/repo] [--independent ref1,ref2]",
+			"       dg chain plan   <layer1> <layer2> ... [same flags] [--native]  — dry run, no provider calls",
+			"       dg chain base   <layer1> <layer2> ...                         — base retargets only",
+			"       dg chain apply  <layer1> <layer2> ... [same flags] [--native] — base retargets + PR/MR body upsert",
 			"",
 			"A layer is one ref, or a comma-separated set of mutually-independent refs",
 			'(e.g. "101,102"). Multiple positional layers form a dependency chain,',
@@ -429,8 +429,8 @@ function printHelp() {
 			"owner/repo#N refs are skipped with a reason, same PR/MR body update either way.",
 			"Not supported on GitLab — refuses with a clear message instead of failing obscurely.",
 			"",
-			"Run `dg-skills chain plan` first and show its full output before apply.",
-			"Honor host approvals and existing grants before `dg-skills chain apply`.",
+			"Run `dg chain plan` first and show its full output before apply.",
+			"Honor host approvals and existing grants before `dg chain apply`.",
 			"",
 		].join("\n"),
 	);

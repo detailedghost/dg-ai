@@ -4,7 +4,7 @@ export function registerCompletion(program: Command): void {
 	program
 		.command("completion")
 		.description(
-			"print the bash, zsh or fish completion script, or write or remove the completion files of dg, dg-skills, dg-agent and dg-daemon",
+			"print the bash, zsh or fish completion script, or write or remove the completion files of dg",
 		)
 		.addArgument(program.createArgument("[shell]", "bash, zsh or fish").choices(["bash", "zsh", "fish"]))
 		.option("--install", "write the completion files for every shell to the per-user folders")

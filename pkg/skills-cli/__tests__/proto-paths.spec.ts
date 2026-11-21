@@ -265,7 +265,7 @@ describe("proto --ext scrape, daemon relay through a fake extension peer", () =>
 			);
 
 			expect(result.code).toBe(1);
-			expect(result.stderr).toMatch(/dg-daemon did not answer/i);
+			expect(result.stderr).toMatch(/dg daemon did not answer/i);
 			expect(result.stderr).not.toMatch(/Downloads/i);
 			expect(result.stderr).not.toMatch(/crdownload/i);
 		} finally {

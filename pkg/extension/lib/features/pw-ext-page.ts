@@ -384,7 +384,7 @@ export function pwExtPageAction(
 		if (/^e\d+$/.test(target)) {
 			const found = (win[REFS] as Map<string, Element> | undefined)?.get(target);
 			if (!found || !found.isConnected)
-				return `Ref ${target} not found. Run dg-skills pw --ext snapshot again.`;
+				return `Ref ${target} not found. Run dg pw --ext snapshot again.`;
 			return [found];
 		}
 		try {

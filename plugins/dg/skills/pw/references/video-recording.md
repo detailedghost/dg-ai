@@ -1,24 +1,24 @@
 # Video Recording
 
-Capture browser automation sessions as video for debugging, documentation, or verification. Produces WebM (VP8/VP9 codec). Needs ffmpeg; if missing, `dg-skills pw` prints the `bunx playwright-core install ffmpeg` hint. Relative filenames resolve against the output directory (`$(dg-skills stash pw)/`).
+Capture browser automation sessions as video for debugging, documentation, or verification. Produces WebM (VP8/VP9 codec). Needs ffmpeg; if missing, `dg pw` prints the `bunx playwright-core install ffmpeg` hint. Relative filenames resolve against the output directory (`$(dg stash pw)/`).
 
 ## Basic Recording
 
 ```bash
-dg-skills pw open
+dg pw open
 
-dg-skills pw video-start demo.webm
+dg pw video-start demo.webm
 
-dg-skills pw video-chapter "Getting Started" --description="Opening the homepage" --duration=2000
+dg pw video-chapter "Getting Started" --description="Opening the homepage" --duration=2000
 
-dg-skills pw goto https://example.com
-dg-skills pw snapshot
-dg-skills pw click e1
+dg pw goto https://example.com
+dg pw snapshot
+dg pw click e1
 
-dg-skills pw video-chapter "Filling Form" --description="Entering test data" --duration=2000
-dg-skills pw fill e2 "test input"
+dg pw video-chapter "Filling Form" --description="Entering test data" --duration=2000
+dg pw fill e2 "test input"
 
-dg-skills pw video-stop
+dg pw video-stop
 ```
 
 ## Best Practices
@@ -26,13 +26,13 @@ dg-skills pw video-stop
 ### 1. Use Descriptive Filenames
 
 ```bash
-dg-skills pw video-start recordings/login-flow-2024-01-15.webm
-dg-skills pw video-start recordings/checkout-test-run-42.webm
+dg pw video-start recordings/login-flow-2024-01-15.webm
+dg pw video-start recordings/checkout-test-run-42.webm
 ```
 
 ### 2. Record entire hero scripts.
 
-When recording a video for the user or as a proof of work, it is best to create a code snippet and execute it with `dg-skills pw-code` (it asks for your approval each time).
+When recording a video for the user or as a proof of work, it is best to create a code snippet and execute it with `dg pw-code` (it asks for your approval each time).
 It allows pulling appropriate pauses between the actions and annotating the video. There are new Playwright APIs for that.
 
 1) Perform scenario using CLI and take note of all locators and actions. You'll need those locators to request their bounding boxes for highlight.

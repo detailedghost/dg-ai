@@ -104,7 +104,7 @@ const rejection = async (run: () => Promise<unknown>) =>
 		(error: unknown) => error,
 	);
 
-describe("dg-daemon stop --force service listing", () => {
+describe("dg daemon stop --force service listing", () => {
 	it("lists with /jobs, reads body.jobs and does not call /services", async () => {
 		const table = fakeProcessTable([424242, 424243]);
 		const { requests } = setup(424242, {
@@ -205,7 +205,7 @@ describe("dg-daemon stop --force service listing", () => {
 	});
 });
 
-describe("dg-daemon stop --force against a daemon from before this release", () => {
+describe("dg daemon stop --force against a daemon from before this release", () => {
 	it("ends the daemon and each service process tree with real processes", async () => {
 		const spawnSleeper = () => {
 			const proc = Bun.spawn(

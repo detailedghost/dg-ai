@@ -25,7 +25,7 @@ function names(report: SniffJson, type: string): string[] {
 		.sort();
 }
 
-describe("dg-skills sniff inventory output", () => {
+describe("dg sniff inventory output", () => {
 	test("stdout and stderr carry no env, Terraform, Docker or CI secret value", async () => {
 		const root = world.repo(secretBearingTree());
 		const run = await world.sniff([root], world.tmp("sniff-cwd-"));
@@ -156,7 +156,7 @@ describe("dg-skills sniff inventory output", () => {
 	});
 });
 
-describe("dg-skills sniff empty inventory", () => {
+describe("dg sniff empty inventory", () => {
 	test("an empty directory reports zero items on stdout with exit 0", async () => {
 		const root = world.tree({});
 		const run = await world.sniff([root], world.tmp("sniff-cwd-"));
@@ -179,7 +179,7 @@ describe("dg-skills sniff empty inventory", () => {
 	});
 });
 
-describe("dg-skills sniff root errors keep the legacy exit status 1", () => {
+describe("dg sniff root errors keep the legacy exit status 1", () => {
 	test("a missing path exits 1 with the legacy message and an empty stdout", async () => {
 		const cwd = world.tmp("sniff-cwd-");
 		const missing = join(cwd, "does-not-exist");
@@ -214,7 +214,7 @@ describe("dg-skills sniff root errors keep the legacy exit status 1", () => {
 	});
 });
 
-describe("dg-skills sniff help", () => {
+describe("dg sniff help", () => {
 	test("--help exits 0, prints usage and scans nothing", async () => {
 		const root = world.repo(secretBearingTree());
 		const run = await world.sniff(["--help"], root);

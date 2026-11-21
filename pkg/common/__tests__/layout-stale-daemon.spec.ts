@@ -30,7 +30,7 @@ const livePid = (): string => JSON.stringify({ pid: process.pid });
 const twoUsedText = (from: string, to: string): string =>
 	`dg: two daemon folders hold data: ${from} and ${to}. dg does not choose one and does not merge them. ${RENAME_SENTENCE}`;
 const asideLine = (dest: string, to: string): string =>
-	`dg: set aside ${dest} as ${to}; dg copied no file from it, and dg-skills clean keeps it`;
+	`dg: set aside ${dest} as ${to}; dg copied no file from it, and dg clean keeps it`;
 
 function put(path: string, body: string): void {
 	mkdirSync(dirname(path), { recursive: true });
@@ -266,7 +266,7 @@ posix("stale target set aside", () => {
 		const result = await run();
 
 		expect(lines).toEqual([
-			`dg: set aside unused ${paths.daemonDir} as ${String(outcomeOf(result, "daemon")?.asideTo)}; dg-skills clean removes it`,
+			`dg: set aside unused ${paths.daemonDir} as ${String(outcomeOf(result, "daemon")?.asideTo)}; dg clean removes it`,
 		]);
 	});
 

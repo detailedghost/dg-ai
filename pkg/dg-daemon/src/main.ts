@@ -29,7 +29,7 @@ async function afterLayout(action: Command): Promise<void> {
 	await daemonLayoutHooks().keychainMove(paths);
 }
 
-/** The dg-daemon program with every command registered and nothing parsed. */
+/** The dg daemon program with every command registered and nothing parsed. */
 export async function buildProgram(): Promise<Command> {
 	const [
 		{ Command },
@@ -50,7 +50,7 @@ export async function buildProgram(): Promise<Command> {
 	]);
 	const program = new Command();
 	program
-		.name("dg-daemon")
+		.name("dg daemon")
 		.description(
 			"Loopback HTTP+WebSocket daemon hosting many chat sessions for dg:start.",
 		)
@@ -174,7 +174,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 		if (err instanceof CommanderError) return err.exitCode;
 		emitRedacted(
 			(line) => console.error(line),
-			`dg-daemon: ${describeError(err)}`,
+			`dg daemon: ${describeError(err)}`,
 		);
 		return err instanceof DgCliError ? err.exitCode : EXIT_GENERAL_FAILURE;
 	}

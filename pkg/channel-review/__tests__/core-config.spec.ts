@@ -119,11 +119,11 @@ describe("loadConfig defaults", () => {
 		).toEqual({ github: ["ghe.corp.example"], gitlab: ["git.corp.example"] });
 	});
 
-	test("builds the claude allowedTools default around the dg-skills thrash subcommand", () => {
+	test("builds the claude allowedTools default around the dg thrash subcommand", () => {
 		const scratch = process.env.AI_SCRATCH_DIR ?? "/tmp/ai";
 		const tools = load().runner.claude.allowedTools;
 		expect(tools).toEqual([
-			"Bash(dg-skills thrash:*)",
+			"Bash(dg thrash:*)",
 			"Agent",
 			`Read(/${scratch}/thrash/**)`,
 			"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**)",
@@ -166,14 +166,14 @@ describe("loadConfig defaults", () => {
 		},
 	);
 
-	test("grants one Bash rule per dg-skills subcommand to each default list", () => {
+	test("grants one Bash rule per dg subcommand to each default list", () => {
 		const claude = load().runner.claude;
 		const grants = (tools: string[]) =>
 			tools.filter((tool) =>
-				tool.startsWith("Bash(dg-skills"),
+				tool.startsWith("Bash(dg "),
 			);
-		expect(grants(claude.allowedTools)).toEqual(["Bash(dg-skills thrash:*)"]);
-		expect(grants(claude.addressAllowedTools)).toEqual(["Bash(dg-skills address:*)"]);
+		expect(grants(claude.allowedTools)).toEqual(["Bash(dg thrash:*)"]);
+		expect(grants(claude.addressAllowedTools)).toEqual(["Bash(dg address:*)"]);
 	});
 
 	test("keeps an explicit allowedTools override untouched", () => {
@@ -485,7 +485,7 @@ describe("loadConfig address", () => {
 		expect(config.owner.senderIds).toEqual([]);
 	});
 
-	test("builds the address allowlist from the clone root and the dg-skills address subcommand", () => {
+	test("builds the address allowlist from the clone root and the dg address subcommand", () => {
 		const tools = load({ address: { cloneRoot: "/srv/clones" } }).runner.claude.addressAllowedTools;
 		expect(tools).toEqual([
 			"Agent",
@@ -497,7 +497,7 @@ describe("loadConfig address", () => {
 			"Bash(git:*)",
 			"Bash(gh:*)",
 			"Bash(glab:*)",
-			"Bash(dg-skills address:*)",
+			"Bash(dg address:*)",
 			"Bash(bun:*)",
 			"Bash(npm:*)",
 			"Bash(npx:*)",

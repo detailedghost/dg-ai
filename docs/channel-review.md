@@ -10,15 +10,15 @@ a model for the selected runner. Install thrash separately on every review machi
 It needs a Teams bot relay that streams each chat's messages over Server-Sent
 Events; see the [relay contract](../pkg/channel-review/README.md) and
 [relay setup](../plugins/dg/skills/channel-review/references/relay-setup.md). Start
-on dev in a test chat. A human signs in to AWS SSO and adds the bot to the chat. Run `dg-skills channel-review status --env dev` before
-`dg-skills channel-review start --env dev`. Read
+on dev in a test chat. A human signs in to AWS SSO and adds the bot to the chat. Run `dg channel-review status --env dev` before
+`dg channel-review start --env dev`. Read
 [setup](../plugins/dg/skills/channel-review/references/setup.md) and
 [commands](../plugins/dg/skills/channel-review/references/commands.md) for production
 rollout, custom emojis, request tokens, and recovery.
 
 Review progress and handled requests use the shared local `daemon.db`, with one
 state row per environment. The first writable start imports legacy JSON once and
-retains the source. Deploy compatible `dg-daemon` and `dg-skills` builds together;
+retains the source. Deploy one `dg` release for the daemon and the CLI;
 see [the migration decision](adr/0018-channel-review-state-in-daemon-db.md).
 
 ## Architecture and automation
@@ -35,12 +35,12 @@ Installing the skill does not authorize starting unattended automation.
 The [CLI-only installation](install.md#cli-only-install) supports channel review
 without the browser extension. The channel-review process still needs its own
 runner, authentication, relay, and private configuration. Run
-`dg-skills channel-review setup` in a terminal to create that configuration.
+`dg channel-review setup` in a terminal to create that configuration.
 
 ## Move to a job
 
 To run the review bot as a [job](jobs-and-services.md) instead, export the state of one env with
-`dg-skills channel-review export --env <env> --label <label>`. The command writes `<state>/jobs/<label>/import.json` with mode
+`dg channel-review export --env <env> --label <label>`. The command writes `<state>/jobs/<label>/import.json` with mode
 `0600`: the cursor of each chat, the handled requests, the current review and the automation state. It reads the state and
 changes nothing. The export refuses, with a `channel-review export:` line and exit 1, when the old daemon of that env runs;
-stop it first with `dg-skills channel-review stop --env <env>`.
+stop it first with `dg channel-review stop --env <env>`.

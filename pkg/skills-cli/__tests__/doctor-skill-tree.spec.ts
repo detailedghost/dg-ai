@@ -43,7 +43,7 @@ describe("packaged doctor skill tree", () => {
 
 	test("probes doctor --help in the bootstrap gate before the first call", () => {
 		const text = skillText(NAME);
-		expect(text).toContain("dg-skills doctor --help");
+		expect(text).toContain("dg doctor --help");
 		expect(text).toContain("bootstrap.sh");
 		expect(text).toContain("--cli-only");
 		const { gate, call } = firstCallIndex(text);
@@ -53,9 +53,9 @@ describe("packaged doctor skill tree", () => {
 
 	test("runs doctor with --json by the bare launcher name", () => {
 		const text = skillText(NAME);
-		expect(text).toContain("dg-skills doctor --json");
+		expect(text).toContain("dg doctor --json");
 		for (const { file, text: body } of treeFiles(NAME))
-			for (const line of body.split("\n").filter((l) => l.includes("dg-skills")))
+			for (const line of body.split("\n").filter((l) => /\bdg\s+[a-z]/.test(l)))
 				expect([file, line.includes(".dg/bin/")]).toEqual([file, false]);
 	});
 

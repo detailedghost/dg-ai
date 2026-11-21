@@ -86,7 +86,7 @@ function groupWithoutExtLines(text: string): string[] {
 function plainBatchOpenLines(text: string): string[] {
 	return text
 		.split("\n")
-		.filter((line) => /dg-skills pw batch-open (?!--)["<]/.test(line))
+		.filter((line) => /dg pw batch-open (?!--)["<]/.test(line))
 		.filter((line) => !line.includes("--group"));
 }
 
@@ -128,7 +128,7 @@ describe("ext opt-in rule A: no SKILL.md requires the extension", () => {
 });
 
 describe("ext opt-in rule B: the require-extension gate runs only with --ext", () => {
-	const gate = "dg-skills require-extension chat || exit 1";
+	const gate = "dg require-extension chat || exit 1";
 
 	test("a gate line without --ext is reported", () => {
 		const offenders = gateWithoutExtOffenders([
@@ -148,13 +148,13 @@ describe("ext opt-in rule B: the require-extension gate runs only with --ext", (
 
 	test("a double-spaced invocation without --ext is reported", () => {
 		const offenders = gateWithoutExtOffenders([
-			{ path: "x/SKILL.md", text: "dg-skills  require-extension x || exit 1" },
+			{ path: "x/SKILL.md", text: "dg  require-extension x || exit 1" },
 		]);
 		expect(offenders).toHaveLength(1);
 	});
 
 	test("--extension is not accepted as --ext", () => {
-		const text = "--extension only: dg-skills require-extension x || exit 1";
+		const text = "--extension only: dg require-extension x || exit 1";
 		expect(
 			gateWithoutExtOffenders([{ path: "x/SKILL.md", text }]),
 		).toHaveLength(1);
@@ -162,7 +162,7 @@ describe("ext opt-in rule B: the require-extension gate runs only with --ext", (
 
 	test("the generated doctor line is not an offender", () => {
 		const doctor =
-			"If a step fails, run dg-skills doctor require-extension install.";
+			"If a step fails, run dg doctor require-extension install.";
 		expect(
 			gateWithoutExtOffenders([{ path: "x/SKILL.md", text: doctor }]),
 		).toEqual([]);
@@ -170,7 +170,7 @@ describe("ext opt-in rule B: the require-extension gate runs only with --ext", (
 
 	test("a prose mention of the gate is not a command, so it does not pass by carrying --ext", () => {
 		const prose =
-			"`proto --ext` and the `dg-skills require-extension <skill>` check stop";
+			"`proto --ext` and the `dg require-extension <skill>` check stop";
 		expect(
 			gateWithoutExtOffenders([
 				{ path: "x.md", text: prose.replace("--ext", "") },
@@ -179,7 +179,7 @@ describe("ext opt-in rule B: the require-extension gate runs only with --ext", (
 		expect(GATE_COMMAND.test(prose)).toBe(false);
 		expect(
 			gateWithoutExtOffenders([
-				{ path: "x.md", text: "dg-skills require-extension x || exit 1" },
+				{ path: "x.md", text: "dg require-extension x || exit 1" },
 			]),
 		).toHaveLength(1);
 	});
@@ -217,9 +217,9 @@ describe("ext opt-in user docs: launch and grouped batch-open examples carry --e
 		/pw launch\b|pw batch-open.*--group/.test(line);
 
 	test("the line check flags launch and grouped batch-open without --ext", () => {
-		expect(needsExt("dg-skills pw launch --browser brave <refs>")).toBe(true);
-		expect(needsExt("dg-skills pw batch-open --group x a")).toBe(true);
-		expect(needsExt("dg-skills pw batch-open a")).toBe(false);
+		expect(needsExt("dg pw launch --browser brave <refs>")).toBe(true);
+		expect(needsExt("dg pw batch-open --group x a")).toBe(true);
+		expect(needsExt("dg pw batch-open a")).toBe(false);
 	});
 
 	for (const file of USER_DOCS) {
@@ -243,32 +243,32 @@ describe("ext opt-in doc grep gate: batch-open callers never group without --ext
 
 	test("the line check flags --group without --ext and accepts the other forms", () => {
 		expect(
-			groupWithoutExtLines("dg-skills pw batch-open --group pr <url>"),
+			groupWithoutExtLines("dg pw batch-open --group pr <url>"),
 		).toHaveLength(1);
 		expect(
-			groupWithoutExtLines("dg-skills pw batch-open --ext --group pr <url>"),
+			groupWithoutExtLines("dg pw batch-open --ext --group pr <url>"),
 		).toEqual([]);
-		expect(groupWithoutExtLines("dg-skills pw batch-open <url>")).toEqual([]);
+		expect(groupWithoutExtLines("dg pw batch-open <url>")).toEqual([]);
 	});
 
 	test("a --group wrapped onto the next line without --ext is flagged", () => {
 		expect(
-			groupWithoutExtLines("dg-skills pw batch-open <url>\n  --group pr"),
+			groupWithoutExtLines("dg pw batch-open <url>\n  --group pr"),
 		).toHaveLength(1);
 		expect(
-			groupWithoutExtLines("dg-skills pw batch-open --ext\n  --group pr <url>"),
+			groupWithoutExtLines("dg pw batch-open --ext\n  --group pr <url>"),
 		).toEqual([]);
 	});
 
 	test("an --ext on the next, separate command does not cover a grouped batch-open", () => {
 		expect(
 			groupWithoutExtLines(
-				"dg-skills pw batch-open --group pr <url>\ndg-skills pw launch --ext <url>",
+				"dg pw batch-open --group pr <url>\ndg pw launch --ext <url>",
 			),
 		).toHaveLength(1);
 		expect(
 			groupWithoutExtLines(
-				"  dg-skills pw batch-open --group pr <url>\n  dg-skills pw launch --ext <url>",
+				"  dg pw batch-open --group pr <url>\n  dg pw launch --ext <url>",
 			),
 		).toHaveLength(1);
 	});
@@ -285,9 +285,9 @@ describe("ext opt-in doc grep gate: batch-open callers never group without --ext
 			[],
 		);
 		expect(plainBatchOpenLines("batch-open opens tabs")).toEqual([]);
-		expect(plainBatchOpenLines("dg-skills pw batch-open <url>")).toHaveLength(1);
+		expect(plainBatchOpenLines("dg pw batch-open <url>")).toHaveLength(1);
 		expect(
-			plainBatchOpenLines("dg-skills pw batch-open --ext --group pr <url>"),
+			plainBatchOpenLines("dg pw batch-open --ext --group pr <url>"),
 		).toEqual([]);
 	});
 

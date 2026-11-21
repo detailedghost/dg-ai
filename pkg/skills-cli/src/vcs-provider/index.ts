@@ -172,7 +172,7 @@ async function cmdMergedPrForBranch(args: string[]): Promise<number> {
 /** Declare the ten provider verbs; detect degrades to JSON nulls while other failures retain command error status. */
 export const commandSpec = {
 	name: "vcs-provider",
-	description: "Query the detected VCS provider (GitHub or GitLab) for repo info, issues, and pull requests. Run dg-skills vcs-provider <subcommand>.",
+	description: "Query the detected VCS provider (GitHub or GitLab) for repo info, issues, and pull requests. Run dg vcs-provider <subcommand>.",
 	subcommands: {
 		detect: {
 			description: "Detect the provider and repo; always exits 0, degrading to nulls plus a reason on failure",

@@ -151,7 +151,7 @@ describe("cmdStart — pid file reclaim", () => {
 	}, 20_000);
 });
 
-describe("dg-agent start session id output", () => {
+describe("dg agent start session id output", () => {
 	let dgHome: string;
 	let port: number;
 
@@ -188,7 +188,7 @@ describe("dg-agent start session id output", () => {
 	});
 });
 
-describe("a second dg-agent start on a live daemon", () => {
+describe("a second dg agent start on a live daemon", () => {
 	let dgHome: string;
 	let port: number;
 	let firstHandle: ReturnType<typeof readPidFile>;
@@ -229,7 +229,7 @@ describe("a second dg-agent start on a live daemon", () => {
 	});
 });
 
-describe("dg-agent start — protocol version mismatch on attach", () => {
+describe("dg agent start — protocol version mismatch on attach", () => {
 	it("refuses to attach, names the remediation, and registers no new session", async () => {
 		const dgHome = freshDgHome();
 		const port = allocatePort();
@@ -321,7 +321,7 @@ describe("a daemon of another protocol", () => {
 
 			expect(err.exitCode).toBe(EXIT_PROTOCOL_MISMATCH);
 			expect(err.message).toContain("another release");
-			expect(err.message).toContain("dg-skills install");
+			expect(err.message).toContain("dg install");
 			expect(capture.logs).toEqual([]);
 		} finally {
 			capture.restore();
@@ -355,7 +355,7 @@ describe("a daemon of another protocol", () => {
 			const result = await runCli(dgHome, port, ["recv"]);
 
 			expect(result.exitCode).toBe(EXIT_PROTOCOL_MISMATCH);
-			expect(result.stderr).toContain("dg-skills install");
+			expect(result.stderr).toContain("dg install");
 			expect(result.stderr).not.toContain("did not answer");
 		} finally {
 			cleanupDgHome(dgHome);

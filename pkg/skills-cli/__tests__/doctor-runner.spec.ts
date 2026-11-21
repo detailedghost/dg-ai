@@ -27,18 +27,18 @@ describe("formatFailures", () => {
 
 	test("omits the detail part when a failure has no detail", () => {
 		expect(formatFailures(report([{ item: "ext", checks: [check("bad", "fail", "")] }]))).toBe("  ❌ ext / bad");
-		expect(formatFailures(report([{ item: "ext", checks: [check("bad", "fail", "", "dg-skills install ext")] }]))).toBe(
-			"  ❌ ext / bad\n      Fix: dg-skills install ext",
+		expect(formatFailures(report([{ item: "ext", checks: [check("bad", "fail", "", "dg install ext")] }]))).toBe(
+			"  ❌ ext / bad\n      Fix: dg install ext",
 		);
 	});
 
 	test("adds a fix line under a failure that has a fix", () => {
 		const text = formatFailures(
-			report([{ item: "ext", checks: [check("bad", "fail", "broken", "dg-skills install ext"), check("worse", "fail", "gone")] }]),
+			report([{ item: "ext", checks: [check("bad", "fail", "broken", "dg install ext"), check("worse", "fail", "gone")] }]),
 		);
 		expect(text.split("\n")).toEqual([
 			"  ❌ ext / bad: broken",
-			"      Fix: dg-skills install ext",
+			"      Fix: dg install ext",
 			"  ❌ ext / worse: gone",
 		]);
 	});

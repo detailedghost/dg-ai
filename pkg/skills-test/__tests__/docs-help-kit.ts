@@ -2,6 +2,8 @@ import { join } from "node:path";
 import { fenceEnv } from "../../skills-cli/__tests__/fence-env";
 import { makeTempDir, REPO_ROOT } from "./test-support";
 
+export const OWN_WORDS: readonly string[] = ["completion", "help", "--help", "--version", "__complete"];
+
 export type HelpRun = { code: number; stdout: string; stderr: string };
 
 const CODE_SPAN = /`([^`\n]+)`/g;

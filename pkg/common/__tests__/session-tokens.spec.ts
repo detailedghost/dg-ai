@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 describe("selectSoleSession messages", () => {
-	it("tells the user to run dg-agent start when no session matches the cwd", () => {
+	it("tells the user to run dg agent start when no session matches the cwd", () => {
 		const cwd = freshDir();
 		let caught: unknown;
 		try {
@@ -38,13 +38,13 @@ describe("selectSoleSession messages", () => {
 			caught = error;
 		}
 		expect(caught).toBeInstanceOf(DgCliError);
-		expect((caught as Error).message).toContain("dg-agent start");
+		expect((caught as Error).message).toContain("dg agent start");
 	});
 
 	it("tells the user to start a session when only other directories have one", () => {
 		const cwd = freshDir();
 		expect(() => selectSoleSession([record("a", freshDir())], cwd)).toThrow(
-			/dg-agent start/,
+			/dg agent start/,
 		);
 	});
 

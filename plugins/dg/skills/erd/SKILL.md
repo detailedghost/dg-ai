@@ -1,28 +1,29 @@
 ---
 name: erd
 description: Generate architecture maps and arbitrary Mermaid diagrams as Markdown or standalone HTML.
-allowed-tools: Bash(dg-skills:*), Read, AskUserQuestion
+allowed-tools: Bash(dg:*), Read, AskUserQuestion
 ---
 
 # /dg:erd
 
 Map a codebase and its reachable database schema, or render a described graph from structured JSON.
 
-First run: install or refresh the CLI when it is missing or too old.
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old.
 
 ```bash
-dg-skills erd --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" erd --help >/dev/null 2>&1 ||
+dg erd --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" erd --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
-If a step fails, run dg-skills doctor erd.
+If a step fails, run dg doctor erd.
 
 ## Usage
 
-**Usage:** `dg-skills erd resolve <concept-or-path>` · `dg-skills erd generate [scope] [--depth N] [--out <path>] [--type er|flow] [--html]` · `dg-skills erd render --type <er|flow|sequence|state|class> --data <file|-> [--out <path>] [--html]`
+**Usage:** `dg erd resolve <concept-or-path>` · `dg erd generate [scope] [--depth N] [--out <path>] [--type er|flow] [--html]` · `dg erd render --type <er|flow|sequence|state|class> --data <file|-> [--out <path>] [--html]`
 
 ## Flags
 
@@ -40,8 +41,8 @@ If a step fails, run dg-skills doctor erd.
 Before a large scan, print `Scanning <scope>...` so the user sees progress.
 
 ```bash
-dg-skills erd resolve "<concept-or-path>"
-dg-skills erd generate <scope> [--depth N] [--out <path>] [--type er|flow] [--html]
+dg erd resolve "<concept-or-path>"
+dg erd generate <scope> [--depth N] [--out <path>] [--type er|flow] [--html]
 ```
 
 `resolve` returns `{ candidates: ErdCandidate[] }`. For fuzzy input, present those candidates with `AskUserQuestion`, then generate the chosen candidate ID. A hard collection failure exits 1 and writes the error to stderr.
@@ -53,8 +54,8 @@ Without `--type`, `generate` writes the full architecture document: directory tr
 Use `render` when the requested sequence, state, class, flow, or schema graph comes from reading and describing the system rather than directory analysis:
 
 ```bash
-dg-skills erd render --type sequence --data flow.json
-printf '%s' "$JSON" | dg-skills erd render --type state --data - --html
+dg erd render --type sequence --data flow.json
+printf '%s' "$JSON" | dg erd render --type state --data - --html
 ```
 
 Create the smallest truthful JSON document. Never invent a participant, transition, relation, import, table, or column. See [render data shapes](references/render-data-shapes.md) for exact schemas.
@@ -63,7 +64,7 @@ The default artifact is Markdown with one or more fenced Mermaid blocks. `--html
 
 ## Database boundary
 
-`erd` never reads database credentials. Live discovery re-enters the same installed `dg-skills` binary through `db connections` and `db schema <conn>`, then falls back to static schema sources.
+`erd` never reads database credentials. Live discovery re-enters the same installed `dg` binary through `db connections` and `db schema <conn>`, then falls back to static schema sources.
 
 ## References
 

@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { writeShims } from "../src/install/shims";
+import { compiledProgramPath } from "@dg/common/node/program";
 
 export type Outcome = "kept" | "replaced";
 
@@ -30,7 +30,7 @@ export type Snapshot = {
 };
 
 export const KEPT_SENTENCE = (path: string): string =>
-	`dg: kept ${path}; it is not a dg launcher. Remove it or rename it, then run dg-skills install again`;
+	`dg: kept ${path}; it is not a dg launcher. Remove it or rename it, then run dg install again`;
 
 export const launcherMarker = (
 	platform: NodeJS.Platform = process.platform,
@@ -53,12 +53,23 @@ export function generatedLauncher(
 	name: string,
 	platform: NodeJS.Platform = process.platform,
 ): string {
-	const bin = join(area, "generated-bin");
-	writeShims(bin, join(area, "other-root"), platform, () => {});
-	return readFileSync(
-		join(bin, platform === "win32" ? `${name}.cmd` : name),
-		"utf8",
-	);
+	const other = join(area, "other-root");
+	if (platform === "win32")
+		return `@echo off\r\n"${other}\\runtime\\current\\bun.exe" "${other}\\lib\\current\\dg.js" ${name} %*\r\n`;
+	return oldShimText(other, name);
+}
+
+export const oldShimText = (root: string, name: string): string =>
+	`#!/bin/sh\nroot='${root}'\nexec "$root/runtime/current/bun" "$root/lib/current/dg.js" ${name} "$@"\n`;
+
+export function writeOldShims(
+	bin: string,
+	area: string,
+	names: readonly string[],
+	platform: NodeJS.Platform = process.platform,
+): void {
+	for (const name of names)
+		put(join(bin, platform === "win32" ? `${name}.cmd` : name), generatedLauncher(area, name, platform));
 }
 
 const put = (path: string, text: string | Uint8Array, mode = 0o755): void => {
@@ -231,12 +242,8 @@ export function snapshot(path: string): Snapshot {
 
 export function isReplacedLauncher(
 	dest: string,
+	root: string,
 	platform: NodeJS.Platform = process.platform,
 ): boolean {
-	const stat = lstatSync(dest);
-	return (
-		stat.isFile() &&
-		!stat.isSymbolicLink() &&
-		readFileSync(dest, "utf8").includes(launcherMarker(platform))
-	);
+	return lstatSync(dest).isSymbolicLink() && readlinkSync(dest) === compiledProgramPath(root, platform);
 }

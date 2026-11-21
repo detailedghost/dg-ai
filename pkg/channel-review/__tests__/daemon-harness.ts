@@ -34,7 +34,7 @@ import {
 type SubscribeRequest = Parameters<ChatProvider["subscribe"]>[0];
 type Script = (request: SubscribeRequest) => AsyncGenerator<ChatEvent>;
 
-export const DAEMON_ARGS = "/usr/bin/bun /x/dg-skills channel-review run --env dev";
+export const DAEMON_ARGS = "/usr/bin/bun /x/dg channel-review run --env dev";
 
 export function untilAbort(signal: AbortSignal): Promise<void> {
 	return new Promise((resolve) => {

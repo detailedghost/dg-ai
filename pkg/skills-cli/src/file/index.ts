@@ -145,7 +145,7 @@ async function cmdBucket(args: string[]): Promise<number> {
 }
 
 const command = defineCommand({
-	name: "dg-skills file",
+	name: "dg file",
 	description: "File and organize issues on the repo's detected git provider (GitHub or GitLab).",
 	subcommands: {
 		create: {

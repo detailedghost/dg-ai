@@ -89,7 +89,7 @@ function codeOf(url: string): string {
 	return url.split("#_chatcode=")[1] ?? "";
 }
 
-describe("dg-agent start output", () => {
+describe("dg agent start output", () => {
 	beforeAll(async () => {
 		dgHome = freshDgHome();
 		port = allocatePort();
@@ -106,7 +106,7 @@ describe("dg-agent start output", () => {
 
 		expect(run.logs).toEqual([]);
 		expect(run.errors).toEqual([
-			"No browser extension is connected. Install it with: dg-skills install",
+			"No browser extension is connected. Install it with: dg install",
 		]);
 	});
 

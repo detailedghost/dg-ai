@@ -6,7 +6,7 @@ export const ADR_DIR = "docs/adr";
 export const DECISION_DIR = ".agents/decisions";
 export const TOC_FILE = `${ADR_DIR}/toc.md`;
 export const README_FILE = `${DECISION_DIR}/README.md`;
-export const NOT_INITIALIZED = "not initialized. Run dg-skills adr init first.";
+export const NOT_INITIALIZED = "not initialized. Run dg adr init first.";
 
 const RECORD_FILE = /^(\d{4})-.+\.md$/;
 

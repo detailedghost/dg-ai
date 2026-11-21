@@ -38,7 +38,7 @@ beforeEach(() => {
 afterEach(() => world.reset());
 afterAll(() => world.cleanup());
 
-describe("compiled dg-skills jot from an external cwd", () => {
+describe("compiled dg jot from an external cwd", () => {
 	test("add, ls, read, kind and done round-trip a note with only git on PATH", async () => {
 		const added = await world.jot(["add"], cwd, "# compiled note\n\nbody\n", only);
 		expect(added.exitCode).toBe(0);

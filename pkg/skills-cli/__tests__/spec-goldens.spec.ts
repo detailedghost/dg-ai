@@ -49,7 +49,7 @@ function expectTreesMatch(
 	}
 }
 
-describe("dg-skills spec parity with the legacy spec-cli", () => {
+describe("dg spec parity with the legacy spec-cli", () => {
 	for (const golden of goldens) {
 		test(`${golden.args.join(" ").slice(0, 60)} [${golden.id}]`, async () => {
 			const outcome = await executeSpecCase(golden, context, runSourceSpec);

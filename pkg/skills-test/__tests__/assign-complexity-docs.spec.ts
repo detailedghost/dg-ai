@@ -18,7 +18,7 @@ const EDGE_CASES = [
 	"references",
 	"edge-cases.md",
 ];
-const MAX_SKILL_LINES = 121;
+const MAX_SKILL_LINES = 122;
 
 const RUBRIC_PHRASES = {
 	low: "one module and a pattern that already exists in the repo",

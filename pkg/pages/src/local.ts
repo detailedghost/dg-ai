@@ -12,7 +12,7 @@ const HELD_BOOTSTRAPS_KEY = "dg_local_bootstraps";
 const HELD_BOOTSTRAPS_MAX = 16;
 
 export const SESSION_ENDED_TEXT =
-	"Your session has ended, so run dg-agent start --open again to get a new link.";
+	"Your session has ended, so run dg agent start --open again to get a new link.";
 const REFUSED_TOKENS_KEY = "dg_local_refused";
 
 function refusedTokens(storage: PageStorage): string[] {

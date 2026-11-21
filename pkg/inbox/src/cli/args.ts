@@ -590,7 +590,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
 export function createCliProgram(): Command {
 	const program = new Command()
-		.name("dg-skills inbox")
+		.name("dg inbox")
 		.description(
 			"Review Proton Mail, Gmail, and Outlook before applying inbox changes.",
 		)
@@ -608,7 +608,7 @@ export function createCliProgram(): Command {
 
 export function createHelpProgram(): Command {
 	const program = new Command()
-		.name("dg-skills inbox")
+		.name("dg inbox")
 		.description(
 			"Review Proton Mail, Gmail, and Outlook before applying inbox changes.",
 		)

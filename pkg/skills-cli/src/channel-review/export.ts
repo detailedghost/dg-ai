@@ -81,7 +81,7 @@ async function writeExport(
 	const record = readPidRecord(paths.pidPath);
 	if (record !== undefined && (await isOurDaemon(record.pid, platform))) {
 		throw new ExportRefusal(
-			`the ${env} daemon is running (pid ${record.pid}) — stop it first with dg-skills channel-review stop --env ${env}`,
+			`the ${env} daemon is running (pid ${record.pid}) — stop it first with dg channel-review stop --env ${env}`,
 		);
 	}
 	const chatId = configuredChatId(paths.configPath);

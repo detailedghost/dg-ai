@@ -84,7 +84,7 @@ export const INBOX_RELAY = defineRelayFeature<InboxRelayBodies>()({
 			multiple:
 				"Multiple extension peers make the inbox request ambiguous; keep one extension connected to this session.",
 			none: ({ sessionId }) =>
-				`No extension peer on session ${sessionId}. Start the session with dg-agent start. If no extension is connected, install it with dg-skills install. ` +
+				`No extension peer on session ${sessionId}. Start the session with dg agent start. If no extension is connected, install it with dg install. ` +
 				"Then open or reload an authenticated Proton Mail tab and retry. " +
 				"Inbox requires dg extension 1.11.0 or newer.",
 		},
@@ -156,7 +156,7 @@ export const PROTO_RELAY = defineRelayFeature<ProtoRelayBodies>()({
 			multiple:
 				"Multiple extension peers make the prototype request ambiguous; keep one extension connected to this session.",
 			none: ({ sessionId }) =>
-				`No extension peer on session ${sessionId}. Start the session with dg-agent start. If no extension is connected, install it with dg-skills install. ` +
+				`No extension peer on session ${sessionId}. Start the session with dg agent start. If no extension is connected, install it with dg install. ` +
 				"Then retry.",
 		},
 		{ check: "burn" },
@@ -218,7 +218,7 @@ export const PW_EXT_RELAY = defineRelayFeature<PwExtRelayBodies>()({
 			multiple:
 				"Multiple extension peers make the pw --ext request ambiguous; keep one extension connected to this session.",
 			none: ({ sessionId }) =>
-				`No extension peer on session ${sessionId}. Pair the dg-ai-extension with this session, then retry. Run dg-skills doctor pw for the steps.`,
+				`No extension peer on session ${sessionId}. Pair the dg-ai-extension with this session, then retry. Run dg doctor pw for the steps.`,
 		},
 		{ check: "burn" },
 		{

@@ -47,7 +47,7 @@ function plan(paths: DgPaths, options: MigrateOptions, store: boolean): Plan | u
 	parseDgToml(stringifyDgToml(raw), paths.configTomlPath);
 	if (legacy.secrets.length && !store)
 		throw new DgCliError(
-			`dg config: ${legacy.secrets.map((secret) => secret.key).join(", ")} must move into the credential store, and dg-daemon is not reachable. Next: run dg-daemon start, then run dg-skills doctor so the move runs. Nothing was changed.`,
+			`dg config: ${legacy.secrets.map((secret) => secret.key).join(", ")} must move into the credential store, and the daemon is not reachable. Next: run dg daemon start, then run dg doctor so the move runs. Nothing was changed.`,
 		);
 	return { raw, legacy };
 }
@@ -69,7 +69,7 @@ async function fold(paths: DgPaths, options: MigrateOptions): Promise<MigrateRes
 			} catch (error) {
 				const reason = secret.value ? describeError(error).replaceAll(secret.value, "[redacted]") : describeError(error);
 				throw new DgCliError(
-					`dg config: could not store ${secret.key} as credential ${secret.name} (${reason}). Next: check dg-daemon with dg-skills doctor, then run the command again. config.toml was not written and no backup was kept; a secret stored before this one stays in the store.`,
+					`dg config: could not store ${secret.key} as credential ${secret.name} (${reason}). Next: check the daemon with dg doctor, then run the command again. config.toml was not written and no backup was kept; a secret stored before this one stays in the store.`,
 				);
 			}
 		}

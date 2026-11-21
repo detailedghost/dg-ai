@@ -284,7 +284,7 @@ describe("channel-review start and stop", () => {
 		const result = await run(["start"]);
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(configPath());
-		expect(result.stderr).toContain("run: dg-skills channel-review setup");
+		expect(result.stderr).toContain("run: dg channel-review setup");
 	});
 
 	test("setup without a terminal writes a template, not config.json, and exits 1", async () => {

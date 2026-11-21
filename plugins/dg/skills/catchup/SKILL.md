@@ -26,18 +26,19 @@ Resolve the compiled CLI in every fresh shell, delegated execution, and resumed
 command. Shell variables do not persist between tool calls:
 
 ```bash
-dg-skills catchup --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" catchup --help >/dev/null 2>&1 ||
+dg catchup --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" catchup --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
-if dg-skills catchup --help >/dev/null 2>&1; then dg-skills catchup; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" catchup; fi
+if dg catchup --help >/dev/null 2>&1; then dg catchup; else "${DG_HOME:-$HOME/.local}/bin/dg" catchup; fi
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
-If a step fails, run dg-skills doctor catchup.
+If a step fails, run dg doctor catchup.
 
-For a local-only catchup, use `dg-skills catchup --no-push` after the same resolution.
-`dg-skills catchup --help` prints usage without inspecting Git or running build tools.
+For a local-only catchup, use `dg catchup --no-push` after the same resolution.
+`dg catchup --help` prints usage without inspecting Git or running build tools.
 Run from the intended repository or worktree.
 
 Honor the host's existing narrow approvals and permissions already granted in

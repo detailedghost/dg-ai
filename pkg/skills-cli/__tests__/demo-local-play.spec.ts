@@ -48,7 +48,7 @@ describe("demo <plan> local default", () => {
 		expect(argv.slice(-3, -1)).toEqual(["demo", "player"]);
 		expect(typeof playerJob().slug).toBe("string");
 		expect(run.out).toContain("recording in");
-		expect(run.out).toContain(`dg-skills demo status ${playerJob().slug}`);
+		expect(run.out).toContain(`dg demo status ${playerJob().slug}`);
 	});
 
 	test("saves the plan under the demos dir and logs the player next to it", async () => {
@@ -172,7 +172,7 @@ describe("demo <plan> with no browser at all", () => {
 			}),
 		);
 		expect(run.code).toBe(3);
-		expect(run.err).toContain("dg-skills pw install-browser");
+		expect(run.err).toContain("dg pw install-browser");
 		expect(world.spawned).toHaveLength(0);
 	});
 });
@@ -330,7 +330,7 @@ describe("demo <plan> browser selection", () => {
 			demoDeps({ isWSL: () => true, windowsBrowserPresent: () => false }),
 		);
 		expect(run.code).toBe(3);
-		expect(run.err).toContain("dg-skills pw install-browser");
+		expect(run.err).toContain("dg pw install-browser");
 		expect(world.spawned).toHaveLength(0);
 	});
 
@@ -496,7 +496,7 @@ describe("demo <plan> browser selection", () => {
 				if (saved.DG_BROWSER !== undefined) process.env["DG_BROWSER"] = saved.DG_BROWSER;
 			});
 		expect(run.code).toBe(3);
-		expect(run.err).toContain("dg-skills pw install-browser");
+		expect(run.err).toContain("dg pw install-browser");
 		expect(world.spawned).toHaveLength(0);
 	});
 });

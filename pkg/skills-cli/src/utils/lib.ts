@@ -1,10 +1,11 @@
 /**
- * Shared helpers for the dg-skills CLI (batch-open/demo/install/launch/detect):
+ * Shared helpers for the dg CLI (batch-open/demo/install/launch/detect):
  * per-OS extension paths, zip extraction, and fetching the CI-built extension
  * from GitHub Releases. Platform detection (isWSL) and subprocess running
  * (run) live in @dg/common/node and are only imported here.
  */
 
+import { spawnSync } from "node:child_process";
 import {
 	mkdirSync,
 	mkdtempSync,
@@ -181,12 +182,49 @@ export type Release = {
 
 export type PickedAsset = { name: string; url: string; version: string };
 
-export type PickedBundle = {
+export type PickedProgram = {
 	version: string;
 	assetName: string;
 	url: string;
 	sumsUrl: string;
 };
+
+function hasAvx2(cpuinfoFile: string): boolean {
+	try {
+		return /^flags\s*:.*\bavx2\b/m.test(readFileSync(cpuinfoFile, "utf8"));
+	} catch {
+		return true;
+	}
+}
+
+const AVX2_PROBE =
+	"Add-Type -Namespace Dg -Name Cpu -MemberDefinition '[DllImport(\"kernel32.dll\")] public static extern bool IsProcessorFeaturePresent(uint feature);'; [Dg.Cpu]::IsProcessorFeaturePresent(40)";
+
+let avx2: boolean | undefined;
+
+function windowsHasAvx2(): boolean {
+	if (avx2 === undefined) {
+		const run = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", AVX2_PROBE], { encoding: "utf8", timeout: 30_000 });
+		avx2 = run.status !== 0 || run.stdout.trim() !== "False";
+	}
+	return avx2;
+}
+
+/** The release platform key for this host; x64 without avx2 takes the baseline build. */
+export function platformKey(
+	platform: string = process.platform,
+	arch: string = process.arch,
+	cpuinfoFile: string = process.env.DG_CPUINFO_FILE || "/proc/cpuinfo",
+	probeWindowsAvx2: () => boolean = windowsHasAvx2,
+): string {
+	const base = `${platform === "win32" ? "windows" : platform}-${arch}`;
+	if (base === "linux-x64" && !hasAvx2(cpuinfoFile)) return `${base}-baseline`;
+	if (base === "windows-x64" && !probeWindowsAvx2()) return `${base}-baseline`;
+	return base;
+}
+
+/** The compiled release asset for a platform key: `dg-<key>`, with `.exe` on Windows. */
+export const compiledAssetName = (key: string): string => `dg-${key}${key.startsWith("windows-") ? ".exe" : ""}`;
 
 export const UA = { "User-Agent": "dg-ai-extension" };
 
@@ -239,7 +277,8 @@ export function pickExtAsset(
 }
 
 /** The dg-lib bundle and its SHA256SUMS from the pinned or newest vX.Y.Z release, which must also ship runtime.json. */
-export function pickBundle(releases: Release[], version?: string): PickedBundle {
+/** The compiled dg asset of the `v<version>` release (else the newest) for this host's platform key. */
+export function pickProgram(releases: Release[], version?: string, key: string = platformKey()): PickedProgram {
 	const rel = pickRelease(releases, version);
 	if (!rel) {
 		throw new Error(
@@ -249,16 +288,16 @@ export function pickBundle(releases: Release[], version?: string): PickedBundle 
 		);
 	}
 	const found = releaseVersion(rel.tag_name);
-	const assetName = `dg-lib-${found}.tar.gz`;
+	const assetName = compiledAssetName(key);
 	const url = (name: string) => rel.assets.find((a) => a.name === name)?.browser_download_url;
-	const [bundleUrl, sumsUrl, runtimeUrl] = [assetName, "SHA256SUMS", "runtime.json"].map(url);
-	if (!bundleUrl) {
+	const [programUrl, sumsUrl] = [assetName, "SHA256SUMS"].map(url);
+	if (!programUrl) {
 		throw new Error(
-			`v${found} has no ${assetName}: releases before the dg-lib bundle ship compiled binaries; run that release's bootstrap.sh: curl -fsSL https://github.com/${REPO}/releases/download/v${found}/bootstrap.sh | sh`,
+			`v${found} has no ${assetName}: releases before the compiled dg ship a bundle; run that release's bootstrap.sh: curl -fsSL https://github.com/${REPO}/releases/download/v${found}/bootstrap.sh | sh`,
 		);
 	}
-	if (!sumsUrl || !runtimeUrl) throw new Error(`v${found} has no SHA256SUMS or runtime.json asset`);
-	return { version: found, assetName, url: bundleUrl, sumsUrl };
+	if (!sumsUrl) throw new Error(`v${found} has no SHA256SUMS asset`);
+	return { version: found, assetName, url: programUrl, sumsUrl };
 }
 
 /** The hash SHA256SUMS lists for `assetName` (GNU `<hash>  <name>` or `<hash> *<name>`), lowercased. */
@@ -324,7 +363,7 @@ export async function downloadReleaseAsset(
 	return { zip, version: asset.version };
 }
 
-/** The data dir that holds `runtime/` and `lib/`. Matches bootstrap.sh and bootstrap.ps1. */
+/** The data dir that holds `bin/<version>/dg`. Matches bootstrap.sh and bootstrap.ps1. */
 export function installRoot(env: NodeJS.ProcessEnv = process.env): string {
 	return resolveDgPaths({ env }).dataDir;
 }
@@ -333,13 +372,7 @@ export function cliBinDir(env: NodeJS.ProcessEnv = process.env): string {
 	return resolveDgPaths({ env }).binDir;
 }
 
-/** The launcher shim for a program: `<root>/bin/<name>`, `.cmd` on Windows. */
-export function cliDest(binaryName: string): string {
-	const name = process.platform === "win32" ? `${binaryName}.cmd` : binaryName;
-	return join(cliBinDir(), name);
-}
-
-/** The bundle version `lib/current` points at, or undefined before the first bundle install. */
+/** The version `bin/current` points at, else the 6.3 bundle that `lib/current` points at, else undefined. */
 export function readCurrentVersion(root: string = installRoot()): string | undefined {
-	return readCurrent(root, "lib");
+	return readCurrent(root, "bin") ?? readCurrent(root, "lib");
 }

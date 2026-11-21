@@ -377,8 +377,8 @@ function setAside(step: Step, { seams, say }: Context): { asideTo: string } | { 
 		const asideTo = setAsideUnusedRoot(step.dest, seams.now());
 		say(
 			kept
-				? `dg: set aside ${step.dest} as ${asideTo}; dg copied no file from it, and dg-skills clean keeps it`
-				: `dg: set aside unused ${step.dest} as ${asideTo}; dg-skills clean removes it`,
+				? `dg: set aside ${step.dest} as ${asideTo}; dg copied no file from it, and dg clean keeps it`
+				: `dg: set aside unused ${step.dest} as ${asideTo}; dg clean removes it`,
 		);
 		return { asideTo };
 	} catch (error) {
@@ -440,7 +440,7 @@ async function applyStep(step: Step, context: Context): Promise<Applied> {
 		case "skip":
 			return settled(step, { kind: "kept", reason: "child-kept" });
 		case "keepUsed":
-			context.say(`dg: kept ${step.from}; ${step.to} already exists and holds data. dg-skills doctor reports both copies`);
+			context.say(`dg: kept ${step.from}; ${step.to} already exists and holds data. dg doctor reports both copies`);
 			return settled(step, { kind: "kept", reason: "target-used" });
 		case "block": {
 			const outcome = blockedOutcome(step, action.reason);

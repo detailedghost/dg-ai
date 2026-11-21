@@ -2,16 +2,16 @@
 	"dg-demo": {
 		"source": "plugins/dg/skills/demo",
 		"files": {
-			"SKILL.md": "5b5fa33254e3a7ee546575e8d1f60764366f99c00479d533663ad0570b989067",
-			"references/authoring.md": "76d88ebff395ca1a6291b3240e0eabc9dc54557123bcfa21423d4e60dd6c92a4"
+			"SKILL.md": "d090de30aa95558a939800186182c66983158dd93cb8641a067d59a6b3352935",
+			"references/authoring.md": "a0f111e32176830e493abf94ca0888247e247864b75877bf86016c2a243a464a"
 		}
 	},
 	"dg-proto": {
 		"source": "plugins/dg/skills/proto",
 		"files": {
-			"SKILL.md": "487936f82f3417973feb85e29c1387b968e84f406439204da9b9ebaaec612521",
-			"references/local-ui.md": "34d7cf27b90f937d0c0b5573657b1f989c319eead8e28a5a0e2f78cdc0d17a8a",
-			"references/local-plan.md": "3dfdec4f1094fe8ad34d41b60112fe4737fb44176a0fad09204829ff1c2878ce",
+			"SKILL.md": "b05fccc4d88c67e4533da505cef3c901daa61e28ebac02bd36a801d9c8005356",
+			"references/local-ui.md": "9c723639e1e89408597a164eca0f1632ca1b52932b045229be04c27cc2cea8da",
+			"references/local-plan.md": "53d599bc1f3c5622550f3b3af7952a4f35620c9592ce4d3f234e2c95015747c0",
 			"references/local-logic.md": "4d6194bcc6ecec93c8ee1182a7407875bb69446065978dbdd9610aac751e39cf"
 		}
 	}

@@ -1,6 +1,6 @@
 # Reading Levels
 
-A level sets how simply the prose reads. `dg-skills adr lint` grades each ADR against the limit. The level comes from the ADR `Level:` line, else the `level:` key in `.agents/decisions/README.md`, else `high-school`.
+A level sets how simply the prose reads. `dg adr lint` grades each ADR against the limit. The level comes from the ADR `Level:` line, else the `level:` key in `.agents/decisions/README.md`, else `high-school`.
 
 | Level | Grade limit | In plain words |
 |---|---|---|

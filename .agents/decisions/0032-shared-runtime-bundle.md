@@ -4,9 +4,11 @@ covers: ["pkg/launcher/**", "pkg/common/src/node/program.ts", "pkg/skills-cli/sr
 
 [ADR 0032](../../docs/adr/0032-shared-runtime-bundle.md)
 
+Superseded in part by [ADR 0055](0055-one-dg-program-with-flat-commands.md): the runtime and bundle stay only as the 6.3 bridge.
+
 - Install one pinned Bun runtime under `<root>/runtime/bun-v<version>/` and one minified, code-split bundle under `<root>/lib/<version>/`. `<root>` comes from `resolveDgPaths`.
 - Point `runtime/current` and `lib/current` at the active versions with symlinks (junctions on Windows). Replace them by create-then-rename.
-- Make `bin/dg-skills`, `bin/dg-agent` and `bin/dg-daemon` shims that run `runtime/current/bun lib/current/dg.js <program>`.
+- Write no `bin/dg-skills`, `bin/dg-agent` or `bin/dg-daemon` file. `bin/dg` runs the compiled program (ADR 0055).
 - Make `pkg/launcher/src/dg.ts` import only the named program. Import each command's code inside its action so `--version` and `--help` load almost nothing.
 - Start a sibling program with `programCommand()`. Name service units and detached listeners with `launcherCommand()`, which uses the stable `current` links.
 - Never spawn a `.cmd` shim from in-tree code. Never use the user's own `bun` on PATH.

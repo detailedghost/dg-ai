@@ -82,8 +82,8 @@ describe.each(
 	};
 
 	it("tells the agent to start the session and install the extension", () => {
-		expect(hint("sess-1")).toContain("Start the session with dg-agent start.");
-		expect(hint("sess-1")).toContain("install it with dg-skills install");
+		expect(hint("sess-1")).toContain("Start the session with dg agent start.");
+		expect(hint("sess-1")).toContain("install it with dg install");
 	});
 
 	it("prints no /start URL and no token placeholder", () => {

@@ -1,5 +1,5 @@
 {
-	"name": "dg-skills",
+	"name": "dg",
 	"commands": [
 		{
 			"name": "inbox",
@@ -327,7 +327,7 @@
 		},
 		{
 			"name": "credentials",
-			"description": "Manage secrets in dg-daemon's encrypted credential store; values are never printed.",
+			"description": "Manage secrets in dg daemon's encrypted credential store; values are never printed.",
 			"commands": [
 				{
 					"name": "list",
@@ -381,7 +381,7 @@
 				},
 				{
 					"name": "exec",
-					"description": "Have dg-daemon run a command with credentials in env vars; the CLI never holds a value, output is scrubbed, and pw/ values need the command in the dg exec-allowlist file"
+					"description": "Have dg daemon run a command with credentials in env vars; the CLI never holds a value, output is scrubbed, and pw/ values need the command in the dg exec-allowlist file"
 				}
 			],
 			"options": [
@@ -468,7 +468,7 @@
 		},
 		{
 			"name": "install",
-			"description": "stage the dg-ai-extension for loading + install the pinned Bun runtime, the dg bundle and the dg, dg-skills, dg-agent and dg-daemon launchers, or copy skill instruction files with --skills-only",
+			"description": "stage the dg-ai-extension for loading + install the compiled dg program and its launcher, or copy skill instruction files with --skills-only",
 			"options": [
 				{
 					"flags": [
@@ -487,13 +487,13 @@
 					"flags": [
 						"--cli-only"
 					],
-					"description": "install the runtime, bundle and launchers; skip the extension"
+					"description": "install the dg program and its launcher; skip the extension"
 				},
 				{
 					"flags": [
 						"--agent-only"
 					],
-					"description": "install the runtime, bundle and launchers; skip the extension, for a non-Claude agent that only needs phone"
+					"description": "install the dg program and its launcher; skip the extension, for a non-Claude agent that only needs phone"
 				},
 				{
 					"flags": [
@@ -848,7 +848,7 @@
 		},
 		{
 			"name": "vcs-provider",
-			"description": "Query the detected VCS provider (GitHub or GitLab) for repo info, issues, and pull requests. Run dg-skills vcs-provider <subcommand>.",
+			"description": "Query the detected VCS provider (GitHub or GitLab) for repo info, issues, and pull requests. Run dg vcs-provider <subcommand>.",
 			"commands": [
 				{
 					"name": "detect",
@@ -2157,7 +2157,7 @@
 				},
 				{
 					"name": "loops",
-					"description": "List running dg-skills bg jobs whose log stopped growing or that ran too long",
+					"description": "List running dg bg jobs whose log stopped growing or that ran too long",
 					"options": [
 						{
 							"flags": [
@@ -2235,7 +2235,7 @@
 		},
 		{
 			"name": "doctor",
-			"description": "check that each dg-skills item has the tools, credentials and settings it needs; on a terminal, browse the results and apply a fix after a yes",
+			"description": "check that each dg item has the tools, credentials and settings it needs; on a terminal, browse the results and apply a fix after a yes",
 			"options": [
 				{
 					"flags": [
@@ -2257,7 +2257,7 @@
 		},
 		{
 			"name": "completion",
-			"description": "print the bash, zsh or fish completion script, or write or remove the completion files of dg, dg-skills, dg-agent and dg-daemon",
+			"description": "print the bash, zsh or fish completion script, or write or remove the completion files of dg",
 			"options": [
 				{
 					"flags": [

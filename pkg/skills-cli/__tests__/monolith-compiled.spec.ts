@@ -93,7 +93,7 @@ beforeAll(() => {
 
 afterAll(() => disposeSpecContext(context));
 
-describe("compiled dg-skills monolith worktree-gen from a relocated plugin", () => {
+describe("compiled dg monolith worktree-gen from a relocated plugin", () => {
 	test("generates the worktree script from an external cwd with the installed assets and no helper on PATH", async () => {
 		const out = join(context.base, "compiled-scan.mjs");
 		const run = await compiled(["worktree-gen", worktree, "--out", out]);
@@ -191,7 +191,7 @@ describe("compiled dg-skills monolith worktree-gen from a relocated plugin", () 
 	});
 });
 
-describe("compiled dg-skills monolith helper operations", () => {
+describe("compiled dg monolith helper operations", () => {
 	let helperTree: string;
 	const live = () => join(helperTree, ".agents", "monolith.md");
 

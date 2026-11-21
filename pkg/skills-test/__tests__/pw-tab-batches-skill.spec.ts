@@ -6,7 +6,7 @@ import { REPO_ROOT, readRepoFile } from "./test-support";
 const SKILLS = join(REPO_ROOT, "plugins", "dg", "skills");
 const SKILL = readRepoFile("plugins", "dg", "skills", "pw", "SKILL.md");
 const TABS_PATH = join(SKILLS, "pw", "references", "tabs.md");
-const OLD_NAMES = /dg:browser|dg-skills (batch-open|launch)\b/;
+const OLD_NAMES = /dg:browser|dg (batch-open|launch)\b/;
 
 function section(heading: string): string {
 	const lines = SKILL.split("\n");
@@ -54,7 +54,7 @@ describe("pw tab batches replace the browser skill", () => {
 			"#_tab_group=<name>",
 			"Group color",
 			"Load unpacked",
-			"dg-skills install [chrome|firefox] [--local]",
+			"dg install [chrome|firefox] [--local]",
 			"%LOCALAPPDATA%\\dg\\dg-ai-extension-chrome",
 			"~/.local/share/dg/dg-ai-extension-chrome",
 			"~/Library/Application Support/dg/dg-ai-extension-chrome",

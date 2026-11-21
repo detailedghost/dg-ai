@@ -10,17 +10,18 @@ Pick the best-fit primary engineering agent, plus any QA agents, for a piece of 
 Annotating the slices of a `/dg:spec` spec is one *application* of that pick — the one that persists its answer — not the
 premise. Most work has no spec bundle anywhere near it, and "who should do this?" is a valid question on its own.
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
-dg-skills spec --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" spec --help >/dev/null 2>&1 ||
+dg spec --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" spec --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
-If a step fails, run dg-skills doctor assign proxy spec.
+If a step fails, run dg doctor assign proxy spec.
 
 ## Invocation
 
@@ -72,8 +73,8 @@ without a spec path is an error, not a no-op.
 
 ### Common — pick the agents
 
-1. **Load roster.** Run `dg-skills spec roster` — one call, emits the live capability list as compact `name<TAB>description`
-   lines (`dg-skills spec roster --full` appends each agent's first prose paragraph). With no local agents directory it lists the packaged `dg:<name>` personas.
+1. **Load roster.** Run `dg spec roster` — one call, emits the live capability list as compact `name<TAB>description`
+   lines (`dg spec roster --full` appends each agent's first prose paragraph). With no local agents directory it lists the packaged `dg:<name>` personas.
    Prefer this over globbing the agents directory and reading each file.
 2. **Pick.** For the work in hand (standalone) or each unassigned slice (spec mode), choose:
    - `primary` — one agent. The dominant language/domain wins. Default to a generalist (`dg:shell` or no assignment +
@@ -82,7 +83,7 @@ without a spec path is an error, not a no-op.
      CI/Docker/Terraform touches, `dg:qa-writer` for test-authoring work, `dg:reviewer` for cross-cutting refactors,
      `dg:security` for auth/secrets/crypto/PII.
    - `effort` — leave unset unless this work needs to deviate from `primary`'s tier default. The default lives in one
-     place, [`references/model-tiers.json`](references/model-tiers.json) (`dg-skills assign resolve` reads it at run
+     place, [`references/model-tiers.json`](references/model-tiers.json) (`dg assign resolve` reads it at run
      time), so emitting the default value would only restate derivable state. Set `effort` to `low`, `medium` or `xhigh`
      (never `high`; the table skips it) only to deviate. A complex slice (cross-cutting architecture, security-sensitive
      design, ambiguous trade-offs, even on a `sonnet` primary) may get `xhigh` with no question.

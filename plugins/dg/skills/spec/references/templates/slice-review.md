@@ -22,7 +22,7 @@ This is a review pass, not the build, so the tier is decoupled from the primary 
 > Review this slice (`<name>`, files: `<files>`) for: **feasibility** (can it be implemented
 > independently within its declared `depends_on`?), **completeness** (missing acceptance criteria
 > or Contracts gaps?), **risk** (integration risk with sibling slices — slices with no dependency
-> path between them MUST touch disjoint files — `dg-skills spec lint-waves` already checked the
+> path between them MUST touch disjoint files — `dg spec lint-waves` already checked the
 > globs, so this is the second line of defense: look for overlap the globs cannot show, such as a
 > generator run or shared fixture), **ambiguity** (any `[ASSUMED]` item from the decision log that needs
 > tightening before engineering starts), and **structure conformance** (if `plan.md` has a

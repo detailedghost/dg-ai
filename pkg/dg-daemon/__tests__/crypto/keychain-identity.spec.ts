@@ -11,7 +11,7 @@ function literal(name: string): string | undefined {
 	return new RegExp(`const ${name} = "([^"]+)"`).exec(BACKENDS)?.[1];
 }
 
-describe("the keychain lookup identity survives the dg-daemon rename", () => {
+describe("the keychain lookup identity survives the dg daemon rename", () => {
 	it("still looks the KEK up under the dg-server service, which is where it was stored", () => {
 		expect(literal("SERVICE")).toBe("dg-server");
 		expect(literal("ACCOUNT")).toBe("chat-store-kek");

@@ -3,14 +3,20 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
+	readlinkSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
+import { PROGRAM_NAMES, compiledProgramPath } from "@dg/common/node/program";
+import { compatLauncherText } from "../src/install/compat-launchers";
+import { versionProgramPath } from "../src/install/compiled";
 import { finishLauncherLayout, installPasswdHome, migrateBeforeInstall, pathHint } from "../src/install/layout";
+import { oldShimText } from "./dg-launcher-fixtures";
 
 const posix = describe.skipIf(process.platform === "win32");
 
@@ -51,34 +57,75 @@ posix("finishLauncherLayout", () => {
 
 	afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-	test("writes the launchers to the bin dir pointing at the data dir, the notice launchers, and the PATH line", () => {
+	const seams = () => ({ paths, home: join(dir, "home"), env: {} as Record<string, string> });
+
+	test("links dg, removes the old shims, stamps and notice launchers, and prints the PATH line", async () => {
 		mkdirSync(join(paths.legacyHome, "bin"), { recursive: true });
-		writeFileSync(join(paths.legacyHome, "bin", "dg-skills"), "old");
+		const notice = compatLauncherText("dg-skills", join(paths.binDir, "dg-skills"), "1.36.0", "linux");
+		writeFileSync(join(paths.legacyHome, "bin", "dg-skills"), notice);
+		mkdirSync(paths.binDir, { recursive: true });
+		for (const name of ["dg", "dg-skills", "dg-agent", "dg-daemon"]) {
+			writeFileSync(join(paths.binDir, name), oldShimText(paths.dataDir, name));
+			writeFileSync(join(paths.binDir, `.${name}.version`), "6.3.1");
+		}
 
-		finishLauncherLayout("1.34.2", {
-			paths,
-			envPath: "/usr/bin",
-			log: (line) => lines.push(line),
-		});
+		await finishLauncherLayout("7.0.0", { ...seams(), envPath: "/usr/bin", log: (line) => lines.push(line) });
 
-		expect(readFileSync(join(paths.binDir, "dg-skills"), "utf8")).toContain(`root='${paths.dataDir}'`);
-		expect(
-			readFileSync(join(paths.legacyHome, "bin", "dg-skills"), "utf8"),
-		).toContain("removed in 1.36.0");
-		expect(lines).toContain(
-			`Add to PATH:  export PATH="${paths.binDir}:$PATH"`,
-		);
+		expect(readlinkSync(join(paths.binDir, "dg"))).toBe(compiledProgramPath(paths.dataDir, "linux"));
+		for (const name of PROGRAM_NAMES) {
+			expect(existsSync(join(paths.binDir, name))).toBe(false);
+			expect(existsSync(join(paths.binDir, `.${name}.version`))).toBe(false);
+		}
+		expect(existsSync(paths.legacyHome)).toBe(false);
+		expect(lines).toEqual([`Add to PATH:  export PATH="${paths.binDir}:$PATH"`]);
 	});
 
-	test("creates no legacy home on a fresh machine", () => {
-		finishLauncherLayout("1.34.2", {
-			paths,
-			envPath: paths.binDir,
-			log: (line) => lines.push(line),
-		});
+	test("creates no legacy home on a fresh machine", async () => {
+		await finishLauncherLayout("7.0.0", { ...seams(), envPath: paths.binDir, log: (line) => lines.push(line) });
 
 		expect(existsSync(paths.legacyHome)).toBe(false);
 		expect(lines).toEqual([]);
+	});
+
+	test("a second run changes nothing", async () => {
+		const opts = { ...seams(), envPath: paths.binDir, log: (line: string) => lines.push(line) };
+		await finishLauncherLayout("7.0.0", opts);
+
+		await finishLauncherLayout("7.0.0", opts);
+
+		expect(readdirSync(paths.binDir)).toEqual(["dg"]);
+		expect(lines).toEqual([]);
+	});
+
+	test("rewrites a hook command that runs dg-skills to <bin>/dg", async () => {
+		const settings = join(dir, "home", ".claude", "settings.json");
+		mkdirSync(dirname(settings), { recursive: true });
+		writeFileSync(
+			settings,
+			JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `${paths.binDir}/dg-skills hooks run pr-prose` }] }] } }),
+		);
+
+		await finishLauncherLayout("7.0.0", { ...seams(), envPath: paths.binDir, log: () => {} });
+
+		expect(readFileSync(settings, "utf8")).toContain(`${paths.binDir}/dg hooks run pr-prose`);
+		expect(readFileSync(settings, "utf8")).not.toContain("dg-skills");
+	});
+
+	test("the bridge keeps the old .cmd files on win32 and writes dg.exe", async () => {
+		mkdirSync(join(paths.dataDir, "bin", "7.0.0"), { recursive: true });
+		writeFileSync(versionProgramPath(paths.dataDir, "7.0.0", "win32"), "MZ");
+		mkdirSync(paths.binDir, { recursive: true });
+		const cmd = `@echo off\r\n"${paths.dataDir}\\runtime\\current\\bun.exe" "${paths.dataDir}\\lib\\current\\dg.js" dg-skills %*\r\n`;
+		writeFileSync(join(paths.binDir, "dg-skills.cmd"), cmd);
+
+		await finishLauncherLayout("7.0.0", { ...seams(), platform: "win32", bridge: true, log: () => {} });
+
+		expect(existsSync(join(paths.binDir, "dg-skills.cmd"))).toBe(true);
+		expect(existsSync(join(paths.binDir, "dg.exe"))).toBe(true);
+
+		await finishLauncherLayout("7.0.0", { ...seams(), platform: "win32", log: () => {} });
+
+		expect(existsSync(join(paths.binDir, "dg-skills.cmd"))).toBe(false);
 	});
 });
 

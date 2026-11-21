@@ -370,7 +370,7 @@ describe("channel-review export daemon liveness", () => {
 
 		expect(result.code).toBe(1);
 		expect(result.stderr.trim()).toBe(
-			`channel-review export: the dev daemon is running (pid ${pid}) — stop it first with dg-skills channel-review stop --env dev`,
+			`channel-review export: the dev daemon is running (pid ${pid}) — stop it first with dg channel-review stop --env dev`,
 		);
 		expect(existsSync(join(dgHome, "state", "jobs"))).toBe(false);
 	});

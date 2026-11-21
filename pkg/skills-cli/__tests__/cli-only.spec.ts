@@ -1,6 +1,7 @@
-import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
@@ -12,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
-import { removeBootstrapDirs, removeBootstrapFixtures, runBootstrap } from "./bootstrap-fixtures";
+import { removeBootstrapDirs, runBootstrap } from "./bootstrap-fixtures";
 import {
 	assertExtensionInstalled,
 	extensionRequiredMessage,
@@ -23,7 +24,6 @@ import {
 } from "../src/utils/cli-only";
 import { registerDemo } from "../src/commands/demo";
 import { addExtOption } from "../src/utils/ext-flag";
-import { cliBinDir, cliDest } from "../src/utils/lib";
 
 const skillsDir = new URL("../../../plugins/dg/skills/", import.meta.url).pathname;
 const bootstrap = new URL("../bootstrap.sh", import.meta.url).pathname;
@@ -112,10 +112,10 @@ describe("extension guard", () => {
 		const { program, calls } = buildProgram();
 		await expect(
 			program.parseAsync(["demo", "--ext"], { from: "user" }),
-		).rejects.toThrow(extensionRequiredMessage("dg-skills demo"));
+		).rejects.toThrow(extensionRequiredMessage("dg demo"));
 		await expect(
 			program.parseAsync(["rerun", "--ext"], { from: "user" }),
-		).rejects.toThrow("dg-skills rerun needs the dg-ai-extension");
+		).rejects.toThrow("dg rerun needs the dg-ai-extension");
 		expect(calls).toEqual([]);
 	});
 
@@ -127,7 +127,7 @@ describe("extension guard", () => {
 		registerDemo(program, { play: async () => {} });
 		await expect(
 			program.parseAsync(["demo", "--ext", "plan.md"], { from: "user" }),
-		).rejects.toThrow(extensionRequiredMessage("dg-skills demo"));
+		).rejects.toThrow(extensionRequiredMessage("dg demo"));
 	});
 
 	test("blocks a nested subcommand when --ext is parsed on its parent", async () => {
@@ -135,7 +135,7 @@ describe("extension guard", () => {
 		const { program, calls } = buildProgram();
 		await expect(
 			program.parseAsync(["rerun", "--ext", "nested"], { from: "user" }),
-		).rejects.toThrow(extensionRequiredMessage("dg-skills rerun"));
+		).rejects.toThrow(extensionRequiredMessage("dg rerun"));
 		expect(calls).toEqual([]);
 	});
 
@@ -187,15 +187,14 @@ describe("extension guard", () => {
 		expect(calls).toEqual(["channel-review", "inbox"]);
 	});
 
-	test("omits dg-agent from the hint once an agent-only install already placed it", async () => {
+	test("tells a CLI-only user to run dg install to add the extension", () => {
 		setCliOnly(true);
-		expect(extensionRequiredMessage("x")).toContain("the extension, dg-daemon and dg-agent");
 
-		mkdirSync(cliBinDir(), { recursive: true });
-		writeFileSync(cliDest("dg-agent"), "");
-
-		expect(extensionRequiredMessage("x")).toContain("the extension and dg-daemon");
-		expect(extensionRequiredMessage("x")).not.toContain("dg-agent.");
+		expect(extensionRequiredMessage("x")).toBe(
+			'x needs the dg-ai-extension, but this is a CLI-only install. Run "dg install" to add the extension.',
+		);
+		expect(extensionRequiredMessage("x")).not.toContain("dg-agent");
+		expect(extensionRequiredMessage("x")).not.toContain("dg-daemon");
 	});
 
 	test("require-extension names the skill and how to add the extension", async () => {
@@ -203,7 +202,7 @@ describe("extension guard", () => {
 		const { program } = buildProgram();
 		await expect(
 			program.parseAsync(["require-extension", "chat"], { from: "user" }),
-		).rejects.toThrow(/The chat skill needs the dg-ai-extension.*Run "dg-skills install"/);
+		).rejects.toThrow(/The chat skill needs the dg-ai-extension.*Run "dg install"/);
 		setCliOnly(false);
 		await program.parseAsync(["require-extension", "chat"], { from: "user" });
 		expect(() => assertExtensionInstalled("x")).not.toThrow();
@@ -234,7 +233,6 @@ describe.skipIf(
 	process.platform === "win32" || process.env.DG_BOOTSTRAP_E2E !== "1",
 )("bootstrap.sh flag", () => {
 	afterEach(removeBootstrapDirs);
-	afterAll(removeBootstrapFixtures);
 
 	const run = async (args: string[], env: Record<string, string> = {}, version?: string) => {
 		const result = await runBootstrap({ args, env, version });
@@ -242,23 +240,23 @@ describe.skipIf(
 	};
 
 	test("runs the full install by default", async () => {
-		expect(await run([])).toEqual({ exitCode: 0, calls: "dg-skills install" });
+		expect(await run([])).toEqual({ exitCode: 0, calls: "install" });
 	});
 
 	test("passes --cli-only to install when given the flag", async () => {
-		expect(await run(["--cli-only"])).toEqual({ exitCode: 0, calls: "dg-skills install --cli-only" });
+		expect(await run(["--cli-only"])).toEqual({ exitCode: 0, calls: "install --cli-only" });
 	});
 
 	test("passes --cli-only to install when DG_CLI_ONLY is 1", async () => {
-		expect(await run([], { DG_CLI_ONLY: "1" })).toEqual({ exitCode: 0, calls: "dg-skills install --cli-only" });
+		expect(await run([], { DG_CLI_ONLY: "1" })).toEqual({ exitCode: 0, calls: "install --cli-only" });
 	});
 
 	test("passes --agent-only to install when given the flag", async () => {
-		expect(await run(["--agent-only"])).toEqual({ exitCode: 0, calls: "dg-skills install --agent-only" });
+		expect(await run(["--agent-only"])).toEqual({ exitCode: 0, calls: "install --agent-only" });
 	});
 
 	test("passes --agent-only to install when DG_AGENT_ONLY is 1", async () => {
-		expect(await run([], { DG_AGENT_ONLY: "1" })).toEqual({ exitCode: 0, calls: "dg-skills install --agent-only" });
+		expect(await run([], { DG_AGENT_ONLY: "1" })).toEqual({ exitCode: 0, calls: "install --agent-only" });
 	});
 
 	test("refuses to combine --cli-only and --agent-only, before any download", async () => {
@@ -272,39 +270,38 @@ describe.skipIf(
 	test("passes --version to install when given the flag", async () => {
 		expect(await run(["--version", "9.9.9"], {}, "9.9.9")).toEqual({
 			exitCode: 0,
-			calls: "dg-skills install --version 9.9.9",
+			calls: "install --version 9.9.9",
 		});
 	});
 
 	test("passes --version to install when DG_VERSION is set", async () => {
 		expect(await run([], { DG_VERSION: "9.9.9" }, "9.9.9")).toEqual({
 			exitCode: 0,
-			calls: "dg-skills install --version 9.9.9",
+			calls: "install --version 9.9.9",
 		});
 	});
 
 	test("combines --version with --cli-only", async () => {
 		expect(await run(["--cli-only", "--version", "9.9.9"], {}, "9.9.9")).toEqual({
 			exitCode: 0,
-			calls: "dg-skills install --cli-only --version 9.9.9",
+			calls: "install --cli-only --version 9.9.9",
 		});
 	});
 
-	test("replaces a busy compiled binary with the shim by rename instead of writing over it", async () => {
+	test("replaces an old dg shim with the dg link by rename instead of writing over it", async () => {
 		let before = 0;
 		const result = await runBootstrap({
 			seed: (root) => {
 				mkdirSync(join(root, "bin"), { recursive: true });
-				writeFileSync(join(root, "bin", "dg-skills"), "old");
-				before = statSync(join(root, "bin", "dg-skills")).ino;
+				writeFileSync(join(root, "bin", "dg"), "#!/bin/sh\nexec x lib/current/dg.js dg\n");
+				before = statSync(join(root, "bin", "dg")).ino;
 			},
 		});
-		const dest = join(result.root, "bin", "dg-skills");
+		const dest = join(result.root, "bin", "dg");
 
 		expect(result.code, result.stderr).toBe(0);
-		expect(readFileSync(dest, "utf8")).toContain("lib/current/dg.js");
-		expect(statSync(dest).ino).not.toBe(before);
-		expect(statSync(dest).mode & 0o777).toBe(0o755);
+		expect(lstatSync(dest).isSymbolicLink()).toBe(true);
+		expect(lstatSync(dest).ino).not.toBe(before);
 		expect(readdirSync(join(result.root, "bin")).filter((f) => f.startsWith("."))).toEqual([]);
 	});
 

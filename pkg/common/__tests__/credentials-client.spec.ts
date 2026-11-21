@@ -232,7 +232,7 @@ describe("createCredentialClient", () => {
 	it("names the start command when no daemon pid file exists", async () => {
 		const client = createCredentialClient({ paths, session: sessionId });
 		await expect(client.list()).rejects.toThrow(
-			"dg-daemon is not running; start it with dg-agent start",
+			"dg daemon is not running; start it with dg agent start",
 		);
 	});
 
@@ -240,7 +240,7 @@ describe("createCredentialClient", () => {
 		const daemon = fixtureDaemon(new Map());
 		daemon.stop();
 		const client = createCredentialClient({ paths, session: sessionId });
-		await expect(client.list()).rejects.toThrow(/dg-daemon is not running/);
+		await expect(client.list()).rejects.toThrow(/dg daemon is not running/);
 	});
 
 	it("passes grant, revoke and grant-list through", async () => {
@@ -297,7 +297,7 @@ describe("createCredentialClient", () => {
 			});
 			try {
 				await expect(client.list()).rejects.toThrow(
-					"no credential grant for consumer; run dg-skills credentials grant consumer",
+					"no credential grant for consumer; run dg credentials grant consumer",
 				);
 				expect(
 					await client.resolveCredential("consumer/example", {
@@ -394,7 +394,7 @@ describe("createCredentialClient", () => {
 				withoutEnv.resolveCredential("consumer/example", {
 					env: ["EXAMPLE_KEY"],
 				}),
-			).rejects.toThrow(/dg-daemon is not running/);
+			).rejects.toThrow(/dg daemon is not running/);
 		});
 	});
 });

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { installEnv, runCli, writeReleaseServer } from "./runtime-bundle-fixtures";
+import { installEnv, runCli, writeReleaseServer } from "./release-fixtures";
 import { skillsEntry } from "./inbox-cli-harness";
 
 const posix = describe.skipIf(process.platform === "win32" || process.getuid?.() === 0);
@@ -30,23 +30,22 @@ function unreadable(relative: string): string {
 	return file;
 }
 
-posix("dg-skills commands after a legacy entry failed to move", () => {
-	for (const entry of ["lib", "runtime"]) {
-		test(`install writes no data/${entry} folder when the legacy ${entry} folder cannot be copied`, async () => {
-			unreadable(`${entry}/old/file`);
-			writeFileSync(join(directory, "fetch.log"), "");
-			const { preload } = writeReleaseServer(directory, join(directory, "fetch.log"), PIN);
+posix("dg commands after a legacy entry failed to move", () => {
+	test("install writes no data/bin folder when the legacy lib folder cannot be copied", async () => {
+		unreadable("lib/old/file");
+		writeFileSync(join(directory, "fetch.log"), "");
+		const { preload } = writeReleaseServer(directory, join(directory, "fetch.log"), PIN);
 
-			const result = await runCli(
-				["bun", "--preload", preload, skillsEntry, "install", "--agent-only", "--version", PIN],
-				installEnv(home),
-			);
+		const result = await runCli(
+			["bun", "--preload", preload, skillsEntry, "install", "--agent-only", "--version", PIN],
+			installEnv(home),
+		);
 
-			expect(result.code).not.toBe(0);
-			expect(existsSync(join(home, "data", entry))).toBe(false);
-			expect(existsSync(join(home, "data", "lib", "current"))).toBe(false);
-		});
-	}
+		expect(result.code).not.toBe(0);
+		expect(existsSync(join(home, "data", "bin"))).toBe(false);
+		expect(existsSync(join(home, "data", "lib"))).toBe(false);
+		expect(existsSync(join(home, "bin", "dg"))).toBe(false);
+	});
 
 	test("channel-review env writes no config.json when the legacy channel-review config cannot be copied", async () => {
 		unreadable("channel-review/config.json");

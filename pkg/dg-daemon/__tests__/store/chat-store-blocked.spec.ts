@@ -59,7 +59,7 @@ posix("ChatStore.open blocked contract", () => {
 
 		expect(opened).toBeInstanceOf(DgCliError);
 		expect((opened as Error).message).toBe(
-			`dg: kept ${legacyAt("daemon")}; a process that writes it is running. Stop it, then run dg-skills install again`,
+			`dg: kept ${legacyAt("daemon")}; a process that writes it is running. Stop it, then run dg install again`,
 		);
 		expect((opened as Error).message).toBe(blockedText(blocked as Parameters<typeof blockedText>[0]));
 		expect(existsSync(paths.dbPath)).toBe(false);
@@ -79,7 +79,7 @@ posix("ChatStore.open blocked contract", () => {
 
 		expect(opened).toBeInstanceOf(DgCliError);
 		expect((opened as Error).message).toBe(
-			`dg: ${legacyAt("daemon")} has not moved to ${paths.daemonDir}; run dg-skills install`,
+			`dg: ${legacyAt("daemon")} has not moved to ${paths.daemonDir}; run dg install`,
 		);
 		expect(existsSync(paths.dbPath)).toBe(false);
 		expect(existsSync(paths.daemonDir)).toBe(false);

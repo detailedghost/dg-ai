@@ -8,7 +8,6 @@ const SCANNED = [
 	"plugins/dg/agents/**/*.md",
 	"pkg/*/src/**/*template*",
 	"pkg/*/src/**/templates/**",
-	"pkg/launcher/shims/*.sh",
 ];
 
 const PGREP = /\bpgrep((?:\s+-[A-Za-z]+)+)\s+("[^"]*"|'[^']*'|[^\s;|&)]+)/g;
