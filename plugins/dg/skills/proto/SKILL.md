@@ -3,7 +3,7 @@ name: proto
 description: Build a throwaway prototype before committing to a design. The local mode, which is the default, routes to a runnable terminal app for state and logic questions, five UI variations toggled from one route (set the count with -n or name them with -o), or a clickable walkthrough across a plan's workflows, with a refine chain and -c resume. Add --ext to prototype app-native variations inside a live page with the dg-ai-extension instead. Use when the user wants to prototype, sanity-check a data model or state machine, mock up a UI, explore design options, review or rework alternatives on a real page, or says "prototype this", "show me all the workflows", "let me play with it". Flags: --ext, -n, -o, -c, --light, --publish, --self-contained, --series.
 ---
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
 dg prototype --help >/dev/null 2>&1 ||
@@ -12,7 +12,7 @@ dg prototype --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
 If a step fails, run dg doctor proto prototype install stash.
 

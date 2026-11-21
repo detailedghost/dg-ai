@@ -17,6 +17,7 @@ import { assertNotBlocked } from "@dg/common/node/layout";
 import { writeCompletions } from "../completion/files";
 import { PROGRAM_NAMES } from "@dg/common/node/program";
 import { installCompiled, versionProgramPath } from "./compiled";
+import { linkCurrent } from "./current";
 import { refreshPhoneListener } from "./phone-listener";
 import { finishLauncherLayout, migrateBeforeInstall } from "./layout";
 import {
@@ -228,7 +229,10 @@ export async function writeCurrentLaunchers(): Promise<void> {
 	if (!version || version === "dev") throw new Error("no dg release is installed; run dg install");
 	const root = installRoot();
 	if (existsSync(versionProgramPath(root, version))) {
-		await withInstallLock(root, () => finishLauncherLayout(version, { bridge: true }));
+		await withInstallLock(root, () => {
+			linkCurrent(root, "bin", version);
+			return finishLauncherLayout(version, { bridge: true });
+		});
 	} else {
 		const release = pickProgram(await listReleases(), version);
 		await withInstallLock(root, () => installProgramLocked(root, release, true));

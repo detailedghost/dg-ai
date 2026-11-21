@@ -2,12 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { resolveRoute } from "../../dg/src/flat";
-import { dgCommandForms } from "./docs-help-kit";
+import { dgCommandForms, OWN_WORDS } from "./docs-help-kit";
 import { REPO_ROOT } from "./test-support";
 
 const PLUGINS_DIR = join(REPO_ROOT, "plugins");
 const OLD_PROGRAM = /\bdg-(skills|agent|daemon)\b/;
-const OWN_WORDS = ["completion", "help", "--help", "--version"];
 
 function textFiles(dir: string): string[] {
 	return readdirSync(dir).flatMap((entry) => {

@@ -15,16 +15,12 @@ import {
 import { join } from "node:path";
 import { compiledProgramPath, PROGRAM_NAMES } from "@dg/common/node/program";
 import { type PickedProgram, UA, verifyReleaseAsset } from "../utils/lib";
-import { linkCurrent, readCurrent } from "./current";
+import { linkCurrent, programExeName, readCurrent, VERSION_DIR } from "./current";
 import { isDgLauncher } from "./dg-launcher";
-
-const VERSION_DIR = /^\d+\.\d+\.\d+/;
-
-const exe = (platform: NodeJS.Platform): string => (platform === "win32" ? "dg.exe" : "dg");
 
 /** `<root>/bin/<version>/dg[.exe]`. */
 export const versionProgramPath = (root: string, version: string, platform: NodeJS.Platform = process.platform): string =>
-	join(root, "bin", version, exe(platform));
+	join(root, "bin", version, programExeName(platform));
 
 function selfCheck(program: string, version: string): void {
 	const result = spawnSync(program, ["--version"], { encoding: "utf8", timeout: 30_000 });
@@ -56,11 +52,7 @@ async function download(release: PickedProgram, staged: string): Promise<void> {
 	chmodSync(staged, 0o755);
 }
 
-/**
- * Installs the verified compiled dg under `<root>/bin/<version>/` and points `bin/current` at it.
- * An installed version is only relinked, with no download. A failed check leaves `bin/current` as it was.
- * Keeps the version it replaces for rollback and removes older ones.
- */
+/** Installs the verified compiled dg under `<root>/bin/<version>/` and points `bin/current` at it. */
 export async function installCompiled(
 	root: string,
 	release: PickedProgram,
@@ -72,7 +64,7 @@ export async function installCompiled(
 		mkdirSync(bin, { recursive: true });
 		const staging = mkdtempSync(join(bin, `.${release.version}.staging-`));
 		try {
-			const staged = join(staging, exe(platform));
+			const staged = join(staging, programExeName(platform));
 			await download(release, staged);
 			selfCheck(staged, release.version);
 			if (!existsSync(final)) {
@@ -111,15 +103,14 @@ export function isOwnedLauncher(path: string, root: string, platform: NodeJS.Pla
 
 function sweepAside(binDir: string): void {
 	for (const name of readdirSync(binDir)) {
-		if (name.startsWith(".dg.exe.") && name.endsWith(".old")) rmSync(join(binDir, name), { force: true });
+		if (!name.startsWith(".dg.exe.") || !name.endsWith(".old")) continue;
+		try {
+			rmSync(join(binDir, name), { force: true });
+		} catch {}
 	}
 }
 
-/**
- * Points `<binDir>/dg` at the compiled program: a symlink to `<root>/bin/current/dg`, or on Windows a hard link
- * `dg.exe` to `<root>/bin/<version>/dg.exe` after the running image is renamed aside. A `dg` that dg did not
- * write stays, with one warning.
- */
+/** Points `<binDir>/dg` at the compiled program, keeping a `dg` that dg did not write. */
 export function writeDgLink(
 	binDir: string,
 	root: string,
@@ -128,7 +119,7 @@ export function writeDgLink(
 	warn: (line: string) => void = warnOnStderr,
 ): void {
 	mkdirSync(binDir, { recursive: true });
-	const dest = join(binDir, exe(platform));
+	const dest = join(binDir, programExeName(platform));
 	if (present(dest) && !isOwnedLauncher(dest, root, platform)) {
 		warn(`dg: kept ${dest}; it is not a dg launcher. Remove it or rename it, then run dg install again`);
 		return;
@@ -137,8 +128,15 @@ export function writeDgLink(
 		try {
 			sweepAside(binDir);
 		} catch {}
-		if (present(dest)) renameSync(dest, join(binDir, `.dg.exe.${process.pid}-${Date.now()}.old`));
-		linkSync(versionProgramPath(root, version, platform), dest);
+		const aside = join(binDir, `.dg.exe.${process.pid}-${Date.now()}.old`);
+		const moved = present(dest);
+		if (moved) renameSync(dest, aside);
+		try {
+			linkSync(versionProgramPath(root, version, platform), dest);
+		} catch (err) {
+			if (moved) renameSync(aside, dest);
+			throw err;
+		}
 		return;
 	}
 	const staged = join(binDir, `.dg.${process.pid}.tmp`);
@@ -147,10 +145,7 @@ export function writeDgLink(
 	renameSync(staged, dest);
 }
 
-/**
- * Removes the old `dg-skills`, `dg-agent` and `dg-daemon` launchers (and on Windows `dg.cmd`) that dg wrote.
- * `keepCmd` leaves `.cmd` files in place: in the 6.3 bridge step they are running batch files.
- */
+/** Removes the old program launchers that dg wrote; `keepCmd` leaves `.cmd` files in place. */
 export function removeOldLaunchers(
 	binDir: string,
 	root: string,

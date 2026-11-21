@@ -85,9 +85,14 @@ describe("platformKey", () => {
 
 	test("joins the OS and architecture and names Windows windows", () => {
 		expect(platformKey("darwin", "arm64")).toBe("darwin-arm64");
-		expect(platformKey("win32", "x64")).toBe("windows-x64");
+		expect(platformKey("win32", "x64", undefined, () => true)).toBe("windows-x64");
 		expect(platformKey("win32", "arm64")).toBe("windows-arm64");
 		expect(platformKey("linux", "arm64")).toBe("linux-arm64");
+	});
+
+	test("windows-x64 takes the baseline build only when the probe finds no avx2", () => {
+		expect(platformKey("win32", "x64", undefined, () => false)).toBe("windows-x64-baseline");
+		expect(platformKey("win32", "arm64", undefined, () => false)).toBe("windows-arm64");
 	});
 
 	test("linux-x64 takes the baseline build only without avx2", () => {

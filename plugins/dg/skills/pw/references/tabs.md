@@ -76,7 +76,7 @@ and less reliable across reboots.
 On native Windows PowerShell, run the installed launcher:
 
 ```powershell
-$dg = if ($env:DG_HOME) { Join-Path $env:DG_HOME "bin\dg.cmd" } else { Join-Path $env:LOCALAPPDATA "dg\bin\dg.cmd" }
+$dg = if ($env:DG_HOME) { Join-Path $env:DG_HOME "bin\dg.exe" } else { Join-Path $env:LOCALAPPDATA "dg\bin\dg.exe" }
 if (-not (Test-Path $dg)) {
   irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 }

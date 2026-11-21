@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
 	lstatSync,
 	mkdirSync,
@@ -17,7 +17,6 @@ import {
 	present,
 	programRun,
 	removeBootstrapDirs,
-	removeBootstrapFixtures,
 	runBootstrap,
 } from "../../skills-cli/__tests__/bootstrap-fixtures";
 import { makeTempDir, readRepoFile, removeTempDirs } from "./test-support";
@@ -26,7 +25,6 @@ afterEach(() => {
 	removeTempDirs();
 	removeBootstrapDirs();
 });
-afterAll(removeBootstrapFixtures);
 
 describe("bootstrap.sh installs the compiled dg program", () => {
 	test("a default run stages bin/<version>/dg, links bin/current and ${BIN}/dg, then ends in dg install", async () => {

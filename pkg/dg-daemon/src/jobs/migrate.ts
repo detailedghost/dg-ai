@@ -328,7 +328,7 @@ export function migrateLauncherArgv(paths: DgPaths): { rewritten: Array<{ name: 
 	const next = Object.fromEntries(
 		Object.entries(jobs).map(([name, entry]) => {
 			if (!isRecord(entry) || !Array.isArray(entry.argv) || !entry.argv.every((part) => typeof part === "string")) return [name, entry];
-			const to = rewriteLauncherArgv(entry.argv as string[]);
+			const to = rewriteLauncherArgv(entry.argv as string[], paths.dataDir);
 			if (!to) return [name, entry];
 			rewritten.push({ name, from: entry.argv as string[], to });
 			return [name, { ...entry, argv: to }];

@@ -98,7 +98,7 @@ describe("dg update", () => {
 			"codex plugin marketplace upgrade detailedghost",
 			"codex plugin add dg@detailedghost",
 		]);
-		expect(d.lines[0]).toBe("✅ CLI, runtime and extension: dg 3.1.0 installed");
+		expect(d.lines[0]).toBe("✅ CLI and extension: dg 3.1.0 installed");
 		expect(d.lines.join("\n")).toContain("Doctor (information only, not part of the exit code): 1 passed");
 		expect(d.lines.at(-1)).toContain("Restart Claude Code and Codex sessions");
 	});
@@ -161,7 +161,7 @@ describe("dg update", () => {
 	test("fails the install step when the installed version did not move", async () => {
 		const d = fake({ tools: [], install: async () => {} });
 		expect(await runUpdate({}, d)).toBe(1);
-		expect(d.lines[0]).toBe("❌ CLI, runtime and extension: dg 3.0.1 is installed, not 3.1.0");
+		expect(d.lines[0]).toBe("❌ CLI and extension: dg 3.0.1 is installed, not 3.1.0");
 	});
 
 	test("installs the Claude plugin when none is installed, adding the marketplace when update fails", async () => {
@@ -214,7 +214,7 @@ describe("dg update", () => {
 		};
 		expect(await runUpdate({}, d)).toBe(1);
 		const text = d.lines.join("\n");
-		expect(text).toContain("❌ CLI, runtime and extension: network down");
+		expect(text).toContain("❌ CLI and extension: network down");
 		expect(text).toContain("❌ Claude plugin: claude wrapper cannot start");
 		expect(d.calls).toContain("codex plugin add dg@detailedghost");
 		expect(text).toContain("Doctor (information only");
@@ -395,7 +395,7 @@ describe("dg update launcher layout", () => {
 	test("reports a non-zero launcher step as a failed install step that names dg install", async () => {
 		const { d } = withLayout({ tools: [] }, 1);
 		expect(await runUpdate({}, d)).toBe(1);
-		expect(d.lines[0]).toBe("❌ CLI, runtime and extension: launchers broke; run dg install");
+		expect(d.lines[0]).toBe("❌ CLI and extension: launchers broke; run dg install");
 	});
 
 	test("the default finishLayout runs the bin dir dg launcher with the hidden launchers step", () => {

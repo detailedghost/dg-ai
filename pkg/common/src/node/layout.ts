@@ -207,7 +207,7 @@ export function blockedText({ reason, from, to, refused }: Ends & { reason: Bloc
 		return `dg: two daemon folders hold data: ${from} and ${to}. dg does not choose one and does not merge them. ${TWO_USED_RENAME}`;
 	if (reason === "no-hook") return `dg: ${from} has not moved to ${to}; run dg install`;
 	return refused
-		? `dg: kept ${from}; stop the dg service, then run dg install again`
+		? `dg: kept ${from}; stop the dg daemon, then run dg install again`
 		: `dg: kept ${from}; a process that writes it is running. Stop it, then run dg install again`;
 }
 

@@ -84,6 +84,26 @@ describe.skipIf(process.platform === "win32")("install launchers (the 6.3 bridge
 		}
 	});
 
+	test("points bin/current at the installed version so the dg link never runs another one", async () => {
+		const w = world();
+		try {
+			seedBridgeInstall(w, "6.3.1");
+			for (const version of ["7.0.0", "7.1.0"]) {
+				mkdirSync(join(w.data, "bin", version), { recursive: true });
+				writeFileSync(join(w.data, "bin", version, "dg"), fakeProgramScript(version), { mode: 0o755 });
+			}
+			symlinkSync("7.1.0", join(w.data, "bin", "current"));
+			const { preload } = writeReleaseServer(w.directory, w.log, "7.0.0");
+
+			const result = await runCli(argv(preload), launchersEnv(w.home, "7.0.0"));
+
+			expect(result.code, result.stderr).toBe(0);
+			expect(basename(readlinkSync(join(w.data, "bin", "current")))).toBe("7.0.0");
+		} finally {
+			w.cleanup();
+		}
+	});
+
 	test("without DG_BUILD_VERSION it installs the version that lib/current names", async () => {
 		const w = world();
 		try {

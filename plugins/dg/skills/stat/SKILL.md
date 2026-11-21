@@ -7,7 +7,7 @@ description: Report this session's in-flight work as a priority-ordered checklis
 
 A four-keystroke glance at this session's work, rendered as one numbered checklist. **Read-only, with three exceptions:** it cleans up background jobs that have FINISHED (section 4), it reaps leftover agent processes (section 5), and it stops work that is clearly stuck: wait loops, stalled bg jobs, silent background Agents, and cron jobs with no effect (section 5). Never edit, commit, push, or resume anything, and **never stop a running job that makes progress**. If reading cannot answer something, report the gap instead of acting.
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
 dg stat --help >/dev/null 2>&1 ||
@@ -16,7 +16,7 @@ dg stat --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
 If a step fails, run dg doctor bg stat vcs-provider worktree.
 

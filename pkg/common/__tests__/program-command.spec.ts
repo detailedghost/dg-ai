@@ -247,6 +247,13 @@ describe("rewriteLauncherArgv", () => {
 		expect(rewriteLauncherArgv(["C:\\dg\\bin\\dg-skills.cmd", "stat"])).toEqual(["C:\\dg\\bin\\dg.exe", "skills", "stat"]);
 	});
 
+	it("with a root maps an old program name or a stale legacy path to the absolute compiled program", () => {
+		expect(rewriteLauncherArgv(["dg-skills", "inbox"], "/d")).toEqual(["/d/bin/current/dg", "skills", "inbox"]);
+		expect(rewriteLauncherArgv(["/home/u/.dg/bin/dg-skills", "stat"], "/d")).toEqual(["/d/bin/current/dg", "skills", "stat"]);
+		expect(rewriteLauncherArgv(["/h/.local/bin/dg-agent", "phone"], "/d")).toEqual(["/d/bin/current/dg", "agent", "phone"]);
+		expect(rewriteLauncherArgv(["python3", "bot.py"], "/d")).toBeUndefined();
+	});
+
 	it.each([
 		[["dg", "skills", "inbox"]],
 		[["/d/bin/current/dg", "daemon", "serve"]],

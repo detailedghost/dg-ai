@@ -33,7 +33,7 @@ dg catchup --help >/dev/null 2>&1 ||
 if dg catchup --help >/dev/null 2>&1; then dg catchup; else "${DG_HOME:-$HOME/.local}/bin/dg" catchup; fi
 ```
 
-Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
 If a step fails, run dg doctor catchup.
 

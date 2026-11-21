@@ -55,7 +55,7 @@ describe("packaged doctor skill tree", () => {
 		const text = skillText(NAME);
 		expect(text).toContain("dg doctor --json");
 		for (const { file, text: body } of treeFiles(NAME))
-			for (const line of body.split("\n").filter((l) => /(^|[\s`])dg\s+[a-z]/.test(l)))
+			for (const line of body.split("\n").filter((l) => /\bdg\s+[a-z]/.test(l)))
 				expect([file, line.includes(".dg/bin/")]).toEqual([file, false]);
 	});
 

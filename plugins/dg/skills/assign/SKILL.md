@@ -10,7 +10,7 @@ Pick the best-fit primary engineering agent, plus any QA agents, for a piece of 
 Annotating the slices of a `/dg:spec` spec is one *application* of that pick — the one that persists its answer — not the
 premise. Most work has no spec bundle anywhere near it, and "who should do this?" is a valid question on its own.
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
 dg spec --help >/dev/null 2>&1 ||
@@ -19,7 +19,7 @@ dg spec --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
 If a step fails, run dg doctor assign proxy spec.
 

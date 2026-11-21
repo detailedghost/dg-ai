@@ -139,8 +139,6 @@ export function removeBootstrapDirs(): void {
 		rmSync(dir, { recursive: true, force: true });
 }
 
-export const removeBootstrapFixtures = removeBootstrapDirs;
-
 export function release(
 	tag: string,
 	assets: string[],

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { REPO_ROOT, readRepoFile } from "./test-support";
+import { REPO_ROOT } from "./test-support";
 
 function gitGrep(pattern: string, ...paths: string[]): string[] {
 	const run = Bun.spawnSync(["git", "grep", "-nE", pattern, "--", ...paths], { cwd: REPO_ROOT, stdout: "pipe", stderr: "pipe" });

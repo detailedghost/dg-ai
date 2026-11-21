@@ -15,11 +15,10 @@ import { installCompiled, removeOldLaunchers, versionProgramPath, writeDgLink } 
 import { hooksHome } from "../src/install/layout";
 import { readCurrent } from "../src/install/current";
 import { compiledAssetName, platformKey } from "../src/utils/lib";
+import { oldShimText } from "./dg-launcher-fixtures";
 import { fakeProgramScript, RELEASE_BASE, type Scratch, scratch, sha256, stubFetch } from "./release-fixtures";
 
 const POSIX = process.platform !== "win32";
-const OLD_SHIM = (root: string, name: string) =>
-	`#!/bin/sh\nroot='${root}'\nexec "$root/runtime/current/bun" "$root/lib/current/dg.js" ${name} "$@"\n`;
 
 let box: Scratch | undefined;
 let restore: (() => void) | undefined;
@@ -113,7 +112,7 @@ describe("writeDgLink", () => {
 		box = scratch("dg-link-shim");
 		const bin = join(box.directory, "bin");
 		mkdirSync(bin, { recursive: true });
-		writeFileSync(join(bin, "dg"), OLD_SHIM(box.root, "dg"));
+		writeFileSync(join(bin, "dg"), oldShimText(box.root, "dg"));
 		writeDgLink(bin, box.root, "7.0.0", "linux");
 		expect(lstatSync(join(bin, "dg")).isSymbolicLink()).toBe(true);
 	});
@@ -129,6 +128,17 @@ describe("writeDgLink", () => {
 		expect(lines).toEqual([`dg: kept ${join(bin, "dg")}; it is not a dg launcher. Remove it or rename it, then run dg install again`]);
 	});
 
+	test.skipIf(!POSIX)("on Windows a failed hard link puts the renamed dg.exe back and rethrows", () => {
+		box = scratch("dg-link-rollback");
+		const bin = join(box.directory, "bin");
+		mkdirSync(bin, { recursive: true });
+		const shim = `@echo off\r\n"${box.root}\\runtime\\current\\bun.exe" "${box.root}\\lib\\current\\dg.js" dg %*\r\n`;
+		writeFileSync(join(bin, "dg.exe"), shim);
+		expect(() => writeDgLink(bin, box.root, "7.0.0", "win32")).toThrow();
+		expect(readdirSync(bin)).toEqual(["dg.exe"]);
+		expect(readFileSync(join(bin, "dg.exe"), "utf8")).toBe(shim);
+	});
+
 	test.skipIf(!POSIX)("a second run keeps the same link", () => {
 		box = scratch("dg-link-again");
 		const bin = join(box.directory, "bin");
@@ -139,12 +149,12 @@ describe("writeDgLink", () => {
 });
 
 describe("removeOldLaunchers", () => {
-	test.skipIf(!POSIX)("removes the three 6.3 shims and their version stamps, and keeps a foreign file", () => {
+	test.skipIf(!POSIX)("removes the 6.3 shims and their version stamps, and keeps a foreign file", () => {
 		box = scratch("old-launchers");
 		const bin = join(box.directory, "bin");
 		mkdirSync(bin, { recursive: true });
 		for (const name of ["dg-skills", "dg-agent"]) {
-			writeFileSync(join(bin, name), OLD_SHIM(box.root, name));
+			writeFileSync(join(bin, name), oldShimText(box.root, name));
 			chmodSync(join(bin, name), 0o755);
 			writeFileSync(join(bin, `.${name}.version`), "6.3.1");
 		}

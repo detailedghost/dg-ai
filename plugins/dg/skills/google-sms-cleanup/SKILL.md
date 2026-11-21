@@ -6,14 +6,14 @@ description: Sort, archive, and spam-block a Google Messages inbox through Messa
 # Google SMS cleanup
 
 Clean up a Google Messages inbox through Messages for Web. The work runs as
-`dg ssms`: `dg ssms google <verb>`. `ssms signal <verb>` is the other
+`dg ssms`: `dg ssms google <verb>`. `dg ssms signal <verb>` is the other
 provider and wraps `signal-cli` in daemon JSON-RPC mode. It does not touch
 Signal Desktop. Every behavior below is a configurable default. Override any
 value from the user's instructions, or from notes they asked to keep, before
 starting, and state the effective config back to the user.
 
 The executable is `dg`.
-On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
+On first use, the block installs the CLI when it is missing and prints an upgrade hint when it is too old. It needs no Bun at runtime:
 
 ```sh
 dg ssms --help >/dev/null 2>&1 ||
@@ -23,7 +23,7 @@ dg ssms --help >/dev/null 2>&1 ||
 if dg ssms --help >/dev/null 2>&1; then dg ssms --help; else "${DG_HOME:-$HOME/.local}/bin/dg" ssms --help; fi
 ```
 
-Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
 **Usage:** `dg ssms google <verb> [--config PATH] [--dry-run] [--limit N] [--draft ID] [--approve TOKEN]`
 
@@ -46,7 +46,7 @@ If a step fails, run dg doctor ssms.
 
 ## Prerequisites
 
-- `dg ssms --help` runs. If it does not, install or refresh the CLI.
+- `dg ssms --help` runs. If it does not, run the first-run block again.
 - Messages for Web is paired at
   https://messages.google.com/web/u/0/conversations. Google sign-in may be
   required first; the user completes it. The CLI opens that page with the same
@@ -96,7 +96,7 @@ Pass the same map as `--config` when the user overrides a value.
    `Load more conversations` until the end, or until the scope limit.
 3. Run `dg ssms google classify`. It marks each thread keep,
    group, archive, spam, or ambiguous. Keep rules always win over archive or
-   spam rules. Open a thread with `ssms google read <conversation> --limit 20`
+   spam rules. Open a thread with `dg ssms google read <conversation> --limit 20`
    when the preview is unclear.
 4. Unless `dry_run` is true, act on clear-cut cases only:
    `dg ssms google cleanup`. Archive through the thread's
@@ -123,7 +123,7 @@ Pass the same map as `--config` when the user overrides a value.
 
 ## Signal
 
-`ssms signal link` prints a QR and a linking URI for a device named `dg-cli`.
+`dg ssms signal link` prints a QR and a linking URI for a device named `dg-cli`.
 `list`, `read`, `receive`, `draft`, and `send --draft ID` are the same
 shape. Reactions, images, and quotes are drafted, then sent after an
 interactive yes or `--approve`. `--yes` does not send. The approval token

@@ -14,6 +14,6 @@ describe("the dg daemon completion tree", () => {
 
 	test("dg daemon completion prints the script that calls dg daemon __complete", () => {
 		const run = Bun.spawnSync([process.execPath, ENTRY, "completion", "zsh"], { stdout: "pipe" });
-		expect(run.stdout.toString()).toBe(completionScript("zsh", "dg-daemon"));
+		expect(run.stdout.toString()).toBe(completionScript("zsh", "dg"));
 	});
 });

@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Extract a project's native vocabulary and write it to `.agents/monolith.md` so every agent (and human) speaks the same language. Lean by design: ~6 KB per file, table format, append-only. Once the vocabulary outgrows 6 KB it splits into `.agents/monolith/<domain>.md`, one file per domain, and `monolith.md` becomes the index — so an agent loads the domain it is working in, not the whole glossary.
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
 dg monolith --help >/dev/null 2>&1 ||
@@ -17,7 +17,7 @@ dg monolith --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
 If a step fails, run dg doctor monolith stash.
 

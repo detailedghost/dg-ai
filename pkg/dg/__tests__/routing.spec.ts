@@ -144,10 +144,14 @@ describe("unknown input", () => {
 		expect(run.loads).toEqual([]);
 	});
 
-	test.each(["start", "serve", "send"])("dg %p exits 1 with a hint that names its group path", async (word) => {
+	test.each([
+		["start", "dg daemon start"],
+		["serve", "dg daemon serve"],
+		["send", "dg agent send"],
+	])("dg %p exits 1 with a hint that names %p", async (word, path) => {
 		const run = await runDg([word]);
 		expect(run.code).toBe(1);
-		expect(run.stderr).toContain(`dg daemon ${word}`.replace("dg daemon send", "dg agent send"));
+		expect(run.stderr).toContain(path);
 		expect(run.stdout).toBe("");
 		expect(run.loads).toEqual([]);
 	});
@@ -193,6 +197,7 @@ describe("completion", () => {
 		const expected = [...flatRows().map((row) => row.name), ...Object.keys(GROUPS), ...Object.keys(ALIASES), "completion", "help"];
 		expect(names).toEqual(expected.sort());
 		for (const line of lines) expect(line).toMatch(/^[^\t]+\t\S/);
+		for (const row of flatRows()) expect(lines).toContain(`${row.name}\t${row.description}`);
 		expect(names).toContain("pw");
 		expect(names).toContain("phone");
 		expect(names).not.toContain("start");

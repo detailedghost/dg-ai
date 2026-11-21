@@ -81,11 +81,7 @@ export async function migrateBeforeInstall(
 	await withInstallLock(paths.dataDir, () => moveSsmsAllowFile(passwdLegacy, trustedConfig, log));
 }
 
-/**
- * Points `<bin>/dg` at the compiled program, removes the old launchers and the `~/.dg/bin` notice launchers,
- * moves hook commands off `dg-skills`, and prints the PATH hint. `bridge` is the 6.3 self-update step:
- * on Windows it leaves the running `.cmd` files for the next install.
- */
+/** Points `<bin>/dg` at the compiled program, removes the old launchers, moves hook commands and prints the PATH hint. */
 export async function finishLauncherLayout(version: string, opts: LayoutOptions = {}): Promise<void> {
 	const paths = opts.paths ?? resolveDgPaths();
 	const platform = opts.platform ?? process.platform;

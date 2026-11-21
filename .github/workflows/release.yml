@@ -256,7 +256,8 @@ jobs:
             echo "::error::the compiled dg printed '${version}' and '${skills}', expected ${VERSION}"
             exit 1
           fi
-          "$program" pw --help | grep -q "Usage: pw"
+          pw_help="$("$program" pw --help)"
+          grep -q "Usage: pw" <<<"$pw_help"
           "$program" phone --help >/dev/null
           "$program" job --help >/dev/null
           if "$program" start 2>/dev/null; then
@@ -274,7 +275,7 @@ jobs:
             echo "::error::dg-skills must exit 1"
             exit 1
           fi
-          echo "$out" | grep -q "the dg-skills command is removed"
+          grep -q "the dg-skills command is removed" <<<"$out"
 
   build-ext:
     needs: [detect, blt-ext]

@@ -111,6 +111,8 @@ export async function cmdStatus(): Promise<void> {
 	console.log(JSON.stringify(await resp.json(), null, 2));
 }
 
+const launcherHead = (argv: readonly string[]): string => argv.slice(0, 2).join(" ");
+
 function migrateJobsConfig(
 	paths: DgPaths,
 	store: ChatStore,
@@ -129,7 +131,7 @@ function migrateJobsConfig(
 			CONFIG_LOCK,
 		);
 		for (const job of rewritten) {
-			logger.info(`job "${job.name}": argv ${job.from.join(" ")} is now ${job.to.join(" ")}; backup ${compiledBackupPath(paths)}`);
+			logger.info(`job "${job.name}": program ${job.from[0]} is now ${launcherHead(job.to)}; backup ${compiledBackupPath(paths)}`);
 		}
 		if (moved.length > 0) {
 			logger.info(
@@ -168,7 +170,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 	migrateJobsConfig(paths, store, logger);
 	await rewriteDaemonAutostart(defaultAutostartDeps(), paths).then(
 		(result) => {
-			if (result.status === "rewritten") logger.info(`autostart unit ${result.path} now runs the compiled dg; backup ${result.path}.pre-compiled`);
+			if (result.status === "rewritten") logger.info(`autostart unit ${result.path} now runs the compiled dg; backup ${result.backup}`);
 		},
 		(err: unknown) => logger.warn(`${describeError(err)}; the autostart unit was not rewritten, run dg autostart install`),
 	);

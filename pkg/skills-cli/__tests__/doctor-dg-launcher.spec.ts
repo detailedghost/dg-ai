@@ -223,6 +223,7 @@ describe("doctor check program-present", () => {
 
 		expect(result?.status).toBe("ok");
 		expect(result?.detail).toContain("the dg program");
+		expect(result?.detail).toContain("7.0.0");
 	});
 
 	test.skipIf(process.platform === "win32")("fails when bin/current points at a version whose program is gone", async () => {

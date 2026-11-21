@@ -16,6 +16,7 @@ import { PROGRAM_NAMES, compiledProgramPath } from "@dg/common/node/program";
 import { compatLauncherText } from "../src/install/compat-launchers";
 import { versionProgramPath } from "../src/install/compiled";
 import { finishLauncherLayout, installPasswdHome, migrateBeforeInstall, pathHint } from "../src/install/layout";
+import { oldShimText } from "./dg-launcher-fixtures";
 
 const posix = describe.skipIf(process.platform === "win32");
 
@@ -64,7 +65,7 @@ posix("finishLauncherLayout", () => {
 		writeFileSync(join(paths.legacyHome, "bin", "dg-skills"), notice);
 		mkdirSync(paths.binDir, { recursive: true });
 		for (const name of ["dg", "dg-skills", "dg-agent", "dg-daemon"]) {
-			writeFileSync(join(paths.binDir, name), `#!/bin/sh\nexec "${paths.dataDir}/lib/current/dg.js" ${name}\n`);
+			writeFileSync(join(paths.binDir, name), oldShimText(paths.dataDir, name));
 			writeFileSync(join(paths.binDir, `.${name}.version`), "6.3.1");
 		}
 

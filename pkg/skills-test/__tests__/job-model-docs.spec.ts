@@ -289,7 +289,7 @@ describe("README.md and docs/install.md", () => {
 			for (const code of codeRegions(read(f)))
 				expect([f, /dg service (add|rm|status|start|stop)\b/.test(code)]).toEqual([f, false]);
 		expect(read("docs/install.md")).toContain(
-			"`dg: kept <from>; stop the dg daemon service, then run dg install again`",
+			"`dg: kept <from>; stop the dg daemon, then run dg install again`",
 		);
 	});
 

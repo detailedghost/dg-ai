@@ -302,9 +302,15 @@ function Test-DgLauncher {
 	}
 	if ($item.PSIsContainer) { return $false }
 	try {
-		$head = @([System.IO.File]::ReadAllBytes($item.FullName) | Select-Object -First 4096)
-		if ($head.Count -eq 0 -or ($head -contains 0)) { return $false }
-		return [System.Text.Encoding]::UTF8.GetString([byte[]]$head).Contains('lib\current\dg.js')
+		$stream = [System.IO.File]::Open($item.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+		try {
+			$buffer = New-Object byte[] 4096
+			$count = $stream.Read($buffer, 0, 4096)
+		} finally { $stream.Dispose() }
+		if ($count -eq 0) { return $false }
+		$head = [byte[]]($buffer[0..($count - 1)])
+		if ($head -contains 0) { return $false }
+		return [System.Text.Encoding]::UTF8.GetString($head).Contains('lib\current\dg.js')
 	} catch { return $false }
 }
 

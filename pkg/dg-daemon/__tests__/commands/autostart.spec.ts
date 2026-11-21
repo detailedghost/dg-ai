@@ -324,24 +324,20 @@ describe("dg autostart install", () => {
 		]);
 	});
 
-	for (const missingIndex of [0]) {
-		it("exits 1 with no unit file when the compiled program is absent", async () => {
-			const target = launcherCommand(paths.dataDir, "dg-daemon", ["serve"])[
-				missingIndex
-			] as string;
-			missing.add(target);
-			const deps = makeDeps();
+	it("exits 1 with no unit file when the compiled program is absent", async () => {
+		const [target] = launcherCommand(paths.dataDir, "dg-daemon", ["serve"]);
+		missing.add(target as string);
+		const deps = makeDeps();
 
-			const error = await failure(cmdAutostartInstall(deps));
+		const error = await failure(cmdAutostartInstall(deps));
 
-			expect(error.exitCode).toBe(1);
-			expect(error.message).toBe(
-				`autostart install: ${target} is missing; install dg first`,
-			);
-			expect(written).toEqual([]);
-			expect(ran).toEqual([]);
-		});
-	}
+		expect(error.exitCode).toBe(1);
+		expect(error.message).toBe(
+			`autostart install: ${target} is missing; install dg first`,
+		);
+		expect(written).toEqual([]);
+		expect(ran).toEqual([]);
+	});
 
 	it("prints the hand over line after the installed line when a live daemon exists", async () => {
 		liveDaemon();
@@ -712,13 +708,19 @@ describe("rewriteDaemonAutostart", () => {
 	const OLD_SYSTEMD = (dataDir: string) =>
 		`[Unit]\nDescription=dg-daemon\n\n[Service]\nExecStart="${join(dataDir, "runtime", "current", "bun")}" "${join(dataDir, "lib", "current", "dg.js")}" "dg-daemon" "serve"\nEnvironment="DG_HOME=${paths.legacyHome}"\n`;
 
+	function unitLocation(deps: AutostartDeps): string {
+		switch (deps.platform) {
+			case "darwin":
+				return launchdPlistPath(deps.homeDir, "dg-daemon");
+			case "win32":
+				return windowsTaskXmlPath(paths, "dg-daemon");
+			default:
+				return unitPathFor(deps);
+		}
+	}
+
 	function seedUnit(deps: AutostartDeps, text: string): string {
-		const path =
-			deps.platform === "darwin"
-				? launchdPlistPath(deps.homeDir, "dg-daemon")
-				: deps.platform === "win32"
-					? windowsTaskXmlPath(paths, "dg-daemon")
-					: unitPathFor(deps);
+		const path = unitLocation(deps);
 		mkdirSync(dirname(path), { recursive: true });
 		writeFileSync(path, text);
 		return path;
@@ -731,7 +733,7 @@ describe("rewriteDaemonAutostart", () => {
 
 		const result = await rewriteDaemonAutostart(deps, paths);
 
-		expect(result).toEqual({ status: "rewritten", path: unit });
+		expect(result).toEqual({ status: "rewritten", path: unit, backup: `${unit}.pre-compiled` });
 		const text = readFileSync(unit, "utf8");
 		expect(text).toContain(`"${join(paths.dataDir, "bin", "current", "dg")}" "daemon" "serve"`);
 		expect(text).not.toContain("dg.js");
@@ -756,12 +758,17 @@ describe("rewriteDaemonAutostart", () => {
 
 	it("rewrites a LaunchAgent and runs no launchctl command", async () => {
 		const deps = makeDeps({ platform: "darwin" });
-		const unit = seedUnit(deps, `<plist><string>${join(paths.dataDir, "lib", "current", "dg.js")}</string><key>DG_HOME</key><string>${paths.legacyHome}</string></plist>`);
+		const old = `<plist><string>${join(paths.dataDir, "lib", "current", "dg.js")}</string><key>DG_HOME</key><string>${paths.legacyHome}</string></plist>`;
+		const unit = seedUnit(deps, old);
 
 		const result = await rewriteDaemonAutostart(deps, paths);
 
 		expect(result.status).toBe("rewritten");
-		expect(readFileSync(unit, "utf8")).toContain(join(paths.dataDir, "bin", "current", "dg"));
+		const text = readFileSync(unit, "utf8");
+		expect(text).toContain(join(paths.dataDir, "bin", "current", "dg"));
+		expect(text).not.toContain("dg.js");
+		expect(readFileSync(`${unit}.pre-compiled`, "utf8")).toBe(old);
+		expect(written.find((entry) => entry.path === `${unit}.pre-compiled`)?.mode).toBe(0o600);
 		expect(ran).toEqual([]);
 	});
 
@@ -771,9 +778,30 @@ describe("rewriteDaemonAutostart", () => {
 
 		const result = await rewriteDaemonAutostart(deps, paths);
 
-		expect(["skipped", "absent"]).toContain(result.status);
+		expect(result.status).toBe("skipped");
 		expect(readFileSync(unit, "utf8")).toContain("dg.js");
 		expect(ran).toEqual([]);
+	});
+
+	it("leaves a unit that records a different DG_HOME alone", async () => {
+		const deps = makeDeps();
+		const old = OLD_SYSTEMD(paths.dataDir).replace(`DG_HOME=${paths.legacyHome}`, `DG_HOME=${join(root, "other-home")}`);
+		const unit = seedUnit(deps, old);
+
+		const result = await rewriteDaemonAutostart(deps, paths);
+
+		expect(result.status).toBe("absent");
+		expect(readFileSync(unit, "utf8")).toBe(old);
+		expect(existsSync(`${unit}.pre-compiled`)).toBe(false);
+		expect(ran).toEqual([]);
+	});
+
+	it("throws when systemctl daemon-reload fails after the rewrite", async () => {
+		const deps = makeDeps();
+		seedUnit(deps, OLD_SYSTEMD(paths.dataDir));
+		replies = () => ({ code: 1 });
+
+		await expect(rewriteDaemonAutostart(deps, paths)).rejects.toThrow("daemon-reload failed");
 	});
 
 	it("does nothing with no unit, or while the compiled program is missing", async () => {

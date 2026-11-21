@@ -135,17 +135,12 @@ instructions check the installed binary once and call `dg` from PATH, or the
 launcher path the block names. When `dg` does not know a command the skill
 names, the block prints `run dg upgrade`.
 
-`dg install --cli-only` skips the extension and the dg daemon. No skill declares `requires: [extension]`. `pw`, `proto`, `demo`,
-`chat` and `overwatch` run locally by default, and `--ext` requires the
-extension (`pw launch` always needs it), which pairs with each session on its own. `chat` and `overwatch` still need the dg daemon, so their
-bootstrap block runs the full installer, which removes the CLI-only marker. The
-CLI-only set includes stash, proxy, clipboard-img, and other skills without
-that requirement. Live inbox profiles still need
-the dg daemon; Google SMS cleanup needs
-Messages for Web through the host's browser tools. `jobs` also needs the full
-install, since it drives the dg daemon directly though it has no extension
-dependency. Instructions that refer to later-wave skills still need those
-skills separately until their ports ship.
+`dg install --cli-only` skips only the extension. A CLI-only install has every command, including the dg daemon.
+No skill declares `requires: [extension]`. `pw`, `proto`, `demo`, `chat` and `overwatch` run locally by default,
+and `--ext` requires the extension (`pw launch` always needs it), which pairs with each session on its own.
+`chat`, `overwatch`, live inbox profiles and `jobs` use the dg daemon, which a CLI-only install already has.
+Google SMS cleanup needs Messages for Web through the host's browser tools. Instructions that refer to
+later-wave skills still need those skills separately until their ports ship.
 
 Stash supports scratch, state, current-worktree, and main-worktree scopes.
 Clipboard capture needs WSL's `wslpath` and `powershell.exe`, Wayland's `wl-paste`,

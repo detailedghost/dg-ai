@@ -6,7 +6,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { present, removeBootstrapDirs, removeBootstrapFixtures, runBootstrap, sha256 } from "./bootstrap-fixtures";
+import { present, removeBootstrapDirs, runBootstrap, sha256 } from "./bootstrap-fixtures";
 
 const VERSION = "1.27.0";
 const ASSET = `dg-chat-skills-${VERSION}.zip`;
@@ -14,7 +14,6 @@ const made: string[] = [];
 
 afterEach(removeBootstrapDirs);
 afterAll(() => {
-	removeBootstrapFixtures();
 	for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 

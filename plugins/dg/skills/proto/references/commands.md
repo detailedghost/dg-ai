@@ -45,8 +45,8 @@ same login wall or redirect will not help.
 
 ## CLI bootstrap
 
-Use the installed binary at `dg`; install or refresh it when it
-is missing or too old. In a development checkout, rebuild and reinstall it first:
+Use the installed binary at `dg`; install it when it
+is missing, and follow the upgrade hint when it is too old. In a development checkout, rebuild and reinstall it first:
 
 ```bash
 dg proto --ext --help >/dev/null 2>&1 ||

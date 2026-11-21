@@ -23,6 +23,11 @@ import { createContext } from "../src/doctor/runner";
 import { makeArea } from "./dg-launcher-fixtures";
 import { fenceEnv } from "./fence-env";
 
+function pathOf(file: { path: string } | undefined): string {
+	if (!file) throw new Error("the completion file is missing");
+	return file.path;
+}
+
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
 const posix = describe.skipIf(process.platform === "win32");
 const FOREIGN = "#!/bin/sh\necho other tool\n";
@@ -106,7 +111,7 @@ posix("completionFiles with a dg launcher in the bin folder", () => {
 
 		for (const program of PROGRAM_NAMES)
 			for (const shell of COMPLETION_SHELLS) {
-				const path = completionFiles(seams).find((file) => file.shell === shell)?.path ?? "";
+				const path = pathOf(completionFiles(seams).find((file) => file.shell === shell));
 				expect(existsSync(path.replace(/dg(\.fish)?$/, `${program}$1`))).toBe(false);
 			}
 	});
@@ -134,7 +139,7 @@ posix("retired completion files", () => {
 		PROGRAM_NAMES.flatMap((program) =>
 			COMPLETION_SHELLS.map((shell) => {
 				const dg = completionFiles({ ...given, binDir: join(area, "empty-bin") }).find((file) => file.shell === shell);
-				return { program, path: (dg?.path ?? "").replace(/dg(\.fish)?$/, `${program}$1`) };
+				return { program, path: pathOf(dg).replace(/dg(\.fish)?$/, `${program}$1`) };
 			}),
 		);
 	const seed = (): void => {
@@ -167,13 +172,13 @@ posix("retired completion files", () => {
 
 	test("a retired-name file that does not call back stays", () => {
 		const [first] = retired();
-		mkdirSync(join(first?.path ?? "", ".."), { recursive: true });
-		writeFileSync(first?.path ?? "", "# mine\n");
+		mkdirSync(join(pathOf(first), ".."), { recursive: true });
+		writeFileSync(pathOf(first), "# mine\n");
 
 		writeCompletions(seams, () => undefined);
 		removeCompletions(seams, () => undefined);
 
-		expect(readFileSync(first?.path ?? "", "utf8")).toBe("# mine\n");
+		expect(readFileSync(pathOf(first), "utf8")).toBe("# mine\n");
 	});
 
 	test("a second writeCompletions removes nothing more", () => {
@@ -281,13 +286,13 @@ posix("doctor completion check files", () => {
 		const all = { ...seams, binDir: bin };
 		writeCompletions(all, () => undefined);
 		const [first] = dgFiles(all);
-		writeFileSync(first?.path ?? "", "old");
+		writeFileSync(pathOf(first), "old");
 
 		const result = await files?.run(ctx);
 
 		expect(result?.status).toBe("warn");
 		expect(result?.detail).toContain("1 completion file(s) out of date");
-		expect(result?.detail).toContain(first?.path ?? "");
+		expect(result?.detail).toContain(pathOf(first));
 	});
 
 	test("expects no dg file and reports nothing for it when <bin>/dg is a file of a different tool", async () => {

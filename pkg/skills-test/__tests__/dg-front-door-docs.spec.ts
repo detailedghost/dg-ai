@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { GROUPED, resolveRoute } from "../../dg/src/flat";
-import { codeRegions, dgCommandForms, dgGroups, runDgHelp } from "./docs-help-kit";
+import { resolveRoute } from "../../dg/src/flat";
+import { codeRegions, dgCommandForms, dgGroups, OWN_WORDS, runDgHelp } from "./docs-help-kit";
 import { count, REPO_ROOT, readRepoFile } from "./test-support";
 
 const ADR_PATH = "docs/adr/0020-one-dg-command.md";
@@ -21,10 +21,8 @@ const CHANGED_DOCS = [
 ];
 const ADR_0055 = "docs/adr/0055-one-dg-program-with-flat-commands.md";
 const OLD_NAMES = /\bdg-(skills|agent|daemon)\b/;
-const OWN_WORDS = ["completion", "help", "__complete", "--help", "--version"];
-const GROUP_VERBS: readonly string[] = Object.values(GROUPED).flat();
 const allowedFirstWord = (name: string): boolean =>
-	resolveRoute(name) !== undefined || OWN_WORDS.includes(name) || GROUP_VERBS.includes(name);
+	resolveRoute(name) !== undefined || OWN_WORDS.includes(name);
 const RETIRED_IN_AMENDMENT = ["review", "service"];
 
 const read = (path: string): string => {
@@ -32,6 +30,7 @@ const read = (path: string): string => {
 	return readRepoFile(path);
 };
 const source = (...parts: string[]): string => readRepoFile("pkg", ...parts);
+const withoutBareExamples = (text: string): string => text.replace(/\b(?:bare|never as) `dg [a-z]+`/g, "");
 const flat = (text: string): string => text.replace(/\s+/g, " ");
 
 function heading(text: string, title: string): string {
@@ -400,7 +399,7 @@ describe("README.md flat commands", () => {
 		expect(readme).not.toMatch(OLD_NAMES);
 	});
 
-	test("each collision verb resolves to its group and each alias to its target", () => {
+	test("no collision verb resolves at the top level and each alias resolves to its target", () => {
 		for (const verb of ["serve", "status", "start", "stop", "restart", "sessions", "origin", "send", "recv", "progress", "spawn", "stage", "close", "manifest"])
 			expect([verb, resolveRoute(verb)]).toEqual([verb, undefined]);
 		for (const [alias, target] of [["upgrade", "update"], ["extension", "install"]] as const)
@@ -480,7 +479,7 @@ describe("changed documents", () => {
 	});
 
 	const shown = (): Array<[string, string[][]]> => [
-		...CHANGED_DOCS.map((f): [string, string[][]] => [f, dgCommandForms(read(f))]),
+		...CHANGED_DOCS.map((f): [string, string[][]] => [f, dgCommandForms(withoutBareExamples(read(f)))]),
 		[`${ADR_PATH} amendment`, dgCommandForms(amendment())],
 	];
 

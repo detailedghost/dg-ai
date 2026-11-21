@@ -104,9 +104,19 @@ async function sharedOptions() {
 	return { options, version, sha };
 }
 
-/** Builds one compiled dg executable for `target` at `outfile`. */
-export async function buildCompiled({ target, outfile }: { target: CompileKey; outfile: string }): Promise<string> {
-	const { options } = await sharedOptions();
+type SharedOptions = Awaited<ReturnType<typeof sharedOptions>>;
+
+/** Builds one compiled dg executable for `target` at `outfile`; pass `shared` to reuse one page build across targets. */
+export async function buildCompiled({
+	target,
+	outfile,
+	shared,
+}: {
+	target: CompileKey;
+	outfile: string;
+	shared?: SharedOptions;
+}): Promise<string> {
+	const { options } = shared ?? (await sharedOptions());
 	mkdirSync(dirname(outfile), { recursive: true });
 	const result = await Bun.build({ ...options, compile: { target: COMPILE_TARGETS[target], outfile } });
 	if (!result.success) throw new AggregateError(result.logs, `Compiled dg build failed for ${target}.`);
@@ -140,9 +150,13 @@ if (import.meta.main) {
 	if (!values.compiled) await buildLauncher(outdir);
 	else {
 		const keys = values.compiled.includes("all") ? Object.keys(COMPILE_TARGETS) : values.compiled;
-		for (const key of keys) {
+		const targets = keys.map((key) => {
 			if (!isCompileKey(key)) throw new Error(`unknown compile target ${key}; expected all or ${Object.keys(COMPILE_TARGETS).join(", ")}`);
-			console.log(await buildCompiled({ target: key, outfile: join(outdir, compiledAssetName(key)) }));
+			return key;
+		});
+		const shared = await sharedOptions();
+		for (const target of targets) {
+			console.log(await buildCompiled({ target, outfile: join(outdir, compiledAssetName(target)), shared }));
 		}
 	}
 }

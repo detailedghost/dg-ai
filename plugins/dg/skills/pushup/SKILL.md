@@ -54,7 +54,7 @@ If a step fails, run dg doctor batch-open pw.
      curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
    ```
 
-   Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
+   Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
    With `--ext`, report which group you used. If `batch-open` fails, print the PR URL and continue: the PR already exists.
 

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
 	existsSync,
 	lstatSync,
@@ -13,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
-import { removeBootstrapDirs, removeBootstrapFixtures, runBootstrap } from "./bootstrap-fixtures";
+import { removeBootstrapDirs, runBootstrap } from "./bootstrap-fixtures";
 import {
 	assertExtensionInstalled,
 	extensionRequiredMessage,
@@ -233,7 +233,6 @@ describe.skipIf(
 	process.platform === "win32" || process.env.DG_BOOTSTRAP_E2E !== "1",
 )("bootstrap.sh flag", () => {
 	afterEach(removeBootstrapDirs);
-	afterAll(removeBootstrapFixtures);
 
 	const run = async (args: string[], env: Record<string, string> = {}, version?: string) => {
 		const result = await runBootstrap({ args, env, version });

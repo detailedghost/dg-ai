@@ -1,6 +1,7 @@
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { compiledAssetName } from "../src/utils/lib";
 
 export interface FileSpec {
 	content: string;
@@ -87,8 +88,6 @@ export const PLATFORM_KEYS = [
 	"windows-arm64",
 ] as const;
 
-export const programAsset = (key: string): string => `dg-${key}${key.startsWith("windows-") ? ".exe" : ""}`;
-
 /** A fake compiled dg: prints `version` for --version, else logs its argv to `argvLog` when given. */
 export function fakeProgramScript(version: string, argvLog?: string, exitCode = 0): string {
 	const log = argvLog ? `printf '%s\\n' "$*" >> '${argvLog}'\n` : "";
@@ -127,7 +126,7 @@ export function writeReleaseServer(
 			"manifest.json": { content: JSON.stringify({ version: current }) },
 			"background.js": { content: "release build" },
 		});
-		const programs = PLATFORM_KEYS.map((key): [string, string] => [programAsset(key), program]);
+		const programs = PLATFORM_KEYS.map((key): [string, string] => [compiledAssetName(key), program]);
 		const sums = [...programs.map(([name, body]) => [name, sha256(body)]), [extensionName, sha256(extension)]]
 			.map(([name, hash]) => `${hash}  ${name}`)
 			.join("\n");

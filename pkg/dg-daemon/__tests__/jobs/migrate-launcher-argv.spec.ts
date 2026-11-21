@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
+import { compiledProgramPath } from "@dg/common/node/program";
 import { compiledBackupPath, migrateLauncherArgv } from "../../src/jobs/migrate";
 import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
 
@@ -31,18 +32,21 @@ describe("migrateLauncherArgv", () => {
 				bot: { argv: [`${root}/runtime/current/bun`, `${root}/lib/current/dg.js`, "dg-skills", "inbox", "sweep"], every: "15m" },
 				mail: { argv: ["dg-skills", "inbox", "--x"], continuous: true },
 				phone: { argv: ["dg-agent", "phone", "listen"], continuous: true },
+				stale: { argv: ["/home/u/.dg/bin/dg-skills", "stat"], continuous: true },
 				other: { argv: ["python3", "bot.py"], continuous: true },
 			},
 		};
 		const paths = setup(config);
 		const before = readFileSync(paths.daemonConfigPath, "utf8");
 		const { rewritten } = migrateLauncherArgv(paths);
-		expect(rewritten.map((job) => job.name)).toEqual(["bot", "mail", "phone"]);
+		expect(rewritten.map((job) => job.name)).toEqual(["bot", "mail", "phone", "stale"]);
 		const jobs = configOf(paths).jobs;
+		const dg = compiledProgramPath(paths.dataDir);
 		expect(jobs.bot.argv).toEqual([`${root}/bin/current/dg`, "skills", "inbox", "sweep"]);
 		expect(jobs.bot.every).toBe("15m");
-		expect(jobs.mail.argv).toEqual(["dg", "skills", "inbox", "--x"]);
-		expect(jobs.phone.argv).toEqual(["dg", "agent", "phone", "listen"]);
+		expect(jobs.mail.argv).toEqual([dg, "skills", "inbox", "--x"]);
+		expect(jobs.phone.argv).toEqual([dg, "agent", "phone", "listen"]);
+		expect(jobs.stale.argv).toEqual([dg, "skills", "stat"]);
 		expect(jobs.other.argv).toEqual(["python3", "bot.py"]);
 		expect(configOf(paths).jobsVersion).toBe(2);
 		expect(readFileSync(compiledBackupPath(paths), "utf8")).toBe(before);
@@ -55,7 +59,6 @@ describe("migrateLauncherArgv", () => {
 		migrateLauncherArgv(paths);
 		const after = readFileSync(paths.daemonConfigPath, "utf8");
 		const backup = readFileSync(compiledBackupPath(paths), "utf8");
-		writeFileSync(join(dirname(compiledBackupPath(paths)), "marker"), "");
 		expect(migrateLauncherArgv(paths).rewritten).toEqual([]);
 		expect(readFileSync(paths.daemonConfigPath, "utf8")).toBe(after);
 		expect(readFileSync(compiledBackupPath(paths), "utf8")).toBe(backup);
@@ -64,6 +67,14 @@ describe("migrateLauncherArgv", () => {
 	it("writes nothing when no job names an old program", () => {
 		const paths = setup({ jobs: { other: { argv: ["dg", "stat"], continuous: true } } });
 		expect(migrateLauncherArgv(paths).rewritten).toEqual([]);
+		expect(existsSync(compiledBackupPath(paths))).toBe(false);
+	});
+
+	it("throws on a config that is not valid JSON and changes nothing", () => {
+		const paths = setup({});
+		writeFileSync(paths.daemonConfigPath, "{ not json");
+		expect(() => migrateLauncherArgv(paths)).toThrow();
+		expect(readFileSync(paths.daemonConfigPath, "utf8")).toBe("{ not json");
 		expect(existsSync(compiledBackupPath(paths))).toBe(false);
 	});
 

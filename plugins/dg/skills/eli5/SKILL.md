@@ -8,7 +8,7 @@ description: 'Explain a concept, file, error, or codebase as if the reader is fi
 Explain one thing, very simply, with a picture. Then stop.
 
 A plain `/dg:eli5 <thing to explain>` needs no CLI at all. Only `-v`/`-p` (stash) or `--erd`
-(erd) need it; install or refresh it first, when it is missing or too old:
+(erd) need it; run the block first. It installs the CLI when it is missing and prints an upgrade hint when the CLI is too old:
 
 ```bash
 dg stash --help >/dev/null 2>&1 ||
@@ -17,7 +17,7 @@ dg stash --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
 If a step fails, run dg doctor erd stash.
 

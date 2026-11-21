@@ -3,8 +3,8 @@ feature: "One dg binary and one config file"
 feature_snake_case: "one_dg_binary"
 date: "2026-11-21"
 version: "1.0"
-status: "draft"
-current_slice: 0
+status: "in-progress"
+current_slice: 8
 pr_strategy: "single"
 execution:
   profile: "balance"

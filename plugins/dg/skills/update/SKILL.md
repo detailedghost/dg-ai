@@ -5,7 +5,7 @@ description: Update every dg part to the newest release with one command. Checks
 
 # Skill: update
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
 dg update --help 2>&1 | grep -q -- --check ||
@@ -14,7 +14,7 @@ dg update --help 2>&1 | grep -q -- --check ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
-Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
 An older CLI has no `update` command and prints its general help instead, so the check looks for the `--check` flag. The bootstrap is a full install. On a machine set up with `--cli-only`, end that line with `| sh -s -- --cli-only` instead, so it stays CLI-only.
 

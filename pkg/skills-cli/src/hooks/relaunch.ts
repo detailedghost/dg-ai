@@ -1,16 +1,13 @@
-import { ownedEntries } from "./doctor";
 import { HOOKS } from "./manifest";
 import { claudeWriter } from "./settings/claude";
 import { codexWriter } from "./settings/codex";
 import { opencodeWriter } from "./settings/opencode";
+import { ownedEntries } from "./settings/owned";
 import type { HookRuntime, SettingsWriter } from "./types";
 
 const OLD_LAUNCHER = /(?:^|[\\/])dg-skills(?:\.cmd|\.exe)?$/i;
 
-/**
- * Points every enabled hook whose command still runs the removed `dg-skills` launcher at `launcher`,
- * in the Claude, Codex and OpenCode settings. Returns the runtimes it changed; a second run changes nothing.
- */
+/** Points each enabled hook that still runs the removed `dg-skills` launcher at `launcher`; returns the runtimes it changed. */
 export async function relaunchHooks(
 	launcher: string,
 	home: string,

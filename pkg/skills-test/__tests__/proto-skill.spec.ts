@@ -139,7 +139,7 @@ describe("proto skill", () => {
 		const commands = skillFile("references/commands.md");
 		const contracts = skillFile("references/contracts.md");
 
-		expect(commands).toContain("dg");
+		expect(commands).toContain("dg proto --ext");
 		expect(commands).toContain("bootstrap.sh");
 		expect(commands).toContain("extension-installed");
 		expect(commands).toContain("browser-batch-installed");

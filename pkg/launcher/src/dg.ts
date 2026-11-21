@@ -25,10 +25,7 @@ function invokedName(argv0: string | undefined): string | undefined {
 		?.replace(/\.exe$/i, "");
 }
 
-/**
- * Runs dg with `argv`. A first word that names an old program is the bundle bridge for 6.3 shims and
- * stored argv: it runs that program after a notice. A program started under an old name exits 1.
- */
+/** Runs dg with `argv`; an old program name as first word is the 6.3 bridge, as invoked name it exits 1. */
 export async function dispatch(argv: readonly string[], argv0?: string): Promise<number> {
 	const invoked = invokedName(argv0);
 	if (isOldName(invoked)) {

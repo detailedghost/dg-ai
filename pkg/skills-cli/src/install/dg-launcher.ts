@@ -2,9 +2,9 @@ import { closeSync, existsSync, lstatSync, openSync, readdirSync, readlinkSync, 
 import { isAbsolute, join, resolve } from "node:path";
 import { isMissingPath } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node/dg-paths";
+import { programExeName, VERSION_DIR } from "./current";
 
 const SNIFF_BYTES = 4096;
-const VERSION_DIR = /^\d+\.\d+\.\d+/;
 const markerOf = (platform: NodeJS.Platform): string => (platform === "win32" ? "lib\\current\\dg.js" : "lib/current/dg.js");
 
 function isBundleShim(path: string, platform: NodeJS.Platform): boolean {
@@ -38,12 +38,12 @@ function linksIntoRoot(path: string, root: string): boolean {
 
 function hardLinkIntoRoot(path: string, root: string): boolean {
 	try {
-		const { ino, dev } = statSync(path);
+		const { ino, dev } = statSync(path, { bigint: true });
 		const bin = join(root, "bin");
 		return readdirSync(bin).some((name) => {
-			const installed = join(bin, name, "dg.exe");
+			const installed = join(bin, name, programExeName("win32"));
 			if (!VERSION_DIR.test(name) || !existsSync(installed)) return false;
-			const other = statSync(installed);
+			const other = statSync(installed, { bigint: true });
 			return other.ino === ino && other.dev === dev;
 		});
 	} catch {
@@ -51,10 +51,7 @@ function hardLinkIntoRoot(path: string, root: string): boolean {
 	}
 }
 
-/**
- * True for a launcher dg wrote: a link into `<root>/bin/`, a hard link to an installed `dg.exe`, or an old
- * shim whose first bytes are text that runs the `lib/current/dg.js` bundle.
- */
+/** True for a launcher dg wrote: a link into `<root>/bin/`, a hard link to `dg.exe`, or an old bundle shim. */
 export function isDgLauncher(
 	path: string,
 	platform: NodeJS.Platform = process.platform,

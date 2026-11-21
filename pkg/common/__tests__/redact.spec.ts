@@ -117,7 +117,7 @@ describe("logging paths", () => {
 			`dg daemon: boom ${TOKEN} ${EMAIL}`,
 			[TOKEN],
 		);
-		emitRedacted((line) => lines.push(line), `dg-agent: boom ${TOKEN}`, [TOKEN]);
+		emitRedacted((line) => lines.push(line), `dg agent: boom ${TOKEN}`, [TOKEN]);
 		expect(lines).toHaveLength(2);
 		expect(lines.join("\n")).not.toContain(TOKEN);
 		expect(lines.join("\n")).not.toContain(EMAIL);

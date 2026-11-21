@@ -40,6 +40,8 @@ export function isCompatLauncher(paths: DgPaths, file: string, platform: NodeJS.
 	}
 }
 
+const launcherFile = (name: string, platform: NodeJS.Platform): string => (platform === "win32" ? `${name}.cmd` : name);
+
 function removeIfEmpty(dir: string): void {
 	if (existsSync(dir) && readdirSync(dir).length === 0) rmdirSync(dir);
 }
@@ -49,10 +51,10 @@ export function removeCompatLaunchers(paths: DgPaths, platform: NodeJS.Platform 
 	const legacyBin = join(paths.legacyHome, "bin");
 	if (legacyBin === paths.binDir || !existsSync(legacyBin)) return;
 	for (const name of PROGRAM_NAMES) {
-		const file = platform === "win32" ? `${name}.cmd` : name;
+		const file = launcherFile(name, platform);
 		if (isCompatLauncher(paths, file, platform)) rmSync(join(legacyBin, file), { force: true });
 	}
-	const launchersLeft = PROGRAM_NAMES.some((name) => existsSync(join(legacyBin, platform === "win32" ? `${name}.cmd` : name)));
+	const launchersLeft = PROGRAM_NAMES.some((name) => existsSync(join(legacyBin, launcherFile(name, platform))));
 	if (!launchersLeft) {
 		for (const name of PROGRAM_NAMES) rmSync(join(legacyBin, `${name}.version`), { force: true });
 	}

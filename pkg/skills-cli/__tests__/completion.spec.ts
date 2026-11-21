@@ -18,7 +18,7 @@ beforeAll(() => {
 	scratch = mkdtempSync(join(tmpdir(), "dg-completion-"));
 	bin = join(scratch, "bin");
 	mkdirSync(bin);
-	const shim = join(bin, "dg-skills");
+	const shim = join(bin, "dg");
 	writeFileSync(shim, `#!/bin/sh\nexec "${process.execPath}" "${ENTRY}" "$@"\n`);
 	chmodSync(shim, 0o755);
 });
@@ -85,14 +85,14 @@ const which = (name: string): boolean => Bun.which(name) !== null;
 
 describe("the completion scripts in a real shell", () => {
 	test.skipIf(!which("bash"))("bash completes st to stat, stat ch to checklist, and an option value after an equals sign", () => {
-		const script = `source /dev/stdin <<'EOF'\n${completionScript("bash", "dg-skills")}EOF
+		const script = `source /dev/stdin <<'EOF'\n${completionScript("bash", "dg")}EOF
 for line in "dg st" "dg stat ch" "dg stat " "dg channel-review start --env=d"; do
 	COMP_LINE="$line"
 	COMP_POINT=\${#line}
 	read -ra COMP_WORDS <<< "\${line//=/ = }"
 	[[ "$line" == *" " ]] && COMP_WORDS+=("")
 	COMP_CWORD=$((\${#COMP_WORDS[@]} - 1))
-	_dg_skills
+	_dg
 	printf '%s\\n' "\${COMPREPLY[@]}"
 done
 `;
@@ -102,23 +102,23 @@ done
 	test.skipIf(!which("zsh"))("zsh autoloads the file from fpath, completes stat ch to checklist, and a path flag to files", () => {
 		const dir = join(scratch, "site-functions");
 		mkdirSync(dir, { recursive: true });
-		writeFileSync(join(dir, "_dg-skills"), completionScript("zsh", "dg-skills"));
+		writeFileSync(join(dir, "_dg"), completionScript("zsh", "dg"));
 		const script = `fpath=(${dir} $fpath)
-autoload -U _dg-skills
+autoload -U _dg
 compadd() { print -l -- "\${(@P)argv[-1]}" }
 compdef() { : }
 compset() { : }
 _files() { print files }
-words=(dg st); CURRENT=2; _dg-skills
-words=(dg stat ch); CURRENT=3; _dg-skills
-words=(dg install --repo ""); CURRENT=4; _dg-skills
-words=(dg install --repo=/x); CURRENT=3; PREFIX=--repo=/x; _dg-skills
+words=(dg st); CURRENT=2; _dg
+words=(dg stat ch); CURRENT=3; _dg
+words=(dg install --repo ""); CURRENT=4; _dg
+words=(dg install --repo=/x); CURRENT=3; PREFIX=--repo=/x; _dg
 `;
 		expect(shell(["zsh", "-f"], script)).toEqual(["stash", "stat", "checklist", "files", "files"]);
 	});
 
 	test.skipIf(!which("fish"))("fish completes stat ch to checklist", () => {
-		const script = `${completionScript("fish", "dg-skills")}
+		const script = `${completionScript("fish", "dg")}
 complete -C "dg st"
 complete -C "dg stat ch"
 complete -C "dg stat "

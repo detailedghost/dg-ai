@@ -10,7 +10,7 @@ const OLD_FALLBACK_DIR = "$HOME/.local/bin";
 
 const LEGACY_LAUNCHER = /(?:~|<home>|\$HOME)\/\.dg\/bin\/dg(?:-skills|-agent|-daemon)?(?![\w-])/g;
 const SENTENCE =
-	/\n *Call `dg[a-z-]*`(?: and `dg[a-z-]*`)* in every later step\. If [^\n]* instead\.\n/;
+	/\n *Call `dg[a-z-]*`(?: and `dg[a-z-]*`)* in every later step\. If [^\n]* instead\.[^\n]*\n/;
 const FENCE = new RegExp(
 	`^( *)\`\`\`(bash|sh)\\n([\\s\\S]*?)^\\1\`\`\`\\n(?:${SENTENCE.source})?`,
 	"gm",
@@ -52,7 +52,7 @@ function group(expressions: string[]): string[] {
 	});
 }
 
-const SENTENCE_TEXT = `Call \`dg\` in every later step. If \`dg\` alone does not answer, also after the bootstrap, call \`${LAUNCHER}\` instead.`;
+const SENTENCE_TEXT = `Call \`dg\` in every later step. If \`dg\` alone does not answer, also after the bootstrap, call \`${LAUNCHER}\` instead. If the block prints "run dg upgrade", run \`dg upgrade\`, then run the step again.`;
 
 const TRAILER_IF = /^if .*; then (.*); else .*; fi$/;
 

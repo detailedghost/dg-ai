@@ -198,7 +198,7 @@ function installTarget(deps: UpdateDeps): { target: InstallTarget; others: strin
 }
 
 async function installStep(deps: UpdateDeps, version: string): Promise<StepResult> {
-	const name = "CLI, runtime and extension";
+	const name = "CLI and extension";
 	try {
 		const { target, others } = installTarget(deps);
 		await deps.install(target, version);

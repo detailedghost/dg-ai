@@ -6,7 +6,7 @@ description: Run local thrash reviews for GitHub pull requests and GitLab merge 
 # Channel review
 
 The executable is `dg`.
-On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
+On first use, the block installs the CLI when it is missing and prints an upgrade hint when it is too old. It needs no Bun at runtime:
 
 ```sh
 { dg deps-upgrade --help >/dev/null 2>&1 &&
@@ -18,7 +18,7 @@ On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
 if dg deps-upgrade --help >/dev/null 2>&1 && dg channel-review --help >/dev/null 2>&1; then dg channel-review --help; else "${DG_HOME:-$HOME/.local}/bin/dg" channel-review --help; fi
 ```
 
-Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
 If a step fails, run dg doctor channel-review credentials address thrash deps-upgrade.
 

@@ -5,7 +5,7 @@ import { resolveRoute } from "../../dg/src/flat";
 import { parseJobDeclaration } from "../../dg-daemon/src/jobs/declaration";
 import { parseSetupAnswers } from "../../dg-daemon/src/jobs/setup-answers";
 import { RESERVED_CREDENTIAL_PREFIXES } from "../../common/src/credentials-format";
-import { dgCommandForms, runDgHelp } from "./docs-help-kit";
+import { dgCommandForms, OWN_WORDS, runDgHelp } from "./docs-help-kit";
 import { ADR_SECTIONS, count, REPO_ROOT, readRepoFile } from "./test-support";
 
 const JOBS = "docs/jobs-and-services.md";
@@ -285,7 +285,7 @@ describe("each documented command passes its --help form", () => {
 		const bad = CHANGED.flatMap((file) =>
 			dgCommandForms(read(file))
 				.map((words) => words[0])
-				.filter((name) => resolveRoute(name) === undefined && !["completion", "help", "--help", "--version"].includes(name))
+				.filter((name) => resolveRoute(name) === undefined && !OWN_WORDS.includes(name))
 				.map((name) => `${file}: dg ${name}`),
 		);
 		expect(bad).toEqual([]);

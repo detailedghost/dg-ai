@@ -20,7 +20,6 @@ import {
 } from "../src/install/compat-launchers";
 
 const posix = describe.skipIf(process.platform === "win32");
-const NAMES = PROGRAM_NAMES;
 
 let dir: string;
 let home: string;
@@ -97,7 +96,7 @@ describe("compatLauncherText", () => {
 const seedOldBin = (): string => {
 	const bin = join(paths.legacyHome, "bin");
 	mkdirSync(bin, { recursive: true });
-	for (const name of NAMES)
+	for (const name of PROGRAM_NAMES)
 		writeFileSync(join(bin, name), compatLauncherText(name, join(paths.binDir, name), "1.30.0", "linux"), { mode: 0o755 });
 	return bin;
 };
@@ -107,8 +106,8 @@ describe("isCompatLauncher", () => {
 		const bin = seedOldBin();
 
 		expect(existsSync(paths.binDir)).toBe(false);
-		for (const name of NAMES) expect(isCompatLauncher(paths, name, "linux")).toBe(true);
-		expect(readdirSync(bin).sort()).toEqual([...NAMES].sort());
+		for (const name of PROGRAM_NAMES) expect(isCompatLauncher(paths, name, "linux")).toBe(true);
+		expect(readdirSync(bin).sort()).toEqual([...PROGRAM_NAMES].sort());
 	});
 
 	test("is false for a file that is not the notice text and for a missing file", () => {
@@ -135,7 +134,7 @@ posix("removeCompatLaunchers", () => {
 		removeCompatLaunchers(paths, "linux");
 
 		expect(existsSync(join(bin, "dg"))).toBe(false);
-		for (const name of NAMES) expect(existsSync(join(bin, name))).toBe(false);
+		for (const name of PROGRAM_NAMES) expect(existsSync(join(bin, name))).toBe(false);
 	});
 
 	test("leaves a legacy dg file and an old shim that are not notice launchers byte-identical", () => {
@@ -153,7 +152,7 @@ posix("removeCompatLaunchers", () => {
 
 	test("removes the version files left beside removed launchers and then the legacy home", () => {
 		const bin = seedOldBin();
-		for (const name of NAMES) writeFileSync(join(bin, `${name}.version`), "1.28.1\n");
+		for (const name of PROGRAM_NAMES) writeFileSync(join(bin, `${name}.version`), "1.28.1\n");
 
 		removeCompatLaunchers(paths, "linux");
 
@@ -198,7 +197,7 @@ posix("removeCompatLaunchers", () => {
 	test("removes the .cmd notice launchers on Windows", () => {
 		const bin = join(paths.legacyHome, "bin");
 		mkdirSync(bin, { recursive: true });
-		for (const name of NAMES)
+		for (const name of PROGRAM_NAMES)
 			writeFileSync(join(bin, `${name}.cmd`), compatLauncherText(name, join(paths.binDir, `${name}.cmd`), "1.30.0", "win32"));
 
 		removeCompatLaunchers(paths, "win32");

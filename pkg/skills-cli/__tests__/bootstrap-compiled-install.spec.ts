@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
 	chmodSync,
 	mkdirSync,
@@ -14,14 +14,12 @@ import {
 	present,
 	programRun,
 	removeBootstrapDirs,
-	removeBootstrapFixtures,
 	runBootstrap,
 } from "./bootstrap-fixtures";
 
 const posix = describe.skipIf(process.platform === "win32");
 
 afterEach(removeBootstrapDirs);
-afterAll(removeBootstrapFixtures);
 
 function seedOldInstall(root: string): void {
 	const data = join(root, "data");

@@ -3,7 +3,7 @@
  * directory, does not execute skill content, and installs the verified compiled
  * dg and its link, never the extension.
  */
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
 	chmodSync,
 	copyFileSync,
@@ -23,7 +23,7 @@ import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { INSTALLED_SKILL_FILES } from "../../common/__tests__/installed-skill-files";
 import { zshHint } from "../src/completion/files";
-import { assetName, present, removeBootstrapDirs, removeBootstrapFixtures, runBootstrap } from "./bootstrap-fixtures";
+import { assetName, present, removeBootstrapDirs, runBootstrap } from "./bootstrap-fixtures";
 import { compiledAssetName, platformKey } from "../src/utils/lib";
 import { fetchedUrls, writeReleaseServer } from "./release-fixtures";
 
@@ -440,7 +440,6 @@ describe("skills-only docs", () => {
 
 describe.skipIf(process.env.DG_BOOTSTRAP_E2E !== "1")("bootstrap.sh --skills-only", () => {
 	afterEach(removeBootstrapDirs);
-	afterAll(removeBootstrapFixtures);
 
 	test("copies the repository skills, then installs only the compiled dg program", async () => {
 		const dest = join(mkdtempSync(join(tmpdir(), "dg-skills-boot-")), "skills");

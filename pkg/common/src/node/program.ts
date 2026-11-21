@@ -76,9 +76,10 @@ function words(program: string | undefined): readonly string[] | undefined {
 /**
  * Maps argv that runs the 6.3 bundle (`<root>/runtime/current/bun <root>/lib/current/dg.js <program> ...`)
  * or an old program name (`dg-skills ...`, `<bin>/dg-skills.cmd ...`) to the compiled dg form.
+ * With `root`, an old program name maps to the absolute compiled program of that root.
  * Returns undefined for any other argv.
  */
-export function rewriteLauncherArgv(argv: readonly string[]): string[] | undefined {
+export function rewriteLauncherArgv(argv: readonly string[], root?: string): string[] | undefined {
 	const [head = "", second, third, ...rest] = argv;
 	const bundle = BUNDLE.exec(head);
 	if (bundle) {
@@ -92,6 +93,7 @@ export function rewriteLauncherArgv(argv: readonly string[]): string[] | undefin
 	if (!old) return undefined;
 	const [, dir = "", name = "", ext] = old;
 	if (dir !== "" && !/[\\/]$/.test(dir)) return undefined;
+	if (root !== undefined) return [compiledProgramPath(root), ...(words(name.toLowerCase()) ?? []), ...argv.slice(1)];
 	const exe = dir === "" ? "dg" : ext ? `${dir}dg.exe` : `${dir}dg`;
 	return [exe, ...(words(name.toLowerCase()) ?? []), ...argv.slice(1)];
 }

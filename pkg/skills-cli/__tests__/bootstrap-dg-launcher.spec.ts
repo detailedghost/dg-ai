@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
 	chmodSync,
 	lstatSync,
@@ -12,7 +12,6 @@ import { dirname, join } from "node:path";
 import {
 	programRun,
 	removeBootstrapDirs,
-	removeBootstrapFixtures,
 	runBootstrap,
 } from "./bootstrap-fixtures";
 
@@ -42,7 +41,6 @@ const OLD_SHIM = (root: string, program = "dg"): string =>
 	`#!/bin/sh\nexec "${root}/runtime/current/bun" "${root}/lib/current/dg.js" ${program} "$@"\n`;
 
 afterEach(removeBootstrapDirs);
-afterAll(removeBootstrapFixtures);
 
 type Fixture = {
 	name: string;
@@ -204,11 +202,11 @@ describe("bootstrap.sh text", () => {
 	});
 
 	test("tests the dg path before it makes the link", () => {
-		const test = sh.indexOf("is_dg_launcher \"${BIN}/dg\"");
+		const linkTest = sh.indexOf("is_dg_launcher \"${BIN}/dg\"");
 		const link = sh.indexOf('link_current "${BIN}/dg"');
 
-		expect(test).toBeGreaterThan(-1);
-		expect(test).toBeLessThan(link);
+		expect(linkTest).toBeGreaterThan(-1);
+		expect(linkTest).toBeLessThan(link);
 		expect(sh).toContain("[ -L");
 		expect(sh).toContain("grep -qF 'lib/current/dg.js'");
 	});
@@ -275,7 +273,8 @@ describe("bootstrap.ps1 text", () => {
 		expect(ps1).toContain("dg: kept $path; it is not a dg launcher");
 		expect(ps1).toContain('".$old.version"');
 		expect(ps1).toContain("Contains('lib\\current\\dg.js')");
-		expect(ps1).toContain("Select-Object -First 4096");
+		expect(ps1).toContain("$stream.Read($buffer, 0, 4096)");
+		expect(ps1).not.toContain("ReadAllBytes");
 	});
 
 	test("writes no .cmd launcher and names no old program in a message", () => {

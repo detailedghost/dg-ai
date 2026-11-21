@@ -6,7 +6,7 @@ description: Review and clean Proton Mail, Gmail, or Outlook through dg, with re
 # Inbox cleanup
 
 The executable is `dg`.
-On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
+On first use, the block installs the CLI when it is missing and prints an upgrade hint when it is too old. It needs no Bun at runtime:
 
 ```sh
 dg inbox --help >/dev/null 2>&1 ||
@@ -16,7 +16,7 @@ dg inbox --help >/dev/null 2>&1 ||
 if dg inbox --help >/dev/null 2>&1; then dg inbox --help; else "${DG_HOME:-$HOME/.local}/bin/dg" inbox --help; fi
 ```
 
-Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
 If a step fails, run dg doctor inbox install require-extension.
 

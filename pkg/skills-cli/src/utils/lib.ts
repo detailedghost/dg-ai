@@ -5,6 +5,7 @@
  * (run) live in @dg/common/node and are only imported here.
  */
 
+import { spawnSync } from "node:child_process";
 import {
 	mkdirSync,
 	mkdtempSync,
@@ -196,14 +197,29 @@ function hasAvx2(cpuinfoFile: string): boolean {
 	}
 }
 
-/** The release platform key for this host; linux-x64 without avx2 takes the baseline build. */
+const AVX2_PROBE =
+	"Add-Type -Namespace Dg -Name Cpu -MemberDefinition '[DllImport(\"kernel32.dll\")] public static extern bool IsProcessorFeaturePresent(uint feature);'; [Dg.Cpu]::IsProcessorFeaturePresent(40)";
+
+function windowsHasAvx2(): boolean {
+	try {
+		const run = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", AVX2_PROBE], { encoding: "utf8", timeout: 30_000 });
+		return run.status !== 0 || run.stdout.trim() !== "False";
+	} catch {
+		return true;
+	}
+}
+
+/** The release platform key for this host; x64 without avx2 takes the baseline build. */
 export function platformKey(
 	platform: string = process.platform,
 	arch: string = process.arch,
 	cpuinfoFile: string = process.env.DG_CPUINFO_FILE || "/proc/cpuinfo",
+	probeWindowsAvx2: () => boolean = windowsHasAvx2,
 ): string {
 	const base = `${platform === "win32" ? "windows" : platform}-${arch}`;
-	return base === "linux-x64" && !hasAvx2(cpuinfoFile) ? `${base}-baseline` : base;
+	if (base === "linux-x64" && !hasAvx2(cpuinfoFile)) return `${base}-baseline`;
+	if (base === "windows-x64" && !probeWindowsAvx2()) return `${base}-baseline`;
+	return base;
 }
 
 /** The compiled release asset for a platform key: `dg-<key>`, with `.exe` on Windows. */

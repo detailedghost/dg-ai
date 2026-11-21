@@ -56,8 +56,11 @@ export function generatedLauncher(
 	const other = join(area, "other-root");
 	if (platform === "win32")
 		return `@echo off\r\n"${other}\\runtime\\current\\bun.exe" "${other}\\lib\\current\\dg.js" ${name} %*\r\n`;
-	return `#!/bin/sh\nroot='${other}'\nexec "$root/runtime/current/bun" "$root/lib/current/dg.js" ${name} "$@"\n`;
+	return oldShimText(other, name);
 }
+
+export const oldShimText = (root: string, name: string): string =>
+	`#!/bin/sh\nroot='${root}'\nexec "$root/runtime/current/bun" "$root/lib/current/dg.js" ${name} "$@"\n`;
 
 export function writeOldShims(
 	bin: string,

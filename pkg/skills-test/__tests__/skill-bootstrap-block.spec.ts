@@ -33,7 +33,7 @@ describe("skill-bootstrap-block --check", () => {
 	test("tells the agent to use the launcher path whenever the bare name does not answer", () => {
 		const text = readFileSync(join(SKILLS_DIR, "worktree", "SKILL.md"), "utf8");
 		expect(text).toContain(
-			"Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.",
+			"Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints \"run dg upgrade\", run `dg upgrade`, then run the step again.",
 		);
 	});
 

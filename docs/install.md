@@ -135,7 +135,7 @@ The move follows these rules:
    that wrote the pid file, then send SIGTERM and, if it stays, SIGKILL; a pid
    that another program reused gets no signal, and a pid dg cannot identify
    blocks the move. On Windows dg never stops it: it
-   prints the service line, and you stop the dg daemon service, then run
+   prints the service line, and you stop the dg daemon, then run
    `dg install` again.
 6. The phone state moves on any `dg phone` command and on
    `dg install`. See [phone](phone.md#where-the-phone-state-lives).
@@ -201,7 +201,7 @@ dg prints each line once for each process.
 | Line | Cause | Fix |
 | --- | --- | --- |
 | `dg: kept <from>; a process that writes it is running. Stop it, then run dg install again` | A live writer holds the entry. dg blocked it. | Stop the process, then run `dg install`. |
-| `dg: kept <from>; stop the dg daemon service, then run dg install again` | On Windows, dg never stops the daemon. | Stop the dg daemon service, then run `dg install`. |
+| `dg: kept <from>; stop the dg daemon, then run dg install again` | On Windows, dg never stops the daemon. | Stop the dg daemon, then run `dg install`. |
 | `dg: <from> has not moved to <to>; run dg install` | A program tried to open an entry that has not moved. This command lacks a step the move needs, such as the phone check or the ssms config folder. | Run `dg install`, or for the phone any `dg phone` command. |
 | `dg: copied <from> to <to>; it is in use, so the next dg start removes it` | The copy is complete, but dg could not remove the old copy. The removal is scheduled. | Nothing. The next dg start removes it. |
 | `dg: removed <from>; its copy at <to> was complete` | A scheduled removal finished on a later start. | Nothing. |
@@ -388,7 +388,7 @@ script for every `dg` command.
 Release 6.3 and earlier shipped four programs, `dg-skills`, `dg-agent`,
 `dg-daemon` and `dg`, as launchers over one bundle and one Bun runtime. This
 release ships one compiled program, `dg`, and removes the other three names.
-Only this section names them.
+Only this section and the [Roll back](#roll-back) steps that follow deal with the old names and releases.
 
 On a 6.3 install, run `dg upgrade`. The command `dg-skills update` does the
 same.
@@ -446,8 +446,8 @@ the script or the job that names the old program. Each old command is now
 | `dg-daemon job`, `autostart`, `service` | `dg job`, `dg autostart`, `dg service` |
 | `dg-daemon serve`, `status`, `start`, `stop`, `restart`, `sessions`, `origin` | `dg daemon <verb>` |
 
-Releases from before the bundle shipped three compiled binaries. A compiled
-`dg-skills install` of that age cannot find the new assets, so update once by
+Releases from before the bundle shipped three separate compiled binaries. A
+compiled `dg-skills install` from one of those old releases cannot find the new assets, so update once by
 re-running bootstrap:
 
 ```bash

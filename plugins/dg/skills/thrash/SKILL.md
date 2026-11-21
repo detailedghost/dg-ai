@@ -69,7 +69,7 @@ Nits never fail a review. Pre-existing findings and improvements never count eit
 
 ## Runtime and skill paths
 
-First run: install or refresh the compiled CLI when it is missing or too old.
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old.
 
 ```bash
 { dg thrash --help 2>/dev/null | grep -q triage &&
@@ -80,7 +80,7 @@ First run: install or refresh the compiled CLI when it is missing or too old.
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
 If a step fails, run dg doctor bg proxy thrash.
 

@@ -253,9 +253,8 @@ export async function assertDaemonAnswers(
 	const pidHandle = readPidFile(paths);
 	const live = await findLiveDaemon(paths);
 	if (!live && pidHandle && isAlive(pidHandle.pid)) {
-		const stop = noun === "job" ? "dg daemon stop --force" : "dg daemon stop --force";
 		throw new DgCliError(
-			`dg daemon (pid ${pidHandle.pid}) does not answer, so the state of ${noun} "${name}" is unknown — run ${stop} first`,
+			`dg daemon (pid ${pidHandle.pid}) does not answer, so the state of ${noun} "${name}" is unknown — run dg daemon stop --force first`,
 			EXIT_GENERAL_FAILURE,
 		);
 	}

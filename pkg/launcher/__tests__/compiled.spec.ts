@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -41,7 +41,10 @@ describe("compile targets", () => {
 });
 
 describe("compiled dg for this machine", () => {
-	const program = buildCompiledHost();
+	let program = "";
+	beforeAll(() => {
+		program = buildCompiledHost();
+	}, 300_000);
 
 	test("--version prints the stamped version", () => {
 		const result = run(program, ["--version"]);
@@ -57,8 +60,11 @@ describe("compiled dg for this machine", () => {
 	});
 
 	test("phone --help runs the agent tree and job --help runs the daemon tree", () => {
-		expect(run(program, ["phone", "--help"]).stdout).toContain("phone");
-		expect(run(program, ["job", "--help"]).stdout).toContain("job");
+		for (const [command, usage] of [["phone", "Usage: dg agent phone"], ["job", "Usage: dg daemon job"]] as const) {
+			const help = run(program, [command, "--help"]);
+			expect(help.exitCode).toBe(0);
+			expect(help.stdout).toContain(usage);
+		}
 	});
 
 	test.skipIf(process.platform === "win32")("a symlink named dg-skills exits 1 with the removed-name notice", () => {

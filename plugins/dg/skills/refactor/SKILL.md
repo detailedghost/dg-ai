@@ -3,7 +3,7 @@ name: refactor
 description: Find architectural deepening opportunities in the current codebase. Walks the code, surfaces up to 4 verified high-leverage refactor candidates (or accepts your own), then drops into a /dg:grill-me design conversation on the chosen one. Hands off to /dg:kick when the design converges. Use when the user wants to improve architecture, find refactoring opportunities, consolidate tightly-coupled modules, or make a codebase more testable.
 ---
 
-First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
 
 ```bash
 { dg stash --help >/dev/null 2>&1 &&
@@ -14,7 +14,7 @@ First run: install or refresh the CLI when it is missing or too old. Each Bash c
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead. If the block prints "run dg upgrade", run `dg upgrade`, then run the step again.
 
 If a step fails, run dg doctor stash thrash.
 

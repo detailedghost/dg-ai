@@ -1,6 +1,10 @@
 import { readlinkSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 
+export const VERSION_DIR = /^\d+\.\d+\.\d+/;
+
+export const programExeName = (platform: NodeJS.Platform): string => (platform === "win32" ? "dg.exe" : "dg");
+
 export type CurrentKind = "bin" | "lib" | "runtime";
 
 const currentLink = (root: string, kind: CurrentKind): string => join(root, kind, "current");

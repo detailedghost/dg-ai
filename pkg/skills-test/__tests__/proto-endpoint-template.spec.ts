@@ -357,10 +357,10 @@ describe("prototype endpoint launcher path", () => {
 describe("prototype endpoint Windows launcher lookup", () => {
 	const FILES = ["prototype-endpoint.ts", "prototype-endpoint.next.ts", "prototype-endpoint.astro.ts"];
 
-	test.each(FILES)("%s looks for the dg.cmd shim and the per-OS default bin folder on win32", (file) => {
+	test.each(FILES)("%s looks for the dg.exe program and the per-OS default bin folder on win32", (file) => {
 		const text = readFileSync(join(ASSETS, file), "utf8");
 		expect(text).toContain('const WINDOWS = process.platform === "win32";');
-		expect(text).toContain('WINDOWS ? "dg.cmd" : "dg"');
+		expect(text).toContain('WINDOWS ? "dg.exe" : "dg"');
 		expect(text).toContain("process.env.LOCALAPPDATA");
 		expect(text).toMatch(/"dg",\s*"bin"/);
 	});
