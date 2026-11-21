@@ -9,6 +9,7 @@ import { registerChannelReview } from "./commands/channel-review";
 import { registerClean } from "./commands/clean";
 import { registerClipboardImage } from "./commands/clipboard-image";
 import { registerCompletion } from "./commands/completion";
+import { registerConfig } from "./commands/config";
 import { registerCredentials } from "./commands/credentials";
 import { registerDb } from "./commands/db";
 import { registerDemo } from "./commands/demo";
@@ -84,6 +85,7 @@ export function registerAll(program: Command): void {
 	registerSniff(program);
 	registerSkill(program);
 	registerSsms(program);
+	registerConfig(program);
 	registerDoctor(program);
 	registerClean(program);
 	registerCompletion(program);

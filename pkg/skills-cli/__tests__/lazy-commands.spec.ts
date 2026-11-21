@@ -53,6 +53,7 @@ const GOLDEN_COMMANDS = [
 	"sniff",
 	"skill",
 	"ssms",
+	"config",
 	"doctor",
 	"clean",
 	"completion",

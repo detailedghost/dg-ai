@@ -2203,6 +2203,37 @@
 			"description": "Read and clean SMS. google drives Messages for Web; signal wraps signal-cli."
 		},
 		{
+			"name": "config",
+			"description": "Read and change dg settings in config.toml",
+			"commands": [
+				{
+					"name": "path",
+					"description": "print the path of config.toml"
+				},
+				{
+					"name": "get",
+					"description": "print a setting, or its default when unset"
+				},
+				{
+					"name": "set",
+					"description": "change one setting; a secret field takes --credential <name>",
+					"options": [
+						{
+							"flags": [
+								"--credential"
+							],
+							"description": "point a secret field at a dg credentials entry",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "edit",
+					"description": "open config.toml in $EDITOR; an edit that does not validate is not saved"
+				}
+			]
+		},
+		{
 			"name": "doctor",
 			"description": "check that each dg-skills item has the tools, credentials and settings it needs; on a terminal, browse the results and apply a fix after a yes",
 			"options": [
