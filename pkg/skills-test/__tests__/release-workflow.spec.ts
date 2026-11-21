@@ -808,6 +808,16 @@ describe("the step text names its release parts the same way the install code re
 });
 
 const VERSION_EXPR = "${{ needs.detect.outputs.version }}";
+const COMPILED_ASSETS = [
+	"dg-linux-x64",
+	"dg-linux-x64-baseline",
+	"dg-linux-arm64",
+	"dg-darwin-x64",
+	"dg-darwin-arm64",
+	"dg-windows-x64.exe",
+	"dg-windows-x64-baseline.exe",
+	"dg-windows-arm64.exe",
+];
 const DOCUMENTED_ASSETS = [
 	"dg-ai-extension-<v>-chrome.zip",
 	"dg-ai-extension-<v>-firefox.zip",
@@ -818,6 +828,7 @@ const DOCUMENTED_ASSETS = [
 	"dg-lib-<v>.tar.gz",
 	"dg-chat-skills-<v>.zip",
 	"runtime.json",
+	...COMPILED_ASSETS,
 ];
 
 function uploadedNames(jobId: string): string[] {
@@ -841,12 +852,26 @@ describe("the release builds one bundle and smokes it on all six platforms", () 
 
 		expect(builders.sort()).toEqual(["build-bundle", "build-ext", "build-narration"]);
 		expect(workflow.jobs["build-bundle"].strategy).toBeUndefined();
-		expect(text).not.toContain("--compile");
 	});
 
-	test("build-bundle uploads the tarball and runtime.json under the stamped version", () => {
-		expect(uploadedNames("build-bundle").sort()).toEqual([`dg-lib-<v>.tar.gz`, "runtime.json"]);
+	test("build-bundle cross-compiles the eight compiled dg assets in one step", () => {
+		const runs = (workflow.jobs["build-bundle"]?.steps ?? []).map((s) => s.run ?? "");
+		expect(runs).toContain("bun run build.ts --outdir dist --compiled all");
+	});
+
+	test("build-bundle uploads the eight compiled assets plus the 6.3 bridge tarball and runtime.json", () => {
+		expect(uploadedNames("build-bundle").sort()).toEqual([`dg-lib-<v>.tar.gz`, "runtime.json", ...COMPILED_ASSETS].sort());
 		expect(text).toContain(`dg-lib-${VERSION_EXPR}.tar.gz`);
+	});
+
+	test("the smoke job runs the compiled dg of its platform and checks the removed-name notice", () => {
+		const id = smokeJobIds()[0] as string;
+		const runs = (workflow.jobs[id]?.steps ?? []).map((s) => s.run ?? "").join("\n");
+		expect(runs).toContain('program="./dg-${RUNTIME_KEY}"');
+		expect(runs).toContain('"$program" --version');
+		expect(runs).toContain('"$program" skills --version');
+		expect(runs).toContain('"$program" pw --help');
+		expect(runs).toContain("the dg-skills command is removed");
 	});
 
 	test("one smoke job runs a six-runner matrix, one native runner per supported platform", () => {
