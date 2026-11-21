@@ -6,7 +6,8 @@
 	"description": "CLI framework for dg AI skills (browser, demo, and future skills).",
 	"exports": {
 		"./lib": "./src/utils/lib.ts",
-		"./main": "./src/main.ts"
+		"./main": "./src/main.ts",
+		"./finish-upgrade": "./src/install/finish-upgrade.ts"
 	},
 	"scripts": {
 		"build": "bun run --cwd ../launcher build",

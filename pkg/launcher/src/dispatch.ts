@@ -45,6 +45,10 @@ export async function dispatch(argv: readonly string[], argv0?: string): Promise
 	}
 	const { setProgramName } = await import("@dg/common/node/program");
 	setProgramName(name);
+	if (bridge) {
+		const { finishLegacyUpgrade } = await import("@dg/skills-cli/finish-upgrade");
+		await finishLegacyUpgrade(name, args);
+	}
 	const { main } = await PROGRAMS[name]();
 	return main(args);
 }
