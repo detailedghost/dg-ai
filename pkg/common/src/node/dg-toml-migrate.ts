@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { DgCliError } from "../errors";
 import type { DgPaths } from "./dg-paths";
-import { type LegacySeams, parseDgToml, readLegacyConfig, stringifyDgToml, writeDgTomlDoc } from "./dg-toml";
-import { withInstallLock } from "./install-lock";
+import { type LegacySeams, legacySources, parseDgToml, readLegacyConfig, stringifyDgToml, writeDgTomlDoc } from "./dg-toml";
+import { withInstallLock, withInstallLockSync } from "./install-lock";
 import { assertNotBlocked } from "./layout";
 
 export type SecretStore = { set(name: string, value: string): Promise<void> };
@@ -35,22 +35,35 @@ function backUp(source: string, made: string[]): string {
 	return backup;
 }
 
-async function fold(paths: DgPaths, options: MigrateOptions): Promise<MigrateResult> {
-	if (existsSync(paths.configTomlPath)) return NOTHING;
+type Plan = { raw: Record<string, unknown>; legacy: ReturnType<typeof readLegacyConfig> };
+
+function plan(paths: DgPaths, options: MigrateOptions, store: boolean): Plan | undefined {
+	if (existsSync(paths.configTomlPath)) return undefined;
 	const legacy = readLegacyConfig(paths, options);
-	if (!legacy.sources.length) return NOTHING;
+	if (!legacy.sources.length) return undefined;
 	const migrated: Record<string, string> = {};
 	for (const source of legacy.sources) migrated[source] = sha256File(source);
 	const raw = { ...legacy.raw, meta: { migrated } };
 	parseDgToml(stringifyDgToml(raw), paths.configTomlPath);
-	if (legacy.secrets.length && !options.store)
+	if (legacy.secrets.length && !store)
 		throw new DgCliError(
-			`dg config: ${legacy.secrets.map((secret) => secret.key).join(", ")} must move into the credential store, and dg-daemon is not reachable. Next: run dg-daemon start, then run the command again. Nothing was changed.`,
+			`dg config: ${legacy.secrets.map((secret) => secret.key).join(", ")} must move into the credential store, and dg-daemon is not reachable. Next: run dg-daemon start, then run dg-skills doctor so the move runs. Nothing was changed.`,
 		);
+	return { raw, legacy };
+}
+
+function undo(made: string[], error: unknown): never {
+	for (const backup of made) rmSync(backup, { force: true });
+	throw error;
+}
+
+async function fold(paths: DgPaths, options: MigrateOptions): Promise<MigrateResult> {
+	const steps = plan(paths, options, options.store !== undefined);
+	if (!steps) return NOTHING;
 	const made: string[] = [];
 	try {
-		const backups = legacy.sources.map((source) => backUp(source, made));
-		for (const secret of legacy.secrets) {
+		const backups = steps.legacy.sources.map((source) => backUp(source, made));
+		for (const secret of steps.legacy.secrets) {
 			try {
 				await options.store?.set(secret.name, secret.value);
 			} catch {
@@ -59,18 +72,42 @@ async function fold(paths: DgPaths, options: MigrateOptions): Promise<MigrateRes
 				);
 			}
 		}
-		writeDgTomlDoc(raw, options.env);
-		return { wrote: true, sources: legacy.sources, backups };
+		writeDgTomlDoc(steps.raw, paths.configTomlPath);
+		return { wrote: true, sources: steps.legacy.sources, backups };
 	} catch (error) {
-		for (const backup of made) rmSync(backup, { force: true });
-		throw error;
+		return undo(made, error);
 	}
+}
+
+function foldSync(paths: DgPaths, options: LegacySeams): MigrateResult {
+	const steps = plan(paths, options, false);
+	if (!steps) return NOTHING;
+	const made: string[] = [];
+	try {
+		const backups = steps.legacy.sources.map((source) => backUp(source, made));
+		writeDgTomlDoc(steps.raw, paths.configTomlPath);
+		return { wrote: true, sources: steps.legacy.sources, backups };
+	} catch (error) {
+		return undo(made, error);
+	}
+}
+
+function needed(paths: DgPaths, options: LegacySeams): boolean {
+	if (existsSync(paths.configTomlPath)) return false;
+	if (!legacySources(paths, options).some((source) => existsSync(source.path))) return false;
+	assertNotBlocked(paths, "config");
+	assertNotBlocked(paths, "cli-only");
+	return true;
 }
 
 /** Folds the pre-TOML config files into config.toml once, under the install lock; a second run changes nothing. */
 export async function migrateToToml(paths: DgPaths, options: MigrateOptions = {}): Promise<MigrateResult> {
-	if (existsSync(paths.configTomlPath)) return NOTHING;
-	assertNotBlocked(paths, "config");
-	assertNotBlocked(paths, "cli-only");
+	if (!needed(paths, options)) return NOTHING;
 	return withInstallLock(paths.dataDir, () => fold(paths, options));
+}
+
+/** The blocking twin of `migrateToToml` for writers; it refuses, and writes nothing, when a secret must move. */
+export function migrateToTomlSync(paths: DgPaths, options: LegacySeams = {}): MigrateResult {
+	if (!needed(paths, options)) return NOTHING;
+	return withInstallLockSync(paths.dataDir, () => foldSync(paths, options));
 }

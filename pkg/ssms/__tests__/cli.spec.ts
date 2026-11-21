@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderHelp } from "../src/cli/catalog";
-import { accountHome, allowSendHome, readFixedAllowSend, runSsms } from "../src/cli/run";
+import { accountHome, allowSendHome, readFixedAllowSend, readFixedGoogleSendEnabled, runSsms } from "../src/cli/run";
 import { createLocalMessagesBrowser } from "../src/google/browser";
 import { connectJsonRpc } from "../src/signal/rpc";
 import { asTextArea, createDocument, node, readyThread } from "./support/document";
@@ -422,5 +422,32 @@ describe("fixed allow_send config location", () => {
 			if (previous.dg === undefined) delete process.env.DG_HOME;
 			else process.env.DG_HOME = previous.dg;
 		}
+	});
+});
+
+describe("fixed allow_send in config.toml", () => {
+	test("reads [ssms] from config.toml in the fixed config folder", () => {
+		const fixed = makeTempDir("ssms-toml-");
+		writeFileSync(join(fixed, "config.toml"), "[ssms]\nallow_send = true\n[ssms.google]\nsend_enabled = true\n");
+
+		expect(readFixedAllowSend(fixed)).toBe(true);
+		expect(readFixedGoogleSendEnabled(fixed)).toBe(true);
+	});
+
+	test("does not read ssms/config.yaml once config.toml exists", () => {
+		const fixed = makeTempDir("ssms-toml-");
+		mkdirSync(join(fixed, "ssms"), { recursive: true });
+		writeFileSync(join(fixed, "ssms", "config.yaml"), "allow_send: true\n");
+		writeFileSync(join(fixed, "config.toml"), '[refs.aliases]\napp = "acme/app"\n');
+
+		expect(readFixedAllowSend(fixed)).toBe(false);
+	});
+
+	test("keeps send off when config.toml sets nothing for ssms", () => {
+		const fixed = makeTempDir("ssms-toml-");
+		writeFileSync(join(fixed, "config.toml"), "");
+
+		expect(readFixedAllowSend(fixed)).toBe(false);
+		expect(readFixedGoogleSendEnabled(fixed)).toBe(false);
 	});
 });

@@ -4,8 +4,10 @@ import { legacyExtensionDirs } from "../utils/extension-files";
 import {
 	createCredentialClient,
 	isDaemonLive,
+	readDgTomlFor,
 	readPidFile,
 	readSessionFiles,
+	sha256File,
 	SessionResolutionError,
 	sessionsForCwd,
 	skillsInstallDest,
@@ -102,7 +104,35 @@ export function upgradeCommand(
 		.replace("winget install ", "winget upgrade ");
 }
 
-export const isCliOnly = (ctx: DoctorContext): boolean => existsSync(ctx.paths.cliOnlyMarker);
+export function isCliOnly(ctx: DoctorContext): boolean {
+	try {
+		return readDgTomlFor(ctx.paths, { env: ctx.env, homeDir: ctx.home }).install.cli_only;
+	} catch {
+		return false;
+	}
+}
+
+/** Warns when a file that moved into config.toml changed after the move, since dg no longer reads it. */
+export const migratedSourcesCheck: DoctorCheck = {
+	id: "migrated-sources",
+	run: (ctx) => {
+		if (!existsSync(ctx.paths.configTomlPath)) return ok("no config.toml yet; nothing has moved");
+		let migrated: Record<string, string>;
+		try {
+			migrated = readDgTomlFor(ctx.paths, { env: ctx.env, homeDir: ctx.home }).meta.migrated;
+		} catch (error) {
+			return fail(describeError(error), "dg config edit");
+		}
+		const changed = Object.entries(migrated)
+			.filter(([path, sum]) => existsSync(path) && sha256File(path) !== sum)
+			.map(([path]) => path);
+		if (!changed.length) return ok("no moved config file changed after the move");
+		return warn(
+			`${changed.join(", ")} changed after the move into config.toml, and dg no longer reads ${changed.length === 1 ? "it" : "them"}`,
+			"dg config edit",
+		);
+	},
+};
 
 export function bootstrapCommand(
 	ctx: DoctorContext,

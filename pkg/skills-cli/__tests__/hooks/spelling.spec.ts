@@ -224,7 +224,8 @@ describe("spelling hook", () => {
 		writeFileSync(join(world.dgHome, "config", "config.json"), "{nope");
 		const r = await world.run("spelling", editInput("const colour = 1;"));
 		expect(r.code).toBe(2);
-		expect(r.stderr).toContain("config.json is unreadable");
+		expect(r.stderr).toContain("dg config is unreadable");
+		expect(r.stderr).toContain("config.json");
 	});
 });
 

@@ -73,7 +73,7 @@ describe("hooks enable strip-ai-coauthors", () => {
 		expect(script).toContain(world.launcher);
 		expect(statSync(repo.hook).mode & 0o111).not.toBe(0);
 		expect(
-			world.readJson<{ hooks: unknown }>(world.paths.config).hooks,
+			world.readToml<{ hooks: unknown }>(world.paths.toml).hooks,
 		).toEqual({ [ID]: { enabled: "on" } });
 	});
 
@@ -98,7 +98,7 @@ describe("hooks enable strip-ai-coauthors", () => {
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain("core.hooksPath");
 		expect(readFileSync(repo.hook, "utf8")).toBe(USER_HOOK);
-		expect(world.has(world.paths.config)).toBe(false);
+		expect(world.has(world.paths.toml)).toBe(false);
 	});
 
 	test("refuses a repo whose core.hooksPath is set to an empty value", async () => {
@@ -155,7 +155,7 @@ describe("hooks disable strip-ai-coauthors", () => {
 		expect(statSync(repo.hook).mode & 0o111).not.toBe(0);
 		expect(existsSync(repo.orig)).toBe(false);
 		expect(
-			world.readJson<{ hooks: Record<string, unknown> }>(world.paths.config)
+			world.readToml<{ hooks: Record<string, unknown> }>(world.paths.toml)
 				.hooks[ID],
 		).toEqual({ enabled: "off" });
 	});

@@ -10,6 +10,7 @@ export * from "./daemon-start";
 export * from "./dg-config";
 export * from "./dg-paths";
 export * from "./dg-toml";
+export { sha256File } from "./dg-toml-migrate";
 export * from "./file-lock";
 export * from "./fs";
 export * from "./install-lock";

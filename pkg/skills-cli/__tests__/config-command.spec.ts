@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveDgPaths } from "@dg/common/node/dg-paths";
 import { main } from "../src/main";
+import { loadConfig as loadRefs } from "../src/utils/refs";
 
 const FAKE_TOKEN = "ghp_FAKEfakeFAKEfakeFAKEfakeFAKEfake0000";
 
@@ -164,5 +165,38 @@ describe("dg-skills config edit", () => {
 
 		expect(await main(["config", "edit"])).toBe(1);
 		expect(readFileSync(file, "utf8")).toBe("[install]\ncli_only = false\n");
+	});
+});
+
+describe("config migration before a command", () => {
+	test("moves config.json into config.toml before the command runs", async () => {
+		const json = join(root, "dg", "config", "config.json");
+		mkdirSync(join(root, "dg", "config"), { recursive: true });
+		writeFileSync(json, JSON.stringify({ hooks: { spelling: { locale: "en-GB" } } }));
+
+		expect(await main(["config", "get", "hooks.spelling.locale"])).toBe(0);
+
+		expect(stdout()).toBe("en-GB\n");
+		expect(readFileSync(file, "utf8")).toContain('locale = "en-GB"');
+		expect(readFileSync(`${json}.pre-toml`, "utf8")).toBe(readFileSync(json, "utf8"));
+	});
+
+	test("warns and still runs the command when the move fails", async () => {
+		const json = join(root, "dg", "config", "config.json");
+		mkdirSync(join(root, "dg", "config"), { recursive: true });
+		writeFileSync(json, "{ broken");
+
+		expect(await main(["config", "path"])).toBe(0);
+
+		expect(stderr()).toContain("config.toml was not written");
+		expect(existsSync(file)).toBe(false);
+	});
+});
+
+describe("ref aliases", () => {
+	test("come from [refs] in config.toml, not the browser-batch file", () => {
+		seed('[refs]\ndefault_repo = "acme/app"\n[refs.aliases]\nweb = "acme/web"\n');
+
+		expect(loadRefs()).toEqual({ defaultRepo: "acme/app", aliases: { web: "acme/web" } });
 	});
 });

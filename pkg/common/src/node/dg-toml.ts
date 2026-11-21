@@ -368,10 +368,14 @@ function withoutSecrets(legacy: LegacyConfig): Table {
 
 /** The config.toml values; before migration it reads the old sources with secret values left out, and with none it gives defaults. */
 export function readDgToml(env: Env = process.env): DgToml {
-	const paths = resolveDgPaths({ env });
+	return readDgTomlFor(resolveDgPaths({ env }), { env });
+}
+
+/** readDgToml for paths that a caller already resolved, such as a doctor context. */
+export function readDgTomlFor(paths: DgPaths, seams: LegacySeams = {}): DgToml {
 	const file = paths.configTomlPath;
 	if (existsSync(file)) return parseDgToml(readFileSync(file, "utf8"), file);
-	const raw = withoutSecrets(readLegacyConfig(paths, { env }));
+	const raw = withoutSecrets(readLegacyConfig(paths, seams));
 	return validateDgToml(raw, { file, text: "" });
 }
 
@@ -440,9 +444,8 @@ export function setDgTomlValue(raw: Table, key: string, value: unknown): void {
 	node[parts.at(-1) as string] = value;
 }
 
-/** Writes a validated config.toml for `raw` atomically with mode 0600. */
-export function writeDgTomlDoc(raw: Table, env: Env = process.env): DgToml {
-	const file = tomlFile(env);
+/** Writes a validated config.toml for `raw` to `file` atomically with mode 0600. */
+export function writeDgTomlDoc(raw: Table, file: string): DgToml {
 	const text = stringifyDgToml(raw);
 	const doc = parseDgToml(text, file);
 	mkdirSync(dirname(file), { recursive: true });
@@ -450,15 +453,37 @@ export function writeDgTomlDoc(raw: Table, env: Env = process.env): DgToml {
 	return doc;
 }
 
-/** Sets one key in config.toml; it validates first and never writes a secret value. */
-export function writeDgToml(key: string, value: unknown, env: Env = process.env): DgToml {
-	const file = tomlFile(env);
-	if (isSecretKey(key) && !isSecretRef(value)) mustBeSecretRef({ file, text: "" }, key);
+function assertMigrated(file: string, env: Env): void {
 	if (!existsSync(file) && readLegacyConfig(resolveDgPaths({ env }), { env }).sources.length)
 		throw new DgCliError(
 			`dg config: ${file} does not exist yet, and older config files still wait to move into it. Next: start dg-daemon if it is stopped, run dg-skills doctor so the move runs, then run this again.`,
 		);
+}
+
+/** Sets one key in config.toml; it validates first and never writes a secret value. */
+export function writeDgToml(key: string, value: unknown, env: Env = process.env): DgToml {
+	const file = tomlFile(env);
+	if (isSecretKey(key) && !isSecretRef(value)) mustBeSecretRef({ file, text: "" }, key);
+	assertMigrated(file, env);
 	const { raw } = rawDoc(file);
 	setDgTomlValue(raw, key, value);
-	return writeDgTomlDoc(raw, env);
+	return writeDgTomlDoc(raw, file);
+}
+
+function deepMerge(base: Table, patch: Table): Table {
+	const out: Table = { ...base };
+	for (const [key, value] of Object.entries(patch)) {
+		if (UNSAFE_KEYS.has(key)) continue;
+		const current = out[key];
+		out[key] = isRecord(value) && !isSecretRef(value) ? deepMerge(isRecord(current) ? current : {}, value) : value;
+	}
+	return out;
+}
+
+/** Deep-merges `patch` into config.toml after the same checks as writeDgToml. */
+export function mergeDgToml(patch: Table, env: Env = process.env): DgToml {
+	const file = tomlFile(env);
+	assertMigrated(file, env);
+	const { raw } = rawDoc(file);
+	return writeDgTomlDoc(deepMerge(raw, patch), file);
 }

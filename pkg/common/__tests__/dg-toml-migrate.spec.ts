@@ -6,7 +6,7 @@ import { dirname, join, relative } from "node:path";
 import { DgCliError } from "../src/errors";
 import { resolveDgPaths, type DgPaths } from "../src/node/dg-paths";
 import { readDgToml } from "../src/node/dg-toml";
-import { migrateToToml, type SecretStore } from "../src/node/dg-toml-migrate";
+import { migrateToToml, migrateToTomlSync, type SecretStore } from "../src/node/dg-toml-migrate";
 
 const FAKE_SECRET = "fake-client-secret-7f3a9c";
 
@@ -216,6 +216,32 @@ describe("migrateToToml", () => {
 		expect(error).toBeInstanceOf(DgCliError);
 		expect((error as Error).message).toContain("refs.aliases.app must be a string");
 		expect(snapshot()).toEqual(before);
+	});
+});
+
+describe("migrateToTomlSync", () => {
+	test("folds the sources that hold no secret", () => {
+		put(configJson(), JSON.stringify({ hooks: { spelling: { locale: "en-GB" } } }));
+		put(ssmsYaml(), "allow_send: false\n");
+
+		const result = migrateToTomlSync(paths, { homeDir: home, env });
+
+		expect(result.wrote).toBe(true);
+		expect(readDgToml(env).hooks.spelling).toEqual({ locale: "en-GB" });
+		expect(existsSync(`${configJson()}.pre-toml`)).toBe(true);
+	});
+
+	test("refuses and writes nothing when a secret must move", () => {
+		seedAll();
+		const before = snapshot();
+
+		expect(() => migrateToTomlSync(paths, { homeDir: home, env })).toThrow(DgCliError);
+		expect(snapshot()).toEqual(before);
+	});
+
+	test("takes no lock and writes nothing when no source exists", () => {
+		expect(migrateToTomlSync(paths, { homeDir: home, env })).toEqual({ wrote: false, sources: [], backups: [] });
+		expect(existsSync(join(paths.dataDir, ".install.lock"))).toBe(false);
 	});
 });
 
