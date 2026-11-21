@@ -220,6 +220,17 @@ describe("migrateToToml", () => {
 	});
 });
 
+describe("empty legacy secrets", () => {
+	test("an empty client secret is dropped, not stored", async () => {
+		put(inboxJson(), JSON.stringify({ gmail: { clientId: "fake-client-id", clientSecret: "" } }));
+
+		await migrate();
+
+		expect(stored.size).toBe(0);
+		expect(readDgToml(env).inbox.gmail).toEqual({ clientId: "fake-client-id" });
+	});
+});
+
 describe("migrateToTomlSync", () => {
 	test("folds the sources that hold no secret", () => {
 		put(configJson(), JSON.stringify({ hooks: { spelling: { locale: "en-GB" } } }));

@@ -67,7 +67,7 @@ async function fold(paths: DgPaths, options: MigrateOptions): Promise<MigrateRes
 			try {
 				await options.store?.set(secret.name, secret.value);
 			} catch (error) {
-				const reason = describeError(error).replaceAll(secret.value, "[redacted]");
+				const reason = secret.value ? describeError(error).replaceAll(secret.value, "[redacted]") : describeError(error);
 				throw new DgCliError(
 					`dg config: could not store ${secret.key} as credential ${secret.name} (${reason}). Next: check dg-daemon with dg-skills doctor, then run the command again. config.toml was not written and no backup was kept; a secret stored before this one stays in the store.`,
 				);

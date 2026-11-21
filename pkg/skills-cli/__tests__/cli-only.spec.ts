@@ -58,6 +58,12 @@ describe("install.cli_only", () => {
 		expect(isCliOnly()).toBe(false);
 	});
 
+	test("surfaces a broken config.toml instead of reading it as a full install", () => {
+		mkdirSync(join(home, ".dg", "config"), { recursive: true });
+		writeFileSync(join(home, ".dg", "config", "config.toml"), "[install\n");
+		expect(() => isCliOnly()).toThrow("dg config:");
+	});
+
 	test("moves an old cli-only marker into config.toml", () => {
 		mkdirSync(join(home, ".dg", "config"), { recursive: true });
 		writeFileSync(join(home, ".dg", "config", "cli-only"), "");

@@ -157,6 +157,12 @@ describe("readDgToml", () => {
 		expect(error.message).not.toContain(FAKE_TOKEN);
 	});
 
+	test("refuses an array of plain values under a secret-named key", () => {
+		writeFileSync(file, ["[plugins.foo.settings]", 'token = ["plain-value"]', ""].join("\n"));
+
+		expect(caught(() => readDgToml(env)).message).toContain("plugins.foo.settings.token must be a credential reference");
+	});
+
 	test("refuses a plugin name with a dot", () => {
 		writeFileSync(file, ['[plugins."a.b".settings]', 'token = "x"', ""].join("\n"));
 
@@ -207,6 +213,16 @@ describe("setting", () => {
 });
 
 describe("setting env values", () => {
+	test("refuses a number env var that does not parse, and an empty one", () => {
+		writeFileSync(file, "[plugins.foo.settings]\ndepth = 3\n");
+
+		for (const raw of ["abc", ""])
+			expect(() => setting<number>("plugins.foo.settings.depth", { envVar: "DG_DEPTH", env: { ...env, DG_DEPTH: raw } })).toThrow(
+				"DG_DEPTH must be a number",
+			);
+	});
+
+
 	test("refuses a boolean env var that does not parse", () => {
 		expect(() => setting<boolean>("install.cli_only", { envVar: "DG_CLI_ONLY", env: { ...env, DG_CLI_ONLY: "flase" } })).toThrow(
 			"DG_CLI_ONLY must be true or false",

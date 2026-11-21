@@ -147,7 +147,8 @@ function checkStrings(where: Where, key: string, value: unknown): void {
 
 function checkSecrets(where: Where, key: string, value: unknown): void {
 	if (isSecretRef(value)) return;
-	if (isSecretKey(key) && (SECRET_FIELDS.has(key) || typeof value === "string" || isRecord(value))) mustBeSecretRef(where, key);
+	const refused = SECRET_FIELDS.has(key) || typeof value === "string" || isRecord(value) || Array.isArray(value);
+	if (isSecretKey(key) && refused) mustBeSecretRef(where, key);
 	if (isRecord(value)) {
 		for (const [name, item] of Object.entries(value)) checkSecrets(where, `${key}.${name}`, item);
 		return;
@@ -325,6 +326,10 @@ function foldInbox(source: Table, secrets: LegacySecret[]): Table {
 	for (const [provider, field, name] of INBOX_SECRETS) {
 		const section = inbox[provider];
 		if (!isRecord(section) || typeof section[field] !== "string") continue;
+		if (section[field] === "") {
+			delete section[field];
+			continue;
+		}
 		secrets.push({ key: `inbox.${provider}.${field}`, name, value: section[field] });
 		section[field] = { credential: name };
 	}

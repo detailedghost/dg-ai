@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readFileSync } from "node:fs";
 import { resolveDgPaths } from "@dg/common/node/dg-paths";
 import { ENV_PATHS } from "../defaults";
 import { loadConfig } from "../load";
@@ -94,11 +93,13 @@ describe("inbox loadConfig", () => {
 	});
 });
 
+const DERIVED_ONLY = ["MICROSOFT_CLIENT_SECRET"];
+
 describe("inbox env overrides", () => {
 	test("list every env var that the defaults read", () => {
 		const source = readFileSync(join(import.meta.dir, "..", "defaults.ts"), "utf8");
 		const read = new Set([...source.matchAll(/\benv\.([A-Z][A-Z0-9_]+)/g)].map((match) => match[1]));
-		const listed = new Set([...ENV_PATHS.flatMap(([, ...names]) => names), "MICROSOFT_CLIENT_SECRET"]);
+		const listed = new Set([...ENV_PATHS.flatMap(([, ...names]) => names), ...DERIVED_ONLY]);
 
 		expect([...read].filter((name) => !listed.has(name as string))).toEqual([]);
 	});

@@ -102,10 +102,11 @@ These fields are secret fields:
 
 - `inbox.gmail.clientSecret` and `inbox.outlook.clientSecret`.
 - Any key under `plugins.<name>.settings` whose name ends in `secret`, `token`,
-  `password`, `api_key` or `private_key` and holds a string. A number, such as
+  `password`, `api_key` or `private_key` and holds a string, a table or a list.
+  A number, such as
   `max_tokens = 1000`, is not a secret.
 - Any string under `plugins.<name>.settings` that looks like a token: one that
-  starts with `ghp_`, `gho_`, `github_pat_`, `sk-`, `xoxb-`, `glpat-`, `AKIA`,
+  starts with a known token prefix such as `ghp_`, `github_pat_`, `sk-`, `xoxb-`, `glpat-`, `AKIA`,
   `ASIA`, `AIza` or `ya29.`, or one of 32 or more letters, digits, `_` and `-`
   that has a lowercase letter, an uppercase letter and a digit.
 
