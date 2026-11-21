@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { parse as parseStrict, stringify } from "smol-toml";
 import { CREDENTIAL_NAME_PATTERN } from "../credentials-format";
 import { DgCliError } from "../errors";
-import { resolveDgPaths } from "./dg-paths";
-import { writeFilePreserving } from "./fs";
+import { type DgPaths, resolveDgPaths } from "./dg-paths";
+import { withinRoot, writeFilePreserving } from "./fs";
 
 type Env = Record<string, string | undefined>;
 type Table = Record<string, unknown>;
@@ -265,10 +266,113 @@ export function parseDgToml(text: string, file: string): DgToml {
 	return validateDgToml(parseToml(where), where);
 }
 
-/** The config.toml values, with defaults for a missing file. */
+export type LegacySource = { id: "hooks" | "cli-only" | "browser-batch" | "inbox" | "ssms"; path: string };
+
+export type LegacySecret = { key: string; name: string; value: string };
+
+export type LegacyConfig = { raw: Table; secrets: LegacySecret[]; sources: string[] };
+
+export type LegacySeams = { env?: Env; homeDir?: string; platform?: NodeJS.Platform };
+
+function insideFence(path: string, env: Env, platform: NodeJS.Platform): boolean {
+	const fence = env.DG_PATH_FENCE;
+	return !fence || withinRoot(fence, path, platform);
+}
+
+/** The pre-TOML config files, in fold order; a file outside DG_PATH_FENCE is left out. */
+export function legacySources(paths: DgPaths, { env = process.env, homeDir, platform = process.platform }: LegacySeams = {}): LegacySource[] {
+	const inboxHome = env.EMAIL_ORGANIZER_HOME ?? env.EMAIL_ORGANIZER_CONFIG_HOME ?? join(paths.stateDir, "inbox", "config");
+	const all: LegacySource[] = [
+		{ id: "hooks", path: paths.configPath },
+		{ id: "cli-only", path: paths.cliOnlyMarker },
+		{ id: "browser-batch", path: join(homeDir ?? homedir(), ".config", "browser-batch", "config.json") },
+		{ id: "inbox", path: join(inboxHome, "organizer.config.json") },
+		{ id: "ssms", path: join(paths.configDir, "ssms", "config.yaml") },
+	];
+	return all.filter((source) => insideFence(source.path, env, platform));
+}
+
+function unreadable(path: string, kind: string, error: unknown): never {
+	const reason = error instanceof Error ? error.message : String(error);
+	throw new DgCliError(
+		`dg config: ${path} is not valid ${kind} (${reason}). Next: fix or move ${path}, then run the command again. Nothing was changed.`,
+	);
+}
+
+function readObject(path: string, kind: "JSON" | "YAML"): Table {
+	const text = readFileSync(path, "utf8");
+	let parsed: unknown;
+	try {
+		parsed = kind === "JSON" ? JSON.parse(text) : Bun.YAML.parse(text);
+	} catch (error) {
+		unreadable(path, kind, error);
+	}
+	if (parsed === null || parsed === undefined) return {};
+	if (!isRecord(parsed)) unreadable(path, kind, new Error("the top level is not an object"));
+	return parsed;
+}
+
+const INBOX_SECRETS = [
+	["gmail", "clientSecret", "dg-config/inbox-gmail-client-secret"],
+	["outlook", "clientSecret", "dg-config/inbox-outlook-client-secret"],
+] as const;
+
+function foldInbox(source: Table, secrets: LegacySecret[]): Table {
+	const inbox = structuredClone(source);
+	for (const [provider, field, name] of INBOX_SECRETS) {
+		const section = inbox[provider];
+		if (!isRecord(section) || typeof section[field] !== "string") continue;
+		secrets.push({ key: `inbox.${provider}.${field}`, name, value: section[field] });
+		section[field] = { credential: name };
+	}
+	return inbox;
+}
+
+function foldRefs(source: Table): Table {
+	const refs: Table = {};
+	if (source.defaultRepo !== undefined) refs.default_repo = source.defaultRepo;
+	if (source.aliases !== undefined) refs.aliases = source.aliases;
+	return refs;
+}
+
+/** Reads every pre-TOML source into one raw TOML table; secret values come back apart, with references in their place. */
+export function readLegacyConfig(paths: DgPaths, seams: LegacySeams = {}): LegacyConfig {
+	const raw: Table = {};
+	const secrets: LegacySecret[] = [];
+	const sources: string[] = [];
+	for (const { id, path } of legacySources(paths, seams)) {
+		if (!existsSync(path)) continue;
+		sources.push(path);
+		if (id === "hooks") {
+			const hooks = readObject(path, "JSON").hooks;
+			if (hooks !== undefined) raw.hooks = hooks;
+		} else if (id === "cli-only") raw.install = { cli_only: true };
+		else if (id === "browser-batch") {
+			const refs = foldRefs(readObject(path, "JSON"));
+			if (Object.keys(refs).length) raw.refs = refs;
+		} else if (id === "inbox") raw.inbox = foldInbox(readObject(path, "JSON"), secrets);
+		else raw.ssms = readObject(path, "YAML");
+	}
+	return { raw, secrets, sources };
+}
+
+function withoutSecrets(legacy: LegacyConfig): Table {
+	const raw = structuredClone(legacy.raw);
+	for (const { key } of legacy.secrets) {
+		const parts = key.split(".");
+		const parent = dgTomlValue(raw, parts.slice(0, -1).join("."));
+		if (isRecord(parent)) delete parent[parts.at(-1) as string];
+	}
+	return raw;
+}
+
+/** The config.toml values; before migration it reads the old sources with secret values left out, and with none it gives defaults. */
 export function readDgToml(env: Env = process.env): DgToml {
-	const file = tomlFile(env);
-	return parseDgToml(existsSync(file) ? readFileSync(file, "utf8") : "", file);
+	const paths = resolveDgPaths({ env });
+	const file = paths.configTomlPath;
+	if (existsSync(file)) return parseDgToml(readFileSync(file, "utf8"), file);
+	const raw = withoutSecrets(readLegacyConfig(paths, { env }));
+	return validateDgToml(raw, { file, text: "" });
 }
 
 function keyParts(key: string): string[] {
@@ -350,6 +454,10 @@ export function writeDgTomlDoc(raw: Table, env: Env = process.env): DgToml {
 export function writeDgToml(key: string, value: unknown, env: Env = process.env): DgToml {
 	const file = tomlFile(env);
 	if (isSecretKey(key) && !isSecretRef(value)) mustBeSecretRef({ file, text: "" }, key);
+	if (!existsSync(file) && readLegacyConfig(resolveDgPaths({ env }), { env }).sources.length)
+		throw new DgCliError(
+			`dg config: ${file} does not exist yet, and older config files still wait to move into it. Next: start dg-daemon if it is stopped, run dg-skills doctor so the move runs, then run this again.`,
+		);
 	const { raw } = rawDoc(file);
 	setDgTomlValue(raw, key, value);
 	return writeDgTomlDoc(raw, env);

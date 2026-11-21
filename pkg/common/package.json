@@ -13,6 +13,7 @@
 		"./node/program": "./src/node/program.ts",
 		"./node/dg-paths": "./src/node/dg-paths.ts",
 		"./node/dg-toml": "./src/node/dg-toml.ts",
+		"./node/dg-toml-migrate": "./src/node/dg-toml-migrate.ts",
 		"./node/layout": "./src/node/layout.ts",
 		"./node/layout-work": "./src/node/layout-work.ts",
 		"./node/layout-preaction": "./src/node/layout-preaction.ts",
