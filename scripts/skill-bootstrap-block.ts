@@ -8,23 +8,21 @@ const DEFAULT_ROOT = resolve(import.meta.dir, "..", "plugins", "dg", "skills");
 const FALLBACK_DIR = "${DG_HOME:-$HOME/.local}/bin";
 const OLD_FALLBACK_DIR = "$HOME/.local/bin";
 
-const LEGACY_LAUNCHER =
-	/(?:~|<home>|\$HOME)\/\.dg\/bin\/(dg-skills|dg-agent|dg-daemon)/g;
+const LEGACY_LAUNCHER = /(?:~|<home>|\$HOME)\/\.dg\/bin\/dg(?:-skills|-agent|-daemon)?(?![\w-])/g;
 const SENTENCE =
-	/\n *Call `dg-[a-z]+`(?: and `dg-[a-z]+`)* in every later step\. If [^\n]* instead\.\n/;
+	/\n *Call `dg[a-z-]*`(?: and `dg[a-z-]*`)* in every later step\. If [^\n]* instead\.\n/;
 const FENCE = new RegExp(
 	`^( *)\`\`\`(bash|sh)\\n([\\s\\S]*?)^\\1\`\`\`\\n(?:${SENTENCE.source})?`,
 	"gm",
 );
 const CURL = /^curl -fsSL (\S+) \| sh(.*)$/;
-const PROGRAM = /^(dg-skills|dg-agent|dg-daemon)\b/;
-const EXECUTABLE_TEST = /^\[ -x (dg-skills|dg-agent|dg-daemon) \]$/;
+const PROGRAM = /^dg(?![\w-])/;
+const LAUNCHER = `${FALLBACK_DIR}/dg`;
+const UPGRADE_LINE = `{ { dg --version >/dev/null 2>&1 || "${LAUNCHER}" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||`;
 
-type Probe = { program: string; expression: string };
-
-function readProbes(lines: string[]): Probe[] | undefined {
-	const probes: Probe[] = [];
-	for (const raw of lines) {
+function readProbes(lines: string[]): string[] | undefined {
+	const probes: string[] = [];
+	for (const raw of lines.filter((line) => line.trim() !== UPGRADE_LINE)) {
 		for (const part of raw
 			.trim()
 			.replace(/^\{ /, "")
@@ -35,22 +33,14 @@ function readProbes(lines: string[]): Probe[] | undefined {
 				.replace(/^\{ /, "")
 				.replace(/;( \})?$/, "");
 			if ([FALLBACK_DIR, OLD_FALLBACK_DIR].some((dir) => expression.startsWith(`"${dir}/`))) continue;
-			const executable = EXECUTABLE_TEST.exec(expression);
-			const program = executable?.[1] ?? PROGRAM.exec(expression)?.[1];
-			if (!program) return undefined;
-			probes.push({
-				program,
-				expression: executable
-					? `${program} --version >/dev/null 2>&1`
-					: expression,
-			});
+			if (!PROGRAM.test(expression)) return undefined;
+			if (!probes.includes(expression)) probes.push(expression);
 		}
 	}
 	return probes.length > 0 ? probes : undefined;
 }
 
-const fallback = (probe: Probe): string =>
-	`"${FALLBACK_DIR}/${probe.program}"${probe.expression.slice(probe.program.length)}`;
+const fallback = (expression: string): string => `"${LAUNCHER}"${expression.slice(2)}`;
 
 function group(expressions: string[]): string[] {
 	if (expressions.length === 1) return [`${expressions[0]} ||`];
@@ -62,14 +52,7 @@ function group(expressions: string[]): string[] {
 	});
 }
 
-function sentence(probes: Probe[]): string {
-	const programs = [...new Set(probes.map((probe) => probe.program))];
-	const names = programs.map((program) => `\`${program}\``).join(" and ");
-	if (probes.length === 1) {
-		return `Call ${names} in every later step. If \`${programs[0]}\` alone does not answer, also after the bootstrap, call \`${FALLBACK_DIR}/${programs[0]}\` instead.`;
-	}
-	return `Call ${names} in every later step. If a bare name does not answer, also after the bootstrap, call it by its \`${FALLBACK_DIR}\` path instead.`;
-}
+const SENTENCE_TEXT = `Call \`dg\` in every later step. If \`dg\` alone does not answer, also after the bootstrap, call \`${LAUNCHER}\` instead.`;
 
 const TRAILER_IF = /^if .*; then (.*); else .*; fi$/;
 
@@ -78,35 +61,31 @@ function bareTrailer(line: string): string {
 	if (branch) return branch;
 	for (const dir of [FALLBACK_DIR, OLD_FALLBACK_DIR]) {
 		const prefix = `"${dir}/`;
-		if (line.startsWith(prefix)) return line.slice(prefix.length).replace(/^(dg-[a-z]+)"/, "$1");
+		if (line.startsWith(prefix)) return line.slice(prefix.length).replace(/^dg"/, "dg");
 	}
 	return line;
 }
 
-function byPath(raw: string, probes: Probe[]): string {
+function byPath(raw: string, probes: string[]): string {
 	const line = bareTrailer(raw);
-	const program = PROGRAM.exec(line)?.[1];
-	const checks = probes.filter((probe) => probe.program === program).map((probe) => probe.expression);
-	if (!program || checks.length === 0) return raw;
-	return `if ${checks.join(" && ")}; then ${line}; else ${fallback({ program, expression: line })}; fi`;
+	if (!PROGRAM.test(line)) return raw;
+	return `if ${probes.join(" && ")}; then ${line}; else ${fallback(line)}; fi`;
 }
 
-type Block = { probes: Probe[]; curl: string; trailer: string[]; fence: string; indent: string };
+type Block = { probes: string[]; curl: string; trailer: string[]; fence: string; indent: string };
 
-/** The uniform first-run block: the bare launcher, then the launcher path, then the bootstrap, then the launcher path. */
+/** The uniform first-run block: the bare launcher, then the launcher path, then the upgrade hint, then the bootstrap, then the launcher path. */
 export function renderBlock({ probes, curl, trailer, fence, indent }: Block): string {
-	const body = [
-		...group(probes.map((probe) => probe.expression)),
-		...group(probes.map(fallback)),
-		curl,
-	].map((line, index) => (index === 0 ? line : `  ${line}`));
+	const body = [...group(probes), ...group(probes.map(fallback)), UPGRADE_LINE, curl].map((line, index) =>
+		index === 0 ? line : `  ${line}`,
+	);
 	return [
 		`\`\`\`${fence}`,
 		...body,
 		...trailer.map((line) => byPath(line, probes)),
 		"```",
 		"",
-		sentence(probes),
+		SENTENCE_TEXT,
 		"",
 	]
 		.map((line) => (line.length > 0 ? `${indent}${line}` : line))
@@ -132,7 +111,7 @@ function rewriteBlock(
 
 /** The file text with bare launcher names and, in a SKILL.md, the uniform first-run block. */
 export function rewrite(name: string, text: string): string {
-	const bare = text.replace(LEGACY_LAUNCHER, "$1");
+	const bare = text.replace(LEGACY_LAUNCHER, "dg");
 	return name.endsWith("SKILL.md") ? bare.replace(FENCE, rewriteBlock) : bare;
 }
 

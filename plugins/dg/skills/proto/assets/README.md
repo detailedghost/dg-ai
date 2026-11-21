@@ -1,7 +1,7 @@
 # Prototype templates
 
 Copyable templates for the local `/dg:proto` mode. Run
-`dg-skills prototype components` to print the installed directory that holds this file,
+`dg prototype components` to print the installed directory that holds this file,
 then copy the template that fits instead of writing one from scratch.
 
 | File | Framework | Use |
@@ -15,12 +15,12 @@ then copy the template that fits instead of writing one from scratch.
 | `webmcp-tools.json` | Any | Read-only WebMCP tool definitions the served page registers |
 | `dg-icons.js` | Plain JS | Icon set shared with `/dg:verify`. `prototype serve` inlines it, so `window.dgIcons` exists in a served page |
 
-The page served by `dg-skills prototype serve` or `prototype ui` injects its own decision client
+The page served by `dg prototype serve` or `prototype ui` injects its own decision client
 and endpoint (`window.prototypeDecide`, `window.prototypePlanDecision`, `POST /prototype-decision`).
 It handles both UI-variant selection and plan-walkthrough decisions. The endpoint templates are for
 a switcher mounted inside an app dev server.
 
-The endpoint templates run `dg-skills prototype path <name>` to find the sentinel. They use
+The endpoint templates run `dg prototype path <name>` to find the sentinel. They use
 `$DG_SKILLS_BIN` when set, else the binary installed under `$HOME/.local/bin`. Export
 `PROTOTYPE_LIGHT=1` in the dev server's environment for a `--light` prototype.
 
@@ -91,4 +91,4 @@ make the notes box unusable.
 **Delivery.** `navigator.sendBeacon` first, so the click's user activation stays live for
 `window.close()`. A `fetch` fallback runs when the beacon is refused.
 
-`dg-skills prototype wait` reports the action (`confirm`, `reject`, or `more`) and the notes text.
+`dg prototype wait` reports the action (`confirm`, `reject`, or `more`) and the notes text.

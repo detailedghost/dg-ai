@@ -182,7 +182,7 @@ diff lacks, and an old-side line on removed code. A finding on a file the PR dif
 contain, for example one the delta reverted, is not posted and counts like an unanchored
 finding. Dedupe and clearing use the same mapped anchors.
 
-`dg-skills thrash action prepare` passes `--reviewer` with the bot login and `publish`
+`dg thrash action prepare` passes `--reviewer` with the bot login and `publish`
 passes `--head-sha`, so the Action follows the same rules.
 
 ### Repeated-class hint
@@ -348,7 +348,7 @@ in the diff is terminal-only in this mode. Nothing posts.
 
 `THRASH_EXECUTION_CONTEXT={"origin":"action"}` labels the trigger "Automatic (CI)".
 
-`dg-skills thrash action prepare|review|publish` runs these steps for the Thrashley GitHub Action and its GitLab CI
+`dg thrash action prepare|review|publish` runs these steps for the Thrashley GitHub Action and its GitLab CI
 template. It reads its inputs from `THRASHLEY_*` variables, counts rounds from the bot's own reviews, reads the rules
 doc and policy from the PR's base commit, and runs one `proxy` job per chunk with `DG_PROXY_NO_SHELL=1`. State passes between phases in
 `$THRASHLEY_WORK/state.json`. `prepare` reads the PR head SHA before and after fetching the
@@ -388,7 +388,7 @@ has no limit. A round uses the first phase whose `through` covers it, or the las
 phase whose `requiresClear` tiers still have an open earlier finding is not entered, so the
 round stays in the phase before it. `nits: false` posts no nits.
 
-`DG_PROXY_NO_SHELL=1` makes `dg-skills proxy copilot` deny shell, URL and built-in MCP tools,
+`DG_PROXY_NO_SHELL=1` makes `dg proxy copilot` deny shell, URL and built-in MCP tools,
 so a reviewed diff cannot steer the agent into running commands. Other backends refuse to run
 with it set.
 

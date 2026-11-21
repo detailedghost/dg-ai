@@ -46,14 +46,15 @@ more than one, it is `--squash` when allowed. Every merge also deletes the remot
 Resolve the compiled CLI before running any command:
 
 ```bash
-dg-skills address --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" address --help >/dev/null 2>&1 ||
+dg address --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" address --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
 
-If a step fails, run dg-skills doctor adr address batch-open pw proxy vcs-provider.
+If a step fails, run dg doctor adr address batch-open pw proxy vcs-provider.
 
 Repeat this resolution in every fresh shell, including delegated execution and
 resumed commands; shell variables do not persist between tool calls. Use the
@@ -73,7 +74,7 @@ Report missing instructions; never assume a private checkout or cache location.
 |---|---|---|
 | 1 | Resolve the PR, its head SHA, its base, and its checkout. | not GitHub, draft, closed, fork, stacked, no checkout, local and remote heads differ |
 | 2 | `/dg:review-loop -p <backend>` for `N` rounds. `/dg:address` fixes and pushes. | review-loop fails |
-| 3 | Wait for CI. On a failed check, `/dg:address` fixes it, pushes, and step 2 reviews the fix; then wait again. Leave the loop only when CI is green on a reviewed head. After green CI, an opted-in repo (`.agents/decisions/README.md`) also passes `dg-skills adr lint --changed`; a failure goes to `/dg:address -l` as one more cycle. | the `-c` ceiling, the same check failing twice with the same error, a wait timeout, `adr-cli-missing`, `adr-lint-failed`, or `adr-lint-repeat` |
+| 3 | Wait for CI. On a failed check, `/dg:address` fixes it, pushes, and step 2 reviews the fix; then wait again. Leave the loop only when CI is green on a reviewed head. After green CI, an opted-in repo (`.agents/decisions/README.md`) also passes `dg adr lint --changed`; a failure goes to `/dg:address -l` as one more cycle. | the `-c` ceiling, the same check failing twice with the same error, a wait timeout, `adr-cli-missing`, `adr-lint-failed`, or `adr-lint-repeat` |
 | 4 | Check the merge state. | behind, conflicting, or blocked: suggest `/dg:catchup` or report |
 | 5 | Ready for your review: summary, open the PR, then ask in the main loop. Merge at the tested SHA only on "Merge now", or at once with `--auto`. | "Not yet" (the default), `--no-merge`, a merge queue, GitHub auto-merge, a changed head, or a blocked merge |
 | 6 | Check each child PR. Land moved it to the base before the merge. GitHub can close it, so give the recovery when it did. | never |

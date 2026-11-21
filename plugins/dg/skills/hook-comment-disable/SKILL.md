@@ -6,19 +6,20 @@ description: Disable the dg spelling hook for the current session. ALWAYS requir
 First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-dg-skills stash --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" stash --help >/dev/null 2>&1 ||
+dg stash --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" stash --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
 
-If a step fails, run dg-skills doctor stash hooks.
+If a step fails, run dg doctor stash hooks.
 
 # /dg:hook-comment-disable
 
-Turn off the `spelling` hook for this session. The hook runs as `dg-skills hooks run spelling`.
-It only exists after the user enables it with `dg-skills hooks enable spelling`.
+Turn off the `spelling` hook for this session. The hook runs as `dg hooks run spelling`.
+It only exists after the user enables it with `dg hooks enable spelling`.
 It blocks Edit/Write/MultiEdit when newly-written text uses a spelling from the other English locale.
 
 ## Mechanism
@@ -26,10 +27,10 @@ It blocks Edit/Write/MultiEdit when newly-written text uses a spelling from the 
 Writes a session-scoped marker file:
 
 ```
-$(dg-skills stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})
+$(dg stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})
 ```
 
-The hook checks for this marker on entry and exits 0 immediately if present. Marker lives in `$(dg-skills stash -G hooks)/` (intentionally **not** cwd-scoped — the hook fires on Edit/Write regardless of cwd, so the bypass must too) and is cleaned on reboot. The cleanup walker skips `hooks/` entirely. No manual cleanup required.
+The hook checks for this marker on entry and exits 0 immediately if present. Marker lives in `$(dg stash -G hooks)/` (intentionally **not** cwd-scoped — the hook fires on Edit/Write regardless of cwd, so the bypass must too) and is cleaned on reboot. The cleanup walker skips `hooks/` entirely. No manual cleanup required.
 
 ## Mandatory user-permission gate
 
@@ -46,17 +47,17 @@ The user has chosen to gate this skill behind explicit consent precisely so that
    - **Keep enforcement on** — abort, no changes.
 4. Only on explicit "Disable" answer:
    ```sh
-   touch "$(dg-skills stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})"
+   touch "$(dg stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})"
    ```
 5. Confirm to the user that the marker was written, including the path so they can `rm` it manually if they change their mind mid-session.
 
 ## Re-enabling
 
 ```sh
-rm -f "$(dg-skills stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})"
+rm -f "$(dg stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})"
 ```
 
-Or wait for reboot (`$(dg-skills stash -r)` cleared).
+Or wait for reboot (`$(dg stash -r)` cleared).
 
 ## When to suggest this skill
 

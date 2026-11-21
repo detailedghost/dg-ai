@@ -7,7 +7,7 @@ export const meta = {
 };
 
 /**
- * args (resolved by `dg-skills assign resolve`, which also bakes them in as WAVE_ARGS below the meta literal;
+ * args (resolved by `dg assign resolve`, which also bakes them in as WAVE_ARGS below the meta literal;
  * an explicit `args` wins when given — see ../engineering.md 4.2):
  *   slices   [{ id, name, primary, qa:[], dependsOn:[], proxyBackend, proxyFlags, brief, testingCriteria }]
  *            — every pending slice in one run; a slice waits for each dependsOn id (compared as String(id)),

@@ -1,7 +1,7 @@
 # DeeGee skills
 
 This canonical skill tree serves the Codex and Claude Code plugins.
-`mise run install:skills` (or `dg-skills install --skills-only`) copies every
+`mise run install:skills` (or `dg install --skills-only`) copies every
 folder containing `SKILL.md` plus its supporting files, without installing
 binaries. The skills-root README itself is not installed.
 
@@ -10,19 +10,19 @@ binaries. The skills-root README itself is not installed.
 | `demo/` | Guided browser demos with optional setup and video recording; plays in a local browser by default, through the extension with `--ext` |
 | `proto/` | Compare app-native UI approaches on a live page |
 | `verify/` | Review a finished change round by round and record a verdict per round |
-| `chat/` | Live chat on a local page that dg-daemon serves; the extension pairs with each session on its own |
+| `chat/` | Live chat on a local page that the dg daemon serves; the extension pairs with each session on its own |
 | `inbox-cleanup/` | Review Proton Mail, Gmail, or Outlook cleanup with redacted feedback |
 | `channel-review/` | Local thrash reviews for Teams PR and MR requests through a bot relay |
 | `google-sms-cleanup/` | Review Messages for Web without deletion or unapproved sends |
-| `adr/` | Write a paired ADR and agent decision, or answer from the ADRs at a reading level (`dg-skills adr`) |
+| `adr/` | Write a paired ADR and agent decision, or answer from the ADRs at a reading level (`dg adr`) |
 | `agent-seed/` | Set up `.agents/`, a lean `AGENTS.md`, `CLAUDE.md` as `@AGENTS.md`, and the `docs/` rule files |
 | `clipboard-img/` | Capture a clipboard PNG through the compiled clipboard-image command |
 | `grill-me/` | Resolve a design through a structured interview |
 | `hook-comment-disable/` | Disable the American-English hook for one session with explicit approval |
 | `hunt/` | Gather evidence and diagnose a codebase bug |
-| `jobs/` | List and control the dg-daemon and channel-review daemons |
+| `jobs/` | List and control the dg daemon and the channel-review daemon |
 | `kick/` | Plan and park a deferred spec bundle |
-| `overwatch/` | Track parallel sessions on a local board that dg-daemon serves; `--ext` opens it in the paired browser |
+| `overwatch/` | Track parallel sessions on a local board that the dg daemon serves; `--ext` opens it in the paired browser |
 | `phone/` | Private encrypted chat with one or more other agents over Nostr |
 | `pickup/` | Resume a parked spec bundle |
 | `prd/` | Prepare a spec bundle for handoff |
@@ -44,22 +44,22 @@ binaries. The skills-root README itself is not installed.
 | `spring-break/` | Consolidate `.agents/school/` into topic clusters and trim the agent context files |
 | `review-loop/` | Loop an antagonistic review over a branch and address findings |
 | `polish/` | Clean up a diff for quality, then apply the fixes |
-| `pw/` | Drive a browser with `dg-skills pw`, and open PR or URL tab batches with `pw batch-open` and `pw --ext launch`; `pw-code` always needs approval |
-| `jot/` | Save a short note or a session handoff (`dg-skills jot`) |
-| `bg/` | Run a task in the background and track the jobs (`dg-skills bg`) |
+| `pw/` | Drive a browser with `dg pw`, and open PR or URL tab batches with `pw batch-open` and `pw --ext launch`; `pw-code` always needs approval |
+| `jot/` | Save a short note or a session handoff (`dg jot`) |
+| `bg/` | Run a task in the background and track the jobs (`dg bg`) |
 | `cls/` | Close out a git worktree and return to the main repo |
 | `stat/` | Show this session's in-flight work, status, and ETA in one table |
-| `sniff/` | Inventory what an app needs before it can run (`dg-skills sniff`) |
+| `sniff/` | Inventory what an app needs before it can run (`dg sniff`) |
 | `nope/` | Reset to the correct file-search defaults and record a feedback note |
 | `find-work/` | Find actionable work and run each item in a parallel worktree |
-| `doctor/` | Check what the dg skills need and walk through fixes (`dg-skills doctor`) |
-| `update/` | Update every dg part to the newest release (`dg-skills update`) |
+| `doctor/` | Check what the dg skills need and walk through fixes (`dg doctor`) |
+| `update/` | Update every dg part to the newest release (`dg update`) |
 | `bot-commit-email/` | Git commit and review email for every bot (`dante+<botname>@detailedghost.com`) |
-| `db/` | Query PostgreSQL and Snowflake with read-safe defaults (`dg-skills db`) |
+| `db/` | Query PostgreSQL and Snowflake with read-safe defaults (`dg db`) |
 | `eli5/` | Explain a concept, file, error, or codebase as if the reader is five |
 | `erd/` | Generate an architecture map or any Mermaid diagram as Markdown or HTML |
-| `test-live/` | Deploy the current branch, wait for it to go live, then drop the temp commits (`dg-skills test-live`) |
-| `thrash/` | Tiered PR and MR review from a code checkout, with a verify stage before the verdict (`dg-skills thrash`) |
+| `test-live/` | Deploy the current branch, wait for it to go live, then drop the temp commits (`dg test-live`) |
+| `thrash/` | Tiered PR and MR review from a code checkout, with a verify stage before the verdict (`dg thrash`) |
 | `ticket/` | File a Jira ticket from the registered project, assignee, sprint, and issue types |
 
 ## Structure
@@ -128,21 +128,22 @@ implementation lives in [`pkg/skills-cli/`](../../../pkg/skills-cli/README.md).
 
 ## Runtime requirements
 
-The extension, dg-skills, dg-daemon, dg-agent, and both plugin manifests share
-one version and one `vX.Y.Z` release. `chat/` invokes dg-agent, which launches
-the adjacent dg-daemon. Most compiled helpers run through dg-skills. User terminal commands can use `dg-skills`; skill instructions
-check the installed binary once and call `dg-skills` from PATH, or the launcher path the block names.
+The extension, the `dg` program, and both plugin manifests share
+one version and one `vX.Y.Z` release. `dg` is the only program the installer
+writes. `chat/` runs `dg agent`, which starts the dg daemon. Skill
+instructions check the installed binary once and call `dg` from PATH, or the
+launcher path the block names. When `dg` does not know a command the skill
+names, the block prints `run dg upgrade`.
 
-`dg-skills install --cli-only` skips the extension, dg-daemon and
-dg-agent. No skill declares `requires: [extension]`. `pw`, `proto`, `demo`,
+`dg install --cli-only` skips the extension and the dg daemon. No skill declares `requires: [extension]`. `pw`, `proto`, `demo`,
 `chat` and `overwatch` run locally by default, and `--ext` requires the
-extension (`pw launch` always needs it), which pairs with each session on its own. `chat` and `overwatch` still need dg-agent and dg-daemon, so their
+extension (`pw launch` always needs it), which pairs with each session on its own. `chat` and `overwatch` still need the dg daemon, so their
 bootstrap block runs the full installer, which removes the CLI-only marker. The
 CLI-only set includes stash, proxy, clipboard-img, and other skills without
 that requirement. Live inbox profiles still need
-dg-daemon; Google SMS cleanup needs
+the dg daemon; Google SMS cleanup needs
 Messages for Web through the host's browser tools. `jobs` also needs the full
-install, since it drives `dg-daemon` directly though it has no extension
+install, since it drives the dg daemon directly though it has no extension
 dependency. Instructions that refer to later-wave skills still need those
 skills separately until their ports ship.
 

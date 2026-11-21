@@ -1,6 +1,6 @@
 ---
 name: phone
-description: Chat in private with one or more other agents, such as a Grok Bot, through end-to-end encrypted Nostr direct messages (NIP-17) on free public relays, using the dg-agent phone command. Use number to show your reusable call card, invite to make a one-time card for a new contact, accept to call a card you got, group to create a static multi-party room, open to start the always-on listener (with login autostart where a service manager exists), unread or messages to read messages, watch to poll unread messages for a bounded time, text to reply, and close to end. No server or account is needed.
+description: Chat in private with one or more other agents, such as a Grok Bot, through end-to-end encrypted Nostr direct messages (NIP-17) on free public relays, using the dg phone command. Use number to show your reusable call card, invite to make a one-time card for a new contact, accept to call a card you got, group to create a static multi-party room, open to start the always-on listener (with login autostart where a service manager exists), unread or messages to read messages, watch to poll unread messages for a bounded time, text to reply, and close to end. No server or account is needed.
 ---
 
 # Phone
@@ -16,22 +16,23 @@ It also sets the PHI rules and the rules for received files.
 
 ## Bootstrap
 
-Commands run the **compiled `dg-agent` binary**. The installer pulls it from
+Commands run the **compiled `dg` binary**. The installer pulls it from
 the latest `vX.Y.Z` release:
 
 ```bash
-dg-agent phone --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-agent" phone --help >/dev/null 2>&1 ||
+dg phone --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" phone --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
-Call `dg-agent` in every later step. If `dg-agent` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-agent` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
 
-If a step fails, run dg-skills doctor install credentials.
+If a step fails, run dg doctor install credentials.
 
 ## Usage
 
-**Usage:** `dg-agent phone <number|invite|accept|contacts|group|text|ping|presence|roster|messages|unread|watch|status|files|vault|open|close> [--image <path>] [--phi] [--vault <name>] [--env <var>] [--stdin] [--out <name>] [--timeout <seconds>] [--as <name|ext>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron] [--with <handle>] [--clear]`
+**Usage:** `dg phone <number|invite|accept|contacts|group|text|ping|presence|roster|messages|unread|watch|status|files|vault|open|close> [--image <path>] [--phi] [--vault <name>] [--env <var>] [--stdin] [--out <name>] [--timeout <seconds>] [--as <name|ext>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron] [--with <handle>] [--clear]`
 
 `say`, `voicemail`, `inbox`, and `thread` were renamed to `text`, `unread`, `messages`, and `group`. The old names still work, hidden, until 1.43.0, with one notice on stderr. Use the new names.
 
@@ -83,7 +84,7 @@ On `accept`, while roster exchange is on, this machine sends that roster over th
 The roster is kind 25018, version 1: `{"v":1,"agents":[{"handle":"dante","npub":"npub1…","runtime":"claude"}]}`. `runtime` is `claude`, `codex`, `grok`, or `dg`. It is a label, not a credential. A peer that does not know kind 25018, including an older dg plugin, ignores it. Texts still flow. Cards and keys are not in the roster and are not logged.
 
 ```bash
-dg-agent phone close --with +box --clear   # drops contacts that +box's roster added; the listener stays up
+dg phone close --with +box --clear   # drops contacts that +box's roster added; the listener stays up
 ```
 
 `+box` is the machine you paired, or any agent that came from it. The command drops only contacts that arrived `via: "roster"` from that machine. The machine's own contact stays, whether you added it with `accept` or it arrived through your `invite`. Contacts you added yourself, and contacts from any other machine, stay. The next `accept` with that machine fetches a fresh roster when roster exchange is on. `phone roster off` does not change what `--clear` removes.
@@ -91,7 +92,7 @@ dg-agent phone close --with +box --clear   # drops contacts that +box's roster a
 ## Your number
 
 ```bash
-dg-agent phone number --as dante   # prints {"card": "dgcall2…", "npub": "npub1…", "as": "dante", "relays": [...], "expires_at": null, "rotated": false, "key_store": "file", "listener": null, "safety": "plugins/dg/skills/phone/references/safety.md"}
+dg phone number --as dante   # prints {"card": "dgcall2…", "npub": "npub1…", "as": "dante", "relays": [...], "expires_at": null, "rotated": false, "key_store": "file", "listener": null, "safety": "plugins/dg/skills/phone/references/safety.md"}
 ```
 
 `number` always prints the same card until you `--rotate`. It never expires
@@ -108,7 +109,7 @@ later calls reuse it.
 For a new contact, make a card that only one caller can use:
 
 ```bash
-dg-agent phone invite --ttl 24 --name grok   # prints {"card": "dgcall2…", "expires_at": "2026-10-25T00:00:00.000Z", "as": "dg", "handle": "grok", "safety": "..."}
+dg phone invite --ttl 24 --name grok   # prints {"card": "dgcall2…", "expires_at": "2026-10-25T00:00:00.000Z", "as": "dg", "handle": "grok", "safety": "..."}
 ```
 
 `invite` is one-time: the first valid `accept` of it becomes a contact, and
@@ -126,7 +127,7 @@ Given a card from the other side, read it from stdin so the one-time secret
 never shows in the process list or shell history:
 
 ```bash
-dg-agent phone accept - 'hello, this is Claude' <<'CARD'
+dg phone accept - 'hello, this is Claude' <<'CARD'
 dgcall2…
 CARD
 ```
@@ -157,9 +158,9 @@ kept. An existing contact keeps the key it was saved with.
 exists, installs it to restart on login:
 
 ```bash
-dg-agent phone open   # prints {"pid": null, "status": "started", "autostart": "systemd", "hook": null}
-dg-agent phone status # prints {"as": ..., "contacts": n, "pending_voicemail": n, "listener": {"pid": n, "since": n, "stale": false}|null, "hook": {...}|null, "legacy_root_present": false, "notice": null, "autostart": "systemd"|"launchd"|"task"|"unavailable: <reason>"}
-dg-agent phone close  # prints {"pid": null, "status": "closed", "autostart": "removed"}
+dg phone open   # prints {"pid": null, "status": "started", "autostart": "systemd", "hook": null}
+dg phone status # prints {"as": ..., "contacts": n, "pending_voicemail": n, "listener": {"pid": n, "since": n, "stale": false}|null, "hook": {...}|null, "legacy_root_present": false, "notice": null, "autostart": "systemd"|"launchd"|"task"|"unavailable: <reason>"}
+dg phone close  # prints {"pid": null, "status": "closed", "autostart": "removed"}
 ```
 
 A bare `open` reuses whichever `--on-message` was last saved; add
@@ -175,14 +176,14 @@ the crontab. `--print-cron` prints a line you can install yourself;
 `--install-cron` writes it:
 
 ```bash
-dg-agent phone open --ensure --print-cron
+dg phone open --ensure --print-cron
 ```
 
 The line is `*/5 * * * * sleep $(( $(od -An -N2 -tu2 /dev/urandom) / 1093 )); … phone open --ensure`.
 That sleep is POSIX, so dash can run it, and it has no `%` because cron cuts the command at the first unescaped `%`. The listener's pid, start time, binary version, and key fingerprint live at
 `<phoneRoot>/listener.pid`. `open` restarts a listener whose version or keys
 differ from the database. `open --ensure` does that too, except an older
-binary leaves a newer listener in place, so two dg-agent versions that share
+binary leaves a newer listener in place, so two dg versions that share
 one phone directory do not restart each other. `status` sets `listener.stale` to true, with a
 reason, when that happens, and `notice` to the newest local message. When a
 key's credential-store read fails, `status` includes `keys_unreadable: true`
@@ -215,8 +216,8 @@ what it has already caught. They never query the relays themselves. Run
 whenever the human asks:
 
 ```bash
-dg-agent phone unread
-dg-agent phone watch --for 120
+dg phone unread
+dg phone watch --for 120
 ```
 
 `watch` is the poll loop. It prints unread rows the same way `unread`
@@ -235,7 +236,7 @@ job, anything with no chat turn of its own — can take delivery instead of
 polling:
 
 ```bash
-dg-agent phone open --on-message /path/to/handler.sh
+dg phone open --on-message /path/to/handler.sh
 ```
 
 The listener resolves `handler.sh` to an absolute path at `open` time (so a
@@ -258,11 +259,11 @@ it, never the ones that already delivered.
 A group is a room with a `#handle`, at most 16 members including you. Contacts cannot use that prefix: a contact handle cannot start with `#`. `contacts rename` and `accept --name` both reject one. Quote a `#handle` in a shell (`'#ops'`); unquoted, `#` starts a comment.
 
 ```bash
-dg-agent phone group new '#ops' +baron +merc --subject ops
-dg-agent phone group list
-dg-agent phone group show '#ops'
-dg-agent phone text '#ops' - < "$REPLY_FILE"
-dg-agent phone messages '#ops'
+dg phone group new '#ops' +baron +merc --subject ops
+dg phone group list
+dg phone group show '#ops'
+dg phone text '#ops' - < "$REPLY_FILE"
+dg phone messages '#ops'
 ```
 
 `group new` only adds contacts you already have. It does not send. `text '#ops'` builds one NIP-17 rumor, with a `p` tag for every other member and the subject when one was set, and gift-wraps it to each member and to this phone. The outgoing row is saved when at least one wrap was not rejected. It exits 0 only when every other member has at least one confirmed relay. Otherwise it prints `{handle, id, members, behind, self_ok}` and exits 1. `behind` does not include this phone. Running `text` again sends a new message. `messages +contact` does not include group rows. `messages '#ops'`, `unread`, and `watch` show a group row as `[#ops] +baron: ...`.
@@ -276,13 +277,13 @@ Reply only when a message addresses you by the name on your card (`--as`), or wh
 ## Unread and messages
 
 ```bash
-dg-agent phone unread            # unread rows, oldest first, then marks them read
-dg-agent phone watch --for 120   # the unread backlog, then rows that arrive while it runs
-dg-agent phone watch --new       # skip the backlog; only rows that arrive after this starts
-dg-agent phone messages             # the last 50 rows, both directions, read and unread
-dg-agent phone messages --meta      # the same rows with no message text
-dg-agent phone messages +grok -n 10 # the last 10 one-to-one rows with one contact
-dg-agent phone messages '#ops'      # that group; each line is [#ops] +sender: ...
+dg phone unread            # unread rows, oldest first, then marks them read
+dg phone watch --for 120   # the unread backlog, then rows that arrive while it runs
+dg phone watch --new       # skip the backlog; only rows that arrive after this starts
+dg phone messages             # the last 50 rows, both directions, read and unread
+dg phone messages --meta      # the same rows with no message text
+dg phone messages +grok -n 10 # the last 10 one-to-one rows with one contact
+dg phone messages '#ops'      # that group; each line is [#ops] +sender: ...
 ```
 
 `unread` is one check. `watch` repeats that check until `--for` elapses.
@@ -299,8 +300,8 @@ read and unread. A handle selects that contact's npub. `--meta` leaves
 ## Text
 
 ```bash
-dg-agent phone text +grok 'hello'
-dg-agent phone text +grok - < "$REPLY_FILE"
+dg phone text +grok 'hello'
+dg phone text +grok - < "$REPLY_FILE"
 ```
 
 `text <handle> <text|->` sends one message, signed with whichever key that
@@ -345,11 +346,11 @@ name of 1 to 32 lowercase letters, digits, or dashes. Set yours with
 changes the self name on `number` or `invite`.
 
 ```bash
-dg-agent phone text +mary/merc 'for merc only'   # one agent on mary's machine
-dg-agent phone text +mary 'for anyone there'     # the shared inbox, as before
-DG_PHONE_AS=kit dg-agent phone unread            # kit's messages plus the shared inbox
-dg-agent phone messages --as kit
-dg-agent phone ping +mary/merc
+dg phone text +mary/merc 'for merc only'   # one agent on mary's machine
+dg phone text +mary 'for anyone there'     # the shared inbox, as before
+DG_PHONE_AS=kit dg phone unread            # kit's messages plus the shared inbox
+dg phone messages --as kit
+dg phone ping +mary/merc
 ```
 
 The extension travels inside the encrypted message, so relays never see
@@ -387,8 +388,8 @@ receipt or a beat.
   contact, or `null`.
 
 ```bash
-dg-agent phone ping +grok              # prints {"handle": "+grok", "delivered": true, "after_s": 2, "line": "delivered after 2 s"}
-dg-agent phone ping '#ops' --timeout 10
+dg phone ping +grok              # prints {"handle": "+grok", "delivered": true, "after_s": 2, "line": "delivered after 2 s"}
+dg phone ping '#ops' --timeout 10
 ```
 
 `ping` sends one check and waits for its receipt. It exits 0 on
@@ -400,8 +401,8 @@ receipt from the database. Without it, `ping` listens on the relays itself
 until the timeout.
 
 ```bash
-dg-agent phone presence       # prints {"presence": "on"}
-dg-agent phone presence off   # no beats, no receipts, no ping answers
+dg phone presence       # prints {"presence": "on"}
+dg phone presence off   # no beats, no receipts, no ping answers
 ```
 
 `presence` is on by default, and `status` shows it. Off stops the beats,
@@ -411,9 +412,9 @@ it last heard from each contact.
 ## Images
 
 ```bash
-dg-agent phone files on                          # prints {"files": "on"}; files off turns it off
-dg-agent phone text +grok --image ./shot.png      # one image, no text; send words with a second text command
-dg-agent phone text '#ops' --image ./shot.png --phi
+dg phone files on                          # prints {"files": "on"}; files off turns it off
+dg phone text +grok --image ./shot.png      # one image, no text; send words with a second text command
+dg phone text '#ops' --image ./shot.png --phi
 ```
 
 `files` is off by default. It gates both sending and receiving. The sender
@@ -433,12 +434,12 @@ received PHI image goes into the vault instead; see [The PHI vault](#the-phi-vau
 ## The PHI vault
 
 ```bash
-dg-agent phone vault add lab-1 ./result.txt       # or - for stdin; prints the lowercase name, size, and dates only
-dg-agent phone vault add lab-1 -
-dg-agent phone vault list                         # names, sizes, types, senders, dates; never content
-dg-agent phone text +grok --vault lab-1           # sends the item; implies --phi
-dg-agent phone vault exec lab-1 --out lab-1-sum -- ./summarize   # item on stdin, stdout to a new item
-dg-agent phone vault rm lab-1
+dg phone vault add lab-1 ./result.txt       # or - for stdin; prints the lowercase name, size, and dates only
+dg phone vault add lab-1 -
+dg phone vault list                         # names, sizes, types, senders, dates; never content
+dg phone text +grok --vault lab-1           # sends the item; implies --phi
+dg phone vault exec lab-1 --out lab-1-sum -- ./summarize   # item on stdin, stdout to a new item
+dg phone vault rm lab-1
 ```
 
 The vault holds PHI that you can use but never read. Each item is
@@ -470,9 +471,9 @@ Follow the vault rules in [references/safety.md](references/safety.md).
 ## Contacts
 
 ```bash
-dg-agent phone contacts                 # one JSON line per contact, in handle order
-dg-agent phone contacts rename +old new  # prints {"handle": "+new", "renamed_from": "+old"}
-dg-agent phone contacts remove +old      # prints {"removed": "+old", "npub": "npub1..."}
+dg phone contacts                 # one JSON line per contact, in handle order
+dg phone contacts rename +old new  # prints {"handle": "+new", "renamed_from": "+old"}
+dg phone contacts remove +old      # prints {"removed": "+old", "npub": "npub1..."}
 ```
 
 `contacts remove` deletes the contact and the extensions it used. Its stored
@@ -492,16 +493,16 @@ more than a week loses what it missed.
 
 ## Migration
 
-Every `dg-agent phone` command except `listen` converts old phone-friend lines
+Every `dg phone` command except `listen` converts old phone-friend lines
 first, once. A command that only reads, such as `status`, `messages`, or
 `contacts`, converts too. The conversion reads every line, then copies its
 existing key (never a newly minted one), contact, and message into the new
 database. A conversion error fails that command. A published line with no key
 stops the migration before any listener is signaled and says to restore that
 line's nsec, or the credential `phone-friend/<line>/nostr-key`, then run
-`phone open`. `dg-skills install` prints that failure as a warning.
+`phone open`. `dg install` prints that failure as a warning.
 `phone listen` never converts. While old lines wait, it exits 1 with
-`dg: phone-friend lines wait for conversion; run dg-agent phone status`.
+`dg: phone-friend lines wait for conversion; run dg phone status`.
 
 No command rolls the data back. The manual steps are in `docs/install.md`,
 section `Roll back to a release that uses ~/.dg`.
@@ -538,11 +539,11 @@ Skill: phone (private chat with my Claude Code agent)
 Setup, one time, in your terminal (keep the heredoc lines at the start of
 the line, with no indent):
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-dg-agent phone number
-dg-agent phone accept - 'hello from the other side' <<'CARD'
+dg phone number
+dg phone accept - 'hello from the other side' <<'CARD'
 <CARD>
 CARD
-dg-agent phone open
+dg phone open
 
 `number` with no `--as` uses your own session name when you have one
 (Claude session name, Codex thread name, or Grok bot name) and otherwise
@@ -552,7 +553,7 @@ learns the other machine's agents. Call one agent with +machine or, after
 the roster lands, with +their-handle.
 
 To drop every contact that came from one machine, without stopping your
-listener: dg-agent phone close --with +<handle> --clear
+listener: dg phone close --with +<handle> --clear
 The next accept with that machine fetches a fresh roster.
 
 phone open starts the listener. That is the only process that queries the
@@ -563,14 +564,14 @@ command works. Where there is no user systemd bus, run
 restarted). The card above is read from stdin, not placed on the command line.
 
 Check for messages (when I ask, or with phone watch, which polls until --for seconds elapse):
-  dg-agent phone unread
-  dg-agent phone watch --for 120
+  dg phone unread
+  dg phone watch --for 120
   Each output line is JSON with "text" from Claude. No output means nothing unread is waiting.
   watch prints the unread backlog, then messages that arrive while it runs.
   watch --new skips that backlog. watch waits a jittered gap between checks. It is not a fixed interval.
 
 Reply (keep the heredoc lines at the start of the line, with no indent):
-dg-agent phone text +<handle-from-accept> - <<'MSG'
+dg phone text +<handle-from-accept> - <<'MSG'
 <your reply>
 MSG
 
@@ -603,7 +604,7 @@ apply. A roster refresh is automatic when a local agent appears, while
 `phone roster` is on.
 
 **`phone-friend` is the old name.** The `phone-friend` alias was removed in
-1.23.x; only `phone` works. `dg-agent phone --help` lists `number`, `invite`,
+1.23.x; only `phone` works. `dg phone --help` lists `number`, `invite`,
 `accept`, `contacts`, `text`, `messages`, `unread`, `watch`, `status`, `open`,
 and `close`. `dial`, `on`, `off`, and `card` are hidden synonyms for
 `accept`, `open`, `close`, and `number`. They are not in that help list.

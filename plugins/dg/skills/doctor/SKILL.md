@@ -10,12 +10,13 @@ One report, one item at a time. The CLI checks tools, versions, credentials by n
 First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-dg-skills doctor --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" doctor --help >/dev/null 2>&1 ||
+dg doctor --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" doctor --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
 
 ## Usage
 
@@ -36,13 +37,13 @@ An item is a command name of the CLI, such as `jot`, `bg`, `sniff`, `worktree`, 
 No items given:
 
 ```bash
-dg-skills doctor --json
+dg doctor --json
 ```
 
 Items given, for example `jot` and `bg`:
 
 ```bash
-dg-skills doctor jot bg --json
+dg doctor jot bg --json
 ```
 
 Exit 0 means no check failed (warnings allowed). Exit 1 means at least one check failed. Exit 2 means an unknown item.

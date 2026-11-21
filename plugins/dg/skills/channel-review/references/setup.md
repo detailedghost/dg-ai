@@ -21,22 +21,22 @@ config.json. Nothing is built in.
 A missing key fails with a config error that names it, such as
 `envs.prod.baseUrl is required`. Only the env in use needs settings.
 
-`dg-skills channel-review env` prints the default environment, base URL, and AWS
-profile. `dg-skills channel-review env dev` saves dev as the default.
+`dg channel-review env` prints the default environment, base URL, and AWS
+profile. `dg channel-review env dev` saves dev as the default.
 `--env dev` or `--env prod` selects an environment for one command.
 
 ## Prerequisites
 
 Install these on every machine that runs the daemon:
 
-- The dg plugin and its compiled `dg-skills` binary.
+- The dg plugin and its compiled `dg` binary.
 - The AWS CLI with SSO access to the environment's profile, so you can read the
   configured Secrets Manager secret yourself and paste it into `connect relay`.
 - `gh`, signed in for GitHub. Install and sign in to `glab` for GitLab MRs.
 - At least one runner CLI, signed in: `claude`, `codex`, `copilot`, or Grok Build (`grok`).
 - The thrash skill where that runner finds it. The dg plugin ships `/dg:thrash` and its persona; a skills-only install copies both.
 - For `$address`: the address skill available to the selected runner,
-  `dg-skills address`, and `gh` or `glab` signed in with push access.
+  `dg address`, and `gh` or `glab` signed in with push access.
 
 `status` reports probes for all four runners. A missing CLI reports CR-201;
 a failed login probe reports CR-202. Claude's print mode writes
@@ -74,8 +74,8 @@ writes the text the runner reads, so a prompt injection must not reach a shell
 or your secrets. Each rule has one job. `<scratch>` is `AI_SCRATCH_DIR` or
 `/tmp/ai`. An absolute path in a rule needs the leading `//`.
 
-- `Bash(dg-skills thrash:*)` lets thrash call its `dg-skills`
-  subcommand and nothing else in the `dg-skills` binary.
+- `Bash(dg thrash:*)` lets thrash call its `dg`
+  subcommand and nothing else in the `dg` binary.
 - `Agent` lets thrash start its reviewer subagents.
 - `Read(//<scratch>/thrash/**)` lets thrash read its own working files.
 - `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**)` lets thrash read its
@@ -102,7 +102,7 @@ review list. `<clones>` is `address.cloneRoot`. The default rules:
   its installed plugin skill files.
 - `Bash(git:*)`, `Bash(gh:*)`, and `Bash(glab:*)` let it commit, push, and
   reply to review threads.
-- `Bash(dg-skills address:*)` lets it call its `dg-skills`
+- `Bash(dg address:*)` lets it call its `dg`
   subcommand.
 - `Bash(bun:*)`, `Bash(npm:*)`, `Bash(npx:*)`, `Bash(dotnet:*)`,
   `Bash(python:*)`, and `Bash(pytest:*)` let it build and test.
@@ -128,7 +128,7 @@ Azure AD object ID. Send `$address` with a PR link once. The bot refuses it
 with CR-106, and the daemon log shows
 `message <id> $address refused: sender <name> (<sender id>) is not in owner.senderIds`.
 Copy the sender ID into `owner.senderIds`, then stop and start the daemon.
-`dg-skills channel-review status` prints the gate and the number of IDs, never
+`dg channel-review status` prints the gate and the number of IDs, never
 the IDs.
 
 ### Runner safety
@@ -172,8 +172,8 @@ is absent, set the chat's `id` to the `19:...@thread.v2` part of the Teams
 registered for this client.
 
 Before starting, make sure the relay secret is stored: run
-`dg-skills channel-review connect relay --env dev` if it is not yet. Stop
-the daemon, then run `dg-skills channel-review status --env dev`.
+`dg channel-review connect relay --env dev` if it is not yet. Stop
+the daemon, then run `dg channel-review status --env dev`.
 Require secret and reactions checks to report `ok`, every entry in `chats` to
 resolve to an ID, and the selected runner probe to report `ok`. Status exits 1
 when any chat check errors. Status prints JSON with named
@@ -185,12 +185,12 @@ checking connectivity again.
 Read this reference and [commands](commands.md) before changing
 `config.json` in the `channel-review` folder of the dg config directory
 (`~/.config/dg/channel-review/config.json` on Linux). To create it, run
-`dg-skills channel-review setup` in a terminal. It asks for each required key,
+`dg channel-review setup` in a terminal. It asks for each required key,
 checks the answers, writes the file with mode 0600, and offers to store the relay
 secret. `--force` replaces an existing file. Without a terminal, setup writes
 [config.example.json](config.example.json) beside it as a template and exits 1.
 `start` and `run` offer setup when the file is missing, and
-`dg-skills doctor channel-review` checks it.
+`dg doctor channel-review` checks it.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
@@ -207,9 +207,9 @@ secret. `--force` replaces an existing file. Without a terminal, setup writes
 | `runner.timeoutMinutes` | number | `30` | Positive review time limit in minutes. |
 | `runner.addressTimeoutMinutes` | number | `60` | Positive `$address` time limit in minutes. |
 | `runner.concurrency` | number | `2` | How many reviews or repo jobs run at the same time, from 1 to 8. Each job runs in its own process. New requests get the pending reaction at once, even when every worker is busy. Use `1` to run one job at a time. |
-| `runner.claude.allowedTools` | string array | `Bash(dg-skills thrash:*)`, `Agent`, and `Read`, `Grep`, `Glob`, `Edit` limited to `//<scratch>/thrash/**` (`Read` also `~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**`, and `<source>/plugins/dg/skills/thrash/**` for each local directory marketplace in `~/.claude/plugins/known_marketplaces.json`) | Tools Claude may use. Keep it narrow; see Runner safety. |
+| `runner.claude.allowedTools` | string array | `Bash(dg thrash:*)`, `Agent`, and `Read`, `Grep`, `Glob`, `Edit` limited to `//<scratch>/thrash/**` (`Read` also `~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**`, and `<source>/plugins/dg/skills/thrash/**` for each local directory marketplace in `~/.claude/plugins/known_marketplaces.json`) | Tools Claude may use. Keep it narrow; see Runner safety. |
 | `runner.claude.bedrock` | object | unset | Run Claude reviews through Amazon Bedrock. Set `model` (a Bedrock model ID or inference profile ARN) and `region`. `profile` is the AWS profile and is optional. The daemon sets `CLAUDE_CODE_USE_BEDROCK`, `AWS_REGION`, and `AWS_PROFILE` for reviews only, and `model` becomes the default review model. `~model` overrides it. |
-| `runner.claude.addressAllowedTools` | string array | `Agent`; `Edit`, `Read`, `Grep`, `Glob` limited to `//<clones>/**`; `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/address/**)`; `Bash` for `git`, `gh`, `glab`, `dg-skills address`, `bun`, `npm`, `npx`, `dotnet`, `python`, `pytest` | Tools Claude may use for `$address`. Separate from the review list; see Address allowlist and clone safety. |
+| `runner.claude.addressAllowedTools` | string array | `Agent`; `Edit`, `Read`, `Grep`, `Glob` limited to `//<clones>/**`; `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/address/**)`; `Bash` for `git`, `gh`, `glab`, `dg address`, `bun`, `npm`, `npx`, `dotnet`, `python`, `pytest` | Tools Claude may use for `$address`. Separate from the review list; see Address allowlist and clone safety. |
 | `runner.grok.model` | string | Unset | Optional `--model` for the Grok CLI. |
 | `runner.grok.tools` | string array | Unset | Optional Grok tool ids, comma-joined into `--tools`. Empty leaves the CLI default. See Grok runner. |
 | `runner.grok.outputFormat` | string | `streaming-json` | `plain`, `json`, or `streaming-json`. |
@@ -293,7 +293,7 @@ to a `bot/fix/*` branch.
 | `deps.ciTimeoutMinutes` | number | `60` | How long the daemon waits for CI on a draft PR before it reports a timeout. |
 | `deps.cooldownDays` | whole number | `0` | The skill only upgrades to versions published at least this many days ago. `0` turns the cooldown off. The scheduled run passes this value as `--cooldown-days`, so `DG_DEPS_COOLDOWN_DAYS` does not apply to it. |
 | `deps.branchPrefix` | string | `chore/deps-update-` | Branch prefix of upgrade PRs. A repo with an open PR on this prefix is skipped. |
-| `deps.allowedTools` | string array | Clone-root file tools, build and test tools, `git`, `gh`, `Bash(dg-skills deps-upgrade:*)`, and `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/deps-upgrade/**)` | Tools the upgrade agent may use. |
+| `deps.allowedTools` | string array | Clone-root file tools, build and test tools, `git`, `gh`, `Bash(dg deps-upgrade:*)`, and `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/deps-upgrade/**)` | Tools the upgrade agent may use. |
 | `deps.schedule.every` | string | `week` | Default cadence: `day` or `week`. |
 | `deps.schedule.day` | string | `mon` | Default weekday for `week`: `mon` to `sun`. |
 | `deps.schedule.window` | string | `02:00-05:00` | Default local-time window, `HH:MM-HH:MM`. It may cross midnight. |
@@ -313,9 +313,9 @@ names under `channel-review/`. Environment variables are fallbacks.
 | `channel-review/datadog` | Datadog personal access token | `site` (such as `us5.datadoghq.com`), `scopes`, `expiresAt` | `DATADOG_ACCESS_TOKEN`, or `DATADOG_API_KEY` and `DATADOG_APP_KEY`; `DATADOG_SITE` |
 | `channel-review/sentry` | Sentry user auth token | `site` (base URL), `org`, `scopes` | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_BASE_URL` |
 
-A stored entry wins over its environment variables. When dg-daemon is not
+A stored entry wins over its environment variables. When the dg daemon is not
 running, or the grant is missing, the daemon logs a warning that names the fix
-(start dg-daemon, then run `dg-skills credentials grant channel-review`) and
+(start the dg daemon, then run `dg credentials grant channel-review`) and
 uses the environment. A missing secret never stops the daemon. `status` lists the
 missing names under `errorWatch.missingEnv`, and the sink is skipped until you
 add the secret and restart.
@@ -323,9 +323,9 @@ add the secret and restart.
 Store each secret with `connect`. It never prints a value:
 
 ```sh
-dg-skills channel-review connect datadog
-dg-skills channel-review connect sentry --org example-org
-dg-skills channel-review connect relay --env dev
+dg channel-review connect datadog
+dg channel-review connect sentry --org example-org
+dg channel-review connect relay --env dev
 ```
 
 - `connect datadog` opens Chrome with a dg profile under
@@ -350,7 +350,7 @@ After it stores a secret, `connect` creates the `channel-review` grant when it
 is missing and says so. Restart the daemon to use a new secret.
 
 To move secrets that are already in `.env`, run
-`dg-skills channel-review migrate-env --dry-run` to list them, then run it
+`dg channel-review migrate-env --dry-run` to list them, then run it
 without `--dry-run`. It stores `CHANNEL_REVIEW_RELAY_SECRET_DEV` and `_PROD`,
 `DATADOG_ACCESS_TOKEN` (with `DATADOG_SITE`), and `SENTRY_AUTH_TOKEN` (with
 `SENTRY_ORG` and `SENTRY_BASE_URL`). Then it deletes only those lines. It
@@ -366,7 +366,7 @@ removed. A final empty secret stays in `.env`. If a store or grant request fails
 or the file changes during migration, its lines stay intact.
 
 Renew a token before its `expiresAt`: run `connect` again, then restart the
-daemon. `dg-skills credentials list` flags entries that expired or expire
+daemon. `dg credentials list` flags entries that expired or expire
 within 14 days.
 
 Status adds a `credentials` block. It has `relay`, `datadog` and `sentry`,
@@ -403,7 +403,7 @@ without creating a database or consuming an import. Malformed state fails
 visibly; repair the retained source and retry if import has not succeeded.
 After import, database state takes precedence over the retained JSON.
 
-Upgrade `dg-daemon` and `dg-skills` together to builds supporting schema 12,
+Upgrade the dg daemon and `dg` together to builds supporting schema 12,
 stopping the old processes before first import. Older daemon binaries refuse
 schema 12 on restart. The review service can initialize the shared schema before
 the main daemon starts; no GUI or browser extension attachment is required.

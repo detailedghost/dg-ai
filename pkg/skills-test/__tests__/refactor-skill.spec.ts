@@ -18,12 +18,12 @@ describe("refactor first-run block", () => {
 	const fence = /```bash\n([\s\S]*?)\n```/.exec(skill)?.[1] ?? "";
 
 	test("probes thrash --help for investigate inside the first-run fence", () => {
-		expect(fence).toContain("dg-skills thrash --help 2>/dev/null | grep -q investigate");
-		expect(fence).toContain("dg-skills stash --help");
+		expect(fence).toContain("dg thrash --help 2>/dev/null | grep -q investigate");
+		expect(fence).toContain("dg stash --help");
 	});
 
 	test("names stash and thrash in the doctor line", () => {
-		expect(skill).toContain("If a step fails, run dg-skills doctor stash thrash.");
+		expect(skill).toContain("If a step fails, run dg doctor stash thrash.");
 	});
 
 	test("the real thrash help lists investigate", () => {
@@ -47,7 +47,7 @@ describe("refactor SKILL.md phase sequence", () => {
 	});
 
 	test("runs one investigate call and skips the attach step on a non-zero exit", () => {
-		expect(text).toContain("dg-skills thrash investigate");
+		expect(text).toContain("dg thrash investigate");
 		expect(text).toContain("Never pass a directory");
 		expect(text).toContain("40 paths at most");
 		expect(text).toMatch(/exits non-zero .* skip the attach step, say so, and continue/);
@@ -73,7 +73,7 @@ describe("refactor discovery.md", () => {
 	const text = collapse(discovery);
 
 	test("names the investigate call and the verifier", () => {
-		expect(discovery).toContain("dg-skills thrash investigate");
+		expect(discovery).toContain("dg thrash investigate");
 		expect(discovery).toContain("dg:thrash-verify");
 	});
 
@@ -94,12 +94,12 @@ describe("refactor discovery.md", () => {
 	}
 
 	test("names the task and verdict stash paths", () => {
-		expect(discovery).toContain("$(dg-skills stash refactor <id>.task.json)");
-		expect(discovery).toContain("$(dg-skills stash refactor <id>.verdict.json)");
+		expect(discovery).toContain("$(dg stash refactor <id>.task.json)");
+		expect(discovery).toContain("$(dg stash refactor <id>.verdict.json)");
 	});
 
 	test("removes old verdict files before the verifiers launch", () => {
-		const remove = 'rm -f "$(dg-skills stash refactor <id>.verdict.json)"';
+		const remove = 'rm -f "$(dg stash refactor <id>.verdict.json)"';
 		expect(discovery).toContain(remove);
 		expect(discovery.indexOf(remove)).toBeLessThan(discovery.indexOf("Launch one `dg:thrash-verify`"));
 	});

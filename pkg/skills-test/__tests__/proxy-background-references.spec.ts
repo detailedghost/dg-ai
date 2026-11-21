@@ -16,7 +16,7 @@ describe("background job references use the bg command", () => {
 		});
 
 		test(`${name} names the bg command`, () => {
-			expect(readRepoFile(...parts)).toMatch(/dg-skills bg\b/);
+			expect(readRepoFile(...parts)).toMatch(/dg bg\b/);
 		});
 	}
 });

@@ -23,14 +23,15 @@ A thin composition of two existing skills. `/dg:prd` is the **handoff** point on
 First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-dg-skills spec --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" spec --help >/dev/null 2>&1 ||
+dg spec --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" spec --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
 
-If a step fails, run dg-skills doctor spec.
+If a step fails, run dg doctor spec.
 
 Usage: `/dg:prd [feature-name]`.
 
@@ -60,7 +61,7 @@ Don't restate kick's semantics here.
    settle execution permissions now: list all six keys, ask one yes/no ("Grant all?"); on "No, let
    me choose", fall through to the granular `multiSelect`. Write the resulting six-key
    `permissions:` block via
-   `dg-skills spec perms-batch .agents/spec/todo/<prd-slug>/plan.md --grant-all` (or `--from-scratch`
+   `dg spec perms-batch .agents/spec/todo/<prd-slug>/plan.md --grant-all` (or `--from-scratch`
    after writing the granular answers). `/dg:pickup`/`/dg:spec -s` see the block and skip their own
    permission ask, so the handoff runs with zero setup.
 5. **Fold the commit.** The relocate + assign + permissions steps edited the just-committed bundle.

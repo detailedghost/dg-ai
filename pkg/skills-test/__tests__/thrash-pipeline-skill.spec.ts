@@ -184,7 +184,7 @@ describe("SKILL.md", () => {
 	test("lists seven helper subcommands and keeps the doctor line", () => {
 		const helper = collapse(section(skill, "## Helper"));
 		expect(helper).toContain("Its seven subcommands are `stack`, `diff`, `investigate`, `triage`, `compile`, `post`, and `tally`");
-		expect(skill).toContain("dg-skills doctor bg proxy thrash");
+		expect(skill).toContain("dg doctor bg proxy thrash");
 	});
 
 	test("puts --no-repo in the Usage line and the Flags table", () => {
@@ -211,7 +211,7 @@ describe("guard rules", () => {
 
 	for (const [name, text] of Object.entries(files)) {
 		test(`${name} has no stash or spec call, no home path and no thrash-helper`, () => {
-			expect(text).not.toMatch(/dg-skills (stash|spec)\b/);
+			expect(text).not.toMatch(/dg (stash|spec)\b/);
 			expect(text).not.toContain("~/");
 			expect(text).not.toContain("thrash-helper");
 		});
@@ -225,8 +225,8 @@ describe("guard rules", () => {
 	}
 });
 
-describe("dg-skills thrash probe", () => {
-	const probe = /^\{ dg-skills thrash --help 2>\/dev\/null \| grep -q (\S+) &&/m.exec(skill);
+describe("dg thrash probe", () => {
+	const probe = /^\{ dg thrash --help 2>\/dev\/null \| grep -q (\S+) &&/m.exec(skill);
 
 	test("greps triage, and the real help lists triage and investigate", () => {
 		expect(probe?.[1]).toBe("triage");
@@ -241,22 +241,36 @@ describe("dg-skills thrash probe", () => {
 		expect(help).toContain("investigate");
 	});
 
-	test("the first-run block starts the bootstrap when dg-skills lacks triage", () => {
-		const block = /```bash\n(\{ dg-skills thrash --help[\s\S]*?)\n```/.exec(skill)?.[1];
+	function runFirstRun(withDg: boolean): { log: string; stdout: string; code: number | null } {
+		const block = /```bash\n(\{ dg thrash --help[\s\S]*?)\n```/.exec(skill)?.[1];
 		expect(block).toBeDefined();
 		const root = makeTempDir("thrash-first-run-");
 		const bin = join(root, "bin");
 		const log = join(root, "curl.log");
 		Bun.spawnSync(["mkdir", "-p", bin, join(root, "home")]);
-		writeFileSync(join(bin, "dg-skills"), '#!/bin/sh\nif [ "$1" = thrash ]; then echo "Subcommands: diff compile post"; fi\nexit 0\n');
+		if (withDg) {
+			writeFileSync(join(bin, "dg"), '#!/bin/sh\nif [ "$1" = thrash ]; then echo "Subcommands: diff compile post"; fi\nexit 0\n');
+			chmodSync(join(bin, "dg"), 0o755);
+		}
 		writeFileSync(join(bin, "curl"), `#!/bin/sh\necho "$@" >> "${log}"\nexit 0\n`);
-		chmodSync(join(bin, "dg-skills"), 0o755);
 		chmodSync(join(bin, "curl"), 0o755);
 		const proc = Bun.spawnSync(["sh", "-c", block as string], {
 			env: { PATH: `${bin}:/usr/bin:/bin`, HOME: join(root, "home"), ...fenceEnv() },
 		});
-		expect(proc.exitCode, proc.stderr.toString()).toBe(0);
-		expect(existsSync(log)).toBe(true);
-		expect(read(log)).toContain("bootstrap.sh");
+		return { log, stdout: proc.stdout.toString(), code: proc.exitCode };
+	}
+
+	test("the first-run block starts the bootstrap when no dg is installed", () => {
+		const run = runFirstRun(false);
+		expect(run.code).toBe(0);
+		expect(existsSync(run.log)).toBe(true);
+		expect(read(run.log)).toContain("bootstrap.sh");
+	});
+
+	test("the first-run block prints run dg upgrade when dg lacks triage", () => {
+		const run = runFirstRun(true);
+		expect(run.code).toBe(0);
+		expect(run.stdout).toContain("run dg upgrade");
+		expect(existsSync(run.log)).toBe(false);
 	});
 });

@@ -112,7 +112,7 @@ describe("channel-review skill distribution", () => {
 
 	test("SKILL.md stays short, link-driven, and points only at references that exist", () => {
 		const skill = readSkill();
-		expect(skill.split("\n").length).toBeLessThanOrEqual(80);
+		expect(skill.split("\n").length).toBeLessThanOrEqual(81);
 		const links = skillLinks(skill);
 		expect(links).toContain("references/setup.md");
 		expect(links).toContain("references/commands.md");
@@ -136,19 +136,20 @@ describe("channel-review skill distribution", () => {
 		const block = bootstrapBlock(readSkill()).split("\n");
 		expect(block).toEqual([
 			"```sh",
-			"{ dg-skills deps-upgrade --help >/dev/null 2>&1 &&",
-			"  dg-skills channel-review --help >/dev/null 2>&1; } ||",
-			'  { "${DG_HOME:-$HOME/.local}/bin/dg-skills" deps-upgrade --help >/dev/null 2>&1 &&',
-			'  "${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review --help >/dev/null 2>&1; } ||',
+			"{ dg deps-upgrade --help >/dev/null 2>&1 &&",
+			"  dg channel-review --help >/dev/null 2>&1; } ||",
+			'  { "${DG_HOME:-$HOME/.local}/bin/dg" deps-upgrade --help >/dev/null 2>&1 &&',
+			'  "${DG_HOME:-$HOME/.local}/bin/dg" channel-review --help >/dev/null 2>&1; } ||',
+			'  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||',
 			expect.stringMatching(/^ {2}curl .*bootstrap\.sh \| sh -s -- --cli-only$/),
-			'if dg-skills deps-upgrade --help >/dev/null 2>&1 && dg-skills channel-review --help >/dev/null 2>&1; then dg-skills channel-review --help; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review --help; fi',
+			'if dg deps-upgrade --help >/dev/null 2>&1 && dg channel-review --help >/dev/null 2>&1; then dg channel-review --help; else "${DG_HOME:-$HOME/.local}/bin/dg" channel-review --help; fi',
 			"```",
 		]);
 	});
 
 	test("SKILL.md and references name the shipped CLI, commands, and vocabulary", () => {
 		const content = allContent();
-		expect(content).toContain("dg-skills channel-review");
+		expect(content).toContain("dg channel-review");
 		expect(content).toMatch(/bootstrap\.sh/);
 		for (const word of [
 			"start",
@@ -353,7 +354,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 		expect(commands).toContain("no `running` key and no `fixStarts` key");
 	});
 
-	test("no documented dg-skills channel-review command or flag is one the CLI lacks", () => {
+	test("no documented dg channel-review command or flag is one the CLI lacks", () => {
 		const top = declaredCommands(cliSource).filter(
 			(n) => n !== "channel-review",
 		);
@@ -364,7 +365,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 		]);
 		const lines = content()
 			.split("\n")
-			.filter((line) => /dg-skills\s+channel-review/.test(line));
+			.filter((line) => /\bdg\s+channel-review/.test(line));
 		expect(lines.length).toBeGreaterThan(5);
 		for (const line of lines) {
 			const sub = /channel-review\s+([a-z-]+)(?:\s+([a-z]+))?/.exec(line);
@@ -502,7 +503,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 				expect(configSource).toMatch(new RegExp(`\\b${segment}\\b`));
 			}
 		for (const rule of [
-			"Bash(dg-skills thrash:*)",
+			"Bash(dg thrash:*)",
 			"Read(//<scratch>/thrash/**)",
 			"Grep(//<scratch>/thrash/**)",
 			"Glob(//<scratch>/thrash/**)",
@@ -516,7 +517,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 			"Read(//<clones>/**)",
 			"Grep(//<clones>/**)",
 			"Glob(//<clones>/**)",
-			"Bash(dg-skills address:*)",
+			"Bash(dg address:*)",
 		])
 			expect(setup).toContain(rule);
 		const address =
@@ -527,8 +528,8 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 			/rec\.addressTimeoutMinutes \?\? (\d+)/.exec(configSource)?.[1],
 		).toBe("60");
 		expect(setup).toContain("`<home>/code/bot`");
-		expect(configSource).toContain('"Bash(dg-skills thrash:*)"');
-		expect(setup).toContain("dg-skills deps-upgrade");
+		expect(configSource).toContain('"Bash(dg thrash:*)"');
+		expect(setup).toContain("dg deps-upgrade");
 		for (const name of ["thrash", "address", "deps-upgrade"])
 			expect(setup).toContain(
 				`Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/${name}/**)`,

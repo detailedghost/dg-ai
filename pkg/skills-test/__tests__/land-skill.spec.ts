@@ -27,7 +27,7 @@ describe("land skill", () => {
 
 	test("reviews through review-loop proxy mode and fixes through address", () => {
 		expect(WORKFLOW).toContain("/dg:review-loop -p <backend>");
-		expect(WORKFLOW).toContain("dg-skills address gather-ci-failures");
+		expect(WORKFLOW).toContain("dg address gather-ci-failures");
 		expect(WORKFLOW).toContain("-m \"Fix the failing CI checks.\"");
 	});
 
@@ -55,7 +55,7 @@ describe("land skill", () => {
 			"- `Not yet (I will review)`: the first option and the default.",
 		);
 		expect(WORKFLOW).toContain("- `Merge now at <short sha>`");
-		expect(WORKFLOW).toContain("dg-skills pw batch-open <url>");
+		expect(WORKFLOW).toContain("dg pw batch-open <url>");
 	});
 
 	test("skips the review gate only with the land --auto flag", () => {

@@ -68,19 +68,20 @@ show within 2 s and prints `skipped setup step N after the sign-in`. A headless-
 Write the plan to `/tmp/ai/demo/tour.md`. Install the CLI when it is missing:
 
 ```bash
-dg-skills demo --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" demo --help >/dev/null 2>&1 ||
+dg demo --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" demo --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
 
 On Windows PowerShell, pipe the raw `bootstrap.ps1` to `Invoke-Expression`.
-If a step fails, run dg-skills doctor demo install rerun pw.
+If a step fails, run dg doctor demo install rerun pw.
 The `demo doctor` subcommand checks the browser, `ffmpeg`, and `ffprobe`.
 
 Walk the plan first, so you hit a bad selector before the human does.
-Run `dg-skills demo --verify /tmp/ai/demo/tour.md`. It drives the recorder in a dry run
+Run `dg demo --verify /tmp/ai/demo/tour.md`. It drives the recorder in a dry run
 and prints `{"ok": boolean, "findings": [...]}`. A finding is `selector-unresolved`,
 `env-unset` (it names the variable), `plan-unreadable`, or `harness-error`.
 A click that submits a form and navigates is fine. Fix the plan and rerun, at most 3 passes.
@@ -89,11 +90,11 @@ If a finding cannot be fixed, surface it to the human.
 Then record:
 
 ```bash
-dg-skills demo /tmp/ai/demo/tour.md
+dg demo /tmp/ai/demo/tour.md
 ```
 
 Add `-n` only when the human asks for voice. The command starts the recorder and returns.
-Run `dg-skills demo status <slug>` until it prints the result. The result holds the MP4
+Run `dg demo status <slug>` until it prints the result. The result holds the MP4
 path. Report that path to the human.
 
 ## Flags
@@ -120,7 +121,7 @@ Local-only flags with `--ext` fail with exit 1.
 One finder picks the browser. It checks `DG_BROWSER` (alias `DG_VERIFY_BROWSER`),
 Chrome, Edge, Brave, Chromium, Vivaldi, Chrome for Testing on PATH, the usual macOS and
 Windows app folders, then the downloaded Chromium. Only then does it suggest
-`dg-skills pw install-browser`. Set `DG_BROWSER` to force one.
+`dg pw install-browser`. Set `DG_BROWSER` to force one.
 
 On WSL, `demo` drives the Windows browser by default and falls back to headless
 Chromium inside WSL. The Windows browser opens a remote-debugging port on 127.0.0.1
@@ -142,5 +143,5 @@ back to captions.
 ## Replay and extension
 
 Every run saves `<cacheDir>/demos/<slug>/<slug>.demo.md`. Replay it with
-`dg-skills rerun <path-to>.demo.md`. Add `--ext` to `demo` or `rerun` to play through
+`dg rerun <path-to>.demo.md`. Add `--ext` to `demo` or `rerun` to play through
 the extension: [references/extension.md](references/extension.md).

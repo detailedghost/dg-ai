@@ -59,7 +59,7 @@ describe("packaged skills call the CLI by its literal path", () => {
 		).toEqual([]);
 	});
 
-	test("every bootstrap block gates on the installed binary and passes --cli-only unless the skill needs dg-agent or the extension", () => {
+	test("every bootstrap block gates on the installed binary and passes --cli-only unless the skill needs the dg daemon or the extension", () => {
 		const needsFullInstall = [
 			"chat",
 			"demo",
@@ -102,6 +102,6 @@ describe("the jobs autostart hook", () => {
 		const command = (JSON.parse(`{${hook.replace(/```$/, "").trim()}`) as {
 			hooks: { SessionStart: { hooks: { command: string }[] }[] };
 		}).hooks.SessionStart[0]?.hooks[0]?.command;
-		expect(command).toBe('"${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review start --env <env> >/dev/null 2>&1');
+		expect(command).toBe('"${DG_HOME:-$HOME/.local}/bin/dg" channel-review start --env <env> >/dev/null 2>&1');
 	});
 });

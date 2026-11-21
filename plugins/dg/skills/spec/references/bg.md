@@ -14,7 +14,7 @@ Launch is the first `assign resolve` call. Before it, run these in order:
    It can ask through the `/dg:assign` backfill.
 3. The permissions check. All six keys (`run_commands`, `git_push`, `gh_pr_create`,
    `auto_cleanup_worktree`, `slice_commits`, `housekeeping_commit`) must be granted before launch.
-   When any is missing, ask once for `dg-skills spec perms-batch <bundle>/plan.md --grant-all`,
+   When any is missing, ask once for `dg spec perms-batch <bundle>/plan.md --grant-all`,
    or stop.
 4. The `-s --proxy` per-slice prompt in [proxy.md](proxy.md), when `--proxy` is given. Slices with
    `agents.proxy` run unprompted.
@@ -26,7 +26,7 @@ After launch, no `AskUserQuestion` is called. Every question becomes a recorded 
 Record each `SPEC`, `TEST` or `CRITICAL` deferral:
 
 ```sh
-dg-skills spec issues add "$SPEC_PATH" --slice <N> --from deferral --severity high --desc '<TYPE>: <text>'
+dg spec issues add "$SPEC_PATH" --slice <N> --from deferral --severity high --desc '<TYPE>: <text>'
 ```
 
 Record an `unverified` result, a dropped slice, and a `blocked` result with no deferral the same

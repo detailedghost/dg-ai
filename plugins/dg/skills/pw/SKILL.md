@@ -8,18 +8,19 @@ description: Drive a browser with pw to open a site, click, fill forms, take sna
 First run: install or refresh the CLI when it is missing or too old.
 
 ```bash
-dg-skills pw --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" pw --help >/dev/null 2>&1 ||
+dg pw --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" pw --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
 
-If a step fails, run dg-skills doctor pw pw-code batch-open launch install stash credentials.
+If a step fails, run dg doctor pw pw-code batch-open launch install stash credentials.
 
-`/dg:pw` drives a browser through `playwright-core`. It needs Bun >= 1.4.0 and Google Chrome or Microsoft Edge. Below, `pw <command>` means `dg-skills pw <command>`.
+`/dg:pw` drives a browser through `playwright-core`. It needs Bun >= 1.4.0 and Google Chrome or Microsoft Edge. Below, `pw <command>` means `dg pw <command>`.
 
-**Usage:** `dg-skills pw [--ext] <command> [args]`
+**Usage:** `dg pw [--ext] <command> [args]`
 
 ## Flags
 
@@ -29,7 +30,7 @@ If a step fails, run dg-skills doctor pw pw-code batch-open launch install stash
 
 ## Calling rules
 
-- Run every step as `dg-skills pw <command>`. Open with `pw open`.
+- Run every step as `dg pw <command>`. Open with `pw open`.
 - One command per Bash call. No `cd`, `&&`, `;`, `|`, `>` or `$( )`. Compound commands miss the allow rule.
 - Read snapshots with Read, using the `[Snapshot](...)` path the command prints.
 - Refs look like `e13`, or `f1e1` inside a frame. They go stale after page changes. Snapshot again on "Ref not found".
@@ -47,7 +48,7 @@ If a step fails, run dg-skills doctor pw pw-code batch-open launch install stash
 
 `pw open` uses `DG_BROWSER` (a browser binary path) when set, then a system Chrome, then Edge, then another Chromium-family browser on PATH or in the usual app folders (Brave, Chromium, Vivaldi), then a Chromium that `install-browser` downloaded.
 `--browser=chromium` uses the same list without the Chrome and Edge channels. `--browser=chrome` or `msedge` falls back to the full list when that browser is missing, and prints `chrome not found, using <path>`. With none, it exits 3 and prints every location it tried.
-Ask the human before you run `dg-skills pw install-browser`: it downloads about 150 MB under the dg data directory. Tell the human that `install-browser --remove` deletes the download.
+Ask the human before you run `dg pw install-browser`: it downloads about 150 MB under the dg data directory. Tell the human that `install-browser --remove` deletes the download.
 
 ## WSL
 
@@ -57,9 +58,9 @@ Agents never pass `--wsl-headed` unless the human asks. Without that request, ne
 ## Quick start
 
 ```bash
-dg-skills pw open https://playwright.dev
-dg-skills pw click e15
-dg-skills pw close
+dg pw open https://playwright.dev
+dg pw click e15
+dg pw close
 ```
 
 ## Open flags
@@ -79,7 +80,7 @@ Opening a persistent session that another directory holds is refused. Close it t
 
 ## Output and logins
 
-Snapshots, screenshots, downloads, traces, and videos land in `dg-skills stash pw`. Nothing goes to the project unless you pass `--out=<dir>`.
+Snapshots, screenshots, downloads, traces, and videos land in `dg stash pw`. Nothing goes to the project unless you pass `--out=<dir>`.
 `pw state save <name>` stores a login in a private directory. Prefer it over `pw state-save <file>`, which leaves a full cookie jar in a plain file.
 
 ## Real browser (`--ext`)
@@ -94,7 +95,7 @@ Passing `--ext` gives you the agent's tab group; the browser asks the human once
 ## Security
 
 A target is a ref, a CSS selector, or a `getBy...(...)` string. `getBy` strings pass a guard that allows only locator calls. `pw eval` runs JavaScript in the page, so run only code you wrote or checked.
-`dg-skills pw-code` runs any Node code with full access to the page. It is a separate command so the pw allow rule does not cover it: Claude Code asks the human to approve every call. Never add pw-code to an allow rule or to `allowed-tools`.
+`dg pw-code` runs any Node code with full access to the page. It is a separate command so the pw allow rule does not cover it: Claude Code asks the human to approve every call. Never add pw-code to an allow rule or to `allowed-tools`.
 
 ## References
 

@@ -10,14 +10,15 @@ description: Render and wire a batch of PRs/MRs as a clean unicode-arrow stack w
 Resolve the compiled CLI before running any command:
 
 ```bash
-dg-skills chain --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" chain --help >/dev/null 2>&1 ||
+dg chain --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" chain --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
 
-If a step fails, run dg-skills doctor chain proxy.
+If a step fails, run dg doctor chain proxy.
 
 Repeat this resolution in every fresh shell, including resumed and delegated
 commands; shell variables do not persist between tool calls. Use the host's
@@ -33,9 +34,9 @@ than assuming a private checkout or cache location. If delegating, resolve host
 personas through the host registry or explicit `DG_PERSONAS_DIR` / `DG_AGENTS_DIR`
 configuration, and pass real absolute instruction paths to delegates.
 The plugin ships its personas in `agents/` (Claude Code loads them as
-`dg:<name>`; `dg-skills proxy` embeds them), so use those when the host has none.
+`dg:<name>`; `dg proxy` embeds them), so use those when the host has none.
 
-Run `dg-skills chain --help` for the full usage.
+Run `dg chain --help` for the full usage.
 
 A **layer** is one ref, or a comma-separated set of mutually-independent refs
 (`"101,102"`). Positional layers form a dependency chain, base-first:
@@ -48,10 +49,10 @@ hard-coding one tool, so every subcommand below behaves the same on both.
 
 | Subcommand | Does |
 |---|---|
-| `dg-skills chain render <layers...>` | Prints the rendered block only — paste it wherever needed (a board note, a manual PR edit). |
-| `dg-skills chain plan <layers...>` | Dry run: rendered block + which base retargets would happen, with no provider calls. Show the full output before applying the plan. |
-| `dg-skills chain base <layers...>` | Runs the base/target-branch retargets only. |
-| `dg-skills chain apply <layers...>` | Retargets bases, then idempotently upserts the rendered block into every PR/MR's body. Safe to re-run. |
+| `dg chain render <layers...>` | Prints the rendered block only — paste it wherever needed (a board note, a manual PR edit). |
+| `dg chain plan <layers...>` | Dry run: rendered block + which base retargets would happen, with no provider calls. Show the full output before applying the plan. |
+| `dg chain base <layers...>` | Runs the base/target-branch retargets only. |
+| `dg chain apply <layers...>` | Retargets bases, then idempotently upserts the rendered block into every PR/MR's body. Safe to re-run. |
 
 **Usage:** `/dg:chain <render|plan|base|apply> <layers...> [--target <branch>] [--mark <ref>] [--repo owner/repo] [--independent ref1,ref2] [--native]`
 
@@ -79,18 +80,18 @@ or failed link is reported on stderr; body updates still continue.
 
 Only linear, single-repo chains qualify (every layer a single ref, no
 `owner/repo#N` refs, no `--repo`). Fan-out layers and cross-repo chains skip native
-linking with a reason and still update the markdown block. `dg-skills chain plan
+linking with a reason and still update the markdown block. `dg chain plan
 <layers...> --native` reports eligibility without calling `gh`. GitLab has no
-native stacking capability: `dg-skills chain apply <layers...> --native` refuses with
+native stacking capability: `dg chain apply <layers...> --native` refuses with
 status 4 before any mutation, while the corresponding plan explains the skip.
 
 ## Workflow
 
-1. Run `dg-skills chain plan <layers...> [--native]` and show its full output,
+1. Run `dg chain plan <layers...> [--native]` and show its full output,
    including the rendered body and base changes, before apply.
 2. Confirm that the host's required approval covers those mutations, honoring
    existing session grants. If approval is still required, obtain it for this
-   concrete plan. Run `dg-skills chain apply <layers...> [--native]` within that scope.
+   concrete plan. Run `dg chain apply <layers...> [--native]` within that scope.
 3. Report any skipped or failed operation. Retarget failures are logged and later
    retargets continue. Body fetching or writing stops on the first failure;
    earlier updates remain. Re-running replaces only the managed marker block and

@@ -6,8 +6,8 @@ Local mode has no tour, start screen, or review. It records an MP4. Only local m
 uses `intro` and `outro`.
 
 ```bash
-dg-skills demo --ext /tmp/ai/demo/tour.md
-dg-skills rerun --ext <path-to>.demo.md
+dg demo --ext /tmp/ai/demo/tour.md
+dg rerun --ext <path-to>.demo.md
 ```
 
 ## Review panel
@@ -39,7 +39,7 @@ rebuild and re-stage it:
 
 ```bash
 bun run --filter='@dg/extension' build
-dg-skills install --local
+dg install --local
 ```
 
 Then reload the extension in `chrome://extensions`. On WSL, the loaded copy is the

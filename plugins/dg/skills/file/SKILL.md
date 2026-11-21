@@ -10,14 +10,15 @@ description: File, list, and organize an issue on the current repo's git provide
 Resolve the compiled CLI before running any command:
 
 ```bash
-dg-skills file --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" file --help >/dev/null 2>&1 ||
+dg file --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" file --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
 
-If a step fails, run dg-skills doctor file proxy.
+If a step fails, run dg doctor file proxy.
 
 Repeat this resolution in every fresh shell, including resumed and delegated
 commands; shell variables do not persist between tool calls. Use the host's
@@ -33,17 +34,17 @@ than assuming a private checkout or cache location. If delegating, resolve host
 personas through the host registry or explicit `DG_PERSONAS_DIR` / `DG_AGENTS_DIR`
 configuration, and pass real absolute instruction paths to delegates.
 The plugin ships its personas in `agents/` (Claude Code loads them as
-`dg:<name>`; `dg-skills proxy` embeds them), so use those when the host has none.
+`dg:<name>`; `dg proxy` embeds them), so use those when the host has none.
 
 Run commands through the compiled CLI:
 
 ```bash
-dg-skills file <subcommand> [flags]
+dg file <subcommand> [flags]
 ```
 
 The shared VCS provider layer uses `gh` or `glab`, detected from the current
 repository's `origin`. Both providers support every subcommand below. Run
-`dg-skills file --help` for the full usage.
+`dg file --help` for the full usage.
 
 ## /dg:file vs /dg:ticket
 
@@ -72,10 +73,10 @@ signal above.
 
 | Subcommand | Does |
 |---|---|
-| `dg-skills file create --title <t> [--body <text>] [--label <name>]... [--assignee <user>]...` | Creates the issue; prints the normalized created issue as JSON |
-| `dg-skills file list [--state open\|closed\|all] [--label <name>] [--limit N] [--group-by-label]` | Lists issues as JSON; `--group-by-label` reshapes the array into `{label: Issue[]}` buckets (an issue with two labels appears in both) |
-| `dg-skills file view <number>` | Prints one normalized issue |
-| `dg-skills file bucket <label> <number> [<number>...] [--create]` | Attaches `<label>` to every given issue number, in one call — this is how work gets grouped. `--create` makes the label first (idempotent — never recolors an existing one) |
+| `dg file create --title <t> [--body <text>] [--label <name>]... [--assignee <user>]...` | Creates the issue; prints the normalized created issue as JSON |
+| `dg file list [--state open\|closed\|all] [--label <name>] [--limit N] [--group-by-label]` | Lists issues as JSON; `--group-by-label` reshapes the array into `{label: Issue[]}` buckets (an issue with two labels appears in both) |
+| `dg file view <number>` | Prints one normalized issue |
+| `dg file bucket <label> <number> [<number>...] [--create]` | Attaches `<label>` to every given issue number, in one call — this is how work gets grouped. `--create` makes the label first (idempotent — never recolors an existing one) |
 
 All subcommands accept `--repo owner/repo` (defaults to the current repo) and
 `--provider github\|gitlab` (defaults to auto-detected).
@@ -84,7 +85,7 @@ All subcommands accept `--repo owner/repo` (defaults to the current repo) and
 
 1. Parse the summary and any flags from the invocation (natural language like
    `/dg:file "Login page 500s under load" --label bug` maps to `create --title "..." --label bug`).
-2. Run `dg-skills file create --title <summary> [flags]`, passing the title and body as single-quoted arguments (write an embedded `'` as `'\''`) so quotes, `$()` and backticks stay literal. If the underlying `gh`/`glab` call fails (not authenticated, label
+2. Run `dg file create --title <summary> [flags]`, passing the title and body as single-quoted arguments (write an embedded `'` as `'\''`) so quotes, `$()` and backticks stay literal. If the underlying `gh`/`glab` call fails (not authenticated, label
    doesn't exist, etc.), report the error verbatim and what input would fix it — don't
    blindly retry.
 3. Report back: issue number, URL, labels, assignees.
@@ -95,11 +96,11 @@ The CLI has no fuzzy-matching of its own — a shared **label** is the bucket, a
 deciding which issues are similar enough to share one is a judgment call for you, not
 the CLI:
 
-1. Run `dg-skills file list` (or `dg-skills file list --group-by-label` to see existing buckets first).
+1. Run `dg file list` (or `dg file list --group-by-label` to see existing buckets first).
 2. Read the titles/bodies and decide which open issues describe the same underlying
    problem or belong to the same piece of work.
 3. Pick a short, descriptive bucket label (e.g. `bucket:auth-flakiness`, not `misc`).
-4. Run `dg-skills file bucket <label> <n1> <n2> ...` — add `--create` the first time a bucket label is
+4. Run `dg file bucket <label> <n1> <n2> ...` — add `--create` the first time a bucket label is
    used so it exists on the provider (subsequent runs can omit `--create`, or leave it
    on since it's idempotent).
 5. Report which issues got bucketed under which label, and why you judged them similar.

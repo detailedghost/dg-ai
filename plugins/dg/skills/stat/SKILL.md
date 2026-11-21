@@ -10,14 +10,15 @@ A four-keystroke glance at this session's work, rendered as one numbered checkli
 First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-dg-skills stat --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" stat --help >/dev/null 2>&1 ||
+dg stat --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" stat --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
 
-If a step fails, run dg-skills doctor bg stat vcs-provider worktree.
+If a step fails, run dg doctor bg stat vcs-provider worktree.
 
 ## Usage
 
@@ -104,23 +105,23 @@ b=$(git branch --show-current 2>/dev/null)
 echo "BRANCH=${b:-none}"
 prs=
 if [ -n "$b" ]; then
-  prs=$(dg-skills vcs-provider list-prs --head "$b" 2>/dev/null | jq -c '[.[]|{number,state,title}]' 2>/dev/null)
+  prs=$(dg vcs-provider list-prs --head "$b" 2>/dev/null | jq -c '[.[]|{number,state,title}]' 2>/dev/null)
 fi
 echo "PRS=${prs:-[]}"
-jobs=$(dg-skills bg list --cwd "$PWD" 2>/dev/null | jq -c '[.jobs[]|{id,state,exitCode,logFile,cmd:.command[0:60]}]' 2>/dev/null)
+jobs=$(dg bg list --cwd "$PWD" 2>/dev/null | jq -c '[.jobs[]|{id,state,exitCode,logFile,cmd:.command[0:60]}]' 2>/dev/null)
 echo "JOBS=${jobs:-[]}"
-echo "WORKTREES=$(dg-skills worktree list --porcelain 2>/dev/null | tr '\n' ' ')"
-checklist=$(dg-skills stat checklist --json 2>/dev/null)
+echo "WORKTREES=$(dg worktree list --porcelain 2>/dev/null | tr '\n' ' ')"
+checklist=$(dg stat checklist --json 2>/dev/null)
 echo "CHECKLIST=${checklist:-null}"
 ```
 
-`dg-skills bg list` is machine-wide. `--cwd "$PWD"` keeps it from dumping every job ever launched. It matches the directory or a path inside it, never a sibling like `/repo-other`. PR lookup goes through `dg-skills vcs-provider`, never `gh` or `glab` directly. The checklist is per repo (shared by linked worktrees) or per cwd outside a repo; `dg-skills stat checklist` already orders, numbers, and totals it, so this gather step only needs its JSON for merging.
+`dg bg list` is machine-wide. `--cwd "$PWD"` keeps it from dumping every job ever launched. It matches the directory or a path inside it, never a sibling like `/repo-other`. PR lookup goes through `dg vcs-provider`, never `gh` or `glab` directly. The checklist is per repo (shared by linked worktrees) or per cwd outside a repo; `dg stat checklist` already orders, numbers, and totals it, so this gather step only needs its JSON for merging.
 
 Then add what only you know: your current foreground task, how far into it you are, and any subagent or background work this session launched that is not yet on the checklist.
 
 ## 2. Report
 
-Print the checklist view the caller asked for, as the CLI renders it. With no flag this is `dg-skills stat checklist`; `--plain` adds `-p`; `--long` adds `-l`.
+Print the checklist view the caller asked for, as the CLI renders it. With no flag this is `dg stat checklist`; `--plain` adds `-p`; `--long` adds `-l`.
 
 The CLI already handles ordering, numbering, sub-items, the done cap, and a Total line computed from the checklist's own unfinished agent items — sub-items included, even under a done parent, and parked work excluded. Two things are still judgment, left to the main loop:
 
@@ -157,13 +158,13 @@ After the report, stop finished background work and drop its records. A job is f
 
 | Substrate | How |
 |---|---|
-| `dg-skills bg` job (`state` is `done` or `canceled`) | One call: `dg-skills bg prune --cwd "$PWD"`. It removes the records of every job in this tree that is not running, and leaves `running` jobs in `running[]`. It has no per-job filter, so run it only when this tree has no `unknown` job. It matches whole path segments, like the filter in section 1 |
+| `dg bg` job (`state` is `done` or `canceled`) | One call: `dg bg prune --cwd "$PWD"`. It removes the records of every job in this tree that is not running, and leaves `running` jobs in `running[]`. It has no per-job filter, so run it only when this tree has no `unknown` job. It matches whole path segments, like the filter in section 1 |
 | Claude Code background Agent or Bash shell that reports completed, failed, or timed out | The main loop calls `TaskStop` once for each finished task it listed in the report. `TaskStop` on a task that already ended is harmless |
 | Workflow | Not killable as one process. Report it finished; stop nothing |
 
 Rules:
 
-- Clean only rows that show a terminal state. Treat an `unknown` job as unfinished: leave it, and skip `dg-skills bg prune` while this tree has one, because prune would delete the log the user needs to read. Prune also removes the session record that `dg-skills bg update` needs to resume a finished job, so skip it when the user may resume one.
+- Clean only rows that show a terminal state. Treat an `unknown` job as unfinished: leave it, and skip `dg bg prune` while this tree has one, because prune would delete the log the user needs to read. Prune also removes the session record that `dg bg update` needs to resume a finished job, so skip it when the user may resume one.
 - Subagents cannot call `TaskStop`. Only the main loop does. A subagent reports the finished tasks and stops there.
 - The total ignores cleaned jobs.
 - Report what was cleaned in one line under the checklist. Default and `--plain` print
@@ -178,14 +179,14 @@ After section 4, the main loop does these steps on every `/dg:stat`. A running j
 
 ### a. Reap
 
-Run `dg-skills stat reap` (not `--dry-run`) once, from the repo. It stops only:
+Run `dg stat reap` (not `--dry-run`) once, from the repo. It stops only:
 
-- Orphans: processes of the current user whose parent is init or the user's `systemd --user`, whose cwd is in this repo or one of its worktrees (or whose command line names a deleted worktree of it), that are older than 10 minutes (`--min-age`), and whose command is on an allowlist of agent tooling: `gh pr checks --watch`, `gh run watch`, `codex review` or `codex exec`, `bun test`, Playwright, a headless Chromium with a temporary `--user-data-dir`, `sleep`, `timeout` around one of these, a non-interactive shell `while`/`until` sleep loop, or a `dg-daemon serve` that does not run from a version under the installed lib directory and whose `dg.js` no longer exists (its worktree was deleted).
-- A dev daemon whose `dg.js` still exists, in a live worktree, is never stopped by default. `stat reap` prints `dev daemon <pid> (...) from live worktree <path>: not stopped`. Relay that line. Stop it only when the user asks, with `dg-skills stat reap --pid <pid>`.
+- Orphans: processes of the current user whose parent is init or the user's `systemd --user`, whose cwd is in this repo or one of its worktrees (or whose command line names a deleted worktree of it), that are older than 10 minutes (`--min-age`), and whose command is on an allowlist of agent tooling: `gh pr checks --watch`, `gh run watch`, `codex review` or `codex exec`, `bun test`, Playwright, a headless Chromium with a temporary `--user-data-dir`, `sleep`, `timeout` around one of these, a non-interactive shell `while`/`until` sleep loop, or a `dg daemon serve` that does not run from a version under the installed lib directory and whose `dg.js` no longer exists (its worktree was deleted).
+- A dev daemon whose `dg.js` still exists, in a live worktree, is never stopped by default. `stat reap` prints `dev daemon <pid> (...) from live worktree <path>: not stopped`. Relay that line. Stop it only when the user asks, with `dg stat reap --pid <pid>`.
 - Allowlisted processes whose cwd is a deleted worktree of this repo, with a live parent or not.
 - Stuck `pgrep -f` wait loops of this session (see b).
 
-It never touches running `dg-skills bg` jobs and their children, systemd `.service` units, launchd jobs, the installed `dg-daemon`, the phone listener, service-manager units, Claude Code, Codex, or Grok sessions, editors, interactive shells, other users' processes, or anything off the allowlist. A live `codex review` that another session runs in its scratchpad has a live parent and a cwd outside the repo, so it stays. Before each signal it reads the start time again and skips the process when it changed. It sends SIGTERM, then SIGKILL after 5 seconds.
+It never touches running `dg bg` jobs and their children, systemd `.service` units, launchd jobs, the installed dg daemon, the phone listener, service-manager units, Claude Code, Codex, or Grok sessions, editors, interactive shells, other users' processes, or anything off the allowlist. A live `codex review` that another session runs in its scratchpad has a live parent and a cwd outside the repo, so it stays. Before each signal it reads the start time again and skips the process when it changed. It sends SIGTERM, then SIGKILL after 5 seconds.
 
 Print the reap summary line under the checklist. The CLI prints it as its last line, with no `#`. On `--long`, add the `# ` prefix yourself:
 
@@ -195,9 +196,9 @@ Relay the text of that line as is. Report zombies (state `Z`) that it lists with
 
 ### b. Stuck loops
 
-- **`pgrep -f` wait loops.** A shell that waits with `until ! pgrep -f "<pattern>"`, `while pgrep -f "<pattern>"`, or `tail --pid=$(pgrep -of "<pattern>")` never ends, because `pgrep -f` also matches the loop's own command line. `stat reap` calls a loop stuck when it is older than 60 minutes (`--loop-min-age`), the loop's condition is only the pgrep check (an `until` may add `X && ` before `! pgrep`), the script has no `break`, `exit` or `return`, the pattern matches the loop's own command line, the shell runs only its wait helpers, a `tail --pid` child does not wait on a live process outside the loop, and no process other than wait loops, their children, and the reap process matches the pattern. It leaves patterns with shell expansions, POSIX classes, or pgrep flags that change matching (such as `-x`) alone. It stops stuck loops of this session, children first. This session is the nearest `claude` or `codex` ancestor of the reap process, or the PID in `--session-pid`. For stuck loops of other sessions it prints `stuck loop <pid> (other session, ...)` and stops nothing. A loop with no session ancestor reads `none session`; only `--pid` stops it. Relay those lines and offer to stop them, once: `dg-skills stat reap --pid <pid>` for one loop, or `--other-sessions` for all loops of other sessions. Run that only after a yes. `--pid` checks the rule again before it signals, and stops the loop shell together with its helper children.
+- **`pgrep -f` wait loops.** A shell that waits with `until ! pgrep -f "<pattern>"`, `while pgrep -f "<pattern>"`, or `tail --pid=$(pgrep -of "<pattern>")` never ends, because `pgrep -f` also matches the loop's own command line. `stat reap` calls a loop stuck when it is older than 60 minutes (`--loop-min-age`), the loop's condition is only the pgrep check (an `until` may add `X && ` before `! pgrep`), the script has no `break`, `exit` or `return`, the pattern matches the loop's own command line, the shell runs only its wait helpers, a `tail --pid` child does not wait on a live process outside the loop, and no process other than wait loops, their children, and the reap process matches the pattern. It leaves patterns with shell expansions, POSIX classes, or pgrep flags that change matching (such as `-x`) alone. It stops stuck loops of this session, children first. This session is the nearest `claude` or `codex` ancestor of the reap process, or the PID in `--session-pid`. For stuck loops of other sessions it prints `stuck loop <pid> (other session, ...)` and stops nothing. A loop with no session ancestor reads `none session`; only `--pid` stops it. Relay those lines and offer to stop them, once: `dg stat reap --pid <pid>` for one loop, or `--other-sessions` for all loops of other sessions. Run that only after a yes. `--pid` checks the rule again before it signals, and stops the loop shell together with its helper children.
 - **Long pipes.** `stat reap` lists a shell of a session that has been in a pipe (such as `rg ... | head`) for over a day as `long pipe <pid>`. Report it only.
-- **`dg-skills bg` jobs.** Run `dg-skills stat loops --cwd "$PWD"`. It lists running jobs whose log has not grown for 20 minutes (`--stall`) or that run past 180 minutes (`--max-age`), with the log file and last line. For each one, read the last 30 lines of its log. When the job is clearly stuck (no progress, the same poll or error again and again), run `dg-skills bg cancel <id>` and report it. When you are not sure, report it and leave it.
+- **`dg bg` jobs.** Run `dg stat loops --cwd "$PWD"`. It lists running jobs whose log has not grown for 20 minutes (`--stall`) or that run past 180 minutes (`--max-age`), with the log file and last line. For each one, read the last 30 lines of its log. When the job is clearly stuck (no progress, the same poll or error again and again), run `dg bg cancel <id>` and report it. When you are not sure, report it and leave it.
 - **Claude Code background Agents.** An Agent that keeps reporting "waiting on its own background work" with no new result for a long time gets one `SendMessage` that asks for its status and tells it to stop polling. When a later `/dg:stat` still shows no progress, `TaskStop` it.
 - **Session cron jobs.** `CronList`. Run `CronDelete` on a job whose target is done or that fires with no effect.
 - **Workflows.** Report only.
@@ -211,11 +212,11 @@ Report what this step stopped in one line after the reap line (also `# `-prefixe
 This mirrors the owner's personal stat skill: **`/dg:stat` itself never calls `stat add`, `stat done`, or `stat status`** — those are for the main loop's normal work, run as it lands, so the checklist stays current without anyone hand-editing the file.
 
 ```sh
-dg-skills stat add "Phone feature to PR" --status running --eta "~1 hr"
-dg-skills stat add "Fix the flaky listener test" --status running --under 1
-dg-skills stat add "Approve the Wave 6/7 PR batch" --status blocked-user
-dg-skills stat done "Phone feature"
-dg-skills stat status "Phone feature" queued --eta "~30 min"
+dg stat add "Phone feature to PR" --status running --eta "~1 hr"
+dg stat add "Fix the flaky listener test" --status running --under 1
+dg stat add "Approve the Wave 6/7 PR batch" --status blocked-user
+dg stat done "Phone feature"
+dg stat status "Phone feature" queued --eta "~30 min"
 ```
 
 - `--eta` accepts only `<5 min`, `~15 min`, `~30 min`, `~1 hr`, `>1 hr` and `unknown`. Any other value fails with a non-zero exit and an error that lists these buckets. Use `>1 hr` for work longer than an hour.
@@ -224,7 +225,7 @@ dg-skills stat status "Phone feature" queued --eta "~30 min"
 - `--at <n>` places a new top-level item at the shown number `n` (default: the end of the plan). A number inside the done range means the first open slot,
   and one past the end appends. It fails with a non-zero exit, writing nothing, when a `needs-user` or `parked` item cannot land there, because those sit
   after the plan. `--under <n|match>` adds it as a sub-item of that open top-level item instead.
-- When the done section is long, run `dg-skills stat archive`. It moves every done item, with its sub-items, into `checklist-archive.md` beside the checklist. Add `--dry-run` to preview and `--json` for the report. The report counts open sub-items that went with a done parent; reopen them with `stat add` if they still matter.
+- When the done section is long, run `dg stat archive`. It moves every done item, with its sub-items, into `checklist-archive.md` beside the checklist. Add `--dry-run` to preview and `--json` for the report. The report counts open sub-items that went with a done parent; reopen them with `stat add` if they still matter.
 - There is no separate `reopen` command: `stat status "<match>" queued` (or any open status) moves a done item back to the end of the open list.
 
 ## `--overwatch`
@@ -248,11 +249,11 @@ Rows already print in plan order — a sub-item's row follows its parent's direc
 The WORK column:
 
 ```sh
-dg-skills stat checklist -l | awk -F '\t' '!/^#/ && NR>1 {print $4}'
+dg stat checklist -l | awk -F '\t' '!/^#/ && NR>1 {print $4}'
 ```
 
 The STATUS column, header included:
 
 ```sh
-dg-skills stat checklist -l | cut -f3
+dg stat checklist -l | cut -f3
 ```

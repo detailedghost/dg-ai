@@ -1,23 +1,24 @@
 ---
 name: inbox-cleanup
-description: Review and clean Proton Mail, Gmail, or Outlook through dg-skills, with redacted message batches, existing-folder routing, and reviewed mailbox changes.
+description: Review and clean Proton Mail, Gmail, or Outlook through dg, with redacted message batches, existing-folder routing, and reviewed mailbox changes.
 ---
 
 # Inbox cleanup
 
-The executable is `dg-skills`.
+The executable is `dg`.
 On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
 
 ```sh
-dg-skills inbox --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" inbox --help >/dev/null 2>&1 ||
+dg inbox --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" inbox --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-if dg-skills inbox --help >/dev/null 2>&1; then dg-skills inbox --help; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" inbox --help; fi
+if dg inbox --help >/dev/null 2>&1; then dg inbox --help; else "${DG_HOME:-$HOME/.local}/bin/dg" inbox --help; fi
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
 
-If a step fails, run dg-skills doctor inbox install require-extension.
+If a step fails, run dg doctor inbox install require-extension.
 
 For PowerShell, use the repository's raw bootstrap.ps1. Read [provider setup](references/providers.md)
 and [the cleanup workflow](references/workflow.md) before planning changes.
@@ -28,11 +29,11 @@ under DG_HOME/inbox and remains stable when the working directory changes.
 
 Gmail and Outlook run locally. Proton runs locally through a pw-managed profile
 under DG_HOME/inbox. Before the first Proton command, ask the human whether to
-sign in, then run `dg-skills inbox proton sign-in`. It opens the profile
+sign in, then run `dg inbox proton sign-in`. It opens the profile
 once for the human to sign in (on WSL it uses the Windows browser through pw) and
 closes it. Later commands run the profile headless. A signed-out profile exits 4
-and names the sign-in command. `dg-skills doctor inbox` reports the transport and
-whether the profile is signed in. Pass `--ext` to `dg-skills inbox` to use the
+and names the sign-in command. `dg doctor inbox` reports the transport and
+whether the profile is signed in. Pass `--ext` to `dg inbox` to use the
 extension instead. Never run pw commands on the `inbox-proton` session
 and never read `DG_HOME/inbox/proton-profile`: they hold the signed-in session.
 The pw and pw-code commands refuse that session, except `close`, `delete-data`
@@ -41,7 +42,7 @@ Gate the extension path with this line, and run only the
 command after the colon:
 
 ```text
---ext only: dg-skills require-extension inbox-cleanup || exit 1
+--ext only: dg require-extension inbox-cleanup || exit 1
 ```
 
 For Proton with `--ext`, use the extension in a signed-in mail tab. Its fixed JavaScript

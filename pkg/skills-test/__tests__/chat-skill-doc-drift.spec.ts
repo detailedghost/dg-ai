@@ -25,7 +25,7 @@ describe("the chat SKILL.md does not drift from the daemon's real surface", () =
 		const section = /\n## Commands\n([\s\S]*?)\n## /.exec(skill)?.[1] ?? "";
 		return [...section.matchAll(/^- `([a-z][a-z-]*)[ `]/gm)]
 			.map((m) => m[1])
-			.filter((name) => !name.startsWith("dg-"));
+			.filter((name) => name !== "dg" && !name.startsWith("dg-"));
 	}
 
 	test("every non-hidden command the CLI registers is documented", () => {

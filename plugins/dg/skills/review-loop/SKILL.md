@@ -69,7 +69,7 @@ coding agent instead. See [Proxy mode](#proxy-mode) below.
 trigger → verify Copilot engaged → wait for review → antagonist →
 `/dg:address` → re-trigger → verify → wait → …, up to `--rounds N`
 (default 2). Between rounds the skill polls GitHub directly via
-`dg-skills address await-copilot-review` — its internal provider polling uses
+`dg address await-copilot-review` — its internal provider polling uses
 no LLM tokens while waiting.
 
 If Copilot doesn't engage within 5 min of a trigger, the skill escalates:
@@ -115,16 +115,17 @@ the full phase breakdown.
 Resolve the compiled CLI before running any command:
 
 ```bash
-{ dg-skills address --help >/dev/null 2>&1 &&
-  dg-skills bg --help >/dev/null 2>&1; } ||
-  { "${DG_HOME:-$HOME/.local}/bin/dg-skills" address --help >/dev/null 2>&1 &&
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" bg --help >/dev/null 2>&1; } ||
+{ dg address --help >/dev/null 2>&1 &&
+  dg bg --help >/dev/null 2>&1; } ||
+  { "${DG_HOME:-$HOME/.local}/bin/dg" address --help >/dev/null 2>&1 &&
+  "${DG_HOME:-$HOME/.local}/bin/dg" bg --help >/dev/null 2>&1; } ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If a bare name does not answer, also after the bootstrap, call it by its `${DG_HOME:-$HOME/.local}/bin` path instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
 
-If a step fails, run dg-skills doctor address bg proxy stash vcs-provider.
+If a step fails, run dg doctor address bg proxy stash vcs-provider.
 
 Repeat this resolution in every fresh shell, including delegated execution and
 resumed commands; shell variables do not persist between tool calls. Use the
@@ -141,18 +142,18 @@ never assume a private checkout or cache location. Agent names below refer to
 the host's configured personas; resolve their files through the host registry or
 explicit `DG_PERSONAS_DIR` / `DG_AGENTS_DIR` configuration when needed.
 The plugin ships its personas in `agents/` (Claude Code loads them as
-`dg:<name>`; `dg-skills proxy` embeds them), so use those when the host has none.
+`dg:<name>`; `dg proxy` embeds them), so use those when the host has none.
 
 ## Helper
 
 Provider capability checks go through
-`dg-skills vcs-provider capabilities`. Use the compiled entrypoint with the
+`dg vcs-provider capabilities`. Use the compiled entrypoint with the
 host's existing narrow approvals and session authorization.
 
 Review-thread and bot-review operations go through
-`dg-skills address` (the same compiled command `/dg:address` uses), subject to
+`dg address` (the same compiled command `/dg:address` uses), subject to
 the same host approvals.
-`dg-skills address` is no longer GitHub-only — its review-thread,
+`dg address` is no longer GitHub-only — its review-thread,
 bot-review and CI-failure subcommands work against GitLab too — but the
 seven Copilot-bot subcommands this skill calls on it below are gated on
 Copilot specifically, not on merely having some reviewer: six refuse
@@ -174,7 +175,7 @@ Phase 1's `capabilities` check routes to the bot-review flow, or to
 proxy mode when no reviewer is configured, first (see
 [references/workflow.md](references/workflow.md) Phase 1 and 1b).
 **The
-proxy-mode steps of this skill never call `dg-skills address`** — round counting and diff-base
+proxy-mode steps of this skill never call `dg address`** — round counting and diff-base
 resolution there are plain `git`
 (see [references/proxy-workflow.md](references/proxy-workflow.md)). The hand-off to `/dg:address -l` runs its own helper calls.
 

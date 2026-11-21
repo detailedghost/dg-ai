@@ -37,7 +37,7 @@ Bundle: <bundle path> · Status: <status> · Slices: <count>
 - 👀 <question>
 
 ## Cost
-- <one line per profile, from `dg-skills spec estimate`>
+- <one line per profile, from `dg spec estimate`>
 ```
 
 After the view, ask per plan.md step 8: Approve (with the profile choice) or Rework.

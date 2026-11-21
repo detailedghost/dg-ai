@@ -1,7 +1,7 @@
 # Tab batches
 
 `pw batch-open` and `pw launch` open a batch of PR or URL tabs in the human's
-browser. They do not start a pw session. Below, `pw` means `dg-skills pw`.
+browser. They do not start a pw session. Below, `pw` means `dg pw`.
 
 ## batch-open
 
@@ -35,10 +35,10 @@ side-loaded through `--load-extension`, then opens the batch as a group.
 - Close the chosen browser fully first: the flag applies only on a cold start.
 - Chrome stable disabled the flag. Use Brave or Edge, or load the extension by
   hand once.
-- `launch` does not support Firefox. Use `dg-skills install firefox`.
+- `launch` does not support Firefox. Use `dg install firefox`.
 
 A CLI-only install refuses `pw launch` and `pw batch-open --ext`, and names
-`dg-skills install` as the fix.
+`dg install` as the fix.
 
 ## How markers work
 
@@ -54,8 +54,8 @@ order.
 
 ## Install the extension
 
-`dg-skills install [chrome|firefox] [--local] [--version <x.y.z>]` stages the
-extension for a one-time load and refreshes the `dg-skills` binary. It downloads
+`dg install [chrome|firefox] [--local] [--version <x.y.z>]` stages the
+extension for a one-time load and refreshes the `dg` binary. It downloads
 the extension zip from the newest `vX.Y.Z` release, or builds it from source with
 `--local` (needs Bun from https://bun.sh). `--version` pins a release; a missing
 release fails the install before anything changes. The default target `chrome`
@@ -76,7 +76,7 @@ and less reliable across reboots.
 On native Windows PowerShell, run the installed launcher:
 
 ```powershell
-$dg = if ($env:DG_HOME) { Join-Path $env:DG_HOME "bin\dg-skills.cmd" } else { Join-Path $env:LOCALAPPDATA "dg\bin\dg-skills.cmd" }
+$dg = if ($env:DG_HOME) { Join-Path $env:DG_HOME "bin\dg.cmd" } else { Join-Path $env:LOCALAPPDATA "dg\bin\dg.cmd" }
 if (-not (Test-Path $dg)) {
   irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 }

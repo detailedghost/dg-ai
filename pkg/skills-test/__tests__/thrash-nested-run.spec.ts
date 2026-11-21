@@ -35,7 +35,7 @@ describe("thrash nested run", () => {
 	});
 
 	test("falls back to a proxy job for each stage persona", () => {
-		expect(nested()).toContain("dg-skills proxy codex --subagent thrash-verify");
+		expect(nested()).toContain("dg proxy codex --subagent thrash-verify");
 		expect(nested()).toContain("thrash-consolidate");
 		expect(nested()).toMatch(/--subagent thrash-verify\|thrash-consolidate/);
 	});

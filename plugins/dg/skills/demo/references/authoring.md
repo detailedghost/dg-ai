@@ -3,7 +3,7 @@
 ## Plan file (the authoring format)
 
 You author a tour as a Markdown **plan**: YAML frontmatter + a `## Steps`
-list. Feed it to `dg-skills demo <plan>.md`; the CLI parses it, generates the
+list. Feed it to `dg demo <plan>.md`; the CLI parses it, generates the
 runnable script into a `## Script` fenced block, and plays it. Local play and
 `--ext` play the same plan. Local play always records an MP4. `--ext` plays the
 interactive tour. Never hand-write the JSON.
@@ -244,7 +244,7 @@ Captions and a silent video are the default. `-n` adds a Kokoro voice, made befo
 recording and muxed as AAC. A numeric timing is the dwell after the caption or voice.
 There is no start screen, review panel, or walkthrough control in local mode.
 
-Run `dg-skills demo --verify <plan>` first. It drives the same recorder in a dry run,
+Run `dg demo --verify <plan>` first. It drives the same recorder in a dry run,
 with no overlays and no holds.
 
 ## Video mode (`--ext`)

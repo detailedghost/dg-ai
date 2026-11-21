@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describeLocalPageSkill } from "./local-page-skill-contract";
 import { REPO_ROOT } from "./test-support";
 
-describeLocalPageSkill("overwatch", "dg-agent overwatch open --ext");
+describeLocalPageSkill("overwatch", "dg overwatch open --ext");
 
 describe("overwatch skill extension notes", () => {
 	const skillDir = join(REPO_ROOT, "plugins", "dg", "skills", "overwatch");

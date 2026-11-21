@@ -1,6 +1,6 @@
 # Real browser with `--ext`
 
-`dg-skills pw --ext <verb>` acts on the agent's selected tab in the human's real
+`dg pw --ext <verb>` acts on the agent's selected tab in the human's real
 Chromium browser through the paired dg-ai-extension. Run one verb per Bash call.
 Your tabs sit in one tab group of their own. You see and act only on tabs in that
 group, until the human hands you a tab from the extension popup.
@@ -26,7 +26,7 @@ group, until the human hands you a tab from the extension popup.
 | `current` | read | URL and title of the agent's selected tab |
 | `tabs` | read | The tabs in the agent's group, the selected one marked |
 | `snapshot` | read | Accessibility tree with refs, and visible text, on stdout |
-| `screenshot` | read | Visible part of the tab, saved to `dg-skills stash pw`; brings the tab to the front first |
+| `screenshot` | read | Visible part of the tab, saved to `dg stash pw`; brings the tab to the front first |
 | `selection` | read | Selected text |
 | `console` | read | Errors and console warnings since the first `console` call |
 | `tools` | read | Web MCP bridge: WebMCP tools of the page: name, description, input schema |
@@ -115,7 +115,7 @@ group, until the human hands you a tab from the extension popup.
   `pw --ext fetch /path --auth page`. To use a sign-in value outside the
   browser, run `pw --ext credential save <name> --from header:Authorization`
   (or `cookie:`, `local:`, `session:`), then
-  `dg-skills credentials exec pw/<site>/<name>=TOKEN -- <command>`. dg-daemon
+  `dg credentials exec pw/<site>/<name>=TOKEN -- <command>`. The dg daemon
   runs the command, the value is only in its environment, and its output is
   scrubbed. The command gets no stdin. It runs only a command that the human
   listed in the dg `exec-allowlist` file; never edit that file yourself. You never see the value, and you must
@@ -145,10 +145,10 @@ group, until the human hands you a tab from the extension popup.
   An extension that lacks `unmask` refuses the verb at once.
 - Output is redacted and capped. Screenshots are not redacted.
 - Ctrl-C on the CLI cancels the request.
-- `--ext` runs no agent code. On a failure, run `dg-skills doctor pw`.
+- `--ext` runs no agent code. On a failure, run `dg doctor pw`.
 - An extension older than the one that ships tab groups is refused with the
   update text. Update the extension, reload it, and reconnect the session. A
-  running `dg-daemon` older than the CLI answers a `--tab` or a new verb with its
+  running dg daemon older than the CLI answers a `--tab` or a new verb with its
   own validator error until you restart it.
 - After an extension reload, run `pw --ext new` again. The reload clears the
   agent's tab binding.

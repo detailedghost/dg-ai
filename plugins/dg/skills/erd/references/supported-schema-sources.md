@@ -6,7 +6,7 @@ detail behind `src/erd/schema-live.ts` and `src/erd/schema-static.ts` (`src/erd/
 
 ## Live-first
 
-`collectLiveSchema` re-enters the current compiled `dg-skills` binary with `db connections`
+`collectLiveSchema` re-enters the current compiled `dg` binary with `db connections`
 to enumerate connection names, then issues exactly one `db schema <conn>`
 call per candidate connection in order — never `db describe` in a loop. Reachability is
 determined solely by whether that single call succeeds or fails: a failing call means the

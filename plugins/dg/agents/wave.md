@@ -50,4 +50,4 @@ file:line — issue description
 
 # Project context
 
-**Project-scope**: Read `.agents/school/quality.md` (if present). When `.agents/decisions/README.md` exists, run `dg-skills adr relevant <files you will touch> --json` and read only the listed decisions. Never load `docs/adr` as context; it is for people. Add new learnings as `- [YYYY-MM-DD] description`. Max 100 lines per file; prune oldest when full.
+**Project-scope**: Read `.agents/school/quality.md` (if present). When `.agents/decisions/README.md` exists, run `dg adr relevant <files you will touch> --json` and read only the listed decisions. Never load `docs/adr` as context; it is for people. Add new learnings as `- [YYYY-MM-DD] description`. Max 100 lines per file; prune oldest when full.

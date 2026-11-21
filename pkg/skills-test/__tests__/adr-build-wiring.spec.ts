@@ -22,7 +22,7 @@ describe("adr build wiring: slice engineering templates", () => {
 	] as const) {
 		test(`${name} reads relevant decisions when opted in`, () => {
 			expect(text).toContain(OPT_IN);
-			expect(text).toContain("dg-skills adr relevant");
+			expect(text).toContain("dg adr relevant");
 			expect(text).toContain("--json");
 		});
 	}
@@ -31,9 +31,9 @@ describe("adr build wiring: slice engineering templates", () => {
 describe("adr build wiring: lore template", () => {
 	test("updates records, then indexes and lints before the docs commit", () => {
 		expect(LORE).toContain(OPT_IN);
-		expect(LORE).toContain("dg-skills adr relevant");
-		expect(LORE).toContain("dg-skills adr index");
-		expect(LORE).toContain("dg-skills adr lint --changed");
+		expect(LORE).toContain("dg adr relevant");
+		expect(LORE).toContain("dg adr index");
+		expect(LORE).toContain("dg adr lint --changed");
 	});
 
 	test("ratifies a new pair and never writes one", () => {
@@ -65,14 +65,14 @@ describe("adr build wiring: finish and execute", () => {
 describe("adr build wiring: land", () => {
 	test("gates on the opt-in file and the CLI probe", () => {
 		expect(LAND_WORKFLOW).toContain(OPT_IN);
-		expect(LAND_WORKFLOW).toContain("dg-skills adr --help");
+		expect(LAND_WORKFLOW).toContain("dg adr --help");
 		expect(LAND).toContain("adr-cli-missing");
 		expect(LAND_WORKFLOW).toContain("land: adr-cli-missing");
 	});
 
 	test("lints against the PR base branch, never the -b value", () => {
 		expect(LAND_WORKFLOW).toContain("git fetch");
-		expect(LAND_WORKFLOW).toContain("dg-skills adr lint --changed --base 'origin/<baseRefName>'");
+		expect(LAND_WORKFLOW).toContain("dg adr lint --changed --base 'origin/<baseRefName>'");
 		expect(LAND_WORKFLOW).toMatch(/never[^\n]*`-b`/i);
 	});
 

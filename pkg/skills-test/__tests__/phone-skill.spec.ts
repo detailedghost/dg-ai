@@ -17,8 +17,8 @@ describe("phone skill", () => {
 		expect(front).toMatch(/^name: phone$/m);
 	});
 
-	test("gates its bootstrap on the dg-agent phone command", () => {
-		expect(skill).toMatch(/^dg-agent phone --help >\/dev\/null 2>&1 \|\|\n\s+"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg-agent" phone --help >\/dev\/null 2>&1 \|\|\n\s+curl/m);
+	test("gates its bootstrap on the dg phone command", () => {
+		expect(skill).toMatch(/^dg phone --help >\/dev\/null 2>&1 \|\|\n\s+"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg" phone --help >\/dev\/null 2>&1 \|\|\n\s+\{ \{ dg --version [^\n]*echo "run dg upgrade"; \} \|\|\n\s+curl/m);
 		expect(skill).not.toContain("$DG_AGENT");
 	});
 
@@ -102,7 +102,7 @@ describe("phone skill", () => {
 		expect(safety).toContain("Vault names hold no PHI.");
 		expect(skill).toContain("phone-vault/<yyyy>-w<ww>");
 		expect(skill).toContain("yyyy-W<ww>");
-		expect(skill).toContain("dg-agent phone vault add lab-1 -");
+		expect(skill).toContain("dg phone vault add lab-1 -");
 		expect(skill).toContain("`Lab` and `lab` are one item");
 		expect(guide).toContain("phone-vault/2026-w45");
 		expect(guide).toContain("phone vault add <name> [file");
@@ -121,7 +121,7 @@ describe("phone skill", () => {
 	test("gives generic setup text with a Grok Bot note and documents where data lives", () => {
 		expect(skill).toContain("## Set up the other side");
 		expect(skill).toContain("**Grok Bot note:**");
-		expect(skill).toContain("dg-agent phone open");
+		expect(skill).toContain("dg phone open");
 		expect(skill).toContain("unread only reads messages that listener has already stored");
 		expect(skill).toContain("~/.local/state/dg/phone/phone.db");
 		expect(skill).not.toContain("~/.dg/phone/phone.db");
@@ -213,7 +213,7 @@ describe("phone skill", () => {
 		expect(skill).toContain(`text +grok - < "$REPLY_FILE"`);
 		expect(safety).toContain("Never copy message text into the heredoc.");
 		expect(skill).not.toMatch(/phone text \+\w+ "/);
-		expect(skill).toContain(`dg-agent phone accept - 'hello from the other side' <<'CARD'`);
+		expect(skill).toContain(`dg phone accept - 'hello from the other side' <<'CARD'`);
 		expect(skill).toContain(`text +<handle-from-accept> - <<'MSG'`);
 		expect(skill).not.toMatch(/phone accept '/);
 		expect(skill).not.toMatch(/accept <CARD>/);
@@ -252,7 +252,7 @@ describe("phone skill", () => {
 
 	test("documents extensions: +handle/ext, --as, DG_PHONE_AS, the waiting line, and machine-wide groups", () => {
 		expect(skill).toContain("## Extensions");
-		for (const text of ["dg-agent phone text +mary/merc", "DG_PHONE_AS", '"waiting"', "from_ext", "#group/ext"]) expect(skill).toContain(text);
+		for (const text of ["dg phone text +mary/merc", "DG_PHONE_AS", '"waiting"', "from_ext", "#group/ext"]) expect(skill).toContain(text);
 		for (const text of ["## Extensions", "dg-ext", "dg-from-ext", "ext_reads", "contact_exts"]) expect(guide).toContain(text);
 		expect(safety).toContain("An extension is a routing label, never an identity.");
 		expect(safety).toContain("A message for another extension is not yours.");

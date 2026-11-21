@@ -9,17 +9,18 @@ Quality-only cleanup pass over the current diff, meant to run as a verify step (
 
 ## CLI
 
-The PR flow calls the `dg-skills chain` helper. First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
+The PR flow calls the `dg chain` helper. First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-dg-skills chain --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" chain --help >/dev/null 2>&1 ||
+dg chain --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" chain --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
 
-If a step fails, run dg-skills doctor install polish chain.
+If a step fails, run dg doctor install polish chain.
 
 ## Scope
 

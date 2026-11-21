@@ -12,14 +12,15 @@ Janitor skill for `.agents/school/` and the agent context files. Migrates scatte
 First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-dg-skills spec --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" spec --help >/dev/null 2>&1 ||
+dg spec --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg" spec --help >/dev/null 2>&1 ||
+  { { dg --version >/dev/null 2>&1 || "${DG_HOME:-$HOME/.local}/bin/dg" --version >/dev/null 2>&1; } && echo "run dg upgrade"; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+Call `dg` in every later step. If `dg` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg` instead.
 
-If a step fails, run dg-skills doctor monolith spec adr.
+If a step fails, run dg doctor monolith spec adr.
 
 Before starting, read [references/structure.md](references/structure.md) for the target layout, file format, and old-to-new mapping.
 
@@ -35,11 +36,11 @@ Before starting, read [references/structure.md](references/structure.md) for the
 | # | Step | Action |
 |---|------|--------|
 | 1 | **Scan** | List `.agents/school/` files and legacy spec artifacts under `.agents/create-specs/`/`.agents/todo/`. If none found and already clean, stop. |
-| 2 | **Migrate Spec Artifacts** | For each `.agents/create-specs/<NNN>_<slug>.md`, create `.agents/spec/<NNN>_<slug>/` and move the file to `plan.md` (preserve `NNN`). Normalize legacy quirks so it validates (see structure.md), run `dg-skills spec validate <bundle>/plan.md` and carry any remaining violations to Step 6, then run `dg-skills spec context <bundle>` to synthesize `context.md`. Migrate `.agents/todo/<NNN>_<slug>.md` → `.agents/spec/todo/<slug>/`. Skip any bundle that already exists at the target path — idempotent. |
+| 2 | **Migrate Spec Artifacts** | For each `.agents/create-specs/<NNN>_<slug>.md`, create `.agents/spec/<NNN>_<slug>/` and move the file to `plan.md` (preserve `NNN`). Normalize legacy quirks so it validates (see structure.md), run `dg spec validate <bundle>/plan.md` and carry any remaining violations to Step 6, then run `dg spec context <bundle>` to synthesize `context.md`. Migrate `.agents/todo/<NNN>_<slug>.md` → `.agents/spec/todo/<slug>/`. Skip any bundle that already exists at the target path — idempotent. |
 | 3 | **Merge Learnings** | Route entries from old files to topic files using mapping table. Dedup, prune to 100 lines max. Drop entries referencing the retired `/create-spec` workflow. |
 | 4 | **Merge Deps** | Combine deps files into DEPS.md (recurring issues + last 3 runs, 80 lines max). Skip if none. |
 | 5 | **Write & Clean** | Write topic files, delete old files and empty subdirs. |
 | 6 | **Report** | Summarize: files migrated, entries merged/pruned, files deleted, spec bundles migrated, any unresolved `plan.md` validation violations from Step 2. |
-| 7 | **Monolith health check** | If `.agents/monolith.md` exists, run `dg-skills monolith prune .agents/monolith.md --dry-run` to list entries whose `_src:_` path no longer exists. If `.agents/school/monolith-conflicts.md` exists, count its entries. Surface both in the report and suggest the user run `/dg:monolith --prune` and review the conflicts log. Do NOT auto-modify monolith.md. |
-| 8 | **Context diet** | Measure the always-loaded files against the budgets in structure.md's "Agent Context Budgets". First find the repo tests that read CLAUDE.md, AGENTS.md, or doc files. List the moves: feature detail to `.agents/references/<pkg>-<topic>.md`, style rules to `docs/code_standards.md`, ADR-linked agent rules to `.agents/decisions/` (format: `/dg:adr`). Delete empty files and empty folders under `.agents/`. Show the list and ask before you move text out of CLAUDE.md, AGENTS.md, or `docs/`. Run the doc-reading tests after. ADR check: run it only when `.agents/decisions/README.md` exists, else skip quietly. Run `dg-skills adr lint --all --json`. Write each missing decision file per `/dg:adr`. Never rewrite an ADR body without a diff the human approves. |
+| 7 | **Monolith health check** | If `.agents/monolith.md` exists, run `dg monolith prune .agents/monolith.md --dry-run` to list entries whose `_src:_` path no longer exists. If `.agents/school/monolith-conflicts.md` exists, count its entries. Surface both in the report and suggest the user run `/dg:monolith --prune` and review the conflicts log. Do NOT auto-modify monolith.md. |
+| 8 | **Context diet** | Measure the always-loaded files against the budgets in structure.md's "Agent Context Budgets". First find the repo tests that read CLAUDE.md, AGENTS.md, or doc files. List the moves: feature detail to `.agents/references/<pkg>-<topic>.md`, style rules to `docs/code_standards.md`, ADR-linked agent rules to `.agents/decisions/` (format: `/dg:adr`). Delete empty files and empty folders under `.agents/`. Show the list and ask before you move text out of CLAUDE.md, AGENTS.md, or `docs/`. Run the doc-reading tests after. ADR check: run it only when `.agents/decisions/README.md` exists, else skip quietly. Run `dg adr lint --all --json`. Write each missing decision file per `/dg:adr`. Never rewrite an ADR body without a diff the human approves. |
 | 9 | **Track `.agents/`** | `.agents/` is tracked agent memory; scratch subfolders are ignored. If `.gitignore` ignores `.agents/` or `.agents/*`, ask once, then replace that block (and its `!.agents/...` negations) with the scratch list from `/dg:agent-seed` templates.md. Keep any `.agents/prototype/` lines. Never stack a second block. Commit the `.gitignore` change on its own. |

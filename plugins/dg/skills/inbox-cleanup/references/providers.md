@@ -1,29 +1,29 @@
 # Provider setup
 
-Run commands through the compiled `dg-skills` binary. Start a
+Run commands through the compiled `dg` binary. Start a
 daemon session with the installed companion binary:
 
 ```sh
-dg-agent start --open
+dg agent start --open
 ```
 
-`dg-agent start` prints one line on stderr and nothing on stdout. The line is
+`dg agent start` prints one line on stderr and nothing on stdout. The line is
 `Paired <identity> (<id8>) with the browser extension.` or
-`No browser extension is connected. Install it with: dg-skills install`. The
+`No browser extension is connected. Install it with: dg install`. The
 extension pairs with the session on its own. Reload the Proton Mail tab after
 it connects. `--open` opens the chat page through a one-time code and prints
 no URL.
 
 Keep the session id and pass `--session ID` when your command's working
 directory differs from the registered session, or when several sessions exist.
-`dg-agent start --print-session-id` prints the session id on stdout.
-`dg-agent start --json` prints one object `{"sessionId","port","extensionLinked"}`
+`dg agent start --print-session-id` prints the session id on stdout.
+`dg agent start --json` prints one object `{"sessionId","port","extensionLinked"}`
 instead. No output carries the session token.
 Gmail and Outlook use the daemon for encrypted configuration and OAuth storage;
 both run locally. Proton runs locally through a pw-managed profile by default.
 With `--ext`, Proton needs exactly one extension connected to that session, and the
-gate line (run only the command after the colon) is `--ext only: dg-skills require-extension inbox-cleanup || exit 1`. Install or
-update all companion binaries with dg-skills install when protocol versions differ.
+gate line (run only the command after the colon) is `--ext only: dg require-extension inbox-cleanup || exit 1`. Install or
+update all companion binaries with dg install when protocol versions differ.
 Proton inbox operations require extension version 1.11.0 or newer.
 
 ## Profiles
@@ -32,10 +32,10 @@ Profile names select accounts with --account-profile NAME in workflow commands.
 The separate --profile NAME workflow flag chooses a saved routing policy.
 
 ```sh
-dg-skills inbox profile set personal --provider gmail --client-id YOUR_DESKTOP_CLIENT_ID \
+dg inbox profile set personal --provider gmail --client-id YOUR_DESKTOP_CLIENT_ID \
   --auth-mode browser --session SESSION_ID
-dg-skills inbox profile get personal --session SESSION_ID
-dg-skills inbox profile list --session SESSION_ID
+dg inbox profile get personal --session SESSION_ID
+dg inbox profile list --session SESSION_ID
 ```
 
 Use --json JSON or --file PATH for a complete validated profile. Useful settings
@@ -53,7 +53,7 @@ daemon database. Explicit --data-path fixture commands bypass live services.
 ## Proton Mail
 
 By default Proton runs through a pw profile under `DG_HOME/inbox/proton-profile`.
-Ask the human before running `dg-skills inbox proton sign-in`. It opens
+Ask the human before running `dg inbox proton sign-in`. It opens
 the profile once so the human can sign in, then closes it. On WSL it uses the
 Windows browser through pw, keeps the profile on the Windows side, and never
 opens a headed browser inside WSL. Cookies stay in that profile, and the agent never runs pw commands on the
@@ -71,7 +71,7 @@ response, ride out a pass through `account.proton.me` while the session resumes,
 and reload and retry once when an operation gets a 401 or loses the mail tab.
 They exit 4 only when the page stays signed out for the whole wait, about 20
 seconds, so a saved session needs no new human sign-in.
-`dg-skills doctor inbox` reads a marker file to report whether the profile is
+`dg doctor inbox` reads a marker file to report whether the profile is
 signed in and never starts a browser. The rest of
 this section describes the `--ext` path.
 
@@ -80,24 +80,24 @@ installing the extension so its MAIN observer sees real fetch/XHR API headers.
 Keep that `mail.proton.me/u/N` tab open while cleaning mail. Do filter and
 account settings in a separate tab. If the only mail tab navigates to
 `account.proton.me`, the extension loses the page session; the next inbox call
-says the mail tab navigated away instead of a generic sign-in error. `dg-skills
+says the mail tab navigated away instead of a generic sign-in error. `dg
 inbox status` reports local message counts and, with `--session`, which check
 failed: no extension peer on that session, no mail tab matching `/u/N`, or
 missing `x-pm-uid`. A missing extension peer names the session and tells you to
-start the session with `dg-agent start` and install the extension with
-`dg-skills install` if none is connected. `dg-skills inbox bootstrap-url
+start the session with `dg agent start` and install the extension with
+`dg install` if none is connected. `dg inbox bootstrap-url
 --session ID` prints a chat URL,
 `http://127.0.0.1:<port>/chat#_chatcode=<code>`, with a one-time code. The URL works once, within 60 seconds. It never
 carries the session token.
 
 Chrome 116+ (MV3, MAIN world) and Firefox 128+ both run that observer. The
 plugin's broader Firefox features may require a newer Firefox. Bootstrap
-(`bootstrap.sh`, which runs `dg-skills install`) stages the Chrome MV3 build at
+(`bootstrap.sh`, which runs `dg install`) stages the Chrome MV3 build at
 `~/.dg/dg-ai-extension-chrome` (`minimum_chrome_version` 116). Use
-`dg-skills install firefox` for the Firefox build.
+`dg install firefox` for the Firefox build.
 
 ```sh
-dg-skills inbox profile set proton --provider protonmail --account-hint 0 \
+dg inbox profile set proton --provider protonmail --account-hint 0 \
   --session SESSION_ID
 ```
 
@@ -158,7 +158,7 @@ browser or device-code login; a confidential client uses a registered loopback
 redirect and a secret referenced through --client-secret-env.
 
 ```sh
-dg-skills inbox profile set work --provider outlook --client-id YOUR_CLIENT_ID \
+dg inbox profile set work --provider outlook --client-id YOUR_CLIENT_ID \
   --tenant-id organizations --auth-mode device-code --session SESSION_ID
 ```
 

@@ -1,11 +1,11 @@
 # Cleanup workflow
 
-Use `dg-skills inbox` for every command. Select the account with
+Use `dg inbox` for every command. Select the account with
 `--account-profile <name>` and optionally an explicit `--dir <workspace>`.
 Default workspaces live below `${DG_HOME:-~/.dg}/inbox`; switching project
 directories does not switch mailboxes. `--data-path <fixture.json>` runs offline.
 
-Set `S` to the session id from `dg-agent start` (`--print-session-id` or
+Set `S` to the session id from `dg agent start` (`--print-session-id` or
 `--json` prints it). Pass `--session "$S"`
 on each command. That is required when the working directory differs from the
 registered session or several sessions exist, which is the usual case for an
@@ -14,12 +14,12 @@ agent.
 ## Inspect and prepare
 
 ```sh
-dg-skills inbox load folders --account-profile work --session "$S"
-dg-skills inbox load filters --account-profile work --session "$S"
-dg-skills inbox probe --folder Inbox --limit 3000 --account-profile work --session "$S"
-dg-skills inbox batch --folder Inbox --limit 3000 --account-profile work --session "$S"
-dg-skills inbox analyze --by domain --account-profile work --session "$S"
-dg-skills inbox sample --limit 10 --account-profile work --session "$S"
+dg inbox load folders --account-profile work --session "$S"
+dg inbox load filters --account-profile work --session "$S"
+dg inbox probe --folder Inbox --limit 3000 --account-profile work --session "$S"
+dg inbox batch --folder Inbox --limit 3000 --account-profile work --session "$S"
+dg inbox analyze --by domain --account-profile work --session "$S"
+dg inbox sample --limit 10 --account-profile work --session "$S"
 ```
 
 The collector consumes async generators one page at a time and writes bounded
@@ -59,12 +59,12 @@ when a later `decide` overwrote an earlier one, so a sum of `written` can be
 higher than `readyToMove`.
 
 ```sh
-dg-skills inbox decide --domain example.test --action move \
+dg inbox decide --domain example.test --action move \
   --target-folder "Finance/Receipts" --mark-read true \
   --reason "Reviewed receipt route" --account-profile work --session "$S"
-dg-skills inbox review --account-profile work --session "$S"
-dg-skills inbox apply --dry-run --account-profile work --session "$S"
-dg-skills inbox apply --confirm --account-profile work --session "$S"
+dg inbox review --account-profile work --session "$S"
+dg inbox apply --dry-run --account-profile work --session "$S"
+dg inbox apply --confirm --account-profile work --session "$S"
 ```
 
 Inspect the review and dry-run result, and confirm mutations under the user's

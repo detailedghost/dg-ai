@@ -72,7 +72,7 @@ const trees = SPEC_SKILLS_TREES.map((skill) => ({
 }));
 
 const callers = trees.filter(({ files }) =>
-	files.some((file) => file.text.includes("dg-skills")),
+	files.some((file) => /^dg [a-z]/m.test(file.text)),
 );
 
 function skillMd(skill: string): string {
@@ -119,13 +119,13 @@ describe("migrated spec, sdlc, assign, grill-me, prd, kick and pickup skill tree
 		},
 	);
 
-	test("every dg-skills spec call uses the bare launcher name and names a real subcommand", () => {
+	test("every dg spec call uses the bare launcher name and names a real subcommand", () => {
 		const called = new Set<string>();
 		for (const { files } of trees)
 			for (const file of files) {
 				expect(file.text).not.toMatch(/\$\{?DG\b/);
 				for (const match of file.text.matchAll(
-					/dg-skills spec ([a-z][a-z-]*)/g,
+					/dg spec ([a-z][a-z-]*)/g,
 				))
 					called.add(match[1] ?? "");
 			}
@@ -159,7 +159,7 @@ describe("migrated spec, sdlc, assign, grill-me, prd, kick and pickup skill tree
 		"$skill gates its first-run bootstrap on the installed CLI",
 		({ skill }) => {
 			expect(skillMd(skill)).toMatch(
-				/^dg-skills \w[\w-]*(?: \w[\w-]*)? --help >\/dev\/null 2>&1 \|\|\s+"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg-skills" \w[\w-]*(?: \w[\w-]*)? --help >\/dev\/null 2>&1 \|\|\s+curl/m,
+				/^dg \w[\w-]*(?: \w[\w-]*)? --help >\/dev\/null 2>&1 \|\|\s+"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg" \w[\w-]*(?: \w[\w-]*)? --help >\/dev\/null 2>&1 \|\|\s+\{ \{ dg --version[^\n]*echo "run dg upgrade"; \} \|\|\s+curl/m,
 			);
 		},
 	);

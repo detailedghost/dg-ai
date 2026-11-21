@@ -18,8 +18,8 @@ Run these before execute.md §1 reads `context.md`. The first command writes the
 `plan.md`, the same file as `SPEC_PATH`.
 
 ```sh
-dg-skills spec set <bundle>/plan.md execution.profile <profile>
-dg-skills spec context <bundle>
+dg spec set <bundle>/plan.md execution.profile <profile>
+dg spec context <bundle>
 ```
 
 Then, when `<profile>` is `expensive` and any slice lacks `agents.complexity`, run `/dg:assign <bundle>/plan.md`.

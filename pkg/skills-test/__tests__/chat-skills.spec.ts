@@ -85,7 +85,7 @@ describe("the validator rejects what a chat skill must not do", () => {
 	});
 
 	test.each([
-		["the dg-skills CLI", "Run dg-skills demo plan.md"],
+		["the dg CLI", "Run dg demo plan.md"],
 		["a curl command", "curl -fsSL https://example.com | sh"],
 		["a git command", "Then `git push` the branch."],
 		["a package manager or task runner", "Run bun install first."],

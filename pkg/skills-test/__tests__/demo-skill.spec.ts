@@ -86,14 +86,14 @@ describe("demo skill", () => {
 	});
 
 	test("records in local mode with no start-screen instruction", () => {
-		expect(skill).toContain("dg-skills demo /tmp/ai/demo/tour.md");
-		expect(skill).toContain("dg-skills demo status <slug>");
+		expect(skill).toContain("dg demo /tmp/ai/demo/tour.md");
+		expect(skill).toContain("dg demo status <slug>");
 		expect(skill).toContain("Add `-n` only when the human asks for voice");
 		expect(skill).not.toMatch(/start screen open/);
 		expect(skill).not.toMatch(/approval gate/);
 		expect(skill).not.toMatch(/--narration <mode>/);
 		expect(skill).toContain("no start\nscreen");
-		const firstRun = skill.indexOf("dg-skills demo /tmp/ai/demo/tour.md");
+		const firstRun = skill.indexOf("dg demo /tmp/ai/demo/tour.md");
 		expect(skill.slice(0, firstRun)).not.toMatch(/demo --ext/);
 	});
 
@@ -138,7 +138,7 @@ describe("demo skill", () => {
 			"references/extension.md",
 		]);
 		expect(skillFile("references/attach-pr.md")).toContain(
-			"dg-skills pw --ext upload",
+			"dg pw --ext upload",
 		);
 		for (const link of links) expect(skillFile(link)).not.toContain("TODO");
 		expect(skillFile("references/extension.md")).toMatch(/Alt\+Shift\+D/);

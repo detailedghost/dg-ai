@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { REPO_ROOT, readRepoFile } from "./test-support";
 
 const MEMORY_TAIL =
-	"When `.agents/decisions/README.md` exists, run `dg-skills adr relevant <files you will touch> --json` " +
+	"When `.agents/decisions/README.md` exists, run `dg adr relevant <files you will touch> --json` " +
 	"and read only the listed decisions. Never load `docs/adr` as context; it is for people.";
 
 const MEMORY_LINE = new RegExp(
