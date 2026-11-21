@@ -30,7 +30,8 @@ const read = (path: string): string => {
 	return readRepoFile(path);
 };
 const source = (...parts: string[]): string => readRepoFile("pkg", ...parts);
-const withoutBareExamples = (text: string): string => text.replace(/\b(?:bare|never as) `dg [a-z]+`/g, "");
+const withoutBareExamples = (text: string): string =>
+	text.replace(/\b(?:bare|never as) `dg (?:start|status|serve|send|recv|stop|restart)`/g, "");
 const flat = (text: string): string => text.replace(/\s+/g, " ");
 
 function heading(text: string, title: string): string {

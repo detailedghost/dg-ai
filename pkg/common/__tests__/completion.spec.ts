@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Argument, Command, Option } from "commander";
-import { type CompletionNode, completeWords, completionScript, FILES_DIRECTIVE, treeOf } from "../src/completion";
+import { type CompletionNode, completeWords, completionScript, FILES_DIRECTIVE, registerCompletionCommand, treeOf } from "../src/completion";
+import { spyOn } from "bun:test";
 
 const tree: CompletionNode = {
 	name: "dg-skills",
@@ -125,5 +126,23 @@ describe("completionScript", () => {
 
 	test("the zsh script starts with the compdef tag that fpath autoload reads", () => {
 		expect(completionScript("zsh", "dg-agent").split("\n")[0]).toBe("#compdef dg-agent");
+	});
+});
+
+describe("registerCompletionCommand", () => {
+	test.each(["dg agent", "dg daemon", "dg-skills"])("a tree named %p prints the dg script", async (name) => {
+		const program = new Command(name).exitOverride();
+		registerCompletionCommand(program);
+		let out = "";
+		const write = spyOn(process.stdout, "write").mockImplementation(((chunk: string) => {
+			out += chunk;
+			return true;
+		}) as never);
+		try {
+			await program.parseAsync(["completion", "bash"], { from: "user" });
+		} finally {
+			write.mockRestore();
+		}
+		expect(out).toBe(completionScript("bash", "dg"));
 	});
 });

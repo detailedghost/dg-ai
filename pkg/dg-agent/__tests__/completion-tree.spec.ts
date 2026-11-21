@@ -12,7 +12,7 @@ describe("the dg-agent completion tree", () => {
 		expect(run.exitCode).toBe(0);
 	}, 30_000);
 
-	test("dg-agent completion prints the dg script that calls dg __complete", () => {
+	test("dg agent completion prints the dg script", () => {
 		const run = Bun.spawnSync([process.execPath, ENTRY, "completion", "zsh"], { stdout: "pipe" });
 		expect(run.stdout.toString()).toBe(completionScript("zsh", "dg"));
 	});

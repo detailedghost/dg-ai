@@ -125,16 +125,18 @@ export function writeDgLink(
 		return;
 	}
 	if (platform === "win32") {
-		try {
-			sweepAside(binDir);
-		} catch {}
+		sweepAside(binDir);
 		const aside = join(binDir, `.dg.exe.${process.pid}-${Date.now()}.old`);
 		const moved = present(dest);
 		if (moved) renameSync(dest, aside);
 		try {
 			linkSync(versionProgramPath(root, version, platform), dest);
 		} catch (err) {
-			if (moved) renameSync(aside, dest);
+			if (moved) {
+				try {
+					renameSync(aside, dest);
+				} catch {}
+			}
 			throw err;
 		}
 		return;

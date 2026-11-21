@@ -93,7 +93,7 @@ export function rewriteLauncherArgv(argv: readonly string[], root?: string): str
 	if (!old) return undefined;
 	const [, dir = "", name = "", ext] = old;
 	if (dir !== "" && !/[\\/]$/.test(dir)) return undefined;
-	if (root !== undefined) return [compiledProgramPath(root), ...(words(name.toLowerCase()) ?? []), ...argv.slice(1)];
-	const exe = dir === "" ? "dg" : ext ? `${dir}dg.exe` : `${dir}dg`;
+	const local = dir === "" ? "dg" : ext ? `${dir}dg.exe` : `${dir}dg`;
+	const exe = root === undefined ? local : compiledProgramPath(root);
 	return [exe, ...(words(name.toLowerCase()) ?? []), ...argv.slice(1)];
 }

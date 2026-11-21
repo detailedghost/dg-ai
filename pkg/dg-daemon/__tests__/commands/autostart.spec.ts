@@ -801,7 +801,7 @@ describe("rewriteDaemonAutostart", () => {
 		seedUnit(deps, OLD_SYSTEMD(paths.dataDir));
 		replies = () => ({ code: 1 });
 
-		await expect(rewriteDaemonAutostart(deps, paths)).rejects.toThrow("daemon-reload failed");
+		await expect(rewriteDaemonAutostart(deps, paths)).rejects.toThrow("run systemctl --user daemon-reload");
 	});
 
 	it("does nothing with no unit, or while the compiled program is missing", async () => {

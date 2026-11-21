@@ -129,12 +129,13 @@ describe("writeDgLink", () => {
 	});
 
 	test.skipIf(!POSIX)("on Windows a failed hard link puts the renamed dg.exe back and rethrows", () => {
-		box = scratch("dg-link-rollback");
-		const bin = join(box.directory, "bin");
+		const tree = scratch("dg-link-rollback");
+		box = tree;
+		const bin = join(tree.directory, "bin");
 		mkdirSync(bin, { recursive: true });
-		const shim = `@echo off\r\n"${box.root}\\runtime\\current\\bun.exe" "${box.root}\\lib\\current\\dg.js" dg %*\r\n`;
+		const shim = `@echo off\r\n"${tree.root}\\runtime\\current\\bun.exe" "${tree.root}\\lib\\current\\dg.js" dg %*\r\n`;
 		writeFileSync(join(bin, "dg.exe"), shim);
-		expect(() => writeDgLink(bin, box.root, "7.0.0", "win32")).toThrow();
+		expect(() => writeDgLink(bin, tree.root, "7.0.0", "win32")).toThrow();
 		expect(readdirSync(bin)).toEqual(["dg.exe"]);
 		expect(readFileSync(join(bin, "dg.exe"), "utf8")).toBe(shim);
 	});

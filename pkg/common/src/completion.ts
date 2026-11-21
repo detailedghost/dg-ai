@@ -1,5 +1,4 @@
 import type { Argument, Command, Option } from "commander";
-import { PROGRAM_NAMES } from "./node/program";
 
 export const COMPLETION_SHELLS = ["bash", "zsh", "fish"] as const;
 export type CompletionShell = (typeof COMPLETION_SHELLS)[number];
@@ -244,15 +243,13 @@ export function printCompletions(root: CompletionNode, words: readonly string[])
 	return 0;
 }
 
-/** Registers `completion <shell>`; a removed program name prints the `dg` script, which covers every tree. */
+/** Registers `completion <shell>`; every tree prints the `dg` script, which covers every tree. */
 export function registerCompletionCommand(program: Command): void {
 	program
 		.command("completion")
-		.description("print the bash, zsh or fish completion script for this program")
+		.description("print the bash, zsh or fish completion script for dg")
 		.addArgument(program.createArgument("<shell>", "bash, zsh or fish").choices(COMPLETION_SHELLS))
 		.action((shell: CompletionShell) => {
-			const name = program.name().replaceAll(" ", "-");
-			const removed = (PROGRAM_NAMES as readonly string[]).includes(name);
-			process.stdout.write(completionScript(shell, removed ? "dg" : name));
+			process.stdout.write(completionScript(shell, "dg"));
 		});
 }

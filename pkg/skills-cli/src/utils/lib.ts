@@ -200,13 +200,14 @@ function hasAvx2(cpuinfoFile: string): boolean {
 const AVX2_PROBE =
 	"Add-Type -Namespace Dg -Name Cpu -MemberDefinition '[DllImport(\"kernel32.dll\")] public static extern bool IsProcessorFeaturePresent(uint feature);'; [Dg.Cpu]::IsProcessorFeaturePresent(40)";
 
+let avx2: boolean | undefined;
+
 function windowsHasAvx2(): boolean {
-	try {
+	if (avx2 === undefined) {
 		const run = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", AVX2_PROBE], { encoding: "utf8", timeout: 30_000 });
-		return run.status !== 0 || run.stdout.trim() !== "False";
-	} catch {
-		return true;
+		avx2 = run.status !== 0 || run.stdout.trim() !== "False";
 	}
+	return avx2;
 }
 
 /** The release platform key for this host; x64 without avx2 takes the baseline build. */

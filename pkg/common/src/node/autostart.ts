@@ -415,7 +415,9 @@ export function defaultAutostartDeps(): AutostartDeps {
 
 const BUNDLE_MARKER = /lib[\\/]current[\\/]dg\.js/;
 
-export type UnitRewrite = { status: "absent" | "current" | "skipped" | "rewritten"; path?: string; backup?: string };
+export type UnitRewrite =
+	| { status: "absent" | "current" | "skipped"; path?: string }
+	| { status: "rewritten"; path: string; backup: string };
 
 /**
  * Rewrites the unit file of `spec.name` when it still runs the 6.3 bundle (`lib/current/dg.js`), with a 0600
@@ -435,7 +437,10 @@ export async function rewriteAutostartFile(deps: AutostartDeps, paths: DgPaths, 
 	deps.writeFile(location.path, unitTextFor(location.kind, spec, xdgEnv), 0o600);
 	if (location.kind === "systemd") {
 		const reload = await deps.run(["systemctl", "--user", "daemon-reload"]);
-		if (reload.code !== 0) throw new Error(`systemctl --user daemon-reload failed (exit ${reload.code}) after the unit ${location.path} was rewritten`);
+		if (reload.code !== 0) {
+			const detail = `the unit ${location.path} was rewritten (backup ${backup}), but systemctl --user daemon-reload exited ${reload.code}`;
+			throw new Error(`${detail}; run systemctl --user daemon-reload`);
+		}
 	}
 	return { status: "rewritten", path: location.path, backup };
 }

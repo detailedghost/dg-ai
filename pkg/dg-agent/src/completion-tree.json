@@ -783,7 +783,7 @@
 		},
 		{
 			"name": "completion",
-			"description": "print the bash, zsh or fish completion script for this program",
+			"description": "print the bash, zsh or fish completion script for dg",
 			"values": [
 				"bash",
 				"zsh",
