@@ -1,5 +1,11 @@
 # Changelog
 
+## v7.0.1 (2026-11-22)
+
+### Fixes
+
+- fix(update): finish a 6.0 or 6.1 self-update from the new bundle ([#250](https://github.com/detailedghost/dg-ai/pull/250))
+
 ## v7.0.0 (2026-11-21)
 
 ### Breaking
