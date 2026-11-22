@@ -221,7 +221,7 @@ async function installProgramLocked(root: string, release: PickedProgram, bridge
 }
 
 /**
- * The hidden `install launchers` step. A 6.3 self-update runs it from the new bundle: it installs the compiled
+ * The hidden `install launchers` step. A 6.2 or later self-update runs it from the new bundle: it installs the compiled
  * dg of this build, then points the dg launcher at it and removes the old launchers.
  */
 export async function writeCurrentLaunchers(): Promise<void> {

@@ -398,6 +398,19 @@ for 6.4.
 dg upgrade
 ```
 
+On 6.0.0 to 6.1.1, the old `update` installs only the new bundle. It does
+not run the new bundle's `install launchers` step, so the old launchers stay.
+The next `dg` or `dg-skills` command finishes the layout before it runs, and
+prints `dg: finishing the upgrade: installing the compiled dg and removing the old launchers`.
+A second `dg upgrade` does the same. Hook runs, `completion`, help flags and
+the `dg-agent` and `dg-daemon` launchers do not download the program. They print
+`dg: the upgrade is not finished; run dg upgrade once more to install the compiled dg`.
+
+| Installed release | Runs needed |
+| --- | --- |
+| 6.2.0 to 6.4.0 | One `dg upgrade` |
+| 6.0.0 to 6.1.1 | One `dg upgrade`, then any `dg` command or a second `dg upgrade` |
+
 Then restart the daemon, so a running daemon picks up the new program:
 
 ```bash
@@ -410,7 +423,8 @@ The update steps, in order:
    `runtime.json`, checks both against `SHA256SUMS`, and runs the new bundle's
    self-check. The release keeps both assets for two minor releases, only for
    this step.
-1. It runs the hidden step `install launchers` of the new bundle. That step
+1. It runs the hidden step `install launchers` of the new bundle. A 6.0.0 to 6.1.1
+   `update` skips this step, and the next command runs it. That step
    installs the compiled `dg` of the new version at `<data>/bin/<version>/dg`,
    links `<data>/bin/current`, and links `<bin>/dg`.
 1. The same step rewrites the argv that dg stored: the login unit of the daemon
