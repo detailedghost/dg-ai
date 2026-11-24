@@ -304,7 +304,7 @@ function daemonReady(ctx: Ctx): Promise<void> {
 	return waitFor(() => spawnSync(ctx.dg, ["daemon", "status"], { env: ctx.env, encoding: "utf8" }).status === 0);
 }
 
-const HOOK_MS = 50;
+const HOOK_MS = 52;
 const JOBS = 15;
 
 const HOOK_EDIT = JSON.stringify({
@@ -393,7 +393,7 @@ const CASES: Case[] = [
 	},
 	listener("phone listener idle", 61),
 	listener("phone listener burst", 59, burst),
-	catchUp("phone listener catch-up", 70),
+	catchUp("phone listener catch-up", 61),
 ];
 
 async function floor(root: string): Promise<number> {

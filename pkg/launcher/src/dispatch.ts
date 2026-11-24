@@ -24,6 +24,15 @@ const KEEP_JIT = "DG_JIT";
 
 type Execve = (file: string, args: string[], env: Record<string, string | undefined>) => void;
 
+const FFI_COMMANDS: ReadonlySet<string> = new Set(["jot", "stat", "install", "update", "upgrade", "extension"]);
+const GROUP_WORDS: ReadonlySet<string> = new Set(["dg", "skills", "dg-skills"]);
+
+/** True for a command that reaches bun:ffi, which needs the JIT. */
+function needsFfi(argv: readonly string[]): boolean {
+	const command = argv.find((word) => !GROUP_WORDS.has(word));
+	return command !== undefined && FFI_COMMANDS.has(command);
+}
+
 /** Re-executes dg once with the JSC JIT off; the pid stays the same, and DG_JIT=1 skips it. */
 export async function reexecWithoutJit(
 	argv: readonly string[],
@@ -35,7 +44,7 @@ export async function reexecWithoutJit(
 		delete env[REEXEC_MARK];
 		return;
 	}
-	if (typeof execve !== "function" || env[JIT_ENV] !== undefined || env[KEEP_JIT] === "1") return;
+	if (typeof execve !== "function" || env[JIT_ENV] !== undefined || env[KEEP_JIT] === "1" || needsFfi(argv)) return;
 	try {
 		const { isCompiled } = await import("@dg/common/node/program");
 		const execArgv = [process.argv0, ...(isCompiled() ? [] : [Bun.main]), ...argv];

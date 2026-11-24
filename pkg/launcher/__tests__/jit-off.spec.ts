@@ -102,6 +102,21 @@ describe("reexecWithoutJit", () => {
 		expect(calls[0]?.args.slice(-argv.length)).toEqual(argv);
 	});
 
+	test.each([
+		[["jot", "kick"]],
+		[["skills", "jot", "kick-take", "x"]],
+		[["stat", "add", "task"]],
+		[["dg-skills", "stat", "done", "task"]],
+		[["install"]],
+		[["update"]],
+		[["upgrade"]],
+		[["extension"]],
+	])("keeps the JIT for dg %p, which needs bun:ffi", async (argv) => {
+		const { calls, execve } = recorder();
+		await reexecWithoutJit(argv, {}, execve);
+		expect(calls).toHaveLength(0);
+	});
+
 	test("DG_JIT=1 keeps the JIT for a heavy one-off run", async () => {
 		const { calls, execve } = recorder();
 		await reexecWithoutJit(["adr", "lint", "--all"], { DG_JIT: "1" }, execve);
@@ -150,5 +165,15 @@ describe("the re-exec call site", () => {
 	test("only the dg entry re-executes, so callers of dispatch keep their own process", () => {
 		expect(source("dg.ts")).toContain("await reexecWithoutJit(process.argv.slice(2));");
 		expect(source("dispatch.ts")).not.toMatch(/await reexecWithoutJit\(/);
+	});
+});
+
+describe("bun:ffi needs the JIT", () => {
+	test("every module that imports bun:ffi is reached only by a command in FFI_COMMANDS", () => {
+		const root = join(import.meta.dir, "..", "..");
+		const found = [...new Bun.Glob("*/src/**/*.ts").scanSync({ cwd: root })]
+			.filter((file) => /from "bun:ffi"|require\("bun:ffi"\)/.test(readFileSync(join(root, file), "utf8")))
+			.sort();
+		expect(found).toEqual(["common/src/node/file-lock.ts", "common/src/node/page-cache.ts"]);
 	});
 });

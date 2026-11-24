@@ -27,12 +27,16 @@ for short commands.
 - The re-executed process removes both variables at start, so the programs it spawns keep their own JIT.
 - `DG_JIT=1` skips the re-exec and keeps the JIT for a heavy one-off run. A `BUN_JSC_useJIT` the caller set is
   kept too.
+- `bun:ffi` refuses to load without the JIT. dg uses it for the `flock` file lock (`jot`, `stat`) and for the
+  page-cache drop after an install (`install`, `update`, `upgrade`, `extension`). Those commands keep the JIT
+  (`FFI_COMMANDS` in `dispatch.ts`). A launcher test lists every module that imports `bun:ffi`, so a new one
+  fails until its commands are added.
 - If `execve` throws, dg prints why and runs with the JIT. Windows has no `execve` and keeps the JIT.
 - `dispatch()` itself never re-executes, so code that imports it, such as tests, keeps its own process.
 - The compiled dg loads no `.env` and no `bunfig.toml` from the working directory.
 - `scripts/ram-budget.ts --gate` checks peak RSS for each case and the median wall time of each `dg hooks run`
   case over 50 runs. The 15 ms limit above is the design limit on the added cost; the CI gate checks the total
-  median against a budget set from the CI runner's own measurement, which runs slower than a desktop.
+  median against `HOOK_MS` in `scripts/ram-budget.ts`: 52 ms, the CI runner's 43 ms plus 20 percent.
 
 ## Consequences
 
@@ -56,6 +60,9 @@ flowchart LR
 ```
 
 ## Other options
+
+- Replace the `flock` lock with the rename lock dg uses on Windows, so no command needs `bun:ffi`. Two lock kinds
+  on one file would not exclude each other during an upgrade, so this stays a separate change.
 
 - Keep the JIT for short commands (ADR 0056). That keeps each one 5 to 8 MB larger.
 - Skip the re-exec for `dg hooks run` only. The measured cost was about 5 ms, under the 15 ms limit set for that
