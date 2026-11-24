@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -95,10 +95,11 @@ describe("reexecWithoutJit", () => {
 		expect(calls[0]?.args.slice(-3)).toEqual(["agent", "phone", "listen"]);
 	});
 
-	test("maps the dg-agent bridge to its agent mount", async () => {
+	test("maps the dg-agent bridge to its agent mount and keeps the bridge argv", async () => {
 		const { calls, execve } = recorder();
 		await reexecWithoutJit("dg-agent", ["phone", "listen"], ["dg-agent", "phone", "listen"], {}, execve);
 		expect(calls).toHaveLength(1);
+		expect(calls[0]?.args.slice(-3)).toEqual(["dg-agent", "phone", "listen"]);
 	});
 
 	test("leaves a short command alone", async () => {
@@ -129,10 +130,16 @@ describe("reexecWithoutJit", () => {
 		expect(env[JIT_ENV]).toBe("1");
 	});
 
-	test("an execve that throws leaves the command running with the JIT", async () => {
+	test("an execve that throws says so and leaves the command running with the JIT", async () => {
 		const execve = () => {
 			throw new Error("no exec");
 		};
-		await expect(reexecWithoutJit("dg", ["daemon", "serve"], ["daemon", "serve"], {}, execve)).resolves.toBeUndefined();
+		const write = spyOn(process.stderr, "write").mockImplementation(() => true);
+		try {
+			await expect(reexecWithoutJit("dg", ["daemon", "serve"], ["daemon", "serve"], {}, execve)).resolves.toBeUndefined();
+			expect(String(write.mock.calls[0]?.[0])).toContain("could not restart without the JIT, so it stays on: no exec");
+		} finally {
+			write.mockRestore();
+		}
 	});
 });

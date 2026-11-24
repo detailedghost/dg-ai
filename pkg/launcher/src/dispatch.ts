@@ -38,7 +38,7 @@ export async function reexecWithoutJit(
 	args: readonly string[],
 	argv: readonly string[],
 	env: Record<string, string | undefined> = process.env,
-	execve: Execve | undefined = process.platform === "win32" ? undefined : process.execve,
+	execve: Execve | undefined = process.platform === "win32" ? undefined : process.execve?.bind(process),
 ): Promise<void> {
 	if (env[REEXEC_MARK] !== undefined && env[JIT_ENV] === "0") {
 		delete env[JIT_ENV];
