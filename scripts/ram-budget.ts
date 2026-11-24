@@ -328,7 +328,7 @@ const CASES: Case[] = [
 	command("help", ["--help"], 26),
 	command("completion zsh", ["completion", "zsh"], 25),
 	command("config path", ["config", "path"], 33),
-	command("stat checklist", ["stat", "checklist"], 39),
+	command("stat checklist", ["stat", "checklist"], 48),
 	command("job --help", ["job", "--help"], 32),
 	command("pw --help", ["pw", "--help"], 33),
 	command("db --help", ["db", "--help"], 32),
