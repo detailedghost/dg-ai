@@ -1,5 +1,11 @@
 # Changelog
 
+## v7.0.4 (2026-11-24)
+
+### Fixes
+
+- perf(launcher): cut dg peak RSS and gate it in CI ([#254](https://github.com/detailedghost/dg-ai/pull/254))
+
 ## v7.0.3 (2026-11-24)
 
 ### Fixes
