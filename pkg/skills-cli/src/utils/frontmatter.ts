@@ -38,7 +38,7 @@ export type YamlResult =
 	| { ok: true; value: unknown }
 	| { ok: false; error: string };
 
-const DOCUMENT_START = /^---(?:[ \t]|\r?$)/m;
+const DOCUMENT_START = /^(?:---(?:[ \t]|\r?$)|\.\.\.[ \t\r]*\n[\s\S]*\S)/m;
 const LEADING_LINES = /^(?:[ \t\r]*(?:[#%][^\n]*)?\n)*---[^\n]*(?:\n|$)/;
 
 export function parseYaml(text: string): YamlResult {

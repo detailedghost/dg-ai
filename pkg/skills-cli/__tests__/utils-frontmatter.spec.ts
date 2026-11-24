@@ -100,6 +100,18 @@ describe("splitDocument with CRLF", () => {
 			expect(utils.parseYaml("\r\n---\r\na: 1\r\n")).toEqual({ ok: true, value: { a: 1 } });
 		});
 
+		test("content after a closing ... is a second document", () => {
+			expect(utils.parseYaml("a: 1\n...\nb: 2\n").ok).toBe(false);
+		});
+
+		test("a CRLF second document is an error", () => {
+			expect(utils.parseYaml("a: 1\r\n---\r\nb: 2\r\n").ok).toBe(false);
+		});
+
+		test("a second document after a %YAML directive is an error", () => {
+			expect(utils.parseYaml("%YAML 1.2\n---\na: 1\n---\nb: 2\n").ok).toBe(false);
+		});
+
 		test("a %YAML directive before the marker still parses", () => {
 			expect(utils.parseYaml("%YAML 1.2\n---\na: 1\n")).toEqual({ ok: true, value: { a: 1 } });
 		});
