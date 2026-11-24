@@ -193,6 +193,8 @@ on a large repo, run slower without the JIT.
 - `DG_JIT=1 dg <command>` keeps the JIT for one heavy run.
 - A `BUN_JSC_useJIT` value you set yourself is kept as it is.
 - Programs that dg starts, such as browsers, git and Bun scripts, keep their own JIT.
+- On Linux, the `long-running-jit` line of `dg doctor` shows whether the daemon and
+  the phone listener run without the JIT, and their memory.
 
 ## Environment files
 
