@@ -123,4 +123,9 @@ describe("size budget", () => {
 		run(bun, inbox.entry, ["dg-agent", "phone", "status"], { DG_HOME: inbox.dir });
 		for (const sentinel of inbox.sentinels.values()) expect(existsSync(sentinel)).toBe(false);
 	});
+
+	test.each(["skills-cli", "dg-agent", "dg-daemon"])("%s main imports no @dg/common barrel at run time, so the barrel chunk with zod stays unloaded", (pkg) => {
+		const source = readFileSync(join(import.meta.dir, "..", "..", pkg, "src", "main.ts"), "utf8");
+		expect(source).not.toMatch(/import\(\s*"@dg\/common"\s*\)/);
+	});
 });

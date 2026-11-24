@@ -8,6 +8,7 @@
 		".": "./src/index.ts",
 		"./async": "./src/async.ts",
 		"./completion": "./src/completion.ts",
+		"./errors": "./src/errors.ts",
 		"./exit": "./src/exit.ts",
 		"./node": "./src/node/index.ts",
 		"./node/program": "./src/node/program.ts",
@@ -22,6 +23,7 @@
 		"./node/process-identity": "./src/node/process-identity.ts",
 		"./node/plugin-cache": "./src/node/plugin-cache.ts",
 		"./msal": "./src/msal/index.ts",
+		"./redact": "./src/redact.ts",
 		"./daemon-db": "./src/node/daemon-db.ts"
 	},
 	"scripts": {

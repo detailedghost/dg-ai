@@ -98,13 +98,15 @@ export async function main(argv: readonly string[]): Promise<number> {
 	}
 	const [
 		{ CommanderError },
-		{ DgCliError, describeError, emitRedacted, EXIT_GENERAL_FAILURE },
+		{ DgCliError, describeError, EXIT_GENERAL_FAILURE },
+		{ emitRedacted },
 		{ ensureLayout },
 		{ installLayoutPreAction },
 		program,
 	] = await Promise.all([
 		import("commander"),
-		import("@dg/common"),
+		import("@dg/common/errors"),
+		import("@dg/common/redact"),
 		import("@dg/common/node/layout"),
 		import("@dg/common/node/layout-preaction"),
 		buildProgram(),

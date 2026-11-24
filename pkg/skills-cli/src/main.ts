@@ -47,7 +47,7 @@ export async function migrateConfig(write: (text: string) => void = (text) => pr
 	const [{ resolveDgPaths }, { migrateToToml }, { describeError }] = await Promise.all([
 		import("@dg/common/node/dg-paths"),
 		import("@dg/common/node/dg-toml-migrate"),
-		import("@dg/common"),
+		import("@dg/common/errors"),
 	]);
 	const paths = resolveDgPaths();
 	try {
@@ -134,9 +134,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 		return typeof process.exitCode === "number" ? process.exitCode : 0;
 	} catch (err) {
 		if (err instanceof CommanderError) return err.exitCode;
-		const { DgCliError, describeError, emitRedacted } = await import(
-			"@dg/common"
-		);
+		const [{ DgCliError, describeError }, { emitRedacted }] = await Promise.all([import("@dg/common/errors"), import("@dg/common/redact")]);
 		emitRedacted(
 			(line) => console.error(line),
 			`dg: ${describeError(err)}`,
