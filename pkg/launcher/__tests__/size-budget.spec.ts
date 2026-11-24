@@ -128,4 +128,11 @@ describe("size budget", () => {
 		const source = readFileSync(join(import.meta.dir, "..", "..", pkg, "src", "main.ts"), "utf8");
 		expect(source).not.toMatch(/import\(\s*"@dg\/common"\s*\)/);
 	});
+
+	test("dg hooks run, which runs on every agent tool call, loads neither the commander command table nor the layout pre-action", () => {
+		const traced = traceChunks(/^chunks\/(register-all|layout-preaction)$/);
+		expect(traced.sentinels.size).toBe(2);
+		run(bun, traced.entry, ["hooks", "run", "spelling"], { DG_HOME: traced.dir });
+		for (const [name, sentinel] of traced.sentinels) expect({ name, loaded: existsSync(sentinel) }).toEqual({ name, loaded: false });
+	});
 });

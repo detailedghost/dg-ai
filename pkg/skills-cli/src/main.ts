@@ -93,18 +93,7 @@ export function registerListenerRestart(program: Command, { phoneOutcome, restar
 	};
 }
 
-export async function main(argv: readonly string[]): Promise<number> {
-	if (argv.length === 1 && argv[0] === "--version") {
-		process.stdout.write(`${VERSION}\n`);
-		return 0;
-	}
-	if (argv[0] === "__complete") {
-		const [{ printCompletions }, { default: tree }] = await Promise.all([
-			import("@dg/common/completion"),
-			import("./completion/tree.json", { with: { type: "json" } }),
-		]);
-		return printCompletions(tree as CompletionNode, argv.slice(1));
-	}
+async function runProgram(argv: readonly string[]): Promise<number> {
 	const [{ Command, CommanderError }, { registerAll }, { ensureLayout }, { installLayoutPreAction }] =
 		await Promise.all([
 			import("commander"),
@@ -131,9 +120,29 @@ export async function main(argv: readonly string[]): Promise<number> {
 	registerListenerRestart(program, { phoneOutcome: phoneOutcomeOf, restart: restartListener });
 	try {
 		await program.parseAsync([...argv], { from: "user" });
-		return typeof process.exitCode === "number" ? process.exitCode : 0;
 	} catch (err) {
 		if (err instanceof CommanderError) return err.exitCode;
+		throw err;
+	}
+	return typeof process.exitCode === "number" ? process.exitCode : 0;
+}
+
+export async function main(argv: readonly string[]): Promise<number> {
+	if (argv.length === 1 && argv[0] === "--version") {
+		process.stdout.write(`${VERSION}\n`);
+		return 0;
+	}
+	if (argv[0] === "__complete") {
+		const [{ printCompletions }, { default: tree }] = await Promise.all([
+			import("@dg/common/completion"),
+			import("./completion/tree.json", { with: { type: "json" } }),
+		]);
+		return printCompletions(tree as CompletionNode, argv.slice(1));
+	}
+	try {
+		if (argv[0] === "hooks" && argv[1] === "run") return await (await import("./hooks/cli")).main(argv.slice(1));
+		return await runProgram(argv);
+	} catch (err) {
 		const [{ DgCliError, describeError }, { emitRedacted }] = await Promise.all([import("@dg/common/errors"), import("@dg/common/redact")]);
 		emitRedacted(
 			(line) => console.error(line),
