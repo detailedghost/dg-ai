@@ -80,8 +80,28 @@ describe("splitDocument with CRLF", () => {
 			expect(utils.parseYaml("\tk: v").ok).toBe(false);
 		});
 
-		test("yes and dates stay strings and 012 is a number", () => {
-			expect(utils.parseYaml("on: yes\nd: 2026-11-23\nn: 012")).toEqual({ ok: true, value: { on: "yes", d: "2026-11-23", n: 12 } });
+		test("yes stays a string", () => {
+			expect(utils.parseYaml("on: yes")).toEqual({ ok: true, value: { on: "yes" } });
+		});
+
+		test("a date stays a string", () => {
+			expect(utils.parseYaml("d: 2026-11-23")).toEqual({ ok: true, value: { d: "2026-11-23" } });
+		});
+
+		test("012 is the number 12", () => {
+			expect(utils.parseYaml("n: 012")).toEqual({ ok: true, value: { n: 12 } });
+		});
+
+		test("a document that ends with ... still parses", () => {
+			expect(utils.parseYaml("a: 1\n...\n")).toEqual({ ok: true, value: { a: 1 } });
+		});
+
+		test("a leading marker after a CRLF blank line still parses", () => {
+			expect(utils.parseYaml("\r\n---\r\na: 1\r\n")).toEqual({ ok: true, value: { a: 1 } });
+		});
+
+		test("a %YAML directive before the marker still parses", () => {
+			expect(utils.parseYaml("%YAML 1.2\n---\na: 1\n")).toEqual({ ok: true, value: { a: 1 } });
 		});
 	});
 });

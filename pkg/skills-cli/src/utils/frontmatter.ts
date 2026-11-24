@@ -38,11 +38,13 @@ export type YamlResult =
 	| { ok: true; value: unknown }
 	| { ok: false; error: string };
 
-const DOCUMENT_MARKER = /^(?:---|\.\.\.)(?:\s|$)/m;
-const LEADING_MARKER = /^(?:[ \t]*(?:#[^\n]*)?\n)*---[^\n]*(?:\n|$)/;
+const DOCUMENT_START = /^---(?:[ \t]|\r?$)/m;
+const LEADING_LINES = /^(?:[ \t\r]*(?:[#%][^\n]*)?\n)*---[^\n]*(?:\n|$)/;
 
 export function parseYaml(text: string): YamlResult {
-	if (DOCUMENT_MARKER.test(text.replace(LEADING_MARKER, ""))) return { ok: false, error: "front matter holds more than one YAML document" };
+	if (DOCUMENT_START.test(text.replace(LEADING_LINES, ""))) {
+		return { ok: false, error: "front matter holds more than one YAML document" };
+	}
 	try {
 		return { ok: true, value: Bun.YAML.parse(text) };
 	} catch (error) {
