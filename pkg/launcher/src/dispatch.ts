@@ -18,24 +18,23 @@ function isOldName(name: string | undefined): name is Exclude<ProgramName, "dg">
 const removed = (name: Exclude<ProgramName, "dg">, args: readonly string[]): string =>
 	`dg: the ${name} command is removed; run ${[NEW_FORM[name], ...args].join(" ")}\n`;
 
-const NO_JIT: readonly (readonly string[])[] = [
-	["agent", "phone", "listen"],
-	["phone", "listen"],
-	["daemon", "serve"],
-	["prototype", "serve"],
-];
-
-const MOUNT_WORD: Partial<Record<ProgramName, string>> = { "dg-agent": "agent", "dg-daemon": "daemon" };
-
 const JIT_ENV = "BUN_JSC_useJIT";
 const REEXEC_MARK = "DG_JIT_REEXEC";
+const KEEP_JIT = "DG_JIT";
 
 type Execve = (file: string, args: string[], env: Record<string, string | undefined>) => void;
 
-/** Re-executes a long-running command with the JSC JIT off; the pid stays the same. */
+const FFI_COMMANDS: ReadonlySet<string> = new Set(["jot", "stat", "install", "update", "upgrade", "extension"]);
+const GROUP_WORDS: ReadonlySet<string> = new Set(["dg", "skills", "dg-skills"]);
+
+/** True for a command that reaches bun:ffi, which needs the JIT. */
+function needsFfi(argv: readonly string[]): boolean {
+	const command = argv.find((word) => !GROUP_WORDS.has(word));
+	return command !== undefined && FFI_COMMANDS.has(command);
+}
+
+/** Re-executes dg once with the JSC JIT off; the pid stays the same, and DG_JIT=1 skips it. */
 export async function reexecWithoutJit(
-	name: ProgramName,
-	args: readonly string[],
 	argv: readonly string[],
 	env: Record<string, string | undefined> = process.env,
 	execve: Execve | undefined = process.platform === "win32" ? undefined : process.execve?.bind(process),
@@ -45,13 +44,10 @@ export async function reexecWithoutJit(
 		delete env[REEXEC_MARK];
 		return;
 	}
-	if (typeof execve !== "function" || env[JIT_ENV] !== undefined) return;
-	const mount = MOUNT_WORD[name];
-	const words = mount ? [mount, ...args] : args;
-	if (!NO_JIT.some((form) => form.every((word, index) => words[index] === word))) return;
-	const { isCompiled } = await import("@dg/common/node/program");
-	const execArgv = [process.argv0, ...(isCompiled() ? [] : [Bun.main]), ...argv];
+	if (typeof execve !== "function" || env[JIT_ENV] !== undefined || env[KEEP_JIT] === "1" || needsFfi(argv)) return;
 	try {
+		const { isCompiled } = await import("@dg/common/node/program");
+		const execArgv = [process.argv0, ...(isCompiled() ? [] : [Bun.main]), ...argv];
 		execve(process.execPath, execArgv, { ...env, [JIT_ENV]: "0", [REEXEC_MARK]: "1" });
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error);
@@ -77,7 +73,6 @@ export async function dispatch(argv: readonly string[], argv0?: string): Promise
 	const bridge = isOldName(first) || first === "dg";
 	const name: ProgramName = bridge ? (first as ProgramName) : "dg";
 	const args = bridge ? rest : [...argv];
-	await reexecWithoutJit(name, args, argv);
 	if (isOldName(name)) process.stderr.write(removed(name, args));
 	const { normalizeDgHome } = await import("@dg/common/node/dg-paths");
 	normalizeDgHome();

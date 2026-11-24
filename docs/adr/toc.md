@@ -93,6 +93,7 @@ belong with their owning private tooling repository.
 - [0054 — One config.toml for dg](0054-one-config-toml-for-dg.md)
 - [0055 — One dg program with flat commands](0055-one-dg-program-with-flat-commands.md)
 - [0056 — Long-running dg processes run without the JIT](0056-long-running-dg-processes-run-without-the-jit.md)
+- [0057 — Every dg command runs without the JIT](0057-every-dg-command-runs-without-the-jit.md)
 
 ### Security
 

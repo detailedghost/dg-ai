@@ -4,6 +4,8 @@ Status: Accepted
 Date: 2026-11-23
 Topic: Platform
 
+This record is superseded in part by [ADR 0057](0057-every-dg-command-runs-without-the-jit.md).
+
 ## Context
 
 - The goal is every dg process below 80 MB of peak RSS, and as low as it can go.

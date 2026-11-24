@@ -13,6 +13,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { evictFromPageCache } from "@dg/common/node/page-cache";
 import { compiledProgramPath, PROGRAM_NAMES } from "@dg/common/node/program";
 import { type PickedProgram, UA, verifyReleaseAsset } from "../utils/lib";
 import { linkCurrent, programExeName, readCurrent, VERSION_DIR } from "./current";
@@ -67,6 +68,7 @@ export async function installCompiled(
 			const staged = join(staging, programExeName(platform));
 			await download(release, staged);
 			selfCheck(staged, release.version);
+			evictFromPageCache(staged);
 			if (!existsSync(final)) {
 				rmSync(join(bin, release.version), { recursive: true, force: true });
 				renameSync(staging, join(bin, release.version));

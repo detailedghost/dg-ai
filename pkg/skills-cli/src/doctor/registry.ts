@@ -44,10 +44,11 @@ import { vcsProviderChecks } from "../vcs-provider/doctor";
 import { worktreeChecks } from "../worktree/doctor";
 import type { DoctorRegistry } from "./runner";
 import { isCliOnly } from "./checks";
+import { longRunningJitCheck } from "./jit";
 import { dgLauncherCheck, SHARED_ITEM, sharedChecks } from "./shared";
 
 export const DOCTOR_REGISTRY: DoctorRegistry = {
-	[SHARED_ITEM]: [...sharedChecks, dgLauncherCheck(isCliOnly)],
+	[SHARED_ITEM]: [...sharedChecks, dgLauncherCheck(isCliOnly), longRunningJitCheck()],
 	inbox: inboxChecks,
 	"channel-review": channelReviewChecks,
 	credentials: credentialsChecks,

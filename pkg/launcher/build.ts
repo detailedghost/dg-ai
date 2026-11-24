@@ -118,7 +118,8 @@ export async function buildCompiled({
 }): Promise<string> {
 	const { options } = shared ?? (await sharedOptions());
 	mkdirSync(dirname(outfile), { recursive: true });
-	const result = await Bun.build({ ...options, compile: { target: COMPILE_TARGETS[target], outfile } });
+	const compile = { target: COMPILE_TARGETS[target], outfile, autoloadDotenv: false, autoloadBunfig: false };
+	const result = await Bun.build({ ...options, compile });
 	if (!result.success) throw new AggregateError(result.logs, `Compiled dg build failed for ${target}.`);
 	return outfile;
 }

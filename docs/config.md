@@ -182,3 +182,23 @@ These keep their own files, outside `config.toml`:
 ssms reads `[ssms]` only from the `config.toml` in the dg config folder under the
 account's passwd home. `HOME`, `DG_HOME` and `XDG_CONFIG_HOME` do not choose
 that file, the same rule that held for `ssms/config.yaml` (ADR 0024).
+
+## Memory and the JIT
+
+On Linux and macOS, every dg command starts itself once more with the JavaScript
+JIT turned off (ADR 0057). That keeps each dg process 2 to 20 MB smaller and adds
+about 5 ms to each start. Commands with heavy CPU work, such as `dg adr lint --all`
+on a large repo, run slower without the JIT.
+
+- `DG_JIT=1 dg <command>` keeps the JIT for one heavy run.
+- A `BUN_JSC_useJIT` value you set yourself is kept as it is.
+- `dg jot`, `dg stat`, `dg install` and `dg update` keep the JIT, because they use
+  native calls that need it.
+- Programs that dg starts, such as browsers, git and Bun scripts, keep their own JIT.
+- On Linux, the `long-running-jit` line of `dg doctor` shows whether the daemon and
+  the phone listener run without the JIT, and their memory.
+
+## Environment files
+
+The compiled dg ignores a `.env` and a `bunfig.toml` in the working folder.
+Set environment variables in your shell or in `config.toml` instead.

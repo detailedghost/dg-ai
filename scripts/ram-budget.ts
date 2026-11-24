@@ -5,19 +5,21 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { evictFromPageCache } from "@dg/common/node/page-cache";
 
 const ROOT = resolve(import.meta.dir, "..");
 const MB = 1024 * 1024;
 
 type Ctx = { dg: string; home: string; work: string; env: Record<string, string>; phone?: Phone };
-type Phone = { relay: string; a: Record<string, string>; b: Record<string, string> };
-type Sample = { peak: number; idle?: number; anon?: number; ms: number };
+type Phone = { relay: string; a: Record<string, string>; b: Record<string, string>; others: Record<string, string>[] };
+type Sample = { peak: number; idle?: number; anon?: number; ms: number; p95?: number };
 type Case = {
 	name: string;
 	budget: number;
 	long?: boolean;
 	phone?: boolean;
 	ungated?: boolean;
+	msBudget?: number;
 	measure(ctx: Ctx): Promise<Sample>;
 };
 
@@ -29,13 +31,16 @@ const { values } = parseArgs({
 		only: { type: "string" },
 		idle: { type: "string", default: "5" },
 		runs: { type: "string", default: "3" },
+		"latency-runs": { type: "string", default: "50" },
+		backlog: { type: "string", default: "100" },
+		"fresh-binary": { type: "boolean", default: false },
 		json: { type: "string" },
 		env: { type: "string", multiple: true, default: [] },
 	},
 });
 const USAGE = [
 	"usage: bun scripts/ram-budget.ts --dg <compiled dg>",
-	"  [--gate] [--only a,b] [--idle s] [--runs n] [--env K=V] [--json file]",
+	"  [--gate] [--only a,b] [--idle s] [--runs n] [--latency-runs n] [--backlog n] [--fresh-binary] [--env K=V] [--json file]",
 ].join("\n");
 
 function usageError(detail: string): never {
@@ -62,15 +67,11 @@ if (!values.dg) usageError("--dg is required");
 const DG = resolve(values.dg);
 const IDLE_MS = wholeNumber(values.idle, "--idle", 0) * 1000;
 const RUNS = wholeNumber(values.runs, "--runs", 1);
+const LATENCY_RUNS = wholeNumber(values["latency-runs"], "--latency-runs", 1);
+const BACKLOG = wholeNumber(values.backlog, "--backlog", 1);
 const EXTRA_ENV = Object.fromEntries((values.env ?? []).map(envPair));
 
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
-
-function dropPageCache(file: string): void {
-	if (process.platform !== "linux") return;
-	spawnSync("sync", [file]);
-	spawnSync("dd", [`if=${file}`, "iflag=nocache", "count=0", "status=none"]);
-}
 
 function fencedEnv(root: string, port: number): Record<string, string> {
 	const home = join(root, "home");
@@ -144,15 +145,30 @@ async function once(bin: string, args: string[], ctx: Ctx, opts: { cwd?: string;
 	return { peak, ms: Number.isFinite(rawMs) ? rawMs : 0 };
 }
 
-async function median(run: () => Promise<Sample>): Promise<Sample> {
-	const samples: Sample[] = [];
-	for (let i = 0; i < RUNS; i++) samples.push(await run());
-	samples.sort((x, y) => x.peak - y.peak);
-	return samples[Math.floor(samples.length / 2)] as Sample;
+function quantile(sorted: number[], fraction: number): number {
+	const value = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
+	if (value === undefined) throw new Error("no samples to take a quantile of");
+	return value;
 }
 
-function command(name: string, args: string[], budget: number, opts: { cwd?: (ctx: Ctx) => string; stdin?: string } = {}): Case {
-	return { name, budget, measure: (ctx) => median(() => once(ctx.dg, args, ctx, { cwd: opts.cwd?.(ctx), stdin: opts.stdin })) };
+async function median(run: () => Promise<Sample>, runs: number): Promise<Sample> {
+	const samples: Sample[] = [];
+	for (let i = 0; i < runs; i++) samples.push(await run());
+	const peaks = samples.map((sample) => sample.peak).sort((x, y) => x - y);
+	const times = samples.map((sample) => sample.ms).sort((x, y) => x - y);
+	return { peak: quantile(peaks, 0.5), ms: quantile(times, 0.5), p95: quantile(times, 0.95) };
+}
+
+type CommandOpts = { cwd?: (ctx: Ctx) => string; stdin?: string; msBudget?: number };
+
+function command(name: string, args: string[], budget: number, opts: CommandOpts = {}): Case {
+	const runs = opts.msBudget === undefined ? RUNS : Math.max(RUNS, LATENCY_RUNS);
+	return {
+		name,
+		budget,
+		msBudget: opts.msBudget,
+		measure: (ctx) => median(() => once(ctx.dg, args, ctx, { cwd: opts.cwd?.(ctx), stdin: opts.stdin }), runs),
+	};
 }
 
 async function serve(
@@ -192,6 +208,8 @@ function run(ctx: Ctx, args: string[], env = ctx.env): string {
 	return result.stdout;
 }
 
+const OTHER_NAMES = ["carol", "dave", "erin"];
+
 async function setupPhone(ctx: Ctx, root: string): Promise<{ phone: Phone; stop: () => void } | undefined> {
 	const certDir = join(root, "tls");
 	mkdirSync(certDir, { recursive: true });
@@ -208,13 +226,25 @@ async function setupPhone(ctx: Ctx, root: string): Promise<{ phone: Phone; stop:
 		relayProcess.once("exit", () => fail(new Error("the test relay exited")));
 	});
 	const side = (name: string, port: number) => ({ ...fencedEnv(join(root, name), port), NODE_EXTRA_CA_CERTS: cert });
-	const phone: Phone = { relay, a: side("phone-a", 47_411), b: side("phone-b", 47_412) };
+	const others = OTHER_NAMES.map((name, index) => side(`phone-${name}`, 47_413 + index));
+	const phone: Phone = { relay, a: side("phone-a", 47_411), b: side("phone-b", 47_412), others };
+	const contacts = [["bob", phone.b] as const, ...OTHER_NAMES.map((name, index) => [name, others[index] ?? phone.b] as const)];
 	try {
 		run(ctx, ["phone", "number", "--as", "alice", "--relay", relay], phone.a);
-		run(ctx, ["phone", "number", "--as", "bob", "--relay", relay], phone.b);
-		const invite = run(ctx, ["phone", "invite", "--name", "bob"], phone.a).trim().split("\n").at(-1) as string;
-		const { card } = JSON.parse(invite) as { card: string };
-		run(ctx, ["phone", "accept", "--name", "alice", card, "hello"], phone.b);
+		for (const [name, env] of contacts) {
+			run(ctx, ["phone", "number", "--as", name, "--relay", relay], env);
+			const invite = run(ctx, ["phone", "invite", "--name", name], phone.a).trim().split("\n").at(-1) as string;
+			const { card } = JSON.parse(invite) as { card: string };
+			run(ctx, ["phone", "accept", "--name", "alice", card, "hello"], env);
+		}
+		const admitting = spawn(ctx.dg, ["phone", "listen"], { cwd: ctx.work, env: phone.a, stdio: "ignore" });
+		try {
+			await waitFor(() => contacts.every(([name]) => run(ctx, ["phone", "contacts"], phone.a).includes(`"+${name}"`)), 60_000);
+		} finally {
+			admitting.kill("SIGTERM");
+			await new Promise((done) => (admitting.exitCode !== null || admitting.signalCode !== null ? done(undefined) : admitting.once("exit", done)));
+		}
+		run(ctx, ["phone", "group", "new", "#team", "+bob", "+carol", "+dave", "+erin"], phone.a);
 	} catch (error) {
 		relayProcess.kill();
 		throw error;
@@ -229,6 +259,9 @@ async function burst(ctx: Ctx): Promise<void> {
 	for (let i = 0; i < BURST; i++) run(ctx, ["phone", "text", "+alice", `burst message ${i} with a little text in it`], phone.b);
 	await sleep(2000);
 }
+
+const pending = (ctx: Ctx): number =>
+	(JSON.parse(run(ctx, ["phone", "status"], ctx.phone?.a)) as { pending_voicemail: number }).pending_voicemail;
 
 function listener(name: string, budget: number, drive?: (ctx: Ctx) => Promise<void>): Case {
 	return {
@@ -245,9 +278,34 @@ function listener(name: string, budget: number, drive?: (ctx: Ctx) => Promise<vo
 	};
 }
 
+function catchUp(name: string, budget: number): Case {
+	return {
+		name,
+		budget,
+		long: true,
+		phone: true,
+		measure: (ctx) => {
+			const phone = ctx.phone as Phone;
+			const senders = [phone.b, ...phone.others];
+			const before = pending(ctx);
+			for (let i = 0; i < BACKLOG; i++) {
+				const text = `backlog message ${i}: ${"a realistic line of chat text. ".repeat(1 + (i % 6))}`;
+				run(ctx, ["phone", "text", "+alice", text], senders[i % senders.length]);
+			}
+			return serve(ctx, ["phone", "listen"], {
+				env: phone.a,
+				ready: () => waitFor(() => pending(ctx) >= before + BACKLOG, 180_000),
+			});
+		},
+	};
+}
+
 function daemonReady(ctx: Ctx): Promise<void> {
 	return waitFor(() => spawnSync(ctx.dg, ["daemon", "status"], { env: ctx.env, encoding: "utf8" }).status === 0);
 }
+
+const HOOK_MS = 52;
+const JOBS = 15;
 
 const HOOK_EDIT = JSON.stringify({
 	hook_event_name: "PostToolUse",
@@ -266,55 +324,60 @@ const HOOK_PR = JSON.stringify({
 const HOOK_SESSION = JSON.stringify({ hook_event_name: "SessionStart", source: "startup", cwd: "." });
 
 const CASES: Case[] = [
-	command("version", ["--version"], 27),
-	command("help", ["--help"], 32),
-	command("completion zsh", ["completion", "zsh"], 27),
-	command("config path", ["config", "path"], 42),
+	command("version", ["--version"], 24),
+	command("help", ["--help"], 26),
+	command("completion zsh", ["completion", "zsh"], 25),
+	command("config path", ["config", "path"], 33),
 	command("stat checklist", ["stat", "checklist"], 48),
-	command("job --help", ["job", "--help"], 42),
-	command("pw --help", ["pw", "--help"], 43),
-	command("db --help", ["db", "--help"], 41),
-	command("thrash --help", ["thrash", "--help"], 46),
-	command("prototype --help", ["prototype", "--help"], 44),
-	command("phone status", ["phone", "status"], 46),
-	command("phone contacts", ["phone", "contacts"], 47),
-	command("phone messages", ["phone", "messages"], 47),
-	command("phone unread", ["phone", "unread"], 49),
-	command("hooks list", ["hooks", "list"], 44),
-	command("hooks run spelling", ["hooks", "run", "spelling"], 37, { stdin: HOOK_EDIT }),
-	command("hooks run format", ["hooks", "run", "format"], 36, { stdin: HOOK_EDIT }),
-	command("hooks run pr-prose", ["hooks", "run", "pr-prose"], 36, { stdin: HOOK_PR }),
-	command("hooks run pr-confirm", ["hooks", "run", "pr-confirm"], 36, { stdin: HOOK_BASH }),
-	command("hooks run spec-plan-lint", ["hooks", "run", "spec-plan-lint"], 36, { stdin: HOOK_EDIT }),
-	command("hooks run daily-prune", ["hooks", "run", "daily-prune"], 36, { stdin: HOOK_SESSION }),
-	command("hooks run strip-ai-coauthors", ["hooks", "run", "strip-ai-coauthors"], 33, { stdin: "" }),
-	command("adr lint --all (repo)", ["adr", "lint", "--all"], 66, { cwd: () => ROOT }),
-	command("spec validate", ["spec", "validate", "spec.md"], 50),
+	command("job --help", ["job", "--help"], 32),
+	command("pw --help", ["pw", "--help"], 33),
+	command("db --help", ["db", "--help"], 32),
+	command("thrash --help", ["thrash", "--help"], 36),
+	command("prototype --help", ["prototype", "--help"], 35),
+	command("phone status", ["phone", "status"], 38),
+	command("phone contacts", ["phone", "contacts"], 38),
+	command("phone messages", ["phone", "messages"], 38),
+	command("phone unread", ["phone", "unread"], 40),
+	command("hooks list", ["hooks", "list"], 34),
+	command("hooks run spelling", ["hooks", "run", "spelling"], 33, { stdin: HOOK_EDIT, msBudget: HOOK_MS }),
+	command("hooks run format", ["hooks", "run", "format"], 32, { stdin: HOOK_EDIT, msBudget: HOOK_MS }),
+	command("hooks run pr-prose", ["hooks", "run", "pr-prose"], 33, { stdin: HOOK_PR, msBudget: HOOK_MS }),
+	command("hooks run pr-confirm", ["hooks", "run", "pr-confirm"], 32, { stdin: HOOK_BASH, msBudget: HOOK_MS }),
+	command("hooks run spec-plan-lint", ["hooks", "run", "spec-plan-lint"], 32, { stdin: HOOK_EDIT, msBudget: HOOK_MS }),
+	command("hooks run daily-prune", ["hooks", "run", "daily-prune"], 32, { stdin: HOOK_SESSION, msBudget: HOOK_MS }),
+	command("hooks run strip-ai-coauthors", ["hooks", "run", "strip-ai-coauthors"], 29, {
+		stdin: "",
+		msBudget: HOOK_MS,
+	}),
+	command("adr lint --all (repo)", ["adr", "lint", "--all"], 47, { cwd: () => ROOT }),
+	command("spec validate", ["spec", "validate", "spec.md"], 40),
 	{ ...command("update --check", ["update", "--check"], 80), ungated: true },
-	command("doctor", ["doctor"], 63),
+	command("doctor", ["doctor"], 56),
 	{
 		name: "daemon idle",
-		budget: 44,
+		budget: 43,
 		long: true,
 		measure: (ctx) => serve(ctx, ["daemon", "serve"], { ready: daemonReady }),
 	},
 	{
-		name: "daemon with jobs",
-		budget: 45,
+		name: "daemon with 15 jobs",
+		budget: 44,
 		long: true,
 		measure: (ctx) =>
 			serve(ctx, ["daemon", "serve"], {
 				ready: daemonReady,
 				drive: async () => {
-					run(ctx, ["job", "add", "--name", "tick", "--cwd", ctx.work, "--every", "1m", "--", "echo", "tick"]);
-					run(ctx, ["job", "start", "tick"]);
+					for (let i = 0; i < JOBS; i++) {
+						run(ctx, ["job", "add", "--name", `tick-${i}`, "--cwd", ctx.work, "--every", "1m", "--", "echo", "tick"]);
+					}
+					run(ctx, ["job", "start", "tick-0"]);
 					for (let i = 0; i < 10; i++) run(ctx, ["job", "list"]);
 				},
 			}),
 	},
 	{
 		name: "prototype serve",
-		budget: 42,
+		budget: 41,
 		long: true,
 		measure: (ctx) => {
 			const page = join(ctx.work, "page.html");
@@ -329,7 +392,8 @@ const CASES: Case[] = [
 		},
 	},
 	listener("phone listener idle", 61),
-	listener("phone listener burst", 60, burst),
+	listener("phone listener burst", 59, burst),
+	catchUp("phone listener catch-up", 61),
 ];
 
 async function floor(root: string): Promise<number> {
@@ -338,9 +402,9 @@ async function floor(root: string): Promise<number> {
 	writeFileSync(source, 'console.log("0");\n');
 	const built = spawnSync(process.execPath, ["build", "--compile", "--minify", source, "--outfile", out], { encoding: "utf8" });
 	if (built.status !== 0) throw new Error(built.stderr);
-	dropPageCache(out);
+	evictFromPageCache(out);
 	const ctx = { dg: out, home: root, work: root, env: { PATH: process.env.PATH ?? "" } };
-	return (await median(() => once(out, [], ctx))).peak;
+	return (await median(() => once(out, [], ctx), RUNS)).peak;
 }
 
 function seedWork(work: string): void {
@@ -357,8 +421,11 @@ async function main(): Promise<number> {
 	const stops: (() => void)[] = [];
 	try {
 		const bin = join(root, "dg");
-		cpSync(DG, bin);
-		dropPageCache(bin);
+		if (values["fresh-binary"]) writeFileSync(bin, readFileSync(DG), { mode: 0o755 });
+		else {
+			cpSync(DG, bin);
+			evictFromPageCache(bin);
+		}
 		const work = join(root, "work");
 		seedWork(work);
 		const ctx: Ctx = { dg: bin, home: root, work, env: fencedEnv(join(root, "main"), 47_401) };
@@ -373,8 +440,9 @@ async function main(): Promise<number> {
 		}
 		const floorBytes = await floor(root);
 		console.log(`floor (compiled console.log): ${fmt(floorBytes)} MB`);
-		console.log(["case", "peak MB", "over floor", "idle MB", "anon MB", "ms", "budget MB"].join("\t"));
-		const results: Record<string, Sample & { budget: number }> = {};
+		const header = ["case", "peak MB", "over floor", "idle MB", "anon MB", "ms", "ms p95", "budget MB", "budget ms"];
+		console.log(header.join("\t"));
+		const results: Record<string, Sample & { budget: number; msBudget?: number }> = {};
 		let failed = 0;
 		for (const c of cases) {
 			if ((c.long && process.platform !== "linux") || (c.ungated && values.gate)) continue;
@@ -391,11 +459,22 @@ async function main(): Promise<number> {
 				console.log(`${c.name}\tFAILED: ${error instanceof Error ? error.message : String(error)}`);
 				continue;
 			}
-			results[c.name] = { ...sample, budget: c.budget };
+			results[c.name] = { ...sample, budget: c.budget, msBudget: c.msBudget };
 			const over = !c.ungated && sample.peak > c.budget * MB;
-			if (over) failed++;
+			const slow = c.msBudget !== undefined && sample.ms > c.msBudget;
+			if (over || slow) failed++;
 			console.log(
-				[c.name, fmt(sample.peak), fmt(sample.peak - floorBytes), sample.idle ? fmt(sample.idle) : "", sample.anon ? fmt(sample.anon) : "", sample.ms.toFixed(0), `${c.ungated ? "report only" : c.budget}${over ? " OVER" : ""}`].join("\t"),
+				[
+					c.name,
+					fmt(sample.peak),
+					fmt(sample.peak - floorBytes),
+					sample.idle ? fmt(sample.idle) : "",
+					sample.anon ? fmt(sample.anon) : "",
+					sample.ms.toFixed(0),
+					sample.p95 === undefined ? "" : sample.p95.toFixed(0),
+					`${c.ungated ? "report only" : c.budget}${over ? " OVER" : ""}`,
+					c.msBudget === undefined ? "" : `${c.msBudget}${slow ? " SLOW" : ""}`,
+				].join("\t"),
 			);
 		}
 		if (values.json) writeFileSync(values.json, `${JSON.stringify({ floor: floorBytes, results }, null, 2)}\n`);
