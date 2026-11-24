@@ -11,7 +11,7 @@ import { resolveSkillAsset } from "../utils/skill-assets";
 import { assertLoopbackUrl } from "../verify/urls";
 import { injectScript } from "./inject";
 import { protoDir, type SentinelPaths, sentinelPaths } from "./paths";
-import { writeSentinel } from "./sentinels";
+import { liveWaiter, waitCommand, writeSentinel } from "./sentinels";
 
 const FAVICON_LINK = `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,${encodeURIComponent(
 	'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50" y="54" font-size="80" text-anchor="middle" dominant-baseline="central">✏️</text></svg>',
@@ -135,6 +135,10 @@ function loopbackPage(value: unknown): string | undefined {
 	}
 }
 
+function recorded(target: SentinelPaths): Response {
+	return Response.json({ ok: true, waiter: liveWaiter(target) !== undefined });
+}
+
 function recordDecision(
 	paths: SentinelPaths,
 	body: Record<string, unknown>,
@@ -154,7 +158,7 @@ function recordDecision(
 			target.decision,
 			`${JSON.stringify({ decision, notes: text(body.notes) })}\n`,
 		);
-		return Response.json({ ok: true });
+		return recorded(target);
 	}
 	const action = (text(body.action) || "confirm").toLowerCase();
 	if (action !== "confirm" && action !== "reject" && action !== "more")
@@ -166,12 +170,12 @@ function recordDecision(
 	if (action === "reject") {
 		writeSentinel(target.source, "browser\n");
 		writeSentinel(target.reject, notes || "\n");
-		return Response.json({ ok: true });
+		return recorded(target);
 	}
 	if (action === "more") {
 		writeSentinel(target.source, "browser\n");
 		writeSentinel(target.more, notes || "\n");
-		return Response.json({ ok: true });
+		return recorded(target);
 	}
 	const variant = text(body.variant);
 	if (!variant)
@@ -189,7 +193,7 @@ function recordDecision(
 	if (page) writeSentinel(target.url, `${page}\n`);
 	writeSentinel(target.source, "browser\n");
 	writeSentinel(target.selection, `${variant}\n`);
-	return Response.json({ ok: true });
+	return recorded(target);
 }
 
 function rejectCrossSite(req: Request, port: number): Response | undefined {
@@ -249,7 +253,7 @@ export async function startServer(
 				return new Response("Method Not Allowed", { status: 405 });
 			if (url.pathname === "/prototype-state")
 				return Response.json(
-					{ status: decisionState(paths) },
+					{ status: decisionState(paths), waiter: liveWaiter(paths) !== undefined },
 					{ headers: { "Cache-Control": "no-store" } },
 				);
 			if (url.pathname === "/prototype-reload")
@@ -343,6 +347,11 @@ function parseServeArgs(argv: string[]): ServeArgs | undefined {
 	return parsed;
 }
 
+function waiterLine(paths: SentinelPaths, name: string, light: boolean): string {
+	const pid = liveWaiter(paths);
+	return pid === undefined ? `none; run: ${waitCommand(name, light)}` : `pid ${pid}`;
+}
+
 function webmcpTools(): unknown {
 	const file = resolveSkillAsset("proto", join("assets", "webmcp-tools.json"));
 	return (JSON.parse(readFileSync(file, "utf8")) as { tools: unknown }).tools;
@@ -361,17 +370,18 @@ export async function runServe(argv: string[]): Promise<number> {
 	}
 	const dir =
 		args.dir ?? protoDir(args.name, { cwd: process.cwd(), light: args.light });
+	const paths = sentinelPaths(dir);
 	const running = await startServer({
 		htmlFile: args.htmlFile,
 		name: args.name,
-		paths: sentinelPaths(dir),
+		paths,
 		port: args.port,
 		idleSec: args.idleSec,
 		tools: webmcpTools(),
 		onIdle: () => void exitAfterDrain(0),
 	});
 	process.stdout.write(
-		`prototype-serve: http://127.0.0.1:${running.port}/\n  html  : ${args.htmlFile}\n  name  : ${args.name}${args.light ? " (--light)" : ""}\n  Press Ctrl-C to stop.\n`,
+		`prototype-serve: http://127.0.0.1:${running.port}/\n  html  : ${args.htmlFile}\n  name  : ${args.name}${args.light ? " (--light)" : ""}\n  waiter: ${waiterLine(paths, args.name, args.light)}\n  Press Ctrl-C to stop.\n`,
 	);
 	return forever();
 }

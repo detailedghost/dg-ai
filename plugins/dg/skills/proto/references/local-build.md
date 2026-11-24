@@ -59,11 +59,23 @@ A prototype with a running server records the user's decision as sentinel files:
    - `.selection` written: `{"status":"ok","variant":"...","notes":"..."}`. The user approved a variant.
    - `.reject` written: `{"status":"rejected","notes":"..."}`. The user rejected. Rework and loop.
    - `.more` written: `{"status":"more","notes":"..."}`. The user wants more versions. Generate N new variants (default the same count as the round), steer them with the notes, and loop.
-4. On timeout it prints `{"status":"timeout","pending":true}` (text mode prints `timeout, still pending`) and exits 124. The pick is still pending. Ask the user by hand, or run `wait` again. Exit 75 means the approve is recorded but the layout fingerprint was skipped. Run the `run:` line that `wait` prints on stderr. Exit 1 is an error.
+4. On timeout it prints `{"status":"timeout","pending":true}` (text mode prints `timeout, still pending`) and exits 124. The pick is still pending. Ask the user by hand, or run `wait` again. Exit 75 means the approve is recorded but the layout fingerprint was skipped for a reason you can fix. A fingerprint step that passes its 60-second bound exits 0: the pick is already on stdout. Run the `run:` line that `wait` prints on stderr. Exit 1 is an error.
 
-Do not fire and forget a backgrounded `wait`: completion may not surface. Prefer the foreground. If it
-must be backgrounded, poll `prototype status <name>` each turn. Sentinels are the source of truth, so a
-missed notification is always recoverable.
+**Arm a waiter before you report the prototype live.** A builder subagent that mounts or serves a prototype
+blocks on `dg prototype wait <chain> --json` itself, or returns the required field
+`wait: dg prototype wait <chain> --json`. The main loop then starts that command in the background and runs
+`dg prototype status <chain> --require-waiter`. A non-zero exit means no waiter is alive. Do not fire and
+forget a backgrounded `wait`: if the runtime does not notify you when it exits, poll `prototype status <name>`
+each turn. Sentinels are the source of truth, so a missed notification is always recoverable.
+
+**The waiter file.** A running `wait` writes its pid to `<sandbox>/.waiter` and removes it on exit. `status`
+prints `waiter: none; run: dg prototype wait <chain> --json` on stderr when no waiter is alive, and every
+decision endpoint answers `{"ok": true, "waiter": false}`. The page then says "No agent is listening; tell
+your agent to check." and keeps the tab open.
+
+**A route behind a login.** Run `dg prototype sign-in <name> --sign-in=<loopback-url>` (or `--state=<name>`)
+when you mount it. It writes `<sandbox>/.signin`, mode 0600, with only the URL and the state name. Every
+later claim and `fingerprint` reads it, so the layout fingerprint is taken signed in.
 
 **Tab behavior after a decision**
 
@@ -109,7 +121,7 @@ dg prototype status <name> --require-pending
 
 See [../assets/README.md](../assets/README.md) for the switcher props and behavior.
 
-**A host with no shipped endpoint template** (for example ASP.NET): port `prototype-endpoint.ts` to the host stack and keep all four actions: `confirm`, `reject`, `more`, and `status`. The `more` action writes the `.more` sentinel. Then either build the bar from the same four actions, or mount `prototype-decision-bar.html` against the ported endpoint. Never drop the `more` action: without it the user cannot ask for more versions, and `prototype wait` can never report `more`.
+**A host with no shipped endpoint template** (for example ASP.NET): port `prototype-endpoint.ts` to the host stack and keep all four actions: `confirm`, `reject`, `more`, and `status`. The `more` action writes the `.more` sentinel. Keep the waiter check too: every reply carries `waiter`, true only while the pid in `<sandbox>/.waiter` is alive, and the bar shows "No agent is listening; tell your agent to check." when a pick answers `waiter: false`. Then either build the bar from the same four actions, or mount `prototype-decision-bar.html` against the ported endpoint. Never drop the `more` action: without it the user cannot ask for more versions, and `prototype wait` can never report `more`.
 
 ## `--publish`
 

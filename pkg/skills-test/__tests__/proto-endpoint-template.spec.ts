@@ -67,6 +67,23 @@ const confirm = (name: unknown) => ({
 });
 
 describe("prototype endpoint template", () => {
+	test("a pick answers waiter: false with no live wait process, and true with one", async () => {
+		const unheard = await post(confirm("demo-waiter"));
+		expect(await unheard.json()).toEqual({ ok: true, waiter: false });
+		writeFileSync(
+			join(sandbox, "project", ".agents", "prototype", "demo-waiter", ".waiter"),
+			`${process.pid}\n`,
+		);
+		const heard = await post({ ...confirm("demo-waiter"), action: "more" });
+		expect(await heard.json()).toEqual({ ok: true, waiter: true });
+		writeFileSync(
+			join(sandbox, "project", ".agents", "prototype", "demo-waiter", ".waiter"),
+			`${2 ** 22 + 7}\n`,
+		);
+		const dead = await post({ ...confirm("demo-waiter"), action: "reject", notes: "no" });
+		expect(await dead.json()).toEqual({ ok: true, waiter: false });
+	});
+
 	test("records a selection for a valid name", async () => {
 		const response = await post(confirm("demo-1"));
 		expect(response.status).toBe(200);
@@ -158,7 +175,7 @@ describe("prototype endpoint template", () => {
 	test("a status action reads the reload token without writing any sentinel", async () => {
 		const unbuilt = await post({ name: "status-demo", action: "status" });
 		expect(unbuilt.status).toBe(200);
-		expect(await unbuilt.json()).toEqual({ ok: true, token: "0" });
+		expect(await unbuilt.json()).toEqual({ ok: true, waiter: false, token: "0" });
 		expect(
 			existsSync(join(sandbox, "project", ".agents", "prototype", "status-demo")),
 		).toBe(false);
@@ -167,7 +184,7 @@ describe("prototype endpoint template", () => {
 		mkdirSync(dir, { recursive: true });
 		writeFileSync(join(dir, ".reload"), "42\n", "utf8");
 		const built = await post({ name: "status-demo", action: "status" });
-		expect(await built.json()).toEqual({ ok: true, token: "42" });
+		expect(await built.json()).toEqual({ ok: true, waiter: false, token: "42" });
 		expect(existsSync(join(dir, ".selection"))).toBe(false);
 	});
 
@@ -180,7 +197,7 @@ describe("prototype endpoint template", () => {
 			action: "status",
 			selftest: true,
 		});
-		expect(await response.json()).toEqual({ ok: true, token: "7" });
+		expect(await response.json()).toEqual({ ok: true, waiter: false, token: "7" });
 		expect(
 			existsSync(
 				join(sandbox, "project", ".agents", "prototype", "status-real-selftest"),

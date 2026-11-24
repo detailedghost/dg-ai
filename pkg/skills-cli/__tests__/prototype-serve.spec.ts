@@ -92,7 +92,7 @@ describe("prototype serve", () => {
 			variant: "B",
 			notes: "keep it",
 		});
-		expect(await response.json()).toEqual({ ok: true });
+		expect(await response.json()).toEqual({ ok: true, waiter: false });
 		expect(readFileSync(paths.selection, "utf8")).toBe("B\n");
 		expect(readFileSync(paths.notes, "utf8")).toBe("keep it");
 		expect(readFileSync(paths.source, "utf8")).toBe("browser\n");
@@ -112,7 +112,7 @@ describe("prototype serve", () => {
 		const { post, paths } = await serve();
 		for (const url of ["https://example.com/", "http://user:pw@127.0.0.1:4321/", "not a url", 7]) {
 			const response = await post({ action: "confirm", variant: "B", url });
-			expect(await response.json()).toEqual({ ok: true });
+			expect(await response.json()).toEqual({ ok: true, waiter: false });
 			expect(existsSync(paths.url)).toBe(false);
 			expect(readFileSync(paths.selection, "utf8")).toBe("B\n");
 		}
@@ -132,7 +132,7 @@ describe("prototype serve", () => {
 			notes: "automated click",
 			selftest: true,
 		});
-		expect(await response.json()).toEqual({ ok: true });
+		expect(await response.json()).toEqual({ ok: true, waiter: false });
 		expect(existsSync(paths.selection)).toBe(false);
 		const selftestPaths = sentinelPaths(`${paths.dir}-selftest`);
 		expect(readFileSync(selftestPaths.selection, "utf8")).toBe("B\n");

@@ -16,13 +16,16 @@ import {
 	confirm,
 	type DecisionSnapshot,
 	formatDecision,
-	formatWait,
+	liveWaiter,
+	printWait,
 	readDecision,
 	readSource,
 	wait,
+	waitCommand,
 	waitExitCode,
 } from "./sentinels";
 import { runServe } from "./serve";
+import { writeSignIn } from "./signin";
 import {
 	loadState,
 	openInBrowser,
@@ -78,6 +81,7 @@ function reportStatus(
 	flags: Flags,
 	name: string,
 	recordDir = paths.dir,
+	light = false,
 ): number {
 	if (flags.requirePending && resolved.status !== "pending") {
 		process.stderr.write(
@@ -85,10 +89,14 @@ function reportStatus(
 		);
 		return 1;
 	}
+	const waiter = liveWaiter(paths);
+	if (waiter === undefined)
+		process.stderr.write(`waiter: none; run: ${waitCommand(name, light)}\n`);
+	if (flags.requireWaiter && waiter === undefined) return 1;
 	if (flags.json) {
 		const accepted = acceptedSummary(recordDir);
 		write(
-			`${JSON.stringify({ status: resolved.status, source: readSource(paths) ?? null, decision: resolved.decision, ...(accepted ? { accepted } : {}) })}\n`,
+			`${JSON.stringify({ status: resolved.status, source: readSource(paths) ?? null, decision: resolved.decision, waiter: waiter === undefined ? null : { pid: waiter }, ...(accepted ? { accepted } : {}) })}\n`,
 		);
 	} else {
 		write(`${resolved.status}\n`);
@@ -125,8 +133,14 @@ export const USAGE = `Usage: prototype <command> [options]
                                                  Write the selection sentinel (and optional notes).
                                                  --selftest writes to <name>-selftest instead.
                                                  --source names who decided (default "cli").
-  status <name> [--light] [--json] [--require-pending]
-                                                 Print the selection, "rejected", "more", or "pending"
+  status <name> [--light] [--json] [--require-pending] [--require-waiter]
+                                                 Print the selection, "rejected", "more", or "pending".
+                                                 Stderr says "waiter: none" with the wait command when no wait
+                                                 process is alive; --require-waiter then exits 1.
+  sign-in <name> [--sign-in=LOOPBACK_URL] [--state=NAME] [--light]
+                                                 Store the sign-in page or saved state in the sandbox's .signin (mode 0600)
+                                                 so every later claim and fingerprint reads the layout signed in.
+                                                 wait, fingerprint, and ui store their own --sign-in and --state the same way.
   fingerprint <name> --url=LOOPBACK_URL [--light] [--sign-in=LOOPBACK_URL] [--state=NAME]
                                                  Read the accepted layout again from a running page
   stop <name>                                    Stop a ui session's server and drop its state
@@ -143,8 +157,9 @@ export const USAGE = `Usage: prototype <command> [options]
 
 const NAME_COMMANDS: Record<string, readonly string[]> = {
 	wait: ["--timeout", "--light", "--json", "--sign-in", "--state"],
+	"sign-in": ["--light", "--sign-in", "--state"],
 	confirm: ["--light", "--notes", "--selftest", "--source"],
-	status: ["--light", "--json", "--require-pending"],
+	status: ["--light", "--json", "--require-pending", "--require-waiter"],
 	fingerprint: ["--light", "--url", "--sign-in", "--state"],
 	path: ["--light"],
 	"await-decision": ["--timeout", "--light", "--json"],
@@ -152,6 +167,14 @@ const NAME_COMMANDS: Record<string, readonly string[]> = {
 	"reload-path": ["--light"],
 	"changes-path": ["--light"],
 };
+
+function remember(dir: string, flags: Flags): void {
+	if (flags.signIn || flags.stateName)
+		writeSignIn(dir, {
+			...(flags.signIn ? { signIn: flags.signIn } : {}),
+			...(flags.stateName ? { stateName: flags.stateName } : {}),
+		});
+}
 
 function locate(name: string, flags: Flags): SentinelPaths {
 	return sentinelPaths(
@@ -172,7 +195,22 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 		return 1;
 	}
 	const session =
-		command === "wait" || command === "status" ? loadState(name) : undefined;
+		command === "wait" || command === "status" || command === "sign-in"
+			? loadState(name)
+			: undefined;
+	if (command === "sign-in") {
+		if (!flags.signIn && !flags.stateName) {
+			process.stderr.write(USAGE);
+			return 1;
+		}
+		const dir =
+			session?.recordDir ??
+			protoDir(name, { cwd: process.cwd(), light: flags.light });
+		remember(dir, flags);
+		write(`recorded ${join(dir, ".signin")}\n`);
+		return 0;
+	}
+	if (command === "wait" && session?.recordDir) remember(session.recordDir, flags);
 	if (command === "wait" && session)
 		return waitSession(
 			{
@@ -198,6 +236,7 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 			...(flags.signIn ? { signIn: flags.signIn } : {}),
 			...(flags.stateName ? { stateName: flags.stateName } : {}),
 		});
+		remember(dir, flags);
 		write(
 			`recorded ${join(dir, "accepted.json")} (${record.fingerprint ? `${record.fingerprint.readings.length} readings` : `skipped: ${record.skipped}`})\n`,
 		);
@@ -208,6 +247,7 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 	const paths = locate(targetName, flags);
 	switch (command) {
 		case "wait": {
+			remember(paths.dir, flags);
 			const result = await wait(
 				paths,
 				flags.timeoutSec,
@@ -218,8 +258,8 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 					...(flags.signIn ? { signIn: flags.signIn } : {}),
 					...(flags.stateName ? { stateName: flags.stateName } : {}),
 				}),
+				(claimed) => printWait(claimed, flags.json),
 			);
-			write(formatWait(result, flags.json));
 			return waitExitCode(result);
 		}
 		case "await-decision": {
@@ -239,6 +279,8 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 				fromExt === undefined ? local : extSnapshot(fromExt),
 				flags,
 				name,
+				paths.dir,
+				flags.light,
 			);
 		}
 		case "path":

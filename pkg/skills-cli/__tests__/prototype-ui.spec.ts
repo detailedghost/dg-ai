@@ -438,6 +438,7 @@ describe("prototype ui", () => {
 			status: "B",
 			source: "cli",
 			decision: "approved",
+			waiter: null,
 		});
 
 		const stale = await cli(["status", name, "--require-pending"]).done;
@@ -479,6 +480,7 @@ describe("prototype ui", () => {
 			status: "B",
 			source: "automation",
 			decision: "approved",
+			waiter: null,
 		});
 	});
 

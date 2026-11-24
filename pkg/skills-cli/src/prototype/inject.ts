@@ -176,7 +176,7 @@ export function injectScript(name: string, tools: unknown): string {
           headers: {'Content-Type':'application/json'},
           body: JSON.stringify(body)
         }).then(function(r){ return r.json(); }).then(function(d){
-          if (d.ok) { _showDecisionOverlay(_overlayState(body), !!(body.notes && body.notes.trim())); }
+          if (d.ok) { _showDecisionOverlay(_overlayState(body), !!(body.notes && body.notes.trim()), undefined, d.waiter === false); }
         });
       });
     });
@@ -189,7 +189,7 @@ export function injectScript(name: string, tools: unknown): string {
     return (body && body.action) || 'confirm';
   }
 
-  function _showDecisionOverlay(state, hasNotes, variant) {
+  function _showDecisionOverlay(state, hasNotes, variant, unheard) {
     var isRework = state === 'reject' || state === 'rework' || state === 'more';
     var isApproved = state === 'approved';
     var isNextInSeries = state === 'confirm' && !hasNotes && window.__protoSeries === true;
@@ -198,7 +198,9 @@ export function injectScript(name: string, tools: unknown): string {
     var isBuilding = state === 'confirm' && (hasNotes || isNextInSeries);
     var pillColor = isRework || isBuilding ? '#e8a838' : '#2ebb6e';
     var pillLabel = state === 'more' ? 'MORE VERSIONS' : isRework ? 'REWORKING' : (isBuilding ? 'BUILDING' : 'APPROVED');
-    var subtitle = isNextInSeries
+    var subtitle = unheard
+      ? 'No agent is listening; tell your agent to check.'
+      : isNextInSeries
       ? 'Selection recorded. Keep this tab open: it reloads in place when the next prototype is ready.'
       : isBuilding
       ? 'Notes sent. Keep this tab open: it reloads in place when the next round is ready.'
@@ -246,7 +248,8 @@ export function injectScript(name: string, tools: unknown): string {
       : isBuilding
       ? 'Building the next round' + (variant ? ' from ' + variant : '') + '…'
       : 'Sent to AI Chat';
-    if (!isConfirmNoNotes) return;
+    if (unheard) document.getElementById('_proto_title').textContent = 'Decision saved';
+    if (!isConfirmNoNotes || unheard) return;
     if (_reloadIntervalId) { clearInterval(_reloadIntervalId); _reloadIntervalId = null; }
     setTimeout(function() {
       _closeOrFallback(function() {
@@ -266,7 +269,7 @@ export function injectScript(name: string, tools: unknown): string {
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ name: ${scriptSafeJson(name)}, action: action || 'confirm', variant: variant || '', notes: notes || '', url: window.location.href })
     }).then(function(r){ return r.json(); }).then(function(d){
-      if (d.ok) { _showDecisionOverlay(action || 'confirm', hasNotes, variant); }
+      if (d.ok) { _showDecisionOverlay(action || 'confirm', hasNotes, variant, d.waiter === false); }
       return !!d.ok;
     }).catch(function(){ return false; });
   };
@@ -278,7 +281,7 @@ export function injectScript(name: string, tools: unknown): string {
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ name: ${scriptSafeJson(name)}, decision: normalized, notes: notes || '' })
     }).then(function(r){ return r.json(); }).then(function(d){
-      if (d.ok) { _showDecisionOverlay(normalized === 'REWORK' ? 'rework' : 'approved', !!(notes && notes.trim())); }
+      if (d.ok) { _showDecisionOverlay(normalized === 'REWORK' ? 'rework' : 'approved', !!(notes && notes.trim()), undefined, d.waiter === false); }
     });
   };
 })();

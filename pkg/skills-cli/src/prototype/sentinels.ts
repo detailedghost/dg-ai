@@ -5,6 +5,7 @@ import {
 	renameSync,
 	rmSync,
 	writeFileSync,
+	writeSync,
 } from "node:fs";
 import type { SentinelPaths } from "./paths";
 
@@ -136,6 +137,63 @@ async function poll<T>(
 	}
 }
 
+function pidAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "EPERM";
+	}
+}
+
+/** The pid of the process blocked on this sandbox's decision, or undefined when none is alive. */
+export function liveWaiter(paths: SentinelPaths): number | undefined {
+	const raw = readOptional(paths.waiter);
+	if (!raw || !/^\d+$/.test(raw)) return undefined;
+	const pid = Number(raw);
+	return pid > 0 && pidAlive(pid) ? pid : undefined;
+}
+
+/** The command that arms a waiter for a prototype name or chain key. */
+export function waitCommand(name: string, light = false): string {
+	return `dg prototype wait ${name}${light ? " --light" : ""} --json`;
+}
+
+async function asWaiter<T>(paths: SentinelPaths, block: () => Promise<T>): Promise<T> {
+	const own = String(process.pid);
+	try {
+		mkdirSync(paths.dir, { recursive: true });
+		writeSentinel(paths.waiter, `${own}\n`);
+	} catch {
+		process.stderr.write(
+			`prototype: warning: could not write ${paths.waiter}; status will report no waiter\n`,
+		);
+		return block();
+	}
+	const release = () => {
+		try {
+			if (readOptional(paths.waiter) === own) rmSync(paths.waiter, { force: true });
+		} catch {
+			return;
+		}
+	};
+	const onSignal = (signal: NodeJS.Signals) => {
+		release();
+		process.exit(signal === "SIGINT" ? 130 : 143);
+	};
+	process.on("exit", release);
+	process.once("SIGINT", onSignal);
+	process.once("SIGTERM", onSignal);
+	try {
+		return await block();
+	} finally {
+		process.off("exit", release);
+		process.off("SIGINT", onSignal);
+		process.off("SIGTERM", onSignal);
+		release();
+	}
+}
+
 /** Record a variant selection, with optional notes, exactly as the served page would. */
 export function confirm(
 	paths: SentinelPaths,
@@ -178,14 +236,19 @@ export function readDecision(paths: SentinelPaths): DecisionSnapshot {
 	return { status: "pending", decision: "pending" };
 }
 
-/** Block until a selection or rejection exists, consume it, and report it; the sentinels are checked before any wait. */
+/** Block until a selection or rejection exists, consume it, and report it; `announce` gets the outcome before the approve hook runs. */
 export async function wait(
 	paths: SentinelPaths,
 	timeoutSec: number,
 	onApprove?: ApproveHook,
+	announce?: (result: WaitResult) => void,
 ): Promise<WaitResult> {
-	const claimed = await poll(timeoutSec, () => claim(paths));
-	if (!claimed) return { status: "timeout" };
+	const claimed = await asWaiter(paths, () => poll(timeoutSec, () => claim(paths)));
+	if (!claimed) {
+		announce?.({ status: "timeout" });
+		return { status: "timeout" };
+	}
+	announce?.(claimed.result);
 	if (claimed.approved && onApprove && claimed.result.status === "ok") {
 		const fingerprintSkipped = await onApprove(claimed.approved);
 		if (fingerprintSkipped !== undefined)
@@ -199,12 +262,14 @@ export async function awaitDecision(
 	paths: SentinelPaths,
 	timeoutSec: number,
 ): Promise<DecisionResult> {
-	const found = await poll(timeoutSec, () => {
-		if (!existsSync(paths.decision)) return undefined;
-		const contents = readTrimmed(paths.decision);
-		removeSentinels(paths.decision);
-		return contents;
-	});
+	const found = await asWaiter(paths, () =>
+		poll(timeoutSec, () => {
+			if (!existsSync(paths.decision)) return undefined;
+			const contents = readTrimmed(paths.decision);
+			removeSentinels(paths.decision);
+			return contents;
+		}),
+	);
 	if (found === undefined) return { status: "timeout" };
 	let decision = "";
 	try {
@@ -225,6 +290,11 @@ export function waitExitCode(result: WaitResult | DecisionResult): number {
 }
 
 const TIMEOUT_TEXT = "timeout, still pending\n";
+
+/** Write a wait outcome to stdout synchronously, so it reaches the caller even if a later step hangs. */
+export function printWait(result: WaitResult, json: boolean): void {
+	writeSync(1, formatWait(result, json));
+}
 
 export function formatWait(result: WaitResult, json: boolean): string {
 	if (result.status === "timeout")

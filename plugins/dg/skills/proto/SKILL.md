@@ -104,6 +104,17 @@ the `pw` skill or an MCP tool, or a headless check of the produced HTML) and con
 content is present — never install Playwright or download a browser for this check. Never ask "does
 this look right?" about a page you have not confirmed renders.
 
+## Hand over: arm a waiter first
+
+A pick that no process waits on stays unclaimed until the user types "check". These rules stop that:
+
+- **Builder RETURN contract.** A builder subagent that mounts or serves a prototype does one of two things. It blocks on `dg prototype wait <chain> --json` itself, or it returns the required field `wait: dg prototype wait <chain> --json` in its result. A result without that field is incomplete. Never tell a builder "do not wait for the pick" unless you also ask for the `wait:` field.
+- **The main loop arms the waiter.** Before it reports the prototype live, the main loop starts `dg prototype wait <chain> --json` in the background (in Claude Code, Bash with `run_in_background`). Then it runs `dg prototype status <chain> --require-waiter`. A non-zero exit means no waiter is alive. Arm one before you report the page.
+- **A route behind a login.** Before it returns, the builder runs `dg prototype sign-in <name> --sign-in=<loopback-url>` (or `--state=<pw state name>`). The claim then reads the layout signed in.
+- **An unheard pick.** If no waiter is alive when the user clicks, the page says "No agent is listening; tell your agent to check." The pick is saved. Run `dg prototype status <chain>`, then claim it.
+
+Details: "Someone must end up waiting" in [references/local-ui.md](references/local-ui.md).
+
 ## Refine chain
 
 `approve C` with no note ends the prototype. `tweak C: <note>` edits C in place in the current

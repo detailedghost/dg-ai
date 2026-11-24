@@ -9,6 +9,7 @@ export interface Flags {
 	series: boolean;
 	noOpen: boolean;
 	requirePending: boolean;
+	requireWaiter: boolean;
 	selftest: boolean;
 	chain?: string;
 	port: number;
@@ -36,6 +37,7 @@ export function parseFlags(argv: string[], allowed: readonly string[]): Flags {
 		series: false,
 		noOpen: process.env.PROTOTYPE_UI_NO_OPEN === "1",
 		requirePending: false,
+		requireWaiter: false,
 		selftest: false,
 		port: DEFAULT_PORT,
 		timeoutSec: DEFAULT_TIMEOUT_SEC,
@@ -52,6 +54,7 @@ export function parseFlags(argv: string[], allowed: readonly string[]): Flags {
 		else if (arg === "--series") flags.series = true;
 		else if (arg === "--no-open") flags.noOpen = true;
 		else if (arg === "--require-pending") flags.requirePending = true;
+		else if (arg === "--require-waiter") flags.requireWaiter = true;
 		else if (arg === "--selftest") flags.selftest = true;
 		else if (arg.startsWith("--chain="))
 			flags.chain = arg.slice("--chain=".length).trim() || undefined;

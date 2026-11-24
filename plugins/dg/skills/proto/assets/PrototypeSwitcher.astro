@@ -392,6 +392,8 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
       }
     }
 
+    var NO_WAITER = "No agent is listening; tell your agent to check.";
+
     function showConfirmOverlay() {
       var notes = notesArea.value.trim();
       var isBuilding = notes.length > 0;
@@ -422,21 +424,27 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
       errorEl.hidden = false;
     }
 
-    function onSuccess(action, closeAfter) {
+    function onSuccess(action, closeAfter, noWaiter) {
+      var unheard = noWaiter === true || (noWaiter === undefined && waiterSeen === false);
+      if (unheard) say(NO_WAITER);
       if (action === "confirm") {
         setFavicon("done");
         showConfirmOverlay();
-        if (closeAfter) setTimeout(closeTab, 2200);
+        if (unheard) {
+          overlaySub.textContent = NO_WAITER;
+          document.getElementById("ps-close").hidden = false;
+        } else if (closeAfter) setTimeout(closeTab, 2200);
+        return;
       } else if (action === "more") {
         setFavicon("processing");
         bar.setAttribute("data-verdict", "more");
         bar.classList.add("is-working");
-        say("Generating more versions. Keep this tab open. It refreshes when they are ready.");
+        if (!unheard) say("Generating more versions. Keep this tab open. It refreshes when they are ready.");
       } else {
         setFavicon("processing");
         bar.setAttribute("data-verdict", "changes");
         bar.classList.add("is-working");
-        say("Sent back for rework. Keep this tab open. It refreshes when new options are ready.");
+        if (!unheard) say("Sent back for rework. Keep this tab open. It refreshes when new options are ready.");
       }
     }
 
@@ -487,7 +495,9 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
               showError(body.error || "HTTP " + res.status);
             });
           }
-          onSuccess(action, closeAfter);
+          return res.json().catch(function () { return {}; }).then(function (body) {
+            onSuccess(action, closeAfter, body.waiter === false);
+          });
         })
         .catch(function (err) {
           showError((err && err.message) || "Network error");
@@ -505,6 +515,7 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
 
     var confirmUrl = window.location.origin + basePath + "/prototype-confirm";
     var lastToken = null;
+    var waiterSeen = null;
     var pollActive = true;
 
     function pollReload() {
@@ -524,6 +535,7 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
         })
         .then(function (data) {
           if (data === null || !pollActive) return;
+          if (typeof data.waiter === "boolean") waiterSeen = data.waiter;
           var t = String(data.token);
           if (lastToken === null) {
             lastToken = t;

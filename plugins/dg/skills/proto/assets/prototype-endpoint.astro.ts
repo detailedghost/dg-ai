@@ -86,6 +86,18 @@ function gitRoot(): string {
 	}
 }
 
+/** True while a `dg prototype wait` process is blocked on this sandbox. */
+function waiterAlive(dir: string): boolean {
+	try {
+		const pid = Number(readFileSync(join(dir, ".waiter"), "utf8").trim());
+		if (!Number.isInteger(pid) || pid <= 0) return false;
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "EPERM";
+	}
+}
+
 function resolveSentinelPath(name: string): string {
 	const light = process.env.PROTOTYPE_LIGHT === "1" ? ["--light"] : [];
 	const cwd = gitRoot();
@@ -120,10 +132,11 @@ export const POST: APIRoute = async ({ request }) => {
 		try {
 			return Response.json({
 				ok: true,
+				waiter: waiterAlive(reloadDir),
 				token: readFileSync(join(reloadDir, ".reload"), "utf8").trim(),
 			});
 		} catch {
-			return Response.json({ ok: true, token: "0" });
+			return Response.json({ ok: true, waiter: waiterAlive(reloadDir), token: "0" });
 		}
 	}
 
@@ -139,7 +152,7 @@ export const POST: APIRoute = async ({ request }) => {
 				: "\n";
 		writeFileSync(join(protoDir, ".source"), "browser\n", "utf8");
 		writeFileSync(join(protoDir, `.${body.action}`), notes, "utf8");
-		return Response.json({ ok: true });
+		return Response.json({ ok: true, waiter: waiterAlive(protoDir) });
 	}
 	if (!Array.isArray(body.variants) || !body.variants.includes(body.variant)) {
 		return Response.json({ error: "unknown variant" }, { status: 400 });
@@ -152,5 +165,5 @@ export const POST: APIRoute = async ({ request }) => {
 	}
 	writeFileSync(join(protoDir, ".source"), "browser\n", "utf8");
 	writeFileSync(sentinelPath, `${body.variant}\n`, "utf8");
-	return Response.json({ ok: true });
+	return Response.json({ ok: true, waiter: waiterAlive(protoDir) });
 };
