@@ -136,12 +136,12 @@ async function once(bin: string, args: string[], ctx: Ctx, opts: { cwd?: string;
 		stderr: "inherit",
 	});
 	const output = (await new Response(child.stdout).text()).trim();
-	const [peak, ms] = output.split(" ").map(Number);
+	const [peak = Number.NaN, rawMs = 0] = output.split(" ").map(Number);
 	const code = await child.exited;
-	if (code !== 0 || !peak) {
+	if (code !== 0 || !Number.isFinite(peak) || peak <= 0) {
 		throw new Error(`could not measure dg ${args.join(" ")}: python exited ${code}, printed "${output}"`);
 	}
-	return { peak, ms: Number.isFinite(ms) ? (ms as number) : 0 };
+	return { peak, ms: Number.isFinite(rawMs) ? rawMs : 0 };
 }
 
 async function median(run: () => Promise<Sample>): Promise<Sample> {
@@ -267,40 +267,40 @@ const HOOK_SESSION = JSON.stringify({ hook_event_name: "SessionStart", source: "
 
 const CASES: Case[] = [
 	command("version", ["--version"], 27),
-	command("help", ["--help"], 33),
+	command("help", ["--help"], 32),
 	command("completion zsh", ["completion", "zsh"], 27),
-	command("config path", ["config", "path"], 43),
-	command("stat checklist", ["stat", "checklist"], 50),
-	command("job --help", ["job", "--help"], 44),
-	command("pw --help", ["pw", "--help"], 45),
-	command("db --help", ["db", "--help"], 43),
-	command("thrash --help", ["thrash", "--help"], 48),
-	command("prototype --help", ["prototype", "--help"], 46),
-	command("phone status", ["phone", "status"], 49),
-	command("phone contacts", ["phone", "contacts"], 49),
-	command("phone messages", ["phone", "messages"], 49),
-	command("phone unread", ["phone", "unread"], 51),
-	command("hooks list", ["hooks", "list"], 45),
-	command("hooks run spelling", ["hooks", "run", "spelling"], 38, { stdin: HOOK_EDIT }),
-	command("hooks run format", ["hooks", "run", "format"], 38, { stdin: HOOK_EDIT }),
-	command("hooks run pr-prose", ["hooks", "run", "pr-prose"], 38, { stdin: HOOK_PR }),
-	command("hooks run pr-confirm", ["hooks", "run", "pr-confirm"], 37, { stdin: HOOK_BASH }),
-	command("hooks run spec-plan-lint", ["hooks", "run", "spec-plan-lint"], 37, { stdin: HOOK_EDIT }),
-	command("hooks run daily-prune", ["hooks", "run", "daily-prune"], 37, { stdin: HOOK_SESSION }),
-	command("hooks run strip-ai-coauthors", ["hooks", "run", "strip-ai-coauthors"], 34, { stdin: "" }),
-	command("adr lint --all (repo)", ["adr", "lint", "--all"], 68, { cwd: () => ROOT }),
-	command("spec validate", ["spec", "validate", "spec.md"], 52),
+	command("config path", ["config", "path"], 42),
+	command("stat checklist", ["stat", "checklist"], 48),
+	command("job --help", ["job", "--help"], 42),
+	command("pw --help", ["pw", "--help"], 43),
+	command("db --help", ["db", "--help"], 41),
+	command("thrash --help", ["thrash", "--help"], 46),
+	command("prototype --help", ["prototype", "--help"], 44),
+	command("phone status", ["phone", "status"], 46),
+	command("phone contacts", ["phone", "contacts"], 47),
+	command("phone messages", ["phone", "messages"], 47),
+	command("phone unread", ["phone", "unread"], 49),
+	command("hooks list", ["hooks", "list"], 44),
+	command("hooks run spelling", ["hooks", "run", "spelling"], 37, { stdin: HOOK_EDIT }),
+	command("hooks run format", ["hooks", "run", "format"], 36, { stdin: HOOK_EDIT }),
+	command("hooks run pr-prose", ["hooks", "run", "pr-prose"], 36, { stdin: HOOK_PR }),
+	command("hooks run pr-confirm", ["hooks", "run", "pr-confirm"], 36, { stdin: HOOK_BASH }),
+	command("hooks run spec-plan-lint", ["hooks", "run", "spec-plan-lint"], 36, { stdin: HOOK_EDIT }),
+	command("hooks run daily-prune", ["hooks", "run", "daily-prune"], 36, { stdin: HOOK_SESSION }),
+	command("hooks run strip-ai-coauthors", ["hooks", "run", "strip-ai-coauthors"], 33, { stdin: "" }),
+	command("adr lint --all (repo)", ["adr", "lint", "--all"], 66, { cwd: () => ROOT }),
+	command("spec validate", ["spec", "validate", "spec.md"], 50),
 	{ ...command("update --check", ["update", "--check"], 80), ungated: true },
-	command("doctor", ["doctor"], 66),
+	command("doctor", ["doctor"], 63),
 	{
 		name: "daemon idle",
-		budget: 47,
+		budget: 44,
 		long: true,
 		measure: (ctx) => serve(ctx, ["daemon", "serve"], { ready: daemonReady }),
 	},
 	{
 		name: "daemon with jobs",
-		budget: 48,
+		budget: 45,
 		long: true,
 		measure: (ctx) =>
 			serve(ctx, ["daemon", "serve"], {
@@ -314,7 +314,7 @@ const CASES: Case[] = [
 	},
 	{
 		name: "prototype serve",
-		budget: 44,
+		budget: 42,
 		long: true,
 		measure: (ctx) => {
 			const page = join(ctx.work, "page.html");
@@ -328,8 +328,8 @@ const CASES: Case[] = [
 			});
 		},
 	},
-	listener("phone listener idle", 62),
-	listener("phone listener burst", 62, burst),
+	listener("phone listener idle", 61),
+	listener("phone listener burst", 60, burst),
 ];
 
 async function floor(root: string): Promise<number> {
