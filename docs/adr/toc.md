@@ -92,6 +92,7 @@ belong with their owning private tooling repository.
 - [0053 — Job sources and credentials](0053-job-sources-and-credentials.md)
 - [0054 — One config.toml for dg](0054-one-config-toml-for-dg.md)
 - [0055 — One dg program with flat commands](0055-one-dg-program-with-flat-commands.md)
+- [0056 — Long-running dg processes run without the JIT](0056-long-running-dg-processes-run-without-the-jit.md)
 
 ### Security
 

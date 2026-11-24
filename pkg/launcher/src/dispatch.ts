@@ -18,6 +18,25 @@ function isOldName(name: string | undefined): name is Exclude<ProgramName, "dg">
 const removed = (name: Exclude<ProgramName, "dg">, args: readonly string[]): string =>
 	`dg: the ${name} command is removed; run ${[NEW_FORM[name], ...args].join(" ")}\n`;
 
+const NO_JIT: readonly (readonly string[])[] = [
+	["agent", "phone", "listen"],
+	["phone", "listen"],
+	["daemon", "serve"],
+	["prototype", "serve"],
+];
+
+const MOUNT_WORD: Partial<Record<ProgramName, string>> = { "dg-agent": "agent", "dg-daemon": "daemon" };
+
+/** Re-executes a long-running command with the JSC JIT off; the pid stays the same. */
+async function reexecWithoutJit(name: ProgramName, args: readonly string[], argv: readonly string[]): Promise<void> {
+	if (process.env.BUN_JSC_useJIT !== undefined || process.platform === "win32" || typeof process.execve !== "function") return;
+	const mount = MOUNT_WORD[name];
+	const words = mount ? [mount, ...args] : args;
+	if (!NO_JIT.some((form) => form.every((word, index) => words[index] === word))) return;
+	const { isCompiled } = await import("@dg/common/node/program");
+	process.execve(process.execPath, [process.argv0, ...(isCompiled() ? [] : [Bun.main]), ...argv], { ...process.env, BUN_JSC_useJIT: "0" });
+}
+
 function invokedName(argv0: string | undefined): string | undefined {
 	return argv0
 		?.split(/[\\/]/)
@@ -36,6 +55,7 @@ export async function dispatch(argv: readonly string[], argv0?: string): Promise
 	const bridge = isOldName(first) || first === "dg";
 	const name: ProgramName = bridge ? (first as ProgramName) : "dg";
 	const args = bridge ? rest : [...argv];
+	await reexecWithoutJit(name, args, argv);
 	if (isOldName(name)) process.stderr.write(removed(name, args));
 	const { normalizeDgHome } = await import("@dg/common/node/dg-paths");
 	normalizeDgHome();

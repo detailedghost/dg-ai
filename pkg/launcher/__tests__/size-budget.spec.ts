@@ -54,7 +54,7 @@ describe("size budget", () => {
 	test("the static import closure of dg.js is only the program-name module and the leaf exit module", () => {
 		const dgSource = readFileSync(join(lib, "dg.js"), "utf8");
 		expect(staticSpecifiers(dgSource)).toEqual([]);
-		const dynamic = [...dgSource.matchAll(DYNAMIC_CHUNK)].map((m) => m[1] as string);
+		const dynamic = [...new Set([...dgSource.matchAll(DYNAMIC_CHUNK)].map((m) => m[1] as string))];
 		const programChunks = dynamic.filter((spec) => /\/program-/.test(spec));
 		const exitChunks = dynamic.filter((spec) => /\/exit-/.test(spec));
 		expect(programChunks).toHaveLength(1);
