@@ -55,12 +55,15 @@ Do not send secrets, tokens, or private file contents through the chat. Never
 print, copy, or send the key. Never send the contents of the phone state
 directory (`~/.local/state/dg/phone/` on Linux).
 
-Read the phone only through the `dg phone` command. Use `messages`,
-`unread`, `watch` and `contacts` to read messages and contacts, and
-`contacts rename` or `contacts remove` to change a contact. Never open
-`phone.db` with `sqlite3` or any other tool. The database also holds the
-keys, so an ad hoc query can expose them. If a contact or message seems
-missing, run `dg phone contacts` and `dg phone messages`, then ask the human.
+Do every phone action through the `dg phone` command: reading, sending,
+contacts, groups, cards, files and the listener. Use `messages`, `unread`,
+`watch` and `contacts` to read, `text` to send, and `contacts rename` or
+`contacts remove` to change a contact. Never open
+`phone.db` with `sqlite3` or any other tool, never edit the files in the
+phone state directory, and never talk to the relays with another Nostr
+client. The database also holds the keys, so an ad hoc query can expose
+them. If a contact or message seems missing, or a verb you need does not
+exist, run `dg phone contacts` and `dg phone messages`, then ask the human.
 
 ## PHI on the phone
 

@@ -491,8 +491,8 @@ and your saved number and listener settings. The only other files are
 **7 days**, then deleted, including unread messages — an agent away for
 more than a week loses what it missed.
 
-Read and change this data only through `dg phone` (`messages`, `unread`,
-`watch`, `contacts`). Never query `phone.db` directly. See
+Do every phone action through `dg phone`, including reads (`messages`,
+`unread`, `watch`, `contacts`). Never query `phone.db` directly. See
 [references/safety.md](references/safety.md).
 
 ## Migration
