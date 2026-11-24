@@ -9,9 +9,10 @@ setDefaultTimeout(120_000);
 const OVERHEAD_BUDGET_MS = 20;
 const RUNS = 7;
 const PROGRAMS = [[], ["dg-skills"], ["dg-agent"], ["dg-daemon"], ["dg"]];
+const KEEP_JIT = { DG_JIT: "1" };
 
 function warmMedian(bun: string, entry: string, args: string[]): number {
-	const spawn = () => run(bun, entry, args);
+	const spawn = () => run(bun, entry, args, KEEP_JIT);
 	expect(spawn().exitCode).toBe(0);
 	const times: number[] = [];
 	for (let i = 0; i < RUNS; i++) {
@@ -22,7 +23,7 @@ function warmMedian(bun: string, entry: string, args: string[]): number {
 	return median(times);
 }
 
-describe("startup budget", () => {
+describe("startup budget of the dispatch code; scripts/ram-budget.ts gates the JIT re-exec on the compiled dg", () => {
 	const { bun, entry } = buildBundle();
 	const scratch = mkdtempSync(join(tmpdir(), "dg-floor-"));
 	const floorEntry = join(scratch, "write-line.js");

@@ -1,4 +1,6 @@
-import { dispatch } from "./dispatch";
+import { dispatch, reexecWithoutJit } from "./dispatch";
+
+await reexecWithoutJit(process.argv.slice(2));
 
 const code = await dispatch(process.argv.slice(2), process.argv0);
 const { exitAfterDrain } = await import("@dg/common/exit");
