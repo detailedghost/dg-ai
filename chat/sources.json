@@ -10,7 +10,7 @@
 		"source": "plugins/dg/skills/proto",
 		"files": {
 			"SKILL.md": "f293107a2754fa0b118bb81fb01e19b975f7bfb951488c69a509ee5bf86f6f51",
-			"references/local-ui.md": "e87290513f44d24de993b259fe6c0a0fcd6e8ada471224a25d56c6387f2cd8e0",
+			"references/local-ui.md": "aa8f48c88d023677a92bca89069cc8cfe70d053fec52ccf803d7908600bd4450",
 			"references/local-plan.md": "53d599bc1f3c5622550f3b3af7952a4f35620c9592ce4d3f234e2c95015747c0",
 			"references/local-logic.md": "4d6194bcc6ecec93c8ee1182a7407875bb69446065978dbdd9610aac751e39cf"
 		}

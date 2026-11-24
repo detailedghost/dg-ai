@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { isAlive } from "@dg/common/node";
 import { z } from "zod";
 import type { Fingerprint } from "./fingerprint";
 
@@ -61,6 +62,7 @@ const record = z.object({
 	skipped: z.string().nullable(),
 	shots: z.string().nullable(),
 	history: z.array(historyEntry),
+	recording: z.object({ pid: z.number(), at: z.string() }).optional(),
 });
 
 export type AcceptedRecord = z.infer<typeof record> & { fingerprint: Fingerprint | null };
@@ -69,10 +71,30 @@ export function parseRecord(raw: unknown): AcceptedRecord {
 	return record.parse(raw) as AcceptedRecord;
 }
 
+export const recordingText = (pid: number): string =>
+	`recording in progress (pid ${pid}); the record is final when that process exits`;
+
+const RECORDING_STALE_MS = 5 * 60_000;
+
+const interruptedText = (value: AcceptedRecord, cause: string): string =>
+	`recording interrupted: ${cause}; run prototype fingerprint ${value.name} --url=<url>`;
+
+function settleRecording(value: AcceptedRecord): AcceptedRecord {
+	if (!value.recording) return value;
+	const age = Date.now() - Date.parse(value.recording.at);
+	const alive = isAlive(value.recording.pid);
+	if (alive && age < RECORDING_STALE_MS) return value;
+	const { recording, ...rest } = value;
+	const cause = alive
+		? `recorder pid ${recording.pid} did not finish within ${RECORDING_STALE_MS / 60_000} minutes`
+		: `recorder pid ${recording.pid} exited before the fingerprint finished`;
+	return rest.fingerprint ? rest : { ...rest, skipped: interruptedText(value, cause) };
+}
+
 /** Read and validate a record file; a missing or malformed file throws with the path named. */
 export function readRecord(path: string): AcceptedRecord {
 	try {
-		return parseRecord(JSON.parse(readFileSync(path, "utf8")));
+		return settleRecording(parseRecord(JSON.parse(readFileSync(path, "utf8"))));
 	} catch (error) {
 		throw new Error(
 			`unreadable accepted record ${path}: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`,
@@ -81,9 +103,9 @@ export function readRecord(path: string): AcceptedRecord {
 }
 
 export function fingerprintSummary(value: AcceptedRecord): string {
-	return value.fingerprint
-		? `${value.fingerprint.readings.length} readings`
-		: `none: ${value.skipped ?? "not recorded"}`;
+	if (value.fingerprint) return `${value.fingerprint.readings.length} readings`;
+	if (value.recording) return recordingText(value.recording.pid);
+	return `none: ${value.skipped ?? "not recorded"}`;
 }
 
 const cell = (text: string): string => text.replace(/\|/g, "\\|");

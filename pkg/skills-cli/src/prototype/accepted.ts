@@ -6,6 +6,7 @@ import {
 	fingerprintSummary,
 	RECORD_FILE,
 	readRecord,
+	recordingText,
 } from "../layout/record";
 import { THEMES, VIEWPORTS, type Capturer } from "../verify/capture-model";
 import { openPlaywrightCapturer } from "../verify/playwright-capturer";
@@ -245,14 +246,10 @@ export async function recordAcceptance(
 		shots: captured.shots ? `${SHOTS_DIR}/` : null,
 		history,
 	});
-	store(
-		target.dir,
-		build({
-			fingerprint: null,
-			skipped: `recording interrupted; run prototype fingerprint ${target.name} --url=<url>`,
-			shots: false,
-		}),
-	);
+	store(target.dir, {
+		...build({ fingerprint: null, skipped: recordingText(process.pid), shots: false }),
+		recording: { pid: process.pid, at: new Date().toISOString() },
+	});
 	const accepted = build(
 		await readLayouts(target.dir, target.name, claim.variant, claim.url, seams, target),
 	);
@@ -324,6 +321,11 @@ export function acceptanceHook(
 	return async (claim) => {
 		try {
 			const target = withStoredAccess(given.dir, given);
+			if (claim.url !== undefined) {
+				process.stderr.write(
+					`prototype: recording the layout fingerprint in ${recordPath(target.dir)}; it is final when this command exits\n`,
+				);
+			}
 			const accepted = await recordAcceptance(target, claim, overrides);
 			const outcome = accepted.fingerprint
 				? fingerprintSummary(accepted)
