@@ -3,7 +3,7 @@ import type { WslNetworkingMode } from "@dg/common/node";
 import type { SessionRegistry } from "../session/registry";
 import { describeKeySource, describeUserVersion } from "../utils/key-source";
 
-export const DG_DAEMON_PACKAGE_VERSION = "7.0.4";
+export const DG_DAEMON_PACKAGE_VERSION = "7.0.5";
 
 export type StatusReport = {
 	daemon: "dg-daemon";

@@ -1,5 +1,11 @@
 # Changelog
 
+## v7.0.5 (2026-11-24)
+
+### Fixes
+
+- perf(launcher): run every dg command without the JIT ([#255](https://github.com/detailedghost/dg-ai/pull/255))
+
 ## v7.0.4 (2026-11-24)
 
 ### Fixes
