@@ -7,7 +7,7 @@ export type JitState = "on" | "off" | "unknown";
 
 const JIT_THREADS = new Set(["JITWorker", "JSCWarmUp"]);
 
-/** JIT state of a live process from its Linux thread names: JSC starts JIT worker threads only when the JIT is on. */
+/** JIT state of a live process, read from its Linux thread names. */
 export function jitState(pid: number, proc = "/proc"): JitState {
 	try {
 		const tasks = readdirSync(join(proc, String(pid), "task"));
@@ -36,9 +36,18 @@ function listenerPid(ctx: DoctorContext): number | undefined {
 	}
 }
 
-type Process = { label: string; pid: number; fix: string };
+type Process = { label: string; pid: number; fix: string; argv: readonly string[] };
 
-/** Reports whether the daemon and the phone listener run without the JIT, as ADR 0057 intends, with their RSS. */
+function cmdlineHas(pid: number, proc: string, words: readonly string[]): boolean {
+	try {
+		const args = readFileSync(join(proc, String(pid), "cmdline"), "utf8").split("\0");
+		return words.every((word) => args.includes(word));
+	} catch {
+		return false;
+	}
+}
+
+/** Reports the JIT state and RSS of the dg daemon and phone listener (ADR 0057). */
 export function longRunningJitCheck(proc = "/proc", platform: NodeJS.Platform = process.platform): DoctorCheck {
 	return {
 		id: "long-running-jit",
@@ -46,14 +55,20 @@ export function longRunningJitCheck(proc = "/proc", platform: NodeJS.Platform = 
 			if (platform !== "linux") return ok("the JIT state is read from /proc on Linux only");
 			const daemon = readPidFile(ctx.paths)?.pid;
 			const listener = listenerPid(ctx);
-			const running: Process[] = [
-				...(daemon === undefined ? [] : [{ label: "daemon", pid: daemon, fix: "dg daemon restart" }]),
-				...(listener === undefined ? [] : [{ label: "phone listener", pid: listener, fix: "dg phone close && dg phone open" }]),
-			].filter((entry) => jitState(entry.pid, proc) !== "unknown");
+			const candidates: Process[] = [
+				...(daemon === undefined ? [] : [{ label: "daemon", pid: daemon, fix: "dg daemon restart", argv: ["serve"] }]),
+				...(listener === undefined
+					? []
+					: [{ label: "phone listener", pid: listener, fix: "dg phone close && dg phone open", argv: ["phone", "listen"] }]),
+			];
+			const running = candidates
+				.filter((entry) => cmdlineHas(entry.pid, proc, entry.argv))
+				.map((entry) => ({ ...entry, state: jitState(entry.pid, proc), rss: rssMb(entry.pid, proc) }))
+				.filter((entry) => entry.state !== "unknown");
 			if (running.length === 0) return ok("no dg daemon or phone listener is running");
-			const detail = running.map((entry) => `${entry.label} pid ${entry.pid}: JIT ${jitState(entry.pid, proc)}, ${rssMb(entry.pid, proc)}`).join("; ");
-			const jitOn = running.find((entry) => jitState(entry.pid, proc) === "on");
-			return jitOn && ctx.env.DG_JIT !== "1" ? warn(detail, jitOn.fix) : ok(detail);
+			const detail = running.map((entry) => `${entry.label} pid ${entry.pid}: JIT ${entry.state}, ${entry.rss}`).join("; ");
+			const fixes = running.filter((entry) => entry.state === "on").map((entry) => entry.fix);
+			return fixes.length > 0 && ctx.env.DG_JIT !== "1" ? warn(detail, fixes.join("; ")) : ok(detail);
 		},
 	};
 }

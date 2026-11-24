@@ -145,8 +145,11 @@ async function once(bin: string, args: string[], ctx: Ctx, opts: { cwd?: string;
 	return { peak, ms: Number.isFinite(rawMs) ? rawMs : 0 };
 }
 
-const quantile = (sorted: number[], fraction: number): number =>
-	sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))] ?? 0;
+function quantile(sorted: number[], fraction: number): number {
+	const value = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
+	if (value === undefined) throw new Error("no samples to take a quantile of");
+	return value;
+}
 
 async function median(run: () => Promise<Sample>, runs: number): Promise<Sample> {
 	const samples: Sample[] = [];
@@ -205,6 +208,8 @@ function run(ctx: Ctx, args: string[], env = ctx.env): string {
 	return result.stdout;
 }
 
+const OTHER_NAMES = ["carol", "dave", "erin"];
+
 async function setupPhone(ctx: Ctx, root: string): Promise<{ phone: Phone; stop: () => void } | undefined> {
 	const certDir = join(root, "tls");
 	mkdirSync(certDir, { recursive: true });
@@ -221,9 +226,9 @@ async function setupPhone(ctx: Ctx, root: string): Promise<{ phone: Phone; stop:
 		relayProcess.once("exit", () => fail(new Error("the test relay exited")));
 	});
 	const side = (name: string, port: number) => ({ ...fencedEnv(join(root, name), port), NODE_EXTRA_CA_CERTS: cert });
-	const others = ["carol", "dave", "erin"].map((name, index) => side(`phone-${name}`, 47_413 + index));
+	const others = OTHER_NAMES.map((name, index) => side(`phone-${name}`, 47_413 + index));
 	const phone: Phone = { relay, a: side("phone-a", 47_411), b: side("phone-b", 47_412), others };
-	const contacts: [string, Record<string, string>][] = [["bob", phone.b], ...others.map((env, index) => [["carol", "dave", "erin"][index] as string, env] as [string, Record<string, string>])];
+	const contacts = [["bob", phone.b] as const, ...OTHER_NAMES.map((name, index) => [name, others[index] ?? phone.b] as const)];
 	try {
 		run(ctx, ["phone", "number", "--as", "alice", "--relay", relay], phone.a);
 		for (const [name, env] of contacts) {

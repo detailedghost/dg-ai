@@ -31,7 +31,8 @@ for short commands.
 - `dispatch()` itself never re-executes, so code that imports it, such as tests, keeps its own process.
 - The compiled dg loads no `.env` and no `bunfig.toml` from the working directory.
 - `scripts/ram-budget.ts --gate` checks peak RSS for each case and the median wall time of each `dg hooks run`
-  case over 50 runs, against a 50 ms budget on the CI runner.
+  case over 50 runs. The 15 ms limit above is the design limit on the added cost; the CI gate checks the total
+  median against a budget set from the CI runner's own measurement, which runs slower than a desktop.
 
 ## Consequences
 

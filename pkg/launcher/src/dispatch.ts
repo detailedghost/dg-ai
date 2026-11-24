@@ -36,9 +36,9 @@ export async function reexecWithoutJit(
 		return;
 	}
 	if (typeof execve !== "function" || env[JIT_ENV] !== undefined || env[KEEP_JIT] === "1") return;
-	const { isCompiled } = await import("@dg/common/node/program");
-	const execArgv = [process.argv0, ...(isCompiled() ? [] : [Bun.main]), ...argv];
 	try {
+		const { isCompiled } = await import("@dg/common/node/program");
+		const execArgv = [process.argv0, ...(isCompiled() ? [] : [Bun.main]), ...argv];
 		execve(process.execPath, execArgv, { ...env, [JIT_ENV]: "0", [REEXEC_MARK]: "1" });
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error);

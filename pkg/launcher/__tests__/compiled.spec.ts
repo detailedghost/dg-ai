@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { COMPILE_TARGETS, compiledAssetName } from "../build";
@@ -98,6 +98,6 @@ describe("compiled dg for this machine", () => {
 		const proc = Bun.spawnSync([program, "config", "path"], { cwd, env, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
 		expect(proc.exitCode).toBe(0);
 		expect(proc.stdout.toString()).not.toContain("from-dotenv");
-		expect(proc.stdout.toString().startsWith(cwd)).toBe(true);
+		expect(proc.stdout.toString().startsWith(realpathSync(cwd))).toBe(true);
 	});
 });

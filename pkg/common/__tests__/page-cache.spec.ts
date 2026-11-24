@@ -8,7 +8,7 @@ mkdirSync(cache, { recursive: true });
 const dir = mkdtempSync(join(cache, "dg-page-cache-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-const hasFincore = process.platform === "linux" && Bun.spawnSync(["fincore", "--version"], { stderr: "ignore" }).exitCode === 0;
+const hasFincore = process.platform === "linux" && Bun.which("fincore") !== null;
 
 function residentBytes(path: string): number {
 	const out = Bun.spawnSync(["fincore", "--bytes", "--noheadings", "--output", "RES", path]).stdout.toString();
