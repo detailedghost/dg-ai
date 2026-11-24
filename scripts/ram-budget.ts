@@ -300,6 +300,7 @@ function daemonReady(ctx: Ctx): Promise<void> {
 }
 
 const HOOK_MS = 50;
+const JOBS = 15;
 
 const HOOK_EDIT = JSON.stringify({
 	hook_event_name: "PostToolUse",
@@ -354,15 +355,17 @@ const CASES: Case[] = [
 		measure: (ctx) => serve(ctx, ["daemon", "serve"], { ready: daemonReady }),
 	},
 	{
-		name: "daemon with jobs",
+		name: "daemon with 15 jobs",
 		budget: 44,
 		long: true,
 		measure: (ctx) =>
 			serve(ctx, ["daemon", "serve"], {
 				ready: daemonReady,
 				drive: async () => {
-					run(ctx, ["job", "add", "--name", "tick", "--cwd", ctx.work, "--every", "1m", "--", "echo", "tick"]);
-					run(ctx, ["job", "start", "tick"]);
+					for (let i = 0; i < JOBS; i++) {
+						run(ctx, ["job", "add", "--name", `tick-${i}`, "--cwd", ctx.work, "--every", "1m", "--", "echo", "tick"]);
+					}
+					run(ctx, ["job", "start", "tick-0"]);
 					for (let i = 0; i < 10; i++) run(ctx, ["job", "list"]);
 				},
 			}),
