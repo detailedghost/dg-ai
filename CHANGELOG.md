@@ -1,5 +1,11 @@
 # Changelog
 
+## v7.0.2 (2026-11-24)
+
+### Fixes
+
+- fix(proto): enforce a waiter, claim signed in, and print the pick first ([#251](https://github.com/detailedghost/dg-ai/pull/251))
+
 ## v7.0.1 (2026-11-22)
 
 ### Fixes
