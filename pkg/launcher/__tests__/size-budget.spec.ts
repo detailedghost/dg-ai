@@ -124,7 +124,7 @@ describe("size budget", () => {
 		for (const sentinel of inbox.sentinels.values()) expect(existsSync(sentinel)).toBe(false);
 	});
 
-	test.each(["skills-cli", "dg-agent", "dg-daemon"])("%s main never imports the @dg/common barrel at run time", (pkg) => {
+	test.each(["skills-cli", "dg-agent", "dg-daemon"])("%s main never imports the @dg/common barrel dynamically", (pkg) => {
 		const source = readFileSync(join(import.meta.dir, "..", "..", pkg, "src", "main.ts"), "utf8");
 		expect(source).not.toMatch(/import\(\s*["']@dg\/common["']\s*\)/);
 	});
@@ -138,7 +138,8 @@ describe("size budget", () => {
 
 	test("dg-agent imports nostr-tools by subpath, so the nip04 AES tables are never built", () => {
 		const src = join(import.meta.dir, "..", "..", "dg-agent", "src");
-		const offenders = walkFiles(src).filter((file) => file.endsWith(".ts") && /(?:from|import)\s*\(?\s*["']nostr-tools["']/.test(readFileSync(file, "utf8")));
+		const indexImport = /(?:from|import)\s*\(?\s*["']nostr-tools["']/;
+		const offenders = walkFiles(src).filter((file) => file.endsWith(".ts") && indexImport.test(readFileSync(file, "utf8")));
 		expect(offenders).toEqual([]);
 	});
 });

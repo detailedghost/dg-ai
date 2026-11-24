@@ -24,8 +24,8 @@ Topic: Platform
 - `dispatch` re-executes `dg agent phone listen`, `dg phone listen`, `dg daemon serve` and `dg prototype serve`
   (and the bridge forms `dg dg-agent phone listen` and `dg dg-daemon serve`) once through `process.execve` with
   `BUN_JSC_useJIT=0`. `execve` keeps the pid, so pid files, service managers and claims see one process.
-- The re-executed process removes `BUN_JSC_useJIT` from its environment at start, so the programs it spawns (an
-  `--on-message` hook, a job) keep their own JIT. If `execve` throws, dg prints why and runs with the JIT.
+- When dg set `BUN_JSC_useJIT=0` itself, the re-executed process removes it from its environment at start, so the
+  programs it spawns (an `--on-message` hook, a job) keep their own JIT. A value the caller set is never removed. If `execve` throws, dg prints why and runs with the JIT.
 - A `BUN_JSC_useJIT` that the caller already set is kept, so `BUN_JSC_useJIT=1` turns the JIT back on.
 - Windows has no `execve`, so long-running processes there keep the JIT.
 - Short commands keep the JIT. Re-executing every command costs a second runtime start on each hook call.
