@@ -7,6 +7,7 @@ import {
 	writeFileSync,
 	writeSync,
 } from "node:fs";
+import { exitAfterDrain } from "@dg/common/async";
 import type { SentinelPaths } from "./paths";
 
 export const EXIT_PROTOTYPE_TIMEOUT = 124;
@@ -183,7 +184,7 @@ async function asWaiter<T>(paths: SentinelPaths, block: () => Promise<T>): Promi
 	};
 	const onSignal = (signal: NodeJS.Signals) => {
 		release();
-		process.exit(signal === "SIGINT" ? 130 : 143);
+		void exitAfterDrain(signal === "SIGINT" ? 130 : 143);
 	};
 	process.on("exit", release);
 	process.once("SIGINT", onSignal);
