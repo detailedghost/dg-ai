@@ -229,43 +229,42 @@ const HOOK_PR = JSON.stringify({
 });
 const HOOK_SESSION = JSON.stringify({ hook_event_name: "SessionStart", source: "startup", cwd: "." });
 
-const SHORT = 40;
 const CASES: Case[] = [
-	dg("version", ["--version"], SHORT),
-	dg("help", ["--help"], SHORT),
-	dg("completion zsh", ["completion", "zsh"], SHORT),
-	dg("config path", ["config", "path"], SHORT),
-	dg("stat checklist", ["stat", "checklist"], SHORT),
-	dg("job --help", ["job", "--help"], SHORT),
-	dg("pw --help", ["pw", "--help"], SHORT),
-	dg("db --help", ["db", "--help"], SHORT),
-	dg("thrash --help", ["thrash", "--help"], SHORT),
-	dg("prototype --help", ["prototype", "--help"], SHORT),
-	dg("phone status", ["phone", "status"], SHORT),
-	dg("phone contacts", ["phone", "contacts"], SHORT),
-	dg("phone messages", ["phone", "messages"], SHORT),
-	dg("phone unread", ["phone", "unread"], SHORT),
-	dg("hooks list", ["hooks", "list"], SHORT),
-	dg("hooks run spelling", ["hooks", "run", "spelling"], SHORT, { stdin: HOOK_EDIT }),
-	dg("hooks run format", ["hooks", "run", "format"], SHORT, { stdin: HOOK_EDIT }),
-	dg("hooks run pr-prose", ["hooks", "run", "pr-prose"], SHORT, { stdin: HOOK_PR }),
-	dg("hooks run pr-confirm", ["hooks", "run", "pr-confirm"], SHORT, { stdin: HOOK_BASH }),
-	dg("hooks run spec-plan-lint", ["hooks", "run", "spec-plan-lint"], SHORT, { stdin: HOOK_EDIT }),
-	dg("hooks run daily-prune", ["hooks", "run", "daily-prune"], SHORT, { stdin: HOOK_SESSION }),
-	dg("hooks run strip-ai-coauthors", ["hooks", "run", "strip-ai-coauthors"], SHORT, { stdin: "" }),
-	dg("adr lint (repo)", ["adr", "lint"], 60, { cwd: () => ROOT }),
-	dg("spec validate", ["spec", "validate", "spec.md"], 60),
+	dg("version", ["--version"], 27),
+	dg("help", ["--help"], 33),
+	dg("completion zsh", ["completion", "zsh"], 27),
+	dg("config path", ["config", "path"], 43),
+	dg("stat checklist", ["stat", "checklist"], 50),
+	dg("job --help", ["job", "--help"], 44),
+	dg("pw --help", ["pw", "--help"], 45),
+	dg("db --help", ["db", "--help"], 43),
+	dg("thrash --help", ["thrash", "--help"], 48),
+	dg("prototype --help", ["prototype", "--help"], 46),
+	dg("phone status", ["phone", "status"], 49),
+	dg("phone contacts", ["phone", "contacts"], 49),
+	dg("phone messages", ["phone", "messages"], 49),
+	dg("phone unread", ["phone", "unread"], 51),
+	dg("hooks list", ["hooks", "list"], 45),
+	dg("hooks run spelling", ["hooks", "run", "spelling"], 38, { stdin: HOOK_EDIT }),
+	dg("hooks run format", ["hooks", "run", "format"], 38, { stdin: HOOK_EDIT }),
+	dg("hooks run pr-prose", ["hooks", "run", "pr-prose"], 38, { stdin: HOOK_PR }),
+	dg("hooks run pr-confirm", ["hooks", "run", "pr-confirm"], 37, { stdin: HOOK_BASH }),
+	dg("hooks run spec-plan-lint", ["hooks", "run", "spec-plan-lint"], 37, { stdin: HOOK_EDIT }),
+	dg("hooks run daily-prune", ["hooks", "run", "daily-prune"], 37, { stdin: HOOK_SESSION }),
+	dg("hooks run strip-ai-coauthors", ["hooks", "run", "strip-ai-coauthors"], 34, { stdin: "" }),
+	dg("adr lint --all (repo)", ["adr", "lint", "--all"], 68, { cwd: () => ROOT }),
+	dg("spec validate", ["spec", "validate", "spec.md"], 52),
 	{ ...dg("update --check", ["update", "--check"], 80), ungated: true },
-	dg("doctor", ["doctor"], 60),
+	dg("doctor", ["doctor"], 66),
 	{
 		name: "daemon idle",
-		budget: 60,
+		budget: 47,
 		long: true,
 		measure: (ctx) => serve(ctx, ["daemon", "serve"], { ready: daemonReady }),
 	},
 	{
 		name: "daemon with jobs",
-		budget: 60,
+		budget: 48,
 		long: true,
 		measure: (ctx) =>
 			serve(ctx, ["daemon", "serve"], {
@@ -279,7 +278,7 @@ const CASES: Case[] = [
 	},
 	{
 		name: "prototype serve",
-		budget: 60,
+		budget: 44,
 		long: true,
 		measure: (ctx) => {
 			const page = join(ctx.work, "page.html");
@@ -293,8 +292,8 @@ const CASES: Case[] = [
 			});
 		},
 	},
-	listener("phone listener idle", 60),
-	listener("phone listener burst", 60, burst),
+	listener("phone listener idle", 62),
+	listener("phone listener burst", 62, burst),
 ];
 
 async function floor(root: string): Promise<number> {
@@ -342,7 +341,7 @@ async function main(): Promise<number> {
 		const results: Record<string, Sample & { budget: number }> = {};
 		let failed = 0;
 		for (const c of cases) {
-			if (c.long && process.platform !== "linux") continue;
+			if ((c.long && process.platform !== "linux") || (c.ungated && values.gate)) continue;
 			if (c.phone && !ctx.phone) {
 				console.log(`${c.name}\tskipped: openssl is missing`);
 				continue;

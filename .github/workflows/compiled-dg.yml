@@ -7,7 +7,11 @@ on:
       - pkg/launcher/**
       - pkg/dg/**
       - pkg/common/**
-      - pkg/skills-cli/package.json
+      - pkg/skills-cli/**
+      - pkg/dg-agent/**
+      - pkg/dg-daemon/**
+      - scripts/ram-budget.ts
+      - scripts/ram-budget/**
       - bun.lock
       - .github/actions/smoke-compiled-dg/**
       - .github/workflows/compiled-dg.yml
@@ -46,6 +50,9 @@ jobs:
       - name: Build the compiled dg for linux-x64 and windows-x64
         working-directory: pkg/launcher
         run: bun run build.ts --outdir dist --compiled linux-x64 --compiled windows-x64
+
+      - name: Check the peak RSS of each dg process against its budget
+        run: bun scripts/ram-budget.ts --dg pkg/launcher/dist/dg-linux-x64 --gate
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
