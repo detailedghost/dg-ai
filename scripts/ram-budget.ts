@@ -33,7 +33,10 @@ const { values } = parseArgs({
 		env: { type: "string", multiple: true, default: [] },
 	},
 });
-const USAGE = "usage: bun scripts/ram-budget.ts --dg <compiled dg> [--gate] [--only a,b] [--idle s] [--runs n] [--env K=V] [--json file]";
+const USAGE = [
+	"usage: bun scripts/ram-budget.ts --dg <compiled dg>",
+	"  [--gate] [--only a,b] [--idle s] [--runs n] [--env K=V] [--json file]",
+].join("\n");
 
 function usageError(detail: string): never {
 	console.error(`${detail}\n${USAGE}`);
@@ -42,7 +45,9 @@ function usageError(detail: string): never {
 
 function wholeNumber(raw: string | undefined, flag: string, min: number): number {
 	const value = Number(raw);
-	if (!Number.isInteger(value) || value < min) usageError(`${flag} must be a whole number of ${min} or more, got "${raw}"`);
+	if (!Number.isInteger(value) || value < min) {
+		usageError(`${flag} must be a whole number of ${min} or more, got "${raw}"`);
+	}
 	return value;
 }
 
@@ -133,8 +138,10 @@ async function once(bin: string, args: string[], ctx: Ctx, opts: { cwd?: string;
 	const output = (await new Response(child.stdout).text()).trim();
 	const [peak, ms] = output.split(" ").map(Number);
 	const code = await child.exited;
-	if (code !== 0 || !Number.isFinite(peak) || !peak) throw new Error(`could not measure dg ${args.join(" ")}: python exited ${code}, printed "${output}"`);
-	return { peak, ms: ms ?? 0 };
+	if (code !== 0 || !peak) {
+		throw new Error(`could not measure dg ${args.join(" ")}: python exited ${code}, printed "${output}"`);
+	}
+	return { peak, ms: Number.isFinite(ms) ? (ms as number) : 0 };
 }
 
 async function median(run: () => Promise<Sample>): Promise<Sample> {

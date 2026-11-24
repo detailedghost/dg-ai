@@ -29,9 +29,13 @@ function matches(filter: Filter, event: NostrEvent): boolean {
 	);
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function isEvent(value: unknown): value is NostrEvent {
-	const event = value as NostrEvent;
-	return typeof event === "object" && event !== null && typeof event.id === "string" && Array.isArray(event.tags);
+	if (!isObject(value) || typeof value.id !== "string" || !Array.isArray(value.tags)) return false;
+	return value.tags.every((tag) => Array.isArray(tag) && tag.every((part) => typeof part === "string"));
 }
 
 function publish(ws: Socket, event: NostrEvent): void {
@@ -65,10 +69,13 @@ function onMessage(ws: Socket, raw: string | Buffer): void {
 		ws.send(JSON.stringify(["NOTICE", "invalid: not JSON"]));
 		return;
 	}
-	if (!Array.isArray(message)) return;
+	if (!Array.isArray(message)) {
+		ws.send(JSON.stringify(["NOTICE", "invalid: not an array"]));
+		return;
+	}
 	const [verb, first, ...rest] = message as [unknown, unknown, ...unknown[]];
 	if (verb === "EVENT" && isEvent(first)) publish(ws, first);
-	else if (verb === "REQ" && typeof first === "string") subscribe(ws, first, rest as Filter[]);
+	else if (verb === "REQ" && typeof first === "string") subscribe(ws, first, rest.filter(isObject) as Filter[]);
 	else if (verb === "CLOSE") unsubscribe(ws, first);
 	else ws.send(JSON.stringify(["NOTICE", "invalid: unknown message"]));
 }
