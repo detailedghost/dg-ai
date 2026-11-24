@@ -5,20 +5,19 @@ import { acceptanceHook, refingerprint } from "../src/prototype/accepted";
 import { sentinelPaths } from "../src/prototype/paths";
 import { confirm } from "../src/prototype/sentinels";
 import { readSignIn, writeSignIn } from "../src/prototype/signin";
-import type { Capturer, CaptureRequest } from "../src/verify/capture-model";
+import type { CaptureRequest } from "../src/verify/capture-model";
 import { verifyBrowserAvailable } from "../src/verify/playwright-capturer";
+import { httpCapturer, startSignInApp } from "./fixtures/prototype/signin-app";
 import { makeTempDir } from "./git-repo-fixtures";
 import { collectRun, type SpecRun } from "./spec-fixtures";
 
 const ENTRY = join(import.meta.dir, "../src/index.ts");
 const SKILLS = join(import.meta.dir, "../../../plugins/dg/skills");
 const browser = process.env.PW_E2E === "1" && verifyBrowserAvailable();
-const ROOT = '[data-verify-root="demo"]';
-const SESSION = "dummy-session=dummy-value";
 
 let root: string;
 let project: string;
-let app: ReturnType<typeof Bun.serve> | undefined;
+let stopApp: (() => void) | undefined;
 const children: Array<{ kill(): void }> = [];
 
 setDefaultTimeout(60_000);
@@ -31,8 +30,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	app?.stop(true);
-	app = undefined;
+	stopApp?.();
+	stopApp = undefined;
 	for (const child of children.splice(0)) child.kill();
 	rmSync(root, { recursive: true, force: true });
 });
@@ -59,52 +58,9 @@ function cli(args: string[], extra: Record<string, string> = {}) {
 const sandbox = (name = "demo") => join(project, ".agents", "prototype", name);
 
 function startApp(): string {
-	app = Bun.serve({
-		hostname: "127.0.0.1",
-		port: 0,
-		fetch(req) {
-			const url = new URL(req.url);
-			const html = (body: string) => new Response(body, { headers: { "Content-Type": "text/html; charset=utf-8" } });
-			if (url.pathname === "/prototype-signin")
-				return new Response(null, { status: 302, headers: { Location: "/", "Set-Cookie": `${SESSION}; Path=/; HttpOnly` } });
-			if (url.pathname === "/Login/SignIn") return html("<!doctype html><html lang=\"en\"><body><p>Sign in</p></body></html>");
-			if (!(req.headers.get("cookie") ?? "").includes(SESSION))
-				return new Response(null, { status: 302, headers: { Location: `/Login/SignIn?ReturnUrl=${encodeURIComponent(url.pathname)}` } });
-			return html(
-				'<!doctype html><html lang="en"><head><title>Schedule</title></head><body><main data-verify-root="demo"><button type="button">Create shift</button></main></body></html>',
-			);
-		},
-	});
-	return `http://127.0.0.1:${app.port}`;
-}
-
-function httpCapturer(seen: CaptureRequest[]): () => Promise<Capturer> {
-	return async () => ({
-		async shot(request) {
-			seen.push(request);
-			let cookie = "";
-			if (request.signIn) {
-				const signedIn = await fetch(request.signIn, { redirect: "manual" });
-				cookie = (signedIn.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
-			}
-			const page = await fetch(request.url, { redirect: "manual", headers: cookie ? { cookie } : {} });
-			const location = page.headers.get("location");
-			const finalUrl = location ? new URL(location, request.url).toString() : request.url;
-			const body = location ? "" : await page.text();
-			return {
-				png: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
-				html: body,
-				finalUrl,
-				menuFound: false,
-				scrolled: false,
-				engine: "playwright",
-				fingerprint: body.includes("data-verify-root")
-					? { root: { x: 0, y: 0, w: request.width, h: 100 }, controls: [], themeApplied: request.theme }
-					: { error: `root: found 0 visible ${ROOT}` },
-			};
-		},
-		async close() {},
-	});
+	const started = startSignInApp();
+	stopApp = started.stop;
+	return started.origin;
 }
 
 describe("stored sign-in", () => {

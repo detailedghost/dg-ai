@@ -507,7 +507,8 @@ describe("recordAcceptance", () => {
 			source: "browser",
 			url: "http://127.0.0.1:4321/",
 			fingerprint: null,
-			skipped: "recording interrupted; run prototype fingerprint demo --url=<url>",
+			skipped: `recording in progress (pid ${process.pid}); the record is final when prototype wait exits`,
+			recording: { pid: process.pid },
 		});
 		expect(stored.history).toHaveLength(1);
 	});
