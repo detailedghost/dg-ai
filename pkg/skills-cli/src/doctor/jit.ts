@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { readPidFile } from "@dg/common/node/pidfile";
 import { type CheckResult, type DoctorCheck, type DoctorContext, ok, warn } from "./types";
 
@@ -41,7 +41,8 @@ type Process = { label: string; pid: number; fix: string; argv: readonly string[
 function cmdlineHas(pid: number, proc: string, words: readonly string[]): boolean {
 	try {
 		const args = readFileSync(join(proc, String(pid), "cmdline"), "utf8").split("\0");
-		return words.every((word) => args.includes(word));
+		const program = basename(args[0] ?? "").replace(/\.exe$/i, "");
+		return program === "dg" && words.every((word) => args.includes(word));
 	} catch {
 		return false;
 	}

@@ -66,6 +66,18 @@ describe("long-running JIT check", () => {
 		expect(result.fix).toBe("dg daemon restart");
 	});
 
+	test("lists both restart commands when both processes have the JIT on", async () => {
+		const dir = join(root, "both");
+		const proc = join(dir, "proc");
+		mkdirSync(join(dir, "phone"), { recursive: true });
+		writeFileSync(join(dir, "daemon.pid"), JSON.stringify({ pid: 800, port: 1, instanceId: "x", versions: { package: "1", protocol: 1 } }));
+		writeFileSync(join(dir, "phone", "listener.pid"), JSON.stringify({ pid: 900, since: 0, hook: null }));
+		fakeProcess(proc, 800, ["dg", "JITWorker"], 55_000);
+		fakeProcess(proc, 900, ["dg", "JITWorker"], 70_000, ["/home/u/.local/share/dg/bin/current/dg", "agent", "phone", "listen"]);
+		const result = await longRunningJitCheck(proc, "linux").run(context(dir));
+		expect(result.fix).toBe("dg daemon restart; dg phone close && dg phone open");
+	});
+
 	test("DG_JIT=1 turns the warning into ok", async () => {
 		const dir = join(root, "kept");
 		const proc = join(dir, "proc");
@@ -81,7 +93,7 @@ describe("long-running JIT check", () => {
 		const proc = join(dir, "proc");
 		mkdirSync(join(dir, "phone"), { recursive: true });
 		writeFileSync(join(dir, "daemon.pid"), JSON.stringify({ pid: 700, port: 1, instanceId: "x", versions: { package: "1", protocol: 1 } }));
-		fakeProcess(proc, 700, ["firefox", "JITWorker"], 300_000, ["/usr/bin/firefox"]);
+		fakeProcess(proc, 700, ["bun", "JITWorker"], 300_000, ["/usr/bin/bun", "serve"]);
 		const result = await longRunningJitCheck(proc, "linux").run(context(dir));
 		expect(result).toEqual({ status: "ok", detail: "no dg daemon or phone listener is running" });
 	});
