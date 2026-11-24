@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { COMPILE_TARGETS, compiledAssetName } from "../build";
@@ -16,13 +16,14 @@ const runtime = JSON.parse(readFileSync(join(import.meta.dir, "..", "runtime.jso
 const scratch = mkdtempSync(join(tmpdir(), "dg-compiled-run-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
-function run(program: string, args: string[]) {
+function run(program: string, args: string[], cwd?: string) {
 	const home = mkdtempSync(join(scratch, "home-"));
 	mkdirSync(join(home, "home"));
 	const proc = Bun.spawnSync([program, ...args], {
 		stdout: "pipe",
 		stderr: "pipe",
 		stdin: "ignore",
+		cwd,
 		env: { ...process.env, DG_HOME: join(home, "dg"), HOME: join(home, "home"), USERPROFILE: join(home, "home") },
 	});
 	return { stdout: proc.stdout.toString(), stderr: proc.stderr.toString(), exitCode: proc.exitCode ?? -1 };
@@ -78,5 +79,24 @@ describe("compiled dg for this machine", () => {
 
 	test("stays under 100 MB", () => {
 		expect(statSync(program).size).toBeLessThan(100 * MB);
+	});
+
+	test("runs no preload from a bunfig.toml in the working directory", () => {
+		const cwd = mkdtempSync(join(scratch, "cwd-"));
+		const marker = join(cwd, "preload-ran");
+		writeFileSync(join(cwd, "preload.ts"), `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "");\n`);
+		writeFileSync(join(cwd, "bunfig.toml"), 'preload = ["./preload.ts"]\n');
+		expect(run(program, ["--version"], cwd).exitCode).toBe(0);
+		expect(existsSync(marker)).toBe(false);
+	});
+
+	test("loads no .env from the working directory", () => {
+		const cwd = mkdtempSync(join(scratch, "cwd-"));
+		writeFileSync(join(cwd, ".env"), `DG_HOME=${join(cwd, "from-dotenv")}\n`);
+		const env: Record<string, string | undefined> = { ...process.env, HOME: cwd, USERPROFILE: cwd };
+		delete env.DG_HOME;
+		const proc = Bun.spawnSync([program, "config", "path"], { cwd, env, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+		expect(proc.exitCode).toBe(0);
+		expect(proc.stdout.toString()).not.toContain("from-dotenv");
 	});
 });
