@@ -1,5 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
-import { finalizeEvent, generateSecretKey, getEventHash, getPublicKey, type NostrEvent, nip17, nip19, nip44, nip59 } from "nostr-tools";
+import * as nip17 from "nostr-tools/nip17";
+import * as nip19 from "nostr-tools/nip19";
+import * as nip44 from "nostr-tools/nip44";
+import * as nip59 from "nostr-tools/nip59";
+import { finalizeEvent, generateSecretKey, getEventHash, getPublicKey, type NostrEvent } from "nostr-tools/pure";
 import type { AbstractSimplePool, SubCloser } from "nostr-tools/pool";
 import { LOOKBACK_SECONDS, MESSAGE_TTL_SECONDS } from "./db";
 import { admitInPasses } from "./admit-pass";

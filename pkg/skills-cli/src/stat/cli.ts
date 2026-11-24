@@ -19,10 +19,6 @@ import {
 	updateChecklist,
 } from "./index";
 import { runSubtree } from "../utils/lazy-command";
-import { listJobs } from "../bg/jobs";
-import { fileMtime, findStalled, lastLogLine } from "./loops";
-import { archiveDone } from "./archive";
-import { renderReap, runReap } from "./reap-run";
 
 function minutes(value: string | undefined, name: string, fallback: number): number {
 	return parseOptionalFlag(wholeNumber(0), value, name) ?? fallback;
@@ -172,6 +168,7 @@ export function registerStat(program: Command): void {
 		.option("--dry-run", "report what would move and write nothing")
 		.option("--json", "print the report as JSON")
 		.action(async (options: { dryRun?: boolean; json?: boolean }) => {
+			const { archiveDone } = await import("./archive");
 			const report = await archiveDone(checklistPath(), !!options.dryRun);
 			if (options.json) {
 				console.log(JSON.stringify(report));
@@ -216,6 +213,7 @@ function registerReap(stat: Command): void {
 					console.log(options.json ? JSON.stringify({ supported: false }) : "stat reap: not supported on Windows");
 					return;
 				}
+				const { renderReap, runReap } = await import("./reap-run");
 				const report = await runReap({
 					cwd: options.cwd ?? process.cwd(),
 					dryRun: !!options.dryRun,
@@ -240,7 +238,8 @@ function registerLoops(stat: Command): void {
 		.option("--cwd <dir>", "only jobs started in this directory or below (default: the current directory)")
 		.option("--stall <minutes>", "flag a job whose log has not grown for this long (default 20)")
 		.option("--max-age <minutes>", "flag a job running longer than this (default 180)")
-		.action((options: { json?: boolean; cwd?: string; stall?: string; maxAge?: string }) => {
+		.action(async (options: { json?: boolean; cwd?: string; stall?: string; maxAge?: string }) => {
+			const [{ listJobs }, { fileMtime, findStalled, lastLogLine }] = await Promise.all([import("../bg/jobs"), import("./loops")]);
 			const stalled = findStalled(listJobs(), {
 				cwd: path.resolve(options.cwd ?? process.cwd()),
 				now: Date.now(),

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { buildBundle, cleanupTraces, dirBytes, run, traceChunks } from "./bundle-fixtures";
+import { buildBundle, cleanupTraces, dirBytes, run, traceChunks, walkFiles } from "./bundle-fixtures";
 
 setDefaultTimeout(120_000);
 
@@ -54,7 +54,7 @@ describe("size budget", () => {
 	test("the static import closure of dg.js is only the program-name module and the leaf exit module", () => {
 		const dgSource = readFileSync(join(lib, "dg.js"), "utf8");
 		expect(staticSpecifiers(dgSource)).toEqual([]);
-		const dynamic = [...dgSource.matchAll(DYNAMIC_CHUNK)].map((m) => m[1] as string);
+		const dynamic = [...new Set([...dgSource.matchAll(DYNAMIC_CHUNK)].map((m) => m[1] as string))];
 		const programChunks = dynamic.filter((spec) => /\/program-/.test(spec));
 		const exitChunks = dynamic.filter((spec) => /\/exit-/.test(spec));
 		expect(programChunks).toHaveLength(1);
@@ -122,5 +122,24 @@ describe("size budget", () => {
 		expect(inbox.sentinels.size).toBeGreaterThan(0);
 		run(bun, inbox.entry, ["dg-agent", "phone", "status"], { DG_HOME: inbox.dir });
 		for (const sentinel of inbox.sentinels.values()) expect(existsSync(sentinel)).toBe(false);
+	});
+
+	test.each(["skills-cli", "dg-agent", "dg-daemon"])("%s main never imports the @dg/common barrel dynamically", (pkg) => {
+		const source = readFileSync(join(import.meta.dir, "..", "..", pkg, "src", "main.ts"), "utf8");
+		expect(source).not.toMatch(/import\(\s*["']@dg\/common["']\s*\)/);
+	});
+
+	test("dg hooks run, which runs on every agent tool call, loads neither the commander command table nor the layout pre-action", () => {
+		const traced = traceChunks(/^chunks\/(register-all|layout-preaction)$/);
+		expect(traced.sentinels.size).toBe(2);
+		run(bun, traced.entry, ["hooks", "run", "spelling"], { DG_HOME: traced.dir });
+		for (const [name, sentinel] of traced.sentinels) expect({ name, loaded: existsSync(sentinel) }).toEqual({ name, loaded: false });
+	});
+
+	test("dg-agent imports nostr-tools by subpath, so the nip04 AES tables are never built", () => {
+		const src = join(import.meta.dir, "..", "..", "dg-agent", "src");
+		const indexImport = /(?:from|import)\s*\(?\s*["']nostr-tools["']/;
+		const offenders = walkFiles(src).filter((file) => file.endsWith(".ts") && indexImport.test(readFileSync(file, "utf8")));
+		expect(offenders).toEqual([]);
 	});
 });

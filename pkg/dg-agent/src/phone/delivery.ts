@@ -1,4 +1,5 @@
-import { SimplePool, verifyEvent, type NostrEvent } from "nostr-tools";
+import { SimplePool } from "nostr-tools/pool";
+import { type NostrEvent, verifyEvent } from "nostr-tools/pure";
 import { isCardRelays } from "./card";
 import type { PhonePool } from "./chat";
 

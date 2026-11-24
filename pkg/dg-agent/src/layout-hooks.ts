@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { LayoutHooks, StopResult } from "@dg/common/node/layout";
-import { nip19 } from "nostr-tools";
+import * as nip19 from "nostr-tools/nip19";
 import { isOurListener as defaultIsOurListener, readListenerPid } from "./phone/listener";
 
 export type PhoneLayoutDeps = {

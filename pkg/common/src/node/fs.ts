@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
 	chmodSync,
 	copyFileSync,
@@ -67,7 +66,7 @@ export function writeFileAtomic(
 	mode?: number,
 	rename: typeof renameSync = renameSync,
 ): void {
-	const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
+	const tmp = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
 	try {
 		writeFileSync(tmp, data, mode === undefined ? undefined : { mode });
 		if (mode !== undefined) chmodSync(tmp, mode);

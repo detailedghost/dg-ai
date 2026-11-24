@@ -1,5 +1,4 @@
 import { dlopen, read as readPointer } from "bun:ffi";
-import { randomUUID } from "node:crypto";
 import {
 	closeSync,
 	fstatSync,
@@ -226,7 +225,7 @@ function restoreClaim(claim: string, lock: string): void {
 
 /** Renames the lock aside, then judges the inode that was actually taken, restoring it if a winner's lock replaced the stale one. */
 function reclaimStaleLock(lock: string, observedRaw: string): boolean {
-	const claim = `${lock}.${process.pid}.${randomUUID()}.stale`;
+	const claim = `${lock}.${process.pid}.${crypto.randomUUID()}.stale`;
 	try {
 		renameSync(lock, claim);
 	} catch (error) {
@@ -259,7 +258,7 @@ function releaseRenameLock(lock: string): void {
 		return;
 	}
 	if (raw !== mine) return;
-	const claim = `${lock}.${process.pid}.${randomUUID()}.release`;
+	const claim = `${lock}.${process.pid}.${crypto.randomUUID()}.release`;
 	try {
 		renameSync(lock, claim);
 	} catch (error) {

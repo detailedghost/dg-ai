@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, isAlive, writeFileAtomic } from "@dg/common/node";
 import { launcherCommand } from "@dg/common/node/program";
-import { nip19 } from "nostr-tools";
+import * as nip19 from "nostr-tools/nip19";
 import { DG_AGENT_PACKAGE_VERSION } from "../version";
 import {
 	addBounded,

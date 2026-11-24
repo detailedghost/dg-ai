@@ -1,7 +1,7 @@
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
 import type { DgPaths } from "@dg/common/node";
-import { nip19 } from "nostr-tools";
+import * as nip19 from "nostr-tools/nip19";
 import { type ControlRumor, createReplayGuard, FILE_REQUEST_KIND, type KeyEntry, type PhonePool, publish, shouldSaveOutgoing, wrapTagged } from "./chat";
 import { OUTBOX_DIR, type PhoneDb } from "./db";
 import { MAX_IMAGE_BYTES } from "./image";

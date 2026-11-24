@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { debuglog } from "node:util";
 import { DgCliError, isRecord } from "@dg/common";
-import { getPublicKey, nip19 } from "nostr-tools";
+import * as nip19 from "nostr-tools/nip19";
+import { getPublicKey } from "nostr-tools/pure";
 import {
 	FILE_REQUEST_KIND,
 	type ControlRumor,

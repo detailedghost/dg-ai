@@ -4,11 +4,14 @@ import type { ConnectionConfig } from "../credentials";
 import type { QueryResult } from "../output";
 import type { DbSchemaForeignKey, DbSchemaResult, DbSchemaTable } from "../types";
 
-let snowflakeSdk: typeof import("snowflake-sdk") | undefined;
+type SnowflakeSdk = typeof import("snowflake-sdk");
 
-function getSnowflakeSdk(): typeof import("snowflake-sdk") {
+let snowflakeSdk: SnowflakeSdk | undefined;
+
+async function getSnowflakeSdk(): Promise<SnowflakeSdk> {
 	if (!snowflakeSdk) {
-		snowflakeSdk = require("snowflake-sdk") as typeof import("snowflake-sdk");
+		const mod = (await import("snowflake-sdk")) as { default?: SnowflakeSdk } & SnowflakeSdk;
+		snowflakeSdk = mod.default ?? mod;
 		snowflakeSdk.configure({ logLevel: "OFF" });
 	}
 	return snowflakeSdk;
@@ -116,7 +119,7 @@ export function buildConnectionOptions(
 export async function sfConnect(
 	config: ConnectionConfig,
 ): Promise<SfConnection> {
-	const connection = getSnowflakeSdk().createConnection(
+	const connection = (await getSnowflakeSdk()).createConnection(
 		buildConnectionOptions(config),
 	) as unknown as SfConnection;
 	return connectAsync(connection);

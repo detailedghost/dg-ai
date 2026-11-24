@@ -1,5 +1,4 @@
 import { escapeRegExp, isRecord } from "@dg/common";
-import { parseDocument } from "yaml";
 
 /** Split text into awk records: no phantom record after a final newline. */
 export function records(text: string): string[] {
@@ -39,12 +38,18 @@ export type YamlResult =
 	| { ok: true; value: unknown }
 	| { ok: false; error: string };
 
+const DOCUMENT_START = /^(?:---(?:[ \t]|\r?$)|\.\.\.[ \t\r]*\n[\s\S]*\S)/m;
+const LEADING_LINES = /^(?:[ \t\r]*(?:[#%][^\n]*)?\n)*---[^\n]*(?:\n|$)/;
+
 export function parseYaml(text: string): YamlResult {
-	const doc = parseDocument(text, { uniqueKeys: false });
-	const [first] = doc.errors;
-	return first === undefined
-		? { ok: true, value: doc.toJS() }
-		: { ok: false, error: first.message };
+	if (DOCUMENT_START.test(text.replace(LEADING_LINES, ""))) {
+		return { ok: false, error: "front matter holds more than one YAML document" };
+	}
+	try {
+		return { ok: true, value: Bun.YAML.parse(text) };
+	} catch (error) {
+		return { ok: false, error: error instanceof Error ? error.message : String(error) };
+	}
 }
 
 /** Parsed front matter as a record; empty when absent, malformed, or not a mapping. */

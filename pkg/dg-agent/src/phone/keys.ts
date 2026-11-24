@@ -1,6 +1,7 @@
 import { DgCliError, describeError } from "@dg/common";
 import { type CredentialClient, createCredentialClient, type DgPaths, resolveCliSession } from "@dg/common/node";
-import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
+import * as nip19 from "nostr-tools/nip19";
+import { generateSecretKey, getPublicKey } from "nostr-tools/pure";
 import type { KeyEntry } from "./chat";
 import type { PhoneDb } from "./db";
 import { numberKeyId } from "./store";

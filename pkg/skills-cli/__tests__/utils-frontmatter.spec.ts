@@ -58,4 +58,62 @@ describe("splitDocument with CRLF", () => {
 		expect(utils.frontOf("---\r\ncovers: [a]\r\n---\r\nBody\r\n")).toEqual({ covers: ["a"] });
 		expect(split.body).toBe("Body\r\n");
 	});
+
+	describe("parseYaml keeps the yaml-package rules it replaced", () => {
+		test("a repeated key keeps the last value", () => {
+			expect(utils.parseYaml("a: 1\na: 2")).toEqual({ ok: true, value: { a: 2 } });
+		});
+
+		test("a second document is an error, not an array", () => {
+			expect(utils.parseYaml("a: 1\n---\nb: 2").ok).toBe(false);
+		});
+
+		test("one document after a leading marker still parses", () => {
+			expect(utils.parseYaml("# schema\n---\na: 1\n")).toEqual({ ok: true, value: { a: 1 } });
+		});
+
+		test("a top-level list still parses", () => {
+			expect(utils.parseYaml("- a\n- b")).toEqual({ ok: true, value: ["a", "b"] });
+		});
+
+		test("tab indentation is an error", () => {
+			expect(utils.parseYaml("\tk: v").ok).toBe(false);
+		});
+
+		test("yes stays a string", () => {
+			expect(utils.parseYaml("on: yes")).toEqual({ ok: true, value: { on: "yes" } });
+		});
+
+		test("a date stays a string", () => {
+			expect(utils.parseYaml("d: 2026-11-23")).toEqual({ ok: true, value: { d: "2026-11-23" } });
+		});
+
+		test("012 is the number 12", () => {
+			expect(utils.parseYaml("n: 012")).toEqual({ ok: true, value: { n: 12 } });
+		});
+
+		test("a document that ends with ... still parses", () => {
+			expect(utils.parseYaml("a: 1\n...\n")).toEqual({ ok: true, value: { a: 1 } });
+		});
+
+		test("a leading marker after a CRLF blank line still parses", () => {
+			expect(utils.parseYaml("\r\n---\r\na: 1\r\n")).toEqual({ ok: true, value: { a: 1 } });
+		});
+
+		test("content after a closing ... is a second document", () => {
+			expect(utils.parseYaml("a: 1\n...\nb: 2\n").ok).toBe(false);
+		});
+
+		test("a CRLF second document is an error", () => {
+			expect(utils.parseYaml("a: 1\r\n---\r\nb: 2\r\n").ok).toBe(false);
+		});
+
+		test("a second document after a %YAML directive is an error", () => {
+			expect(utils.parseYaml("%YAML 1.2\n---\na: 1\n---\nb: 2\n").ok).toBe(false);
+		});
+
+		test("a %YAML directive before the marker still parses", () => {
+			expect(utils.parseYaml("%YAML 1.2\n---\na: 1\n")).toEqual({ ok: true, value: { a: 1 } });
+		});
+	});
 });
