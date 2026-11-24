@@ -1,5 +1,11 @@
 # Changelog
 
+## v7.0.3 (2026-11-24)
+
+### Fixes
+
+- fix(proto): say recording in progress, not interrupted, while wait reads the layout ([#252](https://github.com/detailedghost/dg-ai/pull/252))
+
 ## v7.0.2 (2026-11-24)
 
 ### Fixes
