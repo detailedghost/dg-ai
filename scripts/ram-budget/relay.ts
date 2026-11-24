@@ -75,7 +75,9 @@ function onMessage(ws: Socket, raw: string | Buffer): void {
 	}
 	const [verb, first, ...rest] = message as [unknown, unknown, ...unknown[]];
 	if (verb === "EVENT" && isEvent(first)) publish(ws, first);
-	else if (verb === "REQ" && typeof first === "string") subscribe(ws, first, rest.filter(isObject) as Filter[]);
+	else if (verb === "REQ" && typeof first === "string" && rest.length > 0 && rest.every(isObject)) {
+		subscribe(ws, first, rest as Filter[]);
+	}
 	else if (verb === "CLOSE") unsubscribe(ws, first);
 	else ws.send(JSON.stringify(["NOTICE", "invalid: unknown message"]));
 }
