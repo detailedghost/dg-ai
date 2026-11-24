@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
 	closeSync,
 	mkdirSync,
@@ -129,7 +128,7 @@ function heldError(lock: string): Error {
 }
 
 function newToken(): string {
-	return `${process.pid}:${readProcStart(process.pid) ?? ""}:${randomUUID()}`;
+	return `${process.pid}:${readProcStart(process.pid) ?? ""}:${crypto.randomUUID()}`;
 }
 
 function lockPathOf(root: string): string {

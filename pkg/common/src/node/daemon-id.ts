@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { existsSync, linkSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ensurePrivateDir } from "./fs";
@@ -21,7 +20,7 @@ export function ensureDaemonId(paths: DgPaths): string {
 	const existing = readDaemonId(path);
 	if (existing !== undefined) return existing;
 	ensurePrivateDir(paths.daemonDir);
-	const candidate = `${path}.${process.pid}.${randomUUID()}.tmp`;
+	const candidate = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
 	try {
 		writeFileSync(candidate, mintToken(), { mode: 0o600 });
 		try {
