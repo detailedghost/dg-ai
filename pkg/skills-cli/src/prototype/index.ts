@@ -25,7 +25,7 @@ import {
 	waitExitCode,
 } from "./sentinels";
 import { runServe } from "./serve";
-import { writeSignIn } from "./signin";
+import { rememberAccess } from "./signin";
 import {
 	loadState,
 	openInBrowser,
@@ -81,7 +81,6 @@ function reportStatus(
 	flags: Flags,
 	name: string,
 	recordDir = paths.dir,
-	light = false,
 ): number {
 	if (flags.requirePending && resolved.status !== "pending") {
 		process.stderr.write(
@@ -91,7 +90,7 @@ function reportStatus(
 	}
 	const waiter = liveWaiter(paths);
 	if (waiter === undefined)
-		process.stderr.write(`waiter: none; run: ${waitCommand(name, light)}\n`);
+		process.stderr.write(`waiter: none; run: ${waitCommand(name, flags.light)}\n`);
 	if (flags.requireWaiter && waiter === undefined) return 1;
 	if (flags.json) {
 		const accepted = acceptedSummary(recordDir);
@@ -169,11 +168,7 @@ const NAME_COMMANDS: Record<string, readonly string[]> = {
 };
 
 function remember(dir: string, flags: Flags): void {
-	if (flags.signIn || flags.stateName)
-		writeSignIn(dir, {
-			...(flags.signIn ? { signIn: flags.signIn } : {}),
-			...(flags.stateName ? { stateName: flags.stateName } : {}),
-		});
+	rememberAccess(dir, { signIn: flags.signIn, stateName: flags.stateName });
 }
 
 function locate(name: string, flags: Flags): SentinelPaths {
@@ -279,8 +274,6 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 				fromExt === undefined ? local : extSnapshot(fromExt),
 				flags,
 				name,
-				paths.dir,
-				flags.light,
 			);
 		}
 		case "path":

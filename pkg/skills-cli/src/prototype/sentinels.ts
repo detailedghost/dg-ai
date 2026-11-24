@@ -161,6 +161,7 @@ export function waitCommand(name: string, light = false): string {
 
 async function asWaiter<T>(paths: SentinelPaths, block: () => Promise<T>): Promise<T> {
 	const own = String(process.pid);
+	const outer = liveWaiter(paths);
 	try {
 		mkdirSync(paths.dir, { recursive: true });
 		writeSentinel(paths.waiter, `${own}\n`);
@@ -172,7 +173,10 @@ async function asWaiter<T>(paths: SentinelPaths, block: () => Promise<T>): Promi
 	}
 	const release = () => {
 		try {
-			if (readOptional(paths.waiter) === own) rmSync(paths.waiter, { force: true });
+			if (readOptional(paths.waiter) !== own) return;
+			const stillOuter = outer !== undefined && outer !== process.pid && pidAlive(outer);
+			if (stillOuter) writeSentinel(paths.waiter, `${outer}\n`);
+			else rmSync(paths.waiter, { force: true });
 		} catch {
 			return;
 		}
@@ -293,7 +297,13 @@ const TIMEOUT_TEXT = "timeout, still pending\n";
 
 /** Write a wait outcome to stdout synchronously, so it reaches the caller even if a later step hangs. */
 export function printWait(result: WaitResult, json: boolean): void {
-	writeSync(1, formatWait(result, json));
+	const bytes = Buffer.from(formatWait(result, json));
+	let offset = 0;
+	try {
+		while (offset < bytes.length) offset += writeSync(1, bytes, offset);
+	} catch {
+		process.stdout.write(bytes.subarray(offset));
+	}
 }
 
 export function formatWait(result: WaitResult, json: boolean): string {

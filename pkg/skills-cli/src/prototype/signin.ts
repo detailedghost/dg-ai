@@ -48,3 +48,9 @@ export function writeSignIn(dir: string, access: CaptureAccess): CaptureAccess {
 	renameSync(temp, path);
 	return merged;
 }
+
+/** Store whichever of a sign-in url and saved-state name the caller passed; nothing passed writes nothing. */
+export function rememberAccess(dir: string, { signIn, stateName }: CaptureAccess): void {
+	if (signIn || stateName)
+		writeSignIn(dir, { ...(signIn ? { signIn } : {}), ...(stateName ? { stateName } : {}) });
+}

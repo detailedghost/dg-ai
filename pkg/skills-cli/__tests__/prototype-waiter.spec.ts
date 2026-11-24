@@ -95,6 +95,14 @@ describe("prototype waiter", () => {
 		expect(readFileSync(paths.waiter, "utf8").trim()).toBe(String(process.ppid));
 	});
 
+	test("a second waiter that exits hands the waiter file back to the first one still alive", async () => {
+		const outer = cli(["wait", "demo", "--timeout=20", "--json"]);
+		await until(() => existsSync(sandbox().waiter));
+		expect(liveWaiter(sandbox())).toBe(outer.pid);
+		expect(await wait(sandbox(), 0)).toEqual({ status: "timeout" });
+		expect(liveWaiter(sandbox())).toBe(outer.pid);
+	});
+
 	test("a background wait process is reported by status --json, and gone after it claims", async () => {
 		const waiter = cli(["wait", "demo", "--timeout=20", "--json"]);
 		await until(() => existsSync(sandbox().waiter));

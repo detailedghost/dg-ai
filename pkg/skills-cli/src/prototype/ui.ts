@@ -11,7 +11,7 @@ import { scratchDir, selfCommand, tryOpen } from "@dg/common/node";
 import { acceptanceHook, markFinal } from "./accepted";
 import { assertSavedState, type Flags, parseFlags } from "./args";
 import { parseManifestSource, render } from "./manifest";
-import { writeSignIn } from "./signin";
+import { rememberAccess } from "./signin";
 import {
 	assertNotSelftestName,
 	assertProtoName,
@@ -226,21 +226,15 @@ export async function runUi(argv: string[]): Promise<number> {
 		assertProtoName(flags.chain ?? manifest.chain),
 	);
 
+	const recordDir = protoDir(manifest.name, { cwd: process.cwd(), light: flags.light });
+	rememberAccess(recordDir, { signIn: flags.signIn, stateName: flags.stateName });
 	const described: Described = {
 		prototype: manifest.name,
 		labels: manifest.labels,
-		recordDir: protoDir(manifest.name, {
-			cwd: process.cwd(),
-			light: flags.light,
-		}),
+		recordDir,
 		signIn: flags.signIn,
 		stateName: flags.stateName,
 	};
-	if (flags.signIn || flags.stateName)
-		writeSignIn(described.recordDir as string, {
-			...(flags.signIn ? { signIn: flags.signIn } : {}),
-			...(flags.stateName ? { stateName: flags.stateName } : {}),
-		});
 	const existing = loadState(key);
 	let state: UiState;
 	if (existing && isPidAlive(existing.pid)) {

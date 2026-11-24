@@ -201,6 +201,14 @@ describe("prototype sign-in on the command line", () => {
 		expect(claimed.stderr).toContain("browser unavailable");
 	});
 
+	test("without a stored sign-in the same plain wait names no sign-in in its repair hint", async () => {
+		confirm(sentinelPaths(sandbox()), "D", "", "browser");
+		writeFileSync(join(sandbox(), ".url"), "http://127.0.0.1:18416/ScheduleDoctor/ViewSchedule\n");
+		const claimed = await cli(["wait", "demo", "--timeout=1"]);
+		expect(claimed.stderr).toContain("browser unavailable");
+		expect(claimed.stderr).not.toContain("--sign-in=<loopback-url>");
+	});
+
 	test("sign-in refuses a url off loopback", async () => {
 		const result = await cli(["sign-in", "demo", "--sign-in=https://login.example.com/"]);
 		expect(result.exitCode).toBe(1);

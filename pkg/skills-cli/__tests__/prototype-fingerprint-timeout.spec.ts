@@ -98,7 +98,7 @@ describe("bounded fingerprint step", () => {
 			acceptanceHook({ dir, name: "late", chain: "late" }, { open: () => late, timeoutMs: 100 }),
 		);
 		launched(await hangingCapturer(closed)());
-		await Bun.sleep(50);
+		for (let i = 0; i < 100 && closed.count === 0; i++) await Bun.sleep(20);
 		expect(closed.count).toBe(1);
 	});
 

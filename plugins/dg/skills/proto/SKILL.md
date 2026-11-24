@@ -109,8 +109,8 @@ this look right?" about a page you have not confirmed renders.
 A pick that no process waits on stays unclaimed until the user types "check". These rules stop that:
 
 - **Builder RETURN contract.** A builder subagent that mounts or serves a prototype does one of two things. It blocks on `dg prototype wait <chain> --json` itself, or it returns the required field `wait: dg prototype wait <chain> --json` in its result. A result without that field is incomplete. Never tell a builder "do not wait for the pick" unless you also ask for the `wait:` field.
-- **The main loop arms the waiter.** Before it reports the prototype live, the main loop starts `dg prototype wait <chain> --json` in the background (in Claude Code, Bash with `run_in_background`). Then it runs `dg prototype status <chain> --require-waiter`. A non-zero exit means no waiter is alive. Arm one before you report the page.
-- **A route behind a login.** Before it returns, the builder runs `dg prototype sign-in <name> --sign-in=<loopback-url>` (or `--state=<pw state name>`). The claim then reads the layout signed in.
+- **The main loop arms the waiter.** Before it reports the prototype live, the main loop starts `dg prototype wait <chain> --json` in the background (in Claude Code, Bash with `run_in_background`). Then it runs `dg prototype status <chain> --require-waiter`. A non-zero exit means no waiter is alive. Arm one before you report the page. When the builder blocks on wait itself, it reports the pick, so the main loop arms no second waiter.
+- **A route behind a login.** Before it returns, the builder runs `dg prototype sign-in <name> --sign-in=<loopback-url>` (or `--state=<pw state name>` when the login needs a saved browser state, not a dev-only sign-in route). When `wait` claims an approve, it then reads the layout fingerprint signed in.
 - **An unheard pick.** If no waiter is alive when the user clicks, the page says "No agent is listening; tell your agent to check." The pick is saved. Run `dg prototype status <chain>`, then claim it.
 
 Details: "Someone must end up waiting" in [references/local-ui.md](references/local-ui.md).

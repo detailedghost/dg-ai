@@ -183,6 +183,7 @@ async function captureShots(
 					...(signIn ? { signIn } : {}),
 					...(stateName ? { stateName } : {}),
 				});
+				if (stopped()) return { fingerprint: null, skipped: "stopped", shots };
 				writeFileSync(join(dir, SHOTS_DIR, `${viewport.id}-${theme}.png`), shot.png);
 				shots = true;
 				if (!shot.fingerprint || "error" in shot.fingerprint) {

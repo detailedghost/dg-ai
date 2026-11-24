@@ -435,7 +435,8 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
           document.getElementById("ps-close").hidden = false;
         } else if (closeAfter) setTimeout(closeTab, 2200);
         return;
-      } else if (action === "more") {
+      }
+      if (action === "more") {
         setFavicon("processing");
         bar.setAttribute("data-verdict", "more");
         bar.classList.add("is-working");
@@ -496,7 +497,7 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
             });
           }
           return res.json().catch(function () { return {}; }).then(function (body) {
-            onSuccess(action, closeAfter, body.waiter === false);
+            onSuccess(action, closeAfter, typeof body.waiter === "boolean" ? !body.waiter : undefined);
           });
         })
         .catch(function (err) {
