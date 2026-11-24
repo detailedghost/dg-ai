@@ -58,4 +58,30 @@ describe("splitDocument with CRLF", () => {
 		expect(utils.frontOf("---\r\ncovers: [a]\r\n---\r\nBody\r\n")).toEqual({ covers: ["a"] });
 		expect(split.body).toBe("Body\r\n");
 	});
+
+	describe("parseYaml keeps the yaml-package rules it replaced", () => {
+		test("a repeated key keeps the last value", () => {
+			expect(utils.parseYaml("a: 1\na: 2")).toEqual({ ok: true, value: { a: 2 } });
+		});
+
+		test("a second document is an error, not an array", () => {
+			expect(utils.parseYaml("a: 1\n---\nb: 2").ok).toBe(false);
+		});
+
+		test("one document after a leading marker still parses", () => {
+			expect(utils.parseYaml("# schema\n---\na: 1\n")).toEqual({ ok: true, value: { a: 1 } });
+		});
+
+		test("a top-level list still parses", () => {
+			expect(utils.parseYaml("- a\n- b")).toEqual({ ok: true, value: ["a", "b"] });
+		});
+
+		test("tab indentation is an error", () => {
+			expect(utils.parseYaml("\tk: v").ok).toBe(false);
+		});
+
+		test("yes and dates stay strings and 012 is a number", () => {
+			expect(utils.parseYaml("on: yes\nd: 2026-11-23\nn: 012")).toEqual({ ok: true, value: { on: "yes", d: "2026-11-23", n: 12 } });
+		});
+	});
 });
