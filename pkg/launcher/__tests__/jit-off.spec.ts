@@ -143,3 +143,12 @@ describe("reexecWithoutJit", () => {
 		}
 	});
 });
+
+describe("the re-exec call site", () => {
+	const source = (file: string) => readFileSync(join(import.meta.dir, "..", "src", file), "utf8");
+
+	test("only the dg entry re-executes, so callers of dispatch keep their own process", () => {
+		expect(source("dg.ts")).toContain("await reexecWithoutJit(process.argv.slice(2));");
+		expect(source("dispatch.ts")).not.toMatch(/await reexecWithoutJit\(/);
+	});
+});

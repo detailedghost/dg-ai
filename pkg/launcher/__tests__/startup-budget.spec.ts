@@ -23,7 +23,7 @@ function warmMedian(bun: string, entry: string, args: string[]): number {
 	return median(times);
 }
 
-describe("startup budget of the dispatch code; scripts/ram-budget.ts gates the JIT re-exec on the compiled dg", () => {
+describe("startup budget of the dispatch code", () => {
 	const { bun, entry } = buildBundle();
 	const scratch = mkdtempSync(join(tmpdir(), "dg-floor-"));
 	const floorEntry = join(scratch, "write-line.js");

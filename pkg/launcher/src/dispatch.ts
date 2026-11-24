@@ -24,8 +24,6 @@ const KEEP_JIT = "DG_JIT";
 
 type Execve = (file: string, args: string[], env: Record<string, string | undefined>) => void;
 
-const compiled = (): boolean => Bun.main.startsWith("/$bunfs/") || /^[A-Za-z]:[\\/]~BUN[\\/]/.test(Bun.main);
-
 /** Re-executes dg once with the JSC JIT off; the pid stays the same, and DG_JIT=1 skips it. */
 export async function reexecWithoutJit(
 	argv: readonly string[],
@@ -38,7 +36,8 @@ export async function reexecWithoutJit(
 		return;
 	}
 	if (typeof execve !== "function" || env[JIT_ENV] !== undefined || env[KEEP_JIT] === "1") return;
-	const execArgv = [process.argv0, ...(compiled() ? [] : [Bun.main]), ...argv];
+	const { isCompiled } = await import("@dg/common/node/program");
+	const execArgv = [process.argv0, ...(isCompiled() ? [] : [Bun.main]), ...argv];
 	try {
 		execve(process.execPath, execArgv, { ...env, [JIT_ENV]: "0", [REEXEC_MARK]: "1" });
 	} catch (error) {

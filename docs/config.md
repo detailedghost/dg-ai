@@ -194,5 +194,7 @@ on a large repo, run slower without the JIT.
 - A `BUN_JSC_useJIT` value you set yourself is kept as it is.
 - Programs that dg starts, such as browsers, git and Bun scripts, keep their own JIT.
 
-The compiled dg also ignores a `.env` and a `bunfig.toml` in the working folder.
+## Environment files
+
+The compiled dg ignores a `.env` and a `bunfig.toml` in the working folder.
 Set environment variables in your shell or in `config.toml` instead.

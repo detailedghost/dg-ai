@@ -4,8 +4,9 @@ Status: Accepted
 Date: 2026-11-23
 Topic: Platform
 
-This record is superseded in part by [ADR 0057](0057-every-dg-command-runs-without-the-jit.md), which extends the
-re-exec to every dg command. The rest of this record still holds.
+This record is superseded in part by [ADR 0057](0057-every-dg-command-runs-without-the-jit.md). The `NO_JIT` list in
+`dispatch` is gone: the dg entry now re-executes every command. The rest still holds: a caller's `BUN_JSC_useJIT` is
+kept, the re-executed process drops the variable, and a failed `execve` keeps the JIT.
 
 ## Context
 
