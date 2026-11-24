@@ -4,11 +4,13 @@ import type { ConnectionConfig } from "../credentials";
 import type { QueryResult } from "../output";
 import type { DbSchemaForeignKey, DbSchemaResult, DbSchemaTable } from "../types";
 
-let snowflakeSdk: typeof import("snowflake-sdk") | undefined;
+type SnowflakeSdk = typeof import("snowflake-sdk");
 
-async function getSnowflakeSdk(): Promise<typeof import("snowflake-sdk")> {
+let snowflakeSdk: SnowflakeSdk | undefined;
+
+async function getSnowflakeSdk(): Promise<SnowflakeSdk> {
 	if (!snowflakeSdk) {
-		const mod = (await import("snowflake-sdk")) as { default?: typeof import("snowflake-sdk") } & typeof import("snowflake-sdk");
+		const mod = (await import("snowflake-sdk")) as { default?: SnowflakeSdk } & SnowflakeSdk;
 		snowflakeSdk = mod.default ?? mod;
 		snowflakeSdk.configure({ logLevel: "OFF" });
 	}
