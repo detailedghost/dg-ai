@@ -33,11 +33,31 @@ const { values } = parseArgs({
 		env: { type: "string", multiple: true, default: [] },
 	},
 });
-if (!values.dg) throw new Error("usage: bun scripts/ram-budget.ts --dg <compiled dg> [--gate] [--only a,b] [--idle s] [--runs n] [--json file]");
+const USAGE = "usage: bun scripts/ram-budget.ts --dg <compiled dg> [--gate] [--only a,b] [--idle s] [--runs n] [--env K=V] [--json file]";
+
+function usageError(detail: string): never {
+	console.error(`${detail}\n${USAGE}`);
+	process.exit(2);
+}
+
+function wholeNumber(raw: string | undefined, flag: string, min: number): number {
+	const value = Number(raw);
+	if (!Number.isInteger(value) || value < min) usageError(`${flag} must be a whole number of ${min} or more, got "${raw}"`);
+	return value;
+}
+
+function envPair(pair: string): [string, string] {
+	const split = pair.indexOf("=");
+	if (split < 1) usageError(`--env must be KEY=VALUE, got "${pair}"`);
+	return [pair.slice(0, split), pair.slice(split + 1)];
+}
+
+if (process.platform === "win32") usageError("ram-budget runs on Linux and macOS only");
+if (!values.dg) usageError("--dg is required");
 const DG = resolve(values.dg);
-const IDLE_MS = Number(values.idle) * 1000;
-const RUNS = Number(values.runs);
-const EXTRA_ENV = Object.fromEntries((values.env ?? []).map((pair) => [pair.slice(0, pair.indexOf("=")), pair.slice(pair.indexOf("=") + 1)]));
+const IDLE_MS = wholeNumber(values.idle, "--idle", 0) * 1000;
+const RUNS = wholeNumber(values.runs, "--runs", 1);
+const EXTRA_ENV = Object.fromEntries((values.env ?? []).map(envPair));
 
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
@@ -110,9 +130,11 @@ async function once(bin: string, args: string[], ctx: Ctx, opts: { cwd?: string;
 		stdout: "pipe",
 		stderr: "inherit",
 	});
-	const [peak, ms] = (await new Response(child.stdout).text()).trim().split(" ").map(Number);
-	await child.exited;
-	return { peak: peak ?? 0, ms: ms ?? 0 };
+	const output = (await new Response(child.stdout).text()).trim();
+	const [peak, ms] = output.split(" ").map(Number);
+	const code = await child.exited;
+	if (code !== 0 || !Number.isFinite(peak) || !peak) throw new Error(`could not measure dg ${args.join(" ")}: python exited ${code}, printed "${output}"`);
+	return { peak, ms: ms ?? 0 };
 }
 
 async function median(run: () => Promise<Sample>): Promise<Sample> {
@@ -122,7 +144,7 @@ async function median(run: () => Promise<Sample>): Promise<Sample> {
 	return samples[Math.floor(samples.length / 2)] as Sample;
 }
 
-function dg(name: string, args: string[], budget: number, opts: { cwd?: (ctx: Ctx) => string; stdin?: string } = {}): Case {
+function command(name: string, args: string[], budget: number, opts: { cwd?: (ctx: Ctx) => string; stdin?: string } = {}): Case {
 	return { name, budget, measure: (ctx) => median(() => once(ctx.dg, args, ctx, { cwd: opts.cwd?.(ctx), stdin: opts.stdin })) };
 }
 
@@ -134,16 +156,17 @@ async function serve(
 	const started = performance.now();
 	const child = spawn(ctx.dg, args, { cwd: ctx.work, env: opts.env ?? ctx.env, stdio: "ignore" });
 	const pid = child.pid as number;
+	const exited = () => child.exitCode !== null || child.signalCode !== null;
 	try {
 		await (opts.ready?.(ctx) ?? sleep(3000));
 		await opts.drive?.(ctx);
 		await idle(pid, args.join(" "));
 		const end = memory(pid);
-		if (!end || child.exitCode !== null) throw new Error(`dg ${args.join(" ")} exited early with ${child.exitCode}`);
+		if (!end || exited()) throw new Error(`dg ${args.join(" ")} exited early with ${child.exitCode ?? child.signalCode}`);
 		return { peak: end.hwm, idle: end.rss, anon: end.anon, ms: performance.now() - started };
 	} finally {
 		child.kill("SIGTERM");
-		await new Promise((done) => (child.exitCode !== null ? done(undefined) : child.once("exit", done)));
+		await new Promise((done) => (exited() ? done(undefined) : child.once("exit", done)));
 	}
 }
 
@@ -177,12 +200,18 @@ async function setupPhone(ctx: Ctx, root: string): Promise<{ phone: Phone; stop:
 		relayProcess.stdout.once("data", (chunk: Buffer) => done(chunk.toString().trim()));
 		relayProcess.once("exit", () => fail(new Error("the test relay exited")));
 	});
-	const side = (name: string, port: number) => ({ ...fencedEnv(join(root, name), port), NODE_TLS_REJECT_UNAUTHORIZED: "0" });
+	const side = (name: string, port: number) => ({ ...fencedEnv(join(root, name), port), NODE_EXTRA_CA_CERTS: cert });
 	const phone: Phone = { relay, a: side("phone-a", 47_411), b: side("phone-b", 47_412) };
-	run(ctx, ["phone", "number", "--as", "alice", "--relay", relay], phone.a);
-	run(ctx, ["phone", "number", "--as", "bob", "--relay", relay], phone.b);
-	const card = (JSON.parse(run(ctx, ["phone", "invite", "--name", "bob"], phone.a).trim().split("\n").at(-1) as string) as { card: string }).card;
-	run(ctx, ["phone", "accept", "--name", "alice", card, "hello"], phone.b);
+	try {
+		run(ctx, ["phone", "number", "--as", "alice", "--relay", relay], phone.a);
+		run(ctx, ["phone", "number", "--as", "bob", "--relay", relay], phone.b);
+		const invite = run(ctx, ["phone", "invite", "--name", "bob"], phone.a).trim().split("\n").at(-1) as string;
+		const { card } = JSON.parse(invite) as { card: string };
+		run(ctx, ["phone", "accept", "--name", "alice", card, "hello"], phone.b);
+	} catch (error) {
+		relayProcess.kill();
+		throw error;
+	}
 	return { phone, stop: () => relayProcess.kill() };
 }
 
@@ -230,32 +259,32 @@ const HOOK_PR = JSON.stringify({
 const HOOK_SESSION = JSON.stringify({ hook_event_name: "SessionStart", source: "startup", cwd: "." });
 
 const CASES: Case[] = [
-	dg("version", ["--version"], 27),
-	dg("help", ["--help"], 33),
-	dg("completion zsh", ["completion", "zsh"], 27),
-	dg("config path", ["config", "path"], 43),
-	dg("stat checklist", ["stat", "checklist"], 50),
-	dg("job --help", ["job", "--help"], 44),
-	dg("pw --help", ["pw", "--help"], 45),
-	dg("db --help", ["db", "--help"], 43),
-	dg("thrash --help", ["thrash", "--help"], 48),
-	dg("prototype --help", ["prototype", "--help"], 46),
-	dg("phone status", ["phone", "status"], 49),
-	dg("phone contacts", ["phone", "contacts"], 49),
-	dg("phone messages", ["phone", "messages"], 49),
-	dg("phone unread", ["phone", "unread"], 51),
-	dg("hooks list", ["hooks", "list"], 45),
-	dg("hooks run spelling", ["hooks", "run", "spelling"], 38, { stdin: HOOK_EDIT }),
-	dg("hooks run format", ["hooks", "run", "format"], 38, { stdin: HOOK_EDIT }),
-	dg("hooks run pr-prose", ["hooks", "run", "pr-prose"], 38, { stdin: HOOK_PR }),
-	dg("hooks run pr-confirm", ["hooks", "run", "pr-confirm"], 37, { stdin: HOOK_BASH }),
-	dg("hooks run spec-plan-lint", ["hooks", "run", "spec-plan-lint"], 37, { stdin: HOOK_EDIT }),
-	dg("hooks run daily-prune", ["hooks", "run", "daily-prune"], 37, { stdin: HOOK_SESSION }),
-	dg("hooks run strip-ai-coauthors", ["hooks", "run", "strip-ai-coauthors"], 34, { stdin: "" }),
-	dg("adr lint --all (repo)", ["adr", "lint", "--all"], 68, { cwd: () => ROOT }),
-	dg("spec validate", ["spec", "validate", "spec.md"], 52),
-	{ ...dg("update --check", ["update", "--check"], 80), ungated: true },
-	dg("doctor", ["doctor"], 66),
+	command("version", ["--version"], 27),
+	command("help", ["--help"], 33),
+	command("completion zsh", ["completion", "zsh"], 27),
+	command("config path", ["config", "path"], 43),
+	command("stat checklist", ["stat", "checklist"], 50),
+	command("job --help", ["job", "--help"], 44),
+	command("pw --help", ["pw", "--help"], 45),
+	command("db --help", ["db", "--help"], 43),
+	command("thrash --help", ["thrash", "--help"], 48),
+	command("prototype --help", ["prototype", "--help"], 46),
+	command("phone status", ["phone", "status"], 49),
+	command("phone contacts", ["phone", "contacts"], 49),
+	command("phone messages", ["phone", "messages"], 49),
+	command("phone unread", ["phone", "unread"], 51),
+	command("hooks list", ["hooks", "list"], 45),
+	command("hooks run spelling", ["hooks", "run", "spelling"], 38, { stdin: HOOK_EDIT }),
+	command("hooks run format", ["hooks", "run", "format"], 38, { stdin: HOOK_EDIT }),
+	command("hooks run pr-prose", ["hooks", "run", "pr-prose"], 38, { stdin: HOOK_PR }),
+	command("hooks run pr-confirm", ["hooks", "run", "pr-confirm"], 37, { stdin: HOOK_BASH }),
+	command("hooks run spec-plan-lint", ["hooks", "run", "spec-plan-lint"], 37, { stdin: HOOK_EDIT }),
+	command("hooks run daily-prune", ["hooks", "run", "daily-prune"], 37, { stdin: HOOK_SESSION }),
+	command("hooks run strip-ai-coauthors", ["hooks", "run", "strip-ai-coauthors"], 34, { stdin: "" }),
+	command("adr lint --all (repo)", ["adr", "lint", "--all"], 68, { cwd: () => ROOT }),
+	command("spec validate", ["spec", "validate", "spec.md"], 52),
+	{ ...command("update --check", ["update", "--check"], 80), ungated: true },
+	command("doctor", ["doctor"], 66),
 	{
 		name: "daemon idle",
 		budget: 47,
@@ -298,7 +327,7 @@ const CASES: Case[] = [
 
 async function floor(root: string): Promise<number> {
 	const source = join(root, "floor.ts");
-	const out = join(root, process.platform === "win32" ? "floor.exe" : "floor");
+	const out = join(root, "floor");
 	writeFileSync(source, 'console.log("0");\n');
 	const built = spawnSync(process.execPath, ["build", "--compile", "--minify", source, "--outfile", out], { encoding: "utf8" });
 	if (built.status !== 0) throw new Error(built.stderr);
@@ -320,7 +349,7 @@ async function main(): Promise<number> {
 	const root = mkdtempSync(join(tmpdir(), "dg-ram-"));
 	const stops: (() => void)[] = [];
 	try {
-		const bin = join(root, process.platform === "win32" ? "dg.exe" : "dg");
+		const bin = join(root, "dg");
 		cpSync(DG, bin);
 		dropPageCache(bin);
 		const work = join(root, "work");
@@ -344,9 +373,17 @@ async function main(): Promise<number> {
 			if ((c.long && process.platform !== "linux") || (c.ungated && values.gate)) continue;
 			if (c.phone && !ctx.phone) {
 				console.log(`${c.name}\tskipped: openssl is missing`);
+				if (values.gate) failed++;
 				continue;
 			}
-			const sample = await c.measure(ctx);
+			let sample: Sample;
+			try {
+				sample = await c.measure(ctx);
+			} catch (error) {
+				failed++;
+				console.log(`${c.name}\tFAILED: ${error instanceof Error ? error.message : String(error)}`);
+				continue;
+			}
 			results[c.name] = { ...sample, budget: c.budget };
 			const over = !c.ungated && sample.peak > c.budget * MB;
 			if (over) failed++;

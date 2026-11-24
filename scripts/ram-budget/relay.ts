@@ -8,13 +8,15 @@ type Sub = { ws: Socket; id: string; filters: Filter[] };
 const [cert, key] = Bun.argv.slice(2);
 if (!cert || !key) throw new Error("usage: relay.ts <cert.pem> <key.pem>");
 
-const events: NostrEvent[] = [];
+const events = new Map<string, NostrEvent>();
 const subs: Sub[] = [];
 
 function tagMatches(filter: Filter, event: NostrEvent): boolean {
-	return Object.keys(filter)
-		.filter((name) => name.startsWith("#"))
-		.every((name) => event.tags.some((tag) => tag[0] === name.slice(1) && (filter[name] as string[]).includes(tag[1] as string)));
+	const tagKeys = Object.keys(filter).filter((name) => name.startsWith("#"));
+	return tagKeys.every((name) => {
+		const wanted = filter[name] as string[];
+		return event.tags.some((tag) => tag[0] === name.slice(1) && wanted.includes(tag[1] as string));
+	});
 }
 
 function matches(filter: Filter, event: NostrEvent): boolean {
@@ -27,29 +29,55 @@ function matches(filter: Filter, event: NostrEvent): boolean {
 	);
 }
 
-function onMessage(ws: Socket, raw: string | Buffer): void {
-	const message = JSON.parse(String(raw)) as [string, ...unknown[]];
-	if (message[0] === "EVENT") {
-		const event = message[1] as NostrEvent;
-		events.push(event);
-		ws.send(JSON.stringify(["OK", event.id, true, ""]));
-		for (const sub of subs) if (sub.filters.some((filter) => matches(filter, event))) sub.ws.send(JSON.stringify(["EVENT", sub.id, event]));
-	} else if (message[0] === "REQ") {
-		const [, id, ...filters] = message as [string, string, ...Filter[]];
-		subs.push({ ws, id, filters });
-		for (const event of events) if (filters.some((filter) => matches(filter, event))) ws.send(JSON.stringify(["EVENT", id, event]));
-		ws.send(JSON.stringify(["EOSE", id]));
-	} else if (message[0] === "CLOSE") {
-		const index = subs.findIndex((sub) => sub.ws === ws && sub.id === message[1]);
-		if (index >= 0) subs.splice(index, 1);
+function isEvent(value: unknown): value is NostrEvent {
+	const event = value as NostrEvent;
+	return typeof event === "object" && event !== null && typeof event.id === "string" && Array.isArray(event.tags);
+}
+
+function publish(ws: Socket, event: NostrEvent): void {
+	ws.send(JSON.stringify(["OK", event.id, true, ""]));
+	if (events.has(event.id)) return;
+	events.set(event.id, event);
+	for (const sub of subs) {
+		if (sub.filters.some((filter) => matches(filter, event))) sub.ws.send(JSON.stringify(["EVENT", sub.id, event]));
 	}
+}
+
+function subscribe(ws: Socket, id: string, filters: Filter[]): void {
+	unsubscribe(ws, id);
+	subs.push({ ws, id, filters });
+	for (const event of events.values()) {
+		if (filters.some((filter) => matches(filter, event))) ws.send(JSON.stringify(["EVENT", id, event]));
+	}
+	ws.send(JSON.stringify(["EOSE", id]));
+}
+
+function unsubscribe(ws: Socket, id: unknown): void {
+	const index = subs.findIndex((sub) => sub.ws === ws && sub.id === id);
+	if (index >= 0) subs.splice(index, 1);
+}
+
+function onMessage(ws: Socket, raw: string | Buffer): void {
+	let message: unknown;
+	try {
+		message = JSON.parse(String(raw));
+	} catch {
+		ws.send(JSON.stringify(["NOTICE", "invalid: not JSON"]));
+		return;
+	}
+	if (!Array.isArray(message)) return;
+	const [verb, first, ...rest] = message as [unknown, unknown, ...unknown[]];
+	if (verb === "EVENT" && isEvent(first)) publish(ws, first);
+	else if (verb === "REQ" && typeof first === "string") subscribe(ws, first, rest as Filter[]);
+	else if (verb === "CLOSE") unsubscribe(ws, first);
+	else ws.send(JSON.stringify(["NOTICE", "invalid: unknown message"]));
 }
 
 const server = Bun.serve({
 	port: 0,
 	hostname: "127.0.0.1",
 	tls: { cert: Bun.file(cert), key: Bun.file(key) },
-	fetch: (req, srv) => (srv.upgrade(req) ? undefined : new Response("relay")),
+	fetch: (req, srv) => (srv.upgrade(req, { data: undefined }) ? undefined : new Response("relay")),
 	websocket: {
 		message: onMessage,
 		close(ws) {
