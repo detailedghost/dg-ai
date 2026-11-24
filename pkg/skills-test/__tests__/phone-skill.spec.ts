@@ -94,7 +94,7 @@ describe("phone skill", () => {
 	test("does every phone action through the dg phone command, never phone.db", () => {
 		expect(safety).toContain("Do every phone action through the `dg phone` command");
 		expect(safety).toContain("never talk to the relays with another Nostr\nclient.");
-		expect(safety).toContain("Never open\n`phone.db` with `sqlite3` or any other tool.");
+		expect(safety).toContain("Never open\n`phone.db` with `sqlite3` or any other tool, never edit the files in the\nphone state directory");
 		expect(skill).toContain("Never query `phone.db` directly.");
 		for (const doc of [skill, safety]) {
 			expect(doc).not.toMatch(/sqlite3\s+\S*phone\.db/);
