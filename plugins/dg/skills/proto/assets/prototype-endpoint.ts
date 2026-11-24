@@ -85,6 +85,18 @@ function gitRoot(): string {
 	}
 }
 
+/** True while a `dg prototype wait` process is blocked on this sandbox. */
+function waiterAlive(dir: string): boolean {
+	try {
+		const pid = Number(readFileSync(join(dir, ".waiter"), "utf8").trim());
+		if (!Number.isInteger(pid) || pid <= 0) return false;
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "EPERM";
+	}
+}
+
 function resolveSentinelPath(name: string): string {
 	const light = process.env.PROTOTYPE_LIGHT === "1" ? ["--light"] : [];
 	const cwd = gitRoot();
@@ -110,11 +122,12 @@ function record(body: ConfirmBody): {
 				status: 200,
 				body: {
 					ok: true,
+					waiter: waiterAlive(reloadDir),
 					token: readFileSync(join(reloadDir, ".reload"), "utf8").trim(),
 				},
 			};
 		} catch {
-			return { status: 200, body: { ok: true, token: "0" } };
+			return { status: 200, body: { ok: true, waiter: waiterAlive(reloadDir), token: "0" } };
 		}
 	}
 
@@ -130,7 +143,7 @@ function record(body: ConfirmBody): {
 				: "\n";
 		writeFileSync(join(protoDir, ".source"), "browser\n", "utf8");
 		writeFileSync(join(protoDir, `.${body.action}`), notes, "utf8");
-		return { status: 200, body: { ok: true } };
+		return { status: 200, body: { ok: true, waiter: waiterAlive(protoDir) } };
 	}
 	if (!Array.isArray(body.variants) || !body.variants.includes(body.variant)) {
 		return { status: 400, body: { error: "unknown variant" } };
@@ -143,7 +156,7 @@ function record(body: ConfirmBody): {
 	}
 	writeFileSync(join(protoDir, ".source"), "browser\n", "utf8");
 	writeFileSync(sentinelPath, `${body.variant}\n`, "utf8");
-	return { status: 200, body: { ok: true } };
+	return { status: 200, body: { ok: true, waiter: waiterAlive(protoDir) } };
 }
 
 /** Express or Vite dev-server handler: `app.post("/prototype-confirm", prototypeConfirmHandler)`. */

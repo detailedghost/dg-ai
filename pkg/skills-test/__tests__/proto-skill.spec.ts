@@ -387,6 +387,42 @@ describe("proto skill minimum bar and exit codes", () => {
 	});
 });
 
+describe("proto skill waiter and sign-in hand-over", () => {
+	const HANDOVER_FILES = ["SKILL.md", "references/local-ui.md", "references/local-build.md"];
+	const NO_WAITER = "No agent is listening; tell your agent to check.";
+
+	test("every hand-over file states the builder RETURN contract and the main-loop waiter", () => {
+		for (const file of HANDOVER_FILES) {
+			const text = skillFile(file).replace(/\s+/g, " ");
+			expect(text).toContain("dg prototype wait <chain> --json");
+			expect(text).toMatch(/required field `wait: dg prototype wait <chain> --json`/);
+			expect(text).toMatch(/main loop[^.]*(arm|start)s?[^.]*background/i);
+			expect(text).toContain("dg prototype status <chain> --require-waiter");
+			expect(text).toContain("dg prototype sign-in <name> --sign-in=<loopback-url>");
+			expect(text).not.toMatch(/do not wait for the pick(?![^.]*`wait:` field)/i);
+		}
+	});
+
+	test("the docs name the page message for a pick no waiter heard", () => {
+		for (const file of HANDOVER_FILES) expect(skillFile(file)).toContain(NO_WAITER);
+	});
+
+	test("both copied switchers show the no-waiter message and every endpoint template reports waiter", () => {
+		for (const file of ["assets/PrototypeSwitcher.tsx", "assets/PrototypeSwitcher.astro"])
+			expect(skillFile(file)).toContain(NO_WAITER);
+		for (const file of [
+			"assets/prototype-endpoint.ts",
+			"assets/prototype-endpoint.next.ts",
+			"assets/prototype-endpoint.astro.ts",
+		]) {
+			const text = skillFile(file);
+			expect(text).toContain('".waiter"');
+			expect(text).toContain("waiter: waiterAlive(protoDir)");
+			expect(text).toContain("waiter: waiterAlive(reloadDir)");
+		}
+	});
+});
+
 describe("proto skill network egress", () => {
 	const files = walkSkillFiles();
 

@@ -11,6 +11,7 @@ import { THEMES, VIEWPORTS, type Capturer } from "../verify/capture-model";
 import { openPlaywrightCapturer } from "../verify/playwright-capturer";
 import { isLoopbackUrl } from "../verify/urls";
 import { type ApprovedClaim, type ApproveHook, writeSentinel } from "./sentinels";
+import { readSignIn } from "./signin";
 
 const SHOTS_DIR = "accepted";
 
@@ -28,20 +29,32 @@ export interface CaptureAccess {
 	stateName?: string;
 }
 
+export const FINGERPRINT_TIMEOUT_MS = 60_000;
+const TIMED_OUT = "timed out after ";
+
 export interface AcceptSeams {
 	open: () => Promise<Capturer>;
 	now: () => Date;
+	timeoutMs: number;
 }
 
 const DEFAULT_SEAMS: AcceptSeams = {
 	open: () => openPlaywrightCapturer(),
 	now: () => new Date(),
+	timeoutMs: FINGERPRINT_TIMEOUT_MS,
 };
 
 interface Captured {
 	fingerprint: Fingerprint | null;
 	skipped: string | null;
 	shots: boolean;
+}
+
+function withStoredAccess<T extends CaptureAccess>(dir: string, given: T): T {
+	const stored = readSignIn(dir);
+	const signIn = given.signIn ?? stored.signIn;
+	const stateName = given.stateName ?? stored.stateName;
+	return { ...given, ...(signIn ? { signIn } : {}), ...(stateName ? { stateName } : {}) };
 }
 
 const rootSelector = (name: string): string => `[data-verify-root="${name}"]`;
@@ -104,12 +117,45 @@ async function readLayouts(
 		return none(`sign-in url is not on loopback; ${fix}`);
 	if (signIn !== undefined && new URL(signIn).origin !== page.origin)
 		return none(`sign-in url is not on the page url's origin ${page.origin}; ${fix}`);
-	let capturer: Capturer;
+	let opened: Capturer | undefined;
+	let timedOut = false;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const bound = new Promise<Captured>((resolve) => {
+		timer = setTimeout(() => {
+			timedOut = true;
+			resolve(none(`${TIMED_OUT}${seams.timeoutMs / 1000}s; ${fix}`));
+		}, seams.timeoutMs);
+	});
+	const work = (async (): Promise<Captured> => {
+		try {
+			opened = await seams.open();
+		} catch (error) {
+			return none(`browser unavailable (${firstLine(error)}); ${fix}`);
+		}
+		if (timedOut) {
+			await opened.close().catch(() => undefined);
+			return none(`${TIMED_OUT}${seams.timeoutMs / 1000}s; ${fix}`);
+		}
+		return captureShots(dir, name, variant, page, opened, fix, { signIn, stateName }, () => timedOut);
+	})();
 	try {
-		capturer = await seams.open();
-	} catch (error) {
-		return none(`browser unavailable (${firstLine(error)}); ${fix}`);
+		return await Promise.race([work, bound]);
+	} finally {
+		clearTimeout(timer);
+		await opened?.close().catch(() => undefined);
 	}
+}
+
+async function captureShots(
+	dir: string,
+	name: string,
+	variant: string,
+	page: URL,
+	capturer: Capturer,
+	fix: string,
+	{ signIn, stateName }: CaptureAccess,
+	stopped: () => boolean,
+): Promise<Captured> {
 	const root = rootSelector(name);
 	const readings: Reading[] = [];
 	let skipped: string | null = null;
@@ -119,6 +165,7 @@ async function readLayouts(
 		mkdirSync(join(dir, SHOTS_DIR), { recursive: true });
 		for (const viewport of VIEWPORTS) {
 			for (const theme of THEMES) {
+				if (stopped()) return { fingerprint: null, skipped: "stopped", shots };
 				const target = new URL(page);
 				target.searchParams.set("variant", variant);
 				target.searchParams.set("mode", theme);
@@ -136,6 +183,7 @@ async function readLayouts(
 					...(signIn ? { signIn } : {}),
 					...(stateName ? { stateName } : {}),
 				});
+				if (stopped()) return { fingerprint: null, skipped: "stopped", shots };
 				writeFileSync(join(dir, SHOTS_DIR, `${viewport.id}-${theme}.png`), shot.png);
 				shots = true;
 				if (!shot.fingerprint || "error" in shot.fingerprint) {
@@ -159,8 +207,6 @@ async function readLayouts(
 		}
 	} catch (error) {
 		skipped = `capture failed (${firstLine(error)}); ${fix}`;
-	} finally {
-		await capturer.close().catch(() => undefined);
 	}
 	return skipped === null
 		? { fingerprint: { version: 1, root, readings }, skipped: null, shots }
@@ -222,12 +268,13 @@ export async function refingerprint(
 	overrides: Partial<AcceptSeams> = {},
 	access: CaptureAccess = {},
 ): Promise<AcceptedRecord> {
-	const { signIn } = access;
+	const resolved = withStoredAccess(dir, access);
+	const { signIn } = resolved;
 	const prior = loadRecord(dir);
 	if (!prior) throw new Error(`nothing accepted for "${name}"`);
 	if (!isLoopbackUrl(new URL(url))) throw new Error("refused non-loopback url");
 	if (signIn !== undefined && !isLoopbackUrl(new URL(signIn))) throw new Error("refused non-loopback sign-in url");
-	const captured = await readLayouts(dir, name, prior.variant, url, { ...DEFAULT_SEAMS, ...overrides }, access);
+	const captured = await readLayouts(dir, name, prior.variant, url, { ...DEFAULT_SEAMS, ...overrides }, resolved);
 	const shotsDir = join(dir, SHOTS_DIR);
 	const keptShots = existsSync(shotsDir) && readdirSync(shotsDir).length > 0;
 	const updated: AcceptedRecord = {
@@ -271,11 +318,12 @@ function repairLine(target: AcceptTarget, url = "<url>"): string {
 
 /** Build the claim hook that records an approve and tells stderr where the record went. */
 export function acceptanceHook(
-	target: AcceptTarget,
+	given: AcceptTarget,
 	overrides: Partial<AcceptSeams> = {},
 ): ApproveHook {
 	return async (claim) => {
 		try {
+			const target = withStoredAccess(given.dir, given);
 			const accepted = await recordAcceptance(target, claim, overrides);
 			const outcome = accepted.fingerprint
 				? fingerprintSummary(accepted)
@@ -283,6 +331,10 @@ export function acceptanceHook(
 			process.stderr.write(`prototype: recorded ${recordPath(target.dir)} (${outcome})\n`);
 			const fromPage = claim.url !== undefined || claim.source === "browser";
 			if (accepted.skipped === null || !fromPage) return undefined;
+			if (accepted.skipped.startsWith(TIMED_OUT)) {
+				process.stderr.write(`prototype: fingerprint ${accepted.skipped.split(";")[0]}; the pick is recorded\n${repairLine(target, claim.url)}\n`);
+				return undefined;
+			}
 			process.stderr.write(
 				`prototype: fingerprint skipped: ${accepted.skipped}\n${repairLine(target, claim.url)}\n`,
 			);

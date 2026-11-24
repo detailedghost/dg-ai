@@ -11,13 +11,14 @@ import { scratchDir, selfCommand, tryOpen } from "@dg/common/node";
 import { acceptanceHook, markFinal } from "./accepted";
 import { assertSavedState, type Flags, parseFlags } from "./args";
 import { parseManifestSource, render } from "./manifest";
+import { rememberAccess } from "./signin";
 import {
 	assertNotSelftestName,
 	assertProtoName,
 	protoDir,
 	sentinelPaths,
 } from "./paths";
-import { type WaitResult, formatWait, wait, waitExitCode } from "./sentinels";
+import { type WaitResult, printWait, wait, waitExitCode } from "./sentinels";
 
 const SERVER_START_MS = 10_000;
 const STALE_SENTINELS = [".selection", ".reject", ".more", ".notes", ".decision", ".url"];
@@ -164,7 +165,6 @@ function stopSession(state: UiState): void {
 }
 
 function finish(result: WaitResult, state: UiState): number {
-	process.stdout.write(formatWait(result, true));
 	if (result.status === "ok" && result.notes === "" && !state.series)
 		stopSession(state);
 	return waitExitCode(result);
@@ -191,6 +191,7 @@ export async function waitSession(
 			sentinelPaths(state.sentinelDir),
 			timeoutSec,
 			target && acceptanceHook(target),
+			(claimed) => printWait(claimed, true),
 		),
 		state,
 	);
@@ -225,13 +226,12 @@ export async function runUi(argv: string[]): Promise<number> {
 		assertProtoName(flags.chain ?? manifest.chain),
 	);
 
+	const recordDir = protoDir(manifest.name, { cwd: process.cwd(), light: flags.light });
+	rememberAccess(recordDir, { signIn: flags.signIn, stateName: flags.stateName });
 	const described: Described = {
 		prototype: manifest.name,
 		labels: manifest.labels,
-		recordDir: protoDir(manifest.name, {
-			cwd: process.cwd(),
-			light: flags.light,
-		}),
+		recordDir,
 		signIn: flags.signIn,
 		stateName: flags.stateName,
 	};

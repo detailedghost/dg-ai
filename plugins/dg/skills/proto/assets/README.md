@@ -28,6 +28,10 @@ The endpoint templates accept only a same-origin JSON `POST` from `localhost`, `
 `[::1]`, and only a `name` that matches `[a-z0-9][a-z0-9_-]*`. Any other request gets a 4xx reply
 and writes nothing.
 
+Every endpoint reply carries `waiter`: true only while a `dg prototype wait` pid in `<sandbox>/.waiter`
+is alive. When a pick answers `waiter: false`, the switcher says "No agent is listening; tell your agent
+to check." and keeps the tab open.
+
 ## Switcher props
 
 `PrototypeSwitcher.tsx` and `PrototypeSwitcher.astro` accept the same props.

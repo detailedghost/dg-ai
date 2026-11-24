@@ -119,6 +119,7 @@ describe("pw lazy loading", () => {
 			path.join("doctor", "registry.ts"),
 			path.join("inbox", "proton-pw.ts"),
 			path.join("prototype", "args.ts"),
+			path.join("prototype", "signin.ts"),
 			path.join("rerun", "doctor.ts"),
 			path.join("verify", "capture.ts"),
 			path.join("verify", "manifest.ts"),

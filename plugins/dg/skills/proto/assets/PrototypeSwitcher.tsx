@@ -33,6 +33,7 @@ const WIDTH_NAMES: Record<Width, string> = { all: "all", mobile: "mobile 390", t
 const TEXT_ICONS: Record<string, string> = {
   sun: "☀", moon: "☾", all: "▦", phone: "▯", tablet: "▭", monitor: "▬", left: "‹", right: "›", note: "✎", check: "✓", rework: "⟳", plus: "+",
 };
+const NO_WAITER = "No agent is listening; tell your agent to check.";
 const CONFETTI_COLORS = ["#22c55e", "#4c8dff", "#a855f7", "#f59e0b", "#f43f5e", "#14b8a6"];
 
 declare global {
@@ -199,6 +200,7 @@ export default function PrototypeSwitcher({
   const [width, setWidth] = useState<Width>("all");
   const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [unheard, setUnheard] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confetti, setConfetti] = useState<
     { id: number; dx: number; dy: number; rot: number; color: string; delay: number }[]
@@ -373,10 +375,14 @@ export default function PrototypeSwitcher({
             setError((body as { error?: string }).error ?? `HTTP ${res.status}`);
             return;
           }
+          const reply = (await res.json().catch(() => ({}))) as { waiter?: boolean };
+          const noWaiter = reply.waiter === false;
+          setUnheard(noWaiter);
           setOutcome(action);
-          if (action === "reject") say("Sent back for rework.");
-          if (action === "more") say("Generating more versions. Keep this tab open.");
-          if (closeAfter) window.setTimeout(closeTab, 2200);
+          if (noWaiter) say(NO_WAITER);
+          else if (action === "reject") say("Sent back for rework.");
+          else if (action === "more") say("Generating more versions. Keep this tab open.");
+          if (closeAfter && !noWaiter) window.setTimeout(closeTab, 2200);
         })
         .catch(err => {
           setError(err instanceof Error ? err.message : "Network error");
@@ -425,9 +431,11 @@ export default function PrototypeSwitcher({
         </div>
         {notes.trim() && <div style={noteQuote}>"{notes.trim()}"</div>}
         <div style={{ fontSize: 16, opacity: 0.7 }}>
-          {isBuilding
-            ? "Keep this tab open — it reloads in place when the next round is ready."
-            : "Selection recorded — this tab will close automatically."}
+          {unheard
+            ? NO_WAITER
+            : isBuilding
+              ? "Keep this tab open — it reloads in place when the next round is ready."
+              : "Selection recorded — this tab will close automatically."}
         </div>
         <button type="button" style={overlayBtn} onClick={() => setOutcome(null)}>
           Keep exploring
