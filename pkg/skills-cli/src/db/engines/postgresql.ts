@@ -24,8 +24,11 @@ interface PgModule {
 
 let pgModule: PgModule | undefined;
 
-function getPg(): PgModule {
-	if (!pgModule) pgModule = require("pg") as PgModule;
+async function getPg(): Promise<PgModule> {
+	if (!pgModule) {
+		const mod = (await import("pg")) as unknown as { default?: PgModule } & PgModule;
+		pgModule = mod.default ?? mod;
+	}
 	return pgModule;
 }
 
@@ -48,7 +51,7 @@ export function buildPgClientOptions(
 export async function pgConnect(
 	connection: ConnectionConfig,
 ): Promise<PgClient> {
-	const client = new (getPg().Client)(buildPgClientOptions(connection));
+	const client = new ((await getPg()).Client)(buildPgClientOptions(connection));
 	await client.connect();
 	return client;
 }
