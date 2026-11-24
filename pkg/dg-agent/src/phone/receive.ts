@@ -1,7 +1,7 @@
 import { existsSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { type DgPaths, ensurePrivateDir, writeFileAtomic } from "@dg/common/node";
-import { nip19 } from "nostr-tools";
+import * as nip19 from "nostr-tools/nip19";
 import type { KeyEntry, PhonePool } from "./chat";
 import type { ImageFetchRow, MessageRow, PhoneDb } from "./db";
 import type { Cancel, Schedule } from "./hook";

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { buildBundle, cleanupTraces, dirBytes, run, traceChunks } from "./bundle-fixtures";
+import { buildBundle, cleanupTraces, dirBytes, run, traceChunks, walkFiles } from "./bundle-fixtures";
 
 setDefaultTimeout(120_000);
 
@@ -134,5 +134,11 @@ describe("size budget", () => {
 		expect(traced.sentinels.size).toBe(2);
 		run(bun, traced.entry, ["hooks", "run", "spelling"], { DG_HOME: traced.dir });
 		for (const [name, sentinel] of traced.sentinels) expect({ name, loaded: existsSync(sentinel) }).toEqual({ name, loaded: false });
+	});
+
+	test("dg-agent imports nostr-tools by subpath, so the nip04 AES tables are never built", () => {
+		const src = join(import.meta.dir, "..", "..", "dg-agent", "src");
+		const offenders = walkFiles(src).filter((file) => file.endsWith(".ts") && /from "nostr-tools"/.test(readFileSync(file, "utf8")));
+		expect(offenders).toEqual([]);
 	});
 });

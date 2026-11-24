@@ -1,5 +1,7 @@
 import { DgCliError } from "@dg/common";
-import { generateSecretKey, nip19, nip44 } from "nostr-tools";
+import * as nip19 from "nostr-tools/nip19";
+import * as nip44 from "nostr-tools/nip44";
+import { generateSecretKey } from "nostr-tools/pure";
 import { DEFAULT_RELAYS, isHandle } from "./store";
 
 export type Card = { npub: string; relays: string[]; secret: string; exp: number; handle?: string };

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { DgCliError } from "@dg/common";
-import { nip19, nip59, type NostrEvent } from "nostr-tools";
+import * as nip19 from "nostr-tools/nip19";
+import * as nip59 from "nostr-tools/nip59";
+import type { NostrEvent } from "nostr-tools/pure";
 import { MESSAGE_TTL_SECONDS } from "./db";
 import { IMAGE_TEXT, type ImageOffer, imageUnavailableText, parseImageOffer } from "./image";
 import { isHandle } from "./store";
