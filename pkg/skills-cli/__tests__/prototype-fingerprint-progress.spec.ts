@@ -115,7 +115,11 @@ describe("a reader that looks while the fingerprint is still recording", () => {
 	test("a recorder killed mid-capture reads back as interrupted, naming the pid that exited", async () => {
 		pickBehindSignIn();
 		const { proc } = await claimAndReadFirstLine();
-		while (!existsSync(join(sandbox(), "accepted.json"))) await Bun.sleep(20);
+		const deadline = Date.now() + 10_000;
+		while (!existsSync(join(sandbox(), "accepted.json"))) {
+			if (Date.now() > deadline) throw new Error("the claim never stored its placeholder record");
+			await Bun.sleep(20);
+		}
 		proc.kill("SIGKILL");
 		await proc.exited;
 		const after = await statusFingerprint();
@@ -137,9 +141,20 @@ describe("the stored record while recording", () => {
 			throw new Error("spawn ENOENT");
 		};
 		const record = await recordAcceptance({ dir, name: "demo", chain: "demo" }, claim, { open, now });
-		expect(seen).toBe(`recording in progress (pid ${process.pid}); the record is final when prototype wait exits`);
+		expect(seen).toBe(`recording in progress (pid ${process.pid}); the record is final when that process exits`);
 		expect(record.skipped).toContain("browser unavailable");
 		expect(acceptedSummary(dir)?.fingerprint).toContain("none: browser unavailable");
+	});
+
+	test("a placeholder whose recorder pid is still alive but far too old says interrupted, as after pid reuse", async () => {
+		const dir = join(root, "sandbox");
+		void recordAcceptance({ dir, name: "demo", chain: "demo" }, claim, { open: () => new Promise<Capturer>(() => {}), now });
+		const stored = JSON.parse(readFileSync(join(dir, "accepted.json"), "utf8"));
+		writeFileSync(
+			join(dir, "accepted.json"),
+			JSON.stringify({ ...stored, recording: { pid: process.pid, at: "2026-01-01T00:00:00.000Z" } }),
+		);
+		expect(acceptedSummary(dir)?.fingerprint).toContain(`recording interrupted: recorder pid ${process.pid} did not finish within 5 minutes`);
 	});
 
 	test("a placeholder left by a recorder that is gone says interrupted", async () => {
