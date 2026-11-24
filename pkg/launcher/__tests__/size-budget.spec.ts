@@ -124,9 +124,9 @@ describe("size budget", () => {
 		for (const sentinel of inbox.sentinels.values()) expect(existsSync(sentinel)).toBe(false);
 	});
 
-	test.each(["skills-cli", "dg-agent", "dg-daemon"])("%s main imports no @dg/common barrel at run time, so the barrel chunk with zod stays unloaded", (pkg) => {
+	test.each(["skills-cli", "dg-agent", "dg-daemon"])("%s main never imports the @dg/common barrel at run time", (pkg) => {
 		const source = readFileSync(join(import.meta.dir, "..", "..", pkg, "src", "main.ts"), "utf8");
-		expect(source).not.toMatch(/import\(\s*"@dg\/common"\s*\)/);
+		expect(source).not.toMatch(/import\(\s*["']@dg\/common["']\s*\)/);
 	});
 
 	test("dg hooks run, which runs on every agent tool call, loads neither the commander command table nor the layout pre-action", () => {
@@ -138,7 +138,7 @@ describe("size budget", () => {
 
 	test("dg-agent imports nostr-tools by subpath, so the nip04 AES tables are never built", () => {
 		const src = join(import.meta.dir, "..", "..", "dg-agent", "src");
-		const offenders = walkFiles(src).filter((file) => file.endsWith(".ts") && /from "nostr-tools"/.test(readFileSync(file, "utf8")));
+		const offenders = walkFiles(src).filter((file) => file.endsWith(".ts") && /(?:from|import)\s*\(?\s*["']nostr-tools["']/.test(readFileSync(file, "utf8")));
 		expect(offenders).toEqual([]);
 	});
 });

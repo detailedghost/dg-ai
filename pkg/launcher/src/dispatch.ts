@@ -27,14 +27,29 @@ const NO_JIT: readonly (readonly string[])[] = [
 
 const MOUNT_WORD: Partial<Record<ProgramName, string>> = { "dg-agent": "agent", "dg-daemon": "daemon" };
 
+const JIT_ENV = "BUN_JSC_useJIT";
+const REEXEC_MARK = "DG_JIT_REEXEC";
+
 /** Re-executes a long-running command with the JSC JIT off; the pid stays the same. */
 async function reexecWithoutJit(name: ProgramName, args: readonly string[], argv: readonly string[]): Promise<void> {
-	if (process.env.BUN_JSC_useJIT !== undefined || process.platform === "win32" || typeof process.execve !== "function") return;
+	if (process.env[REEXEC_MARK] !== undefined) {
+		delete process.env[JIT_ENV];
+		delete process.env[REEXEC_MARK];
+		return;
+	}
+	if (process.platform === "win32" || typeof process.execve !== "function") return;
+	if (process.env[JIT_ENV] !== undefined) return;
 	const mount = MOUNT_WORD[name];
 	const words = mount ? [mount, ...args] : args;
 	if (!NO_JIT.some((form) => form.every((word, index) => words[index] === word))) return;
 	const { isCompiled } = await import("@dg/common/node/program");
-	process.execve(process.execPath, [process.argv0, ...(isCompiled() ? [] : [Bun.main]), ...argv], { ...process.env, BUN_JSC_useJIT: "0" });
+	const execArgv = [process.argv0, ...(isCompiled() ? [] : [Bun.main]), ...argv];
+	try {
+		process.execve(process.execPath, execArgv, { ...process.env, [JIT_ENV]: "0", [REEXEC_MARK]: "1" });
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+		process.stderr.write(`dg: could not restart without the JIT, so it stays on: ${reason}\n`);
+	}
 }
 
 function invokedName(argv0: string | undefined): string | undefined {
