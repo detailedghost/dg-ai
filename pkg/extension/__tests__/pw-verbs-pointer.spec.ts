@@ -3,7 +3,7 @@ import { Window } from "happy-dom";
 import type { PointerRequest } from "../../common/src/pw-ext-verbs/pointer";
 import { createAgentTabs } from "@/lib/background/agent-tabs";
 import { createPointerHandler, pwExtPointerAction } from "@/lib/background/pw-verbs/pointer";
-import { createFakeBrowser, recordOf, tabOf, windowOf } from "./utils/fake-browser";
+import { createFakeBrowser, createLock, recordOf, tabOf, windowOf } from "./utils/fake-browser";
 
 const SESSION = "session-1";
 const WINDOW = 3;
@@ -27,7 +27,7 @@ function harness(tabs = [tabOf({ id: 7, windowId: WINDOW, groupId: GROUP, url: U
 		runs.push({ tabId: call.target.tabId, args: call.args });
 		return { detail: "hovered <a>" };
 	};
-	const agentTabs = createAgentTabs({ browserApi: fake.api, storage: fake.api.storage });
+	const agentTabs = createAgentTabs({ browserApi: fake.api, storage: fake.api.storage, lock: createLock() });
 	const handle = createPointerHandler({ browserApi: fake.api as never, agentTabs });
 	return { handle, runs };
 }
