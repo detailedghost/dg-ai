@@ -1,6 +1,7 @@
 using Dg.Cli;
 using Dg.Config;
 using Dg.Core.Abstractions;
+using Dg.Core.Errors;
 using Dg.Hooks.Engine;
 using Dg.Plugins;
 using Dg.Routing;
@@ -173,7 +174,7 @@ public sealed class CompositionRootTests
         {
             new IOException("disk"),
             new UnauthorizedAccessException("denied"),
-            new Dg.Core.Errors.DgError("f", 1, "k", "bad", "fix").ToException(),
+            new DgError("f", 1, "k", "bad", "fix").ToException(),
         };
 
     private sealed class ThrowingCommand(Exception failure) : ICommand

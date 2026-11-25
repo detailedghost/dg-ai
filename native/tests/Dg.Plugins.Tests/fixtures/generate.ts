@@ -1,4 +1,14 @@
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+	lstatSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -13,11 +23,22 @@ type Spec = { bundles: Record<string, Record<string, string>>; cases: Case[] };
 const spec: Spec = JSON.parse(readFileSync(join(dir, "cases.json"), "utf8"));
 const SKIPPED = new Set(["sources", ".bun", ".cache"]);
 
-const AT_A_TERMINAL = ["python3", "-c", "import os, pty, sys; m, s = pty.openpty(); os.set_inheritable(m, True); os.dup2(s, 0); os.execvp(sys.argv[1], sys.argv[1:])"];
+const AT_A_TERMINAL = [
+	"python3",
+	"-c",
+	"import os, pty, sys; m, s = pty.openpty(); os.set_inheritable(m, True); os.dup2(s, 0); os.execvp(sys.argv[1], sys.argv[1:])",
+];
+
+const needsTerminal = (step: Step) => step.bun?.includes("--approve") === true;
+if (!Bun.which("python3") && spec.cases.some((entry) => entry.person === true || entry.steps?.some(needsTerminal))) {
+	console.error("plugin command fixtures need python3 to run --approve at a terminal; install python3");
+	process.exit(1);
+}
 
 function dg(home: string, argv: string[], extra: Record<string, string> = {}, terminal = false) {
 	const env = { PATH: process.env.PATH ?? "", HOME: home, DG_HOME: home, DG_PATH_FENCE: home, ...extra };
-	const result = Bun.spawnSync([...(terminal ? AT_A_TERMINAL : []), "bun", join(root, "pkg", "dg", "src", "index.ts"), ...argv], { cwd: home, env });
+	const command = ["bun", join(root, "pkg", "dg", "src", "index.ts"), ...argv];
+	const result = Bun.spawnSync([...(terminal ? AT_A_TERMINAL : []), ...command], { cwd: home, env });
 	return { stdout: result.stdout.toString(), stderr: result.stderr.toString(), exit: result.exitCode };
 }
 
@@ -49,7 +70,7 @@ function run(entry: Case) {
 		const extra = Object.fromEntries(Object.entries(entry.env ?? {}).map(([key, value]) => [key, value.replaceAll("<home>", home)]));
 		for (const step of entry.steps ?? []) {
 			if (step.bun) {
-				const result = dg(home, step.bun.map((arg) => arg.replaceAll("<home>", home)), extra, true);
+				const result = dg(home, step.bun.map((arg) => arg.replaceAll("<home>", home)), extra, needsTerminal(step));
 				if (result.exit !== 0) throw new Error(`${entry.name}: setup ${step.bun.join(" ")} failed: ${result.stderr}`);
 			}
 			for (const [rel, text] of Object.entries(step.write ?? {})) put(home, rel, text);

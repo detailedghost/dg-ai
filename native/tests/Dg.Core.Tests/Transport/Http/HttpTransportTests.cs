@@ -389,13 +389,12 @@ public sealed class HttpTransportTests(Xunit.ITestOutputHelper output)
     [Fact]
     public async Task SendAsync_PayloadIsNotJson_ThrowsContractException()
     {
-        var transport = Create("http://127.0.0.1:1");
+        await using var transport = Create("http://127.0.0.1:1");
 
         var error = await Assert.ThrowsAsync<PluginContractException>(async () =>
             await transport.SendAsync(Frame("not json"), CancellationToken.None)
         );
 
         Assert.Equal("message", error.Code);
-        await transport.DisposeAsync();
     }
 }

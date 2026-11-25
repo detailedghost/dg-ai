@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Dg.Core.Abstractions;
 using Dg.Core.Output;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dg.Plugins.Tests;
 
@@ -51,6 +52,21 @@ public sealed class PluginCommandParityTests
         Assert.Equal("", run.Stderr);
         Assert.Equal(expected.Setup, run.Files);
     }
+
+    [Fact]
+    public void Harness_BuildsEveryCommandTheProductionRegistrationAdds()
+    {
+        var services = new FakeServices();
+        services.AddPlugins();
+        var registered = services
+            .Select(static d => ((ICommand)d.ImplementationFactory!(null!)).Name)
+            .Order(StringComparer.Ordinal);
+        using var home = new TempHome();
+
+        Assert.Equal(registered, home.CommandNames.Order(StringComparer.Ordinal));
+    }
+
+    private sealed class FakeServices : List<ServiceDescriptor>, IServiceCollection;
 
     [Fact]
     public void Fixtures_EveryCase_HasBunOutput()
@@ -131,15 +147,15 @@ internal sealed class TempHome : IDisposable
 
     public void Write(string relative, string text)
     {
-        var file = System.IO.Path.Combine(Root, relative);
-        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file)!);
+        var file = Path.Combine(Root, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         File.WriteAllText(file, text.Replace("<home>", Root, StringComparison.Ordinal));
     }
 
     public void Symlink(string relative, string target)
     {
-        var file = System.IO.Path.Combine(Root, relative);
-        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file)!);
+        var file = Path.Combine(Root, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         File.CreateSymbolicLink(file, target);
     }
 
@@ -149,6 +165,15 @@ internal sealed class TempHome : IDisposable
         using var error = new MemoryStream();
         var exit = Dispatch(Commands(new OutputWriter(output), new OutputWriter(error)), argv);
         return new CommandRun(Strip(output), Strip(error), exit, Snapshot());
+    }
+
+    public IEnumerable<string> CommandNames
+    {
+        get
+        {
+            using var sink = new MemoryStream();
+            return [.. Commands(new OutputWriter(sink), new OutputWriter(sink)).Select(static c => c.Name)];
+        }
     }
 
     private ICommand[] Commands(OutputWriter output, OutputWriter error) =>
@@ -161,7 +186,7 @@ internal sealed class TempHome : IDisposable
         var files = new SortedDictionary<string, string>(StringComparer.Ordinal);
         foreach (var file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
         {
-            var relative = System.IO.Path.GetRelativePath(Root, file).Replace('\\', '/');
+            var relative = Path.GetRelativePath(Root, file).Replace('\\', '/');
             if (Skipped.Contains(relative.Split('/')[0]))
                 continue;
             files[relative] =

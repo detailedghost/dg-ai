@@ -1,8 +1,8 @@
-using Dg.Core.Abstractions;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using Dg.Core.Abstractions;
 
 namespace Dg.Config.Tests;
 

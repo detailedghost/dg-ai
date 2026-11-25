@@ -57,7 +57,11 @@ internal sealed class TextFixtureCase
         foreach (var bin in Requires)
             File.CreateSymbolicLink(Path.Combine(root, "bin", bin), HostBinary(bin)!);
         foreach (var (name, text) in Bin)
+        {
+            if (Requires.Contains(name))
+                throw new InvalidOperationException($"fixture {Name} lists {name} in both requires and bin");
             Put(Path.Combine(root, "bin", name), text, "755", null);
+        }
         foreach (var (rel, spec) in Files)
         {
             if (spec.ValueKind == JsonValueKind.String)
