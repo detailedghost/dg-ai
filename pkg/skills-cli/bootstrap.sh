@@ -464,8 +464,8 @@ mkdir -p "${ROOT}/bin" "${BIN}"
 
 select_asset() {
   FETCH="${ASSET}"
-  GZIP="${DG_GZIP:-gzip}"
-  if command -v "$GZIP" >/dev/null 2>&1 && [ -n "$(asset_url "${ASSET}.gz")" ]; then
+  GZIP_BIN="${DG_GZIP:-gzip}"
+  if command -v "$GZIP_BIN" >/dev/null 2>&1 && [ -n "$(asset_url "${ASSET}.gz")" ]; then
     FETCH="${ASSET}.gz"
   fi
 }
@@ -474,7 +474,7 @@ fetch_program() {
   echo "Downloading ${FETCH}..."
   download_asset "${FETCH}" "${WORK}/${FETCH}"
   [ "${FETCH}" = "${ASSET}" ] && return
-  "$GZIP" -dc "${WORK}/${FETCH}" >"${WORK}/${ASSET}" || die "could not unpack ${FETCH}"
+  "$GZIP_BIN" -dc "${WORK}/${FETCH}" >"${WORK}/${ASSET}" || die "could not unpack ${FETCH}"
 }
 
 install_program() {
@@ -565,7 +565,7 @@ install_front_door() {
   front_expected=$(sums_entry "${front_asset}")
   [ -n "${front_expected}" ] || { front_note "v${VERSION} has no ${front_asset}"; return 0; }
   front_fetch="${front_asset}"
-  if command -v "$GZIP" >/dev/null 2>&1 && [ -n "$(asset_url "${front_asset}.gz")" ]; then
+  if command -v "$GZIP_BIN" >/dev/null 2>&1 && [ -n "$(asset_url "${front_asset}.gz")" ]; then
     front_fetch="${front_asset}.gz"
   fi
   front_url=$(asset_url "${front_fetch}")
@@ -574,7 +574,7 @@ install_front_door() {
   "$CURL" -fsSL -H "User-Agent: dg-ai" -o "${WORK}/${front_fetch}" "${front_url}" ||
     { front_note "could not download ${front_fetch}"; return 0; }
   if [ "${front_fetch}" != "${front_asset}" ]; then
-    "$GZIP" -dc "${WORK}/${front_fetch}" >"${WORK}/${front_asset}" ||
+    "$GZIP_BIN" -dc "${WORK}/${front_fetch}" >"${WORK}/${front_asset}" ||
       { front_note "could not unpack ${front_fetch}"; return 0; }
   fi
   [ "$(sha256_of "${WORK}/${front_asset}")" = "${front_expected}" ] ||
