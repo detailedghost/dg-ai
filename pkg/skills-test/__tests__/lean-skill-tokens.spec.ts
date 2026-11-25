@@ -103,7 +103,7 @@ describe("skill-tokens.ts command line", () => {
 			stdout: "pipe",
 			stderr: "pipe",
 		});
-		return { code: proc.exitCode, out: proc.stdout.toString() };
+		return { code: proc.exitCode, out: proc.stdout.toString() + proc.stderr.toString() };
 	}
 
 	test("prints every flow and the descriptions", () => {
