@@ -1,15 +1,14 @@
 using System.Diagnostics;
 using System.Text;
 
-namespace Dg.Hooks.Defs.Text;
+namespace Dg.Hooks.Shared;
 
-internal readonly record struct CommandResult(int Status, string Stdout, string Stderr, bool Truncated = false);
-
-internal static class CommandRunner
+internal static class HookProcess
 {
     private const int TimeoutMs = 30_000;
     private const int CapBytes = 1024 * 1024;
     private const int DrainAfterKillMs = 1000;
+    private static readonly string[] WindowsExtensions = [".exe", ".cmd", ".bat", ".com"];
     private const string TruncatedNote = "\n[output truncated]\n";
 
     public static string? Which(string bin, IReadOnlyDictionary<string, string?> env)
@@ -21,6 +20,12 @@ internal static class CommandRunner
         foreach (var dir in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
         {
             var candidate = Path.Combine(dir, bin);
+            if (OperatingSystem.IsWindows())
+            {
+                foreach (var extension in WindowsExtensions)
+                    if (File.Exists(candidate + extension))
+                        return candidate + extension;
+            }
             if (IsExecutable(candidate))
                 return candidate;
         }

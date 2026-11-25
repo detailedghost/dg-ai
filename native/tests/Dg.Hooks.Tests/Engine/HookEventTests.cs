@@ -113,7 +113,45 @@ public sealed class HookEventTests
             """{"tool_name":"MultiEdit","tool_input":{"file_path":"a.md","edits":[{"old_string":"x","new_string":"one"},{"old_string":"y","new_string":"two"},{"old_string":"z"}]}}"""u8
         );
 
-        Assert.Equal(["one", "two"], ev.Edits);
+        Assert.Equal(["one", "two", ""], ev.Edits);
+    }
+
+    [Fact]
+    public void Parse_MultiEdit_NullOrNonObjectEdits_ContributeEmptyStrings()
+    {
+        var ev = HookEvent.Parse(
+            """{"tool_name":"MultiEdit","tool_input":{"edits":[null,7,{"new_string":null},{"new_string":4}]}}"""u8
+        );
+
+        Assert.Equal(["", "", "", "4"], ev.Edits);
+    }
+
+    [Theory]
+    [InlineData("12", "12")]
+    [InlineData("1.5", "1.5")]
+    [InlineData("true", "true")]
+    [InlineData("false", "false")]
+    [InlineData("{\"a\":1}", "[object Object]")]
+    [InlineData("[1,\"a\",null,[2,3]]", "1,a,,2,3")]
+    [InlineData("[]", "")]
+    public void Parse_NonStringContentAndFilePath_BecomeJsString(string json, string expected)
+    {
+        var ev = HookEvent.Parse(
+            Encoding.UTF8.GetBytes($$$"""{"tool_name":"Write","tool_input":{"file_path":{{{json}}},"content":{{{json}}},"new_string":{{{json}}}}}""")
+        );
+
+        Assert.Equal(expected, ev.FilePath);
+        Assert.Equal(expected, ev.Content);
+        Assert.Equal(expected, ev.NewString);
+    }
+
+    [Fact]
+    public void Parse_NullContentAndFilePath_StayNull()
+    {
+        var ev = HookEvent.Parse("""{"tool_input":{"file_path":null,"content":null}}"""u8);
+
+        Assert.Null(ev.FilePath);
+        Assert.Null(ev.Content);
     }
 
     [Fact]
@@ -142,7 +180,7 @@ public sealed class HookEventTests
     public void Parse_NonStringValues_AreIgnored()
     {
         var ev = HookEvent.Parse(
-            """{"tool_name":7,"tool_input":{"file_path":false,"command":{"a":1}},"cwd":"/w"}"""u8
+            """{"tool_name":7,"tool_input":{"file_path":null,"command":{"a":1}},"cwd":"/w"}"""u8
         );
 
         Assert.Null(ev.ToolName);

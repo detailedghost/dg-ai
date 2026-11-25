@@ -1,7 +1,6 @@
 using System.Text;
-using System.Text.Encodings.Web;
-using System.Text.Json;
 using Dg.Hooks.Engine;
+using Dg.Hooks.Shared;
 
 namespace Dg.Hooks.Defs.Pr;
 
@@ -37,7 +36,7 @@ internal sealed class PrProseHook(PrHookHost host) : IHook
                 break;
         }
         if (outcome.Context is { } context)
-            host.Output.Write(AdditionalContext(context));
+            HookJson.EmitContext(ev, "PreToolUse", context, host.Output.Write);
         if (outcome.Stderr != "")
             host.Error.Write(outcome.Stderr);
         return outcome.Exit;
@@ -45,7 +44,7 @@ internal sealed class PrProseHook(PrHookHost host) : IHook
 
     private bool Bypassed(HookEvent ev)
     {
-        var scratch = ScratchDirectory.Hooks(host.Env);
+        var scratch = host.ScratchDirectory();
         foreach (var session in (string[])[host.SessionOf(ev.SessionId), host.MarkerSession()])
         {
             var marker = Path.Combine(scratch, $"pr-prose-disabled.{session}");
@@ -57,9 +56,9 @@ internal sealed class PrProseHook(PrHookHost host) : IHook
 
     private async ValueTask<Outcome> CheckBodyAsync(string body, HookEvent ev, CancellationToken ct)
     {
-        var findings = PrBodyScanner.Scan(body, JsText.FiniteOr(host.Value("HOOK_PR_PROSE_MAX_SENTENCE"), 40));
+        var findings = PrBodyScanner.Scan(body, host.Number("HOOK_PR_PROSE_MAX_SENTENCE", 40));
         var hint = "";
-        if (PrProcess.Which(host.Env, "vale") is null)
+        if (HookProcess.Which("vale", host.Env) is null)
         {
             hint = ValeHint;
         }
@@ -80,7 +79,7 @@ internal sealed class PrProseHook(PrHookHost host) : IHook
                 ? new Outcome(0, "", JsText.Trim(hint))
                 : new Outcome(0, "", null);
 
-        var max = JsText.FiniteOr(host.Value("HOOK_PR_PROSE_MAX_FINDINGS"), 12);
+        var max = host.Number("HOOK_PR_PROSE_MAX_FINDINGS", 12);
         PrBodyScanner.SortByLine(findings);
         var shown = ShownCount(max, findings.Count);
         StringBuilder text = new(hint);
@@ -109,23 +108,24 @@ internal sealed class PrProseHook(PrHookHost host) : IHook
         CancellationToken ct
     )
     {
-        var scratch = ScratchDirectory.Hooks(host.Env);
+        var scratch = host.ScratchDirectory();
         var dir = MakeTempDirectory(scratch, "pr-prose.");
         try
         {
             await File.WriteAllBytesAsync(Path.Combine(dir, "body.md"), Encoding.UTF8.GetBytes($"{body}\n"), ct);
             var level = host.Value("HOOK_PR_PROSE_LEVEL") ?? "warning";
-            var result = await PrProcess.RunAsync(
+            var result = await HookProcess.RunAsync(
                 host.Env,
-                "vale",
                 [
+                    "vale",
                     $"--config={config}",
                     $"--minAlertLevel={level}",
                     "--filter=.Name != \"Vale.Spelling\"",
                     "--output=line",
                     "body.md",
                 ],
-                dir
+                dir,
+                ct
             );
             List<Finding> findings = [];
             foreach (var row in result.Stdout.Split('\n'))
@@ -151,7 +151,7 @@ internal sealed class PrProseHook(PrHookHost host) : IHook
 
     private bool FirstHint(string session)
     {
-        var scratch = ScratchDirectory.Hooks(host.Env);
+        var scratch = host.ScratchDirectory();
         var marker = Path.Combine(scratch, $"pr-prose-hint.{session}");
         if (Path.Exists(marker))
             return false;
@@ -173,7 +173,4 @@ internal sealed class PrProseHook(PrHookHost host) : IHook
             return path;
         }
     }
-
-    private static string AdditionalContext(string text) =>
-        $$$"""{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"{{{JsonEncodedText.Encode(text, JavaScriptEncoder.UnsafeRelaxedJsonEscaping)}}}"}}""";
 }

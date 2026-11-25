@@ -11,6 +11,8 @@ import {
 	type PwExtRequest,
 	type PwExtVerb,
 	type PW_EXT_WEBMCP_VERBS,
+	type PwExtModuleVerb,
+	isPwExtModuleVerb,
 	PW_EXT_READ_VERBS,
 	PW_EXT_MAX_UPLOAD_BYTES,
 	PW_EXT_NETWORK_MAX_LIMIT,
@@ -39,6 +41,12 @@ import { demosDir } from "../demo/paths";
 import { extensionRequiredMessage, isCliOnly } from "../utils/cli-only";
 import { publishPrivate } from "./core/files";
 import { defaultOutputDir } from "./core/registry";
+import { VERBS as STORAGE_VERBS } from "@dg/common/pw-ext-verbs/storage";
+import { PAGE_USAGE, PageUsageError, isPageVerb, pageRequestOf } from "./ext-verbs/page";
+import { InputUsageError, isInputVerb, parse as parseInput } from "./ext-verbs/input";
+import { NavigationUsageError, buildRequest as buildNavigation, isNavigationVerb } from "./ext-verbs/navigation";
+import { POINTER_HELP, POINTER_VERBS, PointerUsageError, parsePointerRequest } from "./ext-verbs/pointer";
+import { STORAGE_USAGE, StorageUsageError, storageRequestOf } from "./ext-verbs/storage";
 import { resolveOutput, timestampedName } from "./core/response";
 import type { ClientEnv } from "./core/spec";
 
@@ -183,7 +191,7 @@ function stageFile(file: string, cwd: string): StagedFile {
 	};
 }
 
-type CliVerb = Exclude<PwExtVerb, (typeof PW_EXT_WEBMCP_VERBS)[number]>;
+type CliVerb = Exclude<PwExtVerb, (typeof PW_EXT_WEBMCP_VERBS)[number] | PwExtModuleVerb>;
 
 const POSITIONALS: Record<CliVerb, readonly string[]> = {
 	current: [],
@@ -233,6 +241,7 @@ const OPTIONS = {
 	keys: { type: "boolean" },
 	from: { type: "string" },
 	path: { type: "string" },
+	submit: { type: "boolean" },
 } as const;
 const STAGED_PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
 
@@ -283,6 +292,17 @@ Write verbs (they change the page):
   press <key>             press a key on the focused element, such as Enter, Escape, Tab, ArrowDown, Backspace,
                           a or Shift+Tab; Enter in a form field submits the form when the page does not handle it
   upload <ref|selector> <file>  set one file on a file input (https pages only)
+  go-back                 go back one entry in the tab's history
+  go-forward              go forward one entry in the tab's history
+  reload                  reload the tab
+${POINTER_HELP}
+  check <ref|selector>    check a checkbox or radio button
+  uncheck <ref|selector>  uncheck a checkbox
+  type <text> [--submit]  type text into the focused element; --submit presses Enter after it
+  keydown <key>           press and hold one key
+  keyup <key>             release one key
+${PAGE_USAGE}
+${STORAGE_USAGE}
   call <tool> <json-args> Web MCP bridge: run one WebMCP tool of the page; it asks a Web MCP approval
                           (not the pw --ext site allowlist) unless the tool reads only or a grant holds
   unmask [--minutes N]    ask the user, in the browser, to show email addresses and allow secret fill
@@ -303,6 +323,28 @@ Write verbs (they change the page):
 
 class ExtUsageError extends Error {}
 
+const MODULE_USAGE_ERRORS = [
+	NavigationUsageError,
+	PointerUsageError,
+	InputUsageError,
+	PageUsageError,
+	StorageUsageError,
+];
+
+function moduleRequest(verb: PwExtModuleVerb, args: readonly string[], tab: number | undefined, submit: boolean): PwExtRequest {
+	const tabText = tab === undefined ? undefined : String(tab);
+	try {
+		if (isNavigationVerb(verb)) return buildNavigation(verb, args, tabText);
+		if ((POINTER_VERBS as readonly string[]).includes(verb)) return parsePointerRequest(verb as (typeof POINTER_VERBS)[number], args, tab);
+		if (isInputVerb(verb)) return parseInput({ verb, args, submit, ...(tab === undefined ? {} : { tab }) });
+		if (isPageVerb(verb)) return pageRequestOf(verb, args, tabText);
+		return storageRequestOf(verb as (typeof STORAGE_VERBS)[number], args, tabText);
+	} catch (error) {
+		if (MODULE_USAGE_ERRORS.some((type) => error instanceof type)) throw new ExtUsageError((error as Error).message);
+		throw error;
+	}
+}
+
 type Parsed = {
 	request: PwExtRequest;
 	staged?: StagedFile;
@@ -312,13 +354,31 @@ type Parsed = {
 
 type SecretSource = Pick<ExtDeps, "env" | "readStdin">;
 
+const NEGATIVE_NUMBER = /^-\d+(\.\d+)?$/;
+const MARK = "\u0000";
+
+function takesValue(previous: string | undefined): boolean {
+	const name = previous?.startsWith("--") ? previous.slice(2) : undefined;
+	return name !== undefined && Object.hasOwn(OPTIONS, name) && OPTIONS[name as keyof typeof OPTIONS].type === "string";
+}
+
 function readArgs(argv: readonly string[]) {
-	return parseArgs({
-		args: [...argv],
+	const parsed = parseArgs({
+		args: argv.map((arg, index) => (NEGATIVE_NUMBER.test(arg) && !takesValue(argv[index - 1]) ? `${MARK}${arg}` : arg)),
 		options: OPTIONS,
 		allowPositionals: true,
 		strict: true,
 	});
+	const unmark = (text: string) => (text.startsWith(MARK) ? text.slice(1) : text);
+	return {
+		values: Object.fromEntries(
+			Object.entries(parsed.values).map(([name, value]) => [
+				name,
+				typeof value === "string" ? unmark(value) : Array.isArray(value) ? value.map(unmark) : value,
+			]),
+		) as typeof parsed.values,
+		positionals: parsed.positionals.map(unmark),
+	};
 }
 
 function tabIdOf(text: string, usage: string): number {
@@ -368,7 +428,7 @@ function parseRequest(
 	}
 	if (parsed.values.help) return "help";
 	const [verb, ...rest] = parsed.positionals;
-	if (!verb || !Object.hasOwn(POSITIONALS, verb))
+	if (!verb || (!Object.hasOwn(POSITIONALS, verb) && !isPwExtModuleVerb(verb)))
 		throw new ExtUsageError(
 			`Unknown pw --ext verb: ${verb ?? "(none)"}. Use one of: ${[...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS].join(", ")}.`,
 		);
@@ -378,6 +438,8 @@ function parseRequest(
 		throw new ExtUsageError("--value-env and --value-stdin work only with pw --ext fill.");
 	if ((parsed.values.minutes !== undefined || parsed.values.off) && verb !== "unmask")
 		throw new ExtUsageError("--minutes and --off work only with pw --ext unmask.");
+	if (parsed.values.submit && verb !== "type")
+		throw new ExtUsageError("--submit works only with pw --ext type.");
 	if (parsed.values.text !== undefined && (verb !== "dialog" || rest[0] !== "accept"))
 		throw new ExtUsageError("--text works only with pw --ext dialog accept.");
 	const networkOption =
@@ -401,11 +463,16 @@ function parseRequest(
 		throw new ExtUsageError(
 			"pw --ext fill takes a secret only from --value-env or --value-stdin, never as an argument.",
 		);
-	const names = secretFill ? ["target"] : POSITIONALS[verb as CliVerb];
 	const tab =
 		parsed.values.tab === undefined
 			? undefined
 			: tabIdOf(parsed.values.tab, "pw --ext --tab takes a tab id from pw --ext tabs.");
+	if (isPwExtModuleVerb(verb))
+		return {
+			request: moduleRequest(verb, rest, tab, parsed.values.submit === true),
+			...(parsed.values.session === undefined ? {} : { session: parsed.values.session }),
+		};
+	const names = secretFill ? ["target"] : POSITIONALS[verb as CliVerb];
 	if (tab !== undefined && verb === "select")
 		throw new ExtUsageError("pw --ext select takes a tab id, not --tab.");
 	const required = names.filter((name) => !name.endsWith("?")).length;

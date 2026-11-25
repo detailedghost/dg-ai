@@ -177,7 +177,7 @@ describe("pw --ext", () => {
 
 	test.each([
 		[["nope"]],
-		[["eval", "1+1"]],
+		[["eval"]],
 		[["run-code", "x"]],
 		[["open"]],
 		[["open", "chrome://settings"]],
@@ -339,12 +339,12 @@ describe("pw --ext tab verbs and --tab", () => {
 		expect(env.stderr.join("\n")).toContain("pw --ext new takes [<url>].");
 	});
 
-	test("lists all 23 verbs for an unknown verb", async () => {
+	test("lists every verb for an unknown verb", async () => {
 		const env = clientEnv();
 		await runExt(["--ext", "nope"], env, deps(() => ({})).value);
 		const verbs = [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS];
 
-		expect(verbs).toHaveLength(23);
+		expect(verbs).toHaveLength(47);
 		for (const verb of verbs) expect(env.stderr.join("\n")).toContain(verb);
 		expect(env.stderr.join("\n")).toContain(`Use one of: ${verbs.join(", ")}.`);
 	});
@@ -372,8 +372,8 @@ describe("pw --ext tab verbs and --tab", () => {
 describe("pw main routes --ext", () => {
 	test("never starts a local browser session for --ext", async () => {
 		const env = clientEnv();
-		expect(await main(["--ext", "eval", "1"], env)).toBe(2);
-		expect(env.stderr.join("\n")).toContain("eval");
+		expect(await main(["--ext", "cookie-list"], env)).toBe(2);
+		expect(env.stderr.join("\n")).toContain("cookie-list");
 	});
 });
 

@@ -60,10 +60,12 @@ internal sealed class PrFixtureCase
 
             var output = new StringWriter();
             var error = new StringWriter();
-            var host = new PrHookHost(env, output, error);
+            var cwd = _case.TryGetProperty("cwd", out var relative) ? Path.Combine(root, relative.GetString()!) : null;
+            var host = new PrHookHost(env, output, error, cwd);
             var engine = new HookEngine(
                 [new PrConfirmHook(host), new PrProseHook(host), new StripAiCoauthorsHook(host)],
-                error
+                error,
+                output
             );
             var args = StringArray("args").Select(arg => arg.Replace("$CWD", root, StringComparison.Ordinal)).ToArray();
             using var stdin = new MemoryStream(Encoding.UTF8.GetBytes(StdinText(root)));

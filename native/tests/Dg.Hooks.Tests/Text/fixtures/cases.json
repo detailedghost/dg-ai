@@ -232,8 +232,7 @@
 			},
 			"cwd": "<ROOT>/work",
 			"session_id": "evsess"
-		},
-		"knownGap": "HookEvent.Edits drops an edit without a string new_string, so line numbers shift (engine-owned)"
+		}
 	},
 	{
 		"name": "spelling-missing-file-path",
@@ -2735,8 +2734,7 @@
 		"files": {
 			"work/a.py": "x\n",
 			"work/b.go": "x\n"
-		},
-		"knownGap": "the Bun runner joins additionalContext of all apply_patch files into one JSON; the C# engine runs the hook per file (engine-owned)"
+		}
 	},
 	{
 		"name": "format-uses-absolute-file-path",

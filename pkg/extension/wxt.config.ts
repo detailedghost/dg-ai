@@ -23,6 +23,7 @@ export default defineConfig({
 		resolve: {
 			conditions: ["onnxruntime-web-use-extern-wasm"],
 			alias: {
+				"@dg/common/pw-ext-verbs": resolve(__dirname, "../common/src/pw-ext-verbs"),
 				"@dg/common": resolve(__dirname, "../common/src/index.ts"),
 				"@dg/pages": resolve(__dirname, "../pages/src"),
 				"@dg/tour-ui": resolve(__dirname, "../tour-ui/src/index.ts"),

@@ -1,5 +1,5 @@
 import type { PwExtResponse } from "@dg/common";
-import type { PointerRequest, PointerResult } from "../../../../common/src/pw-ext-verbs/pointer";
+import type { PointerRequest, PointerResult } from "@dg/common/pw-ext-verbs/pointer";
 import type { AgentTabs } from "../agent-tabs";
 import { allowedPage, mailbox, PW_EXT_BLOCKED_ERROR, PW_EXT_MAILBOX_ERROR, PW_EXT_PRIVATE_ERROR } from "../tab-guards";
 

@@ -1,3 +1,4 @@
+using Dg.Hooks.Shared;
 using Dg.Hooks.Engine;
 
 namespace Dg.Hooks.Defs.Repo;
@@ -15,6 +16,9 @@ internal sealed class DailyPruneHook(
     private const double DayMs = 86_400_000;
 
     public string Id => "daily-prune";
+
+    public bool UsesStdin(string[] args) =>
+        Array.IndexOf(args, "--now") < 0 && Array.IndexOf(args, "--dry-run") < 0;
 
     public async ValueTask<int> RunAsync(HookEvent ev, CancellationToken ct)
     {

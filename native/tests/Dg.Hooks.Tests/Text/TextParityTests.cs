@@ -34,7 +34,6 @@ public sealed class TextParityTests
     {
         var entry = TextFixtureCase.Get(name);
         Assert.SkipWhen(OperatingSystem.IsWindows(), "fixtures use POSIX shell formatters");
-        Assert.SkipWhen(entry.KnownGap is not null, entry.KnownGap ?? "");
         Assert.SkipUnless(entry.Available(), $"requires {string.Join(", ", entry.Requires)}");
 
         var run = entry.Materialize();
@@ -45,7 +44,8 @@ public sealed class TextParityTests
             using StreamWriter engineError = new(stderr, new UTF8Encoding(false), 256, leaveOpen: true) { AutoFlush = true };
             TextHookIo io = new(run.Env, new OutputWriter(stdout), new OutputWriter(stderr));
             IHook hook = entry.Hook == "spelling" ? new SpellingHook(io) : new FormatHook(io);
-            HookEngine engine = new([hook], engineError);
+            using StreamWriter engineOutput = new(stdout, new UTF8Encoding(false), 256, leaveOpen: true) { AutoFlush = true };
+            HookEngine engine = new([hook], engineError, engineOutput);
 
             var code = await engine.RunAsync(entry.Hook, [], new MemoryStream(run.Stdin), TestContext.Current.CancellationToken);
 

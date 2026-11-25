@@ -31,7 +31,6 @@ type Case = {
 	bin?: Record<string, string>;
 	chmod?: Record<string, string>;
 	requires?: string[];
-	knownGap?: string;
 };
 
 const LOG_HEAD = `#!/bin/sh

@@ -73,6 +73,7 @@ internal static class ApplyPatch
             Source = source.Source,
             ResponseFilePath = source.ResponseFilePath,
             Args = source.Args,
+            Sink = source.Sink,
             FilePath = Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(cwd, path)),
             NewString = added,
         };

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Dg.Core.Config;
 using Dg.Hooks.Engine;
+using Dg.Hooks.Shared;
 
 namespace Dg.Hooks.Defs.Pr;
 
@@ -14,6 +15,8 @@ internal sealed partial class StripAiCoauthorsHook(PrHookHost host) : IHook
     private static partial Regex Utf8Name();
 
     public string Id => HookId;
+
+    public bool UsesStdin(string[] args) => false;
 
     public async ValueTask<int> RunAsync(HookEvent ev, CancellationToken ct)
     {
@@ -35,10 +38,10 @@ internal sealed partial class StripAiCoauthorsHook(PrHookHost host) : IHook
         {
             return 0;
         }
-        var encoding = await PrProcess.RunAsync(host.Env, "git", ["config", "--get", "i18n.commitEncoding"], ev.Cwd);
+        var encoding = await HookProcess.RunAsync(host.Env, ["git", "config", "--get", "i18n.commitEncoding"], host.Cwd, ct);
         if (encoding.Status == 0 && !Utf8Name().IsMatch(JsText.Trim(encoding.Stdout)))
             return 0;
-        var config = await PrProcess.RunAsync(host.Env, "git", ["config", "--get", "core.commentChar"], ev.Cwd);
+        var config = await HookProcess.RunAsync(host.Env, ["git", "config", "--get", "core.commentChar"], host.Cwd, ct);
         var configured = config.Status == 0 ? JsText.Trim(config.Stdout) : "";
         var stripped = AiCoauthors.Strip(message, CommentCharOf(configured, message));
         if (stripped != message)
