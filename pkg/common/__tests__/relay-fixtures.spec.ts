@@ -66,7 +66,7 @@ describe("relay contract fixtures", () => {
 describe("relay contract coverage", () => {
 	const requestFrames = RELAY_FEATURES.flatMap(({ frames }) => {
 		const { cliResult: _, ...validated } = frames;
-		return Object.values(validated).filter((type): type is string => type !== undefined);
+		return Object.values(validated).filter((type) => type !== undefined);
 	});
 	const resultFrames = RELAY_FEATURES.map(({ frames }) => frames.cliResult);
 
