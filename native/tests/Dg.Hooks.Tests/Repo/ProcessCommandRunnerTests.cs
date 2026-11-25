@@ -37,10 +37,12 @@ public sealed class ProcessCommandRunnerTests
     [Fact]
     public async Task RunAsync_Cwd_RunsInThatDirectory()
     {
+        using var git = GitEnvironment.Isolate();
         using var dir = TempRoot.Create();
 
         var result = await Runner.RunAsync(["git", "rev-parse", "--git-dir"], dir.Path, CancellationToken.None);
 
         Assert.NotEqual(0, result.Status);
+        Assert.Contains("not a git repository", result.Stderr);
     }
 }

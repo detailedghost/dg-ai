@@ -11,7 +11,7 @@ public sealed class PruneContextTests
     public void Remove_UndeletableEntry_LogsKeptAndContinues()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "unix file modes");
-        Assert.SkipWhen(Environment.UserName == "root", "root ignores directory permissions");
+        Assert.SkipWhen(Environment.IsPrivilegedProcess, "root ignores directory permissions");
         using var temp = TempRoot.Create();
         var locked = Path.Combine(temp.Path, "locked");
         Directory.CreateDirectory(locked);
@@ -36,5 +36,7 @@ public sealed class PruneContextTests
         Assert.True(File.Exists(stuck));
         Assert.False(File.Exists(free));
         Assert.Contains(lines, line => line.StartsWith($"kept {stuck} (", StringComparison.Ordinal));
+        Assert.DoesNotContain(lines, line => line.StartsWith($"removed {stuck} ", StringComparison.Ordinal));
+        Assert.Contains(lines, line => line.StartsWith($"removed {free} ", StringComparison.Ordinal));
     }
 }

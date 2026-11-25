@@ -23,4 +23,7 @@ public sealed class JsTextTests
     [InlineData(double.NegativeInfinity, "-Infinity")]
     public void Format_Number_MatchesJavaScriptToString(double value, string expected) =>
         Assert.Equal(expected, JsText.Format(value));
+
+    [Fact]
+    public void Format_NegativeZero_PrintsZeroLikeJavaScript() => Assert.Equal("0", JsText.Format(double.NegativeZero));
 }
