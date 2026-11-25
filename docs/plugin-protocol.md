@@ -3,7 +3,7 @@
 One contract for every plugin transport. Bun and C# read the same manifest, the same `[plugins.<name>]` section and the
 same fixtures in `pkg/common/fixtures/plugins`. See [ADR 0059](adr/0059-dg-plugins-are-built-in-or-external-with-one-transport-contract.md).
 
-The reference code is `pkg/common/src/plugins/` (`manifest.ts`, `contract.ts`, `config.ts`). The C# side (cs-plugins-core)
+The reference code is `pkg/common/src/plugins/` (`manifest.ts`, `contract.ts`, `config.ts`). The C# side (`native/src/Dg.Core/Plugins`)
 and the Bun IPC transport must match the fixtures byte for byte.
 
 ## Binary frame
