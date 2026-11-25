@@ -17,7 +17,7 @@ export async function buildCompiled({
 	const { options } = shared ?? (await sharedOptions());
 	mkdirSync(dirname(outfile), { recursive: true });
 	const compile = { target: COMPILE_TARGETS[target], outfile, autoloadDotenv: false, autoloadBunfig: false };
-	const result = await Bun.build({ ...options, compile });
+	const result = await Bun.build({ ...options, bytecode: true, format: "esm" as const, compile });
 	if (!result.success) throw new AggregateError(result.logs, `Compiled dg build failed for ${target}.`);
 	return outfile;
 }

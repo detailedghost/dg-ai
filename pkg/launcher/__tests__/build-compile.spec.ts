@@ -21,6 +21,7 @@ describe("buildCompiled options", () => {
 			const [config] = build.mock.calls[0] as [Bun.BuildConfig];
 			expect(config.bytecode).toBe(true);
 			expect(config.splitting).toBe(true);
+			expect(config.format).toBe("esm");
 			expect(config.compile).toMatchObject({ target: COMPILE_TARGETS[target] });
 		});
 	}
