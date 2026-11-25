@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +12,10 @@ const shared = {
 } as unknown as SharedOptions;
 
 describe("buildCompiled options", () => {
-	const build = spyOn(Bun, "build");
+	let build: ReturnType<typeof spyOn<typeof Bun, "build">>;
+	beforeAll(() => {
+		build = spyOn(Bun, "build");
+	});
 	afterEach(() => build.mockReset());
 	afterAll(() => build.mockRestore());
 
@@ -30,7 +33,10 @@ describe("buildCompiled options", () => {
 });
 
 describe("buildLauncher output directory", () => {
-	const build = spyOn(Bun, "build");
+	let build: ReturnType<typeof spyOn<typeof Bun, "build">>;
+	beforeAll(() => {
+		build = spyOn(Bun, "build");
+	});
 	afterEach(() => build.mockReset());
 	afterAll(() => build.mockRestore());
 
@@ -40,7 +46,10 @@ describe("buildLauncher output directory", () => {
 			mkdirSync(join(outdir, "lib"));
 			writeFileSync(join(outdir, "lib", "stale.js"), "");
 			writeFileSync(join(outdir, "keep.txt"), "keep");
-			build.mockResolvedValue({ success: true, outputs: [], logs: [] } as unknown as Bun.BuildOutput);
+			build.mockImplementation((async (config: Bun.BuildConfig) => {
+				mkdirSync(config.outdir as string, { recursive: true });
+				return { success: true, outputs: [], logs: [] };
+			}) as unknown as typeof Bun.build);
 			await buildLauncher(outdir);
 			expect(existsSync(join(outdir, "lib", "stale.js"))).toBe(false);
 			expect(existsSync(join(outdir, "keep.txt"))).toBe(true);
