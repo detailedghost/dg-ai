@@ -20,13 +20,14 @@ If a step fails, run dg doctor pw pw-code batch-open launch install stash creden
 
 `/dg:pw` drives a browser through `playwright-core`. It needs Bun >= 1.4.0 and Google Chrome or Microsoft Edge. Below, `pw <command>` means `dg pw <command>`.
 
-**Usage:** `dg pw [--ext] <command> [args]`
+**Usage:** `dg pw [--ext|--local] <command> [args]`
 
 ## Flags
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
-| `--ext` | | Act on the human's real browser through the paired dg-ai-extension. See "Real browser". | off (local is the default) |
+| `--ext` | | Force the human's real browser through the paired dg-ai-extension. See "Real browser". | off (local is the default) except in `auto` with a paired extension |
+| `--local` | | Force the Playwright browser that dg starts. | off |
 
 ## Calling rules
 
@@ -46,9 +47,7 @@ If a step fails, run dg doctor pw pw-code batch-open launch install stash creden
 
 ## Browser
 
-`pw open` uses `DG_BROWSER` (a browser binary path) when set, then a system Chrome, then Edge, then another Chromium-family browser on PATH or in the usual app folders (Brave, Chromium, Vivaldi), then a Chromium that `install-browser` downloaded.
-`--browser=chromium` uses the same list without the Chrome and Edge channels. `--browser=chrome` or `msedge` falls back to the full list when that browser is missing, and prints `chrome not found, using <path>`. With none, it exits 3 and prints every location it tried.
-Ask the human before you run `dg pw install-browser`: it downloads about 150 MB under the dg data directory. Tell the human that `install-browser --remove` deletes the download.
+`pw open` finds a browser: `DG_VERIFY_BROWSER` (a binary path), then Chrome, Edge, other Chromium-family browsers, then a downloaded Chromium. Ask the human before you run `dg pw install-browser`: it downloads about 150 MB, and `install-browser --remove` deletes it. Search order and fallbacks: `references/browser-finder.md`.
 
 ## WSL
 
@@ -65,16 +64,7 @@ dg pw close
 
 ## Open flags
 
-| Flag | Effect |
-|---|---|
-| `-s=<name>` | Session name. Persistent sessions are global by name. |
-| `--scratch` | In-memory profile, bound to the current directory. |
-| `--headless` | No window. |
-| `--browser=<b>` | `chrome`, `chromium`, `msedge`, `firefox`, `webkit`. `firefox` and `webkit` need the Playwright build (`bunx playwright-core install firefox`). A system Firefox does not work. |
-| `--profile=<dir>` | Profile directory. Use only when asked. |
-| `--from=<state>` | Seed from a saved state. See `references/session-management.md`. |
-| `--out=<dir>` | Output directory, for example a project folder. |
-| `--depth=<n>` | Snapshot depth for this session. |
+`-s=<name>` names a session, `--scratch` uses an in-memory profile, `--headless` hides the window, `--browser=<b>` picks `chrome`, `chromium`, `msedge`, `firefox` or `webkit`, `--from=<state>` seeds from a saved state, `--out=<dir>` sets the output directory, `--depth=<n>` sets snapshot depth. Use `--profile=<dir>` only when asked. Every flag, with its detail: `references/commands.md`.
 
 Opening a persistent session that another directory holds is refused. Close it there, or pick another name.
 
@@ -83,10 +73,18 @@ Opening a persistent session that another directory holds is refused. Close it t
 Snapshots, screenshots, downloads, traces, and videos land in `dg stash pw`. Nothing goes to the project unless you pass `--out=<dir>`.
 `pw state save <name>` stores a login in a private directory. Prefer it over `pw state-save <file>`, which leaves a full cookie jar in a plain file.
 
+## Browser mode
+
+The default is `auto`. A call goes to the human's real browser through the extension only when the extension is paired and connected, the verb has an ext verb, and the call has no options and no session. Every other call runs in a local Playwright browser. `--ext` and `--local` force one. `DG_BROWSER=ext|local` and `browser.mode` in `config.toml` (`ext`, `local`, `auto`) force it for a shell or for good.
+Some verbs run local in every mode: `route`, `unroute`, `route-list`, `network-state-set`, `state-save`, `state-load`, `delete-data`, `cookie-set`, `cookie-delete`, `cookie-clear`, `video-*`, `tracing-*`, `pdf`, `install-browser`, `kill-all`, `attach`. `--ext` with one of them exits 2. The reason for each verb, and the auto routing rules: `references/browser-mode.md`.
+`pw select`, `close`, `tab-select`, `upload` and `tab-close <index>` also stay local in auto mode. Their ext verbs take different arguments.
+
 ## Real browser (`--ext`)
 
-Use `--ext` only when the human asks you to look at or act on a page in their real browser. You act only on tabs in your own tab group, until the human hands you one from the extension popup. Plain `pw` stays the default for tests, recording, mocking and isolated runs.
-Passing `--ext` gives you the agent's tab group; the browser asks the human once per site in a session, and a Stop click on the page ends your control, so act only on what the human asked for. `tools` and `call` are the Web MCP bridge and use Web MCP approvals, not that site question. To save tokens, run `pw --ext tools` first and prefer a WebMCP tool; else use refs from one snapshot. Verbs, tabs, refs, uploads and blocked pages: `references/real-browser.md`.
+Use ext only when the human asks you to look at or act on a page in their real browser. Plain `--local` stays right for tests, recording, mocking and isolated runs.
+Each session gets its own agent window and tab group. You act only on tabs in that group, until the human hands you one from the extension popup.
+The browser asks the human once per site in a session. A PHI checkbox on that popup makes `snapshot` and `screenshot` refuse the site. `eval` and the storage write verbs never ask: they refuse a site that is not allowed yet, so navigate or read first. A Stop click on the page ends your control, so act only on what the human asked for.
+`tools` and `call` are the Web MCP bridge and use Web MCP approvals, not the site question. To save tokens, run `pw --ext tools` first and prefer a WebMCP tool; else use refs from one snapshot. Verbs, tabs, refs, uploads and blocked pages: `references/real-browser.md`.
 
 ## Tab batches
 
@@ -103,10 +101,12 @@ A target is a ref, a CSS selector, or a `getBy...(...)` string. `getBy` strings 
 |---|---|
 | Commands, raw output, snapshots, targeting | `references/commands.md` |
 | Windows mode, CDP, risks | `references/windows.md` |
+| Browser search order, `--browser` fallbacks | `references/browser-finder.md` |
 | Sessions, profiles, named states | `references/session-management.md` |
 | Tests and request mocking | `references/test-generation.md`, `references/request-mocking.md` |
 | `pw-code` recipes and approval | `references/running-code.md` |
 | Cookies, storage, state files | `references/storage-state.md` |
 | Tracing and video | `references/tracing.md`, `references/video-recording.md` |
+| Auto mode, local-only verbs and reasons | `references/browser-mode.md` |
 | Real browser with `--ext` | `references/real-browser.md` |
 | Tab batches, refs, extension install | `references/tabs.md` |
