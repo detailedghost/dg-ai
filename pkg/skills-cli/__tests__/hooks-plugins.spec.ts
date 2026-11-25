@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { parseManifest } from "@dg/common/plugins/manifest";
 import { encodeFrame, FRAME_FLAG_RESPONSE, type Frame } from "@dg/common/plugins/contract";
 import { closeIpcConnections } from "@dg/common/plugins/transport/ipc";
@@ -51,7 +51,8 @@ const MANIFEST = (name: string, extra = "") => `name = "${name}"\nversion = "1.0
 
 function approve(dir: string, approved = true): void {
 	const tree = hashTree(join(dir, "src"));
-	writeFileSync(join(dir, "dg-plugin.json"), JSON.stringify({ treeSha256: tree, approvedSha256: approved ? tree : null }));
+	const record = { name: basename(dir), kind: "skill", source: "folder", pin: { kind: "sha256", value: tree }, treeSha256: tree, approvedSha256: approved ? tree : null };
+	writeFileSync(join(dir, "dg-plugin.json"), JSON.stringify(record));
 }
 
 function installPlugin(world: ReturnType<typeof hookWorld>, name: string, config: string, manifest = MANIFEST(name)) {
@@ -274,6 +275,14 @@ describe("resolveExternalHook", () => {
 		const world = hookWorld();
 		const dir = installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");
 		approve(dir, false);
+		await expect(resolveExternalHook("scan", world.env())).rejects.toThrow(/not approved/);
+	});
+
+	test("refuses a record that the plugin store would reject", async () => {
+		const world = hookWorld();
+		const dir = installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");
+		const tree = hashTree(join(dir, "src"));
+		writeFileSync(join(dir, "dg-plugin.json"), JSON.stringify({ treeSha256: tree, approvedSha256: tree }));
 		await expect(resolveExternalHook("scan", world.env())).rejects.toThrow(/not approved/);
 	});
 

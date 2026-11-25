@@ -35,16 +35,16 @@ export function checkSource(source: string): void {
 		throw new DgCliError("dg plugin: the source holds credentials in its URL. Next: remove them; dg never stores secrets in config.toml.");
 }
 
+const URL_AUTHORITY = /^([a-z][a-z0-9+.-]*):\/\/([^/\\?#]*)/i;
+const SSH_SCHEMES: ReadonlySet<string> = new Set(["ssh:", "git+ssh:"]);
+
 function holdsCredentials(source: string): boolean {
-	if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(source)) return false;
-	let url: URL;
-	try {
-		url = new URL(source);
-	} catch {
-		return /^[a-z][a-z0-9+.-]*:\/\/[^/@]*:[^/@]*@/i.test(source);
-	}
-	const web = url.protocol === "http:" || url.protocol === "https:";
-	return url.password !== "" || (web && url.username !== "");
+	const match = URL_AUTHORITY.exec(source);
+	if (match === null) return false;
+	const authority = match[2] ?? "";
+	const at = authority.lastIndexOf("@");
+	if (at < 0) return false;
+	return !SSH_SCHEMES.has(`${(match[1] ?? "").toLowerCase()}:`) || authority.slice(0, at).includes(":");
 }
 
 function isFolder(source: string): boolean {

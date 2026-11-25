@@ -74,7 +74,8 @@ async function chooseBrowser(
 			env.err(`pw ${verb} runs only in local mode. Next: run it without --ext.`);
 			return 2;
 		}
-		if (process.env["DG_DEBUG"]) env.err(`dg pw: ${decision.mode} browser (${decision.reason})`);
+		const debug = process.env["DG_DEBUG"];
+		if (debug && debug !== "0") env.err(`dg pw: ${decision.mode} browser (${decision.reason})`);
 		const ext = decision.mode === "ext";
 		return { argv: ext && !flags.ext && mapped ? mapped : argv, ext };
 	} catch (error) {

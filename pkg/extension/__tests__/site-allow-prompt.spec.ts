@@ -220,6 +220,35 @@ describe("PHI sites", () => {
 		await expect(s.allow.assertCaptureAllowed("s1", "https://ehr.example.com/")).resolves.toBeUndefined();
 	});
 
+	it("forgets every flag of one session and leaves another session's flags", async () => {
+		const s = setup();
+		const requests = [
+			{ sessionId: "s1", siteKey: "https://example.com" },
+			{ sessionId: "s1", siteKey: "https://example.org" },
+			{ sessionId: "s2", siteKey: "https://example.com" },
+		].map((request) => s.allow.requestSiteAllow(request));
+		await tick();
+		for (const id of ["id1", "id2", "id3"]) s.allow.answer(id, true, true);
+		await Promise.all(requests);
+		await s.allow.forget("s1");
+		for (const site of ["https://example.com/", "https://example.org/"])
+			await expect(s.allow.assertCaptureAllowed("s1", site)).resolves.toBeUndefined();
+		await expect(s.allow.assertCaptureAllowed("s2", "https://example.com/")).rejects.toBeInstanceOf(PhiCaptureRefusedError);
+	});
+
+	it("removes the flag and rethrows when the allow call throws", async () => {
+		const s = setup({
+			onAllow: () => {
+				throw new Error("storage down");
+			},
+		});
+		const pending = s.allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" });
+		await tick();
+		s.allow.answer("id1", true, true);
+		await expect(pending).rejects.toThrow("storage down");
+		expect(Object.keys(s.storage.data)).toEqual([]);
+	});
+
 	it("stores the flag before the site counts as allowed", async () => {
 		let flagged = false;
 		const s = setup({

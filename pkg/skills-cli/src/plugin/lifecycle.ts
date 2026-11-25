@@ -10,6 +10,7 @@ import {
 	type Env,
 	ensureRoot,
 	installedNames,
+	isApproved,
 	isEnabled,
 	pluginFolder,
 	type PluginRecord,
@@ -78,10 +79,6 @@ function disableAndUnload(name: string, env: Env): void {
 
 function srcDir(name: string, env: Env): string {
 	return join(pluginFolder(name, env), "src");
-}
-
-function isApproved(record: PluginRecord, env: Env): boolean {
-	return record.approvedSha256 !== null && record.approvedSha256 === record.treeSha256 && hashTree(srcDir(record.name, env)) === record.treeSha256;
 }
 
 function load(record: PluginRecord, env: Env): void {

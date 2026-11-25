@@ -2,6 +2,7 @@ import { parse } from "smol-toml";
 import { CREDENTIAL_NAME_PATTERN } from "../credentials-format";
 import { DgCliError } from "../errors";
 import { lineOfKey } from "../node/dg-toml";
+import { pluginTokenCredential } from "./contract";
 
 export const PLUGIN_KINDS = ["hook", "job", "skill"] as const;
 export const PLUGIN_TRANSPORTS = ["ipc", "http", "tcp", "udp"] as const;
@@ -34,7 +35,7 @@ const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const HOST_PORT = /^(\[[^\]]+\]|[^:\s/]+):(\d{1,5})$/;
-export const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
 function fail(where: Where, key: string, message: string): never {
 	const target = key === "" ? "the file" : key;
@@ -102,31 +103,41 @@ function parseHostPort(where: Where, transport: PluginTransport, endpoint: strin
 	return match[1] as string;
 }
 
+export type EndpointProblem = { problem: string; next: string };
+
 /** The first rule an http endpoint breaks, or undefined; the one policy for the manifest and the transport. */
-export function checkHttpEndpoint(endpoint: string, remote: boolean): string | undefined {
+export function checkHttpEndpoint(endpoint: string, remote: boolean, plugin: string): EndpointProblem | undefined {
 	let url: URL;
 	try {
 		url = new URL(endpoint);
 	} catch {
-		return "endpoint must be an http or https URL";
+		return { problem: "endpoint must be an http or https URL", next: "set endpoint to an http or https URL in plugin.toml" };
 	}
-	if (url.protocol !== "http:" && url.protocol !== "https:") return "endpoint must be an http or https URL";
-	if (url.username !== "" || url.password !== "") return "endpoint must not hold credentials in the endpoint URL; use the plugin token from dg credentials";
-	if (remote) return url.protocol === "https:" ? undefined : "a remote endpoint must use https";
-	return LOOPBACK_HOSTS.has(url.hostname)
-		? undefined
-		: `endpoint host ${url.hostname} is not loopback; set remote = true in plugin.toml and allow_remote = true in config.toml`;
+	if (url.protocol !== "http:" && url.protocol !== "https:")
+		return { problem: "endpoint must be an http or https URL", next: "set endpoint to an http or https URL in plugin.toml" };
+	if (url.username !== "" || url.password !== "")
+		return {
+			problem: "endpoint must not hold credentials in the endpoint URL; use the plugin token from dg credentials",
+			next: `remove the credentials from endpoint in plugin.toml, then run dg credentials set ${pluginTokenCredential(plugin)}`,
+		};
+	if (remote)
+		return url.protocol === "https:" ? undefined : { problem: "a remote endpoint must use https", next: "use an https endpoint in plugin.toml" };
+	if (LOOPBACK_HOSTS.has(url.hostname)) return undefined;
+	return {
+		problem: `endpoint host ${url.hostname} is not loopback`,
+		next: "set remote = true in plugin.toml and allow_remote = true in config.toml, or use a loopback endpoint",
+	};
 }
 
-function checkEndpoint(where: Where, transport: PluginTransport, remote: boolean, endpoint: string | undefined): void {
+function checkEndpoint(where: Where, name: string, transport: PluginTransport, remote: boolean, endpoint: string | undefined): void {
 	if (transport === "ipc") {
 		if (remote) fail(where, "remote", "remote needs the http transport with an https endpoint");
 		return;
 	}
 	if (endpoint === undefined) fail(where, "transport", `endpoint is required for the ${transport} transport`);
 	if (transport === "http") {
-		const problem = checkHttpEndpoint(endpoint, remote);
-		if (problem !== undefined) fail(where, "endpoint", problem);
+		const found = checkHttpEndpoint(endpoint, remote, name);
+		if (found !== undefined) fail(where, "endpoint", `${found.problem}; ${found.next}`);
 		return;
 	}
 	if (remote) fail(where, "remote", "remote needs the http transport with an https endpoint");
@@ -181,7 +192,7 @@ export function parseManifest(text: string, file: string): PluginManifest {
 	if ("builtin" in entry) {
 		if (endpoint !== undefined) fail(where, "endpoint", "a built-in plugin runs in process and takes no endpoint");
 		if (remote) fail(where, "remote", "a built-in plugin cannot be remote");
-	} else checkEndpoint(where, transport, remote, endpoint);
+	} else checkEndpoint(where, name, transport, remote, endpoint);
 	const source = optionalString(where, "source", root.source);
 	const pin = pinOf(where, root, kind, source);
 	const capabilities = table(where, "capabilities", root.capabilities);

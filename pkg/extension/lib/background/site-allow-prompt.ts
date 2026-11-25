@@ -94,10 +94,14 @@ export function createSiteAllow({
 		const { answer, phi } = await prompt({ sessionId, siteKey });
 		if (answer !== "allow") return "deny";
 		if (phi) await storage.session.set({ [phiKey(sessionId, siteKey)]: true });
-		await control.allow(sessionId, siteKey);
-		if (await control.allowed(sessionId, siteKey)) return "allow";
-		if (phi) await storage.session.remove(phiKey(sessionId, siteKey));
-		return "deny";
+		let allowed = false;
+		try {
+			await control.allow(sessionId, siteKey);
+			allowed = await control.allowed(sessionId, siteKey);
+		} finally {
+			if (!allowed && phi) await storage.session.remove(phiKey(sessionId, siteKey));
+		}
+		return allowed ? "allow" : "deny";
 	}
 
 	async function requestSiteAllow(request: SiteAllowRequest): Promise<SiteAllowAnswer> {
