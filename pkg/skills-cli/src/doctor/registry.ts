@@ -24,6 +24,7 @@ import { launchChecks } from "../launch/doctor";
 import { meaningfulChecks } from "../meaningful/doctor";
 import { monolithChecks } from "../monolith/doctor";
 import { overwatchSnapshotChecks } from "../overwatch-snapshot/doctor";
+import { pluginChecks } from "../plugin/doctor";
 import { polishChecks } from "../polish/doctor";
 import { protoChecks, prototypeChecks } from "../proto/doctor";
 import { updateChecks } from "../update/doctor";
@@ -88,6 +89,7 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	bg: bgChecks,
 	stat: statChecks,
 	sniff: sniffChecks,
+	plugin: pluginChecks,
 	skill: skillChecks,
 	ssms: ssmsChecks,
 	hooks: hooksChecks,
