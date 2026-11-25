@@ -229,7 +229,17 @@ type TabVerbRequest = PwExtRequest & {
 type WebMcpRequest = PwExtRequest & { verb: WebMcpVerb };
 type ModuleRequest = PwExtRequest & { verb: PwExtModuleVerb };
 const MODULE_SITE_ASK: ReadonlySet<PwExtVerb> = new Set([...NAVIGATION_VERBS, ...POINTER_VERBS, ...INPUT_VERBS]);
-const CAPTURE_VERBS: ReadonlySet<PwExtVerb> = new Set(["snapshot", "screenshot"]);
+const PAGE_DATA_VERBS: ReadonlySet<PwExtVerb> = new Set([
+	"snapshot",
+	"screenshot",
+	"selection",
+	"console",
+	"network",
+	"storage",
+	"fetch",
+	"call",
+	"eval",
+]);
 
 const BUILT_INS_KEY = "webmcpScripts";
 
@@ -1842,6 +1852,12 @@ export function createPwExtHandler({
 		};
 	}
 
+	async function assertPageDataAllowed(sessionId: string, url: string): Promise<void> {
+		await siteAllow?.assertCaptureAllowed(sessionId, url).catch((error: unknown) => {
+			throw error instanceof PhiCaptureRefusedError ? new Refusal(error.message) : error;
+		});
+	}
+
 	async function runModule(request: ModuleRequest, sessionId: string): Promise<PwExtResult> {
 		const at = { sessionId };
 		if ((NAVIGATION_VERBS as readonly string[]).includes(request.verb)) return navigation(request as never, at);
@@ -1874,6 +1890,10 @@ export function createPwExtHandler({
 			if (!live || live.groupId !== tab.groupId || !(await agentTabs.owns({ sessionId: context.sessionId, tabId: tab.id })))
 				throw new Refusal(SELECTED_GONE);
 			if (live.url !== tab.url) throw new Refusal("The page changed while the site question was open; nothing ran. Retry.");
+		}
+		if (PAGE_DATA_VERBS.has(request.verb)) {
+			const tab = await resolveTab(request, context.sessionId);
+			if (tab?.url) await assertPageDataAllowed(context.sessionId, tab.url);
 		}
 		if (signal.aborted) return CANCELED;
 		const result = await runModule(request, context.sessionId);
@@ -1924,10 +1944,7 @@ export function createPwExtHandler({
 			if (live.url !== tab.url)
 				throw new Refusal("The page changed while the site question was open; nothing ran. Retry.");
 		}
-		if (siteAllow && CAPTURE_VERBS.has(request.verb))
-			await siteAllow.assertCaptureAllowed(context.sessionId, tab.url as string).catch((error: unknown) => {
-				throw error instanceof PhiCaptureRefusedError ? new Refusal(error.message) : error;
-			});
+		if (PAGE_DATA_VERBS.has(request.verb)) await assertPageDataAllowed(context.sessionId, tab.url as string);
 		tab.signal = signal;
 		if (signal.aborted) return CANCELED;
 		return run(request, tab, context, signal);

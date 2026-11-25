@@ -17,7 +17,7 @@ export const SITE_ALLOW_MSG = {
 
 export class PhiCaptureRefusedError extends Error {
 	constructor(site: string) {
-		super(`${site} is flagged as PHI for this session; snapshot and screenshot are refused there.`);
+		super(`${site} is flagged as PHI for this session; page data verbs (snapshot, screenshot, selection, console, network, storage, fetch, call, eval) are refused there.`);
 	}
 }
 

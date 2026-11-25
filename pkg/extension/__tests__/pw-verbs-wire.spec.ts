@@ -61,7 +61,7 @@ async function harness(options: Options = {}) {
 				asked.push(request);
 				return options.approve ?? "deny";
 			},
-			ask: async (request) => ({ answer: options.approve ?? "deny", remember: false }),
+			ask: async () => ({ answer: options.approve ?? "deny", remember: false }),
 		},
 		grants,
 		lock,
@@ -96,12 +96,14 @@ async function harness(options: Options = {}) {
 	return { run, calls, asked, siteAsked, fake, scriptRuns: () => fake.raw.scripting.executeScript.mock.calls.length };
 }
 
+const BROWSER_METHOD = { "go-back": "goBack", "go-forward": "goForward", reload: "reload" } as const;
+
 describe("registered verb modules", () => {
 	it.each(["go-back", "go-forward", "reload"] as const)("runs %s on an allowed site", async (verb) => {
 		const h = await harness({ approveSite: true });
 		const result = await h.run({ verb });
 		expect(result).toMatchObject({ ok: true });
-		expect(h.calls).toEqual([`${verb === "go-back" ? "goBack" : verb === "go-forward" ? "goForward" : "reload"}:7`]);
+		expect(h.calls).toEqual([`${BROWSER_METHOD[verb]}:7`]);
 		expect(h.siteAsked).toEqual([]);
 	});
 
@@ -208,9 +210,18 @@ describe("registered verb modules", () => {
 		expect(h.scriptRuns()).toBe(0);
 	});
 
-	it.each(["snapshot", "screenshot"] as const)("refuses %s on a site flagged as PHI before any capture", async (verb) => {
+	it.each<PwExtRequest>([
+		{ verb: "snapshot" },
+		{ verb: "screenshot" },
+		{ verb: "selection" },
+		{ verb: "console" },
+		{ verb: "network" },
+		{ verb: "storage" },
+		{ verb: "fetch", url: "https://app.example.test/api" },
+		{ verb: "eval", expression: "document.body.innerText" },
+	])("refuses $verb on a site flagged as PHI before any page data is read", async (request) => {
 		const h = await harness({ approveSite: true, flagged: true });
-		const result = await h.run({ verb });
+		const result = await h.run(request);
 		expect(result).toMatchObject({ ok: false, error: expect.stringContaining("PHI") });
 		expect(h.scriptRuns()).toBe(0);
 	});
