@@ -22,12 +22,12 @@ export function hostKey(): CompileKey {
 	return `${os}-${process.arch}` as CompileKey;
 }
 
-/** Builds the compiled dg for this machine once per run into a temp dir. */
+/** Builds the compiled dg for this machine once per run into a temp dir, as the release does, without the companion packages. */
 export function buildCompiledHost(): string {
 	if (built) return built;
 	const dist = mkdtempSync(join(tmpdir(), "dg-compiled-"));
 	outdir = dist;
-	const build = Bun.spawnSync([process.execPath, join(LAUNCHER, "build.ts"), "--outdir", dist, "--compiled", hostKey()], {
+	const build = Bun.spawnSync([process.execPath, join(LAUNCHER, "build.ts"), "--outdir", dist, "--compiled", hostKey(), "--without-companions"], {
 		stdout: "pipe",
 		stderr: "pipe",
 	});

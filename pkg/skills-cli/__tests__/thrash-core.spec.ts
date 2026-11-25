@@ -297,13 +297,12 @@ describe("decideVerdict", () => {
 	});
 
 	test("the thrash skill documents the verdict limits and chunk constants it owns", () => {
-		const skill = readFileSync(
-			join(import.meta.dir, "../../../plugins/dg/skills/thrash/SKILL.md"),
-			"utf8",
-		);
+		const skillDir = join(import.meta.dir, "../../../plugins/dg/skills/thrash");
+		const skill = readFileSync(join(skillDir, "SKILL.md"), "utf8");
+		const verdictTable = readFileSync(join(skillDir, "references", "verdict.md"), "utf8");
 		const tiers = ["critical", "high", "medium", "low"] as const;
 		const documented: Record<number, Partial<Record<Tier, number>>> = {};
-		for (const match of skill.matchAll(/^\| (\d) \|(.*)\|$/gm)) {
+		for (const match of verdictTable.matchAll(/^\| (\d) \|(.*)\|$/gm)) {
 			const cells = (match[2] ?? "").split("|").map((cell) => cell.trim());
 			const limits: Partial<Record<Tier, number>> = {};
 			tiers.forEach((tier, index) => {
@@ -313,7 +312,7 @@ describe("decideVerdict", () => {
 			documented[Number(match[1])] = limits;
 		}
 		expect(documented).toEqual(VERDICT_LIMITS);
-		expect(skill).toContain(`(${LARGE_DIFF_LINES} changed lines)`);
+		expect(skill).toContain(`\`LARGE_DIFF_LINES\` (${LARGE_DIFF_LINES})`);
 		expect(skill).toContain(`\`MAX_CHUNKS\` (${MAX_CHUNKS})`);
 	});
 

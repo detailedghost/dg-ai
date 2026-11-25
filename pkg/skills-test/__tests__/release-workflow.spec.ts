@@ -68,16 +68,24 @@ describe("only the release job can write to the repository", () => {
 	});
 
 	test("the release job is the only job with contents: write", () => {
-		expect(releaseJob.permissions).toEqual({ contents: "write" });
+		const grants: Record<string, Record<string, string>> = {
+			release: { contents: "write" },
+			"dispatch-patches": { actions: "write" },
+		};
+		expect(releaseJob.permissions).toEqual(grants.release);
 		for (const [id, job] of Object.entries(workflow.jobs)) {
-			if (id === "release") continue;
 			expect([id, job.permissions ?? { contents: "read" }]).toEqual([
 				id,
-				{ contents: "read" },
+				grants[id] ?? { contents: "read" },
 			]);
 		}
-		expect(text.match(/:\s*write\b/g)?.length).toBe(1);
+		expect(text.match(/:\s*write\b/g)?.length).toBe(Object.keys(grants).length);
 		expect(text).not.toContain("write-all");
+	});
+
+	test("the dispatch-patches job only starts the patches workflow", () => {
+		const commands = (workflow.jobs["dispatch-patches"]?.steps ?? []).map((s) => s.run ?? "");
+		expect(commands).toEqual([expect.stringMatching(/^gh workflow run release-patches\.yml /)]);
 	});
 
 	test("the release job runs no install, so no dependency script sees the write token", () => {
@@ -820,6 +828,8 @@ const COMPILED_ASSETS = [
 	"dg-windows-x64-baseline.exe",
 	"dg-windows-arm64.exe",
 ];
+const COMPANION_ASSETS = ["dg-pw-<v>.tar.zst", "dg-db-<v>.tar.zst"];
+const COMPRESSED_ASSETS = COMPILED_ASSETS.flatMap((name) => [`${name}.zst`, `${name}.gz`]);
 const DOCUMENTED_ASSETS = [
 	"dg-ai-extension-<v>-chrome.zip",
 	"dg-ai-extension-<v>-firefox.zip",
@@ -830,7 +840,9 @@ const DOCUMENTED_ASSETS = [
 	"dg-lib-<v>.tar.gz",
 	"dg-chat-skills-<v>.zip",
 	"runtime.json",
+	...COMPANION_ASSETS,
 	...COMPILED_ASSETS,
+	...COMPRESSED_ASSETS,
 ];
 
 function uploadedNames(jobId: string): string[] {
@@ -863,13 +875,14 @@ describe("the release builds one bundle and smokes it on all six platforms", () 
 		expect(workflow.jobs["build-bundle"].strategy).toBeUndefined();
 	});
 
-	test("build-bundle cross-compiles the eight compiled dg assets in one step", () => {
+	test("build-bundle cross-compiles the eight compiled dg assets without companions and packs the companions in a second step", () => {
 		const runs = (workflow.jobs["build-bundle"]?.steps ?? []).map((s) => s.run ?? "");
-		expect(runs).toContain("bun run build.ts --outdir dist --compiled all");
+		expect(runs).toContain("bun run build.ts --outdir dist --compiled all --without-companions");
+		expect(runs).toContain("bun run build.ts --outdir dist --companions");
 	});
 
-	test("build-bundle uploads the eight compiled assets plus the 6.3 bridge tarball and runtime.json", () => {
-		expect(uploadedNames("build-bundle").sort()).toEqual([`dg-lib-<v>.tar.gz`, "runtime.json", ...COMPILED_ASSETS].sort());
+	test("build-bundle uploads the eight compiled assets, the two companion bundles, the 6.3 bridge tarball and runtime.json", () => {
+		expect(uploadedNames("build-bundle").sort()).toEqual([`dg-lib-<v>.tar.gz`, "runtime.json", ...COMPANION_ASSETS, ...COMPILED_ASSETS].sort());
 		expect(text).toContain(`dg-lib-${VERSION_EXPR}.tar.gz`);
 	});
 
@@ -919,7 +932,9 @@ describe("the release publishes exactly the documented asset names", () => {
 			(step(STEP.assets).run ?? "").includes(name),
 		);
 		const chat = /--out dist --version "\$VERSION"/.test(step(STEP.chat).run ?? "") ? ["dg-chat-skills-<v>.zip"] : [];
-		const published = [...fromBuilds, ...extras, ...chat]
+		const compress = step("Compress the compiled dg assets").run ?? "";
+		const compressed = compress.includes("zstd") && compress.includes("gzip") ? COMPRESSED_ASSETS : [];
+		const published = [...fromBuilds, ...extras, ...chat, ...compressed]
 			.sort();
 
 		expect(published).toEqual([...DOCUMENTED_ASSETS].sort());
