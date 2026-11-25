@@ -146,7 +146,7 @@
 		}
 	},
 	{
-		"name": "pr-confirm-bad-json",
+		"name": "pr-confirm-not-json",
 		"hook": "pr-confirm",
 		"stdin": "{not json"
 	},
@@ -177,7 +177,7 @@
 		}
 	},
 	{
-		"name": "spec-plan-lint-fake-dg-pass",
+		"name": "spec-plan-lint-plan-path",
 		"hook": "spec-plan-lint",
 		"event": {
 			"hook_event_name": "PostToolUse",
@@ -192,29 +192,7 @@
 		"files": {
 			"repo/.agents/spec/027_x/plan.md": "# plan\n"
 		},
-		"bin": {
-			"dg": "#!/bin/sh\nexit 0\n"
-		}
-	},
-	{
-		"name": "spec-plan-lint-fake-dg-fail",
-		"hook": "spec-plan-lint",
-		"event": {
-			"hook_event_name": "PostToolUse",
-			"tool_name": "Write",
-			"tool_input": {
-				"file_path": "$CWD/repo/.agents/spec/027_x/plan.md",
-				"content": "x"
-			},
-			"cwd": "$CWD/work",
-			"session_id": "evsess"
-		},
-		"files": {
-			"repo/.agents/spec/027_x/plan.md": "# plan\n"
-		},
-		"bin": {
-			"dg": "#!/bin/sh\necho 'missing Testing Criteria'\necho '  line 4' >&2\nexit 1\n"
-		}
+		"viaCore": true
 	},
 	{
 		"name": "unknown-hook-id",
@@ -223,7 +201,8 @@
 			"run",
 			"no-such-hook"
 		],
-		"stdin": "{}"
+		"stdin": "{}",
+		"viaCore": true
 	},
 	{
 		"name": "hooks-run-without-id",
@@ -231,13 +210,15 @@
 			"hooks",
 			"run"
 		],
-		"stdin": ""
+		"stdin": "",
+		"viaCore": true
 	},
 	{
 		"name": "hooks-list",
 		"argv": [
 			"hooks",
 			"list"
-		]
+		],
+		"viaCore": true
 	}
 ]

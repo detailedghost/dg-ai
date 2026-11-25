@@ -1,11 +1,3 @@
-using Dg.Core.Output;
-using Microsoft.Extensions.DependencyInjection;
+using Dg.Cli;
 
-var services = new ServiceCollection();
-await using var provider = services.BuildServiceProvider(
-    new ServiceProviderOptions { ValidateOnBuild = false }
-);
-
-OutputWriter.Out.WriteLine("dg");
-OutputWriter.Out.Flush();
-return 0;
+return await FrontDoor.RunAsync(args, CancellationToken.None);

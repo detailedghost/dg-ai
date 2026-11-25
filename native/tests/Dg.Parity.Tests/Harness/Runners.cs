@@ -9,7 +9,7 @@ internal static class Runners
         sandbox.Materialize(entry);
         var run = await Proc.RunAsync(
             host.Bun,
-            [host.BunIndex, .. entry.Argv.Select(sandbox.Substitute)],
+            [host.BunEntry, .. entry.Argv.Select(sandbox.Substitute)],
             sandbox.Env(entry, host, "bun"),
             sandbox.WorkingDirectory(entry),
             sandbox.Substitute(entry.Stdin ?? "")
@@ -42,5 +42,6 @@ internal static class Runners
         Assert.Equal(bun.Exit, front.Exit);
         Assert.Equal(bun.Config, front.Config);
         Assert.Equal(bun.After, front.After);
+        Assert.Equal(entry.ViaCore, front.ReachedCore);
     }
 }

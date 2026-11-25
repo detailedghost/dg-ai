@@ -8,6 +8,16 @@ internal static class Cases
 {
     private const int HookSampleStride = 4;
 
+    private static readonly HashSet<string> ViaCoreByConfig =
+    [
+        "get-syntax-error",
+        "get-bad-value",
+        "get-unknown-section-in-file",
+        "set-on-invalid-file",
+        "set-on-syntax-error-file",
+        "get-front-enabled-false",
+    ];
+
     private static readonly string Tests = Path.GetDirectoryName(Path.GetDirectoryName(Folder()))!;
 
     public static ParityCase[] Config() =>
@@ -22,7 +32,8 @@ internal static class Cases
                         static f => $"home/{f.Name}",
                         static f => Encoding.UTF8.GetBytes(f.Value.GetString()!)
                     )
-                    : null
+                    : null,
+                ViaCore: (e.TryGetProperty("native", out var native) && !native.GetBoolean()) || ViaCoreByConfig.Contains(e.GetProperty("name").GetString()!)
             ))
             .ToArray();
 
@@ -33,7 +44,8 @@ internal static class Cases
             .EnumerateArray()
             .Select(static (e, i) => new ParityCase(
                 $"complete-{i:00}",
-                ["__complete", .. Strings(e.GetProperty("words"))]
+                ["__complete", .. Strings(e.GetProperty("words"))],
+                ViaCore: e.GetProperty("words").GetArrayLength() < 2
             ))
             .ToArray();
     }
@@ -81,7 +93,8 @@ internal static class Cases
             e.TryGetProperty("env", out var env) ? Map(env) : null,
             e.TryGetProperty("files", out var files) ? Files(files) : null,
             e.TryGetProperty("bin", out var bin) ? Map(bin) : null,
-            e.TryGetProperty("cwd", out var cwd) ? cwd.GetString() : null
+            e.TryGetProperty("cwd", out var cwd) ? cwd.GetString() : null,
+            e.TryGetProperty("viaCore", out var viaCore) && viaCore.GetBoolean()
         );
     }
 

@@ -6,8 +6,9 @@ internal sealed class FrontDoorHost
 {
     private const string CoreScript = """
         #!/bin/sh
+        if [ -n "$DG_PARITY_LOG" ]; then echo core >> "$DG_PARITY_LOG"; fi
         if [ "$DG_PARITY_CORE" = "bun" ]; then
-          exec "$DG_PARITY_BUN" "$DG_PARITY_INDEX" "$@"
+          exec "$DG_PARITY_BUN" "$DG_PARITY_ENTRY" "$@"
         fi
         printf 'core argv:'
         for arg in "$@"; do printf ' [%s]' "$arg"; done
@@ -26,7 +27,7 @@ internal sealed class FrontDoorHost
 
     public string Bun { get; } = FindBun();
 
-    public string BunIndex => Path.Combine(RepoRoot, "pkg", "dg", "src", "index.ts");
+    public string BunEntry => Path.Combine(RepoRoot, "pkg", "launcher", "src", "dg.ts");
 
     public string DotnetRoot { get; } = FindDotnetRoot();
 
@@ -73,9 +74,9 @@ internal sealed class FrontDoorHost
     private static string FindRepoRoot()
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "pkg", "dg", "src", "index.ts")))
+            if (File.Exists(Path.Combine(dir.FullName, "pkg", "launcher", "src", "dg.ts")))
                 return dir.FullName;
-        throw new InvalidOperationException("pkg/dg/src/index.ts not found above the test output");
+        throw new InvalidOperationException("pkg/launcher/src/dg.ts not found above the test output");
     }
 
     private static string FindBun()

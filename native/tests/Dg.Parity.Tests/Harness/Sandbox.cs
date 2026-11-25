@@ -10,7 +10,8 @@ internal sealed record ParityCase(
     IReadOnlyDictionary<string, string>? Env = null,
     IReadOnlyDictionary<string, byte[]>? Files = null,
     IReadOnlyDictionary<string, string>? Bin = null,
-    string? Cwd = null
+    string? Cwd = null,
+    bool ViaCore = false
 );
 
 internal sealed record Observed(
@@ -18,7 +19,8 @@ internal sealed record Observed(
     string Stdout,
     string Stderr,
     string? Config,
-    SortedDictionary<string, string> After
+    SortedDictionary<string, string> After,
+    bool ReachedCore
 );
 
 internal sealed class Sandbox : IDisposable
@@ -29,6 +31,8 @@ internal sealed class Sandbox : IDisposable
     public string Root { get; } = Directory.CreateTempSubdirectory("dg-parity-").FullName;
 
     public string Home => Path.Combine(Root, "home");
+
+    public string CoreLog => $"{Root}.core";
 
     public string ConfigFile => Path.Combine(Home, "config", "config.toml");
 
@@ -84,7 +88,9 @@ internal sealed class Sandbox : IDisposable
             ["DOTNET_EnableDiagnostics"] = "0",
             ["DG_PARITY_CORE"] = core,
             ["DG_PARITY_BUN"] = host.Bun,
-            ["DG_PARITY_INDEX"] = host.BunIndex,
+            ["DG_PARITY_ENTRY"] = host.BunEntry,
+            ["DG_JIT"] = "1",
+            ["DG_PARITY_LOG"] = CoreLog,
         };
         if (entry.Env is { } extra)
             foreach (var (key, value) in extra)
@@ -100,10 +106,14 @@ internal sealed class Sandbox : IDisposable
     public Observed Observe(RunResult run)
     {
         var config = File.Exists(ConfigFile) ? Normalize(File.ReadAllText(ConfigFile)) : null;
-        return new Observed(run.Exit, Normalize(run.Stdout), Normalize(run.Stderr), config, Snapshot());
+        return new Observed(run.Exit, Normalize(run.Stdout), Normalize(run.Stderr), config, Snapshot(), File.Exists(CoreLog));
     }
 
-    public void Dispose() => Directory.Delete(Root, recursive: true);
+    public void Dispose()
+    {
+        Directory.Delete(Root, recursive: true);
+        File.Delete(CoreLog);
+    }
 
     private SortedDictionary<string, string> Snapshot()
     {
