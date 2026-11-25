@@ -9,7 +9,27 @@ namespace Dg.Core.Plugins.Runtime;
 
 public interface IPluginTransportProvider
 {
-    ValueTask<IPluginTransport> OpenAsync(PluginManifest manifest, bool allowRemote, CancellationToken ct);
+    ValueTask<TransportLease> OpenAsync(PluginManifest manifest, bool allowRemote, CancellationToken ct);
+}
+
+internal interface ITransportLeaseOwner
+{
+    ValueTask ReleaseAsync();
+}
+
+public readonly struct TransportLease : IAsyncDisposable
+{
+    private readonly ITransportLeaseOwner? _owner;
+
+    internal TransportLease(IPluginTransport transport, ITransportLeaseOwner? owner)
+    {
+        Transport = transport;
+        _owner = owner;
+    }
+
+    public IPluginTransport Transport { get; }
+
+    public ValueTask DisposeAsync() => _owner?.ReleaseAsync() ?? ValueTask.CompletedTask;
 }
 
 public static class PluginTransportKeys
@@ -33,48 +53,56 @@ public static class PluginTransportKeys
 
 public sealed class PoolTransportProvider(PluginConnectionPool pool) : IPluginTransportProvider
 {
-    public async ValueTask<IPluginTransport> OpenAsync(PluginManifest manifest, bool allowRemote, CancellationToken ct) =>
-        await pool.GetAsync(manifest.Name, ct).ConfigureAwait(false);
+    public async ValueTask<TransportLease> OpenAsync(PluginManifest manifest, bool allowRemote, CancellationToken ct) =>
+        new(await pool.GetAsync(manifest.Name, ct).ConfigureAwait(false), null);
 }
 
 public sealed class HttpTransportProvider(IHttpTransportFactory factory) : IPluginTransportProvider, IAsyncDisposable
 {
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, OpenTransport> _open = new(StringComparer.Ordinal);
-    private readonly List<IPluginTransport> _retired = [];
+    private readonly Dictionary<string, Entry> _open = new(StringComparer.Ordinal);
+    private readonly HashSet<Entry> _retired = [];
+    private bool _disposed;
 
-    public ValueTask<IPluginTransport> OpenAsync(PluginManifest manifest, bool allowRemote, CancellationToken ct)
+    public ValueTask<TransportLease> OpenAsync(PluginManifest manifest, bool allowRemote, CancellationToken ct)
     {
-        var identity = $"{manifest.Endpoint}|{manifest.Remote}|{allowRemote}";
+        var identity = new Identity(manifest.Endpoint, manifest.Remote, allowRemote);
+        Entry? toDispose = null;
+        TransportLease lease;
         lock (_gate)
         {
-            if (_open.TryGetValue(manifest.Name, out var existing))
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_open.TryGetValue(manifest.Name, out var entry) || entry.Identity != identity)
             {
-                if (existing.Identity == identity)
-                    return ValueTask.FromResult(existing.Transport);
-                _retired.Add(existing.Transport);
+                var created = new Entry(this, identity, factory.Create(manifest, allowRemote));
+                if (entry is not null)
+                    toDispose = Retire(entry);
+                _open[manifest.Name] = entry = created;
             }
-            var current = factory.Create(manifest, allowRemote);
-            _open[manifest.Name] = new OpenTransport(identity, current);
-            return ValueTask.FromResult(current);
+            entry.Leases++;
+            lease = new TransportLease(entry.Transport, entry);
         }
+        return toDispose is null ? ValueTask.FromResult(lease) : DisposeThenAsync(toDispose, lease);
     }
 
     public async ValueTask DisposeAsync()
     {
-        IPluginTransport[] all;
+        Entry[] all;
         lock (_gate)
         {
-            all = [.. _retired, .. _open.Values.Select(static entry => entry.Transport)];
+            _disposed = true;
+            all = [.. _retired, .. _open.Values];
             _retired.Clear();
             _open.Clear();
+            foreach (var entry in all)
+                entry.Closed = true;
         }
         List<Exception> failures = [];
-        foreach (var transport in all)
+        foreach (var entry in all)
         {
             try
             {
-                await transport.DisposeAsync().ConfigureAwait(false);
+                await entry.Transport.DisposeAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -85,7 +113,58 @@ public sealed class HttpTransportProvider(IHttpTransportFactory factory) : IPlug
             throw new AggregateException(failures);
     }
 
-    private sealed record OpenTransport(string Identity, IPluginTransport Transport);
+    private Entry? Retire(Entry entry)
+    {
+        if (entry.Leases > 0)
+        {
+            _retired.Add(entry);
+            return null;
+        }
+        entry.Closed = true;
+        return entry;
+    }
+
+    private static async ValueTask<TransportLease> DisposeThenAsync(Entry retired, TransportLease lease)
+    {
+        await DisposeQuietlyAsync(retired).ConfigureAwait(false);
+        return lease;
+    }
+
+    private static async ValueTask DisposeQuietlyAsync(Entry entry)
+    {
+        try
+        {
+            await entry.Transport.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception) { }
+    }
+
+    private ValueTask Release(Entry entry)
+    {
+        lock (_gate)
+        {
+            entry.Leases--;
+            if (entry.Closed || entry.Leases > 0 || !_retired.Remove(entry))
+                return ValueTask.CompletedTask;
+            entry.Closed = true;
+        }
+        return DisposeQuietlyAsync(entry);
+    }
+
+    private readonly record struct Identity(string? Endpoint, bool Remote, bool AllowRemote);
+
+    private sealed class Entry(HttpTransportProvider owner, Identity identity, IPluginTransport transport) : ITransportLeaseOwner
+    {
+        public Identity Identity { get; } = identity;
+
+        public IPluginTransport Transport { get; } = transport;
+
+        public int Leases;
+
+        public bool Closed;
+
+        public ValueTask ReleaseAsync() => owner.Release(this);
+    }
 }
 
 public sealed class DataDirIpcEndpointResolver(PluginManifestStore store) : IIpcEndpointResolver

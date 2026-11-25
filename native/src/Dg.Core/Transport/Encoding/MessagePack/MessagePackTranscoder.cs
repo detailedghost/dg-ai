@@ -58,7 +58,10 @@ public static class MessagePackTranscoder
         switch (element.ValueKind)
         {
             case JsonValueKind.Object:
-                writer.WriteMapHeader(element.EnumerateObject().Count());
+                var members = 0;
+                foreach (var _ in element.EnumerateObject())
+                    members++;
+                writer.WriteMapHeader(members);
                 foreach (var property in element.EnumerateObject())
                 {
                     writer.Write(property.Name);

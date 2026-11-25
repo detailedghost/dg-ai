@@ -15,11 +15,13 @@ internal sealed class LoopbackServer : IAsyncDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly List<SeenRequest> _seen = [];
     private readonly ServerFault _fault = new();
+    private readonly bool _record;
     private int _connections;
 
-    public LoopbackServer(Func<SeenRequest, Reply> handler)
+    public LoopbackServer(Func<SeenRequest, Reply> handler, bool record = true)
     {
         _handler = handler;
+        _record = record;
         _listener.Start();
         _ = AcceptLoopAsync();
     }
@@ -99,8 +101,9 @@ internal sealed class LoopbackServer : IAsyncDisposable
                 Buffer.BlockCopy(buffer, total, buffer, 0, filled - total);
                 filled -= total;
                 var request = new SeenRequest(first[0], first[1], headers, body);
-                lock (_seen)
-                    _seen.Add(request);
+                if (_record)
+                    lock (_seen)
+                        _seen.Add(request);
                 var reply = _handler(request);
                 if (reply.Delay is { } delay)
                     await Task.Delay(delay, _stop.Token);

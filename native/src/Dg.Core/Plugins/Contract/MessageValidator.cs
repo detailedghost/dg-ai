@@ -25,7 +25,7 @@ public static class MessageValidator
         {
             case (PluginRoutes.Hello, MessageDirection.Request):
                 ProtocolOne(body);
-                if (!StringList(body, "encodings").Contains("json"))
+                if (!StringList(body, "encodings", "json"))
                     throw Bad("body.encodings", "encodings must include json, every plugin reads json");
                 StringList(body, "capabilities");
                 OptionalString(body, "token");
@@ -99,7 +99,7 @@ public static class MessageValidator
 
     private static void RequireString(JsonElement body, string name)
     {
-        if (!(body.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String && value.GetString()!.Length > 0))
+        if (!(body.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String && !value.ValueEquals(""u8)))
             throw Bad($"body.{name}", $"{name} is required and must be a non-empty string");
     }
 
@@ -109,23 +109,26 @@ public static class MessageValidator
             throw Bad($"body.{name}", $"{name} must be a string");
     }
 
-    private static List<string> StringList(JsonElement body, string name)
+    private static bool StringList(JsonElement body, string name, string? wanted = null)
     {
-        List<string> items = [];
         if (!body.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Array)
             throw Bad($"body.{name}", $"{name} must be a list of strings");
+        var found = false;
         foreach (var item in value.EnumerateArray())
         {
             if (item.ValueKind != JsonValueKind.String)
                 throw Bad($"body.{name}", $"{name} must be a list of strings");
-            items.Add(item.GetString()!);
+            found |= wanted is not null && item.ValueEquals(wanted);
         }
-        return items;
+        return found;
     }
 
     private static void OneOf(JsonElement body, string name, string[] allowed)
     {
-        if (!(body.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String && Array.IndexOf(allowed, value.GetString()) >= 0))
-            throw Bad($"body.{name}", $"{name} must be one of {string.Join(", ", allowed)}");
+        if (body.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
+            foreach (var option in allowed)
+                if (value.ValueEquals(option))
+                    return;
+        throw Bad($"body.{name}", $"{name} must be one of {string.Join(", ", allowed)}");
     }
 }

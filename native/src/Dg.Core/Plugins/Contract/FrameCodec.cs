@@ -1,6 +1,6 @@
 namespace Dg.Core.Plugins.Contract;
 
-public sealed record DecodedFrame(FrameHeader Header, ReadOnlyMemory<byte> Payload);
+public readonly record struct DecodedFrame(FrameHeader Header, ReadOnlyMemory<byte> Payload);
 
 public static class FrameCodec
 {

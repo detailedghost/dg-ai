@@ -11,7 +11,15 @@ public sealed class UdpTransport : IEventSink, IAsyncDisposable
 {
     public const int DefaultCapacity = 1_024;
 
+    private const int ScratchCapacityLimit = 8 * 1024;
+
     private static readonly TimeSpan DrainTimeout = TimeSpan.FromMilliseconds(200);
+
+    [ThreadStatic]
+    private static ArrayBufferWriter<byte>? _scratch;
+
+    [ThreadStatic]
+    private static Utf8JsonWriter? _json;
 
     private readonly Channel<byte[]> _queue;
     private readonly UdpClient _client;
@@ -71,31 +79,41 @@ public sealed class UdpTransport : IEventSink, IAsyncDisposable
 
     internal static byte[]? Encode(in PluginEvent ev)
     {
-        var buffer = new ArrayBufferWriter<byte>(PluginProtocol.UdpMaxFrameBytes);
+        var buffer = _scratch ??= new ArrayBufferWriter<byte>(PluginProtocol.UdpMaxFrameBytes);
+        buffer.ResetWrittenCount();
         buffer.GetSpan(PluginProtocol.HeaderBytes);
         buffer.Advance(PluginProtocol.HeaderBytes);
+        var writer = _json;
+        if (writer is null)
+            _json = writer = new Utf8JsonWriter(buffer);
+        else
+            writer.Reset(buffer);
         try
         {
-            using (var writer = new Utf8JsonWriter(buffer))
-            {
-                writer.WriteStartObject();
-                writer.WriteString("route"u8, ev.Route);
-                writer.WritePropertyName("body"u8);
-                if (ev.Body.IsEmpty)
-                    writer.WriteNullValue();
-                else
-                    writer.WriteRawValue(ev.Body.Span, skipInputValidation: false);
-                writer.WriteEndObject();
-            }
+            writer.WriteStartObject();
+            writer.WriteString("route"u8, ev.Route);
+            writer.WritePropertyName("body"u8);
+            if (ev.Body.IsEmpty)
+                writer.WriteNullValue();
+            else
+                writer.WriteRawValue(ev.Body.Span, skipInputValidation: false);
+            writer.WriteEndObject();
+            writer.Flush();
         }
         catch (JsonException)
         {
             return null;
         }
         var total = buffer.WrittenCount;
+        if (buffer.Capacity > ScratchCapacityLimit)
+        {
+            _scratch = null;
+            _json = null;
+        }
         if (total > PluginProtocol.UdpMaxFrameBytes)
             return null;
-        var frame = buffer.WrittenSpan.ToArray();
+        var frame = GC.AllocateUninitializedArray<byte>(total);
+        buffer.WrittenSpan.CopyTo(frame);
         new FrameHeader(
             PluginProtocol.Version,
             FrameEncoding.Json,

@@ -112,5 +112,11 @@ internal sealed class EchoPluginServer : IAsyncDisposable
         {
             _fault.Record(ex);
         }
+        finally
+        {
+            lock (_clients)
+                _clients.Remove(client);
+            client.Dispose();
+        }
     }
 }
