@@ -1596,7 +1596,9 @@ describe("compiled thrash workflow", () => {
 		expect(workflow).toContain(
 			"<reviewDir>/.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md",
 		);
-		expect(skill).toContain("report `ADDRESS_FILE=` and offer `/dg:address -l`");
+		expect(
+			readFileSync(join(skills, "thrash", "references", "flow.md"), "utf8"),
+		).toContain("report `ADDRESS_FILE=` and offer `/dg:address -l`");
 		const installed = readdirSync(skills, { recursive: true }).map((entry) =>
 			basename(String(entry)),
 		);
