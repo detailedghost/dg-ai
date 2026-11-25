@@ -103,6 +103,7 @@ async function runCase(entry: Case) {
 		mkdirs(join(root, "home"));
 		put(join(root, "log"), "");
 		put(join(root, "work", ".git", "HEAD"), "");
+		for (const bin of entry.requires ?? []) symlinkSync(Bun.which(bin) as string, join(root, "bin", bin));
 		for (const [name, text] of Object.entries(entry.bin ?? {})) put(join(root, "bin", name), { content: text, mode: "755" });
 		for (const [rel, spec] of Object.entries(entry.files ?? {})) put(join(root, rel), spec);
 		for (const [rel, mode] of Object.entries(entry.chmod ?? {})) chmodSync(join(root, rel), Number.parseInt(mode, 8));
@@ -136,8 +137,7 @@ async function runCase(entry: Case) {
 }
 
 function available(entry: Case): boolean {
-	const path = (entry.env?.["PATH"] ?? "<ROOT>/bin").split(":").filter((p) => !p.includes("<ROOT>")).join(":");
-	return (entry.requires ?? []).every((bin) => Bun.which(bin, { PATH: path }) !== null);
+	return (entry.requires ?? []).every((bin) => Bun.which(bin) !== null);
 }
 
 const names = new Set<string>();
