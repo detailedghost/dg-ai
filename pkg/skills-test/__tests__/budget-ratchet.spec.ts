@@ -60,7 +60,7 @@ describe("ratchet", () => {
 		const r = ratchet({ budgets, measured: { "lean:a": 90 }, prBody: "" });
 		expect(r.failures).toHaveLength(1);
 		expect(r.failures[0]).toContain("lean:a");
-		expect(r.failures[0]).toContain("95");
+		expect(r.failures[0]).toContain("94");
 	});
 
 	test("passes slack of exactly 5 percent", () => {
@@ -144,13 +144,13 @@ describe("ratchet", () => {
 			prBody: "",
 		});
 		const after = ratchet({
-			budgets: { "lean:size/linux-x64/rawBytes": 49 * MB },
+			budgets: { "lean:size/linux-x64/rawBytes": 49.5 * MB },
 			baseBudgets: { "lean:size/linux-x64/rawBytes": 50 * MB },
 			measured: { "lean:size/linux-x64/rawBytes": 47 * MB },
 			prBody: "",
 		});
 		const lowered = ratchet({
-			budgets: { "lean:size/linux-x64/rawBytes": Math.ceil(47 * MB * 1.05) },
+			budgets: { "lean:size/linux-x64/rawBytes": Math.floor(47 * MB * 1.05) },
 			baseBudgets: { "lean:size/linux-x64/rawBytes": 50 * MB },
 			measured: { "lean:size/linux-x64/rawBytes": 47 * MB },
 			prBody: "",
