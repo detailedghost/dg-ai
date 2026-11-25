@@ -1,5 +1,4 @@
 import type { ProgramName } from "@dg/common/node/program";
-import { fastRoute, runFastRoute } from "../../dg/src/fast-route";
 
 type Program = { main(argv: string[]): Promise<number> };
 
@@ -73,16 +72,22 @@ function invokedName(argv0: string | undefined): string | undefined {
 		?.replace(/\.exe$/i, "");
 }
 
-function printVersion(): number {
-	process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
-	return 0;
+export function isVersionOnly(argv: readonly string[]): boolean {
+	return argv.length === 1 && argv[0] === "--version";
 }
 
-/** Answers hooks, completion and --version without the flat route tree; undefined means the full program must run. */
+function printVersion(): Promise<number> {
+	return new Promise((resolve) => {
+		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`, () => resolve(0));
+	});
+}
+
+/** Answers --version, hooks and completion without the flat route tree; undefined means the full program must run. */
 async function runFast(args: readonly string[]): Promise<number | undefined> {
+	if (isVersionOnly(args)) return printVersion();
+	if (args[0] !== "hooks" && args[0] !== "__complete") return undefined;
+	const { fastRoute, runFastRoute } = await import("../../dg/src/fast-route");
 	switch (fastRoute(args)) {
-		case "version":
-			return runFastRoute(args);
 		case "hooks": {
 			const { normalizeDgHome } = await import("@dg/common/node/dg-paths");
 			normalizeDgHome();
@@ -118,10 +123,9 @@ export async function dispatch(argv: readonly string[], argv0?: string): Promise
 		const code = await runFast(args);
 		if (code !== undefined) return code;
 	}
-	const versionOnly = args.length === 1 && args[0] === "--version";
-	const { normalizeDgHome } = await import("@dg/common/node/dg-paths");
+		const { normalizeDgHome } = await import("@dg/common/node/dg-paths");
 	normalizeDgHome();
-	if (versionOnly) return printVersion();
+	if (isVersionOnly(args)) return printVersion();
 	const { setProgramName } = await import("@dg/common/node/program");
 	setProgramName(name);
 	if (bridge) {
