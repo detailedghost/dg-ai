@@ -183,7 +183,7 @@ public sealed class HookEngineTests
         var code = await engine.RunAsync("spelling", [], Stdin(json), CancellationToken.None);
 
         Assert.Equal(2, code);
-        Assert.Equal(["/w/a.md", "/w/b.md", "/w/c.md"].Select(Path.GetFullPath), hook.Seen.Select(e => e.FilePath));
+        Assert.Equal(new[] { "/w/a.md", "/w/b.md", "/w/c.md" }.Select(Path.GetFullPath), hook.Seen.Select(e => e.FilePath));
     }
 
     [Fact]
