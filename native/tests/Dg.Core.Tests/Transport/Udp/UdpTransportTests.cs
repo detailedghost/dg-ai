@@ -158,8 +158,9 @@ public sealed class UdpTransportTests
     [Fact]
     public async Task AddUdpTransport_RegistersFactoryThatRefusesHooks()
     {
-        var provider = new ServiceCollection().AddUdpTransport().BuildServiceProvider();
-        var factory = provider.GetRequiredService<UdpSinkFactory>();
+        var services = new ServiceCollection().AddUdpTransport();
+        var descriptor = Assert.Single(services, d => d.ServiceType == typeof(UdpSinkFactory));
+        var factory = (UdpSinkFactory)descriptor.ImplementationInstance!;
 
         Assert.Throws<PluginContractException>(() => factory(Manifest(PluginKind.Hook)));
         using var listener = Listen(out var endpoint);
