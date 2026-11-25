@@ -48,8 +48,8 @@ helper — callers never construct `🤖 ...` themselves.
 Default mode never reaches the Copilot-bot subcommands on GitLab —
 Phase 1's `capabilities` check routes to the bot-review flow, or to
 proxy mode when no reviewer is configured, first (see
-[references/workflow.md](references/workflow.md) Phase 1 and 1b).
+[references/workflow.md](workflow.md) Phase 1 and 1b).
 **The
 proxy-mode steps of this skill never call `dg address`** — round counting and diff-base
 resolution there are plain `git`
-(see [references/proxy-workflow.md](references/proxy-workflow.md)). The hand-off to `/dg:address -l` runs its own helper calls.
+(see [references/proxy-workflow.md](proxy-workflow.md)). The hand-off to `/dg:address -l` runs its own helper calls.
