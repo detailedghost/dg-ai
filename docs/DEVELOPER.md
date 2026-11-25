@@ -438,7 +438,7 @@ bun test       # install logic + skill manifests + CLI smoke
 | `skills-blt` | PR: skills-cli, dg, inbox, ssms, channel-review, dg-agent, dg-daemon, extension, common, skills, skills-test, bun.lock | required |
 | `dg-daemon-blt` | PR: dg-daemon, common | required |
 | `dg-agent-blt` | PR: dg-agent, dg-daemon, common | required |
-| `release` | push master, no path filter; manual dispatch | one `vX.Y.Z` release: eight compiled `dg` programs, `dg-lib-<v>.tar.gz` and `runtime.json` (for the 6.3 bridge), the demo narration zip, 2 extension zips, both bootstraps, `SHA256SUMS` |
+| `release` | push master, no path filter; manual dispatch | one `vX.Y.Z` release: eight compiled `dg` programs with a `.zst` and `.gz` copy of each, the `dg-pw-<v>.tar.zst` and `dg-db-<v>.tar.zst` companions, `dg-lib-<v>.tar.gz` and `runtime.json` (for the 6.3 bridge), the demo narration zip, 2 extension zips, both bootstraps, `SHA256SUMS` |
 
 The skills-cli tests inside `skills-blt` (the workflow that also lints and tests channel-review) run as four shards, `skills-cli (1)` through `skills-cli (4)`.
 Each shard and the job that follows it has a 30 minute backstop.
