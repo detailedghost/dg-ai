@@ -1,6 +1,6 @@
 import { lstatSync } from "node:fs";
 import { connect, type Socket } from "node:net";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 import { DgCliError } from "../../errors";
 import { FRAME_FLAG_ERROR, FRAME_FLAG_RESPONSE, PROTOCOL_VERSION, ROUTE_TIMEOUT_MS, validateMessage, type DecodedFrame, type Route } from "../contract";
 import { encodeFrame, FrameReader } from "./framing";
@@ -19,7 +19,7 @@ export function windowsPipePath(plugin: string): string {
 }
 
 function isBareFileName(endpoint: string): boolean {
-	return endpoint !== "" && endpoint !== "." && endpoint !== ".." && !/[/\\\0]/.test(endpoint) && !isAbsolute(endpoint);
+	return endpoint !== "" && endpoint !== "." && endpoint !== ".." && !/[/\\\0]/.test(endpoint);
 }
 
 export function ipcEndpoint(plugin: string, pluginDir: string, endpoint: string, platform: NodeJS.Platform = process.platform): string {

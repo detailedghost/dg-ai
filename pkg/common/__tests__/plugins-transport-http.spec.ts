@@ -220,6 +220,18 @@ describe("httpTransport remote policy", () => {
 		expect(() => httpTransport(manifest, { credentials: credentials(), allowRemote: true })).toThrow(/loopback/);
 	});
 
+	test("names the credentials command when the endpoint holds a user name", () => {
+		const manifest = { ...manifestFor("http://127.0.0.1:9"), endpoint: "http://user:pw@127.0.0.1:9/dg" };
+		const message = (() => {
+			try {
+				httpTransport(manifest, { credentials: credentials() });
+			} catch (thrown) {
+				return (thrown as Error).message;
+			}
+		})();
+		expect(message).toContain("Next: remove the credentials from endpoint in plugin.toml, then run dg credentials set plugin-");
+	});
+
 	test("refuses a remote endpoint that is not https", () => {
 		const manifest = { ...remote(), endpoint: "http://policy.example.com/dg" };
 		expect(() => httpTransport(manifest, { credentials: credentials(), allowRemote: true })).toThrow(/https/);

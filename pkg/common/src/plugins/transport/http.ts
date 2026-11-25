@@ -33,8 +33,8 @@ function endpointOf(manifest: PluginManifest, allowRemote: boolean): URL {
 	const { name } = manifest;
 	if (manifest.transport !== "http" || manifest.endpoint === undefined)
 		throw new PluginTransportError("refused", `${name}: plugin is not on the http transport with an endpoint. Next: use the http transport in plugin.toml.`);
-	const problem = checkHttpEndpoint(manifest.endpoint, manifest.remote);
-	if (problem !== undefined) throw new PluginTransportError("refused", `${name}: ${problem}. Next: fix endpoint in plugin.toml.`);
+	const found = checkHttpEndpoint(manifest.endpoint, manifest.remote, name);
+	if (found !== undefined) throw new PluginTransportError("refused", `${name}: ${found.problem}. Next: ${found.next}.`);
 	const url = new URL(manifest.endpoint);
 	if (manifest.remote && !allowRemote)
 		throw new PluginTransportError(
