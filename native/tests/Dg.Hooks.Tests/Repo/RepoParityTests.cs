@@ -59,6 +59,8 @@ public sealed partial class RepoParityTests : IDisposable
     {
         if (FixtureCases.Load(name).Entries?.Any(e => e.Kind == "symlink" && e.AgeDays > 0) == true)
             Assert.SkipUnless(OperatingSystem.IsLinux(), "aging a symlink needs GNU touch -h");
+        if (FixtureCases.Load(name).Entries?.Any(e => e.Mode is not null) == true)
+            Assert.SkipWhen(OperatingSystem.IsWindows(), "POSIX permission bits have no Windows equivalent");
         Assert.Equal(FixtureCases.Expected(name), await RunCase(name));
     }
 
