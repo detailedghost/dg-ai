@@ -161,7 +161,7 @@ public sealed partial class RepoParityTests : IDisposable
         return string.Concat(sections.Select(s => $"--- {s.Key}\n{s.Value}"));
     }
 
-    [GeneratedRegex(@"<ROOT>(?:\\[\w.-]+)+")]
+    [GeneratedRegex(@"<ROOT>(?:[\\/][\w.-]+)+")]
     private static partial Regex RootedPath();
 
     [GeneratedRegex(@"^daily-prune \S+")]
