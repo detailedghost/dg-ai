@@ -51,6 +51,7 @@ const GOLDEN_COMMANDS = [
 	"bg",
 	"stat",
 	"sniff",
+	"plugin",
 	"skill",
 	"ssms",
 	"config",
