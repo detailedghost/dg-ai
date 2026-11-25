@@ -1,0 +1,1 @@
+{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"format: NOT FORMATTED - formatter unavailable: ruff. Matching files were skipped, not formatted.\nformat: NOT FORMATTED - formatter unavailable: gofmt. Matching files were skipped, not formatted."}}

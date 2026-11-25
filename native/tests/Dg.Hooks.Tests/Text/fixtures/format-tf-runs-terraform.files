@@ -1,0 +1,8 @@
+== log 644
+terraform fmt <ROOT>/work/a.tf | cwd=-
+
+== work/.git/HEAD 644
+
+== work/a.tf 644
+x
+

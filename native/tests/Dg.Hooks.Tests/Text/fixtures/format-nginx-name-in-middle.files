@@ -1,0 +1,8 @@
+== log 644
+nginx_beautifier <ROOT>/work/my-nginx-site.conf | cwd=-
+
+== work/.git/HEAD 644
+
+== work/my-nginx-site.conf 644
+x
+

@@ -1,0 +1,4 @@
+spelling: write en-US in <ROOT>/work/src/new.ts
+1: colour -> color
+2: behaviour -> behavior
+fix: use the en-US spelling in code, identifiers, tests, comments and docs.

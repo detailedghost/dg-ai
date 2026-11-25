@@ -1,0 +1,17 @@
+== log 644
+biome format --write <ROOT>/work/a.htm | cwd=-
+
+== work/.git/HEAD 644
+
+== work/a.htm 644
+x
+
+== work/node_modules/.bin/biome 755
+#!/bin/sh
+case "$PWD" in "$FIXTURE_ROOT"*) c=${PWD#"$FIXTURE_ROOT"};; *) c=-;; esac
+printf '%s %s | cwd=%s\n' "${0##*/}" "$*" "$c" >> "$FIXTURE_ROOT/log"
+case "$1" in
+--version) echo "Version: 1.9";;
+check) if [ "$2" = "--help" ]; then echo "--organize-imports-enabled"; fi;;
+esac
+

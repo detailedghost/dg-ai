@@ -1,0 +1,9 @@
+== log 644
+jq . <ROOT>/work/link.json | cwd=-
+
+== work/.git/HEAD 644
+
+== work/link.json -> real.json
+== work/real.json 644
+[]
+

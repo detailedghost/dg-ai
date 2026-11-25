@@ -1,0 +1,10 @@
+== log 644
+ruff format --quiet <ROOT>/work/a.py | cwd=-
+
+== work/.git/HEAD 644
+
+== work/a.py 644
+x
+
+== work/sub/.keep 644
+

@@ -1,0 +1,8 @@
+== log 644
+dart format <ROOT>/work/a.dart | cwd=-
+
+== work/.git/HEAD 644
+
+== work/a.dart 644
+x
+

@@ -1,0 +1,8 @@
+== log 644
+black --quiet <ROOT>/work/BUILD.bazel | cwd=-
+
+== work/.git/HEAD 644
+
+== work/BUILD.bazel 644
+x
+

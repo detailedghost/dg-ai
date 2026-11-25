@@ -1,0 +1,19 @@
+== log 644
+biome format --write <ROOT>/work/src/a.ts | cwd=-
+biome check --help | cwd=-
+biome check --fix <ROOT>/work/src/a.ts | cwd=-
+
+== work/.git/HEAD 644
+
+== work/node_modules/.bin/biome 755
+#!/bin/sh
+case "$PWD" in "$FIXTURE_ROOT"*) c=${PWD#"$FIXTURE_ROOT"};; *) c=-;; esac
+printf '%s %s | cwd=%s\n' "${0##*/}" "$*" "$c" >> "$FIXTURE_ROOT/log"
+case "$1" in
+--version) echo "Version: 2";;
+check) :;;
+esac
+
+== work/src/a.ts 644
+x
+

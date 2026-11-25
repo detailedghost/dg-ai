@@ -1,0 +1,4 @@
+hooks: dg config is unreadable (dg config: <ROOT>/dg/config/config.toml:2: hooks.spelling.locale must be a string, got 5. Next: run dg config edit, or dg config set hooks.spelling.locale <value>.); using en-US for spelling.locale
+spelling: write en-US in src/a.ts
+1: colour -> color
+fix: use the en-US spelling in code, identifiers, tests, comments and docs.
