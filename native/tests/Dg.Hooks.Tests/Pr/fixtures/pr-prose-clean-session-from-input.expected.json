@@ -1,0 +1,8 @@
+{
+	"exit": 0,
+	"stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"pr-prose: Vale is not installed, so style checks are off. Install it from https://vale.sh to add them. The built-in checks still ran.\"}}",
+	"stderr": "",
+	"after": {
+		"scratch/hooks/pr-prose-hint.abc_1_x": ""
+	}
+}

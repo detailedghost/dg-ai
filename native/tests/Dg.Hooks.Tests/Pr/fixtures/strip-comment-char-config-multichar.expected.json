@@ -1,0 +1,8 @@
+{
+	"exit": 0,
+	"stdout": "",
+	"stderr": "",
+	"after": {
+		"repo/COMMIT_EDITMSG": "subject\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n;; hint line\n"
+	}
+}

@@ -1,0 +1,14 @@
+{
+	"hook": "pr-prose",
+	"event": {
+		"hook_event_name": "PreToolUse",
+		"tool_name": "Bash",
+		"tool_input": {
+			"command": "cd $CWD/work/other && gh pr create --body-file b.md"
+		},
+		"cwd": "$CWD/work"
+	},
+	"files": {
+		"work/other/b.md": "TODO from other\n"
+	}
+}

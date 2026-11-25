@@ -1,0 +1,19 @@
+{
+	"hook": "pr-prose",
+	"posixOnly": true,
+	"event": {
+		"hook_event_name": "PreToolUse",
+		"tool_name": "Bash",
+		"tool_input": {
+			"command": "gh pr create --title t --body 'TODO one\nThis sentence is fine for now.\nTBD two'"
+		},
+		"cwd": "$CWD/work"
+	},
+	"bin": {
+		"vale": "#!/bin/sh\necho 'body.md:2:3:Style.A:vale says so'\nexit 0\n"
+	},
+	"env": {
+		"PATH": "$CWD/bin:/usr/bin:/bin",
+		"HOOK_PR_PROSE_VALE_CONFIG": ".vale.ini"
+	}
+}

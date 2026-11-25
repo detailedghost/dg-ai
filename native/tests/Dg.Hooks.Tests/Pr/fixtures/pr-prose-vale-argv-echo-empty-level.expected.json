@@ -1,0 +1,6 @@
+{
+	"exit": 2,
+	"stdout": "",
+	"stderr": "PR body does not read as plain English (1 issue(s)):\n  body line 1: --minAlertLevel= (Arg.Check)\nfix: rewrite the body as plain English - short active sentences that say what changed and why - then retry.\n",
+	"after": {}
+}

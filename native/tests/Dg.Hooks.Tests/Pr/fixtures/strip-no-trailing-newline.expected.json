@@ -1,0 +1,8 @@
+{
+	"exit": 0,
+	"stdout": "",
+	"stderr": "",
+	"after": {
+		"repo/COMMIT_EDITMSG": "feat(x): add thing\n\nbody"
+	}
+}

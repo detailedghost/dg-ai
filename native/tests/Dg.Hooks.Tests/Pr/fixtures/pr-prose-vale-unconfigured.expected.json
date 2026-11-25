@@ -1,0 +1,8 @@
+{
+	"exit": 0,
+	"stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"pr-prose: Vale is installed but HOOK_PR_PROSE_VALE_CONFIG is not set, so style checks are off. The built-in checks still ran.\"}}",
+	"stderr": "",
+	"after": {
+		"scratch/hooks/pr-prose-hint.NOSESSION": ""
+	}
+}

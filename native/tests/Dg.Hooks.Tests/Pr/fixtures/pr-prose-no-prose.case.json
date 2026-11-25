@@ -1,0 +1,11 @@
+{
+	"hook": "pr-prose",
+	"event": {
+		"hook_event_name": "PreToolUse",
+		"tool_name": "Bash",
+		"tool_input": {
+			"command": "gh pr create --title t --body '# Heading\n- one two three four five\n- six seven eight nine ten\n- eleven twelve'"
+		},
+		"cwd": "$CWD/work"
+	}
+}
