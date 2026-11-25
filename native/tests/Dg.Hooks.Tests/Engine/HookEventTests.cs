@@ -137,7 +137,7 @@ public sealed class HookEventTests
     public void Parse_NonStringContentAndFilePath_BecomeJsString(string json, string expected)
     {
         var ev = HookEvent.Parse(
-            Encoding.UTF8.GetBytes($$"""{"tool_name":"Write","tool_input":{"file_path":{{json}},"content":{{json}},"new_string":{{json}}}}""")
+            Encoding.UTF8.GetBytes($$$"""{"tool_name":"Write","tool_input":{"file_path":{{{json}}},"content":{{{json}}},"new_string":{{{json}}}}}""")
         );
 
         Assert.Equal(expected, ev.FilePath);

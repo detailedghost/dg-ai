@@ -1,11 +1,20 @@
 using System.Text;
+using Dg.Hooks.Engine;
 
-namespace Dg.Hooks.Defs.Text;
+namespace Dg.Hooks.Shared;
 
 internal static class HookJson
 {
     public static string AdditionalContext(string eventName, string text) =>
         $$$"""{"hookSpecificOutput":{"hookEventName":{{{Quote(eventName)}}},"additionalContext":{{{Quote(text)}}}}}""";
+
+    public static void EmitContext(HookEvent ev, string eventName, string text, Action<string> write)
+    {
+        if (ev.Sink is { } sink)
+            sink.Add(eventName, text);
+        else
+            write(AdditionalContext(eventName, text));
+    }
 
     public static string Quote(string text)
     {

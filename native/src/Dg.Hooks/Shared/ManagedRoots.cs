@@ -1,4 +1,4 @@
-namespace Dg.Hooks.Defs.Repo;
+namespace Dg.Hooks.Shared;
 
 internal static class ManagedRoots
 {
@@ -22,16 +22,18 @@ internal static class ManagedRoots
     public static void AssertSafe(string basePath, bool allowRootLink)
     {
         var root = Path.GetFullPath(basePath);
+        var uid = FileOwner.CurrentUser;
+        var systemUid = uid is null ? 0 : FileOwner.Of(Path.GetPathRoot(root)!, follow: false);
         if (Path.GetDirectoryName(root) is { } parent)
-            SafeAncestors(parent);
+            SafeAncestors(parent, uid, systemUid);
         var entry = DirectoryEntry(root);
         if (entry.IsLink)
         {
-            if (!allowRootLink)
+            if (!allowRootLink || (uid is not null && FileOwner.Of(root, follow: false) != uid))
                 Unsafe(root);
-            SafeAncestors(FsPaths.RealPath(root));
+            SafeAncestors(FsPaths.RealPath(root), uid, systemUid);
         }
-        if (!Directory.Exists(root) || OthersCanWriteTo(root))
+        if (!Directory.Exists(root) || !OwnedPrivately(root, uid, follow: true))
             Unsafe(root);
     }
 
@@ -40,20 +42,30 @@ internal static class ManagedRoots
         AssertSafe(basePath, allowRootLink);
         var dir = Path.Join(Path.GetFullPath(basePath), name);
         var entry = DirectoryEntry(dir);
-        if (entry.IsLink || !entry.IsDirectory || OthersCanWriteTo(dir))
+        if (entry.IsLink || !entry.IsDirectory || !OwnedPrivately(dir, FileOwner.CurrentUser, follow: false))
             Unsafe(dir);
         return dir;
     }
 
-    private static void SafeAncestors(string dir)
+    public static void EnsurePrivateDirectory(string path)
+    {
+        if (OperatingSystem.IsWindows())
+            Directory.CreateDirectory(path);
+        else
+            Directory.CreateDirectory(path, OwnerOnly);
+    }
+
+    private static void SafeAncestors(string dir, uint? uid, uint systemUid)
     {
         var parent = Path.GetDirectoryName(dir);
         if (parent is not null && parent != dir)
-            SafeAncestors(parent);
+            SafeAncestors(parent, uid, systemUid);
         var entry = DirectoryEntry(dir);
+        if (uid is { } self && FileOwner.Of(dir, follow: false) is var owner && owner != self && owner != 0 && owner != systemUid)
+            Unsafe(dir);
         if (entry.IsLink)
         {
-            SafeAncestors(FsPaths.RealPath(dir));
+            SafeAncestors(FsPaths.RealPath(dir), uid, systemUid);
             return;
         }
         if (!entry.IsDirectory)
@@ -66,19 +78,22 @@ internal static class ManagedRoots
         }
     }
 
+    private static bool OwnedPrivately(string dir, uint? uid, bool follow) =>
+        OperatingSystem.IsWindows()
+        || uid is not { } self
+        || (FileOwner.Of(dir, follow) == self && (File.GetUnixFileMode(dir) & OthersCanWrite) == 0);
+
     private static Lstat DirectoryEntry(string dir)
     {
         if (FsPaths.TryLstat(dir) is { } existing)
             return existing;
-        if (OperatingSystem.IsWindows())
-            Directory.CreateDirectory(dir);
-        else
-            Directory.CreateDirectory(dir, OwnerOnly);
+        try
+        {
+            EnsurePrivateDirectory(dir);
+        }
+        catch (IOException) when (Directory.Exists(dir)) { }
         return FsPaths.TryLstat(dir) ?? throw new IOException($"cannot create {dir}");
     }
-
-    private static bool OthersCanWriteTo(string dir) =>
-        !OperatingSystem.IsWindows() && (File.GetUnixFileMode(dir) & OthersCanWrite) != 0;
 
     private static void Unsafe(string dir) =>
         throw new InvalidOperationException($"unsafe scratch/state directory: {dir}");

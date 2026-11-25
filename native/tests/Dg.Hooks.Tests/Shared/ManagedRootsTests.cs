@@ -1,7 +1,10 @@
+using System.Runtime.Versioning;
 using Dg.Hooks.Shared;
 
 namespace Dg.Hooks.Tests.Shared;
 
+[SupportedOSPlatform("linux")]
+[SupportedOSPlatform("macos")]
 public sealed class ManagedRootsTests
 {
     private const UnixFileMode Private = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;

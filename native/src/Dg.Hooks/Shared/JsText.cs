@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace Dg.Hooks.Defs.Pr;
+namespace Dg.Hooks.Shared;
 
 internal static class JsText
 {
@@ -60,7 +60,8 @@ internal static class JsText
     public static string Format(double value) =>
         double.IsNaN(value) ? "NaN"
         : double.IsInfinity(value) ? (value > 0 ? "Infinity" : "-Infinity")
-        : value == Math.Floor(value) && Math.Abs(value) < 1e15 ? ((long)value).ToString(CultureInfo.InvariantCulture)
+        : value == 0 ? "0"
+        : value == Math.Floor(value) && Math.Abs(value) < 1e21 ? value.ToString("F0", CultureInfo.InvariantCulture)
         : value.ToString("R", CultureInfo.InvariantCulture);
 
     public static int Words(ReadOnlySpan<char> text)

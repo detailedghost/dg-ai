@@ -19,7 +19,6 @@ internal sealed class TextFixtureCase
     public required IReadOnlyList<(string Name, string Text)> Bin { get; init; }
     public required IReadOnlyList<(string Rel, string Mode)> Chmod { get; init; }
     public required IReadOnlyList<string> Requires { get; init; }
-    public string? KnownGap { get; init; }
 
     public static string Directory { get; } = Path.Combine(Folder(), "fixtures");
 
@@ -184,7 +183,6 @@ internal sealed class TextFixtureCase
                     Requires = item.TryGetProperty("requires", out var req)
                         ? [.. req.EnumerateArray().Select(e => e.GetString()!)]
                         : [],
-                    KnownGap = item.TryGetProperty("knownGap", out var gap) ? gap.GetString() : null,
                 }
             );
         }

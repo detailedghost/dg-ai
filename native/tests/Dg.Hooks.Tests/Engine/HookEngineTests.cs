@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using System.Text;
 using Dg.Hooks.Engine;
 using Dg.Hooks.Shared;
@@ -342,10 +343,11 @@ public sealed class HookEngineTests
     }
 
     [Fact]
+    [SupportedOSPlatform("linux")]
+    [SupportedOSPlatform("macos")]
     public async Task RunAsync_UnsafeScratchDirectory_FailsBeforeRunningHook()
     {
         using var temp = TempRoot.Create();
-        Directory.CreateDirectory(temp.Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.OtherWrite);
         File.SetUnixFileMode(temp.Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.OtherWrite);
         Dictionary<string, string?> env = new() { ["AI_SCRATCH_DIR"] = temp.Path, ["AI_STATE_DIR"] = System.IO.Path.Combine(temp.Path, "state") };
         var hook = new RecordingHook("format", 0);

@@ -11,7 +11,8 @@ internal sealed class TempRoot : IDisposable
 
     public void Dispose()
     {
-        File.SetUnixFileMode(Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         Directory.Delete(Path, recursive: true);
     }
 

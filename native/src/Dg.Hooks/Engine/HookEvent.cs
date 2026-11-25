@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Dg.Hooks.Shared;
 
 namespace Dg.Hooks.Engine;
 
@@ -29,6 +30,8 @@ public readonly record struct HookEvent
     public string[] Edits { get; init; }
 
     public string[] Args { get; init; }
+
+    public ContextSink? Sink { get; init; }
 
     public HookEvent()
     {
@@ -85,13 +88,13 @@ public readonly record struct HookEvent
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             if (reader.ValueTextEquals("file_path"u8))
-                ev = ev with { FilePath = ReadString(ref reader) };
+                ev = ev with { FilePath = ReadJsString(ref reader) };
             else if (reader.ValueTextEquals("old_string"u8))
-                ev = ev with { OldString = ReadString(ref reader) };
+                ev = ev with { OldString = ReadJsString(ref reader) };
             else if (reader.ValueTextEquals("new_string"u8))
-                ev = ev with { NewString = ReadString(ref reader) };
+                ev = ev with { NewString = ReadJsString(ref reader) };
             else if (reader.ValueTextEquals("content"u8))
-                ev = ev with { Content = ReadString(ref reader) };
+                ev = ev with { Content = ReadJsString(ref reader) };
             else if (reader.ValueTextEquals("command"u8))
                 command = ReadString(ref reader);
             else if (reader.ValueTextEquals("cmd"u8))
@@ -111,7 +114,7 @@ public readonly record struct HookEvent
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             if (reader.ValueTextEquals("filePath"u8))
-                ev = ev with { ResponseFilePath = ReadString(ref reader) };
+                ev = ev with { ResponseFilePath = ReadJsString(ref reader) };
             else
                 SkipValue(ref reader);
         }
@@ -131,15 +134,18 @@ public readonly record struct HookEvent
             if (reader.TokenType != JsonTokenType.StartObject)
             {
                 SkipCurrent(ref reader);
+                edits.Add("");
                 continue;
             }
+            string? text = null;
             while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
             {
-                if (!reader.ValueTextEquals("new_string"u8))
+                if (reader.ValueTextEquals("new_string"u8))
+                    text = ReadJsString(ref reader);
+                else
                     SkipValue(ref reader);
-                else if (ReadString(ref reader) is { } text)
-                    edits.Add(text);
             }
+            edits.Add(text ?? "");
         }
         return [.. edits];
     }
@@ -159,6 +165,35 @@ public readonly record struct HookEvent
             return reader.GetString();
         SkipCurrent(ref reader);
         return null;
+    }
+
+    private static string? ReadJsString(ref Utf8JsonReader reader)
+    {
+        reader.Read();
+        return reader.TokenType == JsonTokenType.Null ? null : JsStringOfCurrent(ref reader);
+    }
+
+    private static string JsStringOfCurrent(ref Utf8JsonReader reader)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.String:
+                return reader.GetString()!;
+            case JsonTokenType.Number:
+                return JsText.Format(reader.GetDouble());
+            case JsonTokenType.True:
+                return "true";
+            case JsonTokenType.False:
+                return "false";
+            case JsonTokenType.StartArray:
+                List<string> items = [];
+                while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+                    items.Add(reader.TokenType == JsonTokenType.Null ? "" : JsStringOfCurrent(ref reader));
+                return string.Join(',', items);
+            default:
+                reader.Skip();
+                return "[object Object]";
+        }
     }
 
     private static void SkipValue(ref Utf8JsonReader reader)

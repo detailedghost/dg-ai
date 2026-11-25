@@ -1,3 +1,4 @@
+using Dg.Hooks.Shared;
 using System.Text.RegularExpressions;
 using Dg.Hooks.Engine;
 
