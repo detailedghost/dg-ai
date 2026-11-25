@@ -22,7 +22,12 @@ export type SlopeRun = { slopes: number[]; leaking: boolean };
 export async function measureSlope(
 	step: () => Promise<void>,
 	read: () => Promise<HeapReading> | HeapReading,
-	{ warmup, batches, iterations, limit = LEAK_BYTES_PER_ITERATION }: { warmup: number; batches: number; iterations: number; limit?: number },
+	{
+		warmup,
+		batches,
+		iterations,
+		limit = LEAK_BYTES_PER_ITERATION,
+	}: { warmup: number; batches: number; iterations: number; limit?: number },
 ): Promise<SlopeRun> {
 	for (let i = 0; i < warmup; i++) await step();
 	let previous = await read();
