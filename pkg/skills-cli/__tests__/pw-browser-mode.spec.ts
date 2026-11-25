@@ -158,6 +158,19 @@ describe("pw main browser mode", () => {
 		}
 	});
 
+	test("DG_DEBUG=0 keeps the browser choice quiet", async () => {
+		const previous = process.env.DG_DEBUG;
+		process.env.DG_DEBUG = "0";
+		try {
+			const env = clientEnv();
+			await main(["--local", "--version"], env);
+			expect(env.stderr.join("\n")).not.toContain("dg pw:");
+		} finally {
+			if (previous === undefined) delete process.env.DG_DEBUG;
+			else process.env.DG_DEBUG = previous;
+		}
+	});
+
 	test("--ext on a local-only verb names the verb and the local fix", async () => {
 		const env = clientEnv();
 
