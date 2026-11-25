@@ -1,4 +1,7 @@
+import { buildVersion } from "@dg/common/build-version";
+
 export type FastRoute = "hooks" | "completion" | "version";
+export type RunnableFastRoute = Exclude<FastRoute, "completion">;
 
 export function fastRoute(argv: readonly string[]): FastRoute | undefined {
 	const [first, second] = argv;
@@ -8,16 +11,10 @@ export function fastRoute(argv: readonly string[]): FastRoute | undefined {
 	return undefined;
 }
 
-export async function runFastRoute(argv: readonly string[]): Promise<number> {
-	switch (fastRoute(argv)) {
-		case "hooks":
-			return runHooks(argv.slice(1));
-		case "version":
-			process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
-			return 0;
-		default:
-			throw new Error("runFastRoute handles only hooks and version");
-	}
+export async function runFastRoute(route: RunnableFastRoute, argv: readonly string[]): Promise<number> {
+	if (route === "hooks") return runHooks(argv.slice(1));
+	process.stdout.write(`${buildVersion()}\n`);
+	return 0;
 }
 
 async function runHooks(argv: string[]): Promise<number> {

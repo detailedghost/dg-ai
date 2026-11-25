@@ -100,7 +100,7 @@ describe("dg.js dispatcher", () => {
 });
 
 describe("reexecWithoutJit skips", () => {
-	test.each([[["--version"]], [["dg-skills", "--version"]], [["hooks", "run", "spelling"]], [["skills", "hooks", "run", "format"]]])(
+	test.each([[["--version"]], [["dg-skills", "--version"]], [["hooks", "run", "spelling"]]])(
 		"dg %p, which stays in the RSS budget with the JIT on",
 		async (argv) => {
 			const calls: string[] = [];
@@ -109,7 +109,7 @@ describe("reexecWithoutJit skips", () => {
 		},
 	);
 
-	test.each([[["hooks", "list"]], [["hooks"]], [["phone", "status"]], [["--help"]]])("dg %p still re-executes", async (argv) => {
+	test.each([[["hooks", "list"]], [["hooks"]], [["skills", "hooks", "run", "format"]], [["phone", "status"]], [["--help"]]])("dg %p still re-executes", async (argv) => {
 		const calls: string[] = [];
 		await reexecWithoutJit(argv, { PATH: "/bin" }, (file) => void calls.push(file));
 		expect(calls).toHaveLength(1);

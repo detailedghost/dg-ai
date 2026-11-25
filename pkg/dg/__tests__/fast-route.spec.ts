@@ -13,7 +13,7 @@ const FAST_DRIVER = `import { exitAfterDrain } from ${JSON.stringify(import.meta
 import { normalizeDgHome } from ${JSON.stringify(import.meta.resolve("@dg/common/node/dg-paths"))};
 import { runFastRoute } from ${JSON.stringify(FAST_MODULE)};
 normalizeDgHome();
-await exitAfterDrain(await runFastRoute(process.argv.slice(2)));`;
+await exitAfterDrain(await runFastRoute("hooks", process.argv.slice(2)));`;
 
 describe("fastRoute", () => {
 	test.each([
