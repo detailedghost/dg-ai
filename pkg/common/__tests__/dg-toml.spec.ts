@@ -310,3 +310,22 @@ describe("browser and front keys", () => {
 		expect(caught(() => readDgToml(env)).message).toContain("front.speed is not a dg config key");
 	});
 });
+
+describe("plugins allow_remote", () => {
+	test("defaults to false and reads true from config.toml", () => {
+		writeFileSync(file, ["[plugins.foo]", "enabled = true", "[plugins.bar]", "allow_remote = true", ""].join("\n"));
+
+		const { plugins } = readDgToml(env);
+
+		expect(plugins.foo?.allow_remote).toBe(false);
+		expect(plugins.bar?.allow_remote).toBe(true);
+	});
+
+	test("rejects a value that is not a boolean", () => {
+		writeFileSync(file, ["[plugins.foo]", 'allow_remote = "yes"', ""].join("\n"));
+
+		expect(caught(() => readDgToml(env)).message).toBe(
+			`dg config: ${file}:2: plugins.foo.allow_remote must be a boolean, got "yes". Next: run dg config edit, or dg config set plugins.foo.allow_remote <value>.`,
+		);
+	});
+});
