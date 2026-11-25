@@ -400,7 +400,8 @@ The lean gates keep the program small and fast: size, RAM, latency and skill
 tokens. Each has a budget in `scripts/*.json`, `native/budgets/*.json` or
 `native/bench/Dg.Bench/budgets/*.json`. [lean-baseline.md](lean-baseline.md) lists the numbers
 and the exact command to re-run each gate on your machine. A pull request that
-raises a budget needs a `Budget-Increase:` line in its body.
+raises a budget needs a `Budget-Increase:` line in its body. One that removes a budget
+entry needs a `Budget-Removal: <key> because <reason>` line.
 
 ### pkg/dg (the dg command)
 

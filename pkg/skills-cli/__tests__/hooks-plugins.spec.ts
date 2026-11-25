@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
 import { parseManifest } from "@dg/common/plugins/manifest";
 import { encodeFrame, FRAME_FLAG_RESPONSE, type Frame } from "@dg/common/plugins/contract";
 import { closeIpcConnections } from "@dg/common/plugins/transport/ipc";
 import { FrameReader } from "@dg/common/plugins/transport/framing";
+import { hashTree } from "../src/plugin/tree";
 import { runExternalHook } from "../src/hooks/external";
-import { hasConfiguredPlugins } from "../src/hooks/plugins";
+import { hasConfiguredPlugins, resolveExternalHook } from "../src/hooks/plugins";
 import { bashInput, hookWorld } from "./hooks/hook-fixtures";
 
 const servers: Server[] = [];
@@ -48,10 +49,16 @@ afterEach(async () => {
 
 const MANIFEST = (name: string, extra = "") => `name = "${name}"\nversion = "1.0.0"\nkind = "hook"\ntransport = "ipc"\nendpoint = "p.sock"\n${extra}\n[entry]\ncommand = "dg-${name}"\n`;
 
+function approve(dir: string, approved = true): void {
+	const tree = hashTree(join(dir, "src"));
+	writeFileSync(join(dir, "dg-plugin.json"), JSON.stringify({ treeSha256: tree, approvedSha256: approved ? tree : null }));
+}
+
 function installPlugin(world: ReturnType<typeof hookWorld>, name: string, config: string, manifest = MANIFEST(name)) {
 	const dir = join(world.dgHome, "data", "plugins", name);
-	mkdirSync(dir, { recursive: true });
-	writeFileSync(join(dir, "plugin.toml"), manifest);
+	mkdirSync(join(dir, "src"), { recursive: true });
+	writeFileSync(join(dir, "src", "plugin.toml"), manifest);
+	approve(dir);
 	mkdirSync(join(world.dgHome, "config"), { recursive: true });
 	writeFileSync(join(world.dgHome, "config", "config.toml"), config);
 	return dir;
@@ -244,5 +251,44 @@ describe("hooks run with an external hook plugin", () => {
 		installPlugin(world, "scan", ENABLED);
 		const result = await world.run("pr-confirm", bashInput("gh pr create --title x"));
 		expect(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision).toBe("ask");
+	});
+});
+
+describe("resolveExternalHook", () => {
+	test("loads the manifest from the approved src tree", async () => {
+		const world = hookWorld();
+		const dir = installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");
+		const plugin = await resolveExternalHook("scan", world.env());
+		expect(plugin?.manifest.name).toBe("scan");
+		expect(plugin?.pluginDir).toBe(dir);
+	});
+
+	test("refuses a plugin with no approval record", async () => {
+		const world = hookWorld();
+		const dir = installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");
+		rmSync(join(dir, "dg-plugin.json"));
+		await expect(resolveExternalHook("scan", world.env())).rejects.toThrow(/not approved/);
+	});
+
+	test("refuses a plugin whose record was never approved", async () => {
+		const world = hookWorld();
+		const dir = installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");
+		approve(dir, false);
+		await expect(resolveExternalHook("scan", world.env())).rejects.toThrow(/not approved/);
+	});
+
+	test("refuses a plugin whose src changed after approval", async () => {
+		const world = hookWorld();
+		const dir = installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");
+		writeFileSync(join(dir, "src", "extra.txt"), "x");
+		await expect(resolveExternalHook("scan", world.env())).rejects.toThrow(/not approved/);
+	});
+
+	test("ignores a plugin.toml outside src", async () => {
+		const world = hookWorld();
+		const dir = installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");
+		rmSync(join(dir, "src", "plugin.toml"));
+		writeFileSync(join(dir, "plugin.toml"), MANIFEST("scan"));
+		await expect(resolveExternalHook("scan", world.env())).rejects.toThrow(/no src\/plugin.toml/);
 	});
 });

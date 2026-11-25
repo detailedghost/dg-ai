@@ -107,6 +107,12 @@ dg keeps one warm connection per plugin and never starts a process per call.
   `config.toml` also has `[plugins.<name>] allow_remote = true`. A downloaded manifest cannot opt itself in.
   Non-loopback hosts are refused without `remote = true`. TCP and UDP are local only.
 
+### TCP loopback trade-off
+
+On TCP, any local process can listen on the port first and receive the token that dg sends in the `hello`
+request. An authenticated plugin should prefer IPC, where file permissions guard the socket. The owner
+decision on this is pending.
+
 ## plugin.toml
 
 ```toml

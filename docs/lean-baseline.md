@@ -106,4 +106,4 @@ gh run download <compiled-dg run id> --name budget-measurements --dir budget-mea
 bun scripts/budget-ratchet.ts --measured budget-measurements
 ```
 
-Raise a budget only with a `Budget-Increase: <file>:<path> <old> -> <new> because <reason>` line in the pull request body.
+Raise a budget only with a `Budget-Increase: <file>:<path> <old> -> <new> because <reason>` line in the pull request body. Drop a budget entry only with a `Budget-Removal: <key> because <reason>` line in the same place.

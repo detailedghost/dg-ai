@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Window } from "happy-dom";
-import type { PointerRequest } from "../../common/src/pw-ext-verbs/pointer";
+import type { PointerRequest } from "@dg/common/pw-ext-verbs/pointer";
 import { createAgentTabs } from "@/lib/background/agent-tabs";
 import { createPointerHandler, pwExtPointerAction } from "@/lib/background/pw-verbs/pointer";
 import { createFakeBrowser, createLock, recordOf, tabOf, windowOf } from "./utils/fake-browser";

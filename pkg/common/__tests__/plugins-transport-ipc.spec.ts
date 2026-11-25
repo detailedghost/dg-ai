@@ -304,6 +304,10 @@ describe("endpoint paths", () => {
 		expect(ipcEndpoint("secret-scan", "/home/u/plugins/secret-scan", "secret-scan.sock", "linux")).toBe("/home/u/plugins/secret-scan/secret-scan.sock");
 	});
 
+	test.each(["../x.sock", "a/b.sock", "/tmp/x.sock", "a\\b.sock", "..", "."])("refuses the endpoint %s on Unix", (endpoint) => {
+		expect(() => ipcEndpoint("secret-scan", "/home/u/plugins/secret-scan", endpoint, "linux")).toThrow("plain file name");
+	});
+
 	test("maps a plugin name to a named pipe path on Windows", () => {
 		expect(windowsPipePath("secret-scan")).toBe("\\\\.\\pipe\\dg-plugin-secret-scan");
 		expect(ipcEndpoint("secret-scan", "C:\\plugins\\secret-scan", "secret-scan.sock", "win32")).toBe("\\\\.\\pipe\\dg-plugin-secret-scan");

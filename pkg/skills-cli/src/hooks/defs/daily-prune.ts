@@ -89,7 +89,12 @@ function newestMtime(p: string, cutoff: number): number {
 
 function remove(p: string, reason: string, opts: PruneOptions): void {
 	opts.log(`${opts.dryRun ? "would remove" : "removed"} ${p} (${reason})`);
-	if (!opts.dryRun) rmSync(p, { recursive: true, force: true });
+	if (opts.dryRun) return;
+	try {
+		rmSync(p, { recursive: true, force: true });
+	} catch (error) {
+		opts.log(`kept ${p} (${error instanceof Error ? error.message : String(error)})`);
+	}
 }
 
 function skipped(rel: string): boolean {
