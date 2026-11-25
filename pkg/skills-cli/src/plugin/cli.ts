@@ -36,7 +36,14 @@ export function update(name: string, options: { pin?: string }): void {
 	if (result.changed) out(`It changed, so it is disabled until you approve it again. ${approveHint(name)}`);
 }
 
-export function verify(name: string, options: { approve?: boolean }): void {
+export const APPROVE_NEEDS_PERSON = "dg plugin verify --approve needs a person at a terminal; run it yourself.";
+
+export function verify(name: string, options: { approve?: boolean }, stdin: { isTTY?: boolean } = process.stdin): void {
+	if (options.approve === true && stdin.isTTY !== true) {
+		process.stderr.write(`${APPROVE_NEEDS_PERSON}\n`);
+		process.exitCode = 1;
+		return;
+	}
 	const report = verifyPlugin(name, { approve: options.approve === true });
 	out(`${name}: ${report.approved ? "approved" : "unapproved"}`);
 	for (const problem of report.problems) out(`problem: ${problem}`);

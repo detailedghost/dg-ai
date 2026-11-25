@@ -43,6 +43,17 @@ function folderSource(): string {
 	return dir;
 }
 
+const realIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+
+function setStdinTTY(value: boolean | undefined): void {
+	Object.defineProperty(process.stdin, "isTTY", { value, configurable: true });
+}
+
+afterEach(() => {
+	if (realIsTTY) Object.defineProperty(process.stdin, "isTTY", realIsTTY);
+	else delete (process.stdin as { isTTY?: boolean }).isTTY;
+});
+
 describe("dg plugin", () => {
 	test("add, list, verify --approve, enable and remove run end to end", async () => {
 		const source = folderSource();
@@ -53,6 +64,7 @@ describe("dg plugin", () => {
 		await main(["plugin", "list"]);
 		expect(out.join("")).toMatch(/notes\s+skill\s+off\s+unapproved/);
 		out.length = 0;
+		setStdinTTY(true);
 		await main(["plugin", "verify", "notes", "--approve"]);
 		expect(out.join("")).toMatch(/approved/);
 		await main(["plugin", "enable", "notes"]);
@@ -63,6 +75,30 @@ describe("dg plugin", () => {
 		out.length = 0;
 		await main(["plugin", "list"]);
 		expect(out.join("")).toMatch(/no plugins/i);
+	});
+
+	test("verify --approve refuses to run without a terminal on stdin", async () => {
+		await main(["plugin", "add", folderSource()]);
+		setStdinTTY(false);
+		const written: string[] = [];
+		const realErr = process.stderr.write;
+		process.stderr.write = ((chunk: string | Uint8Array) => (written.push(String(chunk)), true)) as typeof process.stderr.write;
+		try {
+			await main(["plugin", "verify", "notes", "--approve"]);
+		} finally {
+			process.stderr.write = realErr;
+		}
+		expect(process.exitCode).toBe(1);
+		expect(written.join("")).toBe("dg plugin verify --approve needs a person at a terminal; run it yourself.\n");
+		out.length = 0;
+		await main(["plugin", "list"]);
+		expect(out.join("")).toMatch(/notes\s+skill\s+off\s+unapproved/);
+	});
+
+	test("verify without --approve needs no terminal", async () => {
+		await main(["plugin", "add", folderSource()]);
+		setStdinTTY(false);
+		expect(await main(["plugin", "verify", "notes"])).toBe(0);
 	});
 
 	test("enabling an unapproved plugin fails with the next step", async () => {

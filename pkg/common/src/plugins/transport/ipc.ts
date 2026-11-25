@@ -1,6 +1,6 @@
 import { lstatSync } from "node:fs";
 import { connect, type Socket } from "node:net";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { DgCliError } from "../../errors";
 import { FRAME_FLAG_ERROR, FRAME_FLAG_RESPONSE, PROTOCOL_VERSION, ROUTE_TIMEOUT_MS, validateMessage, type DecodedFrame, type Route } from "../contract";
 import { encodeFrame, FrameReader } from "./framing";
@@ -18,8 +18,15 @@ export function windowsPipePath(plugin: string): string {
 	return `\\\\.\\pipe\\dg-plugin-${plugin}`;
 }
 
+function isBareFileName(endpoint: string): boolean {
+	return endpoint !== "" && endpoint !== "." && endpoint !== ".." && !/[/\\\0]/.test(endpoint) && !isAbsolute(endpoint);
+}
+
 export function ipcEndpoint(plugin: string, pluginDir: string, endpoint: string, platform: NodeJS.Platform = process.platform): string {
-	return platform === "win32" ? windowsPipePath(plugin) : join(pluginDir, endpoint);
+	if (platform === "win32") return windowsPipePath(plugin);
+	if (!isBareFileName(endpoint))
+		throw new DgCliError(`dg plugin: ${plugin}: the ipc endpoint must be a plain file name inside the plugin folder. Next: fix endpoint in plugin.toml.`);
+	return join(pluginDir, endpoint);
 }
 
 export function assertSocketPrivate(path: string): void {

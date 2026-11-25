@@ -109,6 +109,26 @@ describe("pruneRoot", () => {
 		expect(existsSync(join(root, "thrash", "bbbbbbbb"))).toBe(true);
 	});
 
+	test.skipIf(process.platform === "win32" || process.getuid?.() === 0)("keeps an undeletable bucket, logs it and goes on", () => {
+		const root = tmp("prune-root-");
+		const locked = join(root, "thrash", "aaaaaaaa");
+		const other = join(root, "thrash", "bbbbbbbb");
+		file(join(locked, "f.md"), OLD);
+		touch(locked, OLD);
+		file(join(other, "f.md"), OLD);
+		touch(other, OLD);
+		chmodSync(locked, 0o500);
+		const lines: string[] = [];
+		try {
+			pruneRoot(root, SCRATCH_TTL_MS, false, { ...opts(), log: (line) => lines.push(line) });
+		} finally {
+			chmodSync(locked, 0o700);
+		}
+		expect(existsSync(locked)).toBe(true);
+		expect(existsSync(other)).toBe(false);
+		expect(lines.some((line) => line.startsWith(`kept ${locked} (`))).toBe(true);
+	});
+
 	test("keeps a bucket whose newest descendant is fresh", () => {
 		const root = tmp("prune-root-");
 		const bucket = join(root, "spec", "cccccccc");

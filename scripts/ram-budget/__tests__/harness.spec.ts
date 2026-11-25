@@ -21,7 +21,7 @@ function harness(msBudget: number, extra: string[] = []) {
 	writeFileSync(budgets, JSON.stringify({ version: 1, cases: { version: { peakMB: 64, msBudget } } }));
 	const out = join(dir, `out-${msBudget}.json`);
 	const run = Bun.spawnSync(
-		["bun", SCRIPT, "--dg", fakeDg, "--budgets", budgets, "--only", "version", "--latency-runs", "5", "--json", out, ...extra],
+		[process.execPath, SCRIPT, "--dg", fakeDg, "--budgets", budgets, "--only", "version", "--latency-runs", "5", "--json", out, ...extra],
 		{ stdout: "pipe", stderr: "pipe" },
 	);
 	return { code: run.exitCode, stdout: run.stdout.toString(), stderr: run.stderr.toString(), out };
