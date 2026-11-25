@@ -13,6 +13,7 @@ internal sealed class TcpPluginServer : IAsyncDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _accept;
     private readonly string _token;
+    private readonly ServerFault _fault = new();
     private int _accepted;
     private int _rejected;
 
@@ -38,7 +39,11 @@ internal sealed class TcpPluginServer : IAsyncDisposable
         {
             await _accept;
         }
-        catch (Exception) { }
+        catch (Exception ex)
+        {
+            _fault.Record(ex);
+        }
+        _fault.ThrowIfFaulted();
     }
 
     private async Task AcceptLoop()
@@ -53,7 +58,10 @@ internal sealed class TcpPluginServer : IAsyncDisposable
                 _ = Task.Run(() => Serve(client));
             }
         }
-        catch (Exception) { }
+        catch (Exception ex)
+        {
+            _fault.Record(ex);
+        }
     }
 
     private async Task Serve(TcpClient client)
@@ -89,6 +97,9 @@ internal sealed class TcpPluginServer : IAsyncDisposable
                 await stream.WriteAsync(echo.Memory, _stop.Token);
             }
         }
-        catch (Exception) { }
+        catch (Exception ex)
+        {
+            _fault.Record(ex);
+        }
     }
 }

@@ -1,3 +1,4 @@
+using Dg.Core.Abstractions;
 using Dg.Core.Config;
 using Dg.Core.Output;
 
@@ -14,7 +15,7 @@ public sealed class ConfigDoctorCommand(
     protected override int Run(string[] args)
     {
         if (args.Length != 0)
-            return ConfigExit.NotNative;
+            return ExitCodes.NotNative;
         var location = Locate();
         if (!location.IsOk)
             return Fail(location.Error!);
@@ -22,7 +23,7 @@ public sealed class ConfigDoctorCommand(
         if (!location.Value.Exists)
         {
             if (location.Value.HasLegacySources())
-                return ConfigExit.NotNative;
+                return ExitCodes.NotNative;
             Output.WriteLine($"{file} does not exist; defaults apply");
             return 0;
         }

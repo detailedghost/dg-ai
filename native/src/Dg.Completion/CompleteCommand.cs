@@ -12,7 +12,10 @@ public sealed class CompleteCommand : ICommand
 
     public ValueTask<int> RunAsync(ReadOnlyMemory<string> args, CancellationToken ct)
     {
-        var root = CompletionTree.Parse(LoadTree());
+        if (LoadTree() is not { } tree)
+            return ValueTask.FromResult(ExitCodes.NotNative);
+
+        var root = CompletionTree.Parse(tree);
         var lines = Completer.Complete(root, args.Span);
         if (lines.Count == 0)
         {
@@ -30,7 +33,7 @@ public sealed class CompleteCommand : ICommand
         return ValueTask.FromResult(0);
     }
 
-    private static byte[] LoadTree()
+    private static byte[]? LoadTree()
     {
         using var embedded = typeof(CompleteCommand).Assembly.GetManifestResourceStream(
             ResourceName
@@ -42,6 +45,6 @@ public sealed class CompleteCommand : ICommand
             return copy.ToArray();
         }
 
-        return File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, ResourceName));
+        return null;
     }
 }

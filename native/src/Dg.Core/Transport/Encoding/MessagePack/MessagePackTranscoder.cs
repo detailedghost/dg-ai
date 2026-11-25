@@ -41,7 +41,7 @@ public static class MessagePackTranscoder
             if (!reader.End)
                 throw Bad("trailing bytes after the message");
         }
-        catch (MessagePackSerializationException ex)
+        catch (Exception ex) when (ex is MessagePackSerializationException or ArgumentException or InvalidOperationException)
         {
             throw Bad(ex.Message);
         }
@@ -128,7 +128,10 @@ public static class MessagePackTranscoder
                     writer.WriteNumberValue(reader.ReadInt64());
                 break;
             case MessagePackType.Float:
-                writer.WriteNumberValue(reader.ReadDouble());
+                var number = reader.ReadDouble();
+                if (!double.IsFinite(number))
+                    throw Bad("numbers must be finite");
+                writer.WriteNumberValue(number);
                 break;
             case MessagePackType.Boolean:
                 writer.WriteBooleanValue(reader.ReadBoolean());

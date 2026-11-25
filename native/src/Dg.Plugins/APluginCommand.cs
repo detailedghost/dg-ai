@@ -29,12 +29,16 @@ internal abstract class APluginCommand(
                     is NotNativeException
                         or IOException
                         or UnauthorizedAccessException
-                        or InvalidOperationException
                         or JsonException
                         or PluginContractException
             )
         {
-            return ValueTask.FromResult(PluginsExit.NotNative);
+            if (!string.IsNullOrEmpty(env.GetValueOrDefault("DG_DEBUG")))
+            {
+                error.WriteLine($"dg: {Name} fell back to dg-core: {ex.GetType().Name}: {ex.Message}");
+                error.Flush();
+            }
+            return ValueTask.FromResult(ExitCodes.NotNative);
         }
         output.Write(stdout.ToString());
         error.Write(stderr.ToString());

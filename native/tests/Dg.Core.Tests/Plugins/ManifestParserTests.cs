@@ -200,4 +200,26 @@ public sealed class ManifestParserTests
         Assert.Empty(report.Enforced);
         Assert.Empty(report.Unenforced);
     }
+
+    [Theory]
+    [InlineData("../escape.sock")]
+    [InlineData("/var/run/docker.sock")]
+    [InlineData("sub/plugin.sock")]
+    [InlineData("..")]
+    public void Parse_IpcEndpointThatIsNotAPlainFileName_IsRefused(string endpoint)
+    {
+        var text = $"""
+            name = "scanner"
+            version = "1.0.0"
+            kind = "hook"
+            transport = "ipc"
+            endpoint = "{endpoint}"
+            [entry]
+            command = "scanner"
+            """;
+
+        var error = Assert.Throws<PluginContractException>(() => ManifestParser.Parse(text, "plugin.toml"));
+
+        Assert.Contains("plain file name", error.Message);
+    }
 }

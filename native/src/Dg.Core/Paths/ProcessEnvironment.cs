@@ -1,8 +1,8 @@
 using System.Collections;
 
-namespace Dg.Cli;
+namespace Dg.Core.Paths;
 
-internal static class EnvSnapshot
+public static class ProcessEnvironment
 {
     public static Dictionary<string, string?> Capture()
     {

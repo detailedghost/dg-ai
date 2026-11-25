@@ -23,16 +23,6 @@ internal static partial class DgTomlValidator
         "meta",
     ];
 
-    private static readonly string[] SecretFields = ["inbox.gmail.clientSecret", "inbox.outlook.clientSecret"];
-
-    private static readonly string[] UnsafeKeys = ["__proto__", "constructor", "prototype"];
-
-    [GeneratedRegex(
-        @"(?:secret|token|password|passwd|api[_-]?key|private[_-]?key)\z",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
-    )]
-    private static partial Regex SecretKeyName();
-
     [GeneratedRegex(
         @"^(?:gh[pousr]_|github_pat_|sk-|xox[abpr]-|glpat-|AKIA|ASIA|AIza|ya29\.)|^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])[A-Za-z0-9_-]{32,}={0,2}\z"
     )]
@@ -43,7 +33,7 @@ internal static partial class DgTomlValidator
         var where = new Where(file, text);
         foreach (var name in root.Keys)
             if (Array.IndexOf(Sections, name) < 0)
-                Fail(where, name, $"{name} is not a dg config section.", $"{NextEdit} <section>.<key> <value>.");
+                throw Fail(where, name, $"{name} is not a dg config section.", $"{NextEdit} <section>.<key> <value>.");
         foreach (var (name, value) in root)
         {
             CheckStrings(where, name, value);
@@ -89,26 +79,15 @@ internal static partial class DgTomlValidator
         );
     }
 
-    public static bool IsSecretKey(string key)
-    {
-        if (Array.IndexOf(SecretFields, key) >= 0)
-            return true;
-        var parts = key.Split('.');
-        return parts[0] == "plugins"
-            && parts.Length > 3
-            && parts[2] == "settings"
-            && SecretKeyName().IsMatch(parts[^1]);
-    }
-
     private readonly record struct Where(string File, string Text);
 
     private static object? Get(TomlTable table, string name) =>
         table.TryGetValue(name, out var value) ? value : null;
 
-    private static void Fail(Where where, string key, string message, string next) =>
+    private static DgException Fail(Where where, string key, string message, string next) =>
         throw new DgError(where.File, ConfigLines.LineOfKey(where.Text, key), key, message, next).ToException();
 
-    private static void MustBe(Where where, string key, string type, object? value) =>
+    private static DgException MustBe(Where where, string key, string type, object? value) =>
         Fail(
             where,
             key,
@@ -116,7 +95,7 @@ internal static partial class DgTomlValidator
             $"{NextEdit} {key} <value>."
         );
 
-    private static void MustBeSecretRef(Where where, string key) =>
+    private static DgException MustBeSecretRef(Where where, string key) =>
         Fail(
             where,
             key,
@@ -136,7 +115,7 @@ internal static partial class DgTomlValidator
         {
             case string text:
                 if (text.Contains("{{resolve:", StringComparison.Ordinal))
-                    Fail(
+                    throw Fail(
                         where,
                         key,
                         $"{key} must not hold a {{{{resolve:...}}}} placeholder.",
@@ -146,8 +125,8 @@ internal static partial class DgTomlValidator
             case TomlTable table:
                 foreach (var (name, item) in table)
                 {
-                    if (Array.IndexOf(UnsafeKeys, name) >= 0)
-                        Fail(
+                    if (ConfigRules.IsUnsafePart(name))
+                        throw Fail(
                             where,
                             $"{key}.{name}",
                             $"{key}.{name} is not an allowed key.",
@@ -168,9 +147,9 @@ internal static partial class DgTomlValidator
     {
         if (SecretRef.TryRead(value, out _))
             return;
-        var refused = Array.IndexOf(SecretFields, key) >= 0 || value is string or TomlTable or IEnumerable;
-        if (IsSecretKey(key) && refused)
-            MustBeSecretRef(where, key);
+        var refused = ConfigRules.IsSecretField(key) || value is string or TomlTable or IEnumerable;
+        if (ConfigRules.IsSecretKey(key) && refused)
+            throw MustBeSecretRef(where, key);
         switch (value)
         {
             case TomlTable table:
@@ -181,8 +160,7 @@ internal static partial class DgTomlValidator
                 when key.StartsWith("plugins.", StringComparison.Ordinal)
                     && key.Split('.') is [_, _, "settings", ..]
                     && TokenLike().IsMatch(text):
-                MustBeSecretRef(where, key);
-                return;
+                throw MustBeSecretRef(where, key);
             case string:
                 return;
             case IEnumerable items:
@@ -197,12 +175,7 @@ internal static partial class DgTomlValidator
     {
         if (value is null)
             return new TomlTable();
-        if (value is not TomlTable table)
-        {
-            MustBe(where, key, "a table", value);
-            return new TomlTable();
-        }
-        return table;
+        return value as TomlTable ?? throw MustBe(where, key, "a table", value);
     }
 
     private static Dictionary<string, string> StringTable(Where where, string key, object? value)
@@ -212,8 +185,7 @@ internal static partial class DgTomlValidator
         {
             if (item is not string text)
             {
-                MustBe(where, $"{key}.{name}", "a string", item);
-                continue;
+                throw MustBe(where, $"{key}.{name}", "a string", item);
             }
             result[name] = text;
         }
@@ -224,24 +196,14 @@ internal static partial class DgTomlValidator
     {
         if (value is null)
             return fallback;
-        if (value is not bool flag)
-        {
-            MustBe(where, key, "a boolean", value);
-            return fallback;
-        }
-        return flag;
+        return value as bool? ?? throw MustBe(where, key, "a boolean", value);
     }
 
     private static string? OptionalString(Where where, string key, object? value)
     {
         if (value is null)
             return null;
-        if (value is not string text)
-        {
-            MustBe(where, key, "a string", value);
-            return null;
-        }
-        return text;
+        return value as string ?? throw MustBe(where, key, "a string", value);
     }
 
     private static BrowserMode ParseBrowserMode(Where where, string key, object? value)
@@ -257,8 +219,7 @@ internal static partial class DgTomlValidator
             case "auto":
                 return BrowserMode.Auto;
             default:
-                MustBe(where, key, "ext, local or auto", value);
-                return BrowserMode.Auto;
+                throw MustBe(where, key, "ext, local or auto", value);
         }
     }
 
@@ -266,7 +227,7 @@ internal static partial class DgTomlValidator
     {
         foreach (var name in value.Keys)
             if (Array.IndexOf(allowed, name) < 0)
-                Fail(
+                throw Fail(
                     where,
                     $"{key}.{name}",
                     $"{key}.{name} is not a dg config key.",
@@ -277,7 +238,7 @@ internal static partial class DgTomlValidator
     private static PluginEntry Plugin(Where where, string key, object? value)
     {
         if (key.Split('.').Length != 2)
-            Fail(
+            throw Fail(
                 where,
                 key,
                 $"{key} is not a valid plugin name; a plugin name has no dot.",

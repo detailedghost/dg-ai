@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { createEmitter } from "../../fixture-support";
 
 const dir = import.meta.dir;
 const root = join(dir, "..", "..", "..", "..");
@@ -40,17 +41,6 @@ function run(entry: Case) {
 	}
 }
 
-const text = `${JSON.stringify(cases.map(run), null, "\t")}\n`;
-const target = join(dir, "cases.expected.json");
-if (check) {
-	let current = "";
-	try {
-		current = readFileSync(target, "utf8");
-	} catch {}
-	if (current !== text) {
-		console.error("config command fixtures are stale; run bun generate.ts");
-		process.exit(1);
-	}
-} else {
-	writeFileSync(target, text);
-}
+const { emit, finish } = createEmitter(dir, check, (name) => name === "cases.expected.json");
+emit("cases.expected.json", `${JSON.stringify(cases.map(run), null, "\t")}\n`);
+finish("run bun generate.ts");

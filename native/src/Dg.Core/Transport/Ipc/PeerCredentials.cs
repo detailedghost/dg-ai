@@ -11,8 +11,8 @@ internal static partial class PeerCredentials
     private const int MacSolLocal = 0;
     private const int MacLocalPeerCred = 1;
 
-    [DllImport("libc", EntryPoint = "geteuid")]
-    private static extern uint GetEffectiveUserId();
+    [LibraryImport("libc", EntryPoint = "geteuid")]
+    private static partial uint GetEffectiveUserId();
 
     public static void VerifySocketFile(string path)
     {
@@ -55,7 +55,7 @@ internal static partial class PeerCredentials
         }
         else
         {
-            return;
+            throw Fail(path, "peer credentials are not supported on this OS", "use the http transport");
         }
 
         var self = GetEffectiveUserId();

@@ -50,7 +50,14 @@ internal sealed class PluginListCommand(
         return 0;
     }
 
-    private static void AppendJson(StringBuilder sink, string name, PluginRecord record, bool enabled, bool approved, bool last)
+    private static void AppendJson(
+        StringBuilder sink,
+        string name,
+        PluginRecord record,
+        bool enabled,
+        bool approved,
+        bool last
+    )
     {
         sink.Append("  {\n    \"name\": ");
         JsonText.Quote(sink, name);

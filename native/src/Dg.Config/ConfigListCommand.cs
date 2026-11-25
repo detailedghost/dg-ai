@@ -1,3 +1,4 @@
+using Dg.Core.Abstractions;
 using Dg.Core.Config;
 using Dg.Core.Output;
 
@@ -14,12 +15,12 @@ public sealed class ConfigListCommand(
     protected override int Run(string[] args)
     {
         if (args.Length != 0)
-            return ConfigExit.NotNative;
+            return ExitCodes.NotNative;
         var location = Locate();
         if (!location.IsOk)
             return Fail(location.Error!);
         if (location.Value!.WaitsForMigration)
-            return ConfigExit.NotNative;
+            return ExitCodes.NotNative;
         var result = DgConfig.Load(location.Value.Seams);
         if (!result.IsOk)
             return Fail(result.Error!);

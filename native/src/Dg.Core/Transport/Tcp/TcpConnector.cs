@@ -85,6 +85,10 @@ public sealed class TcpConnector(ITcpManifestResolver manifests, IPluginTokenPro
                 throw Fail(PluginTransportCodes.Plugin, $"{name}: hello reply did not match the request. Next: update the plugin to protocol 1.");
             ValidateReply(reply);
         }
+        catch (JsonException)
+        {
+            throw Fail(PluginTransportCodes.Plugin, $"{name}: hello reply is not valid JSON. Next: update the plugin to protocol 1.");
+        }
         catch (Exception ex) when (ex is EndOfStreamException or IOException)
         {
             throw Fail(

@@ -46,7 +46,7 @@ public sealed class PluginCommandParityTests
 
         var run = home.Run(Cases[name].Argv);
 
-        Assert.Equal(PluginsExit.NotNative, run.Exit);
+        Assert.Equal(ExitCodes.NotNative, run.Exit);
         Assert.Equal("", run.Stdout);
         Assert.Equal("", run.Stderr);
         Assert.Equal(expected.Setup, run.Files);
@@ -144,9 +144,12 @@ internal sealed class TempHome : IDisposable
     {
         using var output = new MemoryStream();
         using var error = new MemoryStream();
-        var exit = Dispatch(PluginCommands.Create(_env, new OutputWriter(output), new OutputWriter(error)), argv);
+        var exit = Dispatch(Commands(new OutputWriter(output), new OutputWriter(error)), argv);
         return new CommandRun(Strip(output), Strip(error), exit, Snapshot());
     }
+
+    private ICommand[] Commands(OutputWriter output, OutputWriter error) =>
+        [new PluginListCommand(_env, output, error), new PluginVerifyCommand(_env, output, error)];
 
     public void Dispose() => Directory.Delete(Path, recursive: true);
 
@@ -174,7 +177,7 @@ internal sealed class TempHome : IDisposable
             if (argv.Length >= words.Length && argv.AsSpan(0, words.Length).SequenceEqual(words))
                 return command.RunAsync(argv[words.Length..], CancellationToken.None).AsTask().GetAwaiter().GetResult();
         }
-        return PluginsExit.NotNative;
+        return ExitCodes.NotNative;
     }
 
     private string Strip(MemoryStream stream) =>

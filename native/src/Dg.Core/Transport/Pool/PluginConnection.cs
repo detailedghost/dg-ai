@@ -66,7 +66,7 @@ public sealed class PluginConnection : IPluginTransport
                 _writer.Write(frame.Span);
                 await _writer.FlushAsync(ct).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex)
             {
                 Fail(ex);
                 throw;

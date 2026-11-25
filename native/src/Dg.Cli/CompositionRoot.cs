@@ -20,6 +20,6 @@ internal static class CompositionRoot
             sp.GetServices<IHook>
         ));
         services.AddHooks().AddConfig().AddRouting().AddPlugins();
-        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = false });
+        return services.BuildServiceProvider();
     }
 }

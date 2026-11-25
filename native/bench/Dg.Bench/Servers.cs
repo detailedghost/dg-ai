@@ -3,6 +3,7 @@ using System.IO.Pipelines;
 using System.IO.Pipes;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.ExceptionServices;
 using System.Runtime.Versioning;
 using System.Text;
 using Dg.Core.Plugins.Contract;
@@ -22,6 +23,7 @@ internal sealed class EchoServer : IAsyncDisposable
     private readonly Socket? _listener;
     private readonly string? _socketPath;
     private Task _loop = Task.CompletedTask;
+    private Exception? _fault;
 
     private EchoServer(Socket? listener, string? socketPath, int port)
     {
@@ -61,10 +63,21 @@ internal sealed class EchoServer : IAsyncDisposable
         {
             await _loop.ConfigureAwait(false);
         }
-        catch (Exception) { }
+        catch (Exception ex)
+        {
+            Record(ex);
+        }
         if (_socketPath is not null)
             File.Delete(_socketPath);
         _stop.Dispose();
+        if (_fault is { } fault)
+            ExceptionDispatchInfo.Capture(fault).Throw();
+    }
+
+    private void Record(Exception ex)
+    {
+        if (ex is not (OperationCanceledException or IOException or SocketException or ObjectDisposedException or EndOfStreamException))
+            Interlocked.CompareExchange(ref _fault, ex, null);
     }
 
     private static EchoServer StartLoopback(Func<Stream, CancellationToken, Task> serve)
@@ -128,7 +141,10 @@ internal sealed class EchoServer : IAsyncDisposable
             await using (stream.ConfigureAwait(false))
                 await serve(stream, _stop.Token).ConfigureAwait(false);
         }
-        catch (Exception) { }
+        catch (Exception ex)
+        {
+            Record(ex);
+        }
     }
 
     private static async Task ServeFramesAsync(Stream stream, CancellationToken ct)

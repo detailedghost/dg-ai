@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using Dg.Core.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -23,10 +24,10 @@ public sealed class PluginCommandTests
     }
 
     [Fact]
+    [UnsupportedOSPlatform("windows")]
     public void Verify_Approve_WritesPrivateRecordAndKeepsExecuteBit()
     {
-        if (OperatingSystem.IsWindows())
-            return;
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Unix file modes");
         const string tree = "ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b";
         using var home = new TempHome();
         home.Write("data/plugins/gamma/src/SKILL.md", "---\nname: gamma\n---\nGamma.\n");

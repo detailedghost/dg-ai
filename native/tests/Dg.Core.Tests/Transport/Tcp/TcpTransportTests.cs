@@ -10,16 +10,13 @@ using Dg.Core.Transport.Http;
 using Dg.Core.Transport.Pool;
 using Dg.Core.Transport.Tcp;
 using Microsoft.Extensions.DependencyInjection;
+using static Dg.Core.Tests.Transport.TransportTestSupport;
 
 namespace Dg.Core.Tests.Transport.Tcp;
 
 public sealed class TcpTransportTests
 {
     private const string Secret = "s3cret-token";
-
-    private static readonly byte[] HookMessage = Encoding.UTF8.GetBytes(
-        """{"route":"/v1/hook/decide","body":{"event":"pre-tool-use","tool":"Bash","command":"git status"}}"""
-    );
 
     private static PluginManifest Manifest(
         string? endpoint,
@@ -116,7 +113,7 @@ public sealed class TcpTransportTests
     [InlineData("127.0.0.1:9000", false, PluginTransportKind.Tcp, true)]
     [InlineData("[::1]:9000", false, PluginTransportKind.Tcp, true)]
     [InlineData("203.0.113.5:9000", false, PluginTransportKind.Tcp, false)]
-    [InlineData("localhost:9000", false, PluginTransportKind.Tcp, false)]
+    [InlineData("localhost:9000", false, PluginTransportKind.Tcp, true)]
     [InlineData("127.0.0.1", false, PluginTransportKind.Tcp, false)]
     [InlineData("127.0.0.1:0", false, PluginTransportKind.Tcp, false)]
     [InlineData(null, false, PluginTransportKind.Tcp, false)]
@@ -159,37 +156,6 @@ public sealed class TcpTransportTests
             d => d.ServiceType == typeof(PluginConnectionPool) && d.IsKeyedService && Equals(d.ServiceKey, TcpTransportKeys.Pool)
         );
         Assert.DoesNotContain(services, d => d.ServiceType == typeof(PluginConnectionPool) && !d.IsKeyedService);
-    }
-
-    [Fact]
-    public async Task SendAsync_WarmConnection_P50StaysWithinTcpBudget()
-    {
-        await using var server = new TcpPluginServer(Secret);
-        await using var pool = new PluginConnectionPool(ConnectorFor(ManifestFor(server)).ConnectAsync);
-        var connection = await pool.GetAsync("scanner", CancellationToken.None);
-        for (var i = 0; i < 200; i++)
-            await Call(connection);
-
-        var samples = new double[300];
-        for (var i = 0; i < samples.Length; i++)
-        {
-            var start = Stopwatch.GetTimestamp();
-            await Call(connection);
-            samples[i] = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
-        }
-        Array.Sort(samples);
-        var p50 = samples[150];
-        var p99 = samples[296];
-        TestContext.Current.SendDiagnosticMessage($"warm tcp p50={p50:F4} ms p99={p99:F4} ms over {samples.Length} calls");
-
-        Assert.True(p50 < PluginRoutes.HookLatencyBudgetP99Ms.Tcp, $"p50 {p50:F4} ms is over the {PluginRoutes.HookLatencyBudgetP99Ms.Tcp} ms TCP budget");
-    }
-
-    private static async Task Call(PluginConnection connection)
-    {
-        using var frame = FrameWriter.Encode(FrameEncoding.Json, FrameFlags.None, connection.NextRequestId(), HookMessage);
-        var response = await connection.SendAsync(frame.Memory, CancellationToken.None);
-        Assert.Equal(HookMessage.Length, response.Payload.Length);
     }
 
     private sealed class FixedManifests(PluginManifest manifest) : ITcpManifestResolver

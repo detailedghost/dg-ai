@@ -1,4 +1,5 @@
 using Dg.Core.Plugins.Contract;
+using Dg.Core.Plugins.Manifest;
 
 namespace Dg.Core.Plugins.Runtime;
 
@@ -18,12 +19,5 @@ public interface IBuiltinPlugin
 
 public interface IPluginLatencyObserver
 {
-    void OverBudget(string plugin, string route, PluginTransportKindName transport, TimeSpan elapsed, int budgetMs);
-}
-
-public enum PluginTransportKindName
-{
-    Ipc,
-    Tcp,
-    Http,
+    void OverBudget(string plugin, string route, PluginTransportKind transport, TimeSpan elapsed, int budgetMs);
 }

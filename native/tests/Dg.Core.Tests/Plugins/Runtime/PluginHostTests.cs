@@ -48,9 +48,9 @@ public sealed class PluginHostTests
     [Fact]
     public async Task InvokeAsync_EnabledApprovedIpcPlugin_ReturnsPluginReply()
     {
-        await using var server = new EchoPluginServer();
         await using var fixture = new RuntimeFixture();
-        fixture.Install("scanner", IpcManifest(server.SocketPath), approved: true);
+        await using var server = new EchoPluginServer(directory: fixture.Folder("scanner"));
+        fixture.Install("scanner", IpcManifest(EchoPluginServer.SocketFile), approved: true);
         var host = fixture.Host(Enabled);
 
         var response = await host.InvokeAsync("scanner", RuntimeFixture.HookMessage(), CancellationToken.None);
@@ -84,13 +84,13 @@ public sealed class PluginHostTests
     [InlineData("http", false)]
     public async Task InvokeAsync_DisabledOrUnapproved_ConnectsNothing(string transport, bool disabled)
     {
-        await using var ipc = new EchoPluginServer();
+        await using var fixture = new RuntimeFixture();
+        await using var ipc = new EchoPluginServer(directory: fixture.Folder("scanner"));
         await using var tcp = new TcpPluginServer("tok");
         using var http = new CountingListener();
-        await using var fixture = new RuntimeFixture();
         var manifest = transport switch
         {
-            "ipc" => IpcManifest(ipc.SocketPath),
+            "ipc" => IpcManifest(EchoPluginServer.SocketFile),
             "tcp" => TcpManifest(tcp.Port),
             _ => HttpManifest(http.Port),
         };
@@ -112,9 +112,9 @@ public sealed class PluginHostTests
     [Fact]
     public async Task InvokeAsync_NoConfigSection_IsDisabledAndConnectsNothing()
     {
-        await using var server = new EchoPluginServer();
         await using var fixture = new RuntimeFixture();
-        fixture.Install("scanner", IpcManifest(server.SocketPath), approved: true);
+        await using var server = new EchoPluginServer(directory: fixture.Folder("scanner"));
+        fixture.Install("scanner", IpcManifest(EchoPluginServer.SocketFile), approved: true);
         var host = fixture.Host("");
 
         var ex = await Assert.ThrowsAsync<PluginContractException>(async () =>
@@ -128,9 +128,9 @@ public sealed class PluginHostTests
     [Fact]
     public async Task InvokeAsync_FilesChangedAfterApproval_IsUnapprovedAndConnectsNothing()
     {
-        await using var server = new EchoPluginServer();
         await using var fixture = new RuntimeFixture();
-        fixture.Install("scanner", IpcManifest(server.SocketPath), approved: true);
+        await using var server = new EchoPluginServer(directory: fixture.Folder("scanner"));
+        fixture.Install("scanner", IpcManifest(EchoPluginServer.SocketFile), approved: true);
         fixture.Tamper("scanner");
         var host = fixture.Host(Enabled);
 
@@ -210,9 +210,9 @@ public sealed class PluginHostTests
     [Fact]
     public async Task HealthAsync_PluginReplyIsNotAHealthBody_ThrowsBadReply()
     {
-        await using var server = new EchoPluginServer();
         await using var fixture = new RuntimeFixture();
-        fixture.Install("scanner", IpcManifest(server.SocketPath), approved: true);
+        await using var server = new EchoPluginServer(directory: fixture.Folder("scanner"));
+        fixture.Install("scanner", IpcManifest(EchoPluginServer.SocketFile), approved: true);
         var host = fixture.Host(Enabled);
 
         var ex = await Assert.ThrowsAsync<PluginContractException>(async () =>
@@ -225,9 +225,9 @@ public sealed class PluginHostTests
     [Fact]
     public async Task HealthAsync_Unapproved_ConnectsNothing()
     {
-        await using var server = new EchoPluginServer();
         await using var fixture = new RuntimeFixture();
-        fixture.Install("scanner", IpcManifest(server.SocketPath), approved: false);
+        await using var server = new EchoPluginServer(directory: fixture.Folder("scanner"));
+        fixture.Install("scanner", IpcManifest(EchoPluginServer.SocketFile), approved: false);
         var host = fixture.Host(Enabled);
 
         await Assert.ThrowsAsync<PluginContractException>(async () =>
@@ -288,5 +288,19 @@ public sealed class PluginHostTests
             _stop.Cancel();
             _listener.Stop();
         }
+    }
+
+    [Fact]
+    public async Task InvokeAsync_BuiltinDisabledInConfig_IsRefused()
+    {
+        await using var fixture = new RuntimeFixture();
+        var builtin = new EchoBuiltin();
+        var host = fixture.Host("[plugins.echo]\nenabled = false\n", builtin);
+
+        var ex = await Assert.ThrowsAsync<PluginContractException>(async () =>
+            await host.InvokeAsync("echo", RuntimeFixture.HookMessage(), CancellationToken.None)
+        );
+
+        Assert.Equal(PluginRuntimeCodes.Disabled, ex.Code);
     }
 }

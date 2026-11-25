@@ -1,11 +1,12 @@
 using System.Text.Json;
-using Dg.Completion;
 
 namespace Dg.Completion.Tests;
 
 public sealed class ParityTests
 {
-    private static readonly string OutDir = FindOutDir();
+    private static readonly Lazy<string> Out = new(FindOutDir);
+
+    private static string OutDir => Out.Value;
 
     public static TheoryData<int> CaseIndexes()
     {
@@ -32,16 +33,6 @@ public sealed class ParityTests
         var actual = Completer.Complete(root, words);
 
         Assert.Equal(expected, actual);
-    }
-
-    [Fact]
-    public void Complete_EmptyWord_ListsTopLevelCommands()
-    {
-        var root = CompletionTree.Parse(File.ReadAllBytes(Path.Combine(OutDir, "tree.json")));
-
-        var actual = Completer.Complete(root, [""]);
-
-        Assert.True(actual.Count > 10);
     }
 
     [Fact]

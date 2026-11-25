@@ -13,7 +13,7 @@ public static class TcpEndpointGuard
             throw Refuse(manifest, "the manifest does not use the tcp transport", "use the tcp transport in plugin.toml");
         if (manifest.Remote)
             throw Refuse(manifest, "tcp is local only", "use the http transport with https for a remote plugin");
-        if (manifest.Endpoint is not { } endpoint || !IPEndPoint.TryParse(endpoint, out var parsed) || parsed.Port is < 1 or > 65535)
+        if (manifest.Endpoint is not { } endpoint || !LoopbackEndpoint.TryParse(endpoint, out var parsed) || parsed.Port is < 1 or > 65535)
             throw Refuse(manifest, "the endpoint must be a loopback ip:port", "set endpoint to 127.0.0.1:<port> in plugin.toml");
         if (!IPAddress.IsLoopback(parsed.Address))
             throw Refuse(manifest, $"endpoint host {parsed.Address} is not loopback", "use the http transport with https for a remote plugin");

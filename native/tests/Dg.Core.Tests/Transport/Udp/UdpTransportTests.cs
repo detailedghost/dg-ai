@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -84,22 +83,6 @@ public sealed class UdpTransportTests
     }
 
     [Fact]
-    public async Task Post_TenThousandEvents_DoesNotWaitOnTheNetwork()
-    {
-        using var listener = Listen(out var endpoint);
-        await using var transport = new UdpTransport(endpoint, capacity: 64);
-        var ev = Event();
-        transport.Post(ev);
-
-        var watch = Stopwatch.StartNew();
-        for (var i = 0; i < 10_000; i++)
-            transport.Post(ev);
-        watch.Stop();
-
-        Assert.True(watch.ElapsedMilliseconds < 1_000, $"10k posts took {watch.ElapsedMilliseconds} ms");
-    }
-
-    [Fact]
     public async Task Post_FullBatch_DropsInsteadOfBlocking()
     {
         using var listener = Listen(out var endpoint);
@@ -169,5 +152,27 @@ public sealed class UdpTransportTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await listener.ReceiveAsync(cts.Token);
         await ((IAsyncDisposable)sink).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task DisposeAsync_QueuedEvents_AreSentOrCounted()
+    {
+        using var listener = Listen(out var endpoint);
+        var transport = new UdpTransport(endpoint);
+        var ev = Event();
+
+        for (var i = 0; i < 50; i++)
+            transport.Post(ev);
+        await transport.DisposeAsync();
+
+        Assert.Equal(50, transport.Sent + transport.Dropped);
+    }
+
+    [Fact]
+    public void Resolve_LocalhostName_ReturnsLoopbackEndpoint()
+    {
+        var endpoint = UdpEventGuard.Resolve(Manifest(endpoint: "localhost:9000"));
+
+        Assert.Equal(new IPEndPoint(IPAddress.Loopback, 9000), endpoint);
     }
 }

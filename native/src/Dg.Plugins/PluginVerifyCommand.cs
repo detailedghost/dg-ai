@@ -18,7 +18,10 @@ internal sealed class PluginVerifyCommand(
         var (name, approve) = Parse(args);
         var record = store.TryRead(name);
         if (record is null)
-            return Fail(stderr, $"dg plugin: {name} is not installed. Next: run dg plugin list, or dg plugin add <source>.");
+            return Fail(
+                stderr,
+                $"dg plugin: {name} is not installed. Next: run dg plugin list, or dg plugin add <source>."
+            );
         if (!string.Equals(store.TreeHash(name), record.TreeSha256, StringComparison.Ordinal))
             throw new NotNativeException();
         var manifest = ReadManifest(store.Src(name));
@@ -74,8 +77,6 @@ internal sealed class PluginVerifyCommand(
         if (enabled)
             hosts.EnsureRegistrable(record.Name, skills.Select(static s => s.Name));
 
-        var approved = record with { ApprovedSha256 = record.TreeSha256 };
-        store.Write(approved);
         var loaded = store.Loaded(record.Name);
         PluginTree.Remove(loaded);
         foreach (var skill in skills)
@@ -84,6 +85,9 @@ internal sealed class PluginVerifyCommand(
             hosts.Register(record.Name, loaded);
         else
             hosts.Unregister(record.Name);
+
+        var approved = record with { ApprovedSha256 = record.TreeSha256 };
+        store.Write(approved);
         return approved;
     }
 

@@ -41,4 +41,35 @@ public sealed class OutputWriterTests
 
         Assert.Equal("\n"u8.ToArray(), stream.ToArray());
     }
+
+    [Fact]
+    public void WriteLine_Text_WritesTextAndNewlineInOneCall()
+    {
+        var stream = new CountingStream();
+        var writer = new OutputWriter(stream);
+
+        writer.WriteLine("hook output");
+
+        Assert.Equal(1, stream.Writes);
+        Assert.Equal("hook output\n", Encoding.UTF8.GetString(stream.Bytes.ToArray()));
+    }
+
+    private sealed class CountingStream : MemoryStream
+    {
+        public int Writes { get; private set; }
+
+        public ReadOnlySpan<byte> Bytes => GetBuffer().AsSpan(0, (int)Length);
+
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            Writes++;
+            base.Write(buffer);
+        }
+
+        public override void WriteByte(byte value)
+        {
+            Writes++;
+            base.WriteByte(value);
+        }
+    }
 }

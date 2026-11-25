@@ -26,10 +26,14 @@ public sealed class PluginHost(
         MessageValidator.Validate(message.Route, MessageDirection.Request, message.Body);
         foreach (var builtin in builtins)
             if (string.Equals(builtin.Name, name, StringComparison.Ordinal))
+            {
+                if (config.Plugins.TryGetValue(name, out var configured) && !configured.Enabled)
+                    throw Disabled(name);
                 return await builtin.HandleAsync(message, ct).ConfigureAwait(false);
+            }
 
         var manifest = Admit(name, out var allowRemote);
-        var key = KeyFor(manifest);
+        var key = PluginTransportKeys.For(manifest);
         var provider = services.GetRequiredKeyedService<IPluginTransportProvider>(key);
         var transport = await provider.OpenAsync(manifest, allowRemote, ct).ConfigureAwait(false);
         var payload = JsonSerializer.SerializeToUtf8Bytes(message, PluginJsonContext.Default.PluginEnvelope);
@@ -42,7 +46,7 @@ public sealed class PluginHost(
         try
         {
             var response = await transport.SendAsync(frame, limit.Token).ConfigureAwait(false);
-            Observe(manifest.Name, message.Route, key, Stopwatch.GetElapsedTime(started));
+            Observe(manifest.Name, message.Route, manifest.Transport, Stopwatch.GetElapsedTime(started));
             return response;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -76,10 +80,7 @@ public sealed class PluginHost(
         var folder = store.Folder(name);
         config.Plugins.TryGetValue(name, out var entry);
         if (entry is not { Enabled: true })
-            throw new PluginContractException(
-                PluginRuntimeCodes.Disabled,
-                $"dg plugin: {name} is disabled. Next: run dg plugin enable {name}."
-            );
+            throw Disabled(name);
         var manifest = store.Manifest(name);
         if (!string.Equals(manifest.Name, name, StringComparison.Ordinal))
             throw new PluginContractException(
@@ -105,18 +106,6 @@ public sealed class PluginHost(
         return manifest;
     }
 
-    private static string KeyFor(PluginManifest manifest) =>
-        manifest.Transport switch
-        {
-            PluginTransportKind.Ipc => PluginTransportKeys.Ipc,
-            PluginTransportKind.Tcp => PluginTransportKeys.Tcp,
-            PluginTransportKind.Http => PluginTransportKeys.Http,
-            _ => throw new PluginContractException(
-                PluginRuntimeCodes.EventsOnly,
-                $"dg plugin: {manifest.Name}: udp carries events only. Next: use the ipc, tcp or http transport for request and reply plugins."
-            ),
-        };
-
     private uint NextId()
     {
         while (true)
@@ -127,20 +116,23 @@ public sealed class PluginHost(
         }
     }
 
-    private void Observe(string plugin, string route, string key, TimeSpan elapsed)
+    private void Observe(string plugin, string route, PluginTransportKind kind, TimeSpan elapsed)
     {
         if (observer is null || route != PluginRoutes.HookDecide)
             return;
         var (ipc, tcp, http) = PluginRoutes.HookLatencyBudgetP99Ms;
-        var (kind, budget) = key switch
+        var budget = kind switch
         {
-            PluginTransportKeys.Ipc => (PluginTransportKindName.Ipc, ipc),
-            PluginTransportKeys.Tcp => (PluginTransportKindName.Tcp, tcp),
-            _ => (PluginTransportKindName.Http, http),
+            PluginTransportKind.Ipc => ipc,
+            PluginTransportKind.Tcp => tcp,
+            _ => http,
         };
         if (elapsed.TotalMilliseconds > budget)
             observer.OverBudget(plugin, route, kind, elapsed, budget);
     }
+
+    private static PluginContractException Disabled(string name) =>
+        new(PluginRuntimeCodes.Disabled, $"dg plugin: {name} is disabled. Next: run dg plugin enable {name}.");
 
     private static PluginContractException BadReply(string name) =>
         new(PluginRuntimeCodes.BadReply, $"dg plugin: {name}: the health reply is not valid. Next: fix the plugin.");

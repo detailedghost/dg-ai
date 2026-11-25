@@ -53,10 +53,14 @@ public sealed class CompositionRootTests
     }
 
     [Fact]
-    public void NotNative_Sentinel_MatchesEveryGroup()
+    public void Commands_AfterComposition_HaveUniqueNonEmptyNames()
     {
-        Assert.Equal(ConfigExit.NotNative, CliExit.NotNative);
-        Assert.Equal(PluginsExit.NotNative, CliExit.NotNative);
+        using var provider = CompositionRoot.Build();
+
+        var names = provider.GetServices<ICommand>().Select(static c => c.Name).ToArray();
+
+        Assert.All(names, static name => Assert.False(string.IsNullOrWhiteSpace(name)));
+        Assert.Equal(names.Length, names.Distinct(StringComparer.Ordinal).Count());
     }
 
     [Fact]
@@ -69,7 +73,7 @@ public sealed class CompositionRootTests
 
         var exit = await command.RunAsync(new[] { "no-such-hook", "--flag" }, CancellationToken.None);
 
-        Assert.Equal(CliExit.NotNative, exit);
+        Assert.Equal(ExitCodes.NotNative, exit);
     }
 
     [Fact]
@@ -80,7 +84,7 @@ public sealed class CompositionRootTests
             () => []
         );
 
-        Assert.Equal(CliExit.NotNative, await command.RunAsync(Array.Empty<string>(), CancellationToken.None));
+        Assert.Equal(ExitCodes.NotNative, await command.RunAsync(Array.Empty<string>(), CancellationToken.None));
     }
 
     [Fact]
@@ -101,8 +105,8 @@ public sealed class CompositionRootTests
         var inner = new FakeCommand("__complete", 0);
         var gate = new CompleteGateCommand(inner);
 
-        Assert.Equal(CliExit.NotNative, await gate.RunAsync(Array.Empty<string>(), CancellationToken.None));
-        Assert.Equal(CliExit.NotNative, await gate.RunAsync(new[] { "st" }, CancellationToken.None));
+        Assert.Equal(ExitCodes.NotNative, await gate.RunAsync(Array.Empty<string>(), CancellationToken.None));
+        Assert.Equal(ExitCodes.NotNative, await gate.RunAsync(new[] { "st" }, CancellationToken.None));
         Assert.Equal(0, inner.Calls);
     }
 
@@ -143,5 +147,39 @@ public sealed class CompositionRootTests
             Args = ev.Args;
             return ValueTask.FromResult(7);
         }
+    }
+
+    [Theory]
+    [MemberData(nameof(CommandFailures))]
+    public async Task RunNative_CommandThrowsIoFailure_ReturnsOneInsteadOfCrashing(Exception failure)
+    {
+        var exit = await FrontDoor.RunNativeAsync(new ThrowingCommand(failure), Array.Empty<string>(), CancellationToken.None);
+
+        Assert.Equal(1, exit);
+    }
+
+    [Fact]
+    public async Task RunNative_CommandThrowsUnexpectedException_Propagates()
+    {
+        var command = new ThrowingCommand(new InvalidOperationException("bug"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await FrontDoor.RunNativeAsync(command, Array.Empty<string>(), CancellationToken.None)
+        );
+    }
+
+    public static TheoryData<Exception> CommandFailures =>
+        new()
+        {
+            new IOException("disk"),
+            new UnauthorizedAccessException("denied"),
+            new Dg.Core.Errors.DgError("f", 1, "k", "bad", "fix").ToException(),
+        };
+
+    private sealed class ThrowingCommand(Exception failure) : ICommand
+    {
+        public string Name => "throws";
+
+        public ValueTask<int> RunAsync(ReadOnlyMemory<string> args, CancellationToken ct) => throw failure;
     }
 }
