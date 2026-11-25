@@ -51,7 +51,7 @@ internal static class AgentsPruner
         List<string> paths = [];
         foreach (var line in output.Split('\n'))
             if (line.StartsWith("worktree ", StringComparison.Ordinal))
-                paths.Add(line["worktree ".Length..].Trim());
+                paths.Add(Path.GetFullPath(line["worktree ".Length..].Trim()));
         return paths;
     }
 
