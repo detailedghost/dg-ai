@@ -1,5 +1,5 @@
 import { PW_EXT_MAX_TAB_ID } from "@dg/common";
-import { type PointerRequest, POINTER_BUTTONS, validate, VERBS, type PointerVerb } from "../../../../common/src/pw-ext-verbs/pointer";
+import { type PointerRequest, POINTER_BUTTONS, validate, VERBS, type PointerVerb } from "@dg/common/pw-ext-verbs/pointer";
 
 export class PointerUsageError extends Error {}
 

@@ -2,6 +2,11 @@ import { fail, requireRecord, requireString } from "./assert";
 import { parseKeyChord } from "./keyboard-keys";
 import { PROTO_PREVIEW_MAX_CHARS } from "./proto-format";
 import { PW_EXT_NETWORK_MAX_FILTER_CHARS, PW_EXT_NETWORK_MAX_LIMIT } from "./pw-ext-network";
+import { validate as validateInput } from "./pw-ext-verbs/input";
+import { validate as validateNavigation } from "./pw-ext-verbs/navigation";
+import { validate as validatePage } from "./pw-ext-verbs/page";
+import { validate as validatePointer } from "./pw-ext-verbs/pointer";
+import { validate as validateStorage } from "./pw-ext-verbs/storage";
 import { PW_EXT_CREDENTIAL_NAME, PW_EXT_CREDENTIAL_SOURCES, type PwExtCredentialSource } from "./pw-ext-credential-format";
 import type { RelayWire } from "./relay-format";
 import { isDgToolName } from "./webmcp-format";
@@ -18,6 +23,18 @@ export const PW_EXT_READ_VERBS = [
 	"network",
 	"storage",
 ] as const;
+const NAVIGATION_VERBS = ["go-back", "go-forward", "reload"] as const;
+const POINTER_VERBS = ["hover", "dblclick", "drag", "mousedown", "mouseup", "mousemove", "mousewheel"] as const;
+const INPUT_VERBS = ["check", "uncheck", "type", "keydown", "keyup"] as const;
+const PAGE_VERBS = ["eval", "tab-select", "resize"] as const;
+const STORAGE_VERBS = [
+	"localstorage-set",
+	"localstorage-delete",
+	"localstorage-clear",
+	"sessionstorage-set",
+	"sessionstorage-delete",
+	"sessionstorage-clear",
+] as const;
 export const PW_EXT_WRITE_VERBS = [
 	"open",
 	"click",
@@ -32,7 +49,22 @@ export const PW_EXT_WRITE_VERBS = [
 	"dialog",
 	"fetch",
 	"credential",
+	...NAVIGATION_VERBS,
+	...POINTER_VERBS,
+	...INPUT_VERBS,
+	...PAGE_VERBS,
+	...STORAGE_VERBS,
 ] as const;
+/** Verbs whose shape and checks live in pw-ext-verbs/<name>.ts. */
+export type PwExtModuleVerb =
+	| (typeof NAVIGATION_VERBS)[number]
+	| (typeof POINTER_VERBS)[number]
+	| (typeof INPUT_VERBS)[number]
+	| (typeof PAGE_VERBS)[number]
+	| (typeof STORAGE_VERBS)[number];
+export function isPwExtModuleVerb(verb: unknown): verb is PwExtModuleVerb {
+	return moduleValidator(verb) !== undefined;
+}
 /** Web MCP verbs over the person's own tabs; no agent tab group or pw --ext session. */
 export const PW_EXT_WEBMCP_VERBS = ["webmcp-tools", "webmcp-call"] as const;
 export type PwExtVerb =
@@ -112,6 +144,18 @@ export type PwExtRequest = {
 	source?: PwExtCredentialSource;
 	/** credential only: a dotted path into a JSON value. */
 	path?: string;
+	/** drag only: the element the pointer moves to. */
+	to?: string;
+	x?: number;
+	y?: number;
+	dx?: number;
+	dy?: number;
+	button?: "left" | "middle" | "right";
+	/** type only: press Enter after the text. */
+	submit?: true;
+	expression?: string;
+	width?: number;
+	height?: number;
 };
 
 export const PW_EXT_FETCH_MAX_BODY_BYTES = 16_384;
@@ -166,7 +210,7 @@ export function isPwExtCliResult(requestId: string) {
 	};
 }
 
-const FIELDS: Record<PwExtVerb, readonly string[]> = {
+const FIELDS: Record<Exclude<PwExtVerb, PwExtModuleVerb>, readonly string[]> = {
 	current: ["tabId"],
 	snapshot: ["tabId"],
 	screenshot: ["tabId"],
@@ -230,12 +274,24 @@ export function isPwExtWebUrl(value: string): boolean {
 	}
 }
 
+function moduleValidator(verb: unknown): ((value: unknown) => PwExtRequest) | undefined {
+	const named = (verbs: readonly string[]) => verbs.includes(verb as string);
+	if (named(NAVIGATION_VERBS)) return validateNavigation;
+	if (named(POINTER_VERBS)) return validatePointer;
+	if (named(INPUT_VERBS)) return validateInput;
+	if (named(PAGE_VERBS)) return validatePage;
+	if (named(STORAGE_VERBS)) return validateStorage;
+	return undefined;
+}
+
 export function validatePwExtRequest(value: unknown): PwExtRequest {
 	const path = "pw-ext request";
 	requireRecord(value, path);
+	const validateModule = moduleValidator(value.verb);
+	if (validateModule) return validateModule(value);
 	if (!Object.hasOwn(FIELDS, value.verb as string))
 		fail(`${path}.verb is not a supported verb`);
-	const verb = value.verb as PwExtVerb;
+	const verb = value.verb as Exclude<PwExtVerb, PwExtModuleVerb>;
 	onlyKeys(value, ["verb", ...FIELDS[verb]], path);
 	if ((verb === "tabs" || verb === "new") && value.tabId !== undefined)
 		fail(`${path}.tabId is not used by "${verb}"`);

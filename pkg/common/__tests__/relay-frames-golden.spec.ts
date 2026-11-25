@@ -315,7 +315,7 @@ const pwExtRequestRows = rowsFor("pw-ext-browser-request", (t) => [
 	t.ok("requestId 128 characters", t.with({ requestId: "x".repeat(128) })),
 	t.err("requestId 129 characters", t.with({ requestId: "x".repeat(129) }), "chat frame.requestId exceeds 128 characters"),
 	t.err("request not an object", t.with({ request: "current" }), "pw-ext request must be an object"),
-	t.err("request verb unsupported", t.with({ request: { verb: "eval" } }), "pw-ext request.verb is not a supported verb"),
+	t.err("request verb unsupported", t.with({ request: { verb: "bogus" } }), "pw-ext request.verb is not a supported verb"),
 	...tabRequestRows(t),
 	t.err("timeoutMs missing", t.without("timeoutMs"), "chat frame.timeoutMs must be an integer between 1 and 300000"),
 	t.err("timeoutMs 1.5", t.with({ timeoutMs: 1.5 }), "chat frame.timeoutMs must be an integer between 1 and 300000"),

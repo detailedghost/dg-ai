@@ -6,6 +6,7 @@ import {
 	formatStorage,
 	isDgToolName,
 	PW_EXT_CREDENTIAL_SITE,
+	isPwExtModuleVerb,
 	isPwExtWebUrl,
 	mailboxToolAllowed,
 	matchesCoverOrigin,
@@ -15,6 +16,7 @@ import {
 	PW_EXT_MIN_SECRET_CHARS,
 	PW_EXT_UNMASK_DEFAULT_MINUTES,
 	type PW_EXT_RELAY,
+	type PwExtModuleVerb,
 	type PwExtRequest,
 	type PwExtResponse,
 	type PwExtTool,
@@ -29,6 +31,10 @@ import {
 	type KeyChord,
 	parseKeyChord,
 } from "@dg/common";
+import { VERBS as INPUT_VERBS } from "../../../common/src/pw-ext-verbs/input";
+import { VERBS as NAVIGATION_VERBS } from "../../../common/src/pw-ext-verbs/navigation";
+import { VERBS as PAGE_MODULE_VERBS } from "../../../common/src/pw-ext-verbs/page";
+import { VERBS as POINTER_VERBS } from "../../../common/src/pw-ext-verbs/pointer";
 import {
 	type PwExtDialogAction,
 	type PwExtDialogRecord,
@@ -66,7 +72,13 @@ import { forgetAgentTabsAndShims, forgetDialogShim, syncDialogShim } from "./dia
 import { createSessionControl, type SessionControl } from "./session-control";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
+import { createInputHandler } from "./pw-verbs/input";
+import { createNavigationHandler } from "./pw-verbs/navigation";
+import { createPageVerbHandler } from "./pw-verbs/page";
+import { createPointerHandler } from "./pw-verbs/pointer";
+import { createStorageVerbHandler } from "./pw-verbs/storage";
 import { siteOf } from "./site-key";
+import { PhiCaptureRefusedError, type SiteAllow } from "./site-allow-prompt";
 import { runningThirdPartyMatches, STOPPED_SCRIPTS_KEY, type WebMcpStoppedScript } from "./webmcp-scripts";
 import {
 	createRememberedWebMcpGrants,
@@ -209,9 +221,12 @@ const NEEDS_LOADED_TAB: ReadonlySet<PwExtVerb> = new Set([
 
 type WebMcpVerb = "webmcp-tools" | "webmcp-call";
 type TabVerbRequest = PwExtRequest & {
-	verb: Exclude<PwExtVerb, "tabs" | "new" | WebMcpVerb>;
+	verb: Exclude<PwExtVerb, "tabs" | "new" | WebMcpVerb | PwExtModuleVerb>;
 };
 type WebMcpRequest = PwExtRequest & { verb: WebMcpVerb };
+type ModuleRequest = PwExtRequest & { verb: PwExtModuleVerb };
+const MODULE_SITE_ASK: ReadonlySet<PwExtVerb> = new Set([...NAVIGATION_VERBS, ...POINTER_VERBS, ...INPUT_VERBS]);
+const CAPTURE_VERBS: ReadonlySet<PwExtVerb> = new Set(["snapshot", "screenshot"]);
 
 const BUILT_INS_KEY = "webmcpScripts";
 
@@ -260,7 +275,11 @@ function pwExtDocumentStart(): number {
 }
 
 function isTabVerb(request: PwExtRequest): request is TabVerbRequest {
-	return request.verb !== "tabs" && request.verb !== "new" && !isWebMcpVerb(request);
+	return request.verb !== "tabs" && request.verb !== "new" && !isWebMcpVerb(request) && !isModuleRequest(request);
+}
+
+function isModuleRequest(request: PwExtRequest): request is ModuleRequest {
+	return isPwExtModuleVerb(request.verb);
 }
 
 function isWebMcpVerb(request: PwExtRequest): request is WebMcpRequest {
@@ -677,6 +696,7 @@ export function createPwExtHandler({
 	captureDeadlineMs = CAPTURE_DEADLINE_MS,
 	lock,
 	control = createSessionControl({ storage: api.storage }),
+	siteAllow,
 }: {
 	browserApi: PwExtBrowserApi;
 	agentTabs?: AgentTabs;
@@ -693,7 +713,13 @@ export function createPwExtHandler({
 	captureDeadlineMs?: number;
 	lock?: AgentTabsLock;
 	control?: SessionControl;
+	siteAllow?: Pick<SiteAllow, "requestSiteAllow" | "assertCaptureAllowed">;
 }) {
+	const navigation = createNavigationHandler({ browserApi: api as never, agentTabs });
+	const pointer = createPointerHandler({ browserApi: api as never, agentTabs });
+	const input = createInputHandler({ browserApi: api as never, agentTabs });
+	const pageVerbs = createPageVerbHandler({ browserApi: api as never, agentTabs, control });
+	const storageVerbs = createStorageVerbHandler({ browserApi: api as never, agentTabs, control });
 	type Running = { controller: AbortController; stopped(): void };
 	const live = new Map<string, Set<Running>>();
 	const halted = new Set<string>();
@@ -711,6 +737,16 @@ export function createPwExtHandler({
 		const key = `${context.sessionId}\n${site.key}`;
 		if ((deniedThrough.get(key) ?? 0) >= verb)
 			throw new Refusal(`${SITE_REFUSED.deny}; the agent may not use ${named}. Nothing ran.`);
+		if (siteAllow) {
+			const answer = await siteAllow.requestSiteAllow({ sessionId: context.sessionId, siteKey: site.key });
+			if (signal.aborted) throw new Refusal("The request was canceled before it ran.");
+			if (answer !== "allow") {
+				deniedThrough.set(key, verbs);
+				throw new Refusal(`${SITE_REFUSED.deny}; the agent may not use ${named}. Nothing ran.`);
+			}
+			await control.allow(context.sessionId, site.key);
+			return;
+		}
 		let pending = asking.get(key);
 		if (!pending) {
 			const { origin, host } = new URL(url);
@@ -1772,6 +1808,47 @@ export function createPwExtHandler({
 		};
 	}
 
+	async function runModule(request: ModuleRequest, sessionId: string): Promise<PwExtResult> {
+		const at = { sessionId };
+		if ((NAVIGATION_VERBS as readonly string[]).includes(request.verb)) return navigation(request as never, at);
+		if ((POINTER_VERBS as readonly string[]).includes(request.verb)) return pointer(request as never, at);
+		if ((INPUT_VERBS as readonly string[]).includes(request.verb)) return input(request, at);
+		if ((PAGE_MODULE_VERBS as readonly string[]).includes(request.verb)) {
+			const result = await pageVerbs(request, at);
+			if (result.ok && request.verb === "tab-select") void syncShim(request.tabId as number, false);
+			return result;
+		}
+		return storageVerbs(request, at);
+	}
+
+	/** Navigation, pointer and input ask the site question first; eval and storage writes need a site already allowed. */
+	async function moduleVerb(
+		request: ModuleRequest,
+		context: PwExtContext,
+		signal: AbortSignal,
+		verb: number,
+	): Promise<PwExtResult> {
+		if (MODULE_SITE_ASK.has(request.verb)) {
+			const tab = await resolveTab(request, context.sessionId);
+			if (!tab) throw new Refusal((await agentTabs.list({ sessionId: context.sessionId })).length ? SELECTED_GONE : NO_TAB);
+			if (tab.incognito) throw new Refusal(PW_EXT_PRIVATE_ERROR);
+			if (!allowedPage(tab.url)) throw new Refusal(PW_EXT_BLOCKED_ERROR);
+			if (mailbox(tab.url)) throw new Refusal(PW_EXT_MAILBOX_ERROR);
+			if (tab.discarded) throw new Refusal(discardedTab(tab.id));
+			await allowSite(tab.url, context, signal, verb);
+			const live = await api.tabs.get(tab.id).catch(() => undefined);
+			if (!live || live.groupId !== tab.groupId || !(await agentTabs.owns({ sessionId: context.sessionId, tabId: tab.id })))
+				throw new Refusal(SELECTED_GONE);
+			if (live.url !== tab.url) throw new Refusal("The page changed while the site question was open; nothing ran. Retry.");
+		}
+		if (signal.aborted) return CANCELED;
+		const result = await runModule(request, context.sessionId);
+		const options = { secrets: await grants.secrets(context.sessionId).catch(() => []) };
+		return result.ok
+			? { ok: true, data: { ...result.data, text: clean(result.data.text, options) } }
+			: { ok: false, error: clean(result.error, options) };
+	}
+
 	async function execute(
 		request: PwExtRequest,
 		context: PwExtContext,
@@ -1780,6 +1857,7 @@ export function createPwExtHandler({
 	): Promise<PwExtResult> {
 		if (signal.aborted) return CANCELED;
 		if (isWebMcpVerb(request)) return webMcp(request, context, signal);
+		if (isModuleRequest(request)) return moduleVerb(request, context, signal, verb);
 		if (request.verb === "new") {
 			await allowSite(request.url, context, signal, verb);
 			if (signal.aborted) return CANCELED;
@@ -1812,6 +1890,10 @@ export function createPwExtHandler({
 			if (live.url !== tab.url)
 				throw new Refusal("The page changed while the site question was open; nothing ran. Retry.");
 		}
+		if (siteAllow && CAPTURE_VERBS.has(request.verb))
+			await siteAllow.assertCaptureAllowed(context.sessionId, tab.url as string).catch((error: unknown) => {
+				throw error instanceof PhiCaptureRefusedError ? new Refusal(error.message) : error;
+			});
 		tab.signal = signal;
 		if (signal.aborted) return CANCELED;
 		return run(request, tab, context, signal);

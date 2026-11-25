@@ -7,7 +7,7 @@ import {
 	storageActionOf,
 	storageAreaOf,
 	validate,
-} from "@dg/common/pw-ext-verbs/storage";
+} from "../../../../common/src/pw-ext-verbs/storage";
 import type { AgentTabs } from "../agent-tabs";
 import type { PwExtBrowserApi } from "../pw-ext";
 import type { SessionControl } from "../session-control";
