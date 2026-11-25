@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { main } from "../src/pw/cli";
 import {
+	autoExtArgv,
 	type BrowserModeInput,
 	isExtCapable,
 	LOCAL_ONLY_VERBS,
@@ -47,7 +48,7 @@ describe("resolveBrowserMode", () => {
 	});
 
 	test("auto picks local for a verb the extension cannot run", () => {
-		expect(resolve({ verb: "eval" })).toEqual({ mode: "local", reason: "auto: verb is not ext-capable" });
+		expect(resolve({ verb: "cookie-get" })).toEqual({ mode: "local", reason: "auto: verb is not ext-capable" });
 	});
 
 	test("DG_BROWSER=auto is the same as no setting", () => {
@@ -146,5 +147,52 @@ describe("pw main browser mode", () => {
 		} finally {
 			daemon.dispose();
 		}
+	});
+});
+
+describe("autoExtArgv", () => {
+	test.each([
+		[["goto", "https://x.test/"], ["open", "https://x.test/"]],
+		[["open", "https://x.test/"], ["open", "https://x.test/"]],
+		[["tab-list"], ["tabs"]],
+		[["tab-new"], ["new"]],
+		[["tab-new", "https://x.test/"], ["new", "https://x.test/"]],
+		[["tab-close"], ["close"]],
+		[["go-back"], ["go-back"]],
+		[["go-forward"], ["go-forward"]],
+		[["reload"], ["reload"]],
+		[["click", "e1"], ["click", "e1"]],
+		[["fill", "e1", "hello"], ["fill", "e1", "hello"]],
+		[["hover", "e1"], ["hover", "e1"]],
+		[["drag", "e1", "e2"], ["drag", "e1", "e2"]],
+		[["mousewheel", "0", "-100"], ["mousewheel", "0", "-100"]],
+		[["type", "hello", "--submit"], ["type", "hello", "--submit"]],
+		[["eval", "document.title"], ["eval", "document.title"]],
+		[["resize", "800", "600"], ["resize", "800", "600"]],
+		[["localstorage-set", "a", "b"], ["localstorage-set", "a", "b"]],
+		[["sessionstorage-clear"], ["sessionstorage-clear"]],
+	])("maps %j to %j", (argv, expected) => {
+		expect(autoExtArgv(argv)).toEqual(expected);
+	});
+
+	test.each([
+		[["-s=web", "click", "e1"]],
+		[["--session=web", "click", "e1"]],
+		[["--session", "web", "click", "e1"]],
+		[["--raw", "click", "e1"]],
+		[["open"]],
+		[["open", "--headless", "https://x.test/"]],
+		[["tab-close", "2"]],
+		[["tab-select", "1"]],
+		[["select", "e1", "red"]],
+		[["close"]],
+		[["eval", "() => 1", "e1"]],
+		[["eval", "() => 1", "--filename", "out.json"]],
+		[["click", "e1", "--button", "right"]],
+		[["snapshot", "--depth", "3"]],
+		[["route", "**/*"]],
+		[[]],
+	])("leaves %j to local mode", (argv) => {
+		expect(autoExtArgv(argv)).toBeUndefined();
 	});
 });
