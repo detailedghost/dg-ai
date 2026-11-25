@@ -1,6 +1,6 @@
 ---
 name: monolith
-description: Scan the codebase and consolidate its native vocabulary (domain terms, naming conventions, architectural patterns, ambiguities) into `.agents/monolith.md`. Append-only on re-run; splits into `.agents/monolith/<domain>.md` at the byte cap. Flags: --shallow/-s, --prune, --split. Use when the user wants agents and humans speaking the project's dialect.
+description: "Scan the codebase and consolidate its native vocabulary (domain terms, naming conventions, architectural patterns, ambiguities) into `.agents/monolith.md`. Append-only on re-run; splits into `.agents/monolith/<domain>.md` at the byte cap. Flags: --shallow/-s, --prune, --split. Use when the user wants agents and humans speaking the project's dialect."
 disable-model-invocation: true
 ---
 
