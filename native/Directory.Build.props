@@ -4,6 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);IL2101</NoWarn>
     <WarningsNotAsErrors></WarningsNotAsErrors>
     <InvariantGlobalization>true</InvariantGlobalization>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
