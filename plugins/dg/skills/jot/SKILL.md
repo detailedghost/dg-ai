@@ -1,6 +1,6 @@
 ---
 name: jot
-description: Write a short note down and read it back later, or save a session handoff so a fresh agent can resume. Default `/dg:jot` writes a temporary agent note to scratch (lost on reboot, 14-day TTL). `-s` / `--save` writes a durable handoff. `-p` / `--previous` lists and resumes. `-k` / `--kick` writes "where we are" as its own section in the shared `~/doc/checkpoint.md` ("kick", "checkpoint"); `-k -p` / `-kp` / `--kick --previous` takes one back, removes it and resumes ("pick up where we left off"). Each jot file is capped at 2 KB; larger jots split into a folder of parts.
+description: Write a short note and read it back later, or save a handoff. `/dg:jot` writes a temporary note to scratch (lost on reboot). `-s`/`--save` writes a durable handoff. `-p`/`--previous` lists and resumes. `-k`/`--kick` writes "where we are" to the shared `~/doc/checkpoint.md`; `-k -p` takes one back and resumes ("pick up where we left off", "kick", "checkpoint"). Files cap at 2 KB.
 ---
 
 # Skill: jot
