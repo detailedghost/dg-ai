@@ -1,0 +1,82 @@
+name: Budgets
+
+on:
+  pull_request:
+
+concurrency:
+  group: budgets-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+jobs:
+  ratchet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the pull request with history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.1
+
+      - name: Download measurements from the compiled-dg run for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          mkdir -p budget-measurements
+          deadline=$((SECONDS + 1800))
+          run_id=""
+          while [ -z "$run_id" ] && [ "$SECONDS" -lt 120 ]; do
+            run_id=$(gh run list --workflow compiled-dg.yml --commit "$HEAD_SHA" --json databaseId --jq '.[0].databaseId // empty')
+            [ -n "$run_id" ] || sleep 10
+          done
+          if [ -z "$run_id" ]; then
+            echo "No compiled-dg run for this commit; the ratchet has no measurements."
+            exit 0
+          fi
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            state=$(gh run view "$run_id" --json status --jq .status)
+            [ "$state" = "completed" ] && break
+            sleep 20
+          done
+          gh run download "$run_id" --name budget-measurements --dir budget-measurements \
+            || echo "The compiled-dg run uploaded no budget-measurements artifact."
+
+      - name: Diff module sizes between the base and head reports
+        run: |
+          base=budget-measurements/size-report-base.json
+          head=budget-measurements/size-report.json
+          if [ -f scripts/size-diff.ts ] && [ -f "$base" ] && [ -f "$head" ]; then
+            bun scripts/size-diff.ts "$base" "$head" > growth.txt
+          fi
+
+      - name: Run the budget ratchet
+        id: ratchet
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bun scripts/budget-ratchet.ts --measured budget-measurements --growth growth.txt --comment comment.md
+
+      - name: Post or update the budget comment
+        if: always() && hashFiles('comment.md') != '' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          id=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
+            --jq '[.[] | select(.body | contains("<!-- budget-ratchet -->"))][0].id // empty')
+          if [ -n "$id" ]; then
+            gh api --method PATCH "repos/$REPO/issues/comments/$id" -F body=@comment.md
+          else
+            gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" -F body=@comment.md
+          fi
