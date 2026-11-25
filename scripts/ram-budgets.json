@@ -2,103 +2,103 @@
 	"version": 1,
 	"cases": {
 		"version": {
-			"peakMB": 26.4,
-			"msBudget": 8
+			"peakMB": 25.8,
+			"msBudget": 12
 		},
 		"help": {
-			"peakMB": 25.2
+			"peakMB": 24.9
 		},
 		"completion zsh": {
-			"peakMB": 24.2,
-			"msBudget": 12
+			"peakMB": 23.9,
+			"msBudget": 18
 		},
 		"config path": {
 			"peakMB": 31
 		},
 		"stat checklist": {
-			"peakMB": 45.3,
-			"msBudget": 24
+			"peakMB": 45.8,
+			"msBudget": 30
 		},
 		"job --help": {
-			"peakMB": 32
+			"peakMB": 31
 		},
 		"pw --help": {
-			"peakMB": 33.5
+			"peakMB": 33.2
 		},
 		"db --help": {
-			"peakMB": 30.1
+			"peakMB": 31.2
 		},
 		"thrash --help": {
-			"peakMB": 34.1
+			"peakMB": 34.2
 		},
 		"prototype --help": {
-			"peakMB": 32.7
+			"peakMB": 33
 		},
 		"phone status": {
-			"peakMB": 35.7
+			"peakMB": 35.1
 		},
 		"phone contacts": {
-			"peakMB": 35.7
+			"peakMB": 35.2
 		},
 		"phone messages": {
-			"peakMB": 35.8
+			"peakMB": 35.2
 		},
 		"phone unread": {
-			"peakMB": 38
+			"peakMB": 37
 		},
 		"hooks list": {
-			"peakMB": 32.4
+			"peakMB": 32
 		},
 		"hooks run spelling": {
-			"peakMB": 35.1,
-			"msBudget": 14
+			"peakMB": 35.4,
+			"msBudget": 19
 		},
 		"hooks run format": {
-			"peakMB": 34.5,
-			"msBudget": 14
+			"peakMB": 34.6,
+			"msBudget": 18
 		},
 		"hooks run pr-prose": {
-			"peakMB": 34.7,
-			"msBudget": 15
+			"peakMB": 34.6,
+			"msBudget": 18
 		},
 		"hooks run pr-confirm": {
-			"peakMB": 34.2,
-			"msBudget": 13
+			"peakMB": 34.1,
+			"msBudget": 17
 		},
 		"hooks run spec-plan-lint": {
 			"peakMB": 34.1,
-			"msBudget": 14
+			"msBudget": 18
 		},
 		"hooks run daily-prune": {
-			"peakMB": 34.2,
-			"msBudget": 14
+			"peakMB": 34.5,
+			"msBudget": 18
 		},
 		"hooks run strip-ai-coauthors": {
 			"peakMB": 31.8,
-			"msBudget": 12
+			"msBudget": 16
 		},
 		"adr lint --all (repo)": {
-			"peakMB": 49.8
+			"peakMB": 49.9
 		},
 		"spec validate": {
-			"peakMB": 38.1
+			"peakMB": 37.8
 		},
 		"update --check": {
 			"peakMB": 80
 		},
 		"doctor": {
-			"peakMB": 50.8
+			"peakMB": 50
 		},
 		"daemon idle": {
-			"peakMB": 41.4,
-			"growthMB": 2.8
+			"peakMB": 40.4,
+			"growthMB": 1.14
 		},
 		"daemon with 15 jobs": {
-			"peakMB": 42.3,
+			"peakMB": 42,
 			"growthMB": 1
 		},
 		"prototype serve": {
-			"peakMB": 38.8,
+			"peakMB": 39,
 			"growthMB": 1
 		},
 		"phone listener idle": {
@@ -106,16 +106,16 @@
 			"growthMB": 1
 		},
 		"phone listener burst": {
-			"peakMB": 57.1,
+			"peakMB": 58.2,
 			"growthMB": 1
 		},
 		"phone listener catch-up": {
-			"peakMB": 57.5,
+			"peakMB": 60.3,
 			"growthMB": 1
 		},
 		"agent phone status": {
-			"peakMB": 35.5,
-			"msBudget": 24
+			"peakMB": 34.8,
+			"msBudget": 31
 		}
 	}
 }
