@@ -103,9 +103,9 @@ describe("ratchet", () => {
 		expect(r.failures).toEqual([]);
 	});
 
-	test("allows 10 percent slack for latency budgets only", () => {
+	test("gates latency budgets on overruns only", () => {
 		const latency = ratchet({
-			budgets: { "ram:hook/msBudget": 109 },
+			budgets: { "ram:hook/msBudget": 200 },
 			measured: { "ram:hook/msBudget": 100 },
 			prBody: "",
 		});
@@ -116,6 +116,29 @@ describe("ratchet", () => {
 		});
 		expect(latency.failures).toEqual([]);
 		expect(size.failures).toHaveLength(1);
+	});
+
+	test("still fails a latency overrun", () => {
+		const r = ratchet({
+			budgets: { "native:hooks/p50Ms": 5 },
+			measured: { "native:hooks/p50Ms": 5.2 },
+			prBody: "",
+		});
+		expect(r.failures).toHaveLength(1);
+		expect(r.failures[0]).toContain("over the budget");
+	});
+
+	test("names a nonzero budget to set for a key under 1", () => {
+		const r = ratchet({ budgets: { "ram:idle/anonMB": 1.14 }, measured: { "ram:idle/anonMB": 0.91 }, prBody: "" });
+		expect(r.failures).toHaveLength(1);
+		expect(r.failures[0]).toContain("lower the budget to 0.955");
+	});
+
+	test("gates growth budgets on overruns only", () => {
+		const slack = ratchet({ budgets: { "ram:daemon/growthMB": 4 }, measured: { "ram:daemon/growthMB": 0.91 }, prBody: "" });
+		const over = ratchet({ budgets: { "ram:daemon/growthMB": 4 }, measured: { "ram:daemon/growthMB": 4.2 }, prBody: "" });
+		expect(slack.failures).toEqual([]);
+		expect(over.failures).toHaveLength(1);
 	});
 
 	test("honors an explicit slackPct", () => {

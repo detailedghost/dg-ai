@@ -106,4 +106,6 @@ gh run download <compiled-dg run id> --name budget-measurements --dir budget-mea
 bun scripts/budget-ratchet.ts --measured budget-measurements
 ```
 
+RAM, size, download and token budgets are two-sided. A measurement over the budget fails, and a measurement more than 5 percent under it also fails until the pull request lowers the budget. Latency budgets (keys that end in `ms`, `Ms`, `msBudget` or `pNN`) and memory-growth budgets (`growthMB`) are ceilings. They fail only on an overrun, because CI runner speed changes 20 to 77 percent between runs. Each latency value is already the median of many samples (50 runs for `msBudget`, 200 for the front door, 40 to 2,000 for the bench). Seed a ceiling at the slowest CI value seen plus about 20 percent.
+
 Raise a budget only with a `Budget-Increase: <file>:<path> <old> -> <new> because <reason>` line in the pull request body. Drop a budget entry only with a `Budget-Removal: <key> because <reason>` line in the same place.

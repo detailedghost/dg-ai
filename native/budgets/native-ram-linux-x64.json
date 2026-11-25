@@ -1,14 +1,14 @@
 {
 	"version": {
 		"peakRssBytes": 7280026,
-		"p50Ms": 3.65
+		"p50Ms": 5.39
 	},
 	"completion": {
 		"peakRssBytes": 7632691,
-		"p50Ms": 4.51
+		"p50Ms": 5.91
 	},
 	"hooks": {
 		"peakRssBytes": 7481549,
-		"p50Ms": 5.16
+		"p50Ms": 6.71
 	}
 }
