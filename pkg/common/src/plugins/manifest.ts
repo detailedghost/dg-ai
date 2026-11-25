@@ -34,7 +34,7 @@ const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const HOST_PORT = /^(\[[^\]]+\]|[^:\s/]+):(\d{1,5})$/;
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+export const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
 function fail(where: Where, key: string, message: string): never {
 	const target = key === "" ? "the file" : key;
@@ -102,6 +102,22 @@ function parseHostPort(where: Where, transport: PluginTransport, endpoint: strin
 	return match[1] as string;
 }
 
+/** The first rule an http endpoint breaks, or undefined; the one policy for the manifest and the transport. */
+export function checkHttpEndpoint(endpoint: string, remote: boolean): string | undefined {
+	let url: URL;
+	try {
+		url = new URL(endpoint);
+	} catch {
+		return "endpoint must be an http or https URL";
+	}
+	if (url.protocol !== "http:" && url.protocol !== "https:") return "endpoint must be an http or https URL";
+	if (url.username !== "" || url.password !== "") return "endpoint must not hold credentials in the endpoint URL; use the plugin token from dg credentials";
+	if (remote) return url.protocol === "https:" ? undefined : "a remote endpoint must use https";
+	return LOOPBACK_HOSTS.has(url.hostname)
+		? undefined
+		: `endpoint host ${url.hostname} is not loopback; set remote = true in plugin.toml and allow_remote = true in config.toml`;
+}
+
 function checkEndpoint(where: Where, transport: PluginTransport, remote: boolean, endpoint: string | undefined): void {
 	if (transport === "ipc") {
 		if (remote) fail(where, "remote", "remote needs the http transport with an https endpoint");
@@ -109,16 +125,8 @@ function checkEndpoint(where: Where, transport: PluginTransport, remote: boolean
 	}
 	if (endpoint === undefined) fail(where, "transport", `endpoint is required for the ${transport} transport`);
 	if (transport === "http") {
-		let url: URL;
-		try {
-			url = new URL(endpoint);
-		} catch {
-			fail(where, "endpoint", `endpoint must be an http or https URL, got ${endpoint}`);
-		}
-		if (url.protocol !== "http:" && url.protocol !== "https:") fail(where, "endpoint", `endpoint must be an http or https URL, got ${endpoint}`);
-		if (url.username !== "" || url.password !== "") fail(where, "endpoint", "endpoint must not hold credentials in the endpoint URL; use the plugin token from dg credentials");
-		if (remote && url.protocol !== "https:") fail(where, "endpoint", "a remote endpoint must use https");
-		if (!remote && !LOOPBACK_HOSTS.has(url.hostname)) fail(where, "endpoint", `endpoint host ${url.hostname} is not loopback; set remote = true in plugin.toml and allow_remote = true in config.toml`);
+		const problem = checkHttpEndpoint(endpoint, remote);
+		if (problem !== undefined) fail(where, "endpoint", problem);
 		return;
 	}
 	if (remote) fail(where, "remote", "remote needs the http transport with an https endpoint");
