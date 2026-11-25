@@ -3,7 +3,7 @@ using Dg.Core.Plugins.Contract;
 using Dg.Core.Tests.Plugins;
 using Dg.Core.Transport.Codec;
 
-namespace Dg.Core.Tests.Transport.Encoding;
+namespace Dg.Core.Tests.Transport.Codec;
 
 public sealed class MessagePackParityTests
 {
