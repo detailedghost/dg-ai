@@ -74,8 +74,6 @@ internal sealed class PluginVerifyCommand(
         if (enabled)
             hosts.EnsureRegistrable(record.Name, skills.Select(static s => s.Name));
 
-        var approved = record with { ApprovedSha256 = record.TreeSha256 };
-        store.Write(approved);
         var loaded = store.Loaded(record.Name);
         PluginTree.Remove(loaded);
         foreach (var skill in skills)
@@ -84,6 +82,9 @@ internal sealed class PluginVerifyCommand(
             hosts.Register(record.Name, loaded);
         else
             hosts.Unregister(record.Name);
+
+        var approved = record with { ApprovedSha256 = record.TreeSha256 };
+        store.Write(approved);
         return approved;
     }
 

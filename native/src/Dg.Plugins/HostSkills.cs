@@ -8,12 +8,15 @@ internal sealed class HostSkills(IReadOnlyDictionary<string, string?> env, strin
     {
         get
         {
-            var home = env.TryGetValue("HOME", out var set) && set is not null ? set : homeDir;
-            var claude = env.TryGetValue("CLAUDE_CONFIG_DIR", out var c) && !string.IsNullOrEmpty(c) ? c : Path.Combine(home, ".claude");
-            var codex = env.TryGetValue("CODEX_HOME", out var x) && !string.IsNullOrEmpty(x) && Path.IsPathRooted(x) ? x : Path.Combine(home, ".codex");
+            var home = Rooted("HOME") ?? homeDir;
+            var claude = Rooted("CLAUDE_CONFIG_DIR") ?? Path.Combine(home, ".claude");
+            var codex = Rooted("CODEX_HOME") ?? Path.Combine(home, ".codex");
             return [Path.Combine(claude, "skills"), Path.Combine(codex, "skills")];
         }
     }
+
+    private string? Rooted(string key) =>
+        env.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value) && Path.IsPathRooted(value) ? value : null;
 
     public void EnsureRegistrable(string plugin, IEnumerable<string> names)
     {

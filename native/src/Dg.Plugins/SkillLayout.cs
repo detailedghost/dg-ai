@@ -16,19 +16,18 @@ internal static partial class SkillLayout
         var found = new Dictionary<string, SkillDir>(StringComparer.Ordinal);
         foreach (var file in files)
         {
-            var parts = file.Split('/');
-            if (parts[^1] != "SKILL.md")
+            SkillDir? skill = file.Split('/') switch
+            {
+                ["skills", "SKILL.md"] => null,
+                ["skills", var name, "SKILL.md"] => new(name, $"skills/{name}/"),
+                [var name, "SKILL.md"] => new(name, $"{name}/"),
+                _ => null,
+            };
+            if (skill is not { } hit)
                 continue;
-            var skills = parts[0] == "skills";
-            var dir =
-                skills && parts.Length == 3 ? parts[1]
-                : parts.Length == 2 ? parts[0]
-                : null;
-            if (dir is null || (skills && parts.Length < 3))
-                continue;
-            if (!SkillName().IsMatch(dir))
+            if (!SkillName().IsMatch(hit.Name))
                 throw new NotNativeException();
-            found[dir] = new(dir, skills ? $"skills/{dir}/" : $"{dir}/");
+            found[hit.Name] = hit;
         }
         return [.. found.Values];
     }
