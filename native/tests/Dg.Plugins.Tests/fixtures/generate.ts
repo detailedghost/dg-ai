@@ -7,15 +7,17 @@ const root = join(dir, "..", "..", "..", "..");
 const check = process.argv.includes("--check");
 
 type Step = { bun?: string[]; write?: Record<string, string>; rm?: string; symlink?: Record<string, string> };
-type Case = { name: string; argv: string[]; steps?: Step[]; env?: Record<string, string>; native?: boolean };
+type Case = { name: string; argv: string[]; steps?: Step[]; env?: Record<string, string>; native?: boolean; person?: boolean };
 type Spec = { bundles: Record<string, Record<string, string>>; cases: Case[] };
 
 const spec: Spec = JSON.parse(readFileSync(join(dir, "cases.json"), "utf8"));
 const SKIPPED = new Set(["sources", ".bun", ".cache"]);
 
-function dg(home: string, argv: string[], extra: Record<string, string> = {}) {
+const AT_A_TERMINAL = ["python3", "-c", "import os, pty, sys; os.dup2(pty.openpty()[1], 0); os.execvp(sys.argv[1], sys.argv[1:])"];
+
+function dg(home: string, argv: string[], extra: Record<string, string> = {}, terminal = false) {
 	const env = { PATH: process.env.PATH ?? "", HOME: home, DG_HOME: home, DG_PATH_FENCE: home, ...extra };
-	const result = Bun.spawnSync(["bun", join(root, "pkg", "dg", "src", "index.ts"), ...argv], { cwd: home, env });
+	const result = Bun.spawnSync([...(terminal ? AT_A_TERMINAL : []), "bun", join(root, "pkg", "dg", "src", "index.ts"), ...argv], { cwd: home, env });
 	return { stdout: result.stdout.toString(), stderr: result.stderr.toString(), exit: result.exitCode };
 }
 
@@ -47,7 +49,7 @@ function run(entry: Case) {
 		const extra = Object.fromEntries(Object.entries(entry.env ?? {}).map(([key, value]) => [key, value.replaceAll("<home>", home)]));
 		for (const step of entry.steps ?? []) {
 			if (step.bun) {
-				const result = dg(home, step.bun.map((arg) => arg.replaceAll("<home>", home)), extra);
+				const result = dg(home, step.bun.map((arg) => arg.replaceAll("<home>", home)), extra, true);
 				if (result.exit !== 0) throw new Error(`${entry.name}: setup ${step.bun.join(" ")} failed: ${result.stderr}`);
 			}
 			for (const [rel, text] of Object.entries(step.write ?? {})) put(home, rel, text);
@@ -55,7 +57,7 @@ function run(entry: Case) {
 			for (const [rel, target] of Object.entries(step.symlink ?? {})) symlinkSync(target, join(home, rel));
 		}
 		const setup = snapshot(home);
-		const result = dg(home, entry.argv, extra);
+		const result = dg(home, entry.argv, extra, entry.person === true);
 		const strip = (text: string) => text.replaceAll(home, "<home>");
 		return { name: entry.name, setup, stdout: strip(result.stdout), stderr: strip(result.stderr), exit: result.exit, after: snapshot(home) };
 	} finally {

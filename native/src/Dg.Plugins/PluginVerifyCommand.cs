@@ -8,14 +8,22 @@ namespace Dg.Plugins;
 internal sealed class PluginVerifyCommand(
     IReadOnlyDictionary<string, string?> env,
     OutputWriter output,
-    OutputWriter error
+    OutputWriter error,
+    Func<bool>? hasTerminal = null
 ) : APluginCommand(env, output, error)
 {
+    private readonly Func<bool> _hasTerminal = hasTerminal ?? (static () => !Console.IsInputRedirected);
+
     public override string Name => "plugin verify";
 
     protected override int Run(string[] args, PluginStore store, StringBuilder stdout, StringBuilder stderr)
     {
         var (name, approve) = Parse(args);
+        if (approve && !_hasTerminal())
+        {
+            stderr.Append("dg plugin verify --approve needs a person at a terminal; run it yourself.\n");
+            return 1;
+        }
         var record = store.TryRead(name);
         if (record is null)
             return Fail(
