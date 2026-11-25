@@ -770,13 +770,13 @@ describe("bootstrap.ps1 places the front door at dg.exe by default", () => {
 	});
 
 	test("honors DG_FRONT=0 and front.enabled = false", () => {
-		expect(script).toContain('$env:DG_FRONT -eq "0"');
-		expect(script).toMatch(/\[front\]/);
+		expect(script).toContain('"$env:DG_FRONT".Trim().ToLowerInvariant()');
+		expect(script).toContain("$line -eq '[front]'");
 	});
 
 	test("verifies the front door sha256 before it runs it, and runs it with a timeout", () => {
 		expect(at("Assert-DgSha256 $frontDownloaded")).toBeGreaterThan(-1);
-		expect(at("Test-DgFrontVersion")).toBeGreaterThan(at("Assert-DgSha256 $frontDownloaded"));
+		expect(script.lastIndexOf("Test-DgFrontVersion $dg")).toBeGreaterThan(at("Assert-DgSha256 $frontDownloaded"));
 		expect(script).toContain("WaitForExit(");
 	});
 

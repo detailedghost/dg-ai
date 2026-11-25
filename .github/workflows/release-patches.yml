@@ -45,20 +45,34 @@ jobs:
         run: |
           set -euo pipefail
           keys="linux-x64 linux-x64-baseline linux-arm64 darwin-x64 darwin-arm64 windows-x64 windows-x64-baseline windows-arm64"
+          front_rids="linux-x64 linux-arm64 win-x64 win-arm64 osx-x64 osx-arm64"
           mkdir -p old new patches
           from="${PREV#v}"
-          for key in $keys; do
-            asset="dg-${key}"
-            case "$key" in windows-*) asset="${asset}.exe" ;; esac
-            gh release download "$PREV" --repo "$GITHUB_REPOSITORY" --pattern "${asset}.zst" --dir old
+          patch_asset() {
+            asset="$1"
+            name="${asset%.exe}-from-${from}.zpatch"
             gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "${asset}.zst" --dir new
             zstd -d -q --force "old/${asset}.zst" -o "old/${asset}"
             zstd -d -q --force "new/${asset}.zst" -o "new/${asset}"
-            name="dg-${key}-from-${from}.zpatch"
             zstd -q -19 --long=27 --force --patch-from="old/${asset}" "new/${asset}" -o "patches/${name}"
             zstd -d -q --force --long=27 --patch-from="old/${asset}" "patches/${name}" -o "patches/check"
             cmp "patches/check" "new/${asset}"
             rm -f "patches/check" "old/${asset}" "new/${asset}" "old/${asset}.zst" "new/${asset}.zst"
+          }
+          for key in $keys; do
+            asset="dg-${key}"
+            case "$key" in windows-*) asset="${asset}.exe" ;; esac
+            gh release download "$PREV" --repo "$GITHUB_REPOSITORY" --pattern "${asset}.zst" --dir old
+            patch_asset "$asset"
+          done
+          for rid in $front_rids; do
+            asset="dg-front-${rid}"
+            case "$rid" in win-*) asset="${asset}.exe" ;; esac
+            if ! gh release download "$PREV" --repo "$GITHUB_REPOSITORY" --pattern "${asset}.zst" --dir old; then
+              echo "${PREV} has no ${asset}.zst, so there is no front door patch for ${rid}."
+              continue
+            fi
+            patch_asset "$asset"
           done
           (cd patches && sha256sum -- *.zpatch > PATCHSUMS)
 

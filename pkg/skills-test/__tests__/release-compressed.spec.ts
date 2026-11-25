@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLATFORM_KEYS } from "../../skills-cli/__tests__/release-fixtures";
+import { frontDoorAssetName } from "../../skills-cli/src/install/front-door";
 import { compiledAssetName } from "../../skills-cli/src/utils/lib";
 import { parseWorkflow } from "./workflow-support";
 
@@ -19,8 +20,10 @@ function sh(script: string, cwd: string): void {
 	if (proc.exitCode !== 0) throw new Error(`step failed: ${proc.stderr.toString()}`);
 }
 
+const FRONT_ASSETS = [...new Set(PLATFORM_KEYS.map(frontDoorAssetName))];
+
 describe("the release step that compresses the compiled dg", () => {
-	test("publishes .zst and .gz next to each of the eight raw assets, and SHA256SUMS covers all", () => {
+	test("publishes .zst and .gz next to each of the eight raw assets and six front doors, and SHA256SUMS covers all", () => {
 		const work = mkdtempSync(join(tmpdir(), "dg-release-compress-"));
 		try {
 			const dist = join(work, "dist");
@@ -30,14 +33,15 @@ describe("the release step that compresses the compiled dg", () => {
 			writeFileSync(join(work, "pkg", "skills-cli", "bootstrap.ps1"), "ps\n");
 			writeFileSync(join(dist, "dg-lib-1.0.0.tar.gz"), "lib");
 			for (const key of PLATFORM_KEYS) writeFileSync(join(dist, compiledAssetName(key)), `program ${key} `.repeat(500));
+			for (const name of FRONT_ASSETS) writeFileSync(join(dist, name), `front door ${name} `.repeat(500));
 
 			sh(runStep("Compress the compiled dg assets"), work);
 			sh(runStep("Add the bootstrap scripts and checksums"), work);
 
 			const files = readdirSync(dist);
 			const sums = readFileSync(join(dist, "SHA256SUMS"), "utf8");
-			for (const key of PLATFORM_KEYS) {
-				const raw = compiledAssetName(key);
+			expect(FRONT_ASSETS).toHaveLength(6);
+			for (const raw of [...PLATFORM_KEYS.map(compiledAssetName), ...FRONT_ASSETS]) {
 				for (const name of [raw, `${raw}.zst`, `${raw}.gz`]) {
 					expect(files).toContain(name);
 					expect(sums).toMatch(new RegExp(`^[0-9a-f]{64}  ${name.replaceAll(".", "\\.")}$`, "m"));
