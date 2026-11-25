@@ -119,9 +119,9 @@ Local mode records with its own Playwright recorder and stays local in every
 `demo`. `--ext` plays in the agent window, and the first visit to each new site opens
 the allow popup.
 
-One finder picks the browser: `DG_VERIFY_BROWSER` as a binary path (never put a path in
-`DG_BROWSER`, which makes `dg pw` stop), then Chrome, Edge, Brave, Chromium, Vivaldi, Chrome for Testing, the usual app folders,
-then the downloaded Chromium. Only then does it suggest `dg pw install-browser`.
+One finder picks the browser: `DG_VERIFY_BROWSER` as a binary path (a path in `DG_BROWSER` breaks
+`dg pw`), then Chrome, Edge, Brave, Chromium, Vivaldi, Chrome for Testing, the usual app folders,
+then the downloaded Chromium. Last, it suggests `dg pw install-browser`.
 
 On WSL, `demo` drives the Windows browser by default, else headless Chromium inside WSL.
 The Windows browser opens a remote-debugging port on 127.0.0.1 during the run; pass
