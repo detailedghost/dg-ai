@@ -27,10 +27,20 @@ type Execve = (file: string, args: string[], env: Record<string, string | undefi
 const FFI_COMMANDS: ReadonlySet<string> = new Set(["jot", "stat", "install", "update", "upgrade", "extension"]);
 const GROUP_WORDS: ReadonlySet<string> = new Set(["dg", "skills", "dg-skills"]);
 
+function commandWords(argv: readonly string[]): string[] {
+	return argv.filter((word) => !GROUP_WORDS.has(word));
+}
+
 /** True for a command that reaches bun:ffi, which needs the JIT. */
 function needsFfi(argv: readonly string[]): boolean {
-	const command = argv.find((word) => !GROUP_WORDS.has(word));
+	const command = commandWords(argv)[0];
 	return command !== undefined && FFI_COMMANDS.has(command);
+}
+
+/** True for a command whose RSS stays in budget with the JIT on, so the re-exec would only add time. */
+function staysInBudgetWithJit(argv: readonly string[]): boolean {
+	const [first, second] = commandWords(argv);
+	return first === "--version" || (first === "hooks" && second === "run");
 }
 
 /** Re-executes dg once with the JSC JIT off; the pid stays the same, and DG_JIT=1 skips it. */
@@ -44,7 +54,7 @@ export async function reexecWithoutJit(
 		delete env[REEXEC_MARK];
 		return;
 	}
-	if (typeof execve !== "function" || env[JIT_ENV] !== undefined || env[KEEP_JIT] === "1" || needsFfi(argv)) return;
+	if (typeof execve !== "function" || env[JIT_ENV] !== undefined || env[KEEP_JIT] === "1" || needsFfi(argv) || staysInBudgetWithJit(argv)) return;
 	try {
 		const { isCompiled } = await import("@dg/common/node/program");
 		const execArgv = [process.argv0, ...(isCompiled() ? [] : [Bun.main]), ...argv];
@@ -62,6 +72,11 @@ function invokedName(argv0: string | undefined): string | undefined {
 		?.replace(/\.exe$/i, "");
 }
 
+function printVersion(): number {
+	process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
+	return 0;
+}
+
 /** Runs dg with `argv`; an old program name as first word is the 6.3 bridge, as invoked name it exits 1. */
 export async function dispatch(argv: readonly string[], argv0?: string): Promise<number> {
 	const invoked = invokedName(argv0);
@@ -74,12 +89,11 @@ export async function dispatch(argv: readonly string[], argv0?: string): Promise
 	const name: ProgramName = bridge ? (first as ProgramName) : "dg";
 	const args = bridge ? rest : [...argv];
 	if (isOldName(name)) process.stderr.write(removed(name, args));
+	const versionOnly = args.length === 1 && args[0] === "--version";
+	if (versionOnly && !bridge) return printVersion();
 	const { normalizeDgHome } = await import("@dg/common/node/dg-paths");
 	normalizeDgHome();
-	if (args.length === 1 && args[0] === "--version") {
-		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
-		return 0;
-	}
+	if (versionOnly) return printVersion();
 	const { setProgramName } = await import("@dg/common/node/program");
 	setProgramName(name);
 	if (bridge) {
