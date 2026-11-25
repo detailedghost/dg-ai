@@ -1,0 +1,9 @@
+{
+	"size": {
+		"linux-x64": {
+			"rawBytes": 94703000,
+			"zstdBytes": 32442000,
+			"patchBytes": 4976000
+		}
+	}
+}
