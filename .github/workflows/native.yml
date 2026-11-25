@@ -148,6 +148,7 @@ jobs:
           bun scripts/native-ram-budget.ts
           --dg native/publish/${{ matrix.rid }}/dg${{ runner.os == 'Windows' && '.exe' || '' }}
           --rid ${{ matrix.rid }}
+          --runs 200
           --gate
           --json native-measurements/native-ram-${{ matrix.rid }}.json
 
