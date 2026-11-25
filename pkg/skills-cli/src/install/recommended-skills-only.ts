@@ -19,15 +19,15 @@ type SkillPlan = { name: string; files: { from: string; rel: string }[] };
 const REGULAR_MODES = new Set(["100644", "100755"]);
 const MARKER = ".dg-recommended";
 const MANIFEST = ".claude-plugin/plugin.json";
-const SKILL_NAME = /^[a-z0-9][a-z0-9-]*$/;
+export const SKILL_NAME = /^[a-z0-9][a-z0-9-]*$/;
 
-function gitBinary(): string {
+export function gitBinary(): string {
 	const found = Bun.which("git");
 	if (!found) throw new Error("git not found");
 	return found;
 }
 
-const REPO_LOCATION_VARS = [
+export const REPO_LOCATION_VARS = [
 	"GIT_DIR",
 	"GIT_WORK_TREE",
 	"GIT_INDEX_FILE",
@@ -38,14 +38,14 @@ const REPO_LOCATION_VARS = [
 	"GIT_PREFIX",
 ];
 
-function gitEnv(): NodeJS.ProcessEnv {
+export function gitEnv(): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_LFS_SKIP_SMUDGE: "1" };
 	for (const name of REPO_LOCATION_VARS) delete env[name];
 	return env;
 }
 
-function git(binary: string, checkout: string, args: string[]): string {
-	const result = spawnSync(binary, ["-C", checkout, ...args], {
+export function git(binary: string, checkout: string, args: string[]): string {
+	const result = spawnSync(binary, ["-c", "protocol.ext.allow=never", "-c", "core.hooksPath=/dev/null", "-C", checkout, ...args], {
 		cwd: tmpdir(),
 		encoding: "utf8",
 		env: gitEnv(),
