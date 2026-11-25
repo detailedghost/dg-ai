@@ -1,5 +1,9 @@
 import type { HookEvent, HookInput } from "./types";
 
+export async function* bunStdin(): AsyncGenerator<string> {
+	yield await Bun.stdin.text();
+}
+
 export async function readStdinJson(
 	stdin: AsyncIterable<string | Uint8Array>,
 ): Promise<HookInput> {

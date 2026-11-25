@@ -9,11 +9,11 @@ setDefaultTimeout(60_000);
 
 const FAST_MODULE = join(import.meta.dir, "..", "src", "fast-route.ts");
 const FULL_ENTRY = join(import.meta.dir, "..", "src", "index.ts");
-const FAST_DRIVER = `import { exitAfterDrain } from "@dg/common/async";
-import { normalizeDgHome } from "@dg/common/node/dg-paths";
+const FAST_DRIVER = `import { exitAfterDrain } from ${JSON.stringify(import.meta.resolve("@dg/common/async"))};
+import { normalizeDgHome } from ${JSON.stringify(import.meta.resolve("@dg/common/node/dg-paths"))};
 import { runFastRoute } from ${JSON.stringify(FAST_MODULE)};
 normalizeDgHome();
-await exitAfterDrain(await runFastRoute(process.argv.slice(1)));`;
+await exitAfterDrain(await runFastRoute(process.argv.slice(2)));`;
 
 describe("fastRoute", () => {
 	test.each([
@@ -61,8 +61,11 @@ function world() {
 	const root = mkdtempSync(join(tmpdir(), "dg-fast-parity-"));
 	roots.push(root);
 	mkdirSync(join(root, "home"));
+	const driver = join(root, "fast-driver.ts");
+	writeFileSync(driver, FAST_DRIVER);
 	return {
 		root,
+		driver,
 		env: {
 			...process.env,
 			DG_HOME: join(root, ".dg"),
@@ -86,36 +89,35 @@ const EVENTS: Record<string, unknown> = {
 	"pr-confirm": { tool_name: "Bash", tool_input: { command: "gh pr create --title t --body b" } },
 };
 
+function both(args: (root: string) => string[], stdin: string): { fast: Result; full: Result } {
+	const outcome = (entry: (driver: string) => string[]) => {
+		const { root, env, driver } = world();
+		writeFileSync(join(root, "COMMIT_MSG"), "feat(x): y\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n");
+		return run([process.execPath, ...entry(driver), ...args(root)], stdin, env);
+	};
+	return { fast: outcome((driver) => [driver]), full: outcome(() => [FULL_ENTRY]) };
+}
+
 describe("hooks run parity", () => {
 	for (const hook of HOOKS) {
 		test(`${hook.id} gives the same output and exit code through the fast route and the full tree`, () => {
-			const { root, env } = world();
-			const message = join(root, "COMMIT_MSG");
-			writeFileSync(message, "feat(x): y\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n");
-			const args = hook.event === "commit-msg" ? ["hooks", "run", hook.id, message] : ["hooks", "run", hook.id];
 			const stdin = JSON.stringify(EVENTS[hook.id] ?? { tool_name: "Bash", tool_input: { command: "ls" } });
-			const fast = run([process.execPath, "-e", FAST_DRIVER, ...args], stdin, env);
-			const full = run([process.execPath, FULL_ENTRY, ...args], stdin, env);
+			const { fast, full } = both(
+				(root) => ["hooks", "run", hook.id, ...(hook.event === "commit-msg" ? [join(root, "COMMIT_MSG")] : [])],
+				stdin,
+			);
 			expect(fast).toEqual(full);
 		});
 	}
 
 	test("an unknown hook id fails the same way through both routes", () => {
-		const { env } = world();
-		const args = ["hooks", "run", "no-such-hook"];
-		const fast = run([process.execPath, "-e", FAST_DRIVER, ...args], "{}", env);
-		const full = run([process.execPath, FULL_ENTRY, ...args], "{}", env);
+		const { fast, full } = both(() => ["hooks", "run", "no-such-hook"], "{}");
 		expect(fast.exitCode).toBe(1);
 		expect(fast).toEqual(full);
 	});
 
 	test("pr-confirm asks for confirmation through the fast route", () => {
-		const { env } = world();
-		const fast = run(
-			[process.execPath, "-e", FAST_DRIVER, "hooks", "run", "pr-confirm"],
-			JSON.stringify(EVENTS["pr-confirm"]),
-			env,
-		);
+		const { fast } = both(() => ["hooks", "run", "pr-confirm"], JSON.stringify(EVENTS["pr-confirm"]));
 		expect(fast.exitCode).toBe(0);
 		expect(JSON.parse(fast.stdout).hookSpecificOutput.permissionDecision).toBe("ask");
 	});

@@ -9,6 +9,7 @@ import {
 	STRIP_ID,
 	stripCommitMessageFile,
 } from "./defs/strip-ai-coauthors";
+import { bunStdin } from "./io";
 import { HOOKS } from "./manifest";
 import { defaultSeams, runHook } from "./run";
 import { claudeWriter } from "./settings/claude";
@@ -364,7 +365,7 @@ function set(parsed: Parsed, io: HooksIo): number {
 export async function main(
 	argv: string[],
 	io: HooksIo = {
-		stdin: process.stdin,
+		stdin: bunStdin(),
 		env: process.env,
 		seams: defaultSeams(),
 	},
