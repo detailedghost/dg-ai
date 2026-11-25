@@ -75,13 +75,13 @@ describe("a release publishes only after every build workflow passes", () => {
 			expect(jobNeeds(release.jobs["build-bundle"])).toContain(gate);
 		}
 		expect(jobNeeds(release.jobs["build-ext"])).toContain("blt-ext");
-		expect(jobNeeds(release.jobs["smoke-bundle"])).toEqual(["build-bundle"]);
+		expect(jobNeeds(release.jobs["smoke-bundle"])).toEqual(["build-bundle", "build-front"]);
 	});
 
 	test("the release job waits on every smoke run and the extension build", () => {
 		const needs = jobNeeds(release.jobs.release);
 
-		for (const job of ["detect", "build-bundle", "smoke-bundle", "build-ext"]) {
+		for (const job of ["detect", "build-bundle", "build-front", "smoke-bundle", "build-ext"]) {
 			expect(needs).toContain(job);
 		}
 	});
