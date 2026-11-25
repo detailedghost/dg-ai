@@ -1,4 +1,5 @@
 using Dg.Core.Abstractions;
+using Dg.Core.Paths;
 using Dg.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -8,7 +9,7 @@ internal static class FrontDoor
 {
     public static async ValueTask<int> RunAsync(string[] args, CancellationToken ct)
     {
-        if (!FrontGate.IsNative(EnvSnapshot.Capture()))
+        if (!FrontGate.IsNative(ProcessEnvironment.Capture()))
             return new CoreLauncher(CoreLauncher.DefaultPath()).Launch(args);
 
         using var provider = CompositionRoot.Build();
@@ -17,6 +18,6 @@ internal static class FrontDoor
             return launcher.Launch(args);
 
         var exit = await native.Command.RunAsync(native.Args, ct);
-        return exit == CliExit.NotNative ? launcher.Launch(args) : exit;
+        return exit == ExitCodes.NotNative ? launcher.Launch(args) : exit;
     }
 }

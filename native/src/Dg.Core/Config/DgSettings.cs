@@ -1,4 +1,3 @@
-using System.Collections.Frozen;
 using Dg.Core.Errors;
 using Tomlyn.Model;
 
@@ -6,15 +5,6 @@ namespace Dg.Core.Config;
 
 public sealed class DgSettings(DgToml toml, IReadOnlyDictionary<string, string?> env)
 {
-    private static readonly FrozenDictionary<string, object> Defaults = new Dictionary<string, object>
-    {
-        ["browser.mode"] = "auto",
-        ["front.enabled"] = true,
-        ["install.cli_only"] = false,
-        ["ssms.allow_send"] = false,
-        ["ssms.google.send_enabled"] = false,
-    }.ToFrozenDictionary();
-
     public ConfigResult<bool> Bool(string key, bool? flag = null, string? envVar = null)
     {
         if (flag is { } given)
@@ -24,7 +14,7 @@ public sealed class DgSettings(DgToml toml, IReadOnlyDictionary<string, string?>
         if (envVar is not null && env.TryGetValue(envVar, out var raw) && raw is not null)
             return ParseBool(envVar, raw);
         return ConfigResult<bool>.Ok(
-            (Lookup(key) ?? Defaults.GetValueOrDefault(key)) is true
+            (Lookup(key) ?? ConfigRules.Defaults.GetValueOrDefault(key)) is true
         );
     }
 
@@ -37,7 +27,7 @@ public sealed class DgSettings(DgToml toml, IReadOnlyDictionary<string, string?>
         if (envVar is not null && env.TryGetValue(envVar, out var raw) && raw is not null)
             return ConfigResult<string?>.Ok(raw);
         return ConfigResult<string?>.Ok(
-            (Lookup(key) ?? Defaults.GetValueOrDefault(key)) as string
+            (Lookup(key) ?? ConfigRules.Defaults.GetValueOrDefault(key)) as string
         );
     }
 
@@ -68,16 +58,15 @@ public sealed class DgSettings(DgToml toml, IReadOnlyDictionary<string, string?>
 
     private static DgError? CheckKey(string key)
     {
-        foreach (var part in key.Split('.'))
-            if (part.Length == 0 || part is "__proto__" or "constructor" or "prototype")
-                return new DgError(
-                    "",
-                    null,
-                    key,
-                    $"{key} is not a valid key.",
-                    "use dotted names such as install.cli_only."
-                );
-        return null;
+        return ConfigRules.IsInvalid(key)
+            ? new DgError(
+                "",
+                null,
+                key,
+                $"{key} is not a valid key.",
+                "use dotted names such as install.cli_only."
+            )
+            : null;
     }
 
     private object? Lookup(string key)

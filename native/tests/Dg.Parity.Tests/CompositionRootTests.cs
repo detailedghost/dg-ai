@@ -53,13 +53,6 @@ public sealed class CompositionRootTests
     }
 
     [Fact]
-    public void NotNative_Sentinel_MatchesEveryGroup()
-    {
-        Assert.Equal(ConfigExit.NotNative, CliExit.NotNative);
-        Assert.Equal(PluginsExit.NotNative, CliExit.NotNative);
-    }
-
-    [Fact]
     public async Task HooksRun_UnknownId_IsNotNativeAndTouchesNoEngine()
     {
         var command = new HooksRunCommand(
@@ -69,7 +62,7 @@ public sealed class CompositionRootTests
 
         var exit = await command.RunAsync(new[] { "no-such-hook", "--flag" }, CancellationToken.None);
 
-        Assert.Equal(CliExit.NotNative, exit);
+        Assert.Equal(ExitCodes.NotNative, exit);
     }
 
     [Fact]
@@ -80,7 +73,7 @@ public sealed class CompositionRootTests
             () => []
         );
 
-        Assert.Equal(CliExit.NotNative, await command.RunAsync(Array.Empty<string>(), CancellationToken.None));
+        Assert.Equal(ExitCodes.NotNative, await command.RunAsync(Array.Empty<string>(), CancellationToken.None));
     }
 
     [Fact]
@@ -101,8 +94,8 @@ public sealed class CompositionRootTests
         var inner = new FakeCommand("__complete", 0);
         var gate = new CompleteGateCommand(inner);
 
-        Assert.Equal(CliExit.NotNative, await gate.RunAsync(Array.Empty<string>(), CancellationToken.None));
-        Assert.Equal(CliExit.NotNative, await gate.RunAsync(new[] { "st" }, CancellationToken.None));
+        Assert.Equal(ExitCodes.NotNative, await gate.RunAsync(Array.Empty<string>(), CancellationToken.None));
+        Assert.Equal(ExitCodes.NotNative, await gate.RunAsync(new[] { "st" }, CancellationToken.None));
         Assert.Equal(0, inner.Calls);
     }
 

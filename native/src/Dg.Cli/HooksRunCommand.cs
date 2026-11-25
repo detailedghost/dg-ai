@@ -10,7 +10,7 @@ internal sealed class HooksRunCommand(Func<HookEngine> engine, Func<IEnumerable<
     public async ValueTask<int> RunAsync(ReadOnlyMemory<string> args, CancellationToken ct)
     {
         if (args.IsEmpty || !IsBuiltIn(args.Span[0]))
-            return CliExit.NotNative;
+            return ExitCodes.NotNative;
 
         await using var stdin = Console.OpenStandardInput();
         return await engine().RunAsync(args.Span[0], args.Span[1..].ToArray(), stdin, ct);

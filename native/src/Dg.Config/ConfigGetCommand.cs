@@ -1,3 +1,4 @@
+using Dg.Core.Abstractions;
 using Dg.Core.Config;
 using Dg.Core.Output;
 
@@ -14,12 +15,12 @@ public sealed class ConfigGetCommand(
     protected override int Run(string[] args)
     {
         if (args.Length != 1 || HasOption(args))
-            return ConfigExit.NotNative;
+            return ExitCodes.NotNative;
         var key = args[0];
         switch (ConfigKeys.Classify(key, out var known))
         {
             case KeyKind.Hook:
-                return ConfigExit.NotNative;
+                return ExitCodes.NotNative;
             case KeyKind.Unknown:
                 return Fail(
                     $"dg config: {key} is not a dg config key. Next: see docs/config.md for the keys, or run dg config edit."
@@ -29,7 +30,7 @@ public sealed class ConfigGetCommand(
         if (!location.IsOk)
             return Fail(location.Error!);
         if (location.Value!.WaitsForMigration)
-            return ConfigExit.NotNative;
+            return ExitCodes.NotNative;
         var toml = DgConfig.Load(location.Value.Seams);
         if (!toml.IsOk)
             return Fail(toml.Error!);
