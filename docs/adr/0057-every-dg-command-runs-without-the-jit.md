@@ -3,6 +3,7 @@
 Status: Accepted
 Date: 2026-11-24
 Topic: Platform
+Superseded in part by [ADR 0058](0058-dg-moves-to-c-nativeaot-in-stages.md) (spec 027, commit 42731b84): `dg --version` and `dg hooks run` skip the JIT re-exec.
 
 This record supersedes in part [ADR 0056](0056-long-running-dg-processes-run-without-the-jit.md), which kept the JIT
 for short commands.
