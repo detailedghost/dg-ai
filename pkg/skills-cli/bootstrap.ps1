@@ -346,33 +346,6 @@ function Install-DgFrontDoor {
 	}
 }
 
-function Set-DgHardLink {
-	param([string]$Link, [string]$Target, [string]$Stem)
-	$binDir = Split-Path -Parent $Link
-	$aside = $null
-	if (Test-Path -LiteralPath $Link) {
-		$aside = Join-Path $binDir (".$Stem." + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".old")
-		Rename-Item -LiteralPath $Link -NewName (Split-Path -Leaf $aside)
-	}
-	try {
-		New-Item -ItemType HardLink -Path $Link -Target $Target | Out-Null
-	} catch {
-		if ($aside) { Rename-Item -LiteralPath $aside -NewName (Split-Path -Leaf $Link) }
-		throw
-	}
-	if ($aside) { Remove-Item -LiteralPath $aside -Force -ErrorAction SilentlyContinue }
-}
-
-function Test-DgOwnsProgram {
-	param([string]$Path, [string]$Name)
-	$have = Get-DgSha256 $Path
-	foreach ($known in Get-ChildItem -LiteralPath (Join-Path $dgHome "bin") -Directory -Force -ErrorAction SilentlyContinue) {
-		$candidate = Join-Path $known.FullName $Name
-		if ($known.Name -match '^\d+\.\d+\.\d+$' -and (Test-Path -LiteralPath $candidate -PathType Leaf) -and (Get-DgSha256 $candidate) -eq $have) { return $true }
-	}
-	return $false
-}
-
 function Test-DgAvx2 {
 	Add-Type -Namespace Dg -Name Cpu -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool IsProcessorFeaturePresent(uint feature);'
 	return [Dg.Cpu]::IsProcessorFeaturePresent(40)
@@ -499,23 +472,63 @@ try {
 	Set-DgJunction (Join-Path $dgHome "bin\current") $versionDir
 
 	$dgExe = Join-Path $binDir "dg.exe"
-	foreach ($leftover in @(".dg.exe.*.old", ".dg-core.exe.*.old")) {
-		Get-ChildItem -LiteralPath $binDir -Filter $leftover -Force -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-	}
+	Get-ChildItem -LiteralPath $binDir -Filter ".dg.exe.*.old" -Force -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 	$dgRun = $dgExe
 	$owned = $true
-	if ((Test-Path -LiteralPath $dgExe) -and -not (Test-DgOwnsProgram $dgExe "dg.exe")) { $owned = $false }
+	if (Test-Path -LiteralPath $dgExe) {
+		$have = Get-DgSha256 $dgExe
+		$owned = $false
+		foreach ($known in Get-ChildItem -LiteralPath (Join-Path $dgHome "bin") -Directory -Force -ErrorAction SilentlyContinue) {
+			$candidate = Join-Path $known.FullName "dg.exe"
+			if ($known.Name -match '^\d+\.\d+\.\d+$' -and (Test-Path -LiteralPath $candidate -PathType Leaf) -and (Get-DgSha256 $candidate) -eq $have) { $owned = $true; break }
+		}
+	}
 	if (-not $owned) {
 		Write-Host "dg: kept $dgExe; it is not a dg launcher. Remove it or rename it, then run the bootstrap again"
 		$dgRun = Join-Path $dgHome "bin\current\dg.exe"
 	} else {
-		Set-DgHardLink $dgExe $program "dg.exe"
+		$aside = $null
+		if (Test-Path -LiteralPath $dgExe) {
+			$aside = Join-Path $binDir (".dg.exe." + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".old")
+			Rename-Item -LiteralPath $dgExe -NewName (Split-Path -Leaf $aside)
+		}
+		try {
+			New-Item -ItemType HardLink -Path $dgExe -Target $program | Out-Null
+		} catch {
+			if ($aside) { Rename-Item -LiteralPath $aside -NewName "dg.exe" }
+			throw
+		}
+		if ($aside) { Remove-Item -LiteralPath $aside -Force -ErrorAction SilentlyContinue }
+	}
+
+	Get-ChildItem -LiteralPath $binDir -Filter ".dg-core.exe.*.old" -Force -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+	if ($owned) {
 		$coreExe = Join-Path $binDir "dg-core.exe"
 		$coreProgram = Join-Path $versionDir "dg-core.exe"
-		if ((Test-Path -LiteralPath $coreExe) -and -not (Test-DgOwnsProgram $coreExe "dg-core.exe")) {
+		$coreOwned = $true
+		if (Test-Path -LiteralPath $coreExe) {
+			$coreHave = Get-DgSha256 $coreExe
+			$coreOwned = $false
+			foreach ($known in Get-ChildItem -LiteralPath (Join-Path $dgHome "bin") -Directory -Force -ErrorAction SilentlyContinue) {
+				$coreCandidate = Join-Path $known.FullName "dg-core.exe"
+				if ($known.Name -match '^\d+\.\d+\.\d+$' -and (Test-Path -LiteralPath $coreCandidate -PathType Leaf) -and (Get-DgSha256 $coreCandidate) -eq $coreHave) { $coreOwned = $true; break }
+			}
+		}
+		if (-not $coreOwned) {
 			if (Test-Path -LiteralPath $coreProgram) { Write-Host "dg: kept $coreExe; it is not a dg launcher. Remove it or rename it, then run the bootstrap again" }
 		} elseif (Test-Path -LiteralPath $coreProgram) {
-			Set-DgHardLink $coreExe $coreProgram "dg-core.exe"
+			$coreAside = $null
+			if (Test-Path -LiteralPath $coreExe) {
+				$coreAside = Join-Path $binDir (".dg-core.exe." + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".old")
+				Rename-Item -LiteralPath $coreExe -NewName (Split-Path -Leaf $coreAside)
+			}
+			try {
+				New-Item -ItemType HardLink -Path $coreExe -Target $coreProgram | Out-Null
+			} catch {
+				if ($coreAside) { Rename-Item -LiteralPath $coreAside -NewName "dg-core.exe" }
+				throw
+			}
+			if ($coreAside) { Remove-Item -LiteralPath $coreAside -Force -ErrorAction SilentlyContinue }
 		} elseif (Test-Path -LiteralPath $coreExe) {
 			try { Remove-Item -LiteralPath $coreExe -Force } catch { Rename-Item -LiteralPath $coreExe -NewName (".dg-core.exe." + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".old") }
 		}

@@ -383,6 +383,17 @@ jobs:
               exit 1
             fi
           done
+          if [ "${RUNNER_OS}" != Windows ]; then
+            mkdir -p layout/bin/0.0.0 layout/launcher
+            cp pair/dg pair/dg-core layout/bin/0.0.0/
+            ln -s 0.0.0 layout/bin/current
+            ln -s "$PWD/layout/bin/current/dg" layout/launcher/dg
+            linked="$(./layout/launcher/dg skills --version)"
+            if [ "$linked" != "$VERSION" ]; then
+              echo "::error::the front door behind the bin/current and launcher links printed '${linked}', expected ${VERSION}"
+              exit 1
+            fi
+          fi
           rm "pair/dg-core${ext}"
           code=0
           err="$("./pair/dg${ext}" skills --version 2>&1 >/dev/null)" || code=$?

@@ -46,36 +46,39 @@ type Served = {
 	frontSums?: "match" | "wrong" | "missing";
 	frontEncoding?: "raw" | "zst" | "gz";
 	frontUnserved?: boolean;
+	key?: string;
 	patches?: Record<string, string | Uint8Array>;
 };
 
 function serve(version: string, served: Served = {}) {
+	const bunAsset = served.key ? compiledAssetName(served.key) : BUN_ASSET;
+	const frontAsset = served.key ? frontDoorAssetName(served.key) : FRONT_ASSET;
 	const base = `${RELEASE_BASE}/v${version}`;
 	const bun = served.bun ?? bunBody(version);
 	const front = served.front === undefined ? frontBody(version) : served.front;
-	const routes: Record<string, string | Uint8Array> = { [`${base}/${BUN_ASSET}`]: bun };
-	const lines = [`${sha256(bun)}  ${BUN_ASSET}`];
+	const routes: Record<string, string | Uint8Array> = { [`${base}/${bunAsset}`]: bun };
+	const lines = [`${sha256(bun)}  ${bunAsset}`];
 	if (front !== null) {
 		const encoding = served.frontEncoding ?? "raw";
 		const sum = served.frontSums === "wrong" ? sha256("something else") : sha256(front);
-		if (served.frontSums !== "missing") lines.push(`${sum}  ${FRONT_ASSET}`);
+		if (served.frontSums !== "missing") lines.push(`${sum}  ${frontAsset}`);
 		if (encoding === "zst") {
 			const packed = Bun.zstdCompressSync(front);
-			routes[`${base}/${FRONT_ASSET}.zst`] = packed;
-			lines.push(`${sha256(packed)}  ${FRONT_ASSET}.zst`);
+			routes[`${base}/${frontAsset}.zst`] = packed;
+			lines.push(`${sha256(packed)}  ${frontAsset}.zst`);
 		} else if (encoding === "gz") {
 			const packed = Bun.gzipSync(front);
-			routes[`${base}/${FRONT_ASSET}.gz`] = packed;
-			lines.push(`${sha256(packed)}  ${FRONT_ASSET}.gz`);
+			routes[`${base}/${frontAsset}.gz`] = packed;
+			lines.push(`${sha256(packed)}  ${frontAsset}.gz`);
 		} else if (!served.frontUnserved) {
-			routes[`${base}/${FRONT_ASSET}`] = front;
+			routes[`${base}/${frontAsset}`] = front;
 		}
 	}
 	for (const [name, body] of Object.entries(served.patches ?? {})) routes[`${base}/${name}`] = body;
 	routes[`${base}/SHA256SUMS`] = `${lines.join("\n")}\n`;
 	const stub = stubFetch(routes);
 	restore = stub.restore;
-	const picked: PickedProgram = { version, assetName: BUN_ASSET, url: `${base}/${BUN_ASSET}`, sumsUrl: `${base}/SHA256SUMS` };
+	const picked: PickedProgram = { version, assetName: bunAsset, url: `${base}/${bunAsset}`, sumsUrl: `${base}/SHA256SUMS` };
 	return { picked, calls: stub.calls };
 }
 
@@ -228,6 +231,29 @@ describe.skipIf(!POSIX)("a default install", () => {
 		const { picked } = serve("7.0.0");
 		const lines = await stderrOf(() => installCompiled(tree.root, picked, "linux", { env: hermeticEnv(tree) }));
 		expect(lines).toEqual([]);
+	});
+});
+
+describe.skipIf(!POSIX)("the Windows file names", () => {
+	for (const key of ["windows-x64", "windows-x64-baseline", "windows-arm64"]) {
+		test(`${key} installs dg.exe and dg-core.exe from ${frontDoorAssetName(key)}`, async () => {
+			box = scratch("front-win-names");
+			const { picked, calls } = serve("7.0.0", { key });
+			await installCompiled(box.root, picked, "win32", { env: hermeticEnv(box) });
+
+			expect(readdirSync(join(box.root, "bin", "7.0.0")).sort()).toEqual(["dg-core.exe", "dg.exe"]);
+			expect(calls).toContain(`${RELEASE_BASE}/v7.0.0/${frontDoorAssetName(key)}`);
+		});
+	}
+
+	test("installing again with the opt-out leaves dg.exe alone and no set-aside file", async () => {
+		box = scratch("front-win-uninstall");
+		const { picked } = serve("7.0.0", { key: "windows-x64" });
+		await installCompiled(box.root, picked, "win32", { env: hermeticEnv(box) });
+		await installCompiled(box.root, picked, "win32", { env: hermeticEnv(box, { DG_FRONT: "0" }) });
+
+		expect(readdirSync(join(box.root, "bin", "7.0.0"))).toEqual(["dg.exe"]);
+		expect(read(join(box.root, "bin", "7.0.0", "dg.exe"))).toBe(bunBody("7.0.0"));
 	});
 });
 

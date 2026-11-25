@@ -108,6 +108,7 @@ function moveOver(source: string, dest: string, platform: NodeJS.Platform): void
 		renameSync(aside, dest);
 		throw err;
 	}
+	rmSync(aside, { force: true });
 }
 
 async function addFrontDoor(staging: string, release: PickedProgram, platform: NodeJS.Platform, from?: Installed): Promise<void> {
@@ -131,11 +132,7 @@ async function addFrontDoor(staging: string, release: PickedProgram, platform: N
 	}
 }
 
-/**
- * Installs the verified compiled dg under `<root>/bin/<version>/` and points `bin/current` at it.
- * With the front door on, `dg` there is the verified front door and `dg-core` is the Bun program;
- * a front door that is missing or fails its checks leaves the Bun program at `dg`.
- */
+/** Installs the verified compiled dg under `<root>/bin/<version>/` and points `bin/current` at it; the front door goes at `dg` and the Bun program at `dg-core` when it passes its checks. */
 export async function installCompiled(
 	root: string,
 	release: PickedProgram,
