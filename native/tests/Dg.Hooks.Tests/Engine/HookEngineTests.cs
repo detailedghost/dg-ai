@@ -203,7 +203,7 @@ public sealed class HookEngineTests
     }
 
     [Fact]
-    public void AddHooks_RegistersEngineBuiltFromRegisteredHooks()
+    public async Task AddHooks_RegistersEngineBuiltFromRegisteredHooks()
     {
         var services = new FakeServices();
         var hook = new RecordingHook("format", 0);
@@ -212,7 +212,7 @@ public sealed class HookEngineTests
 
         var descriptor = Assert.Single(services, d => d.ServiceType == typeof(HookEngine));
         var engine = Assert.IsType<HookEngine>(descriptor.ImplementationFactory!(new FakeProvider([hook])));
-        Assert.True(engine.Has("format"));
-        Assert.False(engine.Has("spelling"));
+        await engine.RunAsync("format", [], Stdin("{}"), CancellationToken.None);
+        Assert.Single(hook.Seen);
     }
 }
