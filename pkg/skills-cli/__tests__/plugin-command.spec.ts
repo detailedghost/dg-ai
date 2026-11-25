@@ -11,18 +11,23 @@ const realFence = process.env.DG_PATH_FENCE;
 const realExitCode = process.exitCode;
 let root: string;
 let out: string[];
+let err: string[];
+const realConsoleError = console.error;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "dg-plugin-command-"));
 	process.env.DG_HOME = join(root, "dg");
 	process.env.DG_PATH_FENCE = root;
 	out = [];
+	err = [];
+	console.error = (...parts: unknown[]) => void err.push(`${parts.join(" ")}\n`);
 	process.stdout.write = ((chunk: string | Uint8Array) => (out.push(String(chunk)), true)) as typeof process.stdout.write;
 	process.exitCode = 0;
 });
 
 afterEach(() => {
 	process.stdout.write = realOut;
+	console.error = realConsoleError;
 	process.exitCode = realExitCode ?? 0;
 	if (realHome === undefined) delete process.env.DG_HOME;
 	else process.env.DG_HOME = realHome;
@@ -62,7 +67,8 @@ describe("dg plugin", () => {
 
 	test("enabling an unapproved plugin fails with the next step", async () => {
 		await main(["plugin", "add", folderSource()]);
-		await expect(main(["plugin", "enable", "notes"])).rejects.toThrow(/dg plugin verify notes --approve/);
+		expect(await main(["plugin", "enable", "notes"])).toBe(1);
+		expect(err.join("")).toMatch(/dg plugin verify notes --approve/);
 	});
 
 	test("the completion tree lists the plugin subcommands", () => {

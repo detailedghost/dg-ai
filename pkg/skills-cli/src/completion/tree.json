@@ -2195,6 +2195,81 @@
 			"description": "Inventory the secrets, config and tooling a repo needs to run"
 		},
 		{
+			"name": "plugin",
+			"description": "Install, pin and approve skill plugins",
+			"commands": [
+				{
+					"name": "list",
+					"description": "list installed plugins with their pin and approval",
+					"options": [
+						{
+							"flags": [
+								"--json"
+							],
+							"description": "print JSON"
+						}
+					]
+				},
+				{
+					"name": "add",
+					"description": "install a skill bundle from a git url or path, pinned and untrusted until approved",
+					"options": [
+						{
+							"flags": [
+								"--pin"
+							],
+							"description": "require commit:<hex> or sha256:<hex>",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--name"
+							],
+							"description": "plugin name; defaults to the manifest name or the source name",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "remove",
+					"description": "delete a plugin and its [plugins.<name>] section"
+				},
+				{
+					"name": "enable",
+					"description": "turn on an approved plugin"
+				},
+				{
+					"name": "disable",
+					"description": "turn off a plugin; it stays approved"
+				},
+				{
+					"name": "update",
+					"description": "re-fetch the source; a change needs approval again",
+					"options": [
+						{
+							"flags": [
+								"--pin"
+							],
+							"description": "require commit:<hex> or sha256:<hex>",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "verify",
+					"description": "check installed files, report what dg cannot enforce, and approve with --approve",
+					"options": [
+						{
+							"flags": [
+								"--approve"
+							],
+							"description": "approve the reviewed files and load the skills"
+						}
+					]
+				}
+			]
+		},
+		{
 			"name": "skill",
 			"description": "Audit skill directories for token weight and hygiene, and split oversized SKILL.md files"
 		},

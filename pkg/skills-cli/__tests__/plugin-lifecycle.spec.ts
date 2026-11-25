@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { resolveDgPaths } from "@dg/common/node/dg-paths";
+import { writeDgToml } from "@dg/common/node";
 import {
 	addPlugin,
 	approvedHelper,
@@ -196,7 +197,7 @@ describe("remove and disable", () => {
 	test("remove deletes the folder and the config section only", () => {
 		const source = skillRepo("notes");
 		addPlugin({ source }, env);
-		setPluginEnabled("other", false, env, { allowUnknown: true });
+		writeDgToml("plugins.other.enabled", false, env);
 		removePlugin("notes", env);
 		expect(existsSync(join(resolveDgPaths({ env }).dataDir, "plugins", "notes"))).toBe(false);
 		expect(Object.keys(config().plugins ?? {})).toEqual(["other"]);

@@ -28,6 +28,7 @@ import { registerOverwatchSnapshot } from "./commands/overwatch-snapshot";
 import { registerProto } from "./commands/proto";
 import { registerPrototype } from "./commands/prototype";
 import { registerProxy } from "./commands/proxy";
+import { registerPlugin } from "./commands/plugin";
 import { registerPw } from "./commands/pw";
 import { registerPwCode } from "./commands/pw-code";
 import { registerRerun } from "./commands/rerun";
@@ -83,6 +84,7 @@ export function registerAll(program: Command): void {
 	registerBg(program);
 	registerStat(program);
 	registerSniff(program);
+	registerPlugin(program);
 	registerSkill(program);
 	registerSsms(program);
 	registerConfig(program);
