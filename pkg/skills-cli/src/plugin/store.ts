@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { readDgToml, resolveDgPaths, writeDgToml, writeDgTomlDoc, writeFileAtomic } from "@dg/common/node";
 import type { Pin } from "./source";
+import { hashTree } from "./tree";
 
 export type Env = Record<string, string | undefined>;
 
@@ -56,6 +57,10 @@ function parseRecord(name: string, file: string, text: string): PluginRecord {
 	const textOk = value.kind === "skill" && typeof value.source === "string" && typeof value.treeSha256 === "string";
 	if (!pinOk || !textOk || !(value.approvedSha256 === null || typeof value.approvedSha256 === "string")) throw broken("has a field of the wrong type");
 	return value as PluginRecord;
+}
+
+export function isApproved(record: PluginRecord, env: Env): boolean {
+	return record.approvedSha256 !== null && record.approvedSha256 === record.treeSha256 && hashTree(join(pluginFolder(record.name, env), "src")) === record.treeSha256;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
