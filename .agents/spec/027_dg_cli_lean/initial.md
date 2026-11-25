@@ -1,20 +1,20 @@
-# Lean dg CLI: latency, binary and download size, skill token weight — Initial Notes
+# Lean dg CLI: latency, binary and download size, skill token weight, and the C# front door — Initial Notes
 
 ## Purpose
-Make the dg CLI fast and lean. Cut hot-path latency (hooks run on every agent tool call), shrink the compiled binary and the per-update download, and cut the token weight of the skill texts that drive the CLI. Every change is measured against a committed baseline and held by CI gates. Slices 1-8 stay on Bun and help whatever language decision Dante makes later; slices 9-10 are optional native stages gated by RATIFY.
+Make the dg CLI fast and lean: hot-path latency, binary and download size, and skill token weight, each held by CI gates. Start the staged C# NativeAOT port (Dante's R1 choice) with stage 1: a C# front door that runs hooks, --version, completion, config and routing natively and execs the Bun dg for the rest. Slices are small and file-disjoint so each wave builds in parallel worktrees and all land in one PR.
 
 ## Scope
 ### Included
-- A baseline harness and CI gates: binary size per target, compressed download size, hot-path latency, RSS, skill tokens per flow
-- Bundle cuts: duplicate and dead dependencies, lazy chunks, embedded assets
-- Hot-path latency: dispatch order, JIT re-exec, lazy route for hooks and completion, Bun bytecode (RATIFY)
-- Release and download size: compressed assets, zstd delta updates, optional companion bundles for pw and db (RATIFY)
-- Skill text diet: lazy references/, less duplication, per-SKILL.md size cap test
-- Browser default: --ext as the default with a --local Playwright fallback (RATIFY), the extension gap work and the docs
-- An explicit language decision (options A-E) with measured floors
-- Optional native front door and native long-running processes (RATIFY-gated, slices 9-10)
+- Baseline harness and CI gates
+- Bundle split, bytecode, companions
+- Hook, --version and completion fast paths
+- Compressed release assets, delta patches, gzip bootstrap
+- Skill diet by group and a size cap
+- Browser auto mode, ext gap verbs (TypeScript and Bun), agent window
+- Relay protocol contract with shared fixtures
+- C# stage 1 front door (opt-in) with parity tests, 6-runner NativeAOT CI, two-binary install
 ### Excluded
-- A full port to Rust, Zig or C# (option E); later port stages after slice 10 are sketched only
-- UPX or other self-extracting executable packers
-- Changes to the browser extension's own bundle size
-- Moving Snowflake, MSAL or Playwright off Bun or Node
+- C# stages 2+ (phone listener, daemon, command groups): later bundles
+- Any change to the extension toolchain; it stays TypeScript and Bun
+- UPX, the 6.x shared runtime
+- Snowflake and Playwright off Bun

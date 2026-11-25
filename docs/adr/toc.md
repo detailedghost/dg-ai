@@ -94,6 +94,8 @@ belong with their owning private tooling repository.
 - [0055 — One dg program with flat commands](0055-one-dg-program-with-flat-commands.md)
 - [0056 — Long-running dg processes run without the JIT](0056-long-running-dg-processes-run-without-the-jit.md)
 - [0057 — Every dg command runs without the JIT](0057-every-dg-command-runs-without-the-jit.md)
+- [0058 — dg moves to C# NativeAOT in stages](0058-dg-moves-to-c-nativeaot-in-stages.md)
+- [0059 — dg plugins are built in or external with one transport contract](0059-dg-plugins-are-built-in-or-external-with-one-transport-contract.md)
 
 ### Security
 
