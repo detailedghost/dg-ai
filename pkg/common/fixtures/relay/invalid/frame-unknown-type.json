@@ -1,0 +1,9 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "nope"
+	},
+	"error": "chat frame.type must be one of the ratified discriminants, got nope"
+}

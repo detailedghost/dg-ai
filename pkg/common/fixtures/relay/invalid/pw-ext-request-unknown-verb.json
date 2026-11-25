@@ -1,0 +1,14 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "pw-ext-browser-request",
+		"requestId": "req-1",
+		"request": {
+			"verb": "bogus"
+		},
+		"timeoutMs": 120000
+	},
+	"error": "pw-ext request.verb is not a supported verb"
+}

@@ -1,0 +1,14 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "cli-pw-ext-request",
+		"requestId": "req-1",
+		"request": {
+			"verb": "snapshot"
+		},
+		"timeoutMs": 30000
+	},
+	"error": "chat frame.type must be one of the ratified discriminants, got cli-pw-ext-request"
+}

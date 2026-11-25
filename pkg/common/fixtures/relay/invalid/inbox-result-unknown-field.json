@@ -1,0 +1,14 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "inbox-browser-result",
+		"token": "t-1",
+		"requestId": "req-1",
+		"ok": false,
+		"error": "Mail tab not found.",
+		"extra": 1
+	},
+	"error": "unknown inbox result field"
+}

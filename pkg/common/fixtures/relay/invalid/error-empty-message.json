@@ -1,0 +1,10 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "error",
+		"message": ""
+	},
+	"error": "chat frame.message must be a non-empty string"
+}
