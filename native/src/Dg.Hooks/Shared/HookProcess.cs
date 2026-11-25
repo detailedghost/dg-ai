@@ -9,6 +9,8 @@ internal static class HookProcess
     private const int TimeoutMs = 30_000;
     private const int CapBytes = 1024 * 1024;
     private const int ReadChunkBytes = 16 * 1024;
+    private const int TextFileBusy = 26;
+    private const int StartAttempts = 5;
     internal const int DrainMs = 1000;
     private static readonly string[] WindowsExtensions = [".exe", ".cmd", ".bat", ".com"];
     private const string TruncatedNote = "\n[output truncated]\n";
@@ -33,9 +35,6 @@ internal static class HookProcess
         }
         return null;
     }
-
-    private const int TextFileBusy = 26;
-    private const int StartAttempts = 5;
 
     private static async Task<Process> StartAsync(ProcessStartInfo start, CancellationToken ct)
     {

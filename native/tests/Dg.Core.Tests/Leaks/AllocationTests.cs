@@ -2,7 +2,6 @@ using System.Text;
 using System.Text.Json;
 using Dg.Core.Abstractions;
 using Dg.Core.Plugins.Contract;
-using Dg.Core.Plugins.Manifest;
 using Dg.Core.Plugins.Runtime;
 using Dg.Core.Transport.Framing;
 using Dg.Core.Transport.Http;
@@ -15,27 +14,27 @@ public sealed class AllocationTests
 {
     private static readonly byte[] Payload = Encoding.UTF8.GetBytes("""{"route":"/v1/hook/decide","body":{"event":"pre-tool-use","tool":"Bash"}}""");
 
+    private const int MaxLeaseBytes = 48;
+
     private sealed class Tokens : IPluginTokenProvider
     {
         public ValueTask<string?> GetTokenAsync(string credentialName, CancellationToken ct) => new("tok");
     }
-
-    private static JsonElement Json(string text) => JsonDocument.Parse(text).RootElement;
 
     [Fact]
     public void FrameCodecDecode_ValidFrame_AllocatesNothing()
     {
         var frame = FrameCodec.Encode(FrameEncoding.Json, FrameFlags.None, 7, Payload);
 
-        Assert.Equal(0, LeakMeter.AllocatedPerIteration(() => FrameCodec.Decode(frame)));
+        Assert.Equal(0d, AllocationProbe.BytesPerOp(() => FrameCodec.Decode(frame)));
     }
 
     [Fact]
     public void FrameWriterEncode_PooledFrame_AllocatesNothing()
     {
         Assert.Equal(
-            0,
-            LeakMeter.AllocatedPerIteration(() =>
+            0d,
+            AllocationProbe.BytesPerOp(() =>
             {
                 using var frame = FrameWriter.Encode(FrameEncoding.Json, FrameFlags.None, 7, Payload);
             })
@@ -49,9 +48,10 @@ public sealed class AllocationTests
     [InlineData(PluginRoutes.Hello, MessageDirection.Response, """{"protocol":1,"encoding":"json","capabilities":["a","b"]}""")]
     public void Validate_ValidMessage_AllocatesNothing(string route, MessageDirection direction, string body)
     {
-        var element = Json(body);
+        using var document = JsonDocument.Parse(body);
+        var element = document.RootElement;
 
-        Assert.Equal(0, LeakMeter.AllocatedPerIteration(() => MessageValidator.Validate(route, direction, element)));
+        Assert.Equal(0d, AllocationProbe.BytesPerOp(() => MessageValidator.Validate(route, direction, element)));
     }
 
     [Fact]
@@ -60,37 +60,25 @@ public sealed class AllocationTests
         var ev = new PluginEvent("/v1/job/status", Encoding.UTF8.GetBytes("{\"a\":1}"));
         var frame = UdpTransport.Encode(ev)!;
 
-        var bytes = LeakMeter.AllocatedPerIteration(() => UdpTransport.Encode(ev));
+        var bytes = AllocationProbe.BytesPerOp(() => UdpTransport.Encode(ev));
 
         Assert.True(bytes <= frame.Length + 32, $"encode allocates {bytes} bytes for a {frame.Length} byte frame");
     }
 
     [Fact]
-    public async Task OpenAsync_ExistingEndpoint_AllocatesNothing()
+    public async Task OpenAsync_ExistingEndpoint_AllocatesOnlyTheLease()
     {
-        var manifest = new PluginManifest(
-            "scanner",
-            "1.0.0",
-            PluginKind.Hook,
-            PluginTransportKind.Http,
-            "http://127.0.0.1:1",
-            false,
-            null,
-            null,
-            new(null, "scanner", []),
-            new(false, [], [], []),
-            new([], [])
-        );
+        var manifest = TestManifest.Http("http://127.0.0.1:1");
         await using var provider = new HttpTransportProvider(new HttpTransportFactory(new Tokens()));
         await (await provider.OpenAsync(manifest, false, CancellationToken.None)).DisposeAsync();
 
-        var bytes = LeakMeter.AllocatedPerIteration(() =>
+        var bytes = AllocationProbe.BytesPerOp(() =>
         {
             var lease = provider.OpenAsync(manifest, false, CancellationToken.None).GetAwaiter().GetResult();
             lease.DisposeAsync().GetAwaiter().GetResult();
         });
 
-        Assert.Equal(0, bytes);
+        Assert.True(bytes <= MaxLeaseBytes, $"open and release allocated {bytes} B/op");
     }
 
     [Fact]

@@ -17,9 +17,10 @@ internal interface ITransportLeaseOwner
     ValueTask ReleaseAsync();
 }
 
-public readonly struct TransportLease : IAsyncDisposable
+public sealed class TransportLease : IAsyncDisposable
 {
     private readonly ITransportLeaseOwner? _owner;
+    private int _released;
 
     internal TransportLease(IPluginTransport transport, ITransportLeaseOwner? owner)
     {
@@ -29,7 +30,8 @@ public readonly struct TransportLease : IAsyncDisposable
 
     public IPluginTransport Transport { get; }
 
-    public ValueTask DisposeAsync() => _owner?.ReleaseAsync() ?? ValueTask.CompletedTask;
+    public ValueTask DisposeAsync() =>
+        _owner is not null && Interlocked.Exchange(ref _released, 1) == 0 ? _owner.ReleaseAsync() : ValueTask.CompletedTask;
 }
 
 public static class PluginTransportKeys
@@ -62,6 +64,7 @@ public sealed class HttpTransportProvider(IHttpTransportFactory factory) : IPlug
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Entry> _open = new(StringComparer.Ordinal);
     private readonly HashSet<Entry> _retired = [];
+    private readonly List<Exception> _disposeFailures = [];
     private bool _disposed;
 
     public ValueTask<TransportLease> OpenAsync(PluginManifest manifest, bool allowRemote, CancellationToken ct)
@@ -88,16 +91,18 @@ public sealed class HttpTransportProvider(IHttpTransportFactory factory) : IPlug
     public async ValueTask DisposeAsync()
     {
         Entry[] all;
+        List<Exception> failures;
         lock (_gate)
         {
             _disposed = true;
             all = [.. _retired, .. _open.Values];
+            failures = [.. _disposeFailures];
+            _disposeFailures.Clear();
             _retired.Clear();
             _open.Clear();
             foreach (var entry in all)
                 entry.Closed = true;
         }
-        List<Exception> failures = [];
         foreach (var entry in all)
         {
             try
@@ -124,19 +129,23 @@ public sealed class HttpTransportProvider(IHttpTransportFactory factory) : IPlug
         return entry;
     }
 
-    private static async ValueTask<TransportLease> DisposeThenAsync(Entry retired, TransportLease lease)
+    private async ValueTask<TransportLease> DisposeThenAsync(Entry retired, TransportLease lease)
     {
-        await DisposeQuietlyAsync(retired).ConfigureAwait(false);
+        await DisposeRetiredAsync(retired).ConfigureAwait(false);
         return lease;
     }
 
-    private static async ValueTask DisposeQuietlyAsync(Entry entry)
+    private async ValueTask DisposeRetiredAsync(Entry entry)
     {
         try
         {
             await entry.Transport.DisposeAsync().ConfigureAwait(false);
         }
-        catch (Exception) { }
+        catch (Exception ex)
+        {
+            lock (_gate)
+                _disposeFailures.Add(ex);
+        }
     }
 
     private ValueTask Release(Entry entry)
@@ -148,7 +157,7 @@ public sealed class HttpTransportProvider(IHttpTransportFactory factory) : IPlug
                 return ValueTask.CompletedTask;
             entry.Closed = true;
         }
-        return DisposeQuietlyAsync(entry);
+        return DisposeRetiredAsync(entry);
     }
 
     private readonly record struct Identity(string? Endpoint, bool Remote, bool AllowRemote);

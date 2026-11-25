@@ -47,18 +47,26 @@ internal static class CompletionTree
         foreach (var property in element.EnumerateObject())
         {
             if (property.NameEquals("flags"u8))
+            {
                 flags = ReadArray(property.Value, static item => item.GetString() ?? "");
+            }
             else if (property.NameEquals("description"u8))
+            {
                 description = property.Value.GetString();
+            }
             else if (property.NameEquals("value"u8) && property.Value.ValueKind == JsonValueKind.Array)
             {
                 kind = ValueKind.Choices;
                 choices = ReadArray(property.Value, static item => item.GetString() ?? "");
             }
             else if (property.NameEquals("value"u8))
+            {
                 kind = property.Value.GetString() == "path" ? ValueKind.Path : ValueKind.Any;
+            }
             else if (property.NameEquals("mode"u8))
+            {
                 mode = ReadNode(property.Value);
+            }
         }
 
         return new CompletionOption(flags, description, kind, choices, mode);

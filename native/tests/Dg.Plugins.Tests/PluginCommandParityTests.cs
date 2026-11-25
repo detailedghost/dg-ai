@@ -213,12 +213,12 @@ internal sealed partial class TempHome : IDisposable
 
     private string Strip(MemoryStream stream) => Redact(Encoding.UTF8.GetString(stream.ToArray()));
 
-    private string Redact(string text) =>
-        HomePath()
-            .Replace(
-                text.Replace(Slashed, "<home>", StringComparison.Ordinal).Replace(Root, "<home>", StringComparison.Ordinal),
-                static m => m.Value.Replace('\\', '/')
-            );
+    private string Redact(string text)
+    {
+        var homeless = text.Replace(Slashed, "<home>", StringComparison.Ordinal)
+            .Replace(Root, "<home>", StringComparison.Ordinal);
+        return HomePath().Replace(homeless, static m => m.Value.Replace('\\', '/'));
+    }
 
     [GeneratedRegex(@"<home>(?:\\[\w.-]+)+")]
     private static partial Regex HomePath();

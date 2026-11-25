@@ -1,13 +1,26 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Dg.Core.Tests.Leaks;
 
-internal readonly record struct LeakReport(double BytesPerIteration, int OpenFilesGrowth, int ThreadGrowth, long FirstBatchBytes, long LastBatchBytes);
+internal readonly record struct LeakReport(
+    double BytesPerIteration,
+    int OpenFilesGrowth,
+    int ThreadGrowth,
+    long FirstBatchBytes,
+    long LastBatchBytes
+);
 
 internal static class LeakMeter
 {
-    public static async Task<LeakReport> MeasureAsync(Func<Task> iteration, int batches = 5, int perBatch = 2_000, int warmup = 200)
+    public static async Task<LeakReport> MeasureAsync(
+        Func<Task> iteration,
+        int batches = 5,
+        int perBatch = 2_000,
+        int warmup = 200
+    )
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(batches, 2);
         for (var i = 0; i < warmup; i++)
             await iteration();
         Settle();
@@ -25,28 +38,15 @@ internal static class LeakMeter
         return new LeakReport(slope, OpenFiles() - files, ThreadPool.ThreadCount - threads, samples[0], samples[^1]);
     }
 
-    public static async Task<long> AllocatedPerIterationAsync(Func<Task> iteration, int count = 20_000, int warmup = 500)
+    public static int OpenFiles()
     {
-        for (var i = 0; i < warmup; i++)
-            await iteration();
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < count; i++)
-            await iteration();
-        return (GC.GetAllocatedBytesForCurrentThread() - before) / count;
+        if (OperatingSystem.IsLinux())
+            return Directory.GetFileSystemEntries("/proc/self/fd").Length;
+        if (OperatingSystem.IsMacOS())
+            return Directory.GetFileSystemEntries("/dev/fd").Length;
+        using var process = Process.GetCurrentProcess();
+        return process.HandleCount;
     }
-
-    public static long AllocatedPerIteration(Action iteration, int count = 100_000, int warmup = 1_000)
-    {
-        for (var i = 0; i < warmup; i++)
-            iteration();
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < count; i++)
-            iteration();
-        return (GC.GetAllocatedBytesForCurrentThread() - before) / count;
-    }
-
-    public static int OpenFiles() =>
-        OperatingSystem.IsLinux() ? Directory.GetFileSystemEntries("/proc/self/fd").Length : 0;
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void Settle()

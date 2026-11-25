@@ -28,7 +28,7 @@ internal readonly record struct PathFlavor(bool Windows)
         foreach (var part in parts)
             length += part.Length;
         char[]? rented = null;
-        Span<char> joined = length <= StackLimit ? stackalloc char[StackLimit] : rented = ArrayPool<char>.Shared.Rent(length);
+        Span<char> joined = length <= StackLimit ? stackalloc char[length] : rented = ArrayPool<char>.Shared.Rent(length);
         try
         {
             var at = 0;
@@ -53,7 +53,7 @@ internal readonly record struct PathFlavor(bool Windows)
     public string Normalize(ReadOnlySpan<char> path)
     {
         char[]? rented = null;
-        Span<char> text = path.Length <= StackLimit ? stackalloc char[StackLimit] : rented = ArrayPool<char>.Shared.Rent(path.Length);
+        Span<char> text = path.Length <= StackLimit ? stackalloc char[path.Length] : rented = ArrayPool<char>.Shared.Rent(path.Length);
         try
         {
             text = text[..path.Length];

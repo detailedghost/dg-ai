@@ -4,8 +4,25 @@ namespace Dg.Core.Tests.Config;
 
 public sealed class ConfigRulesTests
 {
+    private const int ParseCeilingBytes = 11_800;
+    private const int KeyCheckCeilingBytes = 16;
+
     private const string Sample =
-        "[front]\nenabled = true\n[hooks.spelling]\nlocale = \"en-US\"\n[refs]\ndefault_repo = \"a/b\"\n[refs.aliases]\nx = \"y\"\n[plugins.a]\nenabled = true\n[plugins.a.settings]\nk = \"v\"\n";
+        """
+        [front]
+        enabled = true
+        [hooks.spelling]
+        locale = "en-US"
+        [refs]
+        default_repo = "a/b"
+        [refs.aliases]
+        x = "y"
+        [plugins.a]
+        enabled = true
+        [plugins.a.settings]
+        k = "v"
+
+        """;
 
     [Theory]
     [InlineData("inbox.gmail.clientSecret", true)]
@@ -61,7 +78,7 @@ public sealed class ConfigRulesTests
             ConfigRules.IsPluginSetting("plugins.a.settings.nested.apiKey");
         });
 
-        Assert.True(bytes <= 16, $"key checks allocated {bytes} B/op");
+        Assert.True(bytes <= KeyCheckCeilingBytes, $"key checks allocated {bytes} B/op");
     }
 
     [Fact]
@@ -69,6 +86,6 @@ public sealed class ConfigRulesTests
     {
         var bytes = AllocationProbe.BytesPerOp(() => DgConfig.Parse(Sample, "config.toml"), 200);
 
-        Assert.True(bytes <= 11_800, $"DgConfig.Parse allocated {bytes} B/op");
+        Assert.True(bytes <= ParseCeilingBytes, $"DgConfig.Parse allocated {bytes} B/op");
     }
 }

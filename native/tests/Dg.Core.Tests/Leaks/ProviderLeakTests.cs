@@ -29,7 +29,8 @@ public sealed class ProviderLeakTests
 
     private sealed class Counted(LiveCountFactory owner) : IPluginTransport
     {
-        public ValueTask<PluginResponse> SendAsync(ReadOnlyMemory<byte> frame, CancellationToken ct) => throw new NotSupportedException();
+        public ValueTask<PluginResponse> SendAsync(ReadOnlyMemory<byte> frame, CancellationToken ct) =>
+            throw new NotSupportedException();
 
         public ValueTask DisposeAsync()
         {
@@ -38,20 +39,7 @@ public sealed class ProviderLeakTests
         }
     }
 
-    private static PluginManifest Manifest(int port) =>
-        new(
-            "scanner",
-            "1.0.0",
-            PluginKind.Hook,
-            PluginTransportKind.Http,
-            $"http://127.0.0.1:{port}",
-            false,
-            null,
-            null,
-            new(null, "scanner", []),
-            new(false, [], [], []),
-            new([], [])
-        );
+    private static PluginManifest Manifest(int port) => TestManifest.Http($"http://127.0.0.1:{port}");
 
     [Fact]
     public async Task OpenAsync_ManyEndpointMoves_LeavesOnlyTheCurrentTransportAlive()
@@ -72,7 +60,8 @@ public sealed class ProviderLeakTests
         var port = 0;
 
         var report = await LeakMeter.MeasureAsync(
-            async () => await (await provider.OpenAsync(Manifest(1 + port++ % 60_000), false, CancellationToken.None)).DisposeAsync(),
+            async () =>
+                await (await provider.OpenAsync(Manifest(1 + port++), false, CancellationToken.None)).DisposeAsync(),
             batches: 5,
             perBatch: 1_000,
             warmup: 100

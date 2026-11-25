@@ -25,7 +25,10 @@ public sealed class PluginHostLeakTests
 
     private static void AssertFlat(LeakReport report)
     {
-        Assert.True(report.BytesPerIteration < MaxBytesPerCall, $"heap grows {report.BytesPerIteration:F1} bytes per call ({report.FirstBatchBytes} to {report.LastBatchBytes})");
+        Assert.True(
+            report.BytesPerIteration < MaxBytesPerCall,
+            $"heap grows {report.BytesPerIteration:F1} bytes per call ({report.FirstBatchBytes} to {report.LastBatchBytes})"
+        );
         Assert.True(report.OpenFilesGrowth <= 16, $"{report.OpenFilesGrowth} more open files after the run");
         Assert.True(report.ThreadGrowth <= 4, $"{report.ThreadGrowth} more pool threads after the run");
     }
@@ -40,7 +43,11 @@ public sealed class PluginHostLeakTests
         var host = fixture.Host(Enabled);
         var message = RuntimeFixture.HookMessage();
 
-        var report = await LeakMeter.MeasureAsync(async () => await host.InvokeAsync("scanner", message, CancellationToken.None), batches: 5, perBatch: 1_500);
+        var report = await LeakMeter.MeasureAsync(
+            async () => await host.InvokeAsync("scanner", message, CancellationToken.None),
+            batches: 5,
+            perBatch: 1_500
+        );
 
         AssertFlat(report);
     }
@@ -55,7 +62,11 @@ public sealed class PluginHostLeakTests
         var host = fixture.Host(Enabled);
         var message = RuntimeFixture.HookMessage();
 
-        var report = await LeakMeter.MeasureAsync(async () => await host.InvokeAsync("scanner", message, CancellationToken.None), batches: 5, perBatch: 1_500);
+        var report = await LeakMeter.MeasureAsync(
+            async () => await host.InvokeAsync("scanner", message, CancellationToken.None),
+            batches: 5,
+            perBatch: 1_500
+        );
 
         AssertFlat(report);
     }
@@ -70,7 +81,11 @@ public sealed class PluginHostLeakTests
         var host = fixture.Host(Enabled);
         var message = RuntimeFixture.HookMessage();
 
-        var report = await LeakMeter.MeasureAsync(async () => await host.InvokeAsync("scanner", message, CancellationToken.None), batches: 5, perBatch: 1_500);
+        var report = await LeakMeter.MeasureAsync(
+            async () => await host.InvokeAsync("scanner", message, CancellationToken.None),
+            batches: 5,
+            perBatch: 1_500
+        );
 
         AssertFlat(report);
     }
@@ -85,22 +100,32 @@ public sealed class PluginHostLeakTests
         var host = fixture.Host(Enabled);
         var message = RuntimeFixture.HookMessage();
 
+        const int batches = 4;
+        const int perBatch = 400;
+        const int warmup = 50;
+        var successes = 0;
+
         var report = await LeakMeter.MeasureAsync(
             async () =>
             {
                 try
                 {
                     await host.InvokeAsync("scanner", message, CancellationToken.None);
+                    successes++;
                 }
                 catch (IOException) { }
                 server.DropClients();
                 await Task.Delay(1);
             },
-            batches: 4,
-            perBatch: 400,
-            warmup: 50
+            batches,
+            perBatch,
+            warmup
         );
 
+        Assert.True(
+            successes >= (batches * perBatch + warmup) / 2,
+            $"only {successes} of {batches * perBatch + warmup} calls succeeded"
+        );
         AssertFlat(report);
     }
 }
