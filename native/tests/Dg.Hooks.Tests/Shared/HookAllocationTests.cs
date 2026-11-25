@@ -6,6 +6,7 @@ using Dg.Hooks.Shared;
 
 namespace Dg.Hooks.Tests;
 
+[Collection(AllocationCollection.Name)]
 public sealed class HookAllocationTests
 {
     private sealed class CapturingHook : IHook
@@ -72,7 +73,7 @@ public sealed class HookAllocationTests
     }
 
     [Fact]
-    public void For_RepeatedCalls_AllocateNothingPerCall()
+    public void For_RepeatedCalls_StaysUnderBudget()
     {
         var bytes = AllocationProbe.BytesPerOp(() => SpellingTable.For("en-US"));
 
@@ -85,9 +86,13 @@ public sealed class HookAllocationTests
         var text = "hello world";
 
         Assert.Same(text, JsText.Trim(text));
-        Assert.Equal("hello", JsText.Trim("  hello\t"));
-        Assert.Equal("", JsText.Trim(" \n "));
     }
+
+    [Fact]
+    public void Trim_SurroundingWhitespace_RemovesIt() => Assert.Equal("hello", JsText.Trim("  hello\t"));
+
+    [Fact]
+    public void Trim_OnlyWhitespace_ReturnsEmpty() => Assert.Equal("", JsText.Trim(" \n "));
 
     [Fact]
     public async Task RunAsync_StdinInTrickleChunks_ReadsTheWholeEvent()
@@ -107,7 +112,7 @@ public sealed class HookAllocationTests
         var engine = new HookEngine([new CapturingHook()], TextWriter.Null, TextWriter.Null);
         using MemoryStream stdin = new(WriteEvent(100_000));
 
-        var bytes = AllocationProbe.BytesPerOp(
+        var bytes = AllocationProbe.TotalBytesPerOp(
             () =>
             {
                 stdin.Position = 0;
@@ -167,11 +172,17 @@ public sealed class HookAllocationTests
         Assert.SkipWhen(OperatingSystem.IsWindows(), "needs a POSIX shell");
         var env = HookEnvironment.Process().Values;
 
-        var bytes = AllocationProbe.BytesPerOp(
+        var bytes = AllocationProbe.TotalBytesPerOp(
             () => HookProcess.RunAsync(env, ["true"], null, CancellationToken.None).GetAwaiter().GetResult(),
             20
         );
 
         Assert.True(bytes <= 90_000, $"HookProcess.RunAsync allocated {bytes} B/op");
     }
+}
+
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class AllocationCollection
+{
+    public const string Name = "allocation";
 }

@@ -8,20 +8,7 @@ namespace Dg.Core.Tests.Plugins.Runtime;
 
 public sealed class HttpTransportProviderTests
 {
-    private static PluginManifest Manifest(string endpoint, bool remote = false) =>
-        new(
-            "scanner",
-            "1.0.0",
-            PluginKind.Hook,
-            PluginTransportKind.Http,
-            endpoint,
-            remote,
-            null,
-            null,
-            new(null, "scanner", []),
-            new(false, [], [], []),
-            new([], [])
-        );
+    private static PluginManifest Manifest(string endpoint, bool remote = false) => TestManifest.Http(endpoint, remote);
 
     [Fact]
     public async Task OpenAsync_SameNameWithNewEndpoint_BuildsANewTransport()
@@ -45,7 +32,9 @@ public sealed class HttpTransportProviderTests
         await using var provider = new HttpTransportProvider(factory);
 
         var local = (await provider.OpenAsync(Manifest("https://127.0.0.1:1"), true, CancellationToken.None)).Transport;
-        var remote = (await provider.OpenAsync(Manifest("https://127.0.0.1:1", remote: true), true, CancellationToken.None)).Transport;
+        var remote = (
+            await provider.OpenAsync(Manifest("https://127.0.0.1:1", remote: true), true, CancellationToken.None)
+        ).Transport;
 
         Assert.NotSame(local, remote);
     }
@@ -77,6 +66,49 @@ public sealed class HttpTransportProviderTests
 
         Assert.Equal(1, factory.Disposed);
         await second.DisposeAsync();
+        Assert.Equal(1, factory.Disposed);
+    }
+
+    [Fact]
+    public async Task LeaseDispose_CalledTwice_ReleasesOnce()
+    {
+        var factory = new CountingFactory();
+        await using var provider = new HttpTransportProvider(factory);
+        var first = await provider.OpenAsync(Manifest("http://127.0.0.1:1"), false, CancellationToken.None);
+        await using var second = await provider.OpenAsync(Manifest("http://127.0.0.1:1"), false, CancellationToken.None);
+        await provider.OpenAsync(Manifest("http://127.0.0.1:2"), false, CancellationToken.None);
+
+        await first.DisposeAsync();
+        await first.DisposeAsync();
+
+        Assert.Equal(0, factory.Disposed);
+    }
+
+    [Fact]
+    public async Task LeaseDispose_ConcurrentCalls_ReleaseOnce()
+    {
+        var factory = new CountingFactory();
+        await using var provider = new HttpTransportProvider(factory);
+        var first = await provider.OpenAsync(Manifest("http://127.0.0.1:1"), false, CancellationToken.None);
+        await using var second = await provider.OpenAsync(Manifest("http://127.0.0.1:1"), false, CancellationToken.None);
+        await provider.OpenAsync(Manifest("http://127.0.0.1:2"), false, CancellationToken.None);
+
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(() => first.DisposeAsync().AsTask())));
+
+        Assert.Equal(0, factory.Disposed);
+    }
+
+    [Fact]
+    public async Task OpenAsync_RetiredTransportThrowsOnDispose_SurfacesFromProviderDispose()
+    {
+        var factory = new CountingFactory { ThrowOnDispose = true };
+        var provider = new HttpTransportProvider(factory);
+        await (await provider.OpenAsync(Manifest("http://127.0.0.1:1"), false, CancellationToken.None)).DisposeAsync();
+        await provider.OpenAsync(Manifest("http://127.0.0.1:2"), false, CancellationToken.None);
+
+        var failure = await Assert.ThrowsAsync<AggregateException>(async () => await provider.DisposeAsync());
+
+        Assert.Equal(2, failure.InnerExceptions.Count);
     }
 
     [Fact]
@@ -96,14 +128,16 @@ public sealed class HttpTransportProviderTests
     {
         var factory = new CountingFactory { SendGate = new TaskCompletionSource() };
         await using var provider = new HttpTransportProvider(factory);
-        await using var lease = await provider.OpenAsync(Manifest("http://127.0.0.1:1"), false, CancellationToken.None);
+        var lease = await provider.OpenAsync(Manifest("http://127.0.0.1:1"), false, CancellationToken.None);
         var inFlight = lease.Transport.SendAsync(default, CancellationToken.None).AsTask();
 
         await provider.OpenAsync(Manifest("http://127.0.0.1:2"), false, CancellationToken.None);
         Assert.Equal(0, factory.Disposed);
         factory.SendGate.SetResult();
         await inFlight;
+        await lease.DisposeAsync();
 
+        Assert.Equal(1, factory.Disposed);
         Assert.False(factory.DisposedWhileSending);
     }
 
