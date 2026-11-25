@@ -8,7 +8,8 @@
 		".": "./src/index.ts",
 		"./main": "./src/main.ts",
 		"./layout-hooks": "./src/layout-hooks.ts",
-		"./test-harness": "./__tests__/utils/daemon-harness.ts"
+		"./test-harness": "./__tests__/utils/daemon-harness.ts",
+		"./heap-slope": "./__tests__/utils/heap-slope.ts"
 	},
 	"scripts": {
 		"build": "bun run --cwd ../launcher build",
