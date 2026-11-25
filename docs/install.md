@@ -73,7 +73,7 @@ user-writable folder and the rest under four roots, one for each role.
 | Role | Linux | macOS | Windows | `DG_HOME` set |
 | --- | --- | --- | --- | --- |
 | Launcher: `dg` | `~/.local/bin` | `~/.local/bin` | `%LOCALAPPDATA%\dg\bin` | `$DG_HOME/bin` |
-| Config: `config.json`, the CLI-only marker, channel-review config | `$XDG_CONFIG_HOME/dg` (`~/.config/dg`) | `~/Library/Application Support/dg` | `%APPDATA%\dg` | `$DG_HOME/config` |
+| Config: `config.json` and the CLI-only marker | `$XDG_CONFIG_HOME/dg` (`~/.config/dg`) | `~/Library/Application Support/dg` | `%APPDATA%\dg` | `$DG_HOME/config` |
 | Data: the program in `bin/`, skills, personas, browsers, job sources | `$XDG_DATA_HOME/dg` (`~/.local/share/dg`) | `~/Library/Application Support/dg` | `%LOCALAPPDATA%\dg` | `$DG_HOME/data` |
 | State: daemon, phone, grants, agent sessions and memory, job state | `$XDG_STATE_HOME/dg` (`~/.local/state/dg`) | `~/Library/Application Support/dg/state` | `%LOCALAPPDATA%\dg\state` | `$DG_HOME/state` |
 | Cache: prototypes, demos | `$XDG_CACHE_HOME/dg` (`~/.cache/dg`) | `~/Library/Caches/dg` | `%LOCALAPPDATA%\dg\cache` | `$DG_HOME/cache` |
@@ -458,7 +458,7 @@ the script or the job that names the old program. Each old command is now
 | `dg-skills <command>` | `dg <command>` |
 | `dg-agent phone`, `overwatch`, `memory`, `mcp` | `dg phone`, `dg overwatch`, `dg memory`, `dg mcp` |
 | `dg-agent start`, `send`, `recv`, `progress`, `spawn`, `stage`, `close`, `manifest` | `dg agent <verb>` |
-| `dg-daemon job`, `autostart`, `service` | `dg job`, `dg autostart`, `dg service` |
+| `dg-daemon job`, `autostart` | `dg job`, `dg autostart` |
 | `dg-daemon serve`, `status`, `start`, `stop`, `restart`, `sessions`, `origin` | `dg daemon <verb>` |
 
 Releases from before the bundle shipped three separate compiled binaries. A
@@ -507,7 +507,6 @@ No command copies the data back. A release from before the per-OS layout reads
      command: send SIGTERM to the pid in `<state>/daemon/daemon.pid` (Linux
      and macOS).
    - Phone: run `dg phone close`.
-   - Channel review: run `dg channel-review stop --env <env>`.
    - ssms: `dg ssms` has no stop command. Let a running `dg ssms`
      command end.
 2. Copy each folder back to its `~/.dg` name with a copy that keeps
@@ -853,7 +852,6 @@ An installed `dg` accepts `dg install --cli-only`. Add `--codex`
 | --- | --- |
 | `stash`, `proxy` | Yes — proxy needs the selected external backend installed and authenticated |
 | `clipboard-img` | Yes — needs a native WSL, Wayland, or X11 clipboard tool |
-| `channel-review` | Yes |
 | `worktree`, `spec`, `sdlc`, `assign`, `monolith`, `spring-break`, `review-loop`, `polish` | Yes — they call other skills and tools that must be available |
 | `land` | Yes — needs Git, an authenticated `gh` (GitHub only), and the selected review backend |
 | `jot`, `bg`, `cls`, `stat`, `sniff`, `find-work`, `doctor` | Yes — they call other skills and tools that must be available |

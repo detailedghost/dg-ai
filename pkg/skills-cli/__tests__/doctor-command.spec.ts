@@ -9,13 +9,11 @@ import {
 	legacyAllowRule,
 	checksOf,
 	doctorWorld,
-	type FakeCredentialDaemon,
 	INSTALLED_VERSION,
 	mentions,
 	NEWER_PLUGIN_VERSION,
 	OLD_TOOL_VERSION,
 	snapshotTree,
-	startFakeCredentialDaemon,
 } from "./doctor-fixtures";
 import { anyToolCheck, cliOnlyCheck, migratedSourcesCheck, pairingCheck } from "../src/doctor/checks";
 import { DOCTOR_REGISTRY } from "../src/doctor/registry";
@@ -239,50 +237,6 @@ describe("dg doctor check outcomes", () => {
 			);
 			expect([item, probes.length > 0]).toEqual([item, true]);
 		}
-	});
-});
-
-describe("dg doctor credential checks", () => {
-	const CREDENTIAL = "channel-review/datadog";
-	let daemon: FakeCredentialDaemon | undefined;
-
-	afterEach(() => {
-		daemon?.stop();
-		daemon = undefined;
-	});
-
-	const credentialCheck = (report: Parameters<typeof checksOf>[0]) =>
-		checksOf(report, "channel-review").find(
-			(check) => check.id === "credential-channel-review-datadog",
-		);
-
-	test("a credential missing from the store warns with the credentials set Fix", async () => {
-		world.healthy(["channel-review"]);
-		daemon = startFakeCredentialDaemon(world, []);
-		const { report } = await world.report(["channel-review"]);
-		const check = credentialCheck(report);
-		expect(check?.status).toBe("warn");
-		expect(check?.detail).toContain(CREDENTIAL);
-		expect(check?.fix).toBe(`${CLI_PATH} credentials set ${CREDENTIAL}`);
-	});
-
-	test("a stored credential passes and the check only lists metadata", async () => {
-		world.healthy(["channel-review"]);
-		daemon = startFakeCredentialDaemon(world, [CREDENTIAL]);
-		const { report } = await world.report(["channel-review"]);
-		const check = credentialCheck(report);
-		expect(check?.status).toBe("ok");
-		expect(check?.fix).toBeNull();
-		expect(daemon.operations.length).toBeGreaterThan(0);
-		expect(new Set(daemon.operations)).toEqual(new Set(["list"]));
-	});
-
-	test("a missing credential never makes the run fail when it is optional", async () => {
-		world.healthy(["channel-review"]);
-		daemon = startFakeCredentialDaemon(world, []);
-		const { run } = await world.report(["channel-review"]);
-		expect(run.exitCode).toBe(0);
-		expect(daemon.operations).not.toContain("get");
 	});
 });
 

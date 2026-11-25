@@ -164,7 +164,7 @@ describe("scheduled job verbs on the table", () => {
 		expect(configOf(dgHome).jobs.x.enabled).toBe(false);
 	});
 
-	it("removes the entry, the state row and the feed items at rm", async () => {
+	it("removes the entry, the state row and the feed items at remove", async () => {
 		const cwd = workDir();
 		const { dgHome, port } = await boot({
 			x: tableEntry(
@@ -179,7 +179,7 @@ describe("scheduled job verbs on the table", () => {
 			"ran x",
 		);
 
-		const result = await runCli(dgHome, ["job", "rm", "x"], { port });
+		const result = await runCli(dgHome, ["job", "remove", "x"], { port });
 
 		expect(result.code).toBe(0);
 		expect(Object.keys(configOf(dgHome).jobs)).toEqual([]);

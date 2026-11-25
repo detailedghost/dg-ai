@@ -214,7 +214,7 @@ function refuseActive(states: Map<string, string> | undefined, names: string[]):
 }
 
 export async function refuseLiveJobs(paths: DgPaths, via: string, names: string[]): Promise<void> {
-	if (await assertDaemonAnswers(paths, via, "job")) {
+	if (await assertDaemonAnswers(paths, via)) {
 		refuseActive(await liveJobStates(paths), names);
 	}
 }
@@ -397,7 +397,7 @@ export async function updateSource(
 				}
 			}
 			const removed = record.jobs.filter((job) => !names.includes(job));
-			for (const job of removed) assertNoLiveInstance(paths, job, "job");
+			for (const job of removed) assertNoLiveInstance(paths, job);
 			if (removed.length > 0) await refuseLiveJobs(paths, name, removed);
 			const marks = same
 				? { reset: [] as string[] }

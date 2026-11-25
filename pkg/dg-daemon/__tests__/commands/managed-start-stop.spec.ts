@@ -5,7 +5,6 @@ import { dirname, join } from "node:path";
 import {
 	CHAT_PROTOCOL_VERSION,
 	CHAT_JOBS_PATH,
-	CHAT_SERVICES_PATH,
 	type DaemonHandle,
 	DgCliError,
 	EXIT_LAYOUT_BLOCKED,
@@ -93,7 +92,6 @@ function newHandle(pid: number): DaemonHandle {
 		fetch(req) {
 			const path = new URL(req.url).pathname;
 			if (path === CHAT_JOBS_PATH) return Response.json({ instanceId, jobs: [] });
-			if (path === CHAT_SERVICES_PATH) return Response.json({ instanceId, services: [] });
 			return Response.json({ instanceId });
 		},
 	});

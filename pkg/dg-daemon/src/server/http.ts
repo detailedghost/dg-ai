@@ -13,7 +13,6 @@ import {
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
-	CHAT_SERVICES_PATH,
 	CHAT_SESSIONS_CLEAR_PATH,
 	CHAT_SESSIONS_LOCAL_PATH,
 	CHAT_START_PATH,
@@ -452,10 +451,11 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				});
 			}
 
-			for (const base of [CHAT_SERVICES_PATH, CHAT_JOBS_PATH] as const) {
-				if (url.pathname === base || url.pathname.startsWith(`${base}/`)) {
-					return handleJobRoute(req, url, deps, base);
-				}
+			if (
+				url.pathname === CHAT_JOBS_PATH ||
+				url.pathname.startsWith(`${CHAT_JOBS_PATH}/`)
+			) {
+				return handleJobRoute(req, url, deps);
 			}
 
 			return new Response("not found", { status: 404 });
@@ -908,7 +908,6 @@ async function handleJobRoute(
 	req: Request,
 	url: URL,
 	deps: HttpServerDeps,
-	base: typeof CHAT_SERVICES_PATH | typeof CHAT_JOBS_PATH,
 ): Promise<Response> {
 	const refusal =
 		requireLoopbackHost(req, deps.port) ??
@@ -918,7 +917,7 @@ async function handleJobRoute(
 	if (refusal) return refusal;
 	const { jobs } = deps;
 	const segments = url.pathname
-		.slice(base.length)
+		.slice(CHAT_JOBS_PATH.length)
 		.split("/")
 		.filter((segment) => segment.length > 0)
 		.map(decodeSegment);
@@ -931,8 +930,7 @@ async function handleJobRoute(
 	const [label, verb, ...extra] = segments as string[];
 
 	if (label === undefined && req.method === "GET") {
-		const key = base === CHAT_JOBS_PATH ? "jobs" : "services";
-		return json({ instanceId: deps.instanceId, [key]: jobs.status() });
+		return json({ instanceId: deps.instanceId, jobs: jobs.status() });
 	}
 
 	const isAction =
@@ -944,7 +942,7 @@ async function handleJobRoute(
 
 	const result = verb === "start" ? jobs.start(label) : await jobs.stop(label);
 	const failure =
-		!result.ok && result.kind === "unknown" && base === CHAT_JOBS_PATH
+		!result.ok && result.kind === "unknown"
 			? `no job named "${label}"`
 			: !result.ok
 				? result.error

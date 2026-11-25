@@ -1,6 +1,7 @@
 # Serialize runner jobs across chats and task kinds
 
-Status: Accepted
+Status: Deprecated
+Channel review left dg; see [ADR 0053](0053-job-sources-and-credentials.md).
 Date: 2026-10-16
 Topic: Channel review
 
@@ -40,7 +41,7 @@ flowchart LR
 
 ## References
 
-- [pkg/channel-review/src/engine.ts](../../pkg/channel-review/src/engine.ts)
+- [pkg/channel-review/src/engine.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/engine.ts)
 - [pkg/common/src/serial-queue.ts](../../pkg/common/src/serial-queue.ts)
-- [pkg/channel-review/src/state.ts](../../pkg/channel-review/src/state.ts)
-- [pkg/channel-review/src/automation/start.ts](../../pkg/channel-review/src/automation/start.ts)
+- [pkg/channel-review/src/state.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/state.ts)
+- [pkg/channel-review/src/automation/start.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/automation/start.ts)

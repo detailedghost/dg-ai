@@ -181,13 +181,11 @@ describe("job add of a URL: refusals before git", () => {
 			["--every", "15m"],
 			["--continuous"],
 			["--schedule", "* * * * *"],
-			["--cron", "* * * * *"],
 			["--timeout", "5m"],
 			["--feed"],
 			["--notify", "me"],
 			["--cwd", "/tmp"],
 			["--env", "A"],
-			["--pass-env", "A"],
 			["--env-file", "/tmp/x"],
 			["--stop-timeout", "5s"],
 		].map((flag) => [flag.join(" "), flag]),
@@ -364,9 +362,9 @@ describe("job add of a URL: source name", () => {
 		expect(result.stdout).toContain("credential prefix: tools/");
 	});
 
-	it("takes --label as the name", async () => {
+	it("takes --name as the name", async () => {
 		const repo = repoWith();
-		const result = await runJob(["add", fileUrl(repo), "--label", "tools"], sb.deps());
+		const result = await runJob(["add", fileUrl(repo), "--name", "tools"], sb.deps());
 		expect(result.code).toBe(0);
 		expect(existsSync(cloneOf("tools"))).toBe(true);
 	});

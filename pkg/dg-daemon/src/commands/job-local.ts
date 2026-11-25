@@ -37,7 +37,7 @@ import {
 	type SourceAddOptions,
 	stop,
 } from "./job-source";
-import { assertOneMode, announceAliases, checkEntryFlags, entryFromFlags, type EntryFlags } from "./job-entry";
+import { assertOneMode, checkEntryFlags, entryFromFlags, type EntryFlags } from "./job-entry";
 import { refuseLiveJobs, writeBlockEntries } from "./job-update";
 import {
 	assertNoLiveInstance,
@@ -117,9 +117,8 @@ async function addFile(
 	options: LocalAddOptions,
 	deps: JobSourceDeps,
 ): Promise<void> {
-	announceAliases(options);
 	if (flags.includes("cwd")) stop("the folder of the file is its working directory");
-	const explicit = options.name ?? options.label;
+	const explicit = options.name;
 	const stem = basename(given, extname(given));
 	const name = explicit ?? stem.toLowerCase();
 	if (!isJobName(name)) {
@@ -158,7 +157,7 @@ async function addFolder(
 ): Promise<void> {
 	if (flags.length > 0) stop('the folder declares this in its "dg" block');
 	if (rest.length > 0) stop("a folder takes no command after --");
-	const explicit = options.name ?? options.label;
+	const explicit = options.name;
 	const stem = basename(given);
 	const source = explicit ?? stem.toLowerCase();
 	if (!isJobName(source)) stop(`cannot use "${explicit ?? stem}" as a source name — give one with --name`);
@@ -309,7 +308,7 @@ export async function updateLocal(name: string, deps: JobSourceDeps): Promise<vo
 			stop("the source or the daemon config changed — nothing was changed", UPDATE_PREFIX);
 		}
 		clash(state.config);
-		for (const job of removed) assertNoLiveInstance(paths, job, "job");
+		for (const job of removed) assertNoLiveInstance(paths, job);
 		if (removed.length > 0) await refuseLiveJobs(paths, name, removed);
 		const restores = [snapshotOf(paths.daemonConfigPath), snapshotOf(paths.jobSourcesPath)];
 		try {

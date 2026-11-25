@@ -1,6 +1,7 @@
 # Automation opens drafts and never merges them
 
-Status: Accepted
+Status: Deprecated
+Channel review left dg; see [ADR 0053](0053-job-sources-and-credentials.md).
 Date: 2026-10-16
 Topic: Automation
 
@@ -40,7 +41,7 @@ flowchart LR
 
 ## References
 
-- [pkg/channel-review/src/automation/fix-flow.ts](../../pkg/channel-review/src/automation/fix-flow.ts)
-- [pkg/channel-review/src/automation/deps-flow.ts](../../pkg/channel-review/src/automation/deps-flow.ts)
-- [pkg/channel-review/src/automation/pr-watch.ts](../../pkg/channel-review/src/automation/pr-watch.ts)
-- [pkg/channel-review/src/automation/repos.ts](../../pkg/channel-review/src/automation/repos.ts)
+- [pkg/channel-review/src/automation/fix-flow.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/automation/fix-flow.ts)
+- [pkg/channel-review/src/automation/deps-flow.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/automation/deps-flow.ts)
+- [pkg/channel-review/src/automation/pr-watch.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/automation/pr-watch.ts)
+- [pkg/channel-review/src/automation/repos.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/automation/repos.ts)

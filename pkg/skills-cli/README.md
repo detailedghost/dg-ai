@@ -66,31 +66,6 @@ dg ssms signal link
 - `post` publishes a compiled review.
 - `stack` lists every PR or MR in a stack.
 
-## Channel review
-
-The installed `dg channel-review` command runs local thrash reviews for
-Teams requests through a Teams bot relay. Install thrash separately for each runner. Claude
-is the supported default; Codex and Copilot runners are experimental.
-
-```sh
-dg channel-review status --env dev
-dg channel-review start --env dev
-dg channel-review stop --env dev
-dg channel-review run --env dev
-dg channel-review env dev
-dg channel-review emojis show
-```
-
-`start` runs in the background; `run` stays in the foreground. `status` prints
-JSON with daemon state, runner probes, and preflight when stopped. `env` without
-a name prints the saved default, base URL, and AWS profile. `emojis capture`
-saves a human's custom reaction on its own prompt; `emojis set` saves a known ID.
-Apply saved reaction IDs after stop and start.
-
-Read [setup](../../plugins/dg/skills/channel-review/references/setup.md) and
-[commands](../../plugins/dg/skills/channel-review/references/commands.md) for
-prerequisites, flags, request tokens, and the exact error catalog.
-
 ## Background jobs
 
 `dg bg` identifies a job by its Linux `/proc` start time.

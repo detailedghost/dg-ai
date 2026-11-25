@@ -2,7 +2,7 @@
 
 These records describe the implementation on master as inspected on 2026-10-16
 through commit `5d0311b`. Dates record this documentation pass, not the date
-of the original design. The sixteen historical records below are Accepted, alongside the existing skills-only installation record.
+of the original design. Records 0008 to 0019 describe channel review. They are Deprecated because channel review left dg.
 
 ## How the pieces fit
 
@@ -14,14 +14,6 @@ flowchart LR
     D --> DB["daemon.db"]
     D --> CB["credentials.db"]
     A --> MB["memory.db - plain text"]
-    D -.->|"optional supervised process"| C["pkg/channel-review"]
-    T["Teams relay"] -->|"SSE per chat"| C
-    ER["error sink adapters"] --> C
-    TI["dependency schedule"] --> C
-    C --> Q["serial queue"]
-    Q --> R["runner CLI"]
-    R --> V["GitHub or GitLab review and draft PR workflows"]
-    C -->|"configured notifications"| T
 ```
 
 ## Adding an ADR
@@ -37,7 +29,7 @@ changes, and bug fixes do not each need a record unless they change such a bound
 
 - **Proposed:** the implementation is not yet on master.
 - **Accepted:** the implementation is on master.
-- **Deprecated:** removed without a replacement.
+- **Deprecated:** removed; the record may link the record that covers what replaced it.
 - **Superseded by NNNN:** replaced by a linked record.
 
 Keep an Accepted Decision intact. To replace it, write a new record, link the
@@ -57,21 +49,21 @@ belong with their owning private tooling repository.
 
 ### Automation
 
-- [0013 — Pass error reports as data files](0013-untrusted-reports.md)
-- [0014 — Automation opens drafts and never merges them](0014-draft-prs.md)
-- [0015 — Normalize error providers behind a polling interface](0015-error-sinks.md)
-- [0016 — Run dependency work in bounded windows with a cooldown](0016-scheduled-dependencies.md)
-- [0017 — Isolate automation clones and guard recursive deletion](0017-clone-lifecycle.md)
+- [0013 — Pass error reports as data files](0013-untrusted-reports.md) — Deprecated
+- [0014 — Automation opens drafts and never merges them](0014-draft-prs.md) — Deprecated
+- [0015 — Normalize error providers behind a polling interface](0015-error-sinks.md) — Deprecated
+- [0016 — Run dependency work in bounded windows with a cooldown](0016-scheduled-dependencies.md) — Deprecated
+- [0017 — Isolate automation clones and guard recursive deletion](0017-clone-lifecycle.md) — Deprecated
 
 ### Channel review
 
-- [0008 — Consume one resumable relay stream per chat](0008-relay-streams.md)
-- [0009 — Serialize runner jobs across chats and task kinds](0009-serial-work.md)
-- [0010 — Use an owner token and sender IDs for write-capable chat commands](0010-sender-gates.md)
-- [0011 — Parse commands only from the sender’s own text](0011-sender-text.md)
-- [0012 — Invoke runner CLIs with task-specific tool lists](0012-runner-boundaries.md)
-- [0018 — Store channel-review state in the shared daemon database](0018-channel-review-state-in-daemon-db.md)
-- [0019 — Pass review origin and model evidence across runner attempts](0019-review-execution-context.md)
+- [0008 — Consume one resumable relay stream per chat](0008-relay-streams.md) — Deprecated
+- [0009 — Serialize runner jobs across chats and task kinds](0009-serial-work.md) — Deprecated
+- [0010 — Use an owner token and sender IDs for write-capable chat commands](0010-sender-gates.md) — Deprecated
+- [0011 — Parse commands only from the sender’s own text](0011-sender-text.md) — Deprecated
+- [0012 — Invoke runner CLIs with task-specific tool lists](0012-runner-boundaries.md) — Deprecated
+- [0018 — Store channel-review state in the shared daemon database](0018-channel-review-state-in-daemon-db.md) — Deprecated
+- [0019 — Pass review origin and model evidence across runner attempts](0019-review-execution-context.md) — Deprecated
 
 ### Installation
 

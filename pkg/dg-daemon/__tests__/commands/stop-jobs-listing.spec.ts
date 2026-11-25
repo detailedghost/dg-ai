@@ -4,7 +4,6 @@ import { join } from "node:path";
 import {
 	CHAT_JOBS_PATH,
 	CHAT_PROTOCOL_VERSION,
-	CHAT_SERVICES_PATH,
 	DgCliError,
 } from "@dg/common";
 import {
@@ -104,18 +103,16 @@ const rejection = async (run: () => Promise<unknown>) =>
 		(error: unknown) => error,
 	);
 
-describe("dg daemon stop --force service listing", () => {
+describe("dg daemon stop --force job listing", () => {
 	it("lists with /jobs, reads body.jobs and does not call /services", async () => {
 		const table = fakeProcessTable([424242, 424243]);
 		const { requests } = setup(424242, {
 			[CHAT_JOBS_PATH]: (instanceId) =>
 				Response.json({ instanceId, jobs: [{ label: "a", pid: 424243 }] }),
-			[CHAT_SERVICES_PATH]: () => new Response("must not be called", { status: 500 }),
 		});
 		await cmdStop({ force: true }, seams(table));
 		expect(table.signals).toEqual(expect.arrayContaining([424242, 424243]));
-		expect(requests).toContain(CHAT_JOBS_PATH);
-		expect(requests).not.toContain(CHAT_SERVICES_PATH);
+		expect(requests.filter((path) => path !== "/healthz")).toEqual([CHAT_JOBS_PATH]);
 	});
 
 	it("ignores a services key in the /jobs answer", async () => {
@@ -129,84 +126,54 @@ describe("dg daemon stop --force service listing", () => {
 		expect((failure as Error).message).toContain("could not list the services (");
 	});
 
-	it("falls back to /services and reads body.services after a 404 on /jobs", async () => {
-		const table = fakeProcessTable([424242, 424243]);
-		const { requests } = setup(424242, {
-			[CHAT_SERVICES_PATH]: (instanceId) =>
-				Response.json({ instanceId, services: [{ label: "a", pid: 424243 }] }),
-		});
-		await cmdStop({ force: true }, seams(table));
-		expect(table.signals).toEqual(expect.arrayContaining([424242, 424243]));
-		expect(requests.filter((path) => path !== "/healthz")).toEqual([
-			CHAT_JOBS_PATH,
-			CHAT_SERVICES_PATH,
-		]);
+	it.each([
+		["no instanceId", () => Response.json({ jobs: [{ label: "a", pid: 1 }] })],
+		[
+			"another instanceId",
+			() => Response.json({ instanceId: "other", jobs: [{ label: "a", pid: 1 }] }),
+		],
+	])("names the failure when /jobs answers with %s and asks /services for nothing", async (_name, answer) => {
+		const table = fakeProcessTable([424242]);
+		const { requests } = setup(424242, { [CHAT_JOBS_PATH]: answer });
+		const failure = await rejection(() => cmdStop({ force: true }, seams(table)));
+		expect(failure).toBeInstanceOf(DgCliError);
+		expect((failure as Error).message).toContain("the answer is not from this daemon instance");
+		expect(requests).not.toContain("/services");
 	});
 
-	it("falls back to /services when /jobs answers 200 with no instanceId", async () => {
-		const table = fakeProcessTable([424242, 424243]);
-		const { requests } = setup(424242, {
-			[CHAT_JOBS_PATH]: () => Response.json({ jobs: [{ label: "a", pid: 1 }] }),
-			[CHAT_SERVICES_PATH]: (instanceId) =>
-				Response.json({ instanceId, services: [{ label: "a", pid: 424243 }] }),
-		});
-		await cmdStop({ force: true }, seams(table));
-		expect(table.signals).toEqual(expect.arrayContaining([424242, 424243]));
-		expect(requests).toContain(CHAT_SERVICES_PATH);
+	it("names the failure after a 404 on /jobs and asks /services for nothing", async () => {
+		const table = fakeProcessTable([424242]);
+		const { requests } = setup(424242, {});
+		const failure = await rejection(() => cmdStop({ force: true }, seams(table)));
+		expect(failure).toBeInstanceOf(DgCliError);
+		expect((failure as Error).message).toContain("could not list the services (404");
+		expect(requests).not.toContain("/services");
 	});
 
-	it("falls back to /services when /jobs answers with another instanceId", async () => {
-		const table = fakeProcessTable([424242, 424243]);
-		setup(424242, {
-			[CHAT_JOBS_PATH]: () =>
-				Response.json({ instanceId: "other", jobs: [{ label: "a", pid: 1 }] }),
-			[CHAT_SERVICES_PATH]: (instanceId) =>
-				Response.json({ instanceId, services: [{ label: "a", pid: 424243 }] }),
-		});
-		await cmdStop({ force: true }, seams(table));
-		expect(table.signals).toEqual(expect.arrayContaining([424242, 424243]));
-	});
-
-	it("falls back to /services when /jobs answers 403", async () => {
-		const table = fakeProcessTable([424242, 424243]);
-		const { requests } = setup(424242, {
-			[CHAT_JOBS_PATH]: () => new Response("forbidden", { status: 403 }),
-			[CHAT_SERVICES_PATH]: (instanceId) =>
-				Response.json({ instanceId, services: [{ label: "a", pid: 424243 }] }),
-		});
-		await cmdStop({ force: true }, seams(table));
-		expect(table.signals).toEqual(expect.arrayContaining([424242, 424243]));
-		expect(requests).toContain(CHAT_SERVICES_PATH);
-	});
-
-	it("names the failure when both answers are refused", async () => {
+	it("names the failure when /jobs answers 403", async () => {
 		const table = fakeProcessTable([424242]);
 		setup(424242, {
 			[CHAT_JOBS_PATH]: () => new Response("forbidden", { status: 403 }),
-			[CHAT_SERVICES_PATH]: () => new Response("forbidden", { status: 403 }),
 		});
 		const failure = await rejection(() => cmdStop({ force: true }, seams(table)));
 		expect(failure).toBeInstanceOf(DgCliError);
 		expect((failure as Error).message).toContain("could not list the services (403");
 	});
 
-	it("starts no fallback on a network error", async () => {
+	it("names the failure on a network error", async () => {
 		const table = fakeProcessTable([424242]);
-		const { requests } = setup(424242, {
+		setup(424242, {
 			[CHAT_JOBS_PATH]: () => new Promise<Response>(() => {}),
-			[CHAT_SERVICES_PATH]: (instanceId) =>
-				Response.json({ instanceId, services: [] }),
 		});
 		const failure = await rejection(() =>
 			cmdStop({ force: true }, seams(table, { listTimeoutMs: 100 })),
 		);
 		expect(failure).toBeInstanceOf(DgCliError);
-		expect(requests).not.toContain(CHAT_SERVICES_PATH);
 	});
 });
 
-describe("dg daemon stop --force against a daemon from before this release", () => {
-	it("ends the daemon and each service process tree with real processes", async () => {
+describe("dg daemon stop --force with real processes", () => {
+	it("ends the daemon and each job process tree", async () => {
 		const spawnSleeper = () => {
 			const proc = Bun.spawn(
 				[process.execPath, "-e", "setInterval(() => {}, 1000)"],
@@ -218,10 +185,10 @@ describe("dg daemon stop --force against a daemon from before this release", () 
 		const daemon = spawnSleeper();
 		const services = [spawnSleeper(), spawnSleeper()];
 		setup(daemon.pid, {
-			[CHAT_SERVICES_PATH]: (instanceId) =>
+			[CHAT_JOBS_PATH]: (instanceId) =>
 				Response.json({
 					instanceId,
-					services: services.map((service, index) => ({
+					jobs: services.map((service, index) => ({
 						label: `svc${index}`,
 						pid: service.pid,
 					})),

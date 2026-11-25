@@ -153,3 +153,9 @@ section, this section holds.
 - `dg autostart` is the mount of `dg-daemon autostart`. It installs, removes and reports the login unit of the
   daemon, as the accepted text describes.
 - The job model is in [ADR 0049](0049-jobs.md).
+
+## Amendment (2026-11-25)
+
+Channel review has now left dg in this major release. The `dg channel-review` command, `pkg/channel-review` and the
+channel review state tables are gone. The review bot runs as a job; see
+[the migration note](../channel-review.md) and [ADR 0053](0053-job-sources-and-credentials.md).

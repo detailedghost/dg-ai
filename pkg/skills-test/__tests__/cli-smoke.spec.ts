@@ -49,7 +49,6 @@ describe("dg-skills CLI", () => {
 			"install",
 			"demo",
 			"rerun",
-			"channel-review",
 			"stash",
 			"clipboard-image",
 			"vcs-provider",
@@ -446,36 +445,12 @@ describe("dg-skills CLI", () => {
 		expect(out.toLowerCase()).toContain("extension");
 	});
 
-	test("channel-review --help lists its subcommands", async () => {
-		const { code, out } = await runCli(["channel-review", "--help"]);
-		expect(code).toBe(0);
-		for (const cmd of [
-			"start",
-			"stop",
-			"status",
-			"logs",
-			"run",
-			"env",
-			"emojis",
-		]) {
-			expect(out).toContain(cmd);
-		}
-	});
-
-	test("channel-review logs --help lists --env, --lines, and --follow", async () => {
-		const { code, out } = await runCli(["channel-review", "logs", "--help"]);
-		expect(code).toBe(0);
-		for (const flag of ["--env", "--lines", "--follow"]) {
-			expect(out).toContain(flag);
-		}
-	});
-
-	test("channel-review emojis --help lists capture, set, and show", async () => {
-		const { code, out } = await runCli(["channel-review", "emojis", "--help"]);
-		expect(code).toBe(0);
-		for (const cmd of ["capture", "set", "show"]) {
-			expect(out).toContain(cmd);
-		}
+	test("channel-review is gone: --help does not list it and channel-review status is an unknown command", async () => {
+		const help = await runCli(["--help"]);
+		expect(help.out).not.toMatch(/^  channel-review(?: |$)/m);
+		const { code, out, err } = await runCli(["channel-review", "status"]);
+		expect(code).toBe(1);
+		expect(`${out}${err}`).toContain("unknown command 'channel-review'");
 	});
 
 	test("doctor --help documents --json and selected items without running a check", async () => {

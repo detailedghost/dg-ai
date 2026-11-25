@@ -461,9 +461,9 @@ function createV12ChannelReview(db: Database): void {
 }
 
 function createV15DropChannelReview(db: Database): void {
-	db.run("DROP VIEW channel_review_requests");
-	db.run("DROP VIEW channel_review_current");
-	db.run("DROP TABLE channel_review_state");
+	db.run("DROP VIEW IF EXISTS channel_review_requests");
+	db.run("DROP VIEW IF EXISTS channel_review_current");
+	db.run("DROP TABLE IF EXISTS channel_review_state");
 }
 
 const CHANNEL_REVIEW_SCHEMA_VERSION = 12;

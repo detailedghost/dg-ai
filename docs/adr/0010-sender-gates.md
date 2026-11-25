@@ -1,6 +1,7 @@
 # Use an owner token and sender IDs for write-capable chat commands
 
-Status: Accepted
+Status: Deprecated
+Channel review left dg; see [ADR 0053](0053-job-sources-and-credentials.md).
 Date: 2026-10-16
 Topic: Channel review
 
@@ -44,6 +45,6 @@ flowchart TD
 
 ## References
 
-- [pkg/channel-review/src/trigger.ts](../../pkg/channel-review/src/trigger.ts)
-- [pkg/channel-review/src/engine.ts](../../pkg/channel-review/src/engine.ts)
-- [pkg/channel-review/src/config.ts](../../pkg/channel-review/src/config.ts)
+- [pkg/channel-review/src/trigger.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/trigger.ts)
+- [pkg/channel-review/src/engine.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/engine.ts)
+- [pkg/channel-review/src/config.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/config.ts)

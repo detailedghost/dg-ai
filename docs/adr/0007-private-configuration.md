@@ -40,8 +40,8 @@ flowchart LR
 
 ## References
 
-- [plugins/dg/skills/channel-review/references/config.example.json](../../plugins/dg/skills/channel-review/references/config.example.json)
+- [plugins/dg/skills/channel-review/references/config.example.json](https://github.com/detailedghost/dg-ai/blob/v7.0.5/plugins/dg/skills/channel-review/references/config.example.json)
 - [.env.example](../../.env.example)
 - [.gitignore](../../.gitignore)
-- [pkg/channel-review/src/credentials.ts](../../pkg/channel-review/src/credentials.ts)
-- [pkg/channel-review/src/automation/start.ts](../../pkg/channel-review/src/automation/start.ts)
+- [pkg/channel-review/src/credentials.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/credentials.ts)
+- [pkg/channel-review/src/automation/start.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/automation/start.ts)

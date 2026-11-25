@@ -87,7 +87,7 @@ describe("group titles", () => {
 describe("runnableFix", () => {
 	test.each([
 		["dg agent start", ["dg", "agent", "start"]],
-		["dg channel-review setup", ["dg", "channel-review", "setup"]],
+		["dg phone open", ["dg", "phone", "open"]],
 		["dg doctor jot --json", ["dg", "doctor", "jot", "--json"]],
 	])("runs %s", (fix, argv) => {
 		expect(runnableFix(fix)).toEqual(argv);

@@ -1,4 +1,4 @@
-redactions = ["CHANNEL_REVIEW_RELAY_SECRET_*", "DATADOG_*", "SENTRY_*"]
+redactions = ["DATADOG_*", "SENTRY_*"]
 
 [tools]
 bun = "1.4.1"
@@ -8,7 +8,7 @@ node = "22"
 _.file = { path = ".env", redact = false }
 
 [tasks."remote:install"]
-description = "Build the dg bundle and make it lib/current in the dg data folder for local channel-review runs"
+description = "Build the dg bundle and make it lib/current in the dg data folder"
 run = """
 set -e
 ROOT="$(bun -e 'import { resolveDgPaths } from "./pkg/common/src/node/dg-paths.ts"; console.log(resolveDgPaths().dataDir)')"
@@ -23,47 +23,6 @@ BASE="$(bun -e 'console.log(require("./pkg/skills-cli/package.json").version)')-
 VERSION="$BASE.$(date +%s).$$"
 bun scripts/remote-install.ts "$ROOT" "$OUT/lib" "$BASE" "$VERSION"
 """
-
-[tasks."remote:status"]
-description = "Print the channel-review daemon state and preflight check"
-run = '"${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}" channel-review status'
-
-[tasks."remote:start"]
-description = "Start the channel-review daemon in the background"
-run = '"${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}" channel-review start'
-
-[tasks."remote:bedrock"]
-description = "Refresh the Bedrock AWS SSO login, then restart the channel-review daemon with Claude on Bedrock"
-run = """
-set -e
-DG="${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}"
-CONFIG=$(bun -e 'import { join } from "node:path"; import { resolveDgPaths } from "./pkg/common/src/node/dg-paths.ts"; console.log(join(resolveDgPaths().configDir, "channel-review", "config.json"))')
-PROFILE=$(bun -e 'const b = (await Bun.file(process.argv[1]).json()).runner?.claude?.bedrock; if (!b) { console.error("Add runner.claude.bedrock (model, region, profile) to " + process.argv[1]); process.exit(1); } console.log(b.profile ?? process.env.AWS_PROFILE ?? "")' "$CONFIG")
-aws sts get-caller-identity ${PROFILE:+--profile "$PROFILE"} >/dev/null 2>&1 || aws sso login ${PROFILE:+--profile "$PROFILE"}
-"$DG" channel-review stop || true
-"$DG" channel-review start
-"""
-
-[tasks."remote:stop"]
-description = "Stop the channel-review daemon"
-run = '"${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}" channel-review stop'
-
-[tasks."remote:run"]
-description = "Run the channel-review daemon in the foreground"
-run = '"${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}" channel-review run'
-
-[tasks."remote:logs"]
-description = "Show the last 40 lines of the channel-review daemon log"
-run = '"${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}" channel-review logs --env "${CR_ENV:-dev}"'
-
-[tasks."remote:follow"]
-description = "Follow the channel-review daemon log live"
-run = '"${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}" channel-review logs --env "${CR_ENV:-dev}" -f'
-
-[tasks."remote:up"]
-description = "Start the channel-review daemon and follow its log"
-depends = ["remote:start"]
-run = '"${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}" channel-review logs --env "${CR_ENV:-dev}" -f'
 
 [tasks.ext]
 description = "Build the extension and open it in the internal test Chrome"
@@ -178,40 +137,6 @@ run = "bunx stryker run stryker.credential-name.conf.mjs"
 description = "Run the dg-daemon unit tests"
 dir = "pkg/dg-daemon"
 run = "bun test"
-
-[tasks."test:runners"]
-description = "Run the channel-review runner tests, including a live CLI check when that binary is on PATH"
-dir = "pkg/channel-review"
-run = """
-if [ "${DG_TEST_CLAUDE_CLI:-}" != "1" ] && command -v claude >/dev/null 2>&1; then
-  DG_TEST_CLAUDE_CLI=1
-  export DG_TEST_CLAUDE_CLI
-fi
-if [ "${DG_TEST_GROK_CLI:-}" != "1" ] && command -v grok >/dev/null 2>&1; then
-  DG_TEST_GROK_CLI=1
-  export DG_TEST_GROK_CLI
-fi
-bun test \
-  __tests__/runners-capture.spec.ts \
-  __tests__/runners-cli-fixture.spec.ts \
-  __tests__/runners-cli-live.spec.ts \
-  __tests__/runners-grok-stream.spec.ts \
-  __tests__/runners-index.spec.ts \
-  __tests__/runners-probe.spec.ts \
-  __tests__/runners-spawn.spec.ts
-"""
-
-[tasks."test:runners:live"]
-description = "Run the opt-in Claude and Grok CLI runner tests (requires both binaries on PATH and a signed-in session)"
-dir = "pkg/channel-review"
-run = """
-DG_TEST_CLAUDE_CLI=1 DG_TEST_GROK_CLI=1 bun test __tests__/runners-cli-live.spec.ts
-"""
-
-[tasks."test:runners:mutate"]
-description = "Mutation-test the channel-review runners against the runner suite"
-dir = "pkg/channel-review"
-run = "bunx stryker run"
 
 [tasks."test:verify"]
 description = "Run the dg-skills verify unit tests and the fixture review"

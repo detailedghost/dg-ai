@@ -56,7 +56,7 @@ describe("google-sms-cleanup skill distribution", () => {
 		expect(skill).toContain("Keep rules");
 	});
 
-	test("the skills README lists google-sms-cleanup after channel-review", () => {
+	test("the skills README lists google-sms-cleanup after inbox-cleanup", () => {
 		const readme = readRepoFile("plugins/dg/skills/README.md");
 		expect(readme).toMatch(/^\| `google-sms-cleanup\/` \|/m);
 		expect(readme).toMatch(/^ {2}google-sms-cleanup\/$/m);
@@ -65,7 +65,7 @@ describe("google-sms-cleanup skill distribution", () => {
 			.filter((line) => line.startsWith("| `"))
 			.map((line) => /`([^`]+)`/.exec(line)?.[1]);
 		expect(names.indexOf("google-sms-cleanup/")).toBe(
-			names.indexOf("channel-review/") + 1,
+			names.indexOf("inbox-cleanup/") + 1,
 		);
 	});
 });

@@ -122,9 +122,9 @@ describe("job list --json", () => {
 		const add = await runCli(dgHome, [
 			"job",
 			"add",
-			"--label",
+			"--name",
 			"nightly",
-			"--cron",
+			"--schedule",
 			"0 9 * * 1-5",
 			"--cwd",
 			cwd,
@@ -148,7 +148,7 @@ describe("job list --json", () => {
 		expect(scheduled).toMatchObject({
 			name: "nightly",
 			mode: "schedule",
-			enabled: true,
+			enabled: false,
 			schedule: "0 9 * * 1-5",
 		});
 	});
@@ -159,7 +159,7 @@ describe("job list --json", () => {
 		await runCli(dgHome, [
 			"job",
 			"add",
-			"--label",
+			"--name",
 			"poll",
 			"--every",
 			"15m",
@@ -181,6 +181,17 @@ describe("job list --json", () => {
 });
 
 describe("job list", () => {
+	it("does not mark a declaration with passEnv, stopTimeoutMs and grant invalid", async () => {
+		const { dgHome, port } = await homes.boot((cwd) => ({
+			bot: { ...sleeperEntry(cwd), passEnv: ["A"], stopTimeoutMs: 1000, grant: "bot" },
+		}));
+
+		const result = await runCli(dgHome, ["job", "list", "--json"], { port });
+
+		const [entry] = rowsOf(result.stdout);
+		expect(entry.state).not.toBe("invalid");
+	});
+
 	it("exits 0 with a hint when no job exists", async () => {
 		const dgHome = homes.fresh();
 		seedJobs(dgHome, {});

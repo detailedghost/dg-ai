@@ -1,6 +1,7 @@
 # Consume one resumable relay stream per chat
 
-Status: Accepted
+Status: Deprecated
+Channel review left dg; see [ADR 0053](0053-job-sources-and-credentials.md).
 Date: 2026-10-16
 Topic: Channel review
 
@@ -44,8 +45,8 @@ sequenceDiagram
 
 ## References
 
-- [pkg/channel-review/src/providers/types.ts](../../pkg/channel-review/src/providers/types.ts)
-- [pkg/channel-review/src/providers/teams-relay/subscribe.ts](../../pkg/channel-review/src/providers/teams-relay/subscribe.ts)
-- [pkg/channel-review/src/providers/teams-relay/reply.ts](../../pkg/channel-review/src/providers/teams-relay/reply.ts)
-- [pkg/channel-review/src/daemon/serve.ts](../../pkg/channel-review/src/daemon/serve.ts)
-- [pkg/channel-review/README.md](../../pkg/channel-review/README.md)
+- [pkg/channel-review/src/providers/types.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/providers/types.ts)
+- [pkg/channel-review/src/providers/teams-relay/subscribe.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/providers/teams-relay/subscribe.ts)
+- [pkg/channel-review/src/providers/teams-relay/reply.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/providers/teams-relay/reply.ts)
+- [pkg/channel-review/src/daemon/serve.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/daemon/serve.ts)
+- [pkg/channel-review/README.md](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/README.md)

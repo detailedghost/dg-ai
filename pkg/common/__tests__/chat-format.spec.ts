@@ -6,7 +6,6 @@ import {
 	CHAT_JOBS_PATH,
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
-	CHAT_SERVICES_PATH,
 	type ChatFrame,
 	fitHistoryPage,
 	INBOUND_FRAME_TYPES,
@@ -1150,18 +1149,14 @@ describe("validateLinkFrame", () => {
 });
 
 describe("SERVICE_API_CREDENTIALS_PATH", () => {
-	it("names the versioned credentials route and stays outside the /services tree", () => {
+	it("names the versioned credentials route", () => {
 		expect(SERVICE_API_CREDENTIALS_PATH).toBe("/service-api/v1/credentials");
-		expect(SERVICE_API_CREDENTIALS_PATH.startsWith(CHAT_SERVICES_PATH)).toBe(
-			false,
-		);
 	});
 });
 
 describe("CHAT_JOBS_PATH", () => {
-	it("names the /jobs route beside /services and outside the service-api tree", () => {
+	it("names the /jobs route and stays outside the service-api tree", () => {
 		expect(CHAT_JOBS_PATH).toBe("/jobs");
-		expect(CHAT_JOBS_PATH).not.toBe(CHAT_SERVICES_PATH);
 		expect(SERVICE_API_CREDENTIALS_PATH.startsWith(CHAT_JOBS_PATH)).toBe(false);
 	});
 });

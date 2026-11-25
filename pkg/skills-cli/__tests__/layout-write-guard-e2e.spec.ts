@@ -46,23 +46,4 @@ posix("dg commands after a legacy entry failed to move", () => {
 		expect(existsSync(join(home, "data", "lib"))).toBe(false);
 		expect(existsSync(join(home, "bin", "dg"))).toBe(false);
 	});
-
-	test("channel-review env writes no config.json when the legacy channel-review config cannot be copied", async () => {
-		unreadable("channel-review/config.json");
-
-		const result = await runCli(["bun", skillsEntry, "channel-review", "env", "prod"], installEnv(home));
-
-		expect(result.code).not.toBe(0);
-		expect(existsSync(join(home, "config", "channel-review", "config.json"))).toBe(false);
-	});
-
-	test("channel-review setup writes no config or template when the legacy channel-review config cannot be copied", async () => {
-		unreadable("channel-review/config.json");
-
-		const result = await runCli(["bun", skillsEntry, "channel-review", "setup"], installEnv(home));
-
-		expect(result.code).not.toBe(0);
-		expect(existsSync(join(home, "config", "channel-review", "config.example.json"))).toBe(false);
-		expect(existsSync(join(home, "config", "channel-review", "config.json"))).toBe(false);
-	});
 });

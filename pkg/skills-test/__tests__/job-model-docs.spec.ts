@@ -77,41 +77,39 @@ const SHARED_RULES = [
 	"`enable` with no terminal only prints the hint",
 ];
 
+const OLD_START_RULE = "`dg job start` of a scheduled job, and the alias `run`, need a live daemon";
+const DOC_RULES = SHARED_RULES.map((rule) =>
+	rule === OLD_START_RULE ? "`dg job start` of a scheduled job needs a live daemon" : rule,
+);
+
 describe("docs/jobs-and-services.md job model", () => {
 	const doc = read(JOBS);
 
 	test("holds the fixed headings", () => {
 		expect(doc).toMatch(/^## Job verbs$/m);
-		expect(doc).toMatch(/^## Old and new commands$/m);
+		expect(doc).toMatch(/^## Removed forms$/m);
 	});
 
 	test("names no old program", () => {
 		expect(doc).not.toMatch(/\bdg-(skills|agent|daemon)\b/);
 	});
 
-	test("the old and new table has one row for each old form", () => {
-		const old = tableRows(heading(doc, "Old and new commands")).map((r) => r[0]);
+	test("the removed forms section names each removed form and the job verbs", () => {
+		const section = flat(heading(doc, "Removed forms"));
 		for (const form of [
-			"`dg service add <label> --cwd <path> -- <command>`",
-			"`dg service rm <label>`",
-			"`dg service status`",
-			"`dg service start <label>`",
-			"`dg service stop <label>`",
-			"`dg service add --autostart`",
-			"`dg service add --env-file <path>`",
-			"`dg service add --grant <prefix>`",
-			"`dg job add --label <name>`",
-			'`dg job add --cron "<cron>"`',
-			"`dg job add --pass-env <NAME>`",
-			"`dg job rm <name>`",
-			"`dg job run <name>` and `dg job exec <name>`",
+			"`service` command group",
+			"`/services` route",
+			"`--label`",
+			"`--cron`",
+			"`--pass-env`",
+			"`job rm`",
+			"`job run`",
+			"`job exec`",
 		])
-			expect([form, old.includes(form)]).toEqual([form, true]);
-		const rows = Object.fromEntries(tableRows(heading(doc, "Old and new commands")).map((r) => [r[0], r[1]]));
-		expect(rows["`dg service add --autostart`"]).toContain("`dg job enable <name>`");
-		expect(rows["`dg service add --autostart`"]).toContain("`enabled`");
-		expect(rows["`dg service add --grant <prefix>`"]).toContain("`grant`");
-		expect(rows["`dg service add <label> --cwd <path> -- <command>`"]).toContain("--name <name>");
+			expect([form, section.includes(form)]).toEqual([form, true]);
+		for (const verb of ["add", "enable", "disable", "start", "stop", "restart", "setup", "update", "remove", "logs", "status", "list"])
+			expect([verb, section.includes(`\`${verb}\``)]).toEqual([verb, true]);
+		expect(tableRows(heading(doc, "Removed forms"))).toEqual([]);
 	});
 
 	test("the verb table gives what each verb changes and whether it needs a live daemon", () => {
@@ -126,7 +124,6 @@ describe("docs/jobs-and-services.md job model", () => {
 			"enable",
 			"disable",
 			"start",
-			"run",
 			"stop",
 			"restart",
 			"list",
@@ -139,7 +136,7 @@ describe("docs/jobs-and-services.md job model", () => {
 		expect(byVerb.enable).toMatch(/starts the daemon when none runs/);
 		expect(byVerb.disable).toMatch(/starts none/);
 		for (const v of ["disable", "remove"]) expect(byVerb[v]).toMatch(/a daemon that runs must answer/);
-		for (const v of ["restart", "start", "run", "stop"]) expect(byVerb[v]).toMatch(/^[^|]*\| yes/);
+		for (const v of ["restart", "start", "stop"]) expect(byVerb[v]).toMatch(/^[^|]*\| yes/);
 		expect(byVerb.logs).toMatch(/\| no$/);
 		for (const v of ["list", "status"]) expect(byVerb[v]).toContain("`daemon not running`");
 		for (const v of ["enable", "disable"]) expect(byVerb[v]).toMatch(/stored `enabled` state/);
@@ -164,12 +161,12 @@ describe("docs/jobs-and-services.md job model", () => {
 	test("states the feed rules", () => {
 		const text = flat(doc);
 		expect(text).toMatch(/`feed` is explicit for a new job and is valid only for a scheduled job/);
-		expect(text).toMatch(/alias `--label` or `--cron` get `feed: true`/);
+		expect(text).toMatch(/moved scheduled job gets `feed: true`/);
 	});
 
 	test("holds each shared rule phrase", () => {
 		const text = flat(doc);
-		for (const rule of SHARED_RULES) expect([rule, text.includes(rule)]).toEqual([rule, true]);
+		for (const rule of DOC_RULES) expect([rule, text.includes(rule)]).toEqual([rule, true]);
 	});
 
 	test("names the private consumer only as the review bot repository", () => {
@@ -182,18 +179,6 @@ describe("docs/jobs-and-services.md job model", () => {
 		expect(forms.length).toBeGreaterThan(5);
 		for (const form of forms) expect([form, resolveRoute(form.split(" ")[0] ?? "") !== undefined]).toEqual([form, true]);
 		const runs = await Promise.all(forms.map(async (f) => [f, (await runDgHelp(f.split(" "))).code] as const));
-		expect(runs.filter(([, code]) => code !== 0)).toEqual([]);
-	}, 120_000);
-
-	test("each old form of the table passes its --help form", async () => {
-		const forms = new Set<string>();
-		for (const [old] of tableRows(heading(doc, "Old and new commands")))
-			for (const span of spans(old)) {
-				const words = commandWords(span);
-				if (words[0] === "dg") forms.add(words.slice(1).join(" "));
-			}
-		expect(forms.size).toBeGreaterThan(5);
-		const runs = await Promise.all([...forms].map(async (f) => [f, (await runDgHelp(f.split(" "))).code] as const));
 		expect(runs.filter(([, code]) => code !== 0)).toEqual([]);
 	}, 120_000);
 });
@@ -304,25 +289,21 @@ describe("README.md and docs/install.md", () => {
 describe("jobs SKILL.md", () => {
 	const skill = read(SKILL);
 
-	test("keeps the bootstrap fence, the SessionStart fence, the channel-review lines and the frontmatter", () => {
+	test("keeps the bootstrap fence and holds no channel review text, hook fence or removed form", () => {
 		const fence = (key: string) =>
 			skill
 				.split("```")
 				.filter((_, i) => i % 2 === 1)
 				.find((b) => b.includes(key)) ?? "";
 		expect(sha256(fence("bootstrap.sh"))).toBe("4269b440256c7284daa4e048ca62f8dca62e9b9c96c2f99af88bc3756859e516");
-		expect(sha256(fence('"SessionStart"'))).toBe("d23b524c97aaee81f9bdb4301d441071bf0a6ab7175e1c69503e38deaca78732");
-		expect(
-			sha256(
-				skill
-					.split("\n")
-					.filter((l) => l.includes("channel-review"))
-					.join("\n"),
-			),
-		).toBe("644361f665adaa7674b859627ec4f6989fb1366098314994ff25330842f13c0f");
-		expect(sha256(/^---\n([\s\S]*?)\n---/.exec(skill)?.[1] ?? "")).toBe(
-			"c74ee501fbdd0f35815f0299e1a77edb339b3591f611dfdeae98f25ce6102148",
-		);
+		expect(skill).not.toContain('"hooks": {');
+		expect(skill).not.toContain('"SessionStart"');
+		expect(skill).not.toMatch(/channel-review|channel review/i);
+		const frontmatter = /^---\n([\s\S]*?)\n---/.exec(skill)?.[1] ?? "";
+		expect(frontmatter).toContain("name: jobs");
+		expect(frontmatter).not.toMatch(/channel-review|channel review/i);
+		expect(skill).toContain("The old forms: the `service` command group, `job run`, `job exec`, `job rm`, `--label`,");
+		expect(skill).not.toMatch(/dg service (add|rm|status|start|stop)\b/);
 	});
 
 	test("has a Job verbs section with the new verbs in the flat dg form", () => {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
 	CHAT_PROTOCOL_VERSION,
-	CHAT_SERVICES_PATH,
+	CHAT_JOBS_PATH,
 	type DaemonHandle,
 	DgCliError,
 	OWNER_TOKEN_HEADER,
@@ -153,10 +153,10 @@ function declareServices(
 type Listed = { label: string; state: string; pid: number | null };
 
 async function listServices(port: number, dgHome: string): Promise<Listed[]> {
-	const resp = await fetch(`http://127.0.0.1:${port}${CHAT_SERVICES_PATH}`, {
+	const resp = await fetch(`http://127.0.0.1:${port}${CHAT_JOBS_PATH}`, {
 		headers: { Host: `127.0.0.1:${port}`, ...ownerHeaders(dgHome) },
 	});
-	return ((await resp.json()) as { services: Listed[] }).services;
+	return ((await resp.json()) as { jobs: Listed[] }).jobs;
 }
 
 function ownerHeaders(dgHome: string): Record<string, string> {
@@ -173,7 +173,7 @@ async function startServiceViaHttp(
 	dgHome?: string,
 ): Promise<void> {
 	const resp = await fetch(
-		`http://127.0.0.1:${port}${CHAT_SERVICES_PATH}/${label}/start`,
+		`http://127.0.0.1:${port}${CHAT_JOBS_PATH}/${label}/start`,
 		{
 			method: "POST",
 			headers: {
@@ -266,7 +266,7 @@ describe("dg daemon stop", () => {
 		await proc.exited;
 	});
 
-	it("kills the daemon, exits 1 and names the failure when GET /services answers 500", async () => {
+	it("kills the daemon, exits 1 and names the failure when GET /jobs answers 500", async () => {
 		const { dgHome, port } = homeWithPort();
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		const instanceId = crypto.randomUUID();
@@ -344,7 +344,7 @@ describe("dg daemon stop seams", () => {
 		paths: DgPaths,
 		pid: number,
 		servicePids: number[],
-		servicesInstanceId?: string | null,
+		otherInstanceId?: string,
 	): FakeServices {
 		const instanceId = crypto.randomUUID();
 		const requests: string[] = [];
@@ -355,13 +355,10 @@ describe("dg daemon stop seams", () => {
 				const path = new URL(req.url).pathname;
 				requests.push(`${req.method} ${path}`);
 				if (path === "/healthz") return Response.json({ instanceId });
-				if (path === CHAT_SERVICES_PATH) {
+				if (path === CHAT_JOBS_PATH) {
 					return Response.json({
-						instanceId:
-							servicesInstanceId === null
-								? undefined
-								: (servicesInstanceId ?? instanceId),
-						services: servicePids.map((servicePid, index) => ({
+						instanceId: otherInstanceId ?? instanceId,
+						jobs: servicePids.map((servicePid, index) => ({
 							label: `svc${index}`,
 							state: "running",
 							pid: servicePid,
@@ -446,7 +443,7 @@ describe("dg daemon stop seams", () => {
 		expect(existsSync(paths.pidPath)).toBe(true);
 	});
 
-	it("kills the daemon before the first service, and calls /healthz, GET /jobs and, after its 404, GET /services", async () => {
+	it("kills the daemon before the first service, and calls /healthz and GET /jobs only", async () => {
 		const { paths } = seamHome();
 		const table = fakeProcessTable([424242, 424243, 424244]);
 		const fake = fakeDaemonWithServices(paths, 424242, [424243, 424244]);
@@ -470,7 +467,7 @@ describe("dg daemon stop seams", () => {
 			true,
 		);
 		expect(new Set(fake.requests)).toEqual(
-			new Set(["GET /healthz", "GET /jobs", "GET /services"]),
+			new Set(["GET /healthz", "GET /jobs"]),
 		);
 		expect(existsSync(paths.pidPath)).toBe(false);
 		expect(lines()).toEqual([`dg daemon stopped (pid 424242, forced)`]);
@@ -602,7 +599,7 @@ describe("dg daemon stop seams", () => {
 		expect(table.signals()).toEqual([{ pid: 424242, signal: "SIGKILL" }]);
 	});
 
-	it("treats a /services answer from another instance as a list failure and uses none of its pids", async () => {
+	it("treats a /jobs answer from another instance as a list failure and uses none of its pids", async () => {
 		const { paths } = seamHome();
 		const table = fakeProcessTable([424242, 424243]);
 		fakeDaemonWithServices(paths, 424242, [424243], "some-other-instance");
@@ -672,29 +669,6 @@ describe("dg daemon stop seams", () => {
 			})),
 		]);
 		expect(table.signals()).toEqual([]);
-		expect(lines()).toEqual(["dg daemon stopped (pid 424242, forced)"]);
-	});
-
-	it("accepts a /services answer with no instanceId from a daemon before this change", async () => {
-		const { paths } = seamHome();
-		const table = fakeProcessTable([424242, 424243]);
-		fakeDaemonWithServices(paths, 424242, [424243], null);
-		const lines = captureStdout();
-
-		await cmdStop(
-			{ force: true },
-			{
-				platform: "linux",
-				kill: table.kill,
-				exec: table.exec,
-				autostart: inertAutostart,
-				waitMs: 2000,
-			},
-		);
-
-		expect(new Set(table.calls.map((call) => Math.abs(call.pid)))).toEqual(
-			new Set([424242, 424243]),
-		);
 		expect(lines()).toEqual(["dg daemon stopped (pid 424242, forced)"]);
 	});
 

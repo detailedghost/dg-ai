@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-	CHAT_SERVICES_PATH,
+	CHAT_JOBS_PATH,
 	DG_CHROME_EXTENSION_ORIGIN,
 	OWNER_TOKEN_HEADER,
 } from "@dg/common";
@@ -11,13 +11,10 @@ import {
 	bootServe,
 	cleanupDgHome,
 	createCleanupSlot,
-	ENTRY,
 	registerSession,
 	stopServe,
-	subprocessEnv,
 } from "../utils/daemon-harness";
 import { asContinuous } from "../utils/job-table";
-import { trackChild } from "../utils/child-registry";
 
 const EXTENSION_ORIGIN = DG_CHROME_EXTENSION_ORIGIN;
 
@@ -47,7 +44,7 @@ function fetchService(
 	origin?: string,
 	extraHeaders: Record<string, string> = {},
 ): Promise<Response> {
-	return fetch(`http://127.0.0.1:${port}${CHAT_SERVICES_PATH}/${path}`, {
+	return fetch(`http://127.0.0.1:${port}${CHAT_JOBS_PATH}/${path}`, {
 		method,
 		headers: {
 			Host: `127.0.0.1:${port}`,
@@ -65,7 +62,7 @@ function ownerHeaders(dgHome: string): Record<string, string> {
 
 async function serviceState(port: number): Promise<string> {
 	const resp = await fetchService(port, "", "GET", EXTENSION_ORIGIN);
-	return (await resp.json()).services[0].state;
+	return (await resp.json()).jobs[0].state;
 }
 
 const botDecl = (cwd: string) => ({
@@ -75,8 +72,8 @@ const botDecl = (cwd: string) => ({
 	},
 });
 
-describe("GET/POST /services", () => {
-	it("names the daemon instance beside the services so a client can check whose pids it reads", async () => {
+describe("GET/POST /jobs", () => {
+	it("names the daemon instance beside the jobs so a client can check whose pids it reads", async () => {
 		const { port } = await boot(botDecl);
 
 		const listed = await (
@@ -87,14 +84,14 @@ describe("GET/POST /services", () => {
 		).json();
 
 		expect(listed.instanceId).toBe(health.instanceId);
-		expect(Array.isArray(listed.services)).toBe(true);
+		expect(Array.isArray(listed.jobs)).toBe(true);
 	});
 
 	it("lists, starts and stops a declared service for the extension", async () => {
 		const { port } = await boot(botDecl);
 
 		const listed = await fetchService(port, "", "GET", EXTENSION_ORIGIN);
-		expect((await listed.json()).services[0]).toMatchObject({
+		expect((await listed.json()).jobs[0]).toMatchObject({
 			label: "bot",
 			state: "stopped",
 		});
@@ -161,35 +158,14 @@ describe("GET/POST /services", () => {
 
 	it("refuses a request whose Host is not the loopback authority", async () => {
 		const { port } = await boot(botDecl);
-		const resp = await fetch(`http://127.0.0.1:${port}${CHAT_SERVICES_PATH}`, {
+		const resp = await fetch(`http://127.0.0.1:${port}${CHAT_JOBS_PATH}`, {
 			headers: { Host: "evil.example" },
 		});
 		expect(resp.status).toBe(400);
 	});
-
-	it("drives the same routes from the service CLI", async () => {
-		const { dgHome } = await boot(botDecl);
-		const run = async (...args: string[]) => {
-			const proc = trackChild(Bun.spawn([process.execPath, ENTRY, "service", ...args], {
-				env: subprocessEnv(dgHome, 0),
-				stdout: "pipe",
-				stderr: "pipe",
-			}));
-			const [stdout, exitCode] = await Promise.all([
-				new Response(proc.stdout).text(),
-				proc.exited,
-			]);
-			return { stdout, exitCode };
-		};
-
-		expect((await run("start", "bot")).stdout).toContain("bot  running");
-		expect((await run("status")).stdout).toContain("bot  running");
-		expect((await run("stop", "bot")).stdout).toContain("bot  stopped");
-		expect((await run("start", "nope")).exitCode).not.toBe(0);
-	});
 });
 
-describe("a /services request with no Origin", () => {
+describe("a /jobs request with no Origin", () => {
 	it("refuses a list with no credential", async () => {
 		const { port } = await boot(botDecl);
 		const resp = await fetchService(port, "", "GET");
@@ -231,7 +207,7 @@ describe("a /services request with no Origin", () => {
 		expect(await serviceState(port)).toBe("stopped");
 	});
 
-	it("serves the owner token, which is what the service CLI sends", async () => {
+	it("serves the owner token, which is what the job CLI sends", async () => {
 		const { dgHome, port } = await boot(botDecl);
 		const owner = ownerHeaders(dgHome);
 		const listed = await fetchService(port, "", "GET", undefined, owner);

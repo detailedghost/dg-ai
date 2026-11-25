@@ -12,7 +12,6 @@ binaries. The skills-root README itself is not installed.
 | `verify/` | Review a finished change round by round and record a verdict per round |
 | `chat/` | Live chat on a local page that the dg daemon serves; the extension pairs with each session on its own |
 | `inbox-cleanup/` | Review Proton Mail, Gmail, or Outlook cleanup with redacted feedback |
-| `channel-review/` | Local thrash reviews for Teams PR and MR requests through a bot relay |
 | `google-sms-cleanup/` | Review Messages for Web without deletion or unapproved sends |
 | `adr/` | Write a paired ADR and agent decision, or answer from the ADRs at a reading level (`dg adr`) |
 | `agent-seed/` | Set up `.agents/`, a lean `AGENTS.md`, `CLAUDE.md` as `@AGENTS.md`, and the `docs/` rule files |
@@ -20,7 +19,7 @@ binaries. The skills-root README itself is not installed.
 | `grill-me/` | Resolve a design through a structured interview |
 | `hook-comment-disable/` | Disable the American-English hook for one session with explicit approval |
 | `hunt/` | Gather evidence and diagnose a codebase bug |
-| `jobs/` | List and control the dg daemon and the channel-review daemon |
+| `jobs/` | List and control the dg daemon and its jobs |
 | `kick/` | Plan and park a deferred spec bundle |
 | `overwatch/` | Track parallel sessions on a local board that the dg daemon serves; `--ext` opens it in the paired browser |
 | `phone/` | Private encrypted chat with one or more other agents over Nostr |
@@ -68,7 +67,6 @@ binaries. The skills-root README itself is not installed.
 skills/
   adr/
   agent-seed/
-  channel-review/
   chat/
   clipboard-img/
   demo/

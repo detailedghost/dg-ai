@@ -9,19 +9,6 @@
         "@stryker-mutator/core": "^10.1.1",
       },
     },
-    "pkg/channel-review": {
-      "name": "@dg/channel-review",
-      "version": "0.1.0",
-      "dependencies": {
-        "@dg/common": "workspace:*",
-      },
-      "devDependencies": {
-        "@hughescr/stryker-bun-runner": "^1.6.0",
-        "@stryker-mutator/core": "^10.1.1",
-        "bun-types": "^1.4.4",
-        "typescript": "^7.0.2",
-      },
-    },
     "pkg/common": {
       "name": "@dg/common",
       "version": "1.0.0",
@@ -150,7 +137,6 @@
       "name": "@dg/skills-cli",
       "version": "7.0.5",
       "dependencies": {
-        "@dg/channel-review": "workspace:*",
         "@dg/common": "workspace:*",
         "@dg/dg-agent": "workspace:*",
         "@dg/inbox": "workspace:*",
@@ -389,8 +375,6 @@
     "@colors/colors": ["@colors/colors@1.6.1", "", {}, "sha512-dTmUJzXSuayBK+hZydEaXd2mhx61qWQwkwaBBY6LyEOVx/L9aQU5ac8eFNEsd9nrD1+zb9zvDCphLSe8g1F4Qw=="],
 
     "@dabh/diagnostics": ["@dabh/diagnostics@2.0.9", "", { "dependencies": { "@so-ric/colorspace": "^1.1.6", "enabled": "2.0.x", "kuler": "^2.0.0" } }, "sha512-R6siwR65Hm+3yfgP7o8DKhNvputQAwfoz9zTc3kyDudnomj2/BcLmD+uGQQPICjuFUp8ounPBU+jmKsocwVVAg=="],
-
-    "@dg/channel-review": ["@dg/channel-review@workspace:pkg/channel-review"],
 
     "@dg/common": ["@dg/common@workspace:pkg/common"],
 

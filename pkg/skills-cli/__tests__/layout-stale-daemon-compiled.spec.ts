@@ -90,13 +90,13 @@ describe("two used daemon folders through the compiled programs", () => {
 		};
 	}
 
-	it("keeps both folders, prints the text, and exits 78 for serve and service rm, and 1 for clean", async () => {
+	it("keeps both folders, prints the text, and exits 78 for serve and job remove, and 1 for clean", async () => {
 		const { home, text } = await twoUsedHome();
 		const paths = perOsPaths(home);
 		const before = { legacy: bytesOf(join(paths.legacyHome, "daemon")), target: bytesOf(paths.daemonDir) };
 
 		const serve = await runProgram(home, "dg-daemon", ["serve"]);
-		const remove = await runProgram(home, "dg-daemon", ["service", "rm", "x"]);
+		const remove = await runProgram(home, "dg-daemon", ["job", "remove", "x"]);
 		const clean = await runProgram(home, "dg-skills", ["clean"]);
 
 		expect(serve.code).toBe(78);

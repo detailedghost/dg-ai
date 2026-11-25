@@ -198,8 +198,8 @@ describe("daemon credential grants", () => {
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome! } });
 		const value = "fixture-granted-value-77d2a1";
 		for (const name of [
-			"channel-review/datadog",
-			"channel-review-other/datadog",
+			"my-service/datadog",
+			"my-service-other/datadog",
 			"other/datadog",
 		])
 			await result(
@@ -208,11 +208,11 @@ describe("daemon credential grants", () => {
 			);
 		const granted = await result(
 			results,
-			request(cli, { operation: "grant", prefix: "channel-review" }),
+			request(cli, { operation: "grant", prefix: "my-service" }),
 		);
-		const tokenPath = join(paths.grantsDir, "channel-review.token");
+		const tokenPath = join(paths.grantsDir, "my-service.token");
 		expect(granted.value).toEqual({
-			prefix: "channel-review",
+			prefix: "my-service",
 			path: tokenPath,
 		});
 		expect(statSync(tokenPath).mode & 0o777).toBe(0o600);
@@ -220,23 +220,23 @@ describe("daemon credential grants", () => {
 		const token = readFileSync(tokenPath, "utf8");
 		expect(JSON.stringify(granted)).not.toContain(token);
 
-		const service = await grantSocket(port, "channel-review", token);
+		const service = await grantSocket(port, "my-service", token);
 		const frames = collectFrames(service);
-		const grant = { prefix: "channel-review", token };
+		const grant = { prefix: "my-service", token };
 		const list = await result(
 			frames,
 			request(service, { operation: "list", grant }),
 		);
 		expect(
 			(list.value as { name: string }[]).map((entry) => entry.name),
-		).toEqual(["channel-review/datadog"]);
+		).toEqual(["my-service/datadog"]);
 		expect(
 			(
 				await result(
 					frames,
 					request(service, {
 						operation: "get",
-						name: "channel-review/datadog",
+						name: "my-service/datadog",
 						grant,
 					}),
 				)
@@ -244,10 +244,10 @@ describe("daemon credential grants", () => {
 		).toMatchObject({ value });
 		for (const fields of [
 			{ operation: "get", name: "other/datadog" },
-			{ operation: "get", name: "channel-review-other/datadog" },
-			{ operation: "get", name: "channel-review" },
-			{ operation: "set", name: "channel-review/new", value, meta: {} },
-			{ operation: "delete", name: "channel-review/datadog" },
+			{ operation: "get", name: "my-service-other/datadog" },
+			{ operation: "get", name: "my-service" },
+			{ operation: "set", name: "my-service/new", value, meta: {} },
+			{ operation: "delete", name: "my-service/datadog" },
 			{ operation: "grant-list" },
 		])
 			expect(
@@ -258,8 +258,8 @@ describe("daemon credential grants", () => {
 				frames,
 				request(service, {
 					operation: "get",
-					name: "channel-review/datadog",
-					grant: { prefix: "channel-review", token: `${token}x` },
+					name: "my-service/datadog",
+					grant: { prefix: "my-service", token: `${token}x` },
 				}),
 			),
 		).toMatchObject({ ok: false, error: NOT_ALLOWED });
@@ -269,7 +269,7 @@ describe("daemon credential grants", () => {
 			request(cli, { operation: "grant-list" }),
 		);
 		expect(grants.value).toEqual([
-			expect.objectContaining({ prefix: "channel-review" }),
+			expect.objectContaining({ prefix: "my-service" }),
 		]);
 		expect(
 			(grants.value as { lastUsedAt: string | null }[])[0].lastUsedAt,
@@ -278,7 +278,7 @@ describe("daemon credential grants", () => {
 
 		await result(
 			results,
-			request(cli, { operation: "grant", prefix: "channel-review" }),
+			request(cli, { operation: "grant", prefix: "my-service" }),
 		);
 		const rotated = readFileSync(tokenPath, "utf8");
 		expect(rotated).not.toBe(token);
@@ -288,7 +288,7 @@ describe("daemon credential grants", () => {
 
 		const revoked = await result(
 			results,
-			request(cli, { operation: "revoke", prefix: "channel-review" }),
+			request(cli, { operation: "revoke", prefix: "my-service" }),
 		);
 		expect(revoked.value).toBe(true);
 		expect(existsSync(tokenPath)).toBe(false);
@@ -301,10 +301,10 @@ describe("daemon credential grants", () => {
 		const { cli, results, port } = await boot();
 		await result(
 			results,
-			request(cli, { operation: "grant", prefix: "channel-review" }),
+			request(cli, { operation: "grant", prefix: "my-service" }),
 		);
 		await expect(
-			grantSocket(port, "channel-review", "wrong-fixture-token"),
+			grantSocket(port, "my-service", "wrong-fixture-token"),
 		).rejects.toThrow();
 	});
 });

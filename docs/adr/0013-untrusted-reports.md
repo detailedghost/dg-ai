@@ -1,6 +1,7 @@
 # Pass error reports as data files
 
-Status: Accepted
+Status: Deprecated
+Channel review left dg; see [ADR 0053](0053-job-sources-and-credentials.md).
 Date: 2026-10-16
 Topic: Automation
 
@@ -43,6 +44,6 @@ flowchart LR
 
 ## References
 
-- [pkg/channel-review/src/automation/fix-flow.ts](../../pkg/channel-review/src/automation/fix-flow.ts)
-- [pkg/channel-review/src/runners/index.ts](../../pkg/channel-review/src/runners/index.ts)
-- [pkg/channel-review/src/automation/notify.ts](../../pkg/channel-review/src/automation/notify.ts)
+- [pkg/channel-review/src/automation/fix-flow.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/automation/fix-flow.ts)
+- [pkg/channel-review/src/runners/index.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/runners/index.ts)
+- [pkg/channel-review/src/automation/notify.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/automation/notify.ts)

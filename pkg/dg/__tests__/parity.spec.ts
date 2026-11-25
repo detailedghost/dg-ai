@@ -88,7 +88,6 @@ const HELP_ROWS: ReadonlyArray<readonly [string, string, string[]]> = [
 	["doctor", "dg-skills", ["doctor"]],
 	["pw", "dg-skills", ["pw"]],
 	["phone", "dg-agent", ["phone"]],
-	["service", "dg-daemon", ["service"]],
 ];
 
 describe.each(MODES)("dg against the mounted programs (%s)", (mode) => {
@@ -116,10 +115,10 @@ describe.each(MODES)("dg against the mounted programs (%s)", (mode) => {
 		expect(viaDg.exitCode).toBe(direct.exitCode);
 	});
 
-	test("dg daemon service status matches dg-daemon service status on stderr and exit code", () => {
+	test("dg daemon job rm matches dg-daemon job rm on stderr and exit code", () => {
 		const home = freshHome();
-		const viaDg = invoke(mode, "dg", ["daemon", "service", "status"], home);
-		const direct = invoke(mode, "dg-daemon", ["service", "status"], home);
+		const viaDg = invoke(mode, "dg", ["daemon", "job", "rm", "x"], home);
+		const direct = invoke(mode, "dg-daemon", ["job", "rm", "x"], home);
 		expect(viaDg.stderr).toBe(direct.stderr);
 		expect(viaDg.exitCode).toBe(direct.exitCode);
 	});

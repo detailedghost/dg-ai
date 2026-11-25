@@ -5,7 +5,6 @@ import { batchOpenChecks } from "../batch-open/doctor";
 import { bgChecks } from "../bg/doctor";
 import { catchupChecks } from "../catchup/doctor";
 import { chainChecks } from "../chain/doctor";
-import { channelReviewChecks } from "../channel-review/doctor";
 import { clipboardImageChecks } from "../clipboard-image/doctor";
 import { completionChecks } from "../completion/doctor";
 import { configChecks } from "../config/doctor";
@@ -50,7 +49,6 @@ import { dgLauncherCheck, SHARED_ITEM, sharedChecks } from "./shared";
 export const DOCTOR_REGISTRY: DoctorRegistry = {
 	[SHARED_ITEM]: [...sharedChecks, dgLauncherCheck(isCliOnly), longRunningJitCheck()],
 	inbox: inboxChecks,
-	"channel-review": channelReviewChecks,
 	credentials: credentialsChecks,
 	db: dbChecks,
 	erd: erdChecks,

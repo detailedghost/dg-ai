@@ -15,7 +15,6 @@ const ALLOWED = new Set([
 
 const GOLDEN_COMMANDS = [
 	"inbox",
-	"channel-review",
 	"credentials",
 	"db",
 	"erd",

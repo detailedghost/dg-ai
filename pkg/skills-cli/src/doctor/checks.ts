@@ -306,22 +306,6 @@ export function noAllowRuleCheck(sub: string): DoctorCheck {
 	};
 }
 
-export function credentialChecks(names: string[]): DoctorCheck[] {
-	return names.map((name) => ({
-		id: `credential-${name.replaceAll("/", "-")}`,
-		async run(ctx) {
-			const stored = await storedCredentialNames(ctx);
-			if ("error" in stored)
-				return warn(`cannot list credentials: ${stored.error}`, stored.fix);
-			if (stored.names.includes(name)) return ok(`credential ${name} is stored`);
-			return warn(
-				`credential ${name} is not stored`,
-				`${CLI_PATH} credentials set ${name}`,
-			);
-		},
-	}));
-}
-
 type CredentialNames =
 	| { names: string[] }
 	| { error: string; fix?: string };

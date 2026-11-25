@@ -258,7 +258,7 @@ async function open(
 	verb: Verb,
 	deps: JobSetupDeps,
 ): Promise<{ job: Loaded; client: JobCredentialClient }> {
-	await assertDaemonAnswers(paths, name, "job");
+	await assertDaemonAnswers(paths, name);
 	if (existsSync(paths.daemonConfigPath)) await ensureMigrated(paths);
 	const job = loadJob(paths, name, verb);
 	return { job, client: deps.client(paths, name) };
@@ -543,7 +543,7 @@ async function nextLines(ctx: Ctx): Promise<void> {
 					entry.grant.toLowerCase() === ctx.job.prefix.toLowerCase(),
 			)
 			.map(([name]) => name);
-		const body = (await callDaemon(CHAT_JOBS_PATH, "GET", "job")) as { jobs: ServiceStatus[] };
+		const body = (await callDaemon(CHAT_JOBS_PATH, "GET")) as { jobs: ServiceStatus[] };
 		const running = body.jobs
 			.filter((row) => sharing.includes(row.label) && (row.state === "running" || row.state === "backoff"))
 			.map((row) => row.label)

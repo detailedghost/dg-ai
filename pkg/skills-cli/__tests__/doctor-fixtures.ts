@@ -14,12 +14,6 @@ import {
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 
-const CHANNEL_REVIEW_CONFIG = {
-	envs: { dev: { baseUrl: "https://relay.example.test/api", awsProfile: "example-dev", botName: "Review Bot" } },
-	chats: [{ topic: "Team Reviews" }],
-	owner: { token: "!owner", email: "owner@example.com" },
-	relay: { appName: "review-bot", secret: { id: "relay/chat", key: "RELAY__CHAT__SECRET", region: "us-east-1" } },
-};
 import type { CheckStatus } from "../src/doctor/types";
 import { fenceEnv } from "./fence-env";
 import { scratchFixtures } from "./git-repo-fixtures";
@@ -217,18 +211,11 @@ export function doctorWorld() {
 		return { run: result, report: JSON.parse(result.stdout) as DoctorReport };
 	}
 
-	function writeChannelReviewConfig() {
-		const dir = join(paths.configDir, "channel-review");
-		mkdirSync(dir, { recursive: true });
-		writeFileSync(join(dir, "config.json"), JSON.stringify(CHANNEL_REVIEW_CONFIG));
-	}
-
 	function healthy(subs: string[] = []) {
 		for (const tool of VERSIONED_TOOLS) installTool(tool);
 		installPlugin();
 		writeSettings(subs);
 		installForbiddenFakes();
-		if (subs.includes("channel-review")) writeChannelReviewConfig();
 	}
 
 	return {

@@ -1,8 +1,8 @@
 # 👻 DeeGee
 
-Browser, inbox, channel review, and agent workflow plugin for Codex and Claude Code.
+Browser, inbox, and agent workflow plugin for Codex and Claude Code.
 DeeGee adds stash, proxy, browser tab groups, guided tours, live-page prototypes,
-agent chat, inbox cleanup, channel review, Google SMS cleanup, and private
+agent chat, inbox cleanup, Google SMS cleanup, and private
 agent-to-agent calls over Nostr. The companion browser extension is `dg-ai-extension`.
 
 ## Install
@@ -78,7 +78,6 @@ Claude Code uses `/dg:<skill>`; Codex uses `$dg:<skill>`.
 | `overwatch` | Track work across parallel chats on a local board page | [Skill commands](plugins/dg/skills/overwatch/SKILL.md) |
 | `inbox-cleanup` | Review and organize Proton Mail, Gmail, or Outlook | [Inbox cleanup](docs/inbox-cleanup.md) |
 | `google-sms-cleanup` | Organize Google Messages, or Signal, with `dg ssms` | [SMS providers](docs/ssms.md) |
-| `channel-review` | Review PRs and MRs posted in Teams | [Channel review](docs/channel-review.md) |
 | `phone` | Chat in private with one or more other agents over Nostr | [Phone](docs/phone.md) |
 
 ### Workflow skills
@@ -102,7 +101,7 @@ Claude Code also accepts the bare `/<name>`.
 | `grill-me` | Interview the user about a design until every branch is resolved |
 | `hook-comment-disable` | Turn off the American-English hook for one session |
 | `hunt` | Find the root cause of a bug with parallel evidence gathering |
-| `jobs` | List and control the dg daemon and channel-review daemons |
+| `jobs` | List and control the dg daemon and its jobs |
 | `jot` | Save a short note or a session handoff; `dg jot` |
 | `land` | Take a ready PR through Codex review rounds and green CI to "ready for your review"; it merges only on your answer, or right away with `--auto` |
 | `kick`, `pickup`, `prd` | Park a planned spec, resume it, or hand it off |

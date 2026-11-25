@@ -15,7 +15,7 @@ Run `bun install` at the repo root. It links the `@dg/*` workspace packages. See
 Use Conventional Commits with a scope, like `feat(skills): add the doctor command`.
 
 Use these types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`. Write the scope in lowercase kebab-case. Reuse a scope that exists
-in the history, such as `skills`, `skills-cli`, `channel-review`, `proto`, or `deps`.
+in the history, such as `skills`, `skills-cli`, `proto`, or `deps`.
 
 The release workflow makes its own commit, `chore(release): cut X.Y.Z`. Do not write one by hand. See "How does it get to users?".
 
@@ -124,8 +124,7 @@ Ask a person. Do not turn off a check to get past it.
 
 - **Markdown.** Keep prose lines to 160 characters. See `.markdownlint.jsonc`.
 
-- **No local zone.** Public sources must not hold private values. `no-local-zone.spec.ts` scans `plugins/dg/skills`, `pkg/skills-cli/src`, and
-  `pkg/channel-review/src`. It fails on:
+- **No local zone.** Public sources must not hold private values. `no-local-zone.spec.ts` scans `plugins/dg/skills` and `pkg/skills-cli/src`. It fails on:
 
   - home paths such as `/home/<name>/` and `C:\Users\<name>`
   - `~/scripts/` and local `~/.claude/skills/` paths
@@ -171,15 +170,6 @@ Ask a person. Do not turn off a check to get past it.
 - CI runs `bun test --isolate` and `bun run build`. Both must pass.
 - Import shared types from `@dg/common`. Do not copy them.
 - Send no prototype or demo data off the machine. The extension uses the local Downloads directory only.
-
-### pkg/channel-review
-
-- Keep tests on fakes from `__tests__/support/fakes.ts`. Tests that call a real runner CLI run only when `DG_TEST_CLAUDE_CLI=1` or `DG_TEST_GROK_CLI=1` is set.
-  `mise run test:runners` sets them when the binary is on `PATH`.
-- Check runner changes with `mise run test:runners:mutate`. It runs Stryker mutation tests.
-- Automation opens draft PRs and never merges them. See [ADR 0014](adr/0014-draft-prs.md).
-- Pass error reports to a runner as data files. See [ADR 0013](adr/0013-untrusted-reports.md).
-- Keep deployment values out of the source. See [ADR 0007](adr/0007-private-configuration.md).
 
 ### pkg/inbox
 

@@ -1,6 +1,7 @@
 # Invoke runner CLIs with task-specific tool lists
 
-Status: Accepted
+Status: Deprecated
+Channel review left dg; see [ADR 0053](0053-job-sources-and-credentials.md).
 Date: 2026-10-16
 Topic: Channel review
 
@@ -47,7 +48,7 @@ sequenceDiagram
 
 ## References
 
-- [pkg/channel-review/src/runners/index.ts](../../pkg/channel-review/src/runners/index.ts)
-- [pkg/channel-review/src/runners/spawn.ts](../../pkg/channel-review/src/runners/spawn.ts)
-- [pkg/channel-review/src/config.ts](../../pkg/channel-review/src/config.ts)
-- [pkg/channel-review/src/automation/fix-flow.ts](../../pkg/channel-review/src/automation/fix-flow.ts)
+- [pkg/channel-review/src/runners/index.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/runners/index.ts)
+- [pkg/channel-review/src/runners/spawn.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/runners/spawn.ts)
+- [pkg/channel-review/src/config.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/config.ts)
+- [pkg/channel-review/src/automation/fix-flow.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/automation/fix-flow.ts)

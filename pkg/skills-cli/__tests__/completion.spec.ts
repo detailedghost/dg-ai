@@ -86,7 +86,7 @@ const which = (name: string): boolean => Bun.which(name) !== null;
 describe("the completion scripts in a real shell", () => {
 	test.skipIf(!which("bash"))("bash completes st to stat, stat ch to checklist, and an option value after an equals sign", () => {
 		const script = `source /dev/stdin <<'EOF'\n${completionScript("bash", "dg")}EOF
-for line in "dg st" "dg stat ch" "dg stat " "dg channel-review start --env=d"; do
+for line in "dg st" "dg stat ch" "dg stat " "dg demo --browser=chro"; do
 	COMP_LINE="$line"
 	COMP_POINT=\${#line}
 	read -ra COMP_WORDS <<< "\${line//=/ = }"
@@ -96,7 +96,7 @@ for line in "dg st" "dg stat ch" "dg stat " "dg channel-review start --env=d"; d
 	printf '%s\\n' "\${COMPREPLY[@]}"
 done
 `;
-		expect(shell(["bash"], script)).toEqual(["stash", "stat", "checklist", "checklist", "add", "done", "status", "archive", "reap", "loops", "dev"]);
+		expect(shell(["bash"], script)).toEqual(["stash", "stat", "checklist", "checklist", "add", "done", "status", "archive", "reap", "loops", "chrome", "chromium"]);
 	});
 
 	test.skipIf(!which("zsh"))("zsh autoloads the file from fpath, completes stat ch to checklist, and a path flag to files", () => {

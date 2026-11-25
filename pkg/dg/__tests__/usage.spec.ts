@@ -41,7 +41,7 @@ describe("dg usage", () => {
 	test("lists the groups and the aliases", async () => {
 		const { stdout } = await runDg(["--help"]);
 		const first = stdout.split("\n").map((line) => line.trim().split(/\s+/)[0]);
-		for (const word of [...Object.keys(GROUPS), ...Object.keys(ALIASES), "pw", "phone", "job", "service"]) expect(first).toContain(word);
+		for (const word of [...Object.keys(GROUPS), ...Object.keys(ALIASES), "pw", "phone", "job"]) expect(first).toContain(word);
 	});
 
 	test("lists completion on its own line", async () => {

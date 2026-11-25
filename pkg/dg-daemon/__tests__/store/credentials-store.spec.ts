@@ -273,34 +273,34 @@ describe("CredentialStore grants", () => {
 			expect(credentials.listCredentialGrants().map((entry) => entry.prefix)).toEqual(["phone-vault"]);
 			expect(credentials.verifyCredentialGrant("PHONE-VAULT", folded)).toBe(true);
 			expect(credentials.deleteCredentialGrant("Phone-Vault")).toBe(true);
-			const token = credentials.createCredentialGrant("channel-review");
+			const token = credentials.createCredentialGrant("my-service");
 			expect(Buffer.from(token, "base64url")).toHaveLength(32);
 			expect(scanFileForBytes(paths.credentialsDbPath, token)).toBe(false);
 			expect(credentials.listCredentialGrants()).toEqual([
-				expect.objectContaining({ prefix: "channel-review", lastUsedAt: null }),
+				expect.objectContaining({ prefix: "my-service", lastUsedAt: null }),
 			]);
 			expect(JSON.stringify(credentials.listCredentialGrants())).not.toContain(
 				token,
 			);
-			expect(credentials.verifyCredentialGrant("Channel-Review", token)).toBe(
+			expect(credentials.verifyCredentialGrant("My-Service", token)).toBe(
 				true,
 			);
 			expect(credentials.listCredentialGrants()[0].lastUsedAt).not.toBeNull();
 			expect(credentials.verifyCredentialGrant("other", token)).toBe(false);
 			expect(credentials.verifyCredentialGrant("not a prefix", token)).toBe(false);
 			expect(
-				credentials.verifyCredentialGrant("channel-review", `${token}x`),
+				credentials.verifyCredentialGrant("my-service", `${token}x`),
 			).toBe(false);
-			const rotated = credentials.createCredentialGrant("channel-review");
-			expect(credentials.verifyCredentialGrant("channel-review", token)).toBe(
+			const rotated = credentials.createCredentialGrant("my-service");
+			expect(credentials.verifyCredentialGrant("my-service", token)).toBe(
 				false,
 			);
-			expect(credentials.verifyCredentialGrant("channel-review", rotated)).toBe(
+			expect(credentials.verifyCredentialGrant("my-service", rotated)).toBe(
 				true,
 			);
-			expect(credentials.deleteCredentialGrant("channel-review")).toBe(true);
-			expect(credentials.deleteCredentialGrant("channel-review")).toBe(false);
-			expect(credentials.verifyCredentialGrant("channel-review", rotated)).toBe(
+			expect(credentials.deleteCredentialGrant("my-service")).toBe(true);
+			expect(credentials.deleteCredentialGrant("my-service")).toBe(false);
+			expect(credentials.verifyCredentialGrant("my-service", rotated)).toBe(
 				false,
 			);
 			expect(credentials.listCredentialGrants()).toEqual([]);

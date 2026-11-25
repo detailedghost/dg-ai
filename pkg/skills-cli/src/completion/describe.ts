@@ -59,11 +59,10 @@ function fromPw(specs: readonly PwSpecLike[], tabVerbs: readonly Command[]): Sha
 
 /** Subcommands and flags of the commands that parse their own arguments, read from each feature's own tables. */
 export async function shapes(): Promise<Record<string, Shape>> {
-	const [stat, config, credentials, channelReview, bg, db, jot, testLive, vcs, address, worktree, spec, adr, hooks, pw, tabVerbs] = await Promise.all([
+	const [stat, config, credentials, bg, db, jot, testLive, vcs, address, worktree, spec, adr, hooks, pw, tabVerbs] = await Promise.all([
 		import("../stat/cli"),
 		import("../config/cli"),
 		import("../credentials/cli"),
-		import("../channel-review/cli"),
 		import("../bg/jobs"),
 		import("../db"),
 		import("../jot"),
@@ -81,7 +80,6 @@ export async function shapes(): Promise<Record<string, Shape>> {
 		stat: fromSubtree(stat.registerStat),
 		config: fromSubtree(config.registerConfig),
 		credentials: fromSubtree((program) => credentials.registerCredentials(program)),
-		"channel-review": fromSubtree(channelReview.registerChannelReview),
 		bg: fromSpec(bg.bgSpec),
 		db: fromSpec(db.dbSpec),
 		jot: fromSpec(jot.jotSpec),

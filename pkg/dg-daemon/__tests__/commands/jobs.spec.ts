@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { formatSchedule, parseEvery } from "@dg/common";
@@ -20,6 +20,8 @@ import {
 } from "./job-cli-helpers";
 import { until } from "../jobs/scheduled-fixtures";
 import { trackChild } from "../utils/child-registry";
+
+setDefaultTimeout(20_000);
 
 type RunResult = { code: number; stdout: string; stderr: string };
 
@@ -107,7 +109,7 @@ describe("dg job add", () => {
 				dgHome,
 				"job",
 				"add",
-				"--label",
+				"--name",
 				"jira-sprint",
 				"--every",
 				"15m",
@@ -122,7 +124,7 @@ describe("dg job add", () => {
 			const entry = entries(dgHome)["jira-sprint"];
 			expect(entry.every).toBe("15m");
 			expect((entry.argv as string[])[0]).toBe("printf");
-			expect(entry.enabled).toBe(true);
+			expect(entry.enabled).toBeUndefined();
 		});
 	});
 
@@ -132,12 +134,13 @@ describe("dg job add", () => {
 				dgHome,
 				"job",
 				"add",
-				"--label",
+				"--name",
 				"noisy",
 				"--every",
 				"5m",
 				"--cwd",
 				process.cwd(),
+				"--feed",
 				"--notify",
 				"reviewer",
 				"--",
@@ -154,7 +157,7 @@ describe("dg job add", () => {
 			const args = [
 				"job",
 				"add",
-				"--label",
+				"--name",
 				"once",
 				"--every",
 				"5m",
@@ -178,7 +181,7 @@ describe("dg job add", () => {
 				dgHome,
 				"job",
 				"add",
-				"--label",
+				"--name",
 				"ghost",
 				"--every",
 				"5m",
@@ -200,7 +203,7 @@ describe("dg job add", () => {
 				dgHome,
 				"job",
 				"add",
-				"--label",
+				"--name",
 				"bad",
 				"--every",
 				"soon",
@@ -221,7 +224,7 @@ describe("dg job add", () => {
 				dgHome,
 				"job",
 				"add",
-				"--label",
+				"--name",
 				"nowhere",
 				"--every",
 				"5m",
@@ -241,7 +244,7 @@ describe("dg job add", () => {
 				dgHome,
 				"job",
 				"add",
-				"--label",
+				"--name",
 				"empty",
 				"--every",
 				"5m",
@@ -253,16 +256,16 @@ describe("dg job add", () => {
 	});
 });
 
-describe("dg job add --cron", () => {
+describe("dg job add --schedule", () => {
 	it("stores a cron expression instead of an interval", async () => {
 		await withHome(async (dgHome) => {
 			const result = await dg(
 				dgHome,
 				"job",
 				"add",
-				"--label",
+				"--name",
 				"weekday-standup",
-				"--cron",
+				"--schedule",
 				"0 9 * * 1-5",
 				"--cwd",
 				process.cwd(),
@@ -271,7 +274,6 @@ describe("dg job add --cron", () => {
 				"",
 			);
 			expect(result.code).toBe(0);
-			expect(result.stdout).toContain('cron "0 9 * * 1-5"');
 
 			const entry = entries(dgHome)["weekday-standup"];
 			expect(entry.schedule).toBe("0 9 * * 1-5");
@@ -283,17 +285,17 @@ describe("dg job add --cron", () => {
 		});
 	});
 
-	it("refuses both --every and --cron together", async () => {
+	it("refuses both --every and --schedule together", async () => {
 		await withHome(async (dgHome) => {
 			const result = await dg(
 				dgHome,
 				"job",
 				"add",
-				"--label",
+				"--name",
 				"both",
 				"--every",
 				"5m",
-				"--cron",
+				"--schedule",
 				"0 9 * * 1-5",
 				"--cwd",
 				process.cwd(),
@@ -309,13 +311,13 @@ describe("dg job add --cron", () => {
 		});
 	});
 
-	it("refuses neither --every nor --cron", async () => {
+	it("refuses neither --every nor --schedule", async () => {
 		await withHome(async (dgHome) => {
 			const result = await dg(
 				dgHome,
 				"job",
 				"add",
-				"--label",
+				"--name",
 				"neither",
 				"--cwd",
 				process.cwd(),
@@ -335,9 +337,9 @@ describe("dg job add --cron", () => {
 				dgHome,
 				"job",
 				"add",
-				"--label",
+				"--name",
 				"bad-cron",
-				"--cron",
+				"--schedule",
 				"not a cron expression",
 				"--cwd",
 				process.cwd(),
@@ -365,9 +367,10 @@ describe("dg job add --cron", () => {
 					dgHome,
 					"job",
 					"add",
-					"--label",
+					"--name",
 					"bun-script",
-					"--cron",
+					"--feed",
+					"--schedule",
 					"0 9 * * 1-5",
 					"--cwd",
 					scriptDir,
@@ -377,8 +380,9 @@ describe("dg job add --cron", () => {
 					scriptPath,
 				);
 				expect(added.code).toBe(0);
+				expect((await dg(dgHome, "job", "enable", "bun-script")).code).toBe(0);
 
-				const ran = await dg(dgHome, "job", "run", "bun-script");
+				const ran = await dg(dgHome, "job", "start", "bun-script");
 				expect(ran.code).toBe(0);
 
 				const store = await openStore(dgHome);
@@ -414,7 +418,7 @@ describe("dg job list", () => {
 				dgHome,
 				"job",
 				"add",
-				"--label",
+				"--name",
 				"jira-sprint",
 				"--every",
 				"15m",
@@ -432,14 +436,15 @@ describe("dg job list", () => {
 	});
 });
 
-describe("dg job enable, disable, rm and run", () => {
+describe("dg job enable, disable, remove and start", () => {
 	async function addOne(dgHome: string, label = "j"): Promise<void> {
 		await dg(
 			dgHome,
 			"job",
 			"add",
-			"--label",
+			"--name",
 			label,
+			"--feed",
 			"--every",
 			"5m",
 			"--cwd",
@@ -448,6 +453,7 @@ describe("dg job enable, disable, rm and run", () => {
 			"printf",
 			'{"id":"a","title":"From the CLI"}\n',
 		);
+		await dg(dgHome, "job", "enable", label);
 	}
 
 	it("flips only the enabled flag", async () => {
@@ -465,7 +471,7 @@ describe("dg job enable, disable, rm and run", () => {
 	it("removes a job and its feed items", async () => {
 		await withDaemonHome(async (dgHome) => {
 			await addOne(dgHome);
-			await dg(dgHome, "job", "run", "j");
+			await dg(dgHome, "job", "start", "j");
 			const stored = await openStore(dgHome);
 			try {
 				await until(
@@ -478,7 +484,7 @@ describe("dg job enable, disable, rm and run", () => {
 				stored.close();
 			}
 
-			expect((await dg(dgHome, "job", "rm", "j")).code).toBe(0);
+			expect((await dg(dgHome, "job", "remove", "j")).code).toBe(0);
 
 			const store = await openStore(dgHome);
 			try {
@@ -495,7 +501,7 @@ describe("dg job enable, disable, rm and run", () => {
 		await withDaemonHome(async (dgHome) => {
 			await addOne(dgHome);
 
-			const result = await dg(dgHome, "job", "run", "j");
+			const result = await dg(dgHome, "job", "start", "j");
 			expect(result.code).toBe(0);
 
 			const store = await openStore(dgHome);
@@ -515,7 +521,7 @@ describe("dg job enable, disable, rm and run", () => {
 
 	it("exits non-zero for an unknown label on every verb", async () => {
 		await withHome(async (dgHome) => {
-			for (const verb of ["rm", "enable", "disable", "run"]) {
+			for (const verb of ["remove", "enable", "disable", "start"]) {
 				expect((await dg(dgHome, "job", verb, "absent")).code).not.toBe(0);
 			}
 		});

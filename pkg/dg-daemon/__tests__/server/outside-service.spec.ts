@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CHAT_SERVICES_PATH } from "@dg/common";
+import { CHAT_JOBS_PATH } from "@dg/common";
 import { credentialGrantTokenPath, resolveDgPaths } from "@dg/common/node";
 import {
 	cleanupDgHome,
@@ -70,7 +70,7 @@ async function bootWithCredentials(minted: boolean) {
 }
 
 function serviceAction(port: number, verb: "start" | "stop") {
-	return fetch(`http://127.0.0.1:${port}${CHAT_SERVICES_PATH}/bot/${verb}`, {
+	return fetch(`http://127.0.0.1:${port}${CHAT_JOBS_PATH}/bot/${verb}`, {
 		method: "POST",
 		headers: { Host: `127.0.0.1:${port}`, ...ownerTokenHeader(port) },
 	});
@@ -78,12 +78,12 @@ function serviceAction(port: number, verb: "start" | "stop") {
 
 async function serviceStatus(port: number) {
 	const response = await fetch(
-		`http://127.0.0.1:${port}${CHAT_SERVICES_PATH}`,
+		`http://127.0.0.1:${port}${CHAT_JOBS_PATH}`,
 		{
 			headers: { Host: `127.0.0.1:${port}`, ...ownerTokenHeader(port) },
 		},
 	);
-	return (await response.json()).services[0] as {
+	return (await response.json()).jobs[0] as {
 		state: string;
 		restarts: number;
 	};

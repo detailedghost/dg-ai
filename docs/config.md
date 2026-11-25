@@ -176,7 +176,6 @@ These keep their own files, outside `config.toml`:
   `<data>/jobs/sources.json`. The daemon owns and locks them (ADR 0049).
 - The exec allowlist, `<config>/exec-allowlist`. It stays a separate 0600 file
   that only you edit.
-- Channel review config, `<config>/channel-review/config.json`.
 - Inbox route profiles, mappings and security files in the inbox config folder.
 
 ssms reads `[ssms]` only from the `config.toml` in the dg config folder under the
