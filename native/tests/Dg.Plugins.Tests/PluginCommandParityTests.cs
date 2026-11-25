@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
@@ -121,7 +122,7 @@ internal sealed partial class FixtureJson : JsonSerializerContext;
 
 internal sealed record CommandRun(string Stdout, string Stderr, int Exit, Dictionary<string, string> Files);
 
-internal sealed class TempHome : IDisposable
+internal sealed partial class TempHome : IDisposable
 {
     private static readonly string[] Skipped = ["sources", ".bun", ".cache"];
 
@@ -213,5 +214,12 @@ internal sealed class TempHome : IDisposable
     private string Strip(MemoryStream stream) => Redact(Encoding.UTF8.GetString(stream.ToArray()));
 
     private string Redact(string text) =>
-        text.Replace(Slashed, "<home>", StringComparison.Ordinal).Replace(Root, "<home>", StringComparison.Ordinal);
+        HomePath()
+            .Replace(
+                text.Replace(Slashed, "<home>", StringComparison.Ordinal).Replace(Root, "<home>", StringComparison.Ordinal),
+                static m => m.Value.Replace('\\', '/')
+            );
+
+    [GeneratedRegex(@"<home>(?:\\[\w.-]+)+")]
+    private static partial Regex HomePath();
 }

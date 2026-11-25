@@ -70,8 +70,12 @@ public sealed partial class RepoParityTests : IDisposable
         return [];
     }
 
-    private static string Normalize(string text, string root) =>
-        text.Replace(root, "<ROOT>", StringComparison.Ordinal);
+    private static string Normalize(string text, string root)
+    {
+        var replaced = text.Replace(root, "<ROOT>", StringComparison.Ordinal)
+            .Replace(root.Replace('\\', '/'), "<ROOT>", StringComparison.Ordinal);
+        return RootedPath().Replace(replaced, static m => m.Value.Replace('\\', '/'));
+    }
 
     private static string LogSection(IEnumerable<string> lines, string root)
     {
@@ -156,6 +160,9 @@ public sealed partial class RepoParityTests : IDisposable
         }
         return string.Concat(sections.Select(s => $"--- {s.Key}\n{s.Value}"));
     }
+
+    [GeneratedRegex(@"<ROOT>(?:\\[\w.-]+)+")]
+    private static partial Regex RootedPath();
 
     [GeneratedRegex(@"^daily-prune \S+")]
     private static partial Regex HeaderPattern();
