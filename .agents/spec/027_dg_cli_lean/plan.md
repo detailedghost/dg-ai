@@ -10,7 +10,7 @@ slices:
   - id: 1
     name: "lean-baseline"
     depends_on: []
-    files: ["scripts/ram-budget.ts","scripts/ram-budget/**","scripts/lean-size.ts","scripts/skill-tokens.ts","scripts/lean-budgets.json",".github/workflows/compiled-dg.yml","pkg/skills-test/__tests__/lean-*.spec.ts","docs/lean-baseline.md"]
+    files: ["scripts/ram-budget.ts","scripts/ram-budget/**","scripts/lean-size.ts","scripts/skill-tokens.ts","scripts/lean-budgets.json","scripts/skill-token-budgets.json",".github/workflows/compiled-dg.yml","pkg/skills-test/__tests__/lean-*.spec.ts","docs/lean-baseline.md"]
     agents:
       primary: dg:devops
       confidence: high
@@ -25,8 +25,8 @@ slices:
       qa: [dg:qa-perf]
   - id: 3
     name: "hot-path-latency"
-    depends_on: [2]
-    files: ["pkg/launcher/src/**","pkg/launcher/__tests__/dispatch*.spec.ts","pkg/dg/src/**","pkg/dg/__tests__/**","pkg/skills-cli/src/hooks/cli.ts","pkg/skills-cli/src/hooks/run.ts","pkg/skills-cli/src/hooks/io.ts","pkg/skills-cli/__tests__/hooks-fast-path*.spec.ts"]
+    depends_on: [1,2]
+    files: ["pkg/launcher/build.ts","scripts/lean-budgets.json","pkg/launcher/src/**","pkg/launcher/__tests__/dispatch*.spec.ts","pkg/dg/src/**","pkg/dg/__tests__/**","pkg/skills-cli/src/hooks/cli.ts","pkg/skills-cli/src/hooks/run.ts","pkg/skills-cli/src/hooks/io.ts","pkg/skills-cli/__tests__/hooks-fast-path*.spec.ts"]
     agents:
       primary: dg:js
       confidence: high
@@ -34,7 +34,7 @@ slices:
   - id: 4
     name: "release-download"
     depends_on: [1,3]
-    files: [".github/workflows/release.yml","pkg/skills-cli/src/utils/lib.ts","pkg/skills-cli/src/install/compiled.ts","pkg/skills-cli/src/install/companion*.ts","pkg/skills-cli/bootstrap.sh","pkg/skills-cli/bootstrap.ps1","pkg/skills-cli/__tests__/install-*.spec.ts","pkg/skills-cli/__tests__/bootstrap-*.spec.ts","pkg/skills-test/__tests__/release-*.spec.ts","pkg/skills-test/__tests__/bootstrap-asset-selection.spec.ts","pkg/launcher/build.ts"]
+    files: [".github/workflows/release.yml","pkg/skills-cli/src/utils/lib.ts","pkg/skills-cli/src/install/compiled.ts","pkg/skills-cli/src/install/companion*.ts","pkg/skills-cli/bootstrap.sh","pkg/skills-cli/bootstrap.ps1","pkg/skills-cli/__tests__/install-*.spec.ts","pkg/skills-cli/__tests__/bootstrap-*.spec.ts","pkg/skills-test/__tests__/release-*.spec.ts","pkg/skills-test/__tests__/bootstrap-asset-selection.spec.ts","pkg/launcher/build.ts","scripts/lean-budgets.json"]
     agents:
       primary: dg:js
       confidence: high
@@ -42,8 +42,8 @@ slices:
       qa: [dg:qa-devops, dg:security]
   - id: 5
     name: "skill-diet"
-    depends_on: []
-    files: ["plugins/dg/skills/**","pkg/skills-test/__tests__/skill-size-cap.spec.ts"]
+    depends_on: [1]
+    files: ["plugins/dg/skills/**","scripts/skill-token-budgets.json","pkg/skills-test/__tests__/skill-size-cap.spec.ts"]
     agents:
       primary: dg:lore
       confidence: high
@@ -51,7 +51,7 @@ slices:
   - id: 6
     name: "browser-ext-default-flag"
     depends_on: []
-    files: ["pkg/skills-cli/src/pw/cli.ts","pkg/skills-cli/src/pw/core/dispatch.ts","pkg/skills-cli/src/pw/core/spec.ts","pkg/skills-cli/src/pw/browser-mode.ts","pkg/skills-cli/__tests__/pw-browser-mode*.spec.ts"]
+    files: ["pkg/skills-cli/src/pw/cli.ts","pkg/skills-cli/src/pw/core/dispatch.ts","pkg/skills-cli/src/pw/core/spec.ts","pkg/skills-cli/src/pw/browser-mode.ts","pkg/skills-cli/__tests__/pw-browser-mode*.spec.ts","pkg/common/src/node/dg-toml.ts","pkg/common/__tests__/dg-toml.spec.ts"]
     agents:
       primary: dg:js
       confidence: high
@@ -119,15 +119,15 @@ Make the dg CLI fast and lean. Cut hot-path latency (hooks run on every agent to
 - [ ] Extend scripts/ram-budget.ts (do not add a sibling harness) with latency cases for dg --version, dg completion, dg agent phone status and dg stat, each with p50 and p90 and an msBudget
 - [ ] Add scripts/lean-size.ts: size of each compiled target, plus gzip -9 and zstd -19 --long=27 size, plus zstd --patch-from delta against the previous release asset
 - [ ] Add scripts/skill-tokens.ts: bytes/4 token estimate per SKILL.md, per reference file, per named flow (spec-plan, spec-exec, phone, stat, thrash, verify, review-loop, jot) and for the always-loaded frontmatter descriptions
-- [ ] Store every budget in scripts/lean-budgets.json; budgets start at the measured 2026-11-24 baseline plus 5 percent
+- [ ] Store size and latency budgets in scripts/lean-budgets.json and skill-token budgets in scripts/skill-token-budgets.json; budgets start at the measured 2026-11-24 baseline plus 5 percent
 - [ ] Wire size and latency gates into .github/workflows/compiled-dg.yml on linux-x64; report-only on other targets
 - [ ] Write docs/lean-baseline.md with the baseline tables and how to re-run
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: scripts/lean-budgets.json shape is { size: { [target]: { rawBytes, zstdBytes } }, latencyMs: { [case]: { p50, p90 } }, skillTokens: { perFlow: { [flow]: number }, descriptions: number } }
+- [ ] Contract: scripts/lean-budgets.json shape is { size: { [target]: { rawBytes, zstdBytes } }, latencyMs: { [case]: { p50, p90 } } }; scripts/skill-token-budgets.json shape is { perFlow: { [flow]: number }, descriptions: number }
 - [ ] Contract: scripts/lean-size.ts --json prints the same keys as lean-budgets.json size; --gate exits 1 when a value exceeds its budget
-- [ ] Contract: scripts/skill-tokens.ts --json prints the skillTokens keys; --gate exits 1 on any overrun
+- [ ] Contract: scripts/skill-tokens.ts --json prints the skill-token-budgets.json keys; --gate exits 1 on any overrun
 - [ ] Unit test: the gate logic flags an overrun and passes an equal value
 - [ ] Unit test: flow definitions list only files that exist
 
@@ -207,7 +207,7 @@ Make the dg CLI fast and lean. Cut hot-path latency (hooks run on every agent to
 ##### Contracts
 - [ ] Contract: skill-size-cap.spec.ts reads the cap from one constant and reports each file over it with its size
 - [ ] Regression: all pkg/skills-test skill guards pass
-- [ ] Gate: slice 1 skill-token budgets lowered to the new values
+- [ ] Gate: scripts/skill-token-budgets.json lowered to the new values
 
 #### Acceptance Criteria
 - [ ] Given the slice is merged, when skill-tokens.ts runs, then descriptions are at most 2.5k tokens and the phone flow at most 4k tokens (baseline 9.5k)
@@ -372,6 +372,15 @@ Floors from the study (`/home/detailedghost/.claude/jobs/778a7bca/tmp/lang/resul
 | E: full port incl. browser and db | 5-15 MB | 2-6 MB / <1 MB | 3-5 ms | 2-15 MB | 11-18 eng-months | very high: no official Rust MSAL or Snowflake driver; pw feature loss |
 
 Download in option D shrinks only at the final flip: while any command still needs the Bun core, every user downloads it. Stages cut latency and RAM early; they cut download only at the end.
+
+### CI build cost per option (extra runner minutes, not a blocker)
+
+Bun builds all 8 targets from one Linux runner today; release.yml already runs smoke tests on ubuntu x64 and arm64, macos-15 and macos-15-intel, windows x64 and arm64.
+
+- A: no change.
+- B, C, D with Rust: Linux and Windows targets cross-compile from Linux; macOS needs cargo-zigbuild with the Apple SDK or the existing macOS runners. About +10-20 macOS runner minutes per release.
+- D or E with C# NativeAOT: Microsoft Learn states "Native AOT does not support cross-OS compilation"; cross-architecture on the same OS works with a native toolchain. PublishAotCross (Zig linker) covers Linux only. A build job on Linux, Windows and macOS runners for the 8 targets: about +30-60 runner minutes per release, macOS minutes billed at 10x. Non-AOT .NET publish cross-compiles but loses the size and startup gain.
+- Zig: cross-compiles every target from one Linux runner, the best of the native options.
 
 ### Browser automation (dg pw) row per option
 

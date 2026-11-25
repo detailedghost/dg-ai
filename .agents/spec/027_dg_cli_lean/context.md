@@ -6,8 +6,8 @@ version: "1.0"
 status: "draft"
 current_slice: 0
 pr_strategy: "single"
-bundle: "/home/detailedghost/code/worktrees/dg-ai-spec-027/.agents/spec/027_dg_cli_lean/."
-plan_path: "/home/detailedghost/code/worktrees/dg-ai-spec-027/.agents/spec/027_dg_cli_lean/./plan.md"
+bundle: "/home/detailedghost/code/worktrees/dg-ai-spec-027/.agents/spec/027_dg_cli_lean"
+plan_path: "/home/detailedghost/code/worktrees/dg-ai-spec-027/.agents/spec/027_dg_cli_lean/plan.md"
 slices:
   - id: 1
     name: "lean-baseline"
@@ -18,6 +18,7 @@ slices:
       - "scripts/lean-size.ts"
       - "scripts/skill-tokens.ts"
       - "scripts/lean-budgets.json"
+      - "scripts/skill-token-budgets.json"
       - ".github/workflows/compiled-dg.yml"
       - "pkg/skills-test/__tests__/lean-*.spec.ts"
       - "docs/lean-baseline.md"
@@ -46,8 +47,11 @@ slices:
   - id: 3
     name: "hot-path-latency"
     depends_on:
+      - 1
       - 2
     files:
+      - "pkg/launcher/build.ts"
+      - "scripts/lean-budgets.json"
       - "pkg/launcher/src/**"
       - "pkg/launcher/__tests__/dispatch*.spec.ts"
       - "pkg/dg/src/**"
@@ -78,6 +82,7 @@ slices:
       - "pkg/skills-test/__tests__/release-*.spec.ts"
       - "pkg/skills-test/__tests__/bootstrap-asset-selection.spec.ts"
       - "pkg/launcher/build.ts"
+      - "scripts/lean-budgets.json"
     agents:
       primary: "dg:js"
       effort: "xhigh"
@@ -86,9 +91,11 @@ slices:
         - "dg:security"
   - id: 5
     name: "skill-diet"
-    depends_on: []
+    depends_on:
+      - 1
     files:
       - "plugins/dg/skills/**"
+      - "scripts/skill-token-budgets.json"
       - "pkg/skills-test/__tests__/skill-size-cap.spec.ts"
     agents:
       primary: "dg:lore"
@@ -103,6 +110,8 @@ slices:
       - "pkg/skills-cli/src/pw/core/spec.ts"
       - "pkg/skills-cli/src/pw/browser-mode.ts"
       - "pkg/skills-cli/__tests__/pw-browser-mode*.spec.ts"
+      - "pkg/common/src/node/dg-toml.ts"
+      - "pkg/common/__tests__/dg-toml.spec.ts"
     agents:
       primary: "dg:js"
       qa:
