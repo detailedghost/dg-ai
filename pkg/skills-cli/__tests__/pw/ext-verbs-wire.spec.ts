@@ -117,6 +117,7 @@ describe("pw auto mode with a paired extension", () => {
 		try {
 			for (const argv of [
 				["goto", "https://x.test/"],
+				["open", "https://x.test/"],
 				["click", "e1"],
 				["fill", "e1", "hello"],
 				["go-back"],
@@ -129,6 +130,7 @@ describe("pw auto mode with a paired extension", () => {
 				expect(env.stdout).toEqual(["### Result\ndone"]);
 			}
 			expect(r.requests().map((request) => request.verb)).toEqual([
+				"open",
 				"open",
 				"click",
 				"fill",

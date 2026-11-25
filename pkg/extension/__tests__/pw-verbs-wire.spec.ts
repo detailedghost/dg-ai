@@ -19,6 +19,7 @@ type Options = {
 	siteAnswer?: "allow" | "deny";
 	approveSite?: boolean;
 	flagged?: boolean;
+	flagOnAllow?: boolean;
 	script?: (details: { func?: { name?: string }; args: unknown[] }) => unknown;
 	secrets?: string[];
 };
@@ -48,6 +49,7 @@ async function harness(options: Options = {}) {
 	if (options.approveSite) await control.allow(SESSION, "https://example.test");
 	const asked: ApprovalRequest[] = [];
 	const siteAsked: string[] = [];
+	let phi = options.flagged === true;
 	const grants = createUnmaskGrants({ storage });
 	for (const secret of options.secrets ?? []) await grants.reserve(SESSION, secret);
 	const lock = createLock();
@@ -69,10 +71,11 @@ async function harness(options: Options = {}) {
 				siteAsked.push(siteKey);
 				const answer = options.siteAnswer ?? "deny";
 				if (answer === "allow") await control.allow(sessionId, siteKey);
+				if (answer === "allow" && options.flagOnAllow) phi = true;
 				return answer;
 			},
 			assertCaptureAllowed: async (_session, url) => {
-				if (options.flagged) throw new PhiCaptureRefusedError(new URL(url).host);
+				if (phi) throw new PhiCaptureRefusedError(new URL(url).host);
 			},
 		},
 	});
@@ -195,6 +198,14 @@ describe("registered verb modules", () => {
 		expect(await h.run({ verb: "resize", width: 800, height: 600 })).toMatchObject({ ok: true });
 		expect(h.siteAsked).toEqual([]);
 		expect(h.calls[0]).toStartWith(`resize:${WINDOW}`);
+	});
+
+	it.each(["snapshot", "screenshot"] as const)("refuses the first %s when the person flags the site as PHI in the allow prompt", async (verb) => {
+		const h = await harness({ siteAnswer: "allow", flagOnAllow: true });
+		const result = await h.run({ verb });
+		expect(result).toMatchObject({ ok: false, error: expect.stringContaining("PHI") });
+		expect(h.siteAsked).toEqual(["https://example.test"]);
+		expect(h.scriptRuns()).toBe(0);
 	});
 
 	it.each(["snapshot", "screenshot"] as const)("refuses %s on a site flagged as PHI before any capture", async (verb) => {

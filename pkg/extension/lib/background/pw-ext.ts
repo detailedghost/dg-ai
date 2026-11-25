@@ -1881,10 +1881,6 @@ export function createPwExtHandler({
 			throw new Refusal(NO_TAB);
 		}
 		await guard(request.verb, tab, request.tool);
-		if (siteAllow && CAPTURE_VERBS.has(request.verb))
-			await siteAllow.assertCaptureAllowed(context.sessionId, tab.url as string).catch((error: unknown) => {
-				throw error instanceof PhiCaptureRefusedError ? new Refusal(error.message) : error;
-			});
 		if (!NO_SITE_ASK.has(request.verb)) {
 			if (!WEB_MCP_VERBS.has(request.verb))
 				await allowSite(request.verb === "open" ? request.url : tab.url, context, signal, verb);
@@ -1894,6 +1890,10 @@ export function createPwExtHandler({
 			if (live.url !== tab.url)
 				throw new Refusal("The page changed while the site question was open; nothing ran. Retry.");
 		}
+		if (siteAllow && CAPTURE_VERBS.has(request.verb))
+			await siteAllow.assertCaptureAllowed(context.sessionId, tab.url as string).catch((error: unknown) => {
+				throw error instanceof PhiCaptureRefusedError ? new Refusal(error.message) : error;
+			});
 		tab.signal = signal;
 		if (signal.aborted) return CANCELED;
 		return run(request, tab, context, signal);
