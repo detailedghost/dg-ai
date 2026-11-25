@@ -2,6 +2,8 @@ import { existsSync, mkdtempSync, readFileSync, renameSync } from "node:fs";
 import { basename, join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { parseManifest, permissionReport, type PluginManifest } from "../../../common/src/plugins/manifest";
+import { SKILL_NAME } from "../install/recommended-skills-only";
+import { registerOnHosts, unregisterFromHosts } from "./hosts";
 import { type Pin, stageSource } from "./source";
 import {
 	assertName,
@@ -32,7 +34,6 @@ export type VerifyReport = {
 	unenforced: string[];
 };
 
-const SKILL_NAME = /^[a-z0-9][a-z0-9-]*$/;
 const MANIFEST_FILE = "plugin.toml";
 
 type SkillDir = { name: string; prefix: string };
@@ -70,6 +71,7 @@ function unload(name: string, env: Env): void {
 }
 
 function disableAndUnload(name: string, env: Env): void {
+	unregisterFromHosts(name, env);
 	unload(name, env);
 	if (isEnabled(name, env)) writeEnabled(name, false, env);
 }
@@ -88,6 +90,11 @@ function load(record: PluginRecord, env: Env): void {
 	removeFolder(target);
 	const files = listTree(src);
 	for (const skill of skillDirs(files, record.name)) copyTree(src, join(target, skill.name), files, skill.prefix);
+}
+
+function syncHosts(record: PluginRecord, env: Env): void {
+	if (isEnabled(record.name, env) && isApproved(record, env)) registerOnHosts(record.name, join(pluginFolder(record.name, env), "skills"), env);
+	else unregisterFromHosts(record.name, env);
 }
 
 function notApproved(name: string): DgCliError {
@@ -128,6 +135,7 @@ export function addPlugin(input: { source: string; pin?: Pin; name?: string }, e
 
 export function removePlugin(name: string, env: Env = process.env): void {
 	readRecord(name, env);
+	unregisterFromHosts(name, env);
 	removeFolder(pluginFolder(name, env));
 	removeSection(name, env);
 }
@@ -135,6 +143,10 @@ export function removePlugin(name: string, env: Env = process.env): void {
 export function setPluginEnabled(name: string, enabled: boolean, env: Env = process.env): void {
 	const record = readRecord(name, env);
 	if (enabled && !isApproved(record, env)) throw notApproved(name);
+	if (enabled) {
+		load(record, env);
+		registerOnHosts(name, join(pluginFolder(name, env), "skills"), env);
+	} else unregisterFromHosts(name, env);
 	writeEnabled(name, enabled, env);
 }
 
@@ -155,7 +167,10 @@ export function updatePlugin(name: string, input: { pin?: Pin } = {}, env: Env =
 		const next: PluginRecord = { ...record, pin: staged.pin, treeSha256: staged.treeSha256, approvedSha256: changed ? null : record.approvedSha256 };
 		writeRecord(next, env);
 		if (changed) disableAndUnload(name, env);
-		else if (isApproved(next, env)) load(next, env);
+		else if (isApproved(next, env)) {
+			load(next, env);
+			syncHosts(next, env);
+		}
 		return { name, changed, approved: isApproved(next, env), pin: staged.pin };
 	} finally {
 		removeFolder(staging);
@@ -177,6 +192,7 @@ export function verifyPlugin(name: string, input: { approve: boolean }, env: Env
 		record = { ...record, approvedSha256: record.treeSha256 };
 		writeRecord(record, env);
 		load(record, env);
+		syncHosts(record, env);
 	}
 	const manifest = readManifest(src);
 	const permissions = manifest === undefined ? { enforced: [], unenforced: [] } : permissionReport(manifest);

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveDgPaths } from "@dg/common/node/dg-paths";
 import { addPlugin, removePlugin, setPluginEnabled, updatePlugin, verifyPlugin } from "../src/plugin/lifecycle";
 
 let root: string;
@@ -131,7 +132,7 @@ describe("host registration", () => {
 		expect(() => setPluginEnabled("notes", true, env)).toThrow(/did not register/);
 		expect(readFileSync(join(claudeSkill("release-notes"), "SKILL.md"), "utf8")).toBe("mine\n");
 		expect(existsSync(codexSkill("release-notes"))).toBe(false);
-		expect(readFileSync(join(root, "dg", "config.toml"), "utf8")).toMatch(/enabled = false/);
+		expect(readFileSync(resolveDgPaths({ env }).configTomlPath, "utf8")).toMatch(/enabled = false/);
 	});
 
 	test("unregistering leaves skills that other plugins or the user own", () => {

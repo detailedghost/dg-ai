@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
+import { gitBinary, git as runGit } from "../install/recommended-skills-only";
 import { copyTree, hashTree, listTree } from "./tree";
 
 export type Pin = { kind: "sha256" | "commit"; value: string };
@@ -8,23 +9,15 @@ export type Staged = { dir: string; files: string[]; treeSha256: string; pin: Pi
 
 const COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const SHA256 = /^[0-9a-f]{64}$/;
-const REPO_LOCATION_VARS = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX"];
-
-function gitEnv(): Record<string, string> {
-	const env: Record<string, string> = {};
-	for (const [key, value] of Object.entries(process.env)) if (value !== undefined && !REPO_LOCATION_VARS.includes(key)) env[key] = value;
-	return { ...env, GIT_TERMINAL_PROMPT: "0", GIT_LFS_SKIP_SMUDGE: "1" };
-}
 
 function git(cwd: string, args: string[]): string {
-	const binary = Bun.which("git");
-	if (!binary) throw new DgCliError("dg plugin: git was not found. Next: install git, or add a plain folder instead.");
-	const run = Bun.spawnSync([binary, "-c", "protocol.ext.allow=never", "-c", "core.hooksPath=/dev/null", ...args], { cwd, env: gitEnv() });
-	if (run.exitCode !== 0) {
-		const reason = run.stderr.toString().trim().split("\n")[0] ?? "";
+	try {
+		return runGit(gitBinary(), cwd, args).trim();
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+		if (reason === "git not found") throw new DgCliError("dg plugin: git was not found. Next: install git, or add a plain folder instead.");
 		throw new DgCliError(`dg plugin: git ${args[0]} failed: ${reason}. Next: check the source and run the command again.`);
 	}
-	return run.stdout.toString().trim();
 }
 
 /** Parses `commit:<hex>` or `sha256:<hex>`. */
