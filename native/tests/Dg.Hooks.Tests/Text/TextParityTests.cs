@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using System.Text;
 using Dg.Core.Output;
 using Dg.Hooks.Defs.Text;
@@ -5,6 +6,8 @@ using Dg.Hooks.Engine;
 
 namespace Dg.Hooks.Tests.Text;
 
+[SupportedOSPlatform("linux")]
+[SupportedOSPlatform("macos")]
 public sealed class TextParityTests
 {
     public static TheoryData<string> SpellingNames => TextFixtureCase.Names("spelling");

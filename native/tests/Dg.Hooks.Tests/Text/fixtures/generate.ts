@@ -92,10 +92,12 @@ function snapshot(root: string): string {
 	return out.join("");
 }
 
+const scratchBase = /(^|\/)\.(claude|agents|opencode)(\/|$)/.test(tmpdir()) ? "/tmp" : tmpdir();
+
 const cases: Case[] = JSON.parse(readFileSync(join(dir, "cases.json"), "utf8"));
 
 async function runCase(entry: Case) {
-	const root = realpathSync(mkdtempSync(join(tmpdir(), "dg-hooks-text-")));
+	const root = realpathSync(mkdtempSync(join(scratchBase, "dg-hooks-text-")));
 	try {
 		const sub = (text: string): string => text.split("<ROOT>").join(root);
 		mkdirs(join(root, "bin"));

@@ -1,9 +1,12 @@
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Runtime.Versioning;
 using System.Text.Json;
 
 namespace Dg.Hooks.Tests.Text;
 
+[SupportedOSPlatform("linux")]
+[SupportedOSPlatform("macos")]
 internal sealed class TextFixtureCase
 {
     private const string Placeholder = "<ROOT>";
@@ -122,7 +125,16 @@ internal sealed class TextFixtureCase
 
     private static string Directory_Create()
     {
-        var path = System.IO.Directory.CreateTempSubdirectory("dg-hooks-text-");
+        var temp = Path.GetTempPath();
+        var tempBase = temp.Contains("/.claude/", StringComparison.Ordinal)
+            || temp.Contains("/.agents/", StringComparison.Ordinal)
+            || temp.Contains("/.opencode/", StringComparison.Ordinal)
+            ? "/tmp"
+            : temp;
+        var path = System.IO.Directory.CreateDirectory(
+            Path.Combine(tempBase, $"dg-hooks-text-{Guid.NewGuid():N}"),
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+        );
         return path.ResolveLinkTarget(true)?.FullName ?? path.FullName;
     }
 
