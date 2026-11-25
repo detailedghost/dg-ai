@@ -460,7 +460,13 @@ function createV12ChannelReview(db: Database): void {
 		FROM channel_review_state WHERE json_type(state_json, '$.current') = 'object'`);
 }
 
-export const CHANNEL_REVIEW_SCHEMA_VERSION = 12;
+function createV15DropChannelReview(db: Database): void {
+	db.run("DROP VIEW channel_review_requests");
+	db.run("DROP VIEW channel_review_current");
+	db.run("DROP TABLE channel_review_state");
+}
+
+const CHANNEL_REVIEW_SCHEMA_VERSION = 12;
 
 export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 1, run: createV1Tables },
@@ -477,6 +483,7 @@ export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: CHANNEL_REVIEW_SCHEMA_VERSION, run: createV12ChannelReview },
 	{ version: 13, run: createV13DropAwaitingAgent },
 	{ version: 14, run: createV14ScheduledMove },
+	{ version: 15, run: createV15DropChannelReview },
 ];
 
 export const CURRENT_SCHEMA_VERSION =
