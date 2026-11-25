@@ -16,6 +16,7 @@ public sealed class IpcTransportTests
     [Fact]
     public async Task SendAsync_ManyConcurrentCalls_ShareOneConnectionAndMatchResponsesById()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows dials a named pipe, and the echo server listens on a Unix socket");
         await using var server = new EchoPluginServer();
         await using var pool = PoolFor(server);
         var connection = await pool.GetAsync("echo", CancellationToken.None);
@@ -46,6 +47,7 @@ public sealed class IpcTransportTests
     [Fact]
     public async Task GetAsync_SecondCall_ReusesWarmConnection()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows dials a named pipe, and the echo server listens on a Unix socket");
         await using var server = new EchoPluginServer();
         await using var pool = PoolFor(server);
 
@@ -60,6 +62,7 @@ public sealed class IpcTransportTests
     [Fact]
     public async Task GetAsync_AfterServerDropsConnection_Reconnects()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows dials a named pipe, and the echo server listens on a Unix socket");
         await using var server = new EchoPluginServer();
         await using var pool = PoolFor(server);
         var first = await pool.GetAsync("echo", CancellationToken.None);
@@ -94,6 +97,7 @@ public sealed class IpcTransportTests
     [Fact]
     public async Task SendAsync_Canceled_ThrowsAndConnectionStaysUsable()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows dials a named pipe, and the echo server listens on a Unix socket");
         await using var server = new EchoPluginServer();
         await using var pool = PoolFor(server);
         var connection = await pool.GetAsync("echo", CancellationToken.None);
@@ -124,6 +128,7 @@ public sealed class IpcTransportTests
     [Fact]
     public async Task ConnectAsync_MissingSocket_IsRefusedWithNextStep()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows dials a named pipe, and the echo server listens on a Unix socket");
         var connector = new IpcConnector(new FixedResolver(Path.Combine(Path.GetTempPath(), "dg-missing-" + Guid.NewGuid().ToString("N"))));
 
         var ex = await Assert.ThrowsAsync<DgException>(async () => await connector.ConnectAsync("echo", CancellationToken.None));
