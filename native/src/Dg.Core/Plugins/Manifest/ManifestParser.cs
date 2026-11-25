@@ -81,6 +81,8 @@ public static partial class ManifestParser
             var kindText = OneOf("kind", Get(root, "kind"), Kinds);
             var entry = ReadEntry(Get(root, "entry"));
             var transportText = OneOf("transport", Get(root, "transport"), Transports, "ipc");
+            if (kindText == "hook" && transportText == "udp")
+                throw Fail("transport", "a hook cannot use the udp transport; udp carries events only, never request and response");
             var endpoint = OptionalString("endpoint", Get(root, "endpoint"));
             var remoteRaw = Get(root, "remote");
             if (remoteRaw is not null and not bool)

@@ -5,6 +5,7 @@
 	"bad-version.toml": { "line": 2, "key": "version", "includes": "semantic version" },
 	"missing-entry.toml": { "line": 1, "key": "entry", "includes": "entry is required" },
 	"entry-both.toml": { "line": 5, "key": "entry", "includes": "exactly one of builtin or command" },
+	"udp-hook.toml": { "line": 4, "key": "transport", "includes": "events only" },
 	"unknown-transport.toml": { "line": 4, "key": "transport", "includes": "ipc, http, tcp, udp" },
 	"http-no-endpoint.toml": { "line": 4, "key": "endpoint", "includes": "endpoint is required" },
 	"unknown-key.toml": { "line": 4, "key": "colour", "includes": "not a plugin.toml key" },

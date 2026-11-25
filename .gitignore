@@ -26,3 +26,4 @@ mutation.json
 .no-local-zone.local
 native/**/bin/
 native/**/obj/
+native/**/publish/

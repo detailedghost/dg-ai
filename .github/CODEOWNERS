@@ -3,4 +3,4 @@
 /.github/CODEOWNERS @detailedghost
 /scripts/*budgets.json @detailedghost
 /native/budgets/ @detailedghost
-/bench/budgets/ @detailedghost
+/native/bench/Dg.Bench/budgets/ @detailedghost

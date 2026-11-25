@@ -205,7 +205,7 @@ describe("proto skill local mode", () => {
 		);
 		expect(skill).not.toMatch(/^requires:/m);
 		const ext = flagsTable(skill).find((row) => row[0]?.includes("`--ext`"));
-		expect(ext?.[3]).toMatch(/off \(local is the default\)/);
+		expect(ext?.[3]).toMatch(/^off\b/);
 		expect(skill).toMatch(/Plain `\/dg:proto` runs the \*\*local mode\*\*/);
 	});
 

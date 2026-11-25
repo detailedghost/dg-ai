@@ -26,7 +26,7 @@ If a step fails, run dg doctor pw pw-code batch-open launch install stash creden
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
-| `--ext` | | Force the human's real browser through the paired dg-ai-extension. See "Real browser". | off (local is the default) except in `auto` with a paired extension |
+| `--ext` | | Force the human's real browser through the paired dg-ai-extension. See "Real browser". | off; `auto` mode uses a paired extension without it |
 | `--local` | | Force the Playwright browser that dg starts. | off |
 
 ## Calling rules

@@ -75,6 +75,30 @@ jobs:
           done
           exit 0
 
+      - name: Download the bench measurements from the native-bench run for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          run_id=$(gh run list --workflow native-bench.yml --commit "$HEAD_SHA" --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$run_id" ]; then
+            echo "No native-bench run for this commit; the bench budgets have no measurements."
+            exit 0
+          fi
+          deadline=$((SECONDS + 600))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            state=$(gh run view "$run_id" --json status --jq .status)
+            [ "$state" = "completed" ] && break
+            sleep 20
+          done
+          mkdir -p bench-measurements
+          gh run download "$run_id" --pattern 'bench-measurements-*' --dir bench-measurements \
+            || echo "The native-bench run uploaded no bench measurements."
+          for file in bench-measurements/*/*.json; do
+            [ -f "$file" ] && cp "$file" budget-measurements/
+          done
+          exit 0
+
       - name: Diff module sizes between the base and head reports
         run: |
           base=budget-measurements/size-report-base.json

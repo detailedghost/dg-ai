@@ -22,6 +22,7 @@ public sealed class ManifestParserTests
         "remote-plain-http.toml\tdg plugin: remote-plain-http.toml:5: a remote endpoint must use https. Next: fix endpoint in remote-plain-http.toml, then run dg plugin verify.",
         "skill-unpinned.toml\tdg plugin: skill-unpinned.toml:1: a skill or a plugin with a source must be pinned by sha256 or commit. Next: fix sha256 in skill-unpinned.toml, then run dg plugin verify.",
         "two-pins.toml\tdg plugin: two-pins.toml:6: set only one of sha256 or commit. Next: fix commit in two-pins.toml, then run dg plugin verify.",
+        "udp-hook.toml\tdg plugin: udp-hook.toml:4: a hook cannot use the udp transport; udp carries events only, never request and response. Next: fix transport in udp-hook.toml, then run dg plugin verify.",
         "unknown-key.toml\tdg plugin: unknown-key.toml:4: colour is not a plugin.toml key; the keys are name, version, kind, transport, endpoint, remote, source, sha256, commit, entry, capabilities, permissions. Next: fix colour in unknown-key.toml, then run dg plugin verify.",
         "unknown-kind.toml\tdg plugin: unknown-kind.toml:3: kind must be one of hook, job, skill, got \"widget\". Next: fix kind in unknown-kind.toml, then run dg plugin verify.",
         "unknown-transport.toml\tdg plugin: unknown-transport.toml:4: transport must be one of ipc, http, tcp, udp, got \"smoke\". Next: fix transport in unknown-transport.toml, then run dg plugin verify.",
