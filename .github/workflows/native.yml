@@ -1,0 +1,112 @@
+---
+name: Native dg - AOT Build and Test
+
+on:
+  pull_request:
+    paths:
+      - native/**
+      - scripts/native-*.ts
+      - pkg/skills-cli/src/completion/**
+      - .github/workflows/native.yml
+  workflow_dispatch:
+
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: native-${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+          - os: windows-latest
+            rid: win-x64
+          - os: windows-11-arm
+            rid: win-arm64
+          - os: macos-15-intel
+            rid: osx-x64
+          - os: macos-15
+            rid: osx-arm64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up the .NET SDK from native/global.json
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: native/global.json
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.1
+
+      - name: Install the Bun dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Generate the route table when its script exists
+        run: |
+          if [ -f scripts/native-routes.ts ]; then
+            bun scripts/native-routes.ts
+          else
+            echo "scripts/native-routes.ts is not present yet; skipping"
+          fi
+
+      - name: Generate the completion copy when its script exists
+        run: |
+          if [ -f scripts/native-completion.ts ]; then
+            bun scripts/native-completion.ts
+          else
+            echo "scripts/native-completion.ts is not present yet; skipping"
+          fi
+
+      - name: Run the native tests
+        run: dotnet test native/Dg.slnx -c Release
+
+      - name: Publish the NativeAOT binary with AOT and trim warnings as errors
+        run: >
+          dotnet publish native/src/Dg.Cli
+          -r ${{ matrix.rid }}
+          -c Release
+          -o native/publish/${{ matrix.rid }}
+          -p:TreatWarningsAsErrors=true
+          -p:EnableTrimAnalyzer=true
+          -p:EnableAotAnalyzer=true
+          -p:EnableSingleFileAnalyzer=true
+
+      - name: Report the binary size and check that it runs
+        env:
+          RID: ${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+          binary="native/publish/${RID}/dg"
+          if [ "${RUNNER_OS}" = Windows ]; then
+            binary="${binary}.exe"
+          fi
+          size="$(wc -c < "$binary" | tr -d ' ')"
+          echo "dg-${RID}: ${size} bytes"
+          echo "dg-${RID}: ${size} bytes" >> "$GITHUB_STEP_SUMMARY"
+          "$binary" --version
+
+      - name: Upload the binary
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-dg-${{ matrix.rid }}
+          path: |
+            native/publish/${{ matrix.rid }}/dg
+            native/publish/${{ matrix.rid }}/dg.exe
+          if-no-files-found: error
+          retention-days: 7
