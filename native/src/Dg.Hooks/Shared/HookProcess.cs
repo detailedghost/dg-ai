@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Diagnostics;
 using System.Text;
 
@@ -7,6 +8,7 @@ internal static class HookProcess
 {
     private const int TimeoutMs = 30_000;
     private const int CapBytes = 1024 * 1024;
+    private const int ReadChunkBytes = 16 * 1024;
     internal const int DrainMs = 1000;
     private static readonly string[] WindowsExtensions = [".exe", ".cmd", ".bat", ".com"];
     private const string TruncatedNote = "\n[output truncated]\n";
@@ -126,10 +128,8 @@ internal static class HookProcess
                 await drain.CancelAsync().ConfigureAwait(false);
             }
 
-            var (outBytes, outTruncated) = await stdout.ConfigureAwait(false);
-            var (errBytes, errTruncated) = await stderr.ConfigureAwait(false);
-            var outText = Decode(outBytes, outTruncated);
-            var errText = Decode(errBytes, errTruncated);
+            var (outText, outTruncated) = await stdout.ConfigureAwait(false);
+            var (errText, _) = await stderr.ConfigureAwait(false);
             return timedOut
                 ? new CommandResult(
                     124,
@@ -150,16 +150,10 @@ internal static class HookProcess
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { }
     }
 
-    private static string Decode(byte[] bytes, bool truncated)
-    {
-        var text = Encoding.UTF8.GetString(bytes);
-        return truncated ? text + TruncatedNote : text;
-    }
-
-    private static async Task<(byte[], bool)> ReadCappedAsync(Stream stream, CancellationToken ct)
+    private static async Task<(string, bool)> ReadCappedAsync(Stream stream, CancellationToken ct)
     {
         using MemoryStream kept = new();
-        var buffer = new byte[16 * 1024];
+        var buffer = ArrayPool<byte>.Shared.Rent(ReadChunkBytes);
         var truncated = false;
         try
         {
@@ -178,7 +172,12 @@ internal static class HookProcess
             }
         }
         catch (OperationCanceledException) { }
-        return (kept.ToArray(), truncated);
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+        var text = Encoding.UTF8.GetString(kept.GetBuffer(), 0, (int)kept.Length);
+        return (truncated ? text + TruncatedNote : text, truncated);
     }
 
     private static bool IsExecutable(string path)

@@ -33,18 +33,14 @@ public sealed class CompleteCommand : ICommand
         return ValueTask.FromResult(0);
     }
 
-    private static byte[]? LoadTree()
+    internal static byte[]? LoadTree()
     {
-        using var embedded = typeof(CompleteCommand).Assembly.GetManifestResourceStream(
-            ResourceName
-        );
-        if (embedded is not null)
-        {
-            using var copy = new MemoryStream();
-            embedded.CopyTo(copy);
-            return copy.ToArray();
-        }
+        using var embedded = typeof(CompleteCommand).Assembly.GetManifestResourceStream(ResourceName);
+        if (embedded is null)
+            return null;
 
-        return null;
+        var bytes = new byte[embedded.Length];
+        embedded.ReadExactly(bytes);
+        return bytes;
     }
 }

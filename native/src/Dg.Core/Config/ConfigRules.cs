@@ -36,26 +36,58 @@ public static partial class ConfigRules
         return keys;
     }
 
-    public static bool IsUnsafePart(string part) => Array.IndexOf(UnsafeParts, part) >= 0;
+    public static bool IsUnsafePart(ReadOnlySpan<char> part)
+    {
+        foreach (var unsafePart in UnsafeParts)
+            if (part.SequenceEqual(unsafePart))
+                return true;
+        return false;
+    }
 
     public static bool IsSecretField(string key) => Array.IndexOf(SecretFields, key) >= 0;
 
     public static bool IsInvalid(string key)
     {
-        foreach (var part in key.Split('.'))
-            if (part.Length == 0 || IsUnsafePart(part))
+        var span = key.AsSpan();
+        foreach (var range in span.Split('.'))
+        {
+            var part = span[range];
+            if (part.IsEmpty || IsUnsafePart(part))
                 return true;
+        }
         return false;
+    }
+
+    public static bool IsPluginSetting(string key)
+    {
+        var rest = key.AsSpan();
+        if (!rest.StartsWith("plugins.", StringComparison.Ordinal))
+            return false;
+        rest = rest["plugins.".Length..];
+        var name = rest.IndexOf('.');
+        if (name < 0)
+            return false;
+        rest = rest[(name + 1)..];
+        var section = rest.IndexOf('.');
+        return (section < 0 ? rest : rest[..section]).SequenceEqual("settings");
     }
 
     public static bool IsSecretKey(string key)
     {
         if (IsSecretField(key))
             return true;
-        var parts = key.Split('.');
-        return parts[0] == "plugins"
-            && parts.Length > 3
-            && parts[2] == "settings"
-            && SecretKeyName().IsMatch(parts[^1]);
+        var rest = key.AsSpan();
+        if (!rest.StartsWith("plugins.", StringComparison.Ordinal))
+            return false;
+        rest = rest["plugins.".Length..];
+        var name = rest.IndexOf('.');
+        if (name < 0)
+            return false;
+        rest = rest[(name + 1)..];
+        var section = rest.IndexOf('.');
+        if (section < 0 || !rest[..section].SequenceEqual("settings"))
+            return false;
+        var tail = rest[(section + 1)..];
+        return SecretKeyName().IsMatch(tail[(tail.LastIndexOf('.') + 1)..]);
     }
 }

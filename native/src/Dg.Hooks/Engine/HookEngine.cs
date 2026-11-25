@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Frozen;
 using Dg.Hooks.Shared;
 
@@ -5,6 +6,8 @@ namespace Dg.Hooks.Engine;
 
 public sealed class HookEngine
 {
+    private const int InitialInputBytes = 16 * 1024;
+
     private readonly FrozenDictionary<string, IHook> _hooks;
     private readonly TextWriter _error;
     private readonly TextWriter? _output;
@@ -43,7 +46,7 @@ public sealed class HookEngine
         var usesStdin = hook.UsesStdin(args);
         var sink = new ContextSink();
         var ev =
-            HookEvent.Parse(await ReadAllAsync(usesStdin && !_stdinIsTerminal() ? stdin : null, ct))
+            (await ReadEventAsync(usesStdin && !_stdinIsTerminal() ? stdin : null, ct))
             with
             {
                 Args = args,
@@ -71,12 +74,30 @@ public sealed class HookEngine
         return worst;
     }
 
-    private static async ValueTask<byte[]> ReadAllAsync(Stream? stdin, CancellationToken ct)
+    private static async ValueTask<HookEvent> ReadEventAsync(Stream? stdin, CancellationToken ct)
     {
         if (stdin is null)
-            return [];
-        using var buffer = new MemoryStream();
-        await stdin.CopyToAsync(buffer, ct);
-        return buffer.ToArray();
+            return new HookEvent();
+        var buffer = ArrayPool<byte>.Shared.Rent(InitialInputBytes);
+        try
+        {
+            var length = 0;
+            int read;
+            while ((read = await stdin.ReadAsync(buffer.AsMemory(length), ct)) > 0)
+            {
+                length += read;
+                if (length < buffer.Length)
+                    continue;
+                var larger = ArrayPool<byte>.Shared.Rent(buffer.Length * 2);
+                buffer.AsSpan(0, length).CopyTo(larger);
+                ArrayPool<byte>.Shared.Return(buffer);
+                buffer = larger;
+            }
+            return HookEvent.Parse(buffer.AsSpan(0, length));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 }

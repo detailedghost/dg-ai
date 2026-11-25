@@ -1,4 +1,6 @@
 using Dg.Hooks.Shared;
+using System.Buffers;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Dg.Hooks.Defs.Pr;
@@ -9,6 +11,7 @@ internal static partial class PrBodyScanner
 {
     private const int MinProseWords = 4;
     private const int MinBodyWords = 12;
+    private const int LowerStackChars = 512;
 
     private static readonly string[] Filler =
     [
@@ -56,44 +59,60 @@ internal static partial class PrBodyScanner
         var totalWords = 0;
         var firstBullet = 0;
         var firstProse = 0;
-        var paragraph = "";
+        StringBuilder paragraph = new();
         var paragraphLine = 0;
 
         void Flush()
         {
-            if (paragraph == "")
+            if (paragraph.Length == 0)
             {
                 paragraphLine = 0;
                 return;
             }
+            var text = paragraph.ToString();
             var start = 0;
-            foreach (var match in SentenceBreak().EnumerateMatches(paragraph))
+            foreach (var match in SentenceBreak().EnumerateMatches(text))
             {
-                CheckSentence(paragraph.AsSpan(start, match.Index - start), paragraphLine, maxSentence, findings);
+                CheckSentence(text.AsSpan(start, match.Index - start), paragraphLine, maxSentence, findings);
                 start = match.Index + match.Length;
             }
-            CheckSentence(paragraph.AsSpan(start), paragraphLine, maxSentence, findings);
-            var lower = paragraph.ToLowerInvariant();
-            foreach (var word in Filler)
-                if (lower.Contains(word, StringComparison.Ordinal))
-                    findings.Add(new Finding(paragraphLine, $"marketing filler: '{word}' - say what it actually does"));
-            paragraph = "";
+            CheckSentence(text.AsSpan(start), paragraphLine, maxSentence, findings);
+            char[]? rented = null;
+            Span<char> lower = text.Length <= LowerStackChars
+                ? stackalloc char[LowerStackChars]
+                : rented = ArrayPool<char>.Shared.Rent(text.Length);
+            try
+            {
+                var lowered = lower[..text.AsSpan().ToLowerInvariant(lower)];
+                foreach (var word in Filler)
+                    if (lowered.Contains(word, StringComparison.Ordinal))
+                        findings.Add(new Finding(paragraphLine, $"marketing filler: '{word}' - say what it actually does"));
+            }
+            finally
+            {
+                if (rented is not null)
+                    ArrayPool<char>.Shared.Return(rented);
+            }
+            paragraph.Clear();
             paragraphLine = 0;
         }
 
-        var lines = body.TrimEnd('\n').Split('\n');
-        for (var index = 0; index < lines.Length; index++)
+        var lines = body.AsSpan().TrimEnd('\n');
+        var index = 0;
+        foreach (var range in lines.Split('\n'))
         {
-            var lineNo = index + 1;
-            var line = JsText.Trim(JsText.StripOneCarriageReturn(lines[index]));
+            var lineNo = ++index;
+            var raw = lines[range];
+            var line = JsText.Trim(raw.Length > 0 && raw[^1] == '\r' ? raw[..^1] : raw);
             if (line.StartsWith("```", StringComparison.Ordinal) || line.StartsWith("~~~", StringComparison.Ordinal))
             {
                 fence = !fence;
                 continue;
             }
+            var words = JsText.Words(line);
             if (fence)
             {
-                totalWords += JsText.Words(line);
+                totalWords += words;
                 continue;
             }
             if (line.Contains("<!--", StringComparison.Ordinal) && !ChainComment().IsMatch(line))
@@ -105,7 +124,7 @@ internal static partial class PrBodyScanner
             if (EmptyIssue().IsMatch(line))
                 findings.Add(new Finding(lineNo, "issue reference with no issue number"));
 
-            if (line == "")
+            if (line.IsEmpty)
             {
                 Flush();
                 continue;
@@ -121,13 +140,13 @@ internal static partial class PrBodyScanner
             if (bullet && firstBullet == 0)
                 firstBullet = lineNo;
             if (!line.StartsWith('#'))
-                totalWords += JsText.Words(line);
+                totalWords += words;
             if (line.StartsWith('#') || bullet)
                 continue;
 
-            if (JsText.Words(line) >= MinProseWords && firstProse == 0)
+            if (words >= MinProseWords && firstProse == 0)
                 firstProse = lineNo;
-            paragraph += $" {line}";
+            paragraph.Append(' ').Append(line);
             if (paragraphLine == 0)
                 paragraphLine = lineNo;
         }
