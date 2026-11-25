@@ -1,5 +1,5 @@
 import { PW_EXT_MAX_TEXT_CHARS, PW_EXT_NO_TAB_ERROR } from "@dg/common";
-import { type PageRequest, type PageResult, validate } from "../../../../common/src/pw-ext-verbs/page";
+import { type PageRequest, type PageResult, validate } from "@dg/common/pw-ext-verbs/page";
 import type { AgentTabs } from "../agent-tabs";
 import type { PwExtBrowserApi } from "../pw-ext";
 import type { SessionControl } from "../session-control";

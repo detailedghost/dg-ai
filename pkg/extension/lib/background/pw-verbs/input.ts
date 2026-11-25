@@ -1,4 +1,4 @@
-import { type InputRequest, type InputResult, validate } from "../../../../common/src/pw-ext-verbs/input";
+import { type InputRequest, type InputResult, validate } from "@dg/common/pw-ext-verbs/input";
 import { PW_EXT_NO_TAB_ERROR } from "@dg/common";
 import type { BrowserTab } from "@/lib/background/agent-tabs";
 import { allowedPage, mailbox, PW_EXT_BLOCKED_ERROR, PW_EXT_MAILBOX_ERROR, PW_EXT_PRIVATE_ERROR } from "@/lib/background/tab-guards";
