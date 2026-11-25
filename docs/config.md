@@ -30,7 +30,7 @@ default.
 
 | Key | Type | Default | What it does |
 | --- | --- | --- | --- |
-| `browser.mode` | string | `auto` | Which browser `dg pw` drives: `ext`, `local` or `auto`. `auto` uses the extension when it is paired and running, else a local browser. |
+| `browser.mode` | string | `auto` | Which browser `dg pw` drives: `ext`, `local` or `auto`. `ext` drives your real browser through the paired extension. `local` drives a Playwright browser that dg starts. `auto` uses the extension when it is paired and connected and the call fits it, else a local browser. `--ext`, `--local` and `DG_BROWSER` (`ext` or `local`) win over this key. Verbs such as `route`, `state-save` and `video-start` run local in every mode. See [pw browser mode](pw.md#browser-mode-auto-ext-and-local). |
 | `front.enabled` | boolean | `true` | Runs the native front door as `dg`. Set `false` to run the Bun dg for every command. `DG_FRONT=0` does the same for one shell. |
 | `hooks.<id>.<setting>` | string | the hook's default | A hook setting, for example `hooks.spelling.locale = "en-GB"`. See [hooks](hooks.md). |
 | `install.cli_only` | boolean | `false` | `true` on an install made with `--cli-only`, which has no extension. |
