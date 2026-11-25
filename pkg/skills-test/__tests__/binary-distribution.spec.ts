@@ -46,10 +46,17 @@ describe("the release builds the compiled dg in the bundle job, and no per-progr
 
 	test("exactly one job builds the bundle", () => {
 		const builders = Object.keys(release.jobs).filter(
-			(id) => id.startsWith("build-") && id !== "build-ext" && id !== "build-narration",
+			(id) => id.startsWith("build-") && id !== "build-ext" && id !== "build-narration" && id !== "build-front",
 		);
 
 		expect(builders).toEqual(["build-bundle"]);
+	});
+
+	test("the front-door job builds only the dg-front program", () => {
+		const front = JSON.stringify(release.jobs["build-front"]);
+
+		expect(front).toContain("dg-front-");
+		expect(front).not.toContain("--compiled");
 	});
 
 	test("no build workflow compiles a binary either", () => {
