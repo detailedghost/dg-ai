@@ -2,7 +2,7 @@
 	"dg-demo": {
 		"source": "plugins/dg/skills/demo",
 		"files": {
-			"SKILL.md": "8f1274b76b77842d23d282c20b6b6156dcec46b19d7989cbc024d7a5d076ad35",
+			"SKILL.md": "5f00dd22adf081875858768e8501d356c71013d692314112faa8e600671e7c6d",
 			"references/authoring.md": "a0f111e32176830e493abf94ca0888247e247864b75877bf86016c2a243a464a"
 		}
 	},
