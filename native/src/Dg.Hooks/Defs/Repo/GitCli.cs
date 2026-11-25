@@ -10,6 +10,6 @@ internal static class GitCli
             .RunAsync(HookEnvironment.Process().Values, ["git", .. args], cwd, CancellationToken.None)
             .GetAwaiter()
             .GetResult();
-        return result.Status == 0 ? result.Stdout : null;
+        return result is { Status: 0, Truncated: false } ? result.Stdout : null;
     }
 }

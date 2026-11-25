@@ -15,8 +15,6 @@ internal static class ConfigKeys
 {
     private static readonly string[] SendSwitches = ["ssms.allow_send", "ssms.google.send_enabled"];
 
-    public static string[] DefaultKeys => ConfigRules.DefaultKeys;
-
     public static object? DefaultOf(string key) => ConfigRules.Defaults.GetValueOrDefault(key);
 
     public static KeyKind Classify(string key, out KnownKey known)
@@ -54,10 +52,6 @@ internal static class ConfigKeys
                 return true;
         return false;
     }
-
-    public static bool IsInvalid(string key) => ConfigRules.IsInvalid(key);
-
-    public static bool IsSecretKey(string key) => ConfigRules.IsSecretKey(key);
 
     private static KeyKind Known(bool text, object? fallback, out KnownKey known)
     {

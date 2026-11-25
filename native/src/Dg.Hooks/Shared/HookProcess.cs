@@ -7,7 +7,7 @@ internal static class HookProcess
 {
     private const int TimeoutMs = 30_000;
     private const int CapBytes = 1024 * 1024;
-    private const int DrainMs = 1000;
+    internal const int DrainMs = 1000;
     private static readonly string[] WindowsExtensions = [".exe", ".cmd", ".bat", ".com"];
     private const string TruncatedNote = "\n[output truncated]\n";
 

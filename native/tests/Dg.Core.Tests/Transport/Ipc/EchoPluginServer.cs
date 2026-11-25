@@ -8,14 +8,15 @@ namespace Dg.Core.Tests.Transport.Ipc;
 
 internal sealed class EchoPluginServer : IAsyncDisposable
 {
+    public const string SocketFile = "p.sock";
+
     private readonly Socket _listener = new(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
     private readonly CancellationTokenSource _stop = new();
     private readonly List<Socket> _clients = [];
     private readonly Task _accept;
     private readonly ServerFault _fault = new();
-    private int _accepted;
-
     private readonly bool _ownsDirectory;
+    private int _accepted;
 
     public EchoPluginServer(UnixFileMode mode = UnixFileMode.UserRead | UnixFileMode.UserWrite, string? directory = null)
     {
@@ -29,8 +30,6 @@ internal sealed class EchoPluginServer : IAsyncDisposable
         _listener.Listen(8);
         _accept = Task.Run(AcceptLoop);
     }
-
-    public const string SocketFile = "p.sock";
 
     public string Directory { get; }
 

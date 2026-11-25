@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Dg.Core.Plugins.Contract;
 using Dg.Core.Plugins.Manifest;
 using Dg.Core.Transport.Http;
@@ -40,25 +39,43 @@ public sealed class PoolTransportProvider(PluginConnectionPool pool) : IPluginTr
 
 public sealed class HttpTransportProvider(IHttpTransportFactory factory) : IPluginTransportProvider, IAsyncDisposable
 {
-    private readonly ConcurrentDictionary<string, Lazy<IPluginTransport>> _open = new(StringComparer.Ordinal);
+    private readonly Lock _gate = new();
+    private readonly Dictionary<string, OpenTransport> _open = new(StringComparer.Ordinal);
 
-    public ValueTask<IPluginTransport> OpenAsync(PluginManifest manifest, bool allowRemote, CancellationToken ct) =>
-        ValueTask.FromResult(
-            _open
-                .GetOrAdd(
-                    $"{manifest.Name}|{manifest.Endpoint}|{allowRemote}",
-                    _ => new Lazy<IPluginTransport>(() => factory.Create(manifest, allowRemote))
-                )
-                .Value
-        );
+    public async ValueTask<IPluginTransport> OpenAsync(PluginManifest manifest, bool allowRemote, CancellationToken ct)
+    {
+        var identity = $"{manifest.Endpoint}|{manifest.Remote}|{allowRemote}";
+        IPluginTransport? replaced = null;
+        IPluginTransport current;
+        lock (_gate)
+        {
+            if (_open.TryGetValue(manifest.Name, out var existing))
+            {
+                if (existing.Identity == identity)
+                    return existing.Transport;
+                replaced = existing.Transport;
+            }
+            current = factory.Create(manifest, allowRemote);
+            _open[manifest.Name] = new OpenTransport(identity, current);
+        }
+        if (replaced is not null)
+            await replaced.DisposeAsync().ConfigureAwait(false);
+        return current;
+    }
 
     public async ValueTask DisposeAsync()
     {
-        foreach (var (_, transport) in _open)
-            if (transport.IsValueCreated)
-                await transport.Value.DisposeAsync().ConfigureAwait(false);
-        _open.Clear();
+        OpenTransport[] open;
+        lock (_gate)
+        {
+            open = [.. _open.Values];
+            _open.Clear();
+        }
+        foreach (var entry in open)
+            await entry.Transport.DisposeAsync().ConfigureAwait(false);
     }
+
+    private sealed record OpenTransport(string Identity, IPluginTransport Transport);
 }
 
 public sealed class DataDirIpcEndpointResolver(PluginManifestStore store) : IIpcEndpointResolver

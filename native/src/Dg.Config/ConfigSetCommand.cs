@@ -39,7 +39,7 @@ public sealed class ConfigSetCommand(
         if (!location.IsOk)
             return Fail(location.Error!);
         var file = location.Value!.File;
-        if (ConfigKeys.IsSecretKey(key) && value is string)
+        if (ConfigRules.IsSecretKey(key) && value is string)
             return Fail(PlainSecret(file, 1, key));
         if (location.Value.WaitsForMigration)
             return ExitCodes.NotNative;
@@ -55,7 +55,7 @@ public sealed class ConfigSetCommand(
             if (!current.IsOk)
                 return Fail(current.Error!);
             var raw = RawToml.Parse(text);
-            if (ConfigKeys.IsInvalid(key))
+            if (ConfigRules.IsInvalid(key))
                 return Fail($"dg config: {key} is not a valid key. Next: use dotted names such as install.cli_only.");
             if (Place(raw, key, value) is { } problem)
                 return Fail(problem);

@@ -12,13 +12,13 @@ public sealed class HookProcessTests
         var started = TimeProvider.System.GetTimestamp();
         var result = await HookProcess.RunAsync(
             HookEnvironment.Process().Values,
-            ["sh", "-c", "sleep 8 & echo done"],
+            ["sh", "-c", "sleep 20 & echo done"],
             null,
             CancellationToken.None
         );
 
         Assert.Equal(0, result.Status);
         Assert.Equal("done\n", result.Stdout);
-        Assert.True(TimeProvider.System.GetElapsedTime(started) < TimeSpan.FromSeconds(6));
+        Assert.True(TimeProvider.System.GetElapsedTime(started) < TimeSpan.FromMilliseconds(HookProcess.DrainMs) + TimeSpan.FromSeconds(10));
     }
 }

@@ -25,7 +25,7 @@ public sealed class ConfigListCommand(
         if (!result.IsOk)
             return Fail(result.Error!);
         var toml = result.Value!;
-        foreach (var key in ConfigKeys.DefaultKeys)
+        foreach (var key in ConfigRules.DefaultKeys)
             Line(key, ConfigValues.Lookup(toml, key) ?? ConfigKeys.DefaultOf(key));
         if (toml.RefsDefaultRepo is { } repo)
             Line("refs.default_repo", repo);

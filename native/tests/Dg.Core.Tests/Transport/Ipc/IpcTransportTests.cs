@@ -6,8 +6,8 @@ using Dg.Core.Transport.Framing;
 using Dg.Core.Transport.Ipc;
 using Dg.Core.Transport.Pool;
 using Microsoft.Extensions.DependencyInjection;
-using static Dg.Core.Tests.Transport.TransportTestSupport;
 using Xunit.Sdk;
+using static Dg.Core.Tests.Transport.TransportTestSupport;
 
 namespace Dg.Core.Tests.Transport.Ipc;
 

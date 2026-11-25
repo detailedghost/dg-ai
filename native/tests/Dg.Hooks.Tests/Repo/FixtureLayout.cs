@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -171,7 +172,7 @@ internal sealed class FixtureLayout : IDisposable
         Dictionary<string, double> implicitAges = [];
         foreach (var (path, age) in ages)
         {
-            for (var d = Path.GetDirectoryName(path); d is not null && d.StartsWith(Root + "/", StringComparison.Ordinal); d = Path.GetDirectoryName(d))
+            for (var d = Path.GetDirectoryName(path); IsUnderRoot(d); d = Path.GetDirectoryName(d))
             {
                 if (kinds.ContainsKey(d))
                     continue;
@@ -223,8 +224,14 @@ internal sealed class FixtureLayout : IDisposable
     private static void Git(string cwd, params string[] args) =>
         Run("git", cwd, ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", .. args]);
 
-    private static void TouchLink(string path, DateTime when) =>
-        Run("touch", Path.GetDirectoryName(path)!, ["-h", "-d", $"@{new DateTimeOffset(when).ToUnixTimeSeconds()}", path]);
+    private static void TouchLink(string path, DateTime when)
+    {
+        var seconds = new DateTimeOffset(when).ToUnixTimeSeconds();
+        Run("touch", Path.GetDirectoryName(path)!, ["-h", "-d", $"@{seconds}", path]);
+    }
+
+    private bool IsUnderRoot([NotNullWhen(true)] string? directory) =>
+        directory is not null && directory.StartsWith(Root + "/", StringComparison.Ordinal);
 
     private static void Run(string file, string cwd, string[] args)
     {
