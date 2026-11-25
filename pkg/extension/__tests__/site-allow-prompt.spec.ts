@@ -20,6 +20,8 @@ function memoryStorage() {
 	};
 }
 
+const tick = () => Bun.sleep(2);
+
 function setup({ timeoutMs = 60_000, open }: { timeoutMs?: number; open?: () => Promise<number | undefined> } = {}) {
 	const storage = memoryStorage();
 	const control = createSessionControl({ storage });
@@ -49,10 +51,10 @@ describe("requestSiteAllow", () => {
 	it("opens the prompt page and resolves allow after an Allow click, storing it for the session", async () => {
 		const { allow, control, opened } = setup();
 		const pending = allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" });
-		await Promise.resolve();
-		await Promise.resolve();
+		await tick();
 		expect(opened).toEqual(["chrome-extension://dg/site-allow.html?id=id1"]);
 		expect(allow.show("id1")).toMatchObject({ siteKey: "https://example.com", sessionId: "s1" });
+		await tick();
 		allow.answer("id1", true);
 		expect(await pending).toBe("allow");
 		expect(await control.allowed("s1", "https://example.com")).toBe(true);
@@ -62,6 +64,7 @@ describe("requestSiteAllow", () => {
 	it("resolves deny after a Deny click and stores nothing", async () => {
 		const { allow, control } = setup();
 		const pending = allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" });
+		await tick();
 		allow.answer("id1", false);
 		expect(await pending).toBe("deny");
 		expect(await control.allowed("s1", "https://example.com")).toBe(false);
@@ -85,6 +88,7 @@ describe("requestSiteAllow", () => {
 	it("does not prompt again for a site already allowed in the session", async () => {
 		const { allow, opened } = setup();
 		const first = allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" });
+		await tick();
 		allow.answer("id1", true);
 		await first;
 		expect(await allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" })).toBe("allow");
@@ -95,6 +99,7 @@ describe("requestSiteAllow", () => {
 		const { allow, opened } = setup();
 		const a = allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" });
 		const b = allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" });
+		await tick();
 		allow.answer("id1", true);
 		expect([await a, await b]).toEqual(["allow", "allow"]);
 		expect(opened).toHaveLength(1);
@@ -104,6 +109,7 @@ describe("requestSiteAllow", () => {
 		const { allow, control } = setup();
 		await control.stop("s1");
 		const pending = allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" });
+		await tick();
 		allow.answer("id1", true);
 		expect(await pending).toBe("deny");
 	});
@@ -112,6 +118,7 @@ describe("requestSiteAllow", () => {
 		const { allow } = setup();
 		expect(allow.show("nope")).toBeUndefined();
 		const pending = allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" });
+		await tick();
 		allow.answer("id1", true);
 		await pending;
 		expect(allow.show("id1")).toBeUndefined();
@@ -125,6 +132,7 @@ describe("openSite", () => {
 		await Bun.sleep(5);
 		expect(loaded).toEqual([]);
 		expect(allow.show("id1")?.siteKey).toBe("https://example.com");
+		await tick();
 		allow.answer("id1", true);
 		expect(await pending).toBe("allow");
 		expect(loaded).toEqual([{ sessionId: "s1", url: "https://www.example.com/a" }]);
@@ -133,6 +141,7 @@ describe("openSite", () => {
 	it("never loads the page after a deny", async () => {
 		const { allow, loaded } = setup();
 		const pending = allow.openSite({ sessionId: "s1", url: "https://example.com/" });
+		await tick();
 		allow.answer("id1", false);
 		expect(await pending).toBe("deny");
 		expect(loaded).toEqual([]);
@@ -159,7 +168,8 @@ describe("openSite", () => {
 
 describe("PHI sites", () => {
 	async function allowWithPhi(s: ReturnType<typeof setup>, phi: boolean) {
-		const pending = s.allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://ehr.example.com" });
+		const pending = s.allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" });
+		await tick();
 		s.allow.answer("id1", true, phi);
 		await pending;
 	}
@@ -194,7 +204,8 @@ describe("PHI sites", () => {
 
 	it("does not store the flag on a deny", async () => {
 		const s = setup();
-		const pending = s.allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://ehr.example.com" });
+		const pending = s.allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" });
+		await tick();
 		s.allow.answer("id1", false, true);
 		await pending;
 		await expect(s.allow.assertCaptureAllowed("s1", "https://ehr.example.com/")).resolves.toBeUndefined();
@@ -225,6 +236,7 @@ describe("registerSiteAllow", () => {
 	it("answers a request only for the extension's own prompt page", async () => {
 		const s = register();
 		const pending = s.allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" });
+		await tick();
 		expect(s.send({ type: SITE_ALLOW_MSG.answer, id: "id1", allow: true }, { id: "dg", url: "https://evil.example/" })).toEqual([
 			undefined,
 		]);
@@ -237,9 +249,10 @@ describe("registerSiteAllow", () => {
 		await expect(s.allow.assertCaptureAllowed("s1", "https://example.com/")).rejects.toBeInstanceOf(PhiCaptureRefusedError);
 	});
 
-	it("returns the request to the prompt page", () => {
+	it("returns the request to the prompt page", async () => {
 		const s = register();
 		void s.allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" });
+		await tick();
 		expect(s.send({ type: SITE_ALLOW_MSG.get, id: "id1" }, page)).toEqual([
 			{ sessionId: "s1", siteKey: "https://example.com" },
 		]);
