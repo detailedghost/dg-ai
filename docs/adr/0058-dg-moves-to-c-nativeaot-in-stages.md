@@ -1,6 +1,6 @@
 # dg moves to C# NativeAOT in stages
 
-Status: Accepted (not yet implemented; plan in `.agents/spec/027_dg_cli_lean/plan.md`)
+Status: Accepted (stage 1 implemented; stages 2 and 3 not yet; plan in `.agents/spec/027_dg_cli_lean/plan.md`)
 Date: 2026-11-24
 Topic: Platform
 
@@ -27,7 +27,8 @@ JIT workaround for every command it moves.
 - dg moves to C# NativeAOT (net11.0, SDK pinned in `native/global.json`) in stages. Each stage ships behind a parity
   suite that runs the same fixtures through the Bun dg and the C# binary.
 - Stage 1 is a C# front door. It runs every hook id, `--version`, completion, config, routing and the plugin
-  commands natively, and execs the Bun binary (`dg-core`) for every other command. It ships opt-in first.
+  commands natively, and execs the Bun binary (`dg-core`) for every other command. It is on by default; `DG_FRONT=0` or
+  `front.enabled = false` opts out, and a missing or failing native binary falls back to the Bun dg.
 - Stage 2 moves the phone listener and the daemon (HttpListener, not Kestrel). Stage 3 moves the command groups by
   use and size. At the final switch, the Bun binary becomes a sidecar that downloads on first use.
 - pw local (Playwright), Snowflake, verify capture and demo recording stay in the Bun sidecar until the end.

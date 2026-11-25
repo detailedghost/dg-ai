@@ -32,17 +32,17 @@ request-changes event posts only after a confirm and `post --confirm`.
 | `--comment` | `-c` | Post as comment only. No approve, no request-changes. | off |
 | `--confirm` | none | Confirm before posting any review. An approve or request-changes event always needs one. | off |
 | `--dry-run` | `-n` | Preview only. Nothing reaches the provider. | off |
-| `--min-tier <tier>` | `-t` | Post no comments below this tier. Dropped findings still count toward the verdict. | spice ladder |
-| `--improvements` | none | Also post up to 3 optional improvement ideas (💡). They never count toward the verdict. | off |
+| `--min-tier <tier>` | `-t` | Post no comments below this tier. Dropped findings still count. | spice ladder |
+| `--improvements` | none | Post up to 3 ideas (💡); never counted. Agents get `IMPROVEMENTS: on` ([findings](references/findings.md)). | off |
 | `--base <ref>` | `-b` | Local mode only. Override the fork point. | detected fork point |
-| `--no-repo` | none | Skip the code checkout. Reviewers see the diff only, and verify and consolidate do not run. | off |
-| `--proxy <backend>` | none | Run each chunk review on an external CLI (`codex`, `copilot`, `pi`, `opencode`, `grok`) through `/dg:proxy`, in the background. It always passes `--no-repo`. | off (host agents) |
+| `--no-repo` | none | Skip the code checkout. Reviewers see only the diff; verify and consolidate do not run. | off |
+| `--proxy <backend>` | none | Run each chunk review on an external CLI (`codex`, `copilot`, `pi`, `opencode`, `grok`) through `/dg:proxy` in the background. It always passes `--no-repo`. | off (host agents) |
 
 ## Verdict rule
 
 Spice sets how many findings per tier the PR can have. One more requests changes.
 Otherwise approve. Only open findings count. Nits, pre-existing findings and
-improvements never count. `--comment` replaces the event. The limit table and
+improvements never do. `--comment` replaces the event. The limit table and
 `VERDICT_LIMITS` are in `references/verdict.md`.
 
 ## Runtime and skill paths

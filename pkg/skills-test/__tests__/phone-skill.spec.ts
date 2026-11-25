@@ -4,6 +4,7 @@ import { readRepoFile } from "./test-support";
 const skill = readRepoFile("plugins/dg/skills/phone/SKILL.md");
 const safety = readRepoFile("plugins/dg/skills/phone/references/safety.md");
 const guide = readRepoFile("docs/phone.md");
+const vaultRef = readRepoFile("plugins/dg/skills/phone/references/images-vault.md");
 const SAFETY_REF = "plugins/dg/skills/phone/references/safety.md";
 
 describe("phone skill", () => {
@@ -110,10 +111,10 @@ describe("phone skill", () => {
 		expect(skill).toContain("[PHI: vault item <name> from +handle]");
 		expect(guide).toContain("[PHI: vault item <name> from +handle]");
 		expect(safety).toContain("Vault names hold no PHI.");
-		expect(skill).toContain("phone-vault/<yyyy>-w<ww>");
-		expect(skill).toContain("yyyy-W<ww>");
+		expect(vaultRef).toContain("phone-vault/<yyyy>-w<ww>");
+		expect(vaultRef).toContain("yyyy-W<ww>");
 		expect(skill).toContain("dg phone vault add lab-1 -");
-		expect(skill).toContain("`Lab` and `lab` are one item");
+		expect(vaultRef).toContain("`Lab` and `lab` are one item");
 		expect(guide).toContain("phone-vault/2026-w45");
 		expect(guide).toContain("phone vault add <name> [file");
 		expect(guide).toContain("`-` means stdin");
@@ -132,7 +133,7 @@ describe("phone skill", () => {
 		expect(skill).toContain("## Set up the other side");
 		expect(skill).toContain("**Grok Bot note:**");
 		expect(skill).toContain("dg phone open");
-		expect(skill).toContain("unread only reads messages that listener has already stored");
+		expect(skill).toContain("`unread` reads only what the listener stored");
 		expect(skill).toContain("~/.local/state/dg/phone/phone.db");
 		expect(skill).not.toContain("~/.dg/phone/phone.db");
 		expect(skill).not.toMatch(/invite\.json|config\.json|phone-friend\/key\b/);

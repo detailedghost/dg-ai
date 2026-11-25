@@ -13,8 +13,7 @@ daemon running at all.
   <name>]` — record one memory. The body is the argument, or stdin when left
   off. The same title again replaces the earlier memory. A blank title or body
   is refused. Prints the memory id. A title starting with `-` needs a `--`
-  separator first: `memory write -- "-1 on call" "body"`. Replace and size-cap
-  rules: [details.md](details.md).
+  separator first: `memory write -- "-1 on call" "body"`.
 - `memory search [query] [--workset <label>] [--identity <name>] [--limit <n>]
   [--offset <n>] [--full]` — find this agent's memories, most relevant first.
   Free text only: punctuation FTS5 would choke on is dropped, so no query is a

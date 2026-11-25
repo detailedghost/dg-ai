@@ -398,7 +398,7 @@ uploads the binary as `native-dg-<rid>` for 7 days.
 
 The lean gates keep the program small and fast: size, RAM, latency and skill
 tokens. Each has a budget in `scripts/*.json`, `native/budgets/*.json` or
-`bench/budgets/*.json`. [lean-baseline.md](lean-baseline.md) lists the numbers
+`native/bench/Dg.Bench/budgets/*.json`. [lean-baseline.md](lean-baseline.md) lists the numbers
 and the exact command to re-run each gate on your machine. A pull request that
 raises a budget needs a `Budget-Increase:` line in its body.
 

@@ -4,7 +4,7 @@
 
 Print the checklist view the caller asked for, as the CLI renders it. With no flag this is `dg stat checklist`; `--plain` adds `-p`; `--long` adds `-l`.
 
-The CLI already handles ordering, numbering, sub-items, the done cap, and a Total line computed from the checklist's own unfinished agent items — sub-items included, even under a done parent, and parked work excluded. Two things are still judgment, left to the main loop:
+The CLI already handles ordering, numbering, sub-items, the done cap, and a Total line computed from the checklist's own unfinished agent items — sub-items included, even under a done parent, and parked work excluded. Three things are still judgment, left to the main loop:
 
 - **Items waiting on the user.** When the CLI prints a `Waiting on you: N items.` line, keep it. Then offer to hand those items to `/dg:walk stat`. Ask once. Do not start the walk without a yes.
 - **Session-only work not yet on the list.** Prefer adding it first (see "Keeping the list current" in SKILL.md), so the checklist already reflects it. If you do not, append a short, plain trailer after the CLI's own output: `Also running, not on the list:` followed by one line per item. Do this for the default and `--plain` views; for `--long`, append the same items as additional rows (see views.md) instead.

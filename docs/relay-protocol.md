@@ -117,7 +117,10 @@ Requires extension 1.11.0 or newer.
 
 ### Browser automation (pw-ext)
 
-Requires dg-ai-extension 1.44.0 or newer. A verb the extension did not list in `pwExtVerbs` is refused when it is one of `count`, `unmask`, `dialog`, `network`, `storage`, `fetch`, `credential`, `press`, `webmcp-tools` or `webmcp-call`.
+Requires dg-ai-extension 1.44.0 or newer. The daemon checks the verb against the `pwExtVerbs` list from the `connect` frame:
+
+- An extension that sent `pwExtVerbs` receives only the verbs in that list. This covers every verb, including the verbs from [ADR 0060](adr/0060-pw-auto-mode-and-ext-verbs-for-the-real-browser.md) such as `eval` and the storage writes.
+- An extension that omitted `pwExtVerbs` is refused `count`, `unmask`, `dialog`, `network`, `storage`, `fetch`, `credential`, `press`, `webmcp-tools` and `webmcp-call`. The daemon forwards any other verb, and the extension rejects a verb it does not know.
 
 `cli-pw-ext-request`: `requestId`, `request`, optional `timeoutMs` (1 to 300,000), optional `protocolVersion`. No other field is allowed. The default deadline is 120,000 ms.
 

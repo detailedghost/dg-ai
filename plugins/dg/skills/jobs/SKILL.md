@@ -7,8 +7,8 @@ description: List and control the dg daemon (scheduled jobs and long-running ser
 
 # Jobs
 
-This skill is a thin front end over two existing daemons. It adds no new
-commands to either one; it only calls what `dg job`, `dg service` and
+This skill is a thin front end over two existing daemons. It adds no
+commands; it only calls what `dg job`, `dg service` and
 `dg channel-review` already expose.
 
 Commands use the compiled `dg` binary. Bootstrap it once if needed (the
@@ -86,7 +86,7 @@ running service. This skill does not stop a running service to make
 
 ### Start, stop or restart the dg daemon
 
-Run these only on a request from the human that names the dg daemon:
+Run these only when the human names the dg daemon:
 
 ```sh
 dg daemon start
@@ -94,7 +94,7 @@ dg daemon stop
 dg daemon restart
 ```
 
-Before a stop or a restart, tell the human that each service stops and each
+Before a stop or restart, tell the human each service stops and each
 session ends, then wait for the go-ahead. Use `--force` only when the human
 says so; it kills the daemon and each service process tree at once. Timeouts
 and scope: [details](references/details.md#daemon).
@@ -102,7 +102,6 @@ and scope: [details](references/details.md#daemon).
 ### Restart
 
 A service restart is stop then start.
-
 A `channel-review-<env>` restart must not drop a review in progress:
 
 1. Run `dg channel-review status --env <env>` and read `current`.
@@ -110,8 +109,7 @@ A `channel-review-<env>` restart must not drop a review in progress:
 3. Otherwise re-check every 15 seconds for up to 2 minutes, then stop then start
    once it is `null`. After 2 minutes, tell the human which PR or MR
    `current.url` names and how long it has run (`current.startedAt`). Ask
-   whether to restart anyway or wait longer. Do not stop or start until they
-   answer.
+   whether to restart or wait. Do not stop or start until they answer.
 
 ## Job verbs
 
@@ -120,7 +118,8 @@ A `channel-review-<env>` restart must not drop a review in progress:
 ```sh
 dg job list
 dg job status [<name>] [--json]
-dg job add --name <name> --cwd <absolute-path> (--continuous | --every <duration> | --schedule "<cron>") [--feed] [--timeout <duration>] -- <command> [args...]
+dg job add --name <name> --cwd <absolute-path> --continuous -- <command> [args...]
+dg job add --name <name> --cwd <absolute-path> (--every <duration> | --schedule "<cron>") [--feed] [--timeout <duration>] -- <command> [args...]
 dg job add <url>
 dg job add <path>
 dg job update <name> --every <duration>

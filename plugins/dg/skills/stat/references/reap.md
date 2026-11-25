@@ -1,8 +1,6 @@
 # Stat reap and stuck loops
 
-Section 5 of `/dg:stat`: the main loop runs these steps after the cleanup in section 4.
-
-After section 4, the main loop does these steps on every `/dg:stat`. A running job or process that makes progress is never touched.
+Section 5 of `/dg:stat`: after the cleanup in section 4, the main loop runs these steps on every `/dg:stat`. A running job or process that makes progress is never touched.
 
 ### a. Reap
 

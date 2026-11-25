@@ -6,8 +6,8 @@ version: "1.0"
 status: "draft"
 current_slice: 0
 pr_strategy: "single"
-bundle: "/home/detailedghost/code/worktrees/dg-ai-spec-027/.agents/spec/027_dg_cli_lean"
-plan_path: "/home/detailedghost/code/worktrees/dg-ai-spec-027/.agents/spec/027_dg_cli_lean/plan.md"
+bundle: ".agents/spec/027_dg_cli_lean"
+plan_path: ".agents/spec/027_dg_cli_lean/plan.md"
 slices:
   - id: 1
     name: "baseline-latency"
@@ -861,11 +861,11 @@ slices:
 
 ## === school pointers ===
 
-- /home/detailedghost/code/worktrees/dg-ai-spec-027/.agents/school/security.md
-- /home/detailedghost/code/worktrees/dg-ai-spec-027/.agents/school/performance.md
-- /home/detailedghost/code/worktrees/dg-ai-spec-027/.agents/school/infrastructure.md
-- /home/detailedghost/code/worktrees/dg-ai-spec-027/.agents/school/engineering.md
-- /home/detailedghost/code/worktrees/dg-ai-spec-027/.agents/school/quality.md
-- /home/detailedghost/code/worktrees/dg-ai-spec-027/.agents/school/tooling.md
+- .agents/school/security.md
+- .agents/school/performance.md
+- .agents/school/infrastructure.md
+- .agents/school/engineering.md
+- .agents/school/quality.md
+- .agents/school/tooling.md
 
 ## Slice Summaries
