@@ -95,7 +95,8 @@ export async function main(argv: readonly string[], mounts: Mounts): Promise<num
 		return 0;
 	}
 	if (first === "--version") {
-		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
+		const { buildVersion } = await import("@dg/common/build-version");
+		process.stdout.write(`${buildVersion()}\n`);
 		return 0;
 	}
 	if (first === "help") {

@@ -11,6 +11,7 @@ import {
 	FRAME_HEADER_BYTES,
 	FRAME_MAX_PAYLOAD_BYTES,
 	pluginTokenCredential,
+	ROUTES,
 	validateMessage,
 } from "../src/plugins/contract";
 import { parseManifest, permissionReport } from "../src/plugins/manifest";
@@ -171,8 +172,8 @@ describe("validateMessage fixtures", () => {
 
 	test("covers every v1 route in both directions", () => {
 		const covered = new Set(names(valid, ".json").map((file) => file.replace(".json", "")));
-		for (const route of ["hello", "hook-decide", "job-run", "job-status", "skill-describe", "health"])
-			for (const direction of ["request", "response"]) expect(covered.has(`${route}-${direction}`)).toBe(true);
+		for (const route of ROUTES)
+			for (const direction of ["request", "response"]) expect(covered.has(`${route.slice("/v1/".length).replace("/", "-")}-${direction}`)).toBe(true);
 	});
 });
 
@@ -184,6 +185,17 @@ describe("binary frames", () => {
 	test("uses a 12-byte header and a 1 MiB payload limit", () => {
 		expect(FRAME_HEADER_BYTES).toBe(12);
 		expect(FRAME_MAX_PAYLOAD_BYTES).toBe(1_048_576);
+	});
+
+	test.each([
+		["an unknown encoding", { encoding: "xml" as never, flags: 0, requestId: 1 }, "bad-encoding"],
+		["a reserved flag bit", { encoding: "json" as const, flags: 0b1000, requestId: 1 }, "reserved-flags"],
+		["flags wider than 16 bits", { encoding: "json" as const, flags: 0x10000, requestId: 1 }, "reserved-flags"],
+		["a negative request id", { encoding: "json" as const, flags: 0, requestId: -1 }, "bad-request-id"],
+		["a request id over uint32", { encoding: "json" as const, flags: 0, requestId: 2 ** 32 }, "bad-request-id"],
+		["a fractional request id", { encoding: "json" as const, flags: 0, requestId: 1.5 }, "bad-request-id"],
+	])("refuses to encode %s so a bad frame fails on the sender", (_label, header, code) => {
+		expect(() => encodeFrame({ ...header, payload: new Uint8Array() })).toThrow(`frame ${code}`);
 	});
 
 	test("matches the hand-computed bytes of the smallest frame", () => {

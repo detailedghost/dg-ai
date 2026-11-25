@@ -31,7 +31,7 @@ export const HOOK_LATENCY_BUDGET_P99_MS = { ipc: 1, tcp: 2, http: 5 } as const;
 export type Frame = { encoding: Encoding; flags: number; requestId: number; payload: Uint8Array };
 export type DecodedFrame = Frame & { version: number };
 
-export type FrameErrorCode = "short-header" | "bad-version" | "bad-encoding" | "reserved-flags" | "oversize" | "truncated-payload" | "trailing-bytes";
+export type FrameErrorCode = "short-header" | "bad-version" | "bad-encoding" | "bad-request-id" | "reserved-flags" | "oversize" | "truncated-payload" | "trailing-bytes";
 
 function frameError(code: FrameErrorCode, detail: string, next: string): never {
 	throw new DgCliError(`dg plugin: frame ${code}: ${detail}. Next: ${next}`);
@@ -44,10 +44,16 @@ export function pluginTokenCredential(plugin: string): string {
 export function encodeFrame({ encoding, flags, requestId, payload }: Frame): Uint8Array {
 	if (payload.length > FRAME_MAX_PAYLOAD_BYTES)
 		frameError("oversize", `payload is ${payload.length} bytes, the limit is ${FRAME_MAX_PAYLOAD_BYTES}`, "send a smaller payload");
+	const encodingId = ENCODINGS.indexOf(encoding);
+	if (encodingId < 0) frameError("bad-encoding", `encoding ${String(encoding)} is not json or msgpack`, "use json or msgpack");
+	if (!Number.isInteger(flags) || (flags & ~FRAME_FLAGS_MASK) !== 0)
+		frameError("reserved-flags", `flags ${flags} is not a mix of the response, error and event bits`, "send only the response, error and event flag bits");
+	if (!Number.isInteger(requestId) || requestId < 0 || requestId > 0xffff_ffff)
+		frameError("bad-request-id", `request id ${requestId} is not a uint32`, "use a whole number from 0 to 4294967295");
 	const out = new Uint8Array(FRAME_HEADER_BYTES + payload.length);
 	const view = new DataView(out.buffer);
 	view.setUint8(0, PROTOCOL_VERSION);
-	view.setUint8(1, ENCODINGS.indexOf(encoding));
+	view.setUint8(1, encodingId);
 	view.setUint16(2, flags, false);
 	view.setUint32(4, requestId, false);
 	view.setUint32(8, payload.length, false);

@@ -1,3 +1,4 @@
+import { buildVersion } from "@dg/common/build-version";
 import type { ProgramName } from "@dg/common/node/program";
 
 type Program = { main(argv: string[]): Promise<number> };
@@ -39,7 +40,8 @@ function needsFfi(argv: readonly string[]): boolean {
 
 /** True for a command whose RSS stays in budget with the JIT on, so the re-exec would only add time. */
 function staysInBudgetWithJit(argv: readonly string[]): boolean {
-	const [first, second] = commandWords(argv);
+	const bridged = isOldName(argv[0]) || argv[0] === "dg";
+	const [first, second] = bridged ? argv.slice(1) : argv;
 	return first === "--version" || (first === "hooks" && second === "run");
 }
 
@@ -78,7 +80,7 @@ export function isVersionOnly(argv: readonly string[]): boolean {
 
 function printVersion(): Promise<number> {
 	return new Promise((resolve) => {
-		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`, () => resolve(0));
+		process.stdout.write(`${buildVersion()}\n`, () => resolve(0));
 	});
 }
 
@@ -86,17 +88,17 @@ function printVersion(): Promise<number> {
 async function runFast(args: readonly string[]): Promise<number | undefined> {
 	if (isVersionOnly(args)) return printVersion();
 	if (args[0] !== "hooks" && args[0] !== "__complete") return undefined;
-	const { fastRoute, runFastRoute } = await import("../../dg/src/fast-route");
+	const { fastRoute, runFastRoute } = await import("@dg/dg/fast-route");
 	switch (fastRoute(args)) {
 		case "hooks": {
 			const { normalizeDgHome } = await import("@dg/common/node/dg-paths");
 			normalizeDgHome();
-			return runFastRoute(args);
+			return runFastRoute("hooks", args);
 		}
 		case "completion": {
 			const words = args.slice(1);
 			if (words.length < 2) return undefined;
-			const { completeFast } = await import("../../skills-cli/src/completion/fast");
+			const { completeFast } = await import("@dg/skills-cli/completion/fast");
 			const lines = completeFast(words);
 			if (lines.length === 0) return undefined;
 			process.stdout.write(`${lines.join("\n")}\n`);
@@ -123,7 +125,7 @@ export async function dispatch(argv: readonly string[], argv0?: string): Promise
 		const code = await runFast(args);
 		if (code !== undefined) return code;
 	}
-		const { normalizeDgHome } = await import("@dg/common/node/dg-paths");
+	const { normalizeDgHome } = await import("@dg/common/node/dg-paths");
 	normalizeDgHome();
 	if (isVersionOnly(args)) return printVersion();
 	const { setProgramName } = await import("@dg/common/node/program");

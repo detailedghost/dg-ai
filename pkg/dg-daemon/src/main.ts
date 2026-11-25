@@ -1,3 +1,4 @@
+import { buildVersion } from "@dg/common/build-version";
 import type { CompletionNode } from "@dg/common/completion";
 import type { LayoutHooks } from "@dg/common/node/layout";
 import type { Command } from "commander";
@@ -136,7 +137,7 @@ export async function buildProgram(): Promise<Command> {
 
 export async function main(argv: readonly string[]): Promise<number> {
 	if (argv.length === 1 && argv[0] === "--version") {
-		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
+		process.stdout.write(`${buildVersion()}\n`);
 		return 0;
 	}
 	if (argv[0] === "__complete") {

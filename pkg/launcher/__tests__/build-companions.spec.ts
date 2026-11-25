@@ -1,13 +1,14 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildCompanions, excludeCompanions } from "../build/companions";
+import { buildCompanions, excludeCompanions, packLib } from "../build/companions";
 import { buildCompiled } from "../build/compile";
 import { COMPILE_TARGETS, sharedOptions } from "../build/options";
 
 setDefaultTimeout(240_000);
 
+const MIN_COMPANION_SAVINGS_BYTES = 7_000_000;
 const outdir = mkdtempSync(join(tmpdir(), "dg-companions-"));
 afterAll(() => rmSync(outdir, { recursive: true, force: true }));
 
@@ -43,8 +44,18 @@ describe("companion bundles", () => {
 		const compile = { target: COMPILE_TARGETS["linux-x64"], outfile: slimFile, autoloadDotenv: false, autoloadBunfig: false };
 		const built = await Bun.build({ ...excludeCompanions(options), compile });
 		expect(built.success).toBe(true);
-		const slim = slimFile;
-		const saved = statSync(embedded).size - statSync(slim).size;
-		expect(saved).toBeGreaterThan(7_000_000);
+		const saved = statSync(embedded).size - statSync(slimFile).size;
+		expect(saved).toBeGreaterThan(MIN_COMPANION_SAVINGS_BYTES);
+	});
+});
+
+describe("packLib", () => {
+	test("adds files in path order so the same lib packs to the same bytes", async () => {
+		const lib = join(outdir, "order-lib");
+		mkdirSync(join(lib, "m"), { recursive: true });
+		for (const file of ["z.js", "m/b.js", "a.js", "m/a.js"]) writeFileSync(join(lib, file), file);
+		const tarball = await packLib(lib, join(outdir, "order-out"), "0.0.0");
+		const files = await new Bun.Archive(readFileSync(tarball)).files();
+		expect([...files.keys()]).toEqual(["a.js", "m/a.js", "m/b.js", "z.js"]);
 	});
 });

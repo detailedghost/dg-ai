@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
-import { parseManifest, type PluginManifest } from "../../../common/src/plugins/manifest";
+import { parseManifest, type PluginManifest } from "@dg/common/plugins/manifest";
 import { type DeclaredJob, type DeclarationContext, parseJobDeclaration } from "./declaration";
 
 export const MANIFEST_FILE = "plugin.toml";

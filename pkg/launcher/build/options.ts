@@ -13,7 +13,7 @@ interface NamedChunk {
 	name: string;
 	specifier: RegExp;
 	importer?: RegExp;
-	target: (importer: string) => string;
+	target: () => string;
 }
 
 const NAMED_CHUNKS: NamedChunk[] = [
@@ -36,9 +36,11 @@ const NAMED_CHUNKS: NamedChunk[] = [
 	},
 ];
 
+export const NAMED_CHUNKS_PLUGIN = "named-chunks";
+
 /** Routes each heavy dependency through a virtual module so its chunk gets a stable name. */
 const namedChunks: Bun.BunPlugin = {
-	name: "named-chunks",
+	name: NAMED_CHUNKS_PLUGIN,
 	setup(build) {
 		for (const chunk of NAMED_CHUNKS) {
 			build.onResolve({ filter: chunk.specifier, namespace: "file" }, ({ importer }) => {
@@ -49,7 +51,7 @@ const namedChunks: Bun.BunPlugin = {
 		build.onLoad({ filter: /.*/, namespace: NAMESPACE }, ({ path }) => {
 			const chunk = NAMED_CHUNKS.find((candidate) => candidate.name === path);
 			if (!chunk) throw new Error(`Unknown named chunk ${path}`);
-			return { contents: `export * from ${JSON.stringify(chunk.target(""))};`, loader: "js", resolveDir: PKG };
+			return { contents: `export * from ${JSON.stringify(chunk.target())};`, loader: "js", resolveDir: PKG };
 		});
 	},
 };

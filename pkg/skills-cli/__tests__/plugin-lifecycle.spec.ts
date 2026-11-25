@@ -13,6 +13,7 @@ import {
 	updatePlugin,
 	verifyPlugin,
 } from "../src/plugin/lifecycle";
+import { checkSource } from "../src/plugin/source";
 
 let root: string;
 let env: Record<string, string | undefined>;
@@ -125,6 +126,31 @@ describe("addPlugin", () => {
 
 	test("refuses a source that looks like a git option", () => {
 		expect(() => addPlugin({ source: "--upload-pack=touch /tmp/x", name: "bad" }, env)).toThrow(/source/);
+	});
+
+	test.each([
+		["a user and password", "https://user:pass@example.com/org/repo.git"],
+		["a token as the user name", "https://ghp_token@example.com/org/repo.git"],
+		["a password only", "https://:secret@example.com/org/repo.git"],
+	])("refuses an http source with %s in the URL", (_label, source) => {
+		expect(() => addPlugin({ source, name: "bad" }, env)).toThrow(/credentials in its URL/);
+	});
+
+	test("accepts the ssh git user in a source URL", () => {
+		expect(() => checkSource("ssh://git@example.com/org/repo.git")).not.toThrow();
+	});
+
+	test("refuses an installed record that names another plugin or has the wrong shape", () => {
+		const source = skillRepo("notes");
+		addPlugin({ source }, env);
+		const file = join(resolveDgPaths({ env }).dataDir, "plugins", "notes", "dg-plugin.json");
+		const record = JSON.parse(readFileSync(file, "utf8"));
+		writeFileSync(file, JSON.stringify({ ...record, name: "other" }));
+		expect(() => verifyPlugin("notes", { approve: false }, env)).toThrow(/dg plugin: .*notes.*Next:/);
+		writeFileSync(file, JSON.stringify({ ...record, extra: 1 }));
+		expect(() => verifyPlugin("notes", { approve: false }, env)).toThrow(/dg plugin: .*Next:/);
+		writeFileSync(file, "{ not json");
+		expect(() => verifyPlugin("notes", { approve: false }, env)).toThrow(/dg plugin: .*Next:/);
 	});
 
 	test("refuses a name that is already installed", () => {

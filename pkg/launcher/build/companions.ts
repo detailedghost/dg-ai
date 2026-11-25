@@ -2,10 +2,10 @@ import { mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { companionAssetName } from "@dg/common/node/companion";
 import { playwrightMetadata } from "../../skills-cli/build";
-import { ROOT } from "./options";
+import { NAMED_CHUNKS_PLUGIN, ROOT } from "./options";
 
 function walk(dir: string): string[] {
-	return readdirSync(dir).flatMap((name) => {
+	return readdirSync(dir).sort().flatMap((name) => {
 		const path = join(dir, name);
 		return statSync(path).isDirectory() ? walk(path) : [path];
 	});
@@ -35,7 +35,7 @@ export const companionNames = Object.keys(COMPANION_ENTRIES) as Array<keyof type
 export function excludeCompanions<T extends { external: string[]; define: Record<string, string>; plugins: Bun.BunPlugin[] }>(options: T): T {
 	return {
 		...options,
-		plugins: options.plugins.filter((plugin) => plugin.name !== "named-chunks"),
+		plugins: options.plugins.filter((plugin) => plugin.name !== NAMED_CHUNKS_PLUGIN),
 		external: [...options.external, ...COMPANION_PACKAGES],
 		define: { ...options.define, "process.env.DG_COMPANIONS_EXTERNAL": JSON.stringify("1") },
 	};
@@ -56,7 +56,9 @@ export async function buildCompanions(outdir: string, version: string): Promise<
 				naming: "index.js",
 			});
 			if (!result.success) throw new AggregateError(result.logs, `Companion ${name} build failed.`);
-			const index = new Uint8Array(await result.outputs[0].arrayBuffer());
+			const [output, ...extra] = result.outputs;
+			if (!output || extra.length > 0) throw new Error(`Companion ${name} build emitted ${result.outputs.length} outputs, expected 1.`);
+			const index = new Uint8Array(await output.arrayBuffer());
 			const tarball = join(outdir, companionAssetName(name, version));
 			await Bun.write(tarball, Bun.zstdCompressSync(await new Bun.Archive({ "index.js": index }).bytes(), { level: 19 }));
 			return tarball;

@@ -4,11 +4,9 @@ import type { PluginManifest } from "./manifest";
 
 export type PluginConfig = { enabled: boolean; allowRemote: boolean; source?: string; settings: PluginEntry["settings"] };
 
-type EntryWithRemote = PluginEntry & { allow_remote?: unknown };
-
 /** Joins a manifest with its `[plugins.<name>]` section; a remote manifest also needs `allow_remote = true` there. */
 export function resolvePluginConfig(config: DgToml, manifest: PluginManifest, file: string): PluginConfig {
-	const entry: EntryWithRemote | undefined = config.plugins[manifest.name];
+	const entry: PluginEntry | undefined = config.plugins[manifest.name];
 	const allowRemote = manifest.remote && entry?.allow_remote === true;
 	if (manifest.remote && !allowRemote)
 		throw new DgCliError(

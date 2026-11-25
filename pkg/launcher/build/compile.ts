@@ -28,7 +28,7 @@ export async function buildCompiled({
 export async function buildLauncher(outdir: string): Promise<{ lib: string; tarball: string }> {
 	const { options, version, sha } = await sharedOptions();
 	const lib = join(outdir, "lib");
-	rmSync(outdir, { recursive: true, force: true });
+	rmSync(lib, { recursive: true, force: true });
 	const result = await Bun.build({ ...options, outdir: lib, naming: { chunk: "chunks/[name]-[hash].js" } });
 	if (!result.success) throw new AggregateError(result.logs, "Launcher bundle build failed.");
 
