@@ -43,8 +43,6 @@ internal sealed class FrontDoorHost
         WithoutCore = Install(Path.Combine(root, "without-core"), withCore: false);
     }
 
-    public static bool IsPublishedBinary => Environment.GetEnvironmentVariable("DG_PARITY_FRONT") is { Length: > 0 };
-
     private static string Install(string directory, bool withCore)
     {
         Directory.CreateDirectory(directory);
