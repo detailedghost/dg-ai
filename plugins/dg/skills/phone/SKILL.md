@@ -38,8 +38,8 @@ Common flags. Every flag, with limits and defaults: [references/flags.md](refere
 | Flag | Short | Effect | Default |
 |---|---|---|---|
 | `--image <path>` | none | `text`: send an image | off |
-| `--phi` | none | `text`: mark PHI | off |
-| `--vault <name>` | none | `text`: send a vault item | off |
+| `--phi` | none | `text`: mark PHI. Only when the human asks for that send | off |
+| `--vault <name>` | none | `text`: send a vault item. Implies `--phi`, so only when the human asks | off |
 | `--as <name\|ext>` | none | card name, else extension | `dg` |
 | `--with <handle>` | none | `close`: machine to hang up | off |
 | `--clear` | none | `close --with`: drop its contacts | off |
@@ -118,7 +118,7 @@ dg phone text +grok --vault lab-1
 dg phone vault exec lab-1 --out lab-1-sum -- ./summarize
 ```
 
-The vault holds PHI that you can use but never read. `phone vault list` shows names only; `phone vault rm` deletes an item. Weekly keys are `phone-vault/<yyyy>-w<ww>` (`yyyy-W<ww>` is the same week). `Lab` and `lab` are one item. A received `dg-phi` item shows only `[PHI: vault item <name> from +handle]`. `phone vault open <name>` is for a human at a terminal. Do not run it.
+The vault holds PHI that you can use but never read. `phone vault list` shows names only; `phone vault rm` deletes an item. A received `dg-phi` item shows only `[PHI: vault item <name> from +handle]`. `phone vault open <name>` is for a human at a terminal. Do not run it.
 
 Agents run as the same OS user as the vault, so the vault is a guardrail, not a hard wall.
 Follow [references/safety.md](references/safety.md). Details: [references/images-vault.md](references/images-vault.md).
@@ -141,6 +141,4 @@ dg phone text +<handle-from-accept> - <<'MSG'
 MSG
 ```
 
-unread only reads messages that listener has already stored, so without open a reply never shows up.
-
-**Grok Bot note:** a Grok Bot runs this setup on its cloud computer, including `phone open`. Its key is in file mode and it has no push. With no user systemd bus, use `phone open --ensure`. Set `GROK_AGENT_NAME` before `number`. Codex note: see the reference.
+**Grok Bot note:** a Grok Bot runs this setup on its cloud computer, including `phone open`. Its key is in file mode and it has no push. With no user systemd bus, use `phone open --ensure`. Set `GROK_AGENT_NAME` before `number`. `unread` reads only what the listener stored, so without `phone open` no reply shows. Codex: [references/setup-other-side.md](references/setup-other-side.md).
