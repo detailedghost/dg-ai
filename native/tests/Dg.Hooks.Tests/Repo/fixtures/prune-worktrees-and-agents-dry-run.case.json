@@ -1,0 +1,114 @@
+{
+  "hook": "daily-prune",
+  "args": [
+    "--now",
+    "--dry-run"
+  ],
+  "repos": [
+    {
+      "path": "code/alpha",
+      "files": {
+        ".gitignore": ".agents/cache/\n.agents/tmp/\n.agents/scratch.txt\n",
+        "README.md": "hi\n",
+        ".agents/school/rules.md": "kept\n"
+      },
+      "worktrees": [
+        {
+          "path": "code/worktrees/alpha-merged",
+          "branch": "merged-clean"
+        },
+        {
+          "path": "code/worktrees/alpha-dirty",
+          "branch": "dirty-one"
+        },
+        {
+          "path": "code/worktrees/alpha-other",
+          "branch": "zz-last"
+        }
+      ]
+    },
+    {
+      "path": "code/beta",
+      "files": {
+        ".gitignore": ".agents/cache/\n.agents/tmp/\n.agents/scratch.txt\n",
+        "README.md": "hi\n",
+        ".agents/school/rules.md": "kept\n"
+      },
+      "worktrees": []
+    }
+  ],
+  "entries": [
+    {
+      "path": "code/alpha/.agents/cache/old.bin",
+      "ageDays": 45
+    },
+    {
+      "path": "code/alpha/.agents/cache/new.bin",
+      "ageDays": 5
+    },
+    {
+      "path": "code/alpha/.agents/tmp/nested/deeper/old.txt",
+      "ageDays": 45
+    },
+    {
+      "path": "code/alpha/.agents/scratch.txt",
+      "ageDays": 60
+    },
+    {
+      "path": "code/alpha/.agents/school/ignored-but-kept.md",
+      "ageDays": 90
+    },
+    {
+      "path": "code/alpha/.agents/spec/x/ignored.md",
+      "ageDays": 90
+    },
+    {
+      "path": "code/alpha/.agents/notes/HANDOFF.md",
+      "ageDays": 90
+    },
+    {
+      "path": "code/alpha/.agents/tmp/jot/keepme.md",
+      "ageDays": 90
+    },
+    {
+      "path": "code/worktrees/alpha-merged/.agents/cache/old.bin",
+      "ageDays": 45
+    },
+    {
+      "path": "code/worktrees/alpha-merged/.agents/cache/sub/old2.bin",
+      "ageDays": 45
+    },
+    {
+      "path": "code/worktrees/alpha-dirty/.agents/tmp/old.txt",
+      "ageDays": 45
+    },
+    {
+      "path": "code/worktrees/alpha-dirty/.agents/tmp/new.txt",
+      "ageDays": 1
+    },
+    {
+      "path": "code/beta/.agents/cache/old.bin",
+      "ageDays": 45
+    }
+  ],
+  "runner": [
+    {
+      "match": [
+        "worktree",
+        "remove",
+        "dirty-one"
+      ],
+      "status": 1,
+      "stderr": "\u001b[31mrefusing: uncommitted changes\u001b[0m\nsecond line\n"
+    },
+    {
+      "match": [
+        "worktree",
+        "remove",
+        "zz-last"
+      ],
+      "status": 1,
+      "stderr": "not merged into master\n"
+    }
+  ]
+}

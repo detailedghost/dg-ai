@@ -1,0 +1,9 @@
+{
+  "hook": "daily-prune",
+  "entries": [
+    {
+      "path": "state/hooks/daily-prune.stamp",
+      "ageDays": 0.5
+    }
+  ]
+}

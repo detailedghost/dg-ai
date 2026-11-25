@@ -1,0 +1,22 @@
+{
+  "hook": "daily-prune",
+  "args": [
+    "--now"
+  ],
+  "entries": [
+    {
+      "path": "scratch/claude/aaaaaaaa/old.txt",
+      "ageDays": 20
+    },
+    {
+      "path": "state/claude/bbbbbbbb/old.txt",
+      "ageDays": 40
+    },
+    {
+      "path": "scratch",
+      "kind": "dir",
+      "ageDays": 0,
+      "mode": "0777"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+--- exit
+2
+--- stdout
+--- stderr
+/proj/.agents/spec/027_x/plan.md
+spec validate failed (exit 1):
+missing Testing Criteria
+  line 4
+--- calls
+call: spec lint-waves /proj/.agents/spec/027_x/plan.md (cwd=/proj)
+call: spec validate /proj/.agents/spec/027_x/plan.md (cwd=/proj)

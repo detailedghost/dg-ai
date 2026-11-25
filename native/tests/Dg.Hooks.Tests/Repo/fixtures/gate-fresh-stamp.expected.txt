@@ -1,0 +1,18 @@
+--- exit
+0
+--- stdout
+--- stderr
+--- calls
+--- stamp
+1 days
+--- tree
+code/
+home/
+outside/
+scratch/
+scratch/hooks/
+state/
+state/hooks/
+state/hooks/daily-prune.stamp
+xdg/
+--- pruned

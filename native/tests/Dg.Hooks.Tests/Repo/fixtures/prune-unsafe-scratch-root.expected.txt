@@ -1,0 +1,33 @@
+--- exit
+0
+--- stdout
+--- stderr
+--- calls
+--- stamp
+absent
+--- log
+daily-prune <NOW>
+removed <ROOT>/state/claude (empty tool dir)
+removed <ROOT>/state/claude/bbbbbbbb (bucket past TTL)
+scratch prune failed: unsafe scratch/state directory: <ROOT>/scratch
+--- logfile
+daily-prune <NOW>
+removed <ROOT>/state/claude (empty tool dir)
+removed <ROOT>/state/claude/bbbbbbbb (bucket past TTL)
+scratch prune failed: unsafe scratch/state directory: <ROOT>/scratch
+--- tree
+code/
+home/
+outside/
+scratch/
+scratch/claude/
+scratch/claude/aaaaaaaa/
+scratch/claude/aaaaaaaa/old.txt
+scratch/hooks/
+scratch/hooks/daily-prune.log
+state/
+xdg/
+--- pruned
+state/claude/
+state/claude/bbbbbbbb/
+state/claude/bbbbbbbb/old.txt

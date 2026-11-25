@@ -1,0 +1,41 @@
+--- exit
+0
+--- stdout
+--- stderr
+--- calls
+--- stamp
+absent
+--- log
+daily-prune <NOW>
+removed <ROOT>/scratch/claude (empty tool dir)
+removed <ROOT>/scratch/claude/eeeeeeee (bucket past TTL)
+removed <ROOT>/scratch/tool-link (flat file past TTL)
+removed <ROOT>/state/claude (empty tool dir)
+removed <ROOT>/state/claude/entry-link (global entry past TTL)
+--- logfile
+daily-prune <NOW>
+removed <ROOT>/scratch/claude (empty tool dir)
+removed <ROOT>/scratch/claude/eeeeeeee (bucket past TTL)
+removed <ROOT>/scratch/tool-link (flat file past TTL)
+removed <ROOT>/state/claude (empty tool dir)
+removed <ROOT>/state/claude/entry-link (global entry past TTL)
+--- tree
+code/
+home/
+outside/
+outside/precious/
+outside/precious/data.txt
+scratch/
+scratch/hooks/
+scratch/hooks/daily-prune.log
+state/
+state/tool-link -> ../outside/precious
+xdg/
+--- pruned
+scratch/claude/
+scratch/claude/eeeeeeee/
+scratch/claude/eeeeeeee/link -> ../../../outside/precious
+scratch/claude/eeeeeeee/old.txt
+scratch/tool-link -> ../outside/precious
+state/claude/
+state/claude/entry-link -> ../../outside/precious

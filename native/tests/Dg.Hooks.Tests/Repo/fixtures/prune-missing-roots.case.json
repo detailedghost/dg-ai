@@ -1,0 +1,10 @@
+{
+  "hook": "daily-prune",
+  "args": [
+    "--now"
+  ],
+  "env": {
+    "AI_SCRATCH_DIR": "<ROOT>/home/none/scratch",
+    "AI_STATE_DIR": "<ROOT>/home/none/state"
+  }
+}

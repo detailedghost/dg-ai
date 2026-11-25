@@ -1,0 +1,16 @@
+--- exit
+2
+--- stdout
+--- stderr
+hooks run daily-prune: --dry-run requires --now
+--- calls
+--- stamp
+absent
+--- tree
+code/
+home/
+outside/
+scratch/
+state/
+xdg/
+--- pruned

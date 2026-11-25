@@ -1,0 +1,23 @@
+--- exit
+0
+--- stdout
+--- stderr
+--- calls
+--- stamp
+absent
+--- log
+daily-prune <NOW>
+--- logfile
+--- tree
+code/
+home/
+home/none/
+home/none/scratch/
+home/none/scratch/hooks/
+home/none/scratch/hooks/daily-prune.log
+home/none/state/
+outside/
+scratch/
+state/
+xdg/
+--- pruned
