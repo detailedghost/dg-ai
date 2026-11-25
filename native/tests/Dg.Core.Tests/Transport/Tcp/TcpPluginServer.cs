@@ -58,10 +58,11 @@ internal sealed class TcpPluginServer : IAsyncDisposable
                 _ = Task.Run(() => Serve(client));
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!_stop.IsCancellationRequested)
         {
             _fault.Record(ex);
         }
+        catch (Exception) { }
     }
 
     private async Task Serve(TcpClient client)

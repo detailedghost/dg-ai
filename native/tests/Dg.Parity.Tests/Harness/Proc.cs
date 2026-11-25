@@ -62,7 +62,7 @@ internal static class Proc
         try
         {
             await process.WaitForExitAsync(limit.Token);
-            await pumps;
+            await pumps.WaitAsync(limit.Token);
         }
         catch (OperationCanceledException)
         {

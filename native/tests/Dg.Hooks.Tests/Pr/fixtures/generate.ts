@@ -1,21 +1,13 @@
-import {
-	chmodSync,
-	mkdirSync,
-	mkdtempSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { resolveDgPaths } from "../../../../../pkg/common/src/node/dg-paths";
 import { main } from "../../../../../pkg/skills-cli/src/hooks/cli";
 import { runCommand } from "../../../../../pkg/skills-cli/src/hooks/spawn";
+import { createEmitter } from "../../../fixture-support";
 
 const dir = import.meta.dir;
 const check = process.argv.includes("--check");
-const stale: string[] = [];
 
 type FileValue = string | { base64: string };
 
@@ -134,18 +126,7 @@ async function run(entry: Case): Promise<Record<string, unknown>> {
 	}
 }
 
-function emit(name: string, text: string): void {
-	const file = join(dir, name);
-	if (check) {
-		let current = "";
-		try {
-			current = readFileSync(file, "utf8");
-		} catch {}
-		if (current !== text) stale.push(name);
-		return;
-	}
-	writeFileSync(file, text);
-}
+const { emit, finish } = createEmitter(dir, check, (name) => name.endsWith(".expected.json"));
 
 for (const file of readdirSync(dir).filter((name) => name.endsWith(".case.json")).sort()) {
 	const base = file.slice(0, -".case.json".length);
@@ -153,17 +134,4 @@ for (const file of readdirSync(dir).filter((name) => name.endsWith(".case.json")
 	emit(`${base}.expected.json`, `${JSON.stringify(await run(entry), null, "\t")}\n`);
 }
 
-if (!check) {
-	const expected = new Set(
-		readdirSync(dir)
-			.filter((name) => name.endsWith(".case.json"))
-			.map((name) => `${name.slice(0, -".case.json".length)}.expected.json`),
-	);
-	for (const file of readdirSync(dir).filter((name) => name.endsWith(".expected.json")))
-		if (!expected.has(file)) rmSync(join(dir, file));
-}
-
-if (check && stale.length) {
-	console.error(`stale fixtures: ${stale.join(", ")}`);
-	process.exit(1);
-}
+finish("run bun generate.ts");
