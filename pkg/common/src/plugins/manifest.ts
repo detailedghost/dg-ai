@@ -105,23 +105,29 @@ function parseHostPort(where: Where, transport: PluginTransport, endpoint: strin
 
 export type EndpointProblem = { problem: string; next: string };
 
+const NOT_HTTP_URL: EndpointProblem = {
+	problem: "endpoint must be an http or https URL",
+	next: "set endpoint to an http or https URL in plugin.toml",
+};
+
 /** The first rule an http endpoint breaks, or undefined; the one policy for the manifest and the transport. */
 export function checkHttpEndpoint(endpoint: string, remote: boolean, plugin: string): EndpointProblem | undefined {
 	let url: URL;
 	try {
 		url = new URL(endpoint);
 	} catch {
-		return { problem: "endpoint must be an http or https URL", next: "set endpoint to an http or https URL in plugin.toml" };
+		return NOT_HTTP_URL;
 	}
-	if (url.protocol !== "http:" && url.protocol !== "https:")
-		return { problem: "endpoint must be an http or https URL", next: "set endpoint to an http or https URL in plugin.toml" };
+	if (url.protocol !== "http:" && url.protocol !== "https:") return NOT_HTTP_URL;
 	if (url.username !== "" || url.password !== "")
 		return {
 			problem: "endpoint must not hold credentials in the endpoint URL; use the plugin token from dg credentials",
 			next: `remove the credentials from endpoint in plugin.toml, then run dg credentials set ${pluginTokenCredential(plugin)}`,
 		};
-	if (remote)
-		return url.protocol === "https:" ? undefined : { problem: "a remote endpoint must use https", next: "use an https endpoint in plugin.toml" };
+	if (remote) {
+		if (url.protocol === "https:") return undefined;
+		return { problem: "a remote endpoint must use https", next: "use an https endpoint in plugin.toml" };
+	}
 	if (LOOPBACK_HOSTS.has(url.hostname)) return undefined;
 	return {
 		problem: `endpoint host ${url.hostname} is not loopback`,

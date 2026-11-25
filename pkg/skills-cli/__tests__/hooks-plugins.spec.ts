@@ -283,7 +283,7 @@ describe("resolveExternalHook", () => {
 		const dir = installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");
 		const tree = hashTree(join(dir, "src"));
 		writeFileSync(join(dir, "dg-plugin.json"), JSON.stringify({ treeSha256: tree, approvedSha256: tree }));
-		await expect(resolveExternalHook("scan", world.env())).rejects.toThrow(/not approved/);
+		await expect(resolveExternalHook("scan", world.env())).rejects.toThrow(/not approved.*must hold exactly the keys/);
 	});
 
 	test("refuses a plugin whose src changed after approval", async () => {

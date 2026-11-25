@@ -53,10 +53,12 @@ describe("the release builds the compiled dg in the bundle job, and no per-progr
 	});
 
 	test("the front-door job builds only the dg-front program", () => {
-		const front = JSON.stringify(release.jobs["build-front"]);
+		const front = release.jobs["build-front"];
+		expect(front).toBeDefined();
+		const commands = (front?.steps ?? []).flatMap((step) => (step.run === undefined ? [] : [step.run]));
 
-		expect(front).toContain("dg-front-");
-		expect(front).not.toContain("--compiled");
+		expect(commands.some((command) => command.includes("dg-front-"))).toBe(true);
+		expect(commands.some((command) => command.includes("--compiled"))).toBe(false);
 	});
 
 	test("no build workflow compiles a binary either", () => {

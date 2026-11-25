@@ -13,6 +13,7 @@ import {
 	isApproved,
 	isEnabled,
 	pluginFolder,
+	pluginSrcDir,
 	type PluginRecord,
 	readRecord,
 	removeFolder,
@@ -77,12 +78,8 @@ function disableAndUnload(name: string, env: Env): void {
 	if (isEnabled(name, env)) writeEnabled(name, false, env);
 }
 
-function srcDir(name: string, env: Env): string {
-	return join(pluginFolder(name, env), "src");
-}
-
 function load(record: PluginRecord, env: Env): void {
-	const src = srcDir(record.name, env);
+	const src = pluginSrcDir(record.name, env);
 	const target = join(pluginFolder(record.name, env), "skills");
 	removeFolder(target);
 	const files = listTree(src);
@@ -158,7 +155,7 @@ export function updatePlugin(name: string, input: { pin?: Pin } = {}, env: Env =
 		if (skillDirs(staged.files, name).length === 0)
 			throw new DgCliError(`dg plugin: ${record.source} no longer has a SKILL.md. Next: keep the installed version, or run dg plugin remove ${name}.`);
 		const changed = staged.treeSha256 !== record.treeSha256;
-		const src = srcDir(name, env);
+		const src = pluginSrcDir(name, env);
 		removeFolder(src);
 		renameSync(staged.dir, src);
 		const next: PluginRecord = { ...record, pin: staged.pin, treeSha256: staged.treeSha256, approvedSha256: changed ? null : record.approvedSha256 };
@@ -177,7 +174,7 @@ export function updatePlugin(name: string, input: { pin?: Pin } = {}, env: Env =
 /** Checks the installed files against the record and reports what dg cannot enforce; `approve` records the approval. */
 export function verifyPlugin(name: string, input: { approve: boolean }, env: Env = process.env): VerifyReport {
 	let record = readRecord(name, env);
-	const src = srcDir(name, env);
+	const src = pluginSrcDir(name, env);
 	const intact = hashTree(src) === record.treeSha256;
 	const problems: string[] = [];
 	if (!intact) {
@@ -207,7 +204,7 @@ export function listPlugins(env: Env = process.env): ListRow[] {
 export function approvedHelper(name: string, env: Env = process.env): { command: string; args: string[] } {
 	const record = readRecord(name, env);
 	if (!isApproved(record, env)) throw notApproved(name);
-	const entry = readManifest(srcDir(name, env))?.entry;
+	const entry = readManifest(pluginSrcDir(name, env))?.entry;
 	if (entry === undefined || !("command" in entry)) throw new DgCliError(`dg plugin: ${name} ships no helper command. Next: nothing to run.`);
 	return { command: entry.command, args: entry.args };
 }

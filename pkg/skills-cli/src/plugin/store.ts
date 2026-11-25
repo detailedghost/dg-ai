@@ -59,8 +59,13 @@ function parseRecord(name: string, file: string, text: string): PluginRecord {
 	return value as PluginRecord;
 }
 
+export function pluginSrcDir(name: string, env: Env): string {
+	return join(pluginFolder(name, env), "src");
+}
+
 export function isApproved(record: PluginRecord, env: Env): boolean {
-	return record.approvedSha256 !== null && record.approvedSha256 === record.treeSha256 && hashTree(join(pluginFolder(record.name, env), "src")) === record.treeSha256;
+	const { approvedSha256, treeSha256 } = record;
+	return approvedSha256 !== null && approvedSha256 === treeSha256 && hashTree(pluginSrcDir(record.name, env)) === treeSha256;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

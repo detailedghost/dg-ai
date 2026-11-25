@@ -1095,20 +1095,18 @@ function seedRelease(releases: string, tag: string, names: string[], salt: strin
 const compiledName = (key: string): string => (key.startsWith("windows-") ? `dg-${key}.exe` : `dg-${key}`);
 
 describe("the release patches cover the front doors", () => {
-	test.skipIf(ZSTD === null)("an asset listing or download error fails the step instead of skipping the patch", () => {
-		for (const failing of ["GH_FAIL_VIEW", "GH_FAIL_DOWNLOAD"]) {
-			const sandbox = createStepSandbox();
-			const releases = join(sandbox.root, "releases");
-			writeFileSync(join(sandbox.root, "bin", "gh"), GH_DOWNLOAD_STUB);
-			seedRelease(releases, "v7.0.0", BUN_KEYS.map(compiledName), "old");
-			seedRelease(releases, "v7.0.1", [...BUN_KEYS.map(compiledName), ...FRONT_ASSETS], "new");
-			try {
-				const result = sandbox.run(patchStep, { TAG: "v7.0.1", PREV: "v7.0.0", RELEASES: releases, [failing]: "1" });
-				expect(result.code).not.toBe(0);
-				expect(result.stdout).not.toContain("has no");
-			} finally {
-				sandbox.cleanup();
-			}
+	test.skipIf(ZSTD === null).each(["GH_FAIL_VIEW", "GH_FAIL_DOWNLOAD"])("%s fails the step instead of skipping the patch", (failing) => {
+		const sandbox = createStepSandbox();
+		const releases = join(sandbox.root, "releases");
+		writeFileSync(join(sandbox.root, "bin", "gh"), GH_DOWNLOAD_STUB);
+		seedRelease(releases, "v7.0.0", BUN_KEYS.map(compiledName), "old");
+		seedRelease(releases, "v7.0.1", [...BUN_KEYS.map(compiledName), ...FRONT_ASSETS], "new");
+		try {
+			const result = sandbox.run(patchStep, { TAG: "v7.0.1", PREV: "v7.0.0", RELEASES: releases, [failing]: "1" });
+			expect(result.code).not.toBe(0);
+			expect(result.stdout).not.toContain("has no");
+		} finally {
+			sandbox.cleanup();
 		}
 	});
 

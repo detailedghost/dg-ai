@@ -222,19 +222,28 @@ describe("httpTransport remote policy", () => {
 
 	test("names the credentials command when the endpoint holds a user name", () => {
 		const manifest = { ...manifestFor("http://127.0.0.1:9"), endpoint: "http://user:pw@127.0.0.1:9/dg" };
-		const message = (() => {
-			try {
-				httpTransport(manifest, { credentials: credentials() });
-			} catch (thrown) {
-				return (thrown as Error).message;
-			}
-		})();
-		expect(message).toContain("Next: remove the credentials from endpoint in plugin.toml, then run dg credentials set plugin-");
+		expect(() => httpTransport(manifest, { credentials: credentials() })).toThrow(
+			/Next: remove the credentials from endpoint in plugin\.toml, then run dg credentials set plugin-/,
+		);
+	});
+
+	test("names the remote setting when a non-loopback endpoint is not remote", () => {
+		const manifest = { ...manifestFor("http://127.0.0.1:9"), endpoint: "https://policy.example.com/dg" };
+		expect(() => httpTransport(manifest, { credentials: credentials(), allowRemote: true })).toThrow(
+			/Next: set remote = true in plugin\.toml and allow_remote = true in config\.toml, or use a loopback endpoint/,
+		);
 	});
 
 	test("refuses a remote endpoint that is not https", () => {
 		const manifest = { ...remote(), endpoint: "http://policy.example.com/dg" };
-		expect(() => httpTransport(manifest, { credentials: credentials(), allowRemote: true })).toThrow(/https/);
+		expect(() => httpTransport(manifest, { credentials: credentials(), allowRemote: true })).toThrow(/Next: use an https endpoint in plugin\.toml/);
+	});
+
+	test("names the http scheme when the endpoint is not an http URL", () => {
+		const manifest = { ...manifestFor("http://127.0.0.1:9"), endpoint: "ftp://127.0.0.1:9/dg" };
+		expect(() => httpTransport(manifest, { credentials: credentials() })).toThrow(
+			/Next: set endpoint to an http or https URL in plugin\.toml/,
+		);
 	});
 
 	test("refuses a manifest that does not use the http transport", () => {
