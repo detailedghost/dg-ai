@@ -65,7 +65,9 @@ import {
 import { createWebMcpSigner } from "./webmcp-signing";
 import { createIdbGrantNonces } from "./webmcp-grant-nonces";
 import { forgetAgentTabsAndShims } from "./dialog-shim";
+import { type AgentWindowApi, createAgentWindows } from "./agent-window";
 import { createSessionControl } from "./session-control";
+import { createSiteAllow, type SiteAllow, type SiteAllowWindows } from "./site-allow-prompt";
 import { PW_EXT_STOP_MESSAGE } from "@/lib/features/pw-ext-banner";
 import {
 	createRelayDispatcher,
@@ -166,6 +168,29 @@ function stagedAsset(
 	);
 }
 
+type SiteAllowWindowApi = {
+	windows?: {
+		create(props: { url: string; type: "popup"; width: number; height: number; focused: true }): Promise<{ id?: number }>;
+		remove(windowId: number): Promise<unknown>;
+		onRemoved?: { addListener(listener: (windowId: number) => void): void };
+	};
+};
+
+const SITE_ALLOW_WINDOW = { type: "popup", width: 480, height: 440, focused: true } as const;
+
+function siteAllowWindows(api: ChatBrowserApi): SiteAllowWindows {
+	const { windows } = api as unknown as SiteAllowWindowApi;
+	return {
+		async open(url) {
+			return (await windows?.create({ url, ...SITE_ALLOW_WINDOW }))?.id;
+		},
+		async close(windowId) {
+			await windows?.remove(windowId);
+		},
+		onRemoved: (listener) => windows?.onRemoved?.addListener(listener),
+	};
+}
+
 function pwExtContext({
 	bootstrap,
 }: {
@@ -196,6 +221,7 @@ export function registerDaemonLink(
 	adopt(bootstrap: SessionBootstrap): Promise<void>;
 	daemonPort(): Promise<number | undefined>;
 	pending(sessionId?: string): RelayRun[];
+	siteAllow: SiteAllow;
 } {
 	const api = options.browserApi ?? (browser as unknown as ChatBrowserApi);
 	const openSocket = options.openSocket ?? defaultOpenSocket;
@@ -224,6 +250,17 @@ export function registerDaemonLink(
 		});
 	const pwExtApi = api as unknown as PwExtBrowserApi;
 	const sessionControl = createSessionControl({ storage: api.storage as unknown as AgentTabsStorage });
+	const agentWindows = createAgentWindows({
+		browserApi: api as unknown as AgentWindowApi,
+		storage: api.storage as unknown as AgentTabsStorage,
+	});
+	const siteAllow = createSiteAllow({
+		control: sessionControl,
+		storage: api.storage as unknown as AgentTabsStorage,
+		windows: siteAllowWindows(api),
+		pageUrl: (path) => api.runtime.getURL(path),
+		navigate: agentWindows.navigate,
+	});
 	const pwExtRelay = createPwExtHandler({
 		browserApi: pwExtApi,
 		agentTabs,
@@ -231,6 +268,7 @@ export function registerDaemonLink(
 		webmcpGrants,
 		rememberedWebMcpGrants,
 		control: sessionControl,
+		siteAllow,
 	});
 	const relayHandlers: {
 		[N in RelayFeatureName]: RelayHandler<FeatureNamed<N>>;
@@ -522,6 +560,8 @@ export function registerDaemonLink(
 			() => unmaskGrants.forget(sessionId),
 			() => webmcpGrants.forget(sessionId),
 			() => sessionControl.forget(sessionId),
+			() => agentWindows.forget(sessionId),
+			() => siteAllow.forget(sessionId),
 		])
 			void Promise.resolve()
 				.then(cleanup)
@@ -989,5 +1029,5 @@ export function registerDaemonLink(
 		return undefined;
 	});
 
-	return { client, adopt, daemonPort, pending: dispatcher.pending };
+	return { client, adopt, daemonPort, pending: dispatcher.pending, siteAllow };
 }

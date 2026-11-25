@@ -1,9 +1,10 @@
 import { DgCliError } from "@dg/common";
-import { readDgToml, resolveCliSession } from "@dg/common/node";
+import { readDgToml, readPidFile, resolveCliSession, resolveDgPaths } from "@dg/common/node";
+import { connectedExtensionVersion } from "../doctor/probes";
 import { isCliOnly } from "../utils/cli-only";
 import {
+	autoExtArgv,
 	forcedBrowserMode,
-	isExtCapable,
 	resolveBrowserMode,
 	withoutLocalFlag,
 } from "./browser-mode";
@@ -16,6 +17,7 @@ import {
 	UsageError,
 } from "./core/args";
 import { BrowserMissingError } from "./core/browser";
+import type { ExtDeps } from "./ext";
 import { bunVersionError } from "./core/bun-version";
 import { defaultEnv, forward, VERSION } from "./core/client";
 import { commandHelp, indexHelp } from "./core/help";
@@ -24,11 +26,22 @@ import type { ClientEnv, ClientHandler } from "./core/spec";
 export const RUN_CODE_MOVED =
 	"run-code moved to pw-code (it needs your approval each time).";
 
-async function extensionConnected(): Promise<boolean> {
+type ExtensionProbe = { session(): Promise<unknown>; version(): Promise<string | null> };
+
+const LIVE_PROBE: ExtensionProbe = {
+	session: () => resolveCliSession(),
+	async version() {
+		const handle = readPidFile(resolveDgPaths());
+		return handle ? connectedExtensionVersion(handle) : null;
+	},
+};
+
+/** True only when a daemon session exists and the daemon reports a paired extension that has contacted it. */
+export async function extensionConnected(probe: ExtensionProbe = LIVE_PROBE): Promise<boolean> {
 	if (isCliOnly()) return false;
 	try {
-		await resolveCliSession();
-		return true;
+		await probe.session();
+		return (await probe.version()) !== null;
 	} catch {
 		return false;
 	}
@@ -49,13 +62,19 @@ async function chooseBrowser(
 	try {
 		const config = needsConfig ? readDgToml(process.env).browser.mode : undefined;
 		const input = { flags, env: process.env, config, extConnected: false, verb };
-		const probe = !forcedBrowserMode(input) && isExtCapable(verb);
-		const decision = resolveBrowserMode({ ...input, extConnected: probe && (await extConnected()) });
+		const forced = forcedBrowserMode(input) !== undefined;
+		const mapped = autoExtArgv(argv);
+		const probe = !forced && mapped !== undefined;
+		const decision = resolveBrowserMode({
+			...input,
+			fits: mapped !== undefined,
+			extConnected: probe && (await extConnected()),
+		});
 		if (flags.ext && !flags.local && decision.mode === "local") {
 			env.err(`pw ${verb} runs only in local mode. Next: run it without --ext.`);
 			return 2;
 		}
-		return { argv, ext: decision.mode === "ext" };
+		return { argv: decision.mode === "ext" && !forced && mapped ? mapped : argv, ext: decision.mode === "ext" };
 	} catch (error) {
 		if (!(error instanceof DgCliError)) throw error;
 		env.err(error.message);
@@ -68,6 +87,7 @@ export async function main(
 	env: ClientEnv = defaultEnv(),
 	commands: readonly CommandEntry[] = COMMANDS,
 	extConnected: () => Promise<boolean> = extensionConnected,
+	extDeps?: ExtDeps,
 ): Promise<number> {
 	if (argv[0] === "daemon") {
 		await (await import("./daemon")).runDaemon(argv[1]);
@@ -83,7 +103,7 @@ export async function main(
 		return (await import("./tab-verbs")).runTabVerb(verb, argv, env);
 	const route = await chooseBrowser(argv, env, extConnected);
 	if (typeof route === "number") return route;
-	if (route.ext) return (await import("./ext")).runExt(route.argv, env);
+	if (route.ext) return (await import("./ext")).runExt(route.argv, env, extDeps);
 	try {
 		const args = normalize(route.argv);
 		const name = commandName(args);

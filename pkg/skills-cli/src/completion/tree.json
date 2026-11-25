@@ -1718,6 +1718,78 @@
 							},
 							{
 								"name": "credential"
+							},
+							{
+								"name": "go-back"
+							},
+							{
+								"name": "go-forward"
+							},
+							{
+								"name": "reload"
+							},
+							{
+								"name": "hover"
+							},
+							{
+								"name": "dblclick"
+							},
+							{
+								"name": "drag"
+							},
+							{
+								"name": "mousedown"
+							},
+							{
+								"name": "mouseup"
+							},
+							{
+								"name": "mousemove"
+							},
+							{
+								"name": "mousewheel"
+							},
+							{
+								"name": "check"
+							},
+							{
+								"name": "uncheck"
+							},
+							{
+								"name": "type"
+							},
+							{
+								"name": "keydown"
+							},
+							{
+								"name": "keyup"
+							},
+							{
+								"name": "eval"
+							},
+							{
+								"name": "tab-select"
+							},
+							{
+								"name": "resize"
+							},
+							{
+								"name": "localstorage-set"
+							},
+							{
+								"name": "localstorage-delete"
+							},
+							{
+								"name": "localstorage-clear"
+							},
+							{
+								"name": "sessionstorage-set"
+							},
+							{
+								"name": "sessionstorage-delete"
+							},
+							{
+								"name": "sessionstorage-clear"
 							}
 						],
 						"options": [

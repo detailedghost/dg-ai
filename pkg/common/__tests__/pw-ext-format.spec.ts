@@ -719,11 +719,11 @@ describe("pw-ext verb lists", () => {
 	];
 
 	it("keeps the read verbs as they were", () => {
-		expect([...PW_EXT_READ_VERBS]).toEqual(LEGACY_READ);
+		expect<string[]>([...PW_EXT_READ_VERBS]).toEqual(LEGACY_READ);
 	});
 
 	it("grows the write verbs only by the verbs of the registered modules", () => {
-		expect([...PW_EXT_WRITE_VERBS]).toEqual([...LEGACY_WRITE, ...MODULE_VERBS]);
+		expect<string[]>([...PW_EXT_WRITE_VERBS]).toEqual([...LEGACY_WRITE, ...MODULE_VERBS]);
 	});
 
 	it.each([

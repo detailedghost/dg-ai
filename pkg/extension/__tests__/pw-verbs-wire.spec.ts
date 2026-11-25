@@ -45,7 +45,7 @@ async function harness(options: Options = {}) {
 		(options.script ?? (() => ({ detail: "done" })))(details as { func?: { name?: string }; args: unknown[] });
 	const storage = fake.api.storage;
 	const control = createSessionControl({ storage });
-	if (options.approveSite) await control.allow(SESSION, "example.test");
+	if (options.approveSite) await control.allow(SESSION, "https://example.test");
 	const asked: ApprovalRequest[] = [];
 	const siteAsked: string[] = [];
 	const grants = createUnmaskGrants({ storage });
@@ -119,7 +119,7 @@ describe("registered verb modules", () => {
 		const h = await harness({ siteAnswer: "deny" });
 		const result = await h.run(request);
 		expect(result).toMatchObject({ ok: false });
-		expect(h.siteAsked).toEqual(["example.test"]);
+		expect(h.siteAsked).toEqual(["https://example.test"]);
 		expect(h.calls).toEqual([]);
 		expect(h.scriptRuns()).toBe(0);
 	});
@@ -127,7 +127,7 @@ describe("registered verb modules", () => {
 	it("runs hover after the person allows the site", async () => {
 		const h = await harness({ siteAnswer: "allow", script: () => ({ detail: "hovered <a>" }) });
 		expect(await h.run({ verb: "hover", target: "e1" })).toEqual({ ok: true, data: { text: "### Result\nhovered <a>" } });
-		expect(h.siteAsked).toEqual(["example.test"]);
+		expect(h.siteAsked).toEqual(["https://example.test"]);
 	});
 
 	it("never prompts for a browser page", async () => {
