@@ -15,7 +15,6 @@
 		"test": "bun test"
 	},
 	"dependencies": {
-		"@dg/channel-review": "workspace:*",
 		"@dg/common": "workspace:*",
 		"@dg/dg-agent": "workspace:*",
 		"@dg/inbox": "workspace:*",

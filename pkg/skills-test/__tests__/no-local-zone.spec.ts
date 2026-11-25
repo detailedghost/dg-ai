@@ -20,7 +20,6 @@ const skillFiles = filesUnder(join(repo, "plugins/dg/skills"));
 const publicFiles = [
 	...skillFiles,
 	...filesUnder(join(repo, "pkg/skills-cli/src")),
-	...filesUnder(join(repo, "pkg/channel-review/src")),
 ];
 
 const LOCAL_TERMS_FILE = ".no-local-zone.local";
@@ -120,11 +119,6 @@ describe("public skill distribution", () => {
 		expect(
 			matches(publicFiles, PRIVATE_PATTERN),
 		).toEqual([]);
-	});
-
-	test("includes the channel-review sources in the scanned files", () => {
-		const scanned = publicFiles.map((file) => relative(repo, file));
-		expect(scanned).toContain("pkg/channel-review/src/config.ts");
 	});
 
 	test("contains none of the terms in the optional local list", () => {

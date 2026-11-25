@@ -42,7 +42,7 @@ const addArgs = (dir: string, flags: string[], command: string[] = CMD) => [
 ];
 
 describe("job add --continuous", () => {
-	it("writes the jobs entry that service add writes and points to enable", async () => {
+	it("writes the jobs entry and points to enable", async () => {
 		const dgHome = preparedHome();
 		const dir = freshTempDir("job-cwd");
 
@@ -63,54 +63,30 @@ describe("job add --continuous", () => {
 		});
 	});
 
-	it("writes passEnv for --env and for its alias --pass-env", async () => {
+	it("writes passEnv for --env", async () => {
 		const dir = freshTempDir("job-cwd");
-		const viaEnv = preparedHome();
-		const viaAlias = preparedHome();
+		const home = preparedHome();
 
 		const env = await runCli(
-			viaEnv,
+			home,
 			addArgs(dir, ["--name", "x", "--continuous", "--env", "PATH"]),
-		);
-		const alias = await runCli(
-			viaAlias,
-			addArgs(dir, ["--name", "x", "--continuous", "--pass-env", "PATH"]),
 		);
 
 		expect(env.code).toBe(0);
-		expect(alias.code).toBe(0);
-		expect(jobsTable(readConfigFile(viaEnv)).x.passEnv).toEqual(["PATH"]);
-		expect(jobsTable(readConfigFile(viaAlias)).x).toEqual(
-			jobsTable(readConfigFile(viaEnv)).x,
-		);
+		expect(jobsTable(readConfigFile(home)).x.passEnv).toEqual(["PATH"]);
 	});
 
 	it("writes each repeated passEnv name one time", async () => {
 		const dir = freshTempDir("job-cwd");
 		const repeated = preparedHome();
-		const mixed = preparedHome();
 
 		const same = await runCli(
 			repeated,
 			addArgs(dir, ["--name", "x", "--continuous", "--env", "A", "--env", "A"]),
 		);
-		const alias = await runCli(
-			mixed,
-			addArgs(dir, [
-				"--name",
-				"x",
-				"--continuous",
-				"--env",
-				"A",
-				"--pass-env",
-				"A",
-			]),
-		);
 
 		expect(same.code).toBe(0);
-		expect(alias.code).toBe(0);
 		expect(jobsTable(readConfigFile(repeated)).x.passEnv).toEqual(["A"]);
-		expect(jobsTable(readConfigFile(mixed)).x.passEnv).toEqual(["A"]);
 	});
 
 	it("refuses --env with a value and writes nothing", async () => {
@@ -252,42 +228,7 @@ describe("job add mode flags", () => {
 });
 
 describe("job add a scheduled job", () => {
-	it("writes an enabled feed entry for --label with --every", async () => {
-		const dgHome = preparedHome();
-
-		const result = await runCli(
-			dgHome,
-			addArgs(freshTempDir("job-cwd"), ["--label", "x", "--every", "15m"]),
-		);
-
-		expect(result.code).toBe(0);
-		const row = await scheduledRow(dgHome, "x");
-		expect(row?.enabled).toBe(true);
-		expect(row?.feed).toBe(true);
-		expect(row?.every).toBe("15m");
-	});
-
-	it("writes an enabled feed entry for --name with --cron", async () => {
-		const dgHome = preparedHome();
-
-		const result = await runCli(
-			dgHome,
-			addArgs(freshTempDir("job-cwd"), [
-				"--name",
-				"x",
-				"--cron",
-				"0 9 * * 1-5",
-			]),
-		);
-
-		expect(result.code).toBe(0);
-		const row = await scheduledRow(dgHome, "x");
-		expect(row?.enabled).toBe(true);
-		expect(row?.feed).toBe(true);
-		expect(row?.schedule).toBe("0 9 * * 1-5");
-	});
-
-	it("writes an entry with no enabled key for the new form --name with --every", async () => {
+	it("writes an entry with no enabled key for --name with --every", async () => {
 		const dgHome = preparedHome();
 
 		const result = await runCli(
@@ -361,10 +302,10 @@ describe("job add on a name the table holds", () => {
 });
 
 describe("job add name rules", () => {
-	it("refuses a bad --label and a bad --name, names the flag and writes nothing", async () => {
+	it("refuses a bad --name, names the flag and writes nothing", async () => {
 		const dir = freshTempDir("job-cwd");
 		const cases: [string[], string][] = [
-			[["--label", "Bad Label", "--every", "15m"], "--label"],
+			[["--name", "Bad Name", "--every", "15m"], "--name"],
 			[["--name", "Bad_Name", "--continuous"], "--name"],
 		];
 		for (const [flags, flag] of cases) {
@@ -406,7 +347,7 @@ describe("job add name rules", () => {
 		const dgHome = preparedHome();
 		const first = await runCli(
 			dgHome,
-			addArgs(dir, ["--label", "y", "--every", "15m"]),
+			addArgs(dir, ["--name", "y", "--every", "15m"]),
 		);
 		expect(first.code).toBe(0);
 		const before = readFileSync(configPathOf(dgHome), "utf8");
@@ -421,20 +362,17 @@ describe("job add name rules", () => {
 		expect(readFileSync(configPathOf(dgHome), "utf8")).toBe(before);
 	});
 
-	it.each([
-		["--env", "PATH", "passEnv", ["PATH"]],
-		["--pass-env", "PATH", "passEnv", ["PATH"]],
-	])("stores %s of a scheduled add in the table entry", async (flag, value, key, stored) => {
+	it("stores --env of a scheduled add in the table entry", async () => {
 		const dir = freshTempDir("job-cwd");
 		const dgHome = preparedHome();
 
 		const result = await runCli(
 			dgHome,
-			addArgs(dir, ["--name", "s1", "--every", "15m", flag, value]),
+			addArgs(dir, ["--name", "s1", "--every", "15m", "--env", "PATH"]),
 		);
 
 		expect(result.code).toBe(0);
-		expect((await scheduledRow(dgHome, "s1"))?.[key]).toEqual(stored);
+		expect((await scheduledRow(dgHome, "s1"))?.passEnv).toEqual(["PATH"]);
 	});
 
 	it("stores an absolute --env-file path on a scheduled add", async () => {
@@ -490,25 +428,6 @@ describe("job add name rules", () => {
 			`job add: ${probe.ok === false ? probe.error : ""}`,
 		);
 		expect(readFileSync(configPathOf(dgHome), "utf8")).toBe(before);
-	});
-
-	it("lets --notify imply --feed on the alias forms", async () => {
-		const dir = freshTempDir("job-cwd");
-		const dgHome = preparedHome();
-
-		const label = await runCli(
-			dgHome,
-			addArgs(dir, ["--label", "n3", "--every", "15m", "--notify", "bob"]),
-		);
-		const cron = await runCli(
-			dgHome,
-			addArgs(dir, ["--name", "n4", "--cron", "0 9 * * *", "--notify", "bob"]),
-		);
-
-		expect(label.code).toBe(0);
-		expect(cron.code).toBe(0);
-		expect(label.stderr).not.toContain("--notify");
-		expect(cron.stderr).not.toContain("--notify");
 	});
 
 	it("checks the --env value before the need for --continuous", async () => {

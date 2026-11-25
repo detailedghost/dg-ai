@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
 import {
 	CHAT_JOBS_PATH,
-	CHAT_SERVICES_PATH,
 	type DaemonHandle,
 	DgCliError,
 	describeError,
@@ -95,28 +94,17 @@ async function listServicePids(
 			},
 			signal: AbortSignal.timeout(seams.listTimeoutMs ?? LIST_TIMEOUT_MS),
 		});
-	const jobsResp = await list(CHAT_JOBS_PATH);
-	const jobsBody: unknown = jobsResp.ok
-		? await jobsResp.json().catch(() => undefined)
-		: undefined;
-	if (
-		isRecord(jobsBody) &&
-		jobsBody.instanceId === handle.instanceId &&
-		Array.isArray(jobsBody.jobs)
-	) {
-		return pidsOf(jobsBody.jobs);
-	}
-	const resp = await list(CHAT_SERVICES_PATH);
+	const resp = await list(CHAT_JOBS_PATH);
 	if (!resp.ok) throw new Error(`${resp.status} ${(await resp.text()).trim()}`);
-	const body: unknown = await resp.json();
+	const body: unknown = await resp.json().catch(() => undefined);
 	if (
 		!isRecord(body) ||
-		(body.instanceId !== undefined && body.instanceId !== handle.instanceId) ||
-		!Array.isArray(body.services)
+		body.instanceId !== handle.instanceId ||
+		!Array.isArray(body.jobs)
 	) {
 		throw new Error("the answer is not from this daemon instance");
 	}
-	return pidsOf(body.services);
+	return pidsOf(body.jobs);
 }
 
 function killDaemonOnly(pid: number, seams: StopSeams): void {
@@ -163,10 +151,10 @@ async function forceStop(
 	);
 	if (!gone) {
 		throw new DgCliError(
-			`dg daemon (pid ${handle.pid}) or a service did not exit after the kill${
+			`dg daemon (pid ${handle.pid}) or a job did not exit after the kill${
 				listFailure === undefined
 					? ""
-					: `; could not list the services (${listFailure}); a service process can still run`
+					: `; could not list the jobs (${listFailure}); a job process can still run`
 			}`,
 			EXIT_GENERAL_FAILURE,
 		);
@@ -174,7 +162,7 @@ async function forceStop(
 	removeOwnPidFile(paths, handle);
 	if (listFailure !== undefined) {
 		throw new DgCliError(
-			`could not list the services (${listFailure}); a service process can still run`,
+			`could not list the jobs (${listFailure}); a job process can still run`,
 			EXIT_GENERAL_FAILURE,
 		);
 	}

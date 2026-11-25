@@ -37,13 +37,8 @@ const STARTED_DAEMON_MARK_WAIT_MS = 2_000;
 const NOT_MIGRATED =
 	"the daemon config is not migrated — run dg daemon start, then run this command again";
 
-type Noun = "service" | "job";
-
-const NO_DAEMON_TEXT: Record<Noun, string> = {
-	service:
-		"no live dg daemon — services run inside it, so start it with dg daemon start",
-	job: "no live dg daemon — jobs run inside it, so start it with dg daemon start",
-};
+const NO_DAEMON_TEXT =
+	"no live dg daemon — jobs run inside it, so start it with dg daemon start";
 
 export type JobVerbDeps = {
 	confirm(question: string): Promise<boolean>;
@@ -161,12 +156,11 @@ export async function findLiveDaemon(
 export async function callDaemon(
 	path: string,
 	method: "GET" | "POST",
-	noun: Noun,
 ): Promise<unknown> {
 	const paths = resolveDgPaths();
 	const handle = await findLiveDaemon(paths);
 	if (!handle) {
-		throw new DgCliError(NO_DAEMON_TEXT[noun], EXIT_GENERAL_FAILURE);
+		throw new DgCliError(NO_DAEMON_TEXT, EXIT_GENERAL_FAILURE);
 	}
 	const owner = readOwnerToken(paths);
 	const resp = await fetch(`http://127.0.0.1:${handle.port}${path}`, {
@@ -248,13 +242,12 @@ export function formatStatus(
 export async function assertDaemonAnswers(
 	paths: DgPaths,
 	name: string,
-	noun: Noun = "service",
 ): Promise<ReturnType<typeof readPidFile>> {
 	const pidHandle = readPidFile(paths);
 	const live = await findLiveDaemon(paths);
 	if (!live && pidHandle && isAlive(pidHandle.pid)) {
 		throw new DgCliError(
-			`dg daemon (pid ${pidHandle.pid}) does not answer, so the state of ${noun} "${name}" is unknown — run dg daemon stop --force first`,
+			`dg daemon (pid ${pidHandle.pid}) does not answer, so the state of job "${name}" is unknown — run dg daemon stop --force first`,
 			EXIT_GENERAL_FAILURE,
 		);
 	}
@@ -270,7 +263,7 @@ export async function callJobRoute(
 	method: "GET" | "POST",
 ): Promise<unknown> {
 	try {
-		return await callDaemon(path, method, "job");
+		return await callDaemon(path, method);
 	} catch (err) {
 		if (
 			err instanceof DaemonCallError &&
@@ -303,13 +296,12 @@ export async function liveJobStates(
 export function assertNoLiveInstance(
 	paths: DgPaths,
 	name: string,
-	noun: Noun = "service",
 ): void {
 	const instance = servicePidFile(paths.daemonDir, name);
 	const instancePid = readInstancePid(instance);
 	if (instancePid !== undefined) {
 		throw new DgCliError(
-			`${noun} "${name}" still runs as pid ${instancePid} — stop it, or delete ${instance} if that pid is not the ${noun}`,
+			`job "${name}" still runs as pid ${instancePid} — stop it, or delete ${instance} if that pid is not the job`,
 			EXIT_GENERAL_FAILURE,
 		);
 	}

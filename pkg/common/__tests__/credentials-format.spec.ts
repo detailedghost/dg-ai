@@ -14,8 +14,8 @@ import {
 
 describe("validateCredentialName", () => {
 	it.each([
-		"channel-review/datadog",
-		"channel-review/relay/dev",
+		"my-service/datadog",
+		"my-service/relay/dev",
 		"a",
 		"x.y_z-1",
 	])("accepts %p", (name) => {
@@ -99,10 +99,10 @@ describe("validateCredentialsCliRequest", () => {
 		{ operation: "get", name: "consumer/example" },
 		{ operation: "delete", name: "consumer/example" },
 		{ operation: "set", name: "consumer/example", value: "v", meta: {} },
-		{ operation: "grant", prefix: "channel-review" },
-		{ operation: "revoke", prefix: "channel-review" },
+		{ operation: "grant", prefix: "my-service" },
+		{ operation: "revoke", prefix: "my-service" },
 		{ operation: "grant-list" },
-		{ operation: "list", grant: { prefix: "channel-review", token: "t" } },
+		{ operation: "list", grant: { prefix: "my-service", token: "t" } },
 	])("accepts %p", (fields) => {
 		expect(validateCredentialsCliRequest({ ...base, ...fields })).toMatchObject(
 			fields,
@@ -118,7 +118,7 @@ describe("validateCredentialsCliRequest", () => {
 		{ operation: "list", requestId: "" },
 		{ operation: "grant", prefix: "has/slash" },
 		{ operation: "revoke" },
-		{ operation: "list", grant: { prefix: "channel-review" } },
+		{ operation: "list", grant: { prefix: "my-service" } },
 		{ operation: "list", grant: { prefix: "bad prefix", token: "t" } },
 		{ operation: "list", grant: { prefix: "a", token: "t", extra: 1 } },
 	])("rejects %p", (fields) => {

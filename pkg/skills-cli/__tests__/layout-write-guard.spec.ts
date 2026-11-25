@@ -3,7 +3,6 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
-import { launchChrome } from "../src/channel-review/connect";
 import { registerDemo } from "../src/commands/demo";
 import { ensureNarrationAssets } from "../src/demo/narration-assets";
 import { launchLocal } from "../src/demo/player-process";
@@ -132,13 +131,6 @@ posix("dg writers refuse an unmoved legacy entry", () => {
 
 		await expect(launchLocal(job, plan)).rejects.toBeInstanceOf(DgCliError);
 		expect(existsSync(join(resolveDgPaths().stateDir, "demo-profile"))).toBe(false);
-	});
-
-	test("launchChrome creates no browser-profiles folder while the legacy folder holds data", async () => {
-		legacy("browser-profiles/connect/Default/Preferences");
-
-		await expect(launchChrome()).rejects.toBeInstanceOf(DgCliError);
-		expect(existsSync(join(resolveDgPaths().stateDir, "browser-profiles"))).toBe(false);
 	});
 
 	test("scrapePrototype creates no proto folder while the legacy proto folder holds data", async () => {

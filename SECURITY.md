@@ -7,13 +7,13 @@ artifact. Install the latest tag to receive them.
 ## Supported versions
 
 The compiled `dg` program, the extension, and the install scripts ship together
-in one `vX.Y.Z` release. Channel-review ships inside `dg`. The skill
+in one `vX.Y.Z` release. The skill
 tree and the install scripts install from the latest release. Fixes still land
 on `master` first.
 
 | Artifact | Tag | Supported release |
 | --- | --- | --- |
-| `dg-<os>-<arch>[-baseline][.exe]`, the compiled `dg` (daemon, agent, inbox and channel-review included) | `v*` | Latest tag |
+| `dg-<os>-<arch>[-baseline][.exe]`, the compiled `dg` (daemon, agent and inbox included) | `v*` | Latest tag |
 | `dg-lib-<v>.tar.gz` and `runtime.json` (the 6.3 self-update bridge only) | `v*` | Latest tag |
 | `dg-ai-extension` zip | `v*` | Latest tag |
 | Skill tree (`plugins/dg/skills`) | `v*` | Latest tag |
@@ -40,7 +40,7 @@ Include:
 - What a successful attack can reach.
 - Steps to reproduce, or a proof of concept with every secret redacted.
 - Which component is affected: the extension, a daemon, the credential store,
-  channel-review, or an install script.
+  or an install script.
 
 Keep the full report on that private advisory. If the advisory form is
 unavailable, contact the repository owner on GitHub and ask them to open one
@@ -73,9 +73,6 @@ Report vulnerabilities in these parts of this repository:
   scheduled jobs, and supervised services), `dg agent`, and every `dg` command.
 - **Credential store.** The encrypted `credentials.db`, grant tokens, and the
   `dg credentials` commands.
-- **Channel-review daemon.** The local daemon in `pkg/channel-review` that
-  `dg channel-review` runs. It watches a Teams bot relay and keeps state
-  under `<DG_HOME>/channel-review`.
 - **Install scripts.** `pkg/skills-cli/bootstrap.sh`,
   `pkg/skills-cli/bootstrap.ps1`, and the GitHub release downloads performed by
   `dg install`.
@@ -132,11 +129,10 @@ change the argv of that fetch, and gets one fetch for one credential in 60 s. Se
 Keep secrets out of agent memory. Demo and prototype fill text is stored as
 plaintext. Type passwords, tokens, and MFA codes by hand.
 
-Channel-review reads its relay secret from `CHANNEL_REVIEW_RELAY_SECRET_<ENV>`
-when that variable is set, and otherwise loads it from AWS Secrets Manager
-into memory. Keep that value out of `config.json`, logs, and chat. Inbox
-profiles and caches use the daemon's encrypted store.
+Inbox profiles and caches use the daemon's encrypted store.
 
 Name the variable or credential in a report, issue, pull request, or
 transcript, and redact the value. Leave `.env`, `credentials.db`, `daemon.db`,
-`daemon/key`, and grant token files out of git.
+`daemon/key`, grant token files, `import.json`, `channel-review-state.<env>.json`
+and `pre-migration-v*.db` snapshots out of git and out of reports. They can
+hold review URLs and error text.

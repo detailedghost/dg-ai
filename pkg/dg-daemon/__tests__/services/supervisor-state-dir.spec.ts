@@ -10,7 +10,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { CHAT_SERVICES_PATH, describeError } from "@dg/common";
+import { CHAT_JOBS_PATH, describeError } from "@dg/common";
 import { ensurePrivateDir, resolveDgPaths } from "@dg/common/node";
 import { servicePidFile } from "../../src/services/supervisor";
 import { runCli } from "../commands/service-cli-helpers";
@@ -387,7 +387,7 @@ describe("state folder against a live daemon", () => {
 	}
 
 	const post = (port: number, path: string) =>
-		fetch(`http://127.0.0.1:${port}${CHAT_SERVICES_PATH}/${path}`, {
+		fetch(`http://127.0.0.1:${port}${CHAT_JOBS_PATH}/${path}`, {
 			method: "POST",
 			headers: { Host: `127.0.0.1:${port}`, ...ownerTokenHeader(port) },
 		});
@@ -412,19 +412,19 @@ describe("state folder against a live daemon", () => {
 			`cannot create the state folder ${path}: ${reasonFor(path)}`,
 		);
 		const status = (await (
-			await fetch(`http://127.0.0.1:${port}${CHAT_SERVICES_PATH}`, {
+			await fetch(`http://127.0.0.1:${port}${CHAT_JOBS_PATH}`, {
 				headers: { Host: `127.0.0.1:${port}`, ...ownerTokenHeader(port) },
 			})
 		).json()) as {
-			services: Array<{ label: string; state: string; pid: number | null }>;
+			jobs: Array<{ label: string; state: string; pid: number | null }>;
 		};
-		expect(status.services.find((s) => s.label === "bot")).toMatchObject({
+		expect(status.jobs.find((s) => s.label === "bot")).toMatchObject({
 			state: "stopped",
 			pid: null,
 		});
 	});
 
-	it("gives a service from service add its state folder and the daemon DG_HOME, and keeps the folder after stop and rm", async () => {
+	it("gives a job from job add its state folder and the daemon DG_HOME, and keeps the folder after stop and remove", async () => {
 		const { dgHome, port, paths } = await boot();
 		const cwd = freshTempDir("svc-state-cwd");
 		const dump = join(cwd, "dump.jsonl");
@@ -437,7 +437,7 @@ describe("state folder against a live daemon", () => {
 
 		const added = await runCli(
 			dgHome,
-			["service", "add", "bot", "--cwd", cwd, "--", process.execPath, script],
+			["job", "add", "--name", "bot", "--continuous", "--cwd", cwd, "--", process.execPath, script],
 			{ port },
 		);
 		expect(added.code).toBe(0);
@@ -452,7 +452,7 @@ describe("state folder against a live daemon", () => {
 		expect(existsSync(stateDir)).toBe(true);
 
 		expect((await post(port, "bot/stop")).ok).toBe(true);
-		const removed = await runCli(dgHome, ["service", "rm", "bot"], { port });
+		const removed = await runCli(dgHome, ["job", "remove", "bot"], { port });
 		expect(removed.code).toBe(0);
 		expect(existsSync(stateDir)).toBe(true);
 	});

@@ -394,8 +394,6 @@ describe("job add of a local folder", () => {
 		[["--env", "HOME"]],
 		[["--env-file", "/tmp/x"]],
 		[["--stop-timeout", "5s"]],
-		[["--cron", "* * * * *"]],
-		[["--pass-env", "HOME"]],
 	])("refuses the flag %s with a folder", async (flag) => {
 		sb = box.create();
 		const dir = makeFolder({ dg: block("a"), files: { "bin/run": BIN_RUN } });
@@ -616,31 +614,20 @@ describe("job add of a file with entry flags", () => {
 		expect(readConfig(sb).jobs).toEqual({});
 	});
 
-	it("refuses --schedule together with --cron", async () => {
-		sb = box.create();
-		await refused(
-			[makeScript("poll.ts"), "--schedule", "* * * * *", "--cron", "* * * * *"],
-			"job add: give one of --continuous, --schedule or --every",
-		);
-	});
-
-	it("prints the alias note for --cron, --label and --pass-env", async () => {
+	it("stores --schedule, --name and --env of a file", async () => {
 		sb = box.create();
 
 		const result = await add([
 			makeScript("poll.ts"),
-			"--cron",
+			"--schedule",
 			"* * * * *",
-			"--label",
+			"--name",
 			"tick",
-			"--pass-env",
+			"--env",
 			"HOME",
 		]);
 
 		expect(result.code).toBe(0);
-		expect(result.stderr).toContain('"--cron" is now "--schedule"');
-		expect(result.stderr).toContain('"--label" is now "--name"');
-		expect(result.stderr).toContain('"--pass-env" is now "--env"');
-		expect(readConfig(sb).jobs.tick.schedule).toBe("* * * * *");
+		expect(readConfig(sb).jobs.tick).toMatchObject({ schedule: "* * * * *", passEnv: ["HOME"] });
 	});
 });

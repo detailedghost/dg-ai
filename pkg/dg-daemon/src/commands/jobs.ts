@@ -5,7 +5,6 @@ import {
 	DgCliError,
 	describeError,
 	EXIT_GENERAL_FAILURE,
-	formatSchedule,
 	isRecord,
 } from "@dg/common";
 import {
@@ -17,7 +16,7 @@ import {
 	resolveDgPaths,
 } from "@dg/common/node";
 import { assertNotBlocked } from "@dg/common/node/layout";
-import { type Command, Option } from "commander";
+import type { Command } from "commander";
 import {
 	JOB_NAME_RULE,
 	JOBS_CONFIG_KEY,
@@ -57,8 +56,6 @@ import {
 import type { JobSetupDeps } from "./job-setup";
 import type { JobSourceDeps } from "./job-source";
 import {
-	aliasNote,
-	announceAliases,
 	assertOneMode,
 	checkEntryFlags,
 	duration,
@@ -177,19 +174,16 @@ async function refuseTakenPrefix(
 
 type AddOptions = {
 	name?: string;
-	label?: string;
 	yes?: boolean;
 	cwd?: string;
 	continuous?: boolean;
 	schedule?: string;
-	cron?: string;
 	every?: string;
 	timeout?: string;
 	feed?: boolean;
 	notify?: string;
 	envFile?: string;
 	env?: string[];
-	passEnv?: string[];
 	stopTimeout?: string;
 	credential?: string[];
 };
@@ -202,11 +196,9 @@ async function addVerb(
 	function stop(message: string): never {
 		return fail(`job add: ${message}`);
 	}
-	announceAliases(options);
-	const flag = options.name === undefined ? "--label" : "--name";
-	const name = options.name ?? options.label ?? stop("--name is required");
+	const name = options.name ?? stop("--name is required");
 	assertOneMode(options, "job add");
-	if (!isJobName(name)) stop(`"${flag}" ${JOB_NAME_RULE}`);
+	if (!isJobName(name)) stop(`"--name" ${JOB_NAME_RULE}`);
 	const parts = checkEntryFlags(options, "job add");
 	const { names, cronText, timeoutMs } = parts;
 	if (argv.length === 0) stop("no command given — put it after a bare --");
@@ -226,16 +218,7 @@ async function addVerb(
 			? {}
 			: (await import("./job-source")).credentialListFor(options.credential, name);
 	const entry: Row = entryFromFlags(options, parts, { argv: command, cwd, credentials });
-	const legacy = options.label !== undefined || options.cron !== undefined;
-	const legacyScheduled = legacy && !options.continuous;
-	const probe: Row = legacyScheduled
-		? {
-				...entry,
-				argv: command.map((part) => part || "-"),
-				...(options.notify === undefined ? {} : { feed: true }),
-			}
-		: entry;
-	const parsed = parseJobEntry(name, probe);
+	const parsed = parseJobEntry(name, entry);
 	if (!parsed.ok) stop(parsed.error);
 	if (existsSync(paths.daemonConfigPath) || options.continuous) {
 		await ensureMigrated(paths);
@@ -244,26 +227,20 @@ async function addVerb(
 		fail(`a job named "${name}" already exists`);
 	if (!options.continuous) {
 		await refuseTakenPrefix(paths, readTable(paths), name);
-		const created = await addScheduled({
+		await addScheduled({
 			name,
 			argv,
 			cwd,
 			every: options.every,
 			schedule: cronText,
 			notify: options.notify,
-			enabled: legacy,
+			enabled: false,
 			feed: options.feed,
 			timeoutMs,
 			envFile: options.envFile === undefined ? undefined : resolve(options.envFile),
 			passEnv: names,
 			...credentials,
 		}, deps.which);
-		if (legacy) {
-			console.log(
-				`added "${created.label}" — ${formatSchedule(created)}, first run ${created.nextRunAt}`,
-			);
-			return;
-		}
 		console.log(`added job "${name}"`);
 		console.log(`next: dg job enable ${name}`);
 		return;
@@ -550,7 +527,7 @@ async function enableVerb(
 	if (options.setup !== undefined) {
 		fail(`job enable: job "${name}" lists no credential, so --setup has nothing to answer`);
 	}
-	await assertDaemonAnswers(paths, name, "job");
+	await assertDaemonAnswers(paths, name);
 	await withConfigLock(paths, () => {
 		const config = readTable(paths);
 		requireMigrated(config);
@@ -567,7 +544,7 @@ async function enableVerb(
 async function disableVerb(name: string): Promise<void> {
 	const paths = resolveDgPaths();
 	const kind = await locate(paths, name, { migrate: true, scheduled: false });
-	const live = await assertDaemonAnswers(paths, name, "job");
+	const live = await assertDaemonAnswers(paths, name);
 	if (kind === "scheduled") {
 		await setScheduledEnabled(name, false);
 	} else {
@@ -614,7 +591,7 @@ async function removeVerb(name: string): Promise<void> {
 	} else {
 		kind = await locate(paths, name, { migrate: true, scheduled: true });
 	}
-	const live = await assertDaemonAnswers(paths, name, "job");
+	const live = await assertDaemonAnswers(paths, name);
 	if (live) {
 		const state = (await liveJobStates(paths))?.get(name);
 		if (isActive(state)) {
@@ -632,7 +609,7 @@ async function removeVerb(name: string): Promise<void> {
 		const config = readTable(paths);
 		requireMigrated(config);
 		if (!found && !isInTable(config, name)) notFound(name);
-		assertNoLiveInstance(paths, name, "job");
+		assertNoLiveInstance(paths, name);
 		if (isInTable(config, name)) {
 			const entry = tableEntry(paths, config, name);
 			listsCredentials =
@@ -811,7 +788,6 @@ async function logsVerb(
 const SOURCE_OPTION_KEYS = [
 	"continuous",
 	"schedule",
-	"cron",
 	"every",
 	"timeout",
 	"feed",
@@ -819,7 +795,6 @@ const SOURCE_OPTION_KEYS = [
 	"cwd",
 	"env",
 	"envFile",
-	"passEnv",
 	"stopTimeout",
 	"credential",
 ];
@@ -861,11 +836,9 @@ export function registerJobCommands(
 				"continuous, on a cron schedule, or at an interval",
 		)
 		.option("--name <name>", "unique name for the job")
-		.addOption(new Option("--label <name>").hideHelp())
 		.option("--cwd <path>", "working directory for the command")
 		.option("--continuous", "keep the job running")
 		.option("--schedule <cron>", 'a cron expression, e.g. "0 9 * * 1-5"')
-		.addOption(new Option("--cron <cron>").hideHelp())
 		.option("--every <duration>", "how often to run it, e.g. 15m")
 		.option("--timeout <duration>", "stop a run that takes longer, e.g. 5m")
 		.option("--feed", "read one JSON object per item from the output")
@@ -876,7 +849,6 @@ export function registerJobCommands(
 			"environment variable to pass through (repeatable)",
 			collect,
 		)
-		.addOption(new Option("--pass-env <NAME>").argParser(collect).hideHelp())
 		.option("--stop-timeout <duration>", "grace period on stop, e.g. 30s")
 		.option("--yes", "approve the jobs of a repository without asking")
 		.option(
@@ -949,16 +921,6 @@ export function registerJobCommands(
 		.argument("<name>")
 		.action(startVerb);
 
-	for (const alias of ["run", "exec"]) {
-		job
-			.command(alias, { hidden: true })
-			.argument("<name>")
-			.action(async (name: string) => {
-				aliasNote(`job ${alias}`, "job start");
-				await startVerb(name);
-			});
-	}
-
 	job
 		.command("stop")
 		.description("stop the job now")
@@ -997,14 +959,6 @@ export function registerJobCommands(
 		.description("remove a job")
 		.argument("<name>")
 		.action(removeVerb);
-
-	job
-		.command("rm", { hidden: true })
-		.argument("<name>")
-		.action(async (name: string) => {
-			aliasNote("job rm", "job remove");
-			await removeVerb(name);
-		});
 
 	job
 		.command("logs")

@@ -2296,126 +2296,127 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 ### Slice 21 — remove-channel-review
 
 #### Engineering
-- [ ] Start this slice only after the operator gate of the PR plan
-- [ ] Delete the package pkg/channel-review, and remove `@dg/channel-review` from pkg/skills-cli/package.json; `bun install` writes bun.lock
-- [ ] Delete pkg/skills-cli/src/channel-review/ and pkg/skills-cli/src/commands/channel-review.ts; remove `registerChannelReview` from pkg/skills-cli/src/register-all.ts and `channel-review` from pkg/skills-cli/src/doctor/registry.ts
-- [ ] In pkg/skills-cli/src/credentials/cli.ts, replace the example prefix `channel-review` in the `grant` help text with `my-service`
-- [ ] In pkg/common/src/node/daemon-schema.ts, keep `createV12ChannelReview` and step 12, and add step 15: `DROP VIEW channel_review_requests`, `DROP VIEW channel_review_current`, `DROP TABLE channel_review_state`; step 14 is the `moved_at` step of slice 10
-- [ ] Keep the constant `CHANNEL_REVIEW_SCHEMA_VERSION` in pkg/common/src/node/daemon-schema.ts for step 12, remove its `export` keyword, and remove `CHANNEL_REVIEW_SCHEMA_VERSION` from the re-export list of pkg/common/src/node/daemon-db.ts
-- [ ] The change deletes no credential and no grant: the entries below `channel-review/` in the credential store and the file `<state>/grants/channel-review.token` stay
-- [ ] Add `channel-review` to `RETIRED_SKILLS` in pkg/common/src/node/install-skills.ts with the hashes of its released SKILL.md files in `RETIRED_SKILL_HASHES`, and add the fixture copy to pkg/skills-test/__tests__/fixtures/retired-skills/channel-review/
-- [ ] Get the hashes from release tags, not from `git log --all`: for each tag of `git tag --list` that holds the file, run `git show <tag>:plugins/dg/skills/channel-review/SKILL.md | sha256sum`; add the hash of the PR 3 release; the files in `references/` need no hash; a name with no entry in `RETIRED_SKILL_HASHES` is removed with no hash check, so the entry is what keeps a changed copy
-- [ ] Correct the doc comment of `RETIRED_SKILL_HASHES`: no other plugin provides this skill
-- [ ] Delete plugins/dg/skills/channel-review/
-- [ ] In plugins/dg/skills/jobs/SKILL.md, remove each channel-review section, the channel-review column of the action table, and the SessionStart hook block that starts `channel-review`; update the frontmatter `description`
-- [ ] Remove the channel-review text from plugins/dg/skills/doctor/SKILL.md, plugins/dg/skills/thrash/SKILL.md and plugins/dg/skills/README.md
-- [ ] Replace the content of docs/channel-review.md with the migration note; keep the path, so existing links open it
-- [ ] The migration note gives this order: on the last release before the major, run `dg job add <bot repository URL>`; stop the old daemon with `dg-skills channel-review stop --env <env>`; run `dg-skills channel-review export --env <env> --label <name>`; run `dg job enable <name>`; make sure that a review runs; remove the SessionStart hook that starts `dg-skills channel-review` from the settings file; remove each `review-<env>` job with `dg job remove review-<env>`; then upgrade to the major
-- [ ] The migration note states: `export` exists only before the major; the major drops the state tables and no downgrade is possible after it; the stored credentials and the grant stay
-- [ ] The migration note states: the copy `channel-review-state.<env>.json` is an archive; it is not an import file, and the bot cannot read it; dg gives no conversion
-- [ ] The migration note states: the `pre-migration-v<version>-….db` files that dg writes before the schema change are a second source for a restore, and dg does not remove them; `takeSnapshot` names a file after the step that is about to run and makes one file for each step, so a database at version 14 gets `pre-migration-v15-…`, and one at version 12 gets the v13, v14 and v15 files; the note tells the owner to restore from the file of the lowest step
-- [ ] In docs/adr/toc.md, remove `pkg/channel-review` from the diagram
-- [ ] Remove the channel-review text from README.md, SECURITY.md, .env.example, docs/AGENT-INSTALL.md, docs/DEVELOPER.md, docs/contributing.md and pkg/skills-cli/README.md
-- [ ] In docs/install.md, remove the channel-review stop step and keep the two layout rows of the legacy move
-- [ ] Do not edit pkg/common/src/node/layout.ts: its two `channel-review` entries are not in the removal list
-- [ ] After the deletes, no source file of dg names a credential below `channel-review/` or a `CHANNEL_REVIEW_` variable
-- [ ] In .github/workflows/skills-blt.yml, remove the path `pkg/channel-review/**` and the lint and test steps of pkg/channel-review
-- [ ] In .gitleaks.toml, remove the allow rule of the deleted `channel-review-connect.spec.ts`
-- [ ] In .mise/config.toml, remove: each task that runs `channel-review` or has `dir = "pkg/channel-review"`, the `CHANNEL_REVIEW_RELAY_SECRET_*` entry of `redactions`, and the words on channel-review in the `description` of the build task
-- [ ] Delete the specs of the removed code (pkg/skills-cli/__tests__/channel-review-*.spec.ts, pkg/skills-test/__tests__/channel-review-skill.spec.ts, pkg/dg-daemon/__tests__/store/channel-review-state.spec.ts) and update each spec that names channel-review in a list
-- [ ] Update each spec that uses channel-review outside a list: pkg/skills-cli/__tests__/layout-write-guard.spec.ts (it imports `launchChrome` from the deleted connect module: give the guard test a different subject, or remove it), cli-only.spec.ts, lazy-commands.spec.ts and completion.spec.ts; pkg/skills-test/__tests__/no-local-zone.spec.ts (it scans `pkg/channel-review/src`), skill-cli-invocation.spec.ts (the SessionStart hook command), agent-namespacing.spec.ts, google-sms-cleanup-skill.spec.ts (the README order test) and cli-smoke.spec.ts; keep pkg/skills-cli/__tests__/clean.spec.ts, because its `channel-review` is a layout entry that stays
-- [ ] Rename the credential fixtures that use the prefix `channel-review/` to `my-service/` and keep each assertion: pkg/common/__tests__/credentials-format.spec.ts, pkg/common/__tests__/installed-skill-files.ts, pkg/dg-daemon/__tests__/store/credentials-store.spec.ts, pkg/dg-daemon/__tests__/server/credentials-frame.spec.ts, pkg/skills-cli/__tests__/credentials-cli.spec.ts and pkg/skills-cli/__tests__/doctor-fixtures.ts
-- [ ] Update the table lists of pkg/dg-daemon/__tests__/store/overwatch-board.spec.ts and pkg/dg-daemon/__tests__/store/scheduled-jobs.spec.ts
-- [ ] Keep pkg/skills-cli/__tests__/test-home-fence.ts, test-run-end.ts and home-fence.spec.ts: each package bunfig preloads the fence
-- [ ] In pkg/skills-test/__tests__/outside-services-docs.spec.ts, change the test `does not deprecate ADR 0020 or ADRs 0008 to 0019`: the assertion on 0020 stays; the toc assertion now expects `Deprecated` for each record from 0008 to 0019
-- [ ] Name the new spec of the state copy pkg/common/__tests__/channel-review-state-copy.spec.ts
-- [ ] pkg/common/src/node/fs.ts keeps `removeInside`, and pkg/common/src/node/log-tail.ts and pkg/common/src/node/prompt.ts stay: the `job` verbs use them
-- [ ] Use the commit subject `feat(skills-cli)!: remove channel-review` with a `BREAKING CHANGE:` footer that links docs/channel-review.md, so the release is a major
-- [ ] Write no private organization name and no private repository name in a file; the migration note uses `<bot repository URL>`
-- [ ] In `openDaemonDatabase` of pkg/common/src/node/daemon-db.ts, read the schema version first; make the copy only when the version is 12, 13 or 14 and `sqlite_master` holds `channel_review_state`
-- [ ] Before the migration to version 15 runs on such a database, write one file for each row of `channel_review_state`: `<daemonDir>/channel-review-state.<env>.json`, with `writeFileAtomic(path, data, 0o600)`
-- [ ] Put the copy code in one named function in daemon-db.ts; add no new source file
-- [ ] Each copy is one JSON object `{ "env", "revision", "updatedAt", "state" }`; `state` is the parsed `state_json` of the row
-- [ ] `openDaemonDatabase` is the one caller of `runMigrations` with `SCHEMA_STEPS`; pkg/dg-daemon/src/store/index.ts opens daemon.db through it, so the copy is on each path to step 15
-- [ ] When a copy cannot be written, the open fails with an error that names the path, and step 15 does not run
-- [ ] The `pre-migration-v<version>-….db` copy of pkg/common/src/node/sqlite.ts stays as it is
-- [ ] The migration note names the copy files `channel-review-state.<env>.json` and `pre-migration-v<version>-….db`, and their folder, and says that dg makes one `pre-migration` file for each step
-- [ ] Set `Status: Deprecated` in each record from docs/adr/0008 to docs/adr/0019 (twelve files; 0018 and 0019 go from `Proposed` to `Deprecated`), and add one line below it that says that channel review left dg and links the job sources record of slice 20; change no other line of those records
-- [ ] In docs/adr/toc.md, show the twelve records as deprecated with the line form `- [<number> — <title>](<file>) — Deprecated: channel review left dg`, on one line (the spec matches `/00(0[89]|1\d)[^\n]*Deprecated/`); move 0018 and 0019 out of `Proposed changes` to the section of the other channel-review records
-- [ ] Change the toc legend so that `Deprecated` agrees with a record that links a replacement
-- [ ] Do not change the text of ADRs 0002, 0003, 0007 and 0042, and do not edit CHANGELOG.md; the release workflow writes it
-- [ ] In docs/DEVELOPER.md, remove the section of the `CR-` error codes
-- [ ] Give in the commit message the reason that step 12 stays: a database at version 11 needs it to get to version 15
-- [ ] Start from .github/workflows/skills-blt.yml as slice 6 left it
-- [ ] Remove the `dg-daemon service` group, pkg/dg-daemon/src/commands/service.ts and the `/services` route; `dg-daemon stop --force` lists with `/jobs` only; a search of pkg/dg, pkg/launcher and plugins for `dg-daemon service` finds nothing outside the migration note and the `BREAKING CHANGE:` text
-- [ ] Remove the alias forms of the `job` group: `--label`, `--cron`, `--pass-env`, `rm`, `run` and `exec`; also remove the stderr note text of the alias forms and its specs; a search of pkg/dg, pkg/launcher and plugins for `--pass-env` finds nothing outside the migration note and the `BREAKING CHANGE:` text
-- [ ] Keep `migrateServicesKey` and `migrateScheduledRows` and their calls at daemon start, so a machine that jumps a release still migrates; remove no column of `scheduled_jobs`
-- [ ] Remove the re-export of `promptHidden` from pkg/skills-cli/src/credentials/cli.ts with the spec that used it
-- [ ] The `BREAKING CHANGE:` footer names each removal: channel review, the `dg-daemon service` group, the `/services` route and the alias forms
-- [ ] docs/jobs-and-services.md and plugins/dg/skills/jobs/SKILL.md lose the old → new table rows that name a removed form, and say that the old forms are gone
-- [ ] After the removals, run `bun scripts/completion-trees.ts` and commit the tree files that changed; do not edit the JSON by hand
-- [ ] In pkg/skills-cli/src/completion/describe.ts, remove the import of `../channel-review/cli` and the `"channel-review"` entry; the tree step and `bun run lint:all` fail without this
-- [ ] Remove `CHAT_SERVICES_PATH` from pkg/common/src/chat-format.ts, its two uses in pkg/dg-daemon/src/server/http.ts, and the `/services` fallback of pkg/dg-daemon/src/commands/stop.ts; chat-format.spec.ts loses the case of the constant
-- [ ] services-http.spec.ts, outside-service.spec.ts and stop.spec.ts move their requests to `/jobs` and the key `jobs`
-- [ ] service-add-rm.spec.ts and service-live-daemon.spec.ts test the removed command group: delete each case that job-verbs.spec.ts already has, and move each other case to the `job` verbs; a spec that tests the supervisor through a fixture config (for example service-autostart.spec.ts and service-shutdown.spec.ts) stays
-- [ ] The state copy runs before `runMigrations`, outside the transaction of step 15; `MigrationStep` does not change
-- [ ] The migration note says that the old channel-review daemon must be stopped before the upgrade, so no process writes the state between the copy and the drop
-- [ ] pkg/common/__tests__/channel-review-state-copy.spec.ts builds its database in a temp folder below the fence and reads no DG path of the real home
-- [ ] In pkg/skills-test/__tests__/outside-services-docs.spec.ts, also change the tests `covers the new actions and the gating rules` and `carries the final no-daemon message`: SKILL.md no longer holds `dg-daemon service add`, `dg-daemon service rm` or `dg-daemon job exec`, and the `services` no-daemon text goes with service.ts
+- [x] Start this slice only after the operator gate of the PR plan
+- [x] Delete the package pkg/channel-review, and remove `@dg/channel-review` from pkg/skills-cli/package.json; `bun install` writes bun.lock
+- [x] Delete pkg/skills-cli/src/channel-review/ and pkg/skills-cli/src/commands/channel-review.ts; remove `registerChannelReview` from pkg/skills-cli/src/register-all.ts and `channel-review` from pkg/skills-cli/src/doctor/registry.ts
+- [x] In pkg/skills-cli/src/credentials/cli.ts, replace the example prefix `channel-review` in the `grant` help text with `my-service`
+- [x] In pkg/common/src/node/daemon-schema.ts, keep `createV12ChannelReview` and step 12, and add step 15: `DROP VIEW channel_review_requests`, `DROP VIEW channel_review_current`, `DROP TABLE channel_review_state`; step 14 is the `moved_at` step of slice 10
+- [x] Keep the constant `CHANNEL_REVIEW_SCHEMA_VERSION` in pkg/common/src/node/daemon-schema.ts for step 12, remove its `export` keyword, and remove `CHANNEL_REVIEW_SCHEMA_VERSION` from the re-export list of pkg/common/src/node/daemon-db.ts
+- [x] The change deletes no credential and no grant: the entries below `channel-review/` in the credential store and the file `<state>/grants/channel-review.token` stay
+- [x] Add `channel-review` to `RETIRED_SKILLS` in pkg/common/src/node/install-skills.ts with the hashes of its released SKILL.md files in `RETIRED_SKILL_HASHES`, and add the fixture copy to pkg/skills-test/__tests__/fixtures/retired-skills/channel-review/
+- [x] Get the hashes from release tags, not from `git log --all`: for each tag of `git tag --list` that holds the file, run `git show <tag>:plugins/dg/skills/channel-review/SKILL.md | sha256sum`; add the hash of the PR 3 release; the files in `references/` need no hash; a name with no entry in `RETIRED_SKILL_HASHES` is removed with no hash check, so the entry is what keeps a changed copy
+- [x] Correct the doc comment of `RETIRED_SKILL_HASHES`: no other plugin provides this skill
+- [x] Delete plugins/dg/skills/channel-review/
+- [x] In plugins/dg/skills/jobs/SKILL.md, remove each channel-review section, the channel-review column of the action table, and the SessionStart hook block that starts `channel-review`; update the frontmatter `description`
+- [x] Remove the channel-review text from plugins/dg/skills/doctor/SKILL.md, plugins/dg/skills/thrash/SKILL.md and plugins/dg/skills/README.md
+- [x] Replace the content of docs/channel-review.md with the migration note; keep the path, so existing links open it
+- [x] The migration note gives this order: on the last release before the major, run `dg job add <bot repository URL>`; stop the old daemon with `dg-skills channel-review stop --env <env>`; run `dg-skills channel-review export --env <env> --label <name>`; run `dg job enable <name>`; make sure that a review runs; remove the SessionStart hook that starts `dg-skills channel-review` from the settings file; remove each `review-<env>` job with `dg job remove review-<env>`; then upgrade to the major
+- [x] The migration note states: `export` exists only before the major; the major drops the state tables and no downgrade is possible after it; the stored credentials and the grant stay
+- [x] The migration note states: the copy `channel-review-state.<env>.json` is an archive; it is not an import file, and the bot cannot read it; dg gives no conversion
+- [x] The migration note states: the `pre-migration-v<version>-….db` files that dg writes before the schema change are a second source for a restore, and dg does not remove them; `takeSnapshot` names a file after the step that is about to run and makes one file for each step, so a database at version 14 gets `pre-migration-v15-…`, and one at version 12 gets the v13, v14 and v15 files; the note tells the owner to restore from the file of the lowest step
+- [x] In docs/adr/toc.md, remove `pkg/channel-review` from the diagram
+- [x] Remove the channel-review text from README.md, SECURITY.md, .env.example, docs/AGENT-INSTALL.md, docs/DEVELOPER.md, docs/contributing.md and pkg/skills-cli/README.md
+- [x] In docs/install.md, remove the channel-review stop step and keep the two layout rows of the legacy move
+- [x] Do not edit pkg/common/src/node/layout.ts: its two `channel-review` entries are not in the removal list
+- [x] After the deletes, no source file of dg names a credential below `channel-review/` or a `CHANNEL_REVIEW_` variable
+- [x] In .github/workflows/skills-blt.yml, remove the path `pkg/channel-review/**` and the lint and test steps of pkg/channel-review
+- [x] In .gitleaks.toml, remove the allow rule of the deleted `channel-review-connect.spec.ts`
+- [x] In .mise/config.toml, remove: each task that runs `channel-review` or has `dir = "pkg/channel-review"`, the `CHANNEL_REVIEW_RELAY_SECRET_*` entry of `redactions`, and the words on channel-review in the `description` of the build task
+- [x] Delete the specs of the removed code (pkg/skills-cli/__tests__/channel-review-*.spec.ts, pkg/skills-test/__tests__/channel-review-skill.spec.ts, pkg/dg-daemon/__tests__/store/channel-review-state.spec.ts) and update each spec that names channel-review in a list
+- [x] Update each spec that uses channel-review outside a list: pkg/skills-cli/__tests__/layout-write-guard.spec.ts (it imports `launchChrome` from the deleted connect module: give the guard test a different subject, or remove it), cli-only.spec.ts, lazy-commands.spec.ts and completion.spec.ts; pkg/skills-test/__tests__/no-local-zone.spec.ts (it scans `pkg/channel-review/src`), skill-cli-invocation.spec.ts (the SessionStart hook command), agent-namespacing.spec.ts, google-sms-cleanup-skill.spec.ts (the README order test) and cli-smoke.spec.ts; keep pkg/skills-cli/__tests__/clean.spec.ts, because its `channel-review` is a layout entry that stays
+- [x] Rename the credential fixtures that use the prefix `channel-review/` to `my-service/` and keep each assertion: pkg/common/__tests__/credentials-format.spec.ts, pkg/common/__tests__/installed-skill-files.ts, pkg/dg-daemon/__tests__/store/credentials-store.spec.ts, pkg/dg-daemon/__tests__/server/credentials-frame.spec.ts, pkg/skills-cli/__tests__/credentials-cli.spec.ts and pkg/skills-cli/__tests__/doctor-fixtures.ts
+- [x] Update the table lists of pkg/dg-daemon/__tests__/store/overwatch-board.spec.ts and pkg/dg-daemon/__tests__/store/scheduled-jobs.spec.ts
+- [x] Keep pkg/skills-cli/__tests__/test-home-fence.ts, test-run-end.ts and home-fence.spec.ts: each package bunfig preloads the fence
+- [x] In pkg/skills-test/__tests__/outside-services-docs.spec.ts, change the test `does not deprecate ADR 0020 or ADRs 0008 to 0019`: the assertion on 0020 stays; the toc assertion now expects `Deprecated` for each record from 0008 to 0019
+- [x] Name the new spec of the state copy pkg/common/__tests__/channel-review-state-copy.spec.ts
+- [x] pkg/common/src/node/fs.ts keeps `removeInside`, and pkg/common/src/node/log-tail.ts and pkg/common/src/node/prompt.ts stay: the `job` verbs use them
+- [x] Use the commit subject `feat(skills-cli)!: remove channel-review` with a `BREAKING CHANGE:` footer that links docs/channel-review.md, so the release is a major
+- [x] Write no private organization name and no private repository name in a file; the migration note uses `<bot repository URL>`
+- [x] In `openDaemonDatabase` of pkg/common/src/node/daemon-db.ts, read the schema version first; make the copy only when the version is 12, 13 or 14 and `sqlite_master` holds `channel_review_state`
+- [x] Before the migration to version 15 runs on such a database, write one file for each row of `channel_review_state`: `<daemonDir>/channel-review-state.<env>.json`, with `writeFileAtomic(path, data, 0o600)`
+- [x] Put the copy code in one named function in daemon-db.ts; add no new source file
+- [x] Each copy is one JSON object `{ "env", "revision", "updatedAt", "state" }`; `state` is the parsed `state_json` of the row
+- [x] `openDaemonDatabase` is the one caller of `runMigrations` with `SCHEMA_STEPS`; pkg/dg-daemon/src/store/index.ts opens daemon.db through it, so the copy is on each path to step 15
+- [x] When a copy cannot be written, the open fails with an error that names the path, and step 15 does not run
+- [x] The `pre-migration-v<version>-….db` copy of pkg/common/src/node/sqlite.ts stays as it is
+- [x] The migration note names the copy files `channel-review-state.<env>.json` and `pre-migration-v<version>-….db`, and their folder, and says that dg makes one `pre-migration` file for each step
+- [x] Set `Status: Deprecated` in each record from docs/adr/0008 to docs/adr/0019 (twelve files; 0018 and 0019 go from `Proposed` to `Deprecated`), and add one line below it that says that channel review left dg and links the job sources record of slice 20; change no other line of those records
+- [x] In docs/adr/toc.md, show the twelve records as deprecated with the line form `- [<number> — <title>](<file>) — Deprecated: channel review left dg`, on one line (the spec matches `/00(0[89]|1\d)[^\n]*Deprecated/`); move 0018 and 0019 out of `Proposed changes` to the section of the other channel-review records
+- [x] Change the toc legend so that `Deprecated` agrees with a record that links a replacement
+- [x] Do not change the text of ADRs 0002, 0003, 0007 and 0042, and do not edit CHANGELOG.md; the release workflow writes it
+- [x] In docs/DEVELOPER.md, remove the section of the `CR-` error codes
+- [x] Give in the commit message the reason that step 12 stays: a database at version 11 needs it to get to version 15
+- [x] Start from .github/workflows/skills-blt.yml as slice 6 left it
+- [x] Remove the `dg-daemon service` group, pkg/dg-daemon/src/commands/service.ts and the `/services` route; `dg-daemon stop --force` lists with `/jobs` only; a search of pkg/dg, pkg/launcher and plugins for `dg-daemon service` finds nothing outside the migration note and the `BREAKING CHANGE:` text
+- [x] Remove the alias forms of the `job` group: `--label`, `--cron`, `--pass-env`, `rm`, `run` and `exec`; also remove the stderr note text of the alias forms and its specs; a search of pkg/dg, pkg/launcher and plugins for `--pass-env` finds nothing outside the migration note and the `BREAKING CHANGE:` text
+- [x] Keep `migrateServicesKey` and `migrateScheduledRows` and their calls at daemon start, so a machine that jumps a release still migrates; remove no column of `scheduled_jobs`
+- [x] Remove the re-export of `promptHidden` from pkg/skills-cli/src/credentials/cli.ts with the spec that used it
+- [x] The `BREAKING CHANGE:` footer names each removal: channel review, the `dg-daemon service` group, the `/services` route and the alias forms
+- [x] docs/jobs-and-services.md and plugins/dg/skills/jobs/SKILL.md lose the old → new table rows that name a removed form, and say that the old forms are gone
+- [x] After the removals, run `bun scripts/completion-trees.ts` and commit the tree files that changed; do not edit the JSON by hand
+- [x] In pkg/skills-cli/src/completion/describe.ts, remove the import of `../channel-review/cli` and the `"channel-review"` entry; the tree step and `bun run lint:all` fail without this
+- [x] Remove `CHAT_SERVICES_PATH` from pkg/common/src/chat-format.ts, its two uses in pkg/dg-daemon/src/server/http.ts, and the `/services` fallback of pkg/dg-daemon/src/commands/stop.ts; chat-format.spec.ts loses the case of the constant
+- [x] services-http.spec.ts, outside-service.spec.ts and stop.spec.ts move their requests to `/jobs` and the key `jobs`
+- [x] service-add-rm.spec.ts and service-live-daemon.spec.ts test the removed command group: delete each case that job-verbs.spec.ts already has, and move each other case to the `job` verbs; a spec that tests the supervisor through a fixture config (for example service-autostart.spec.ts and service-shutdown.spec.ts) stays
+- [x] The state copy runs before `runMigrations`, outside the transaction of step 15; `MigrationStep` does not change
+- [x] The migration note says that the old channel-review daemon must be stopped before the upgrade, so no process writes the state between the copy and the drop
+- [x] pkg/common/__tests__/channel-review-state-copy.spec.ts builds its database in a temp folder below the fence and reads no DG path of the real home
+- [x] In pkg/skills-test/__tests__/outside-services-docs.spec.ts, also change the tests `covers the new actions and the gating rules` and `carries the final no-daemon message`: SKILL.md no longer holds `dg-daemon service add`, `dg-daemon service rm` or `dg-daemon job exec`, and the `services` no-daemon text goes with service.ts
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: `dg-skills channel-review status` exits 1 with the unknown-command error of commander; `dg-skills --help` does not list `channel-review`
-- [ ] Contract: a new daemon.db has the schema version 15 and no object whose name starts with `channel_review`
-- [ ] Contract: a daemon.db at version 14 with one `channel_review_state` row moves to version 15, and one at version 13 moves through 14 to 15; the three objects are gone; the row counts of each other table are equal before and after
-- [ ] Contract: a daemon.db at version 11 moves through steps 12 to 15 with no error
-- [ ] Contract: a build of the release before the major refuses a version 15 database with `ForwardOnlyVersionError`; method: `runMigrations(db, SCHEMA_STEPS.slice(0, -1))` on a database at schema version 15 throws `ForwardOnlyVersionError`; specs use `CURRENT_SCHEMA_VERSION` where they can, not the number 15
-- [ ] Contract: after the upgrade, `dg-skills credentials list` still shows each `channel-review/` name, and the grant token file exists
-- [ ] Contract: a skills-only install removes an installed dg copy of the `channel-review` skill (hash match) and keeps a copy with other content
-- [ ] Contract: `rg --hidden -il "channel-review|channel_review" pkg plugins .github .gitleaks.toml .mise .claude-plugin README.md SECURITY.md .env.example docs scripts` finds only: pkg/common/src/node/daemon-schema.ts, daemon-db.ts, install-skills.ts and layout.ts; pkg/common/__tests__/layout.spec.ts, pkg/skills-cli/__tests__/clean.spec.ts, pkg/skills-cli/__tests__/layout-write-guard-e2e.spec.ts, pkg/common/__tests__/node-daemon-db.spec.ts and pkg/common/__tests__/node-sqlite.spec.ts; pkg/common/__tests__/channel-review-state-copy.spec.ts (the new spec of the copy); the retired-skill fixture; and in docs/ only docs/channel-review.md, the ADR files and docs/adr/toc.md; pkg/common/src/chat-format.ts is not in the result
-- [ ] Contract: docs/channel-review.md holds the seven ordered steps that come before the upgrade step, and the words `no downgrade`
-- [ ] Contract: skills-blt.yml has no step with `pkg/channel-review`
-- [ ] Contract: plugins/dg/skills/jobs/SKILL.md holds no `channel-review` text and no `"hooks": {` fence; `bun scripts/skill-bootstrap-block.ts --check` exits 0
-- [ ] Contract: a database at version 14 with a `dev` row and a `prod` row gives `channel-review-state.dev.json` and `channel-review-state.prod.json` beside daemon.db, each with mode 0600 (POSIX), and then has no object whose name starts with `channel_review`
-- [ ] Contract: `state` of each copy is deep-equal to the `state_json` of its row; `revision` and `updatedAt` are the values of the row
-- [ ] Contract: a database with no `channel_review_state` row, and a new database, give no copy file
-- [ ] Contract: when a copy path is not writable, the open throws an `Error` that holds the path; the schema version does not become 15 and the row is present
-- [ ] Contract: a second open at version 15 writes no file and changes no copy
-- [ ] Contract: a search for `SCHEMA_STEPS` in pkg/*/src finds one `runMigrations` call, in pkg/common/src/node/daemon-db.ts
-- [ ] Contract: each record from docs/adr/0008 to 0019 has the line `Status: Deprecated` and one link to the job sources record; `git diff` shows no other changed line in those files
-- [ ] Contract: docs/adr/toc.md lists 0018 and 0019 outside `Proposed changes`
-- [ ] Contract: the two `channel-review` entries of `LAYOUT_TABLE` are equal to master
-- [ ] Contract: a database at version 11 makes no copy file, gives no error, and moves to version 15
-- [ ] Contract: the `RETIRED_SKILL_HASHES` list holds the hash of the SKILL.md of the last release before the major; the spec proves it with the fixture file: the hash of the fixture copy is in the list
-- [ ] Contract: in pkg/skills-test/__tests__/outside-services-docs.spec.ts, the test on ADR 0020 keeps its assertion on 0020, and its toc assertion expects `Deprecated` for each record from 0008 to 0019
-- [ ] Edge: the first start of the major does not read and does not change the pid file of the old channel-review daemon
-- [ ] Check: each relative link in docs/, README.md and SECURITY.md opens an existing file
-- [ ] Check (manual; no spec): use the private-name Check of slice 7 on the files of `git diff origin/master --name-only`, and report only `found` or `not found`
-- [ ] Check: pkg/launcher/__tests__/size-budget.spec.ts passes
-- [ ] Check: `skillFilesCheck` and `allowRuleCheck` stay in pkg/skills-cli/src/doctor/checks.ts, because the doctor groups `file`, `ssms` and `inbox` call them; the delete of pkg/skills-cli/src/channel-review/doctor.ts removes one caller only
-- [ ] Regression: `bun test` passes at the root and in each package directory; `bun run lint:all` passes; `bun install --frozen-lockfile` passes
-- [ ] Contract: `dg-daemon service status` exits 1 with the unknown-command error of commander; `GET /services` gives 404
-- [ ] Contract: `dg-daemon job add --label x --every 15m --cwd <dir> -- <cmd>` and `dg-daemon job rm x` exit 1 with the unknown-option and unknown-command errors of commander
-- [ ] Contract: a config with `services` and a store with scheduled rows that are not moved, from two releases before, still migrate at the first boot of the major
-- [ ] Contract: `bun scripts/completion-trees.ts --check` exits 0, and no tree holds `channel-review`, `service` below `dg-daemon`, or an alias form
-- [ ] Contract: `rg CHAT_SERVICES_PATH pkg` finds nothing
-- [ ] Contract: two opens of one database at version 14 at the same time give one correct set of copy files and one migration; the second process gets no error, reads version 15 and writes nothing (`writeFileAtomic` makes each file write safe)
-- [ ] Check: no link in the repository points at an anchor of the old docs/channel-review.md or of a removed toc section (for example `toc.md#channel-review`)
+- [x] Contract: `dg-skills channel-review status` exits 1 with the unknown-command error of commander; `dg-skills --help` does not list `channel-review`
+- [x] Contract: a new daemon.db has the schema version 15 and no object whose name starts with `channel_review`
+- [x] Contract: a daemon.db at version 14 with one `channel_review_state` row moves to version 15, and one at version 13 moves through 14 to 15; the three objects are gone; the row counts of each other table are equal before and after
+- [x] Contract: a daemon.db at version 11 moves through steps 12 to 15 with no error
+- [x] Contract: a build of the release before the major refuses a version 15 database with `ForwardOnlyVersionError`; method: `runMigrations(db, SCHEMA_STEPS.slice(0, -1))` on a database at schema version 15 throws `ForwardOnlyVersionError`; specs use `CURRENT_SCHEMA_VERSION` where they can, not the number 15
+- [x] Contract: after the upgrade, `dg-skills credentials list` still shows each `channel-review/` name, and the grant token file exists
+- [x] Contract: a skills-only install removes an installed dg copy of the `channel-review` skill (hash match) and keeps a copy with other content
+- [x] Contract: `rg --hidden -il "channel-review|channel_review" pkg plugins .github .gitleaks.toml .mise .claude-plugin README.md SECURITY.md .env.example docs scripts` finds only: pkg/common/src/node/daemon-schema.ts, daemon-db.ts, install-skills.ts and layout.ts; pkg/common/__tests__/layout.spec.ts, pkg/skills-cli/__tests__/clean.spec.ts, pkg/skills-cli/__tests__/layout-write-guard-e2e.spec.ts, pkg/common/__tests__/node-daemon-db.spec.ts and pkg/common/__tests__/node-sqlite.spec.ts; pkg/common/__tests__/channel-review-state-copy.spec.ts (the new spec of the copy); the retired-skill fixture; and in docs/ only docs/channel-review.md, the ADR files and docs/adr/toc.md; pkg/common/src/chat-format.ts is not in the result
+- [x] Contract: docs/channel-review.md holds the seven ordered steps that come before the upgrade step, and the words `no downgrade`
+- [x] Contract: skills-blt.yml has no step with `pkg/channel-review`
+- [x] Contract: plugins/dg/skills/jobs/SKILL.md holds no `channel-review` text and no `"hooks": {` fence; `bun scripts/skill-bootstrap-block.ts --check` exits 0
+- [x] Contract: a database at version 14 with a `dev` row and a `prod` row gives `channel-review-state.dev.json` and `channel-review-state.prod.json` beside daemon.db, each with mode 0600 (POSIX), and then has no object whose name starts with `channel_review`
+- [x] Contract: `state` of each copy is deep-equal to the `state_json` of its row; `revision` and `updatedAt` are the values of the row
+- [x] Contract: a database with no `channel_review_state` row, and a new database, give no copy file
+- [x] Contract: when a copy path is not writable, the open throws an `Error` that holds the path; the schema version does not become 15 and the row is present
+- [x] Contract: a second open at version 15 writes no file and changes no copy
+- [x] Contract: a search for `SCHEMA_STEPS` in pkg/*/src finds one `runMigrations` call, in pkg/common/src/node/daemon-db.ts
+- [x] Contract: each record from docs/adr/0008 to 0019 has the line `Status: Deprecated` and one link to the job sources record; `git diff` shows no other changed line in those files
+- [x] Contract: docs/adr/toc.md lists 0018 and 0019 outside `Proposed changes`
+- [x] Contract: the two `channel-review` entries of `LAYOUT_TABLE` are equal to master
+- [x] Contract: a database at version 11 makes no copy file, gives no error, and moves to version 15
+- [x] Contract: the `RETIRED_SKILL_HASHES` list holds the hash of the SKILL.md of the last release before the major; the spec proves it with the fixture file: the hash of the fixture copy is in the list
+- [x] Contract: in pkg/skills-test/__tests__/outside-services-docs.spec.ts, the test on ADR 0020 keeps its assertion on 0020, and its toc assertion expects `Deprecated` for each record from 0008 to 0019
+- [x] Edge: the first start of the major does not read and does not change the pid file of the old channel-review daemon
+- [x] Check: each relative link in docs/, README.md and SECURITY.md opens an existing file
+- [x] Check (manual; no spec): use the private-name Check of slice 7 on the files of `git diff origin/master --name-only`, and report only `found` or `not found`
+- [x] Check: pkg/launcher/__tests__/size-budget.spec.ts passes
+- [x] Check: `skillFilesCheck` and `allowRuleCheck` stay in pkg/skills-cli/src/doctor/checks.ts, because the doctor groups `file`, `ssms` and `inbox` call them; the delete of pkg/skills-cli/src/channel-review/doctor.ts removes one caller only
+- [x] Regression: `bun test` passes at the root and in each package directory; `bun run lint:all` passes; `bun install --frozen-lockfile` passes
+- [x] Contract: `dg-daemon service status` exits 1 with the unknown-command error of commander; `GET /services` gives 404
+- [x] Contract: `dg-daemon job add --label x --every 15m --cwd <dir> -- <cmd>` and `dg-daemon job rm x` exit 1 with the unknown-option and unknown-command errors of commander
+- [x] Contract: a config with `services` and a store with scheduled rows that are not moved, from two releases before, still migrate at the first boot of the major
+- [x] Contract: `bun scripts/completion-trees.ts --check` exits 0, and no tree holds `channel-review`, `service` below `dg-daemon`, or an alias form
+- [x] Contract: `rg CHAT_SERVICES_PATH pkg` finds nothing
+- [x] Contract: two opens of one database at version 14 at the same time give one correct set of copy files and one migration; the second process gets no error, reads version 15 and writes nothing (`writeFileAtomic` makes each file write safe)
+- [x] Check: no link in the repository points at an anchor of the old docs/channel-review.md or of a removed toc section (for example `toc.md#channel-review`)
 
 #### Acceptance Criteria
-- [ ] Given the major release, when the owner runs `dg-skills channel-review`, then the command does not exist
-- [ ] Given a machine that ran channel review, when the daemon of the major starts, then daemon.db has no channel-review object and each other table keeps its rows
-- [ ] Given the same machine, when the owner lists the credentials, then the `channel-review/` entries are present
-- [ ] Given docs/channel-review.md, when the owner reads it, then it gives the order add, stop, export, enable, verify, remove the hook, remove the `review-<env>` jobs, upgrade
-- [ ] Given the repository, when `ls pkg` and `ls plugins/dg/skills` run, then no `channel-review` folder exists
-- [ ] Given the PR, when the release workflow reads its commits, then the next version is a major
-- [ ] Given a machine that ran channel review, when the daemon of the major starts the first time, then one JSON copy of the state of each env is beside daemon.db, and the tables are gone
-- [ ] Given docs/adr, when a reader opens a record from 0008 to 0019, then its status is Deprecated and it links the job sources record
-- [ ] Given the major release, when `dg-skills doctor` runs, then it reports no `channel-review` group and no unknown-group error
-- [ ] Given a script that calls `dg-daemon service start <name>`, when it runs on the major release, then the command does not exist, and docs/jobs-and-services.md gives `dg job start <name>`
+- [x] Given the major release, when the owner runs `dg-skills channel-review`, then the command does not exist
+- [x] Given a machine that ran channel review, when the daemon of the major starts, then daemon.db has no channel-review object and each other table keeps its rows
+- [x] Given the same machine, when the owner lists the credentials, then the `channel-review/` entries are present
+- [x] Given docs/channel-review.md, when the owner reads it, then it gives the order add, stop, export, enable, verify, remove the hook, remove the `review-<env>` jobs, upgrade
+- [x] Given the repository, when `ls pkg` and `ls plugins/dg/skills` run, then no `channel-review` folder exists
+- [x] Given the PR, when the release workflow reads its commits, then the next version is a major
+- [x] Given a machine that ran channel review, when the daemon of the major starts the first time, then one JSON copy of the state of each env is beside daemon.db, and the tables are gone
+- [x] Given docs/adr, when a reader opens a record from 0008 to 0019, then its status is Deprecated and it links the job sources record
+- [x] Given the major release, when `dg-skills doctor` runs, then it reports no `channel-review` group and no unknown-group error
+- [x] Given a script that calls `dg-daemon service start <name>`, when it runs on the major release, then the command does not exist, and docs/jobs-and-services.md gives `dg job start <name>`
 
 ## Slice Summaries
 
+- Slice 21: channel review leaves dg (pkg/channel-review, the dg channel-review command, its doctor group and skill, retired with every released SKILL.md hash); schema step 15 drops the channel_review objects after it writes channel-review-state.<env>.json beside daemon.db in the version 1 import shape; the service group, the /services route and the job alias forms are gone; ADRs 0008 to 0019 are Deprecated and dg adr index marks them in the toc; docs/channel-review.md is the migration note.
 - Slice 20: ADR 0053 (job sources and credentials) with its paired decision; docs/jobs-and-services.md gains Add a job from a repository, Add a local script or folder, Credentials: enable and setup, Answers with --setup and Refresh a credential; docs/service-api.md, SECURITY.md, the jobs skill and docs/channel-review.md are updated; ADR 0043, 0006 and 0049 get one dated Amended line each; job-source-docs.spec.ts checks each documented literal against the source.
 - Slice 18: POST /service-api/v1/credentials takes refresh with {operation, name, job}: the daemon fetches only from the source in the sources.json record of the job, with the job's base environment and the shared fetchSecret, stores the value with merged meta, returns only {name, updatedAt}, and starts one fetch at most for one credential in 60 s; docs/service-api.md and the outside-services docs spec are updated.
 - Slice 17: A job binds a stored credential to an environment variable with --credential <name>=<NAME> (add and update of a file or command job) or the block key env on a credential; the entry key credentialEnv holds the binding; buildJobEnv reads each value at every launch and places it after the envFile, passEnv and allowlist values and before the DG_* keys; a missing, NUL-holding, unreadable or reserved-prefix value makes the start invalid.
@@ -2438,6 +2439,12 @@ Make `job` the one noun for each program that dg-daemon runs: a continuous job o
 - Slice 1 (cc825ca1): each package preloads the test home fence; resolveDgPaths throws outside DG_PATH_FENCE; test spawns with their own env pass fenceEnv(). 12 MEDIUM/LOW residuals are in Issues Remediation.
 
 ## Agent Notes
+- (slice 21, orchestrator) The state copy is written in the import.json shape (version, cursor, handled, current, automation), not as the raw {env, revision, updatedAt, state} row, so an owner who upgraded before the export can copy it to <state>/jobs/<name>/import.json; the raw row stays in the pre-migration-v15 snapshot. RATIFY item in the PR.
+- (slice 21, orchestrator) Step 15 uses DROP ... IF EXISTS, so a database whose objects are already gone still migrates.
+- (slice 21, orchestrator) The migration note removes the SessionStart hook before the stop step (review finding: a new session could start the old daemon between the stop and the export); the plan order put it after verify.
+- (slice 21, orchestrator) dg adr lint --all would fail on links from ADRs 0003, 0007 and 0008 to 0019 into the removed code, so those links point at the v7.0.5 tag. This changes link lines beyond the Status line of 0008 to 0019 and two lines of 0003 and 0007.
+- (slice 21, orchestrator) The toc line form is `- [NNNN — title](file) — Deprecated`: the toc list is generated, so renderToc appends the suffix for a Deprecated status.
+- (slice 21, orchestrator) Commands are flat since 7.0 (dg channel-review, dg service), so the plan's dg-skills and dg-daemon forms map to dg forms.
 
 - (orchestrator) PR 1 opened as draft: https://github.com/detailedghost/dg-ai/pull/227 (slices 1-7 plus review fixes 35f3e2fd and 6a605d37). PR 2 starts in a new worktree after it merges.
 - (slice 7, dg:lore) docs/install.md has the new anchor #two-daemon-folders-hold-data and move rule 13; jobs-and-services.md keeps the line '`dg job` runs `dg-daemon job`' for pairing-docs.spec.ts.

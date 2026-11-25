@@ -6,7 +6,7 @@ import { runCapture } from "@dg/common/node";
 
 let dir: string;
 beforeEach(() => {
-	dir = realpathSync(mkdtempSync(join(tmpdir(), "runners-capture-")));
+	dir = realpathSync(mkdtempSync(join(tmpdir(), "run-capture-")));
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 

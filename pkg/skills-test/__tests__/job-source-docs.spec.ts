@@ -40,7 +40,6 @@ const SOURCE_FILES = [
 	"common/src/node/job-credentials-client.ts",
 	"common/src/node/dg-paths.ts",
 	"common/src/chat-format.ts",
-	"skills-cli/src/channel-review/export.ts",
 ];
 
 const read = (path: string): string => readRepoFile(...path.split("/"));
@@ -104,10 +103,10 @@ describe("docs/jobs-and-services.md job sources", () => {
 		expect([...order].sort((a, b) => a - b)).toEqual(order);
 	});
 
-	test("holds the five sections as H2 headings after Job verbs and before Old and new commands", () => {
+	test("holds the five sections as H2 headings after Job verbs and before Removed forms", () => {
 		const lines = doc.split("\n");
 		const at = (title: string) => lines.indexOf(`## ${title}`);
-		const positions = ["Job verbs", ...NEW_SECTIONS, "Old and new commands", "Run rules"].map(at);
+		const positions = ["Job verbs", ...NEW_SECTIONS, "Removed forms", "Run rules"].map(at);
 		for (const p of positions) expect(p).toBeGreaterThanOrEqual(0);
 		expect([...positions].sort((a, b) => a - b)).toEqual(positions);
 		expect(doc.search(/^#+ Start at login$/m)).toBeGreaterThan(at("Run rules"));
@@ -282,10 +281,12 @@ describe("each documented command passes its --help form", () => {
 	}, 120_000);
 
 	test("each dg name in a code span or fence of the changed documents resolves through resolveRoute", () => {
+		const removedNames = ["channel-review", "service"];
+		const removed = (file: string, name: string) => file === CHANNEL_REVIEW && removedNames.includes(name);
 		const bad = CHANGED.flatMap((file) =>
 			dgCommandForms(read(file))
 				.map((words) => words[0])
-				.filter((name) => resolveRoute(name) === undefined && !OWN_WORDS.includes(name))
+				.filter((name) => resolveRoute(name) === undefined && !OWN_WORDS.includes(name) && !removed(file, name))
 				.map((name) => `${file}: dg ${name}`),
 		);
 		expect(bad).toEqual([]);
@@ -427,22 +428,47 @@ describe("the setup mark after a changed credential source", () => {
 	});
 });
 
-describe("the move to a job in docs/channel-review.md", () => {
+describe("the migration note in docs/channel-review.md", () => {
 	const doc = flat(read(CHANGED[2]));
-	const exportSource = readRepoFile("pkg", "skills-cli", "src", "channel-review", "export.ts");
+	const steps = [
+		"`dg job add <bot repository URL>`",
+		"Remove the SessionStart hook that starts `dg channel-review`",
+		"`dg channel-review stop --env <env>`",
+		"`dg channel-review export --env <env> --label <name>`",
+		"`dg job enable <name>`",
+		"Make sure that a review runs.",
+		"`dg job remove review-<env>`",
+		"Upgrade to the major.",
+	];
 
-	test("gives the command, the path and the refusal rule from export.ts", () => {
-		expect(doc).toContain("## Move to a job");
-		expect(doc).toContain("`dg channel-review export --env <env> --label <label>`");
-		expect(doc).toContain("`<state>/jobs/<label>/import.json`");
-		expect(doc).toContain("`channel-review export:`");
-		expect(doc).toContain("when the old daemon of that env runs");
-		expect(exportSource).toContain('const PREFIX = "channel-review export:"');
-		expect(exportSource).toContain('"import.json"');
-		expect(exportSource).toContain("daemon is running");
-		const cli = readRepoFile("pkg", "skills-cli", "src", "channel-review", "cli.ts");
-		expect(cli).toContain('"--label <label>"');
-		expect(cli).toContain('.command("export")');
+	test("gives the eight steps in order, before the upgrade", () => {
+		const at = steps.map((s) => doc.indexOf(s));
+		for (const [i, p] of at.entries()) expect([steps[i], p >= 0]).toEqual([steps[i], true]);
+		expect([...at].sort((a, b) => a - b)).toEqual(at);
+		expect(doc).toContain("`dg channel-review export` exists only there");
+	});
+
+	test("states no downgrade, the stopped daemon and what stays", () => {
+		expect(doc).toContain("There is no downgrade after it");
+		expect(doc).toMatch(/No process may write the state between the copy and the drop/);
+		expect(doc).toContain("`channel-review/`");
+		expect(doc).toContain("`<state>/grants/channel-review.token`");
+	});
+
+	test("gives the recovery path, the copy files and the lowest step rule", () => {
+		expect(doc).toContain("`channel-review-state.<env>.json`");
+		expect(doc).toContain("`<state>/jobs/<name>/import.json`");
+		expect(doc).toContain("`DG_SERVICE_STATE_DIR`");
+		expect(doc).toContain("`pre-migration-v<version>-\u2026.db`");
+		expect(doc).toContain("use the file of the lowest step");
+		expect(doc).toContain("mode 0600");
+		expect(doc).toContain("Do not commit it.");
+		expect(doc).toContain("(install.md#where-dg-keeps-its-files)");
+	});
+
+	test("lists each removed form with its job verb", () => {
+		for (const w of ["`dg service add <name>`", "`dg-daemon service`", "the `/services` route", "`--label`, `--cron`, `--pass-env`", "`dg job rm <name>`", "`dg job exec <name>`"])
+			expect([w, doc.includes(w)]).toEqual([w, true]);
 	});
 });
 

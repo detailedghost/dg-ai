@@ -3,17 +3,14 @@ import { DgCliError, describeError, EXIT_GENERAL_FAILURE, parseEvery } from "@dg
 
 export type EntryFlags = {
 	name?: string;
-	label?: string;
 	continuous?: boolean;
 	schedule?: string;
-	cron?: string;
 	every?: string;
 	timeout?: string;
 	feed?: boolean;
 	notify?: string;
 	envFile?: string;
 	env?: string[];
-	passEnv?: string[];
 	stopTimeout?: string;
 };
 
@@ -28,18 +25,6 @@ const fail = (message: string): never => {
 	throw new DgCliError(message, EXIT_GENERAL_FAILURE);
 };
 
-export const aliasNote = (oldForm: string, newForm: string): void => {
-	console.error(
-		`note: "${oldForm}" is now "${newForm}"; this form goes away in the next major release`,
-	);
-};
-
-export function announceAliases(options: EntryFlags): void {
-	if (options.label !== undefined) aliasNote("--label", "--name");
-	if (options.cron !== undefined) aliasNote("--cron", "--schedule");
-	if (options.passEnv !== undefined) aliasNote("--pass-env", "--env");
-}
-
 export function duration(value: string, flag: string, prefix: string): number {
 	try {
 		return parseEvery(value, flag);
@@ -52,19 +37,18 @@ export function assertOneMode(options: EntryFlags, prefix: string): void {
 	const count =
 		Number(options.continuous === true) +
 		Number(options.every !== undefined) +
-		Number(options.schedule !== undefined) +
-		Number(options.cron !== undefined);
+		Number(options.schedule !== undefined);
 	if (count !== 1) fail(`${prefix}: give one of --continuous, --schedule or --every`);
 }
 
 export function checkEntryFlags(options: EntryFlags, prefix: string): EntryParts {
-	const names = [...new Set([...(options.env ?? []), ...(options.passEnv ?? [])])];
+	const names = [...new Set(options.env ?? [])];
 	if (names.some((entry) => entry.includes("="))) {
 		fail(`${prefix}: --env takes a variable name — put a value in the file of --env-file`);
 	}
 	return {
 		names,
-		cronText: options.schedule ?? options.cron,
+		cronText: options.schedule,
 		stopTimeoutMs:
 			options.stopTimeout === undefined
 				? undefined

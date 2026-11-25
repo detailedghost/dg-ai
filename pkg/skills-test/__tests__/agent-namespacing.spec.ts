@@ -49,7 +49,6 @@ const BARE_AGENT = new RegExp(
 );
 
 const NOT_AN_AGENT = new Set([
-	"channel-review/references/setup.md",
 	"deps-upgrade/references/ecosystems.md",
 ]);
 

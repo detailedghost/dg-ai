@@ -1,6 +1,7 @@
 # Pass review origin and model evidence across runner attempts
 
-Status: Proposed
+Status: Deprecated
+Channel review left dg; see [ADR 0053](0053-job-sources-and-credentials.md).
 Date: 2026-10-16
 Topic: Channel review
 
@@ -63,9 +64,9 @@ sequenceDiagram
 
 ## References
 
-- [Attempt execution and fallback](../../pkg/channel-review/src/engine.ts)
-- [Runner context](../../pkg/channel-review/src/runners/index.ts)
-- [Environment filtering](../../pkg/channel-review/src/runners/spawn.ts)
-- [Grok readiness](../../pkg/channel-review/src/runners/grok.ts)
-- [Quota and fallback regressions](../../pkg/channel-review/__tests__/core-engine-fallback.spec.ts)
+- [Attempt execution and fallback](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/engine.ts)
+- [Runner context](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/runners/index.ts)
+- [Environment filtering](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/runners/spawn.ts)
+- [Grok readiness](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/runners/grok.ts)
+- [Quota and fallback regressions](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/__tests__/core-engine-fallback.spec.ts)
 - [Deployment contract](../DEVELOPER.md#review-attribution)

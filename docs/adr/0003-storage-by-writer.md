@@ -41,4 +41,4 @@ flowchart LR
 - [pkg/dg-daemon/src/store/schema.ts](../../pkg/dg-daemon/src/store/schema.ts)
 - [pkg/dg-daemon/src/store/index.ts](../../pkg/dg-daemon/src/store/index.ts)
 - [pkg/common/src/node/sqlite.ts](../../pkg/common/src/node/sqlite.ts)
-- [pkg/channel-review/src/state.ts](../../pkg/channel-review/src/state.ts)
+- [pkg/channel-review/src/state.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/state.ts)

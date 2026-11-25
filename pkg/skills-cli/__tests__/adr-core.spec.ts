@@ -441,6 +441,27 @@ describe("adr index", () => {
 		expect(renderIndexes(records)).toEqual(renderIndexes(records));
 		expect(records).toEqual(before);
 	});
+
+	test("renderIndexes marks a deprecated record in the toc and leaves an accepted one plain", async () => {
+		const { renderIndexes } = await import("../src/adr/index-gen");
+		const record = (number: string, status: string) => ({
+			number,
+			key: `${number}-x`,
+			title: `Record ${number}`,
+			status,
+			date: "2026-11-25",
+			topic: "Platform",
+			level: "",
+			covers: [],
+			adrPath: "",
+			decisionPath: "",
+			adrText: null,
+			decisionText: null,
+		});
+		const { toc } = renderIndexes([record("0001", "Accepted"), record("0002", "Deprecated")]);
+		expect(toc).toContain("- [0001 — Record 0001](0001-x.md)\n");
+		expect(toc).toContain("- [0002 — Record 0002](0002-x.md) — Deprecated\n");
+	});
 });
 
 describe("adr relevant", () => {

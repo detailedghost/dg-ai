@@ -1,6 +1,7 @@
 # Normalize error providers behind a polling interface
 
-Status: Accepted
+Status: Deprecated
+Channel review left dg; see [ADR 0053](0053-job-sources-and-credentials.md).
 Date: 2026-10-16
 Topic: Automation
 
@@ -48,7 +49,7 @@ sequenceDiagram
 
 ## References
 
-- [pkg/channel-review/src/sinks/types.ts](../../pkg/channel-review/src/sinks/types.ts)
-- [pkg/channel-review/src/sinks/poller.ts](../../pkg/channel-review/src/sinks/poller.ts)
-- [Datadog adapter](../../pkg/channel-review/src/sinks/datadog.ts)
-- [Sentry adapter](../../pkg/channel-review/src/sinks/sentry.ts)
+- [pkg/channel-review/src/sinks/types.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/sinks/types.ts)
+- [pkg/channel-review/src/sinks/poller.ts](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/sinks/poller.ts)
+- [Datadog adapter](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/sinks/datadog.ts)
+- [Sentry adapter](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/sinks/sentry.ts)

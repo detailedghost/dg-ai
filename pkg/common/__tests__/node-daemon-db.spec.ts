@@ -42,13 +42,13 @@ describe("openDaemonDatabase", () => {
 		db.close(true);
 		const retry = openDaemonDatabase(paths);
 		expect(readSchemaVersion(retry)).toBe(CURRENT_SCHEMA_VERSION);
-		expect(retry.query("SELECT count(*) AS n FROM channel_review_requests").get()).toEqual({ n: 0 });
+		expect(retry.query("SELECT count(*) AS n FROM sqlite_master WHERE name GLOB 'channel_review*'").get()).toEqual({ n: 0 });
 		retry.close(true);
 	});
 
 	test("creates a sessions table without awaiting_agent on a fresh database", () => {
 		const db = openDaemonDatabase(freshPaths());
-		expect(CURRENT_SCHEMA_VERSION).toBe(14);
+		expect(CURRENT_SCHEMA_VERSION).toBe(15);
 		expect(sessionColumns(db)).not.toContain("awaiting_agent");
 		db.close(true);
 	});
@@ -63,7 +63,7 @@ describe("openDaemonDatabase", () => {
 		old.close(true);
 
 		const db = openDaemonDatabase(paths);
-		expect(readSchemaVersion(db)).toBe(14);
+		expect(readSchemaVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
 		expect(sessionColumns(db)).not.toContain("awaiting_agent");
 		expect(db.query("SELECT count(*) AS n FROM sessions WHERE id = ?").get("session-kept")).toEqual({ n: 1 });
 		db.close(true);
@@ -94,7 +94,7 @@ describe("openDaemonDatabase", () => {
 		expect(results).toEqual(children.map(() => ({ code: 0, stderr: "" })));
 		const raw = new Database(paths.dbPath, { readonly: true });
 		expect(readSchemaVersion(raw)).toBe(CURRENT_SCHEMA_VERSION);
-		expect(raw.query("SELECT count(*) AS n FROM channel_review_state").get()).toEqual({ n: 0 });
+		expect(raw.query("SELECT count(*) AS n FROM sqlite_master WHERE name GLOB 'channel_review*'").get()).toEqual({ n: 0 });
 		raw.close(true);
 	});
 });

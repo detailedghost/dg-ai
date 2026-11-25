@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { ADR_SECTIONS, count, REPO_ROOT, readRepoFile } from "./test-support";
 
@@ -115,9 +115,20 @@ describe("ADR 0043 outside services", () => {
 			expect(heading(adr, "References")).toContain(f);
 	});
 
-	test("does not deprecate ADR 0020 or ADRs 0008 to 0019", () => {
+	test("does not deprecate ADR 0020 and deprecates ADRs 0008 to 0019", () => {
 		expect(adr).not.toMatch(/supersede[sd]? (ADR )?0020/i);
-		expect(toc).not.toMatch(/00(0[89]|1\d)[^\n]*Deprecated/);
+		expect(read("docs/adr/0020-one-dg-command.md")).toMatch(/^Status: Accepted$/m);
+		expect(toc).toContain("**Deprecated:** removed; the record may link the record that covers what replaced it.");
+		for (let n = 8; n <= 19; n++) {
+			const prefix = `00${String(n).padStart(2, "0")}-`;
+			const file = readdirSync(join(REPO_ROOT, "docs", "adr")).find((f) => f.startsWith(prefix)) ?? "";
+			expect(file).not.toBe("");
+			const lines = read(`docs/adr/${file}`).split("\n");
+			const at = lines.indexOf("Status: Deprecated");
+			expect([file, at]).not.toEqual([file, -1]);
+			expect(lines[at + 1]).toBe("Channel review left dg; see [ADR 0053](0053-job-sources-and-credentials.md).");
+			expect(toc).toMatch(new RegExp(`\\(${file}\\) — Deprecated$`, "m"));
+		}
 	});
 });
 
@@ -142,36 +153,21 @@ describe("docs/jobs-and-services.md", () => {
 			"dg job add --name bot",
 			"dg job enable bot",
 			"## Job verbs",
-			"## Old and new commands",
+			"## Removed forms",
 		].map((s) => doc.indexOf(s));
 		for (const i of order) expect(i).toBeGreaterThanOrEqual(0);
 		expect([...order].sort((a, b) => a - b)).toEqual(order);
 	});
 
-	test("shows service add with a positional label", () => {
-		expect(doc).toMatch(/service add [a-z<][\w<>-]* /);
-		expect(doc).not.toMatch(/service add --label/);
+	test("shows job add with a name and gives the removed forms as gone", () => {
+		expect(doc).toMatch(/dg job add --name [a-z<][\w<>-]* /);
+		expect(doc).not.toMatch(/service add/);
+		expect(doc).not.toMatch(/dg job exec/);
+		expect(doc).toContain("are gone");
 	});
 
-	test("documents each service add option from the command source", () => {
-		const src = source("dg-daemon", "src", "commands", "service.ts");
-		for (const opt of [
-			"--autostart",
-			"--env-file",
-			"--cwd",
-			"--stop-timeout",
-			"--grant",
-		]) {
-			expect(src).toContain(opt);
-			expect(doc).toContain(opt);
-		}
-		for (const w of [
-			"service rm",
-			"job exec",
-			"passEnv",
-			"stopTimeoutMs",
-			"grant",
-		])
+	test("documents each job add option", () => {
+		for (const w of ["--env-file", "--cwd", "--stop-timeout", "--name", "passEnv", "stopTimeoutMs", "grant"])
 			expect(doc).toContain(w);
 	});
 
@@ -272,9 +268,9 @@ describe("jobs SKILL.md", () => {
 
 	test("covers the new actions and the gating rules", () => {
 		for (const w of [
-			"dg service add",
-			"dg service rm",
-			"dg job exec",
+			"dg job add",
+			"dg job remove",
+			"dg job start",
 			"dg daemon start",
 			"dg daemon stop",
 			"dg daemon restart",
@@ -283,7 +279,7 @@ describe("jobs SKILL.md", () => {
 		])
 			expect(skill).toContain(w);
 		expect(skill).not.toMatch(/dg-skills[^.\n]*start[^.\n]*daemon on demand/i);
-		expect(skill).toMatch(/does not stop a running service/i);
+		expect(skill).not.toMatch(/dg service (add|rm)/);
 		expect(skill).not.toContain("~/.dg/bin/");
 		expect(count(skill, '"hooks": {')).toBeLessThanOrEqual(1);
 	});

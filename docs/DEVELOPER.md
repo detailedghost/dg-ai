@@ -11,7 +11,6 @@ pkg/
   dg-agent/    agent-facing CLI for the daemon — compiled into `dg`
   inbox/       reusable inbox providers/workflows, lazy generators, runtime seams
   ssms/        SMS providers (google Messages for Web, signal-cli) and the ssms CLI
-  channel-review/ Teams review daemon, runners, reactions, and verdict readers
   skills-cli/  CLI framework — compiled into `dg`
   launcher/    @dg/launcher — compiled program build, bundle tarball for the 6.3 bridge
   skills-test/ smoke tests — skills reference the right packages, install logic
@@ -19,7 +18,6 @@ plugins/dg/
   skills/      AI instruction layer — SKILL.md + references for each skill
                (the canonical tree; both .claude-plugin/plugin.json and
                plugins/dg/.codex-plugin/plugin.json point here)
-    channel-review/ SKILL.md and setup/command references
     google-sms-cleanup/ SKILL.md for Messages for Web cleanup (`dg ssms`)
 docs/          Documentation
 .github/       CI workflows
@@ -209,8 +207,7 @@ provider explicitly. CLI overrides `GH_BIN` and `GLAB_BIN` select executables.
 | `create-pr` | `--title`, `--base`, `--head`, `--body` required; optional `--draft` |
 | `merged-pr-for-branch <branch>` | First matching merged request, or JSON null |
 
-This command ports the provider library into the compiled CLI; channel-review's
-verdict readers remain separate. Configure GitLab AI review identities explicitly
+This command ports the provider library into the compiled CLI. Configure GitLab AI review identities explicitly
 with `AI_VCS_GITLAB_REVIEW_BOT`; there is no personal reviewer default.
 
 #### Proxy
@@ -435,19 +432,19 @@ bun test       # install logic + skill manifests + CLI smoke
 | Workflow | Trigger (paths) | Result |
 | ------------------- | ------------------------------------------- | --------------------------------------- |
 | `ext-blt` | PR: extension, common | required on master |
-| `skills-blt` | PR: skills-cli, dg, inbox, ssms, channel-review, dg-agent, dg-daemon, extension, common, skills, skills-test, bun.lock | required |
+| `skills-blt` | PR: skills-cli, dg, inbox, ssms, dg-agent, dg-daemon, extension, common, skills, skills-test, bun.lock | required |
 | `dg-daemon-blt` | PR: dg-daemon, common | required |
 | `dg-agent-blt` | PR: dg-agent, dg-daemon, common | required |
 | `release` | push master, no path filter; manual dispatch | one `vX.Y.Z` release: eight compiled `dg` programs, `dg-lib-<v>.tar.gz` and `runtime.json` (for the 6.3 bridge), the demo narration zip, 2 extension zips, both bootstraps, `SHA256SUMS` |
 
-The skills-cli tests inside `skills-blt` (the workflow that also lints and tests channel-review) run as four shards, `skills-cli (1)` through `skills-cli (4)`.
+The skills-cli tests inside `skills-blt` run as four shards, `skills-cli (1)` through `skills-cli (4)`.
 Each shard and the job that follows it has a 30 minute backstop.
 That job passes only after every shard and the other package checks pass.
-`blt-gate` still waits on `skills-blt`, which covers channel-review as well as the shards.
+`blt-gate` still waits on `skills-blt`.
 
 ## Branch Protection
 
-PRs to `master` require `ext-blt`, `skills-blt` (including channel-review), `dg-daemon-blt` and
+PRs to `master` require `ext-blt`, `skills-blt`, `dg-daemon-blt` and
 `dg-agent-blt` to pass.
 
 > **Manual step, post-merge.** A repository admin must add the `dg-daemon-blt`
@@ -608,7 +605,7 @@ column and the name, so a ciphertext copied to another name does not decrypt.
 with a key named like `value`, `secret`, `token` or `password`.
 
 Name credentials `<consumer>/<provider>[/<qualifier>]`, for example
-`channel-review/datadog` or `channel-review/relay/dev`. The store checks only
+`bot/datadog` or `bot/relay/dev`. The store checks only
 the character set (`[a-z0-9][a-z0-9._/-]{0,127}`), so each package picks its
 own consumer prefix. `CredentialMeta` types the reserved optional fields
 `provider`, `site`, `scopes`, `expiresAt`, `createdBy` and `note`; other keys
@@ -677,100 +674,15 @@ with `dg daemon is not running; start it with dg agent start`.
 `resolveCredential` uses an environment variable in that case when one is
 set.
 
-## Channel review integration
-
-`@dg/channel-review` supplies the Teams relay provider, local daemon, runner
-probes, persistent state, reactions, and GitHub/GitLab verdict readers.
-`pkg/skills-cli` registers `channel-review` and depends on the workspace package.
-Both plugin hosts discover its skill through `plugins/dg/skills/channel-review/`.
-Read [setup](../plugins/dg/skills/channel-review/references/setup.md) and
-[commands](../plugins/dg/skills/channel-review/references/commands.md) for the
-config contract and error templates.
-
-The daemon runs separately from the loopback chat daemon. It fetches its secret
-into memory. Per-environment operational state lives in the existing
-`DG_HOME/daemon/daemon.db`, in `channel_review_state`; configuration, PID files,
-and logs remain under `DG_HOME/channel-review`. The schema-only opener and
-single migration list live in `@dg/common/daemon-db`; `ChatStore` retains
-ownership of crypto/key initialization. Both processes can start independently.
-The service imports its legacy `state.<env>.json` once in a transaction and
-retains the source. Status only reads; malformed state reports an error.
-See [ADR 0018](adr/0018-channel-review-state-in-daemon-db.md) for schema,
-restart behavior, migration guarantees, and integration with the ADR branch.
-
-Review operational state retains its prior plaintext boundary; the shared opener
-does not read keys or credentials. For local inspection of the shared database:
-
-```sql
-SELECT env, status, count(*) FROM channel_review_requests GROUP BY env, status;
-SELECT * FROM channel_review_current WHERE env = 'dev';
-```
-
-Build and deploy one `dg` release with schema 12 support for both the daemon and the CLI
-before allowing the new service to migrate the shared file. Older daemon
-binaries refuse schema 12 on restart. Never run an old JSON writer alongside
-the database-backed service. Retained legacy JSON is a recovery source rather
-than a live mirror. Pending/running requests become failed on restart with
-CR-205; the service does not reconstruct or rerun the queue.
-
-`resolveSecrets` (`pkg/channel-review/src/credentials.ts`) reads the
-`channel-review/` entries at daemon start, and again before a relay auth retry,
-through the `channel-review` grant. It builds an env-like map for the relay
-connect and the sinks: unexpired store records first, then the process
-environment. `status` reports each source and flags expired records.
-`dg channel-review connect` drives Chrome through `playwright-core`. It
-imports the package lazily, so other commands never load it, and the bundle
-build (`pkg/launcher/build.ts`) marks `chromium-bidi` external because the
-CDP flow does not use it. The `playwrightMetadata` plugin in
-`pkg/skills-cli/build.ts` rewrites Playwright's two computed metadata imports to
-static imports, embedding `package.json` and `browsers.json`. Playwright is
-pinned; when upgrading it, run `channel-review-connect-compiled.spec.ts`, which
-runs the connect flow from the built bundle.
-Every review machine needs a signed-in runner and thrash installed in that
-runner's skill roots. `status` reports each runner probe, including CR-206 for
-missing thrash after executable and login checks pass.
-Grok Build is available through `~agent grok`, `--runner grok`, or
-`runner.default`; `~model` passes its model ID unchanged. Its probe uses
-`grok models` for the resolved auth source and `grok inspect --json` for an
-enabled, invocable `/thrash`. These utilities do not generate model output.
-The review runs headlessly with `--always-approve`. `runner.fallback: "grok"`
-opts into Grok after a Claude limit.
-
-AI usage-limit detection lives in `@dg/common` as `isAiUsageLimit`. Runners check
-bounded tails from both stdout and stderr and return CR-207 for quota exhaustion,
-including Claude's exit-zero limit responses. Review jobs retry a limited Claude
-run once with `runner.fallback` after a successful probe. Fallback is off by
-default: set `"fallback": "codex"` to enable it. The
-fallback keeps the remaining timeout, uses its own default model, writes a separate
-log, and replies to the original request. Other AI tasks expose the same error and
-notify the owner; write tasks are not automatically retried.
-
-The [relay contract](../pkg/channel-review/README.md) lists every relay call.
-A relay deploy can drop SSE streams and the relay's replay buffer. The daemon
-reconnects and may report a gap; commands posted during the deploy cannot
-replay. Test first on dev in a test chat. Emoji capture also needs relay
-reaction events and a human reaction on the capture prompt.
-
 Run `bun test` and `bun run lint` in `pkg/skills-test`, including release trigger
 and binary distribution contracts. Run `bun run test:all` at the root. Refresh
 `bun.lock` with `bun install`, then verify `bun install --frozen-lockfile`.
 
-The live `/dg:channel-review` bootstrap check in Claude Code is human-only and
-remains pending. Check that the installed skill runs the installed dg and
-prints status JSON. Exit 0 requires reachable secret, chat, and reactions while
-stopped; named errors with remedies also pass the bootstrap check. Record the
-exact Claude scratch write rule and WSL restart result during live validation.
+## Review attribution
 
-### Review attribution
-
-Review tasks pass `origin: "daemon"` explicitly to the runner, including Teams requests
-and readiness events. Other direct runner callers default to `manual`. The runner puts
-fresh JSON in `THRASH_EXECUTION_CONTEXT`: `origin`, `backend`, optional `model`, and
+The review caller puts fresh JSON in `THRASH_EXECUTION_CONTEXT`: `origin`, `backend`, optional `model`, and
 `modelSource` (`requested`, `configured`, or `default`). These model fields describe the orchestrator,
-not the reviewer. Child spawning strips inherited `THRASH_*` variables before applying
-this attempt's context. Fallback rebuilds it for the successful backend with no stale
-Claude model. Current-job status includes `execution`; local logs identify origin and
-orchestrator model evidence. The shared database snapshot retains this current-job metadata.
+not the reviewer. A caller that starts a review for each attempt sets fresh JSON for each attempt.
 
 The thrash helper owns the compiled review contract. It reads the
 `THRASH_EXECUTION_CONTEXT` JSON above and needs a helper version that understands

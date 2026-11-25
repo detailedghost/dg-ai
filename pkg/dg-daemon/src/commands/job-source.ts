@@ -76,7 +76,7 @@ export type JobSourceDeps = JobVerbDeps & {
 	runBuild(argv: string[], cwd: string): Promise<number>;
 };
 
-export type SourceAddOptions = { name?: string; label?: string; yes?: boolean };
+export type SourceAddOptions = { name?: string; yes?: boolean };
 
 const CONSENT_QUESTION = "Add these jobs? [y/N]";
 export const SAFE_GIT = ["-c", "protocol.ext.allow=never", "-c", "protocol.fd.allow=never"];
@@ -210,7 +210,7 @@ function refuseCredentialsInUrl(value: string): void {
 }
 
 function sourceNameOf(url: string, options: SourceAddOptions): string {
-	const given = options.name ?? options.label;
+	const given = options.name;
 	const trimmed = url.replace(/\/+$/, "");
 	const segment = trimmed
 		.slice(Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf(":")) + 1)

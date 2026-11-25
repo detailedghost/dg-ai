@@ -3,7 +3,6 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	CHAT_JOBS_PATH,
-	CHAT_SERVICES_PATH,
 	DG_CHROME_EXTENSION_ORIGIN,
 } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
@@ -62,18 +61,20 @@ describe("GET /jobs", () => {
 		expect(body.instanceId).toBe(health.instanceId);
 		expect(body.jobs).toHaveLength(1);
 		expect(body.jobs[0]).toMatchObject({ label: "bot", state: "stopped" });
-		expect(Object.hasOwn(body, "services")).toBe(false);
 	});
 
-	it("gives the same status objects as GET /services under the key services", async () => {
+	it.each([
+		["GET", ""],
+		["GET", "/bot"],
+		["POST", "/bot/start"],
+		["POST", "/bot/stop"],
+	] as const)("answers 404 for %s /services%s", async (method, tail) => {
 		const { port } = await boot((home) => ({ jobs: botDecl(home) }));
-		const jobs = await (await call(port, CHAT_JOBS_PATH, "", "GET")).json();
-		const services = await (
-			await call(port, CHAT_SERVICES_PATH, "", "GET")
-		).json();
-		expect(services.services).toEqual(jobs.jobs);
-		expect(services.instanceId).toBe(jobs.instanceId);
-		expect(Object.hasOwn(services, "jobs")).toBe(false);
+		const resp = await fetch(`http://127.0.0.1:${port}/services${tail}`, {
+			method,
+			headers: { Host: `127.0.0.1:${port}`, ...ownerTokenHeader(port) },
+		});
+		expect(resp.status).toBe(404);
 	});
 
 	it("refuses a request with no origin and no credential", async () => {
@@ -126,13 +127,6 @@ describe("POST /jobs/<name>/start and /stop", () => {
 			expect(resp.status).toBe(404);
 			expect((await resp.text()).trim()).toBe('no job named "nope"');
 		}
-	});
-
-	it("keeps the service text for an unknown label on /services", async () => {
-		const { port } = await boot(() => ({}));
-		const resp = await call(port, CHAT_SERVICES_PATH, "nope/start", "POST");
-		expect(resp.status).toBe(404);
-		expect((await resp.text()).trim()).toBe('no service labelled "nope"');
 	});
 
 	it("refuses a browser page origin and starts nothing", async () => {

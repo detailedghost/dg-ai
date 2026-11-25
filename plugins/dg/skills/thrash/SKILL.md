@@ -156,7 +156,7 @@ which is more than the default of 120 s.
    `--dry-run`: run `export DG_THRASH_DRY_RUN=1` at the start of the run (every fresh shell),
    and in the Post step call `dg thrash post "$TARGET" --review "$REVIEW_JSON" --dry-run`. It prints
    the review it would post and makes no provider call; the env var makes any `post` a no-op too. Confirm through the host's user-question facility when `--confirm` was
-   passed or when the verdict is approve or request changes. A headless run with no user to ask (for example the channel-review daemon) treats its own request as the confirm. A comment-only review goes to the Post step now.
+   passed or when the verdict is approve or request changes. A headless run with no user to ask treats its own request as the confirm. A comment-only review goes to the Post step now.
 9. **Post.** `dg thrash post "$TARGET" --review "$REVIEW_JSON"` (plus `--confirm` for an approve or request-changes verdict, or `--dry-run` in report-only mode) posts and saves the result
    next to the review JSON. `post` removes the scratch tree. If `degraded` is true, say the provider refused the requested
    verdict and posted as comment (for example, an own-PR restriction); the body still states the verdict.
@@ -185,8 +185,8 @@ Launch 16 agents at most in one message. Start the next wave when every agent of
 replied. A wave holds agents of one stage only. The rule covers reviewers, verifiers,
 consolidators and `--stacked` runs.
 
-**Headless rule.** In a run with no user to ask, for example `claude -p` or the channel-review
-daemon, start every host agent of a wave in the foreground, all in one message. `--proxy` jobs
+**Headless rule.** In a run with no user to ask, for example `claude -p`,
+start every host agent of a wave in the foreground, all in one message. `--proxy` jobs
 are background processes, and this rule does not cover them.
 
 ## Findings and summary

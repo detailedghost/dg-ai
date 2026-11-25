@@ -47,6 +47,12 @@ describe("the job group in the completion tree", () => {
 		}
 	});
 
+	it("has no service group", () => {
+		const names = (tree.commands ?? []).map((command) => command.name);
+
+		expect(names).not.toContain("service");
+	});
+
 	it("gives add the new flags and --credential but no --grant", () => {
 		const flags = flagsOf(verb("add"));
 

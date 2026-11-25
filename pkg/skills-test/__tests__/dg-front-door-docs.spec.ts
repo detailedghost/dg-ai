@@ -56,6 +56,18 @@ function amendment(): string {
 	return (end < 0 ? rest : rest.slice(0, end)).join("\n");
 }
 
+const lastAmendmentIndex = (lines: string[]): number =>
+	lines.map((l, i) => (/^## Amendment \(\d{4}-\d{2}-\d{2}\)$/.test(l) ? i : -1)).filter((i) => i >= 0).at(-1) ?? -1;
+
+function lastAmendment(): string {
+	const lines = read(ADR_PATH).split("\n");
+	const start = lastAmendmentIndex(lines);
+	if (start < 0) return "";
+	const rest = lines.slice(start + 1);
+	const end = rest.findIndex((l) => /^## /.test(l));
+	return (end < 0 ? rest : rest.slice(0, end)).join("\n");
+}
+
 function functionBody(text: string, name: string): string {
 	const start = text.indexOf(`function ${name}(`);
 	const open = start < 0 ? -1 : text.indexOf("{", text.indexOf(")", start));
@@ -110,7 +122,7 @@ describe("ADR 0020 amendment", () => {
 		expect(text).not.toBe("");
 		expect(adr).toMatch(/^Status: Accepted$/m);
 		const lines = adr.split("\n");
-		const at = lines.findIndex((l) => /^## Amendment \(\d{4}-\d{2}-\d{2}\)$/.test(l));
+		const at = lastAmendmentIndex(lines);
 		const lastH2 = lines.map((l, i) => (/^## /.test(l) ? i : -1)).filter((i) => i >= 0).at(-1);
 		const refs = lines.findIndex((l) => l === "## References");
 		expect(refs).toBeGreaterThanOrEqual(0);
@@ -118,7 +130,18 @@ describe("ADR 0020 amendment", () => {
 		expect(lastH2).toBe(at);
 	});
 
-	test("says channel review leaves dg in a later major release, with no date", () => {
+	test("the last amendment says channel review has left dg and links the migration note and ADR 0053", () => {
+		const last = flat(lastAmendment());
+		expect(last).toMatch(/channel review has now left dg in this major release/i);
+		expect(last).toContain("`dg channel-review`");
+		expect(last).toContain("pkg/channel-review");
+		expect(last).toContain("(../channel-review.md)");
+		expect(last).toContain("(0053-job-sources-and-credentials.md)");
+		expect(last).not.toMatch(/supersede/i);
+		expect(last).not.toMatch(/Deprecated/);
+	});
+
+	test("the first amendment keeps the plan text, with no date", () => {
 		expect(flatText).toMatch(/channel review leaves dg in a later major release/i);
 		expect(sentenceWith(text, "later major release")).not.toMatch(/\b20\d\d\b/);
 		expect(flatText).toMatch(/no `dg review` group/);
@@ -192,8 +215,9 @@ describe("docs/adr/toc.md", () => {
 		for (const line of heading(toc, "Platform").split("\n")) expect([line, [...line].length <= 160]).toEqual([line, true]);
 	});
 
-	test("keeps the count sixteen historical records", () => {
-		expect(toc).toContain("sixteen historical records");
+	test("says records 0008 to 0019 are Deprecated because channel review left dg", () => {
+		expect(toc).toContain("Records 0008 to 0019 describe channel review. They are Deprecated because channel review left dg.");
+		expect(toc).not.toContain("sixteen historical records");
 	});
 });
 
@@ -211,12 +235,11 @@ describe("ADR 0043 amendment line", () => {
 describe("docs/jobs-and-services.md front door", () => {
 	const doc = read(JOBS);
 
-	test("uses flat dg job, dg autostart and dg service, and dg daemon for the daemon lifecycle", () => {
+	test("uses flat dg job and dg autostart, and dg daemon for the daemon lifecycle", () => {
 		expect(doc).not.toMatch(OLD_NAMES);
-		expect(doc).toMatch(/dg job (add|list|run|enable|disable|rm)/);
+		expect(doc).toMatch(/dg job (add|list|start|enable|disable|remove)/);
 		expect(doc).toMatch(/dg autostart (install|remove|status)/);
-		for (const w of ["job exec", "service add", "service rm", "dg service start", "service status --json"])
-			expect(doc).toContain(w);
+		for (const w of ["dg job start", "dg job add", "dg job remove", "dg job status"]) expect(doc).toContain(w);
 		for (const w of ["dg daemon start", "dg daemon stop", "dg daemon restart", "dg daemon status"]) expect(doc).toContain(w);
 	});
 
@@ -229,8 +252,8 @@ describe("docs/jobs-and-services.md front door", () => {
 		expect(login).toBeGreaterThan(run);
 		const link = doc.indexOf("#start-at-login");
 		expect(link).toBeGreaterThanOrEqual(0);
-		expect(link).toBeLessThan(doc.indexOf("service add"));
-		for (const lit of ["service add", "dg daemon start", "dg service start", "service status --json"])
+		expect(link).toBeLessThan(doc.indexOf("dg job add"));
+		for (const lit of ["dg job add", "dg daemon start", "dg job start", "dg job status"])
 			expect(doc.indexOf(lit)).toBeLessThan(login);
 	});
 
@@ -303,7 +326,7 @@ describe("docs/service-api.md injected keys", () => {
 		const row = doc.split("\n").find((l) => l.startsWith("| `DG_SERVICE_STATE_DIR`")) ?? "";
 		expect(row).toContain("<state>/jobs/<label>/");
 		expect(flat(doc)).toMatch(/0700/);
-		expect(flat(doc)).toMatch(/`service rm` does not remove/);
+		expect(flat(doc)).toMatch(/`job remove` does not remove/);
 		const home = doc.split("\n").find((l) => l.startsWith("| `DG_HOME`")) ?? "";
 		expect(home).toMatch(/only when/i);
 		expect(flat(doc)).toMatch(/same dg home/);
@@ -406,7 +429,7 @@ describe("README.md flat commands", () => {
 			expect([verb, resolveRoute(verb)]).toEqual([verb, undefined]);
 		for (const [alias, target] of [["upgrade", "update"], ["extension", "install"]] as const)
 			expect(resolveRoute(alias)?.command).toEqual(resolveRoute(target)?.command ?? [target]);
-		for (const name of ["job", "autostart", "service", "phone", "pw", "doctor"])
+		for (const name of ["job", "autostart", "phone", "pw", "doctor"])
 			expect([name, resolveRoute(name) !== undefined]).toEqual([name, true]);
 	});
 

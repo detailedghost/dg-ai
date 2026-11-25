@@ -1,6 +1,7 @@
 # Store channel-review state in the shared daemon database
 
-Status: Proposed
+Status: Deprecated
+Channel review left dg; see [ADR 0053](0053-job-sources-and-credentials.md).
 Date: 2026-10-16
 Topic: Channel review
 Updates: [0003](0003-storage-by-writer.md) (the accepted JSON-state decision).
@@ -142,6 +143,6 @@ The record keeps one JSON snapshot instead of an indexed request table. It keeps
 - [Shared opener](../../pkg/common/src/node/daemon-db.ts)
 - [Central schema and migration 12](../../pkg/common/src/node/daemon-schema.ts)
 - [Migration runner](../../pkg/common/src/node/sqlite.ts)
-- [Review state/import API](../../pkg/channel-review/src/state.ts)
-- [Existing restart recovery](../../pkg/channel-review/src/engine.ts)
-- [Encrypted database compatibility tests](../../pkg/dg-daemon/__tests__/store/channel-review-state.spec.ts)
+- [Review state/import API](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/state.ts)
+- [Existing restart recovery](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/channel-review/src/engine.ts)
+- [Encrypted database compatibility tests](https://github.com/detailedghost/dg-ai/blob/v7.0.5/pkg/dg-daemon/__tests__/store/channel-review-state.spec.ts)

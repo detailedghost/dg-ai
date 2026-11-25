@@ -15,7 +15,6 @@ import {
 import type { Command } from "commander";
 import { runSubtree } from "../utils/lazy-command";
 
-export { promptHidden } from "@dg/common/node";
 
 const EXPIRING_WITHIN_MS = 14 * 86_400_000;
 
@@ -213,7 +212,7 @@ export function registerCredentials(
 		.description(
 			"Create or rotate a read-only service token for names under <prefix>/",
 		)
-		.argument("<prefix>", "consumer prefix, for example channel-review")
+		.argument("<prefix>", "consumer prefix, for example my-service")
 		.action(async (rawPrefix: string, _options, command: Command) => {
 			const prefix = validateCredentialGrantPrefix(rawPrefix);
 			await withClient(command, async (client) => {

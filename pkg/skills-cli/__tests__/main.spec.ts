@@ -132,7 +132,6 @@ describe("dg main through feature modules that used to exit", () => {
 		"chain/index.ts",
 		"demo/cli.ts",
 		"address/index.ts",
-		"channel-review/cli.ts",
 		"deps-upgrade/index.ts",
 	])("keeps %s free of a bare process.exit so the entry point can drain output", (file) => {
 		const source = readFileSync(join(import.meta.dir, "..", "src", file), "utf8");

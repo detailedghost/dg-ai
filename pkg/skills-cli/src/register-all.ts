@@ -5,7 +5,6 @@ import { registerAssign } from "./commands/assign";
 import { registerBg } from "./commands/bg";
 import { registerCatchup } from "./commands/catchup";
 import { registerChain } from "./commands/chain";
-import { registerChannelReview } from "./commands/channel-review";
 import { registerClean } from "./commands/clean";
 import { registerClipboardImage } from "./commands/clipboard-image";
 import { registerCompletion } from "./commands/completion";
@@ -47,7 +46,6 @@ import { guardExtensionCommands, registerRequireExtension } from "./utils/cli-on
 export function registerAll(program: Command): void {
 	guardExtensionCommands(program);
 	registerInbox(program);
-	registerChannelReview(program);
 	registerCredentials(program);
 	registerDb(program);
 	registerErd(program);

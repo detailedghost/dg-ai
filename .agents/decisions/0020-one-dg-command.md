@@ -9,7 +9,7 @@ Superseded by [ADR 0055](0055-one-dg-program-with-flat-commands.md) where they d
 - Each command tree keeps its commands in its own package; `dg` routes to it (ADR 0055).
 - Do not build the `dg-v<x>` tag or `dg review`.
 - Do not register a `review-<env>` service in install or in the daemon.
-- Keep service commands under `dg service`.
+- Do not add a `dg service` group. The `dg job` verbs run services.
 - `dg daemon serve` starts the long-running process. Do not add `dg daemon run`.
 - The daemon keeps its own command tree.
 - A job or service stores the argument list its owner gave it. The job model is in [ADR 0049](../../docs/adr/0049-jobs.md).

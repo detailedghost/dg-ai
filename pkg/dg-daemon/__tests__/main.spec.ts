@@ -83,7 +83,7 @@ describe("dg daemon main", () => {
 			"start the daemon in the background, or report the live one",
 			"--json",
 		],
-		["stop", "stop the daemon and its services", "--force"],
+		["stop", "stop the daemon and its jobs", "--force"],
 		["restart", "stop the daemon, then start it again", "--force"],
 	])(
 		"registers %s with its description and %s flag",

@@ -91,7 +91,7 @@ describe("extension guard", () => {
 			"demo",
 			"rerun",
 			"inbox",
-			"channel-review",
+			"stash",
 		]) {
 			const command = addExtOption(program.command(name));
 			command.command("nested").action(() => void calls.push(`${name} nested`));
@@ -182,9 +182,9 @@ describe("extension guard", () => {
 	test("keeps CLI commands working in a CLI-only install", async () => {
 		setCliOnly(true);
 		const { program, calls } = buildProgram();
-		await program.parseAsync(["channel-review"], { from: "user" });
+		await program.parseAsync(["stash"], { from: "user" });
 		await program.parseAsync(["inbox"], { from: "user" });
-		expect(calls).toEqual(["channel-review", "inbox"]);
+		expect(calls).toEqual(["stash", "inbox"]);
 	});
 
 	test("tells a CLI-only user to run dg install to add the extension", () => {

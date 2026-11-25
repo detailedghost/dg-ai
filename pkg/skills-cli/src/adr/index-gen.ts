@@ -58,7 +58,10 @@ function renderToc(records: AdrRecord[]): string {
 		.map((topic) => {
 			const lines = records
 				.filter((record) => record.topic === topic)
-				.map((record) => `- [${record.number} — ${linkText(record.title)}](${record.key}.md)`);
+				.map((record) => {
+					const suffix = record.status.startsWith("Deprecated") ? " — Deprecated" : "";
+					return `- [${record.number} — ${linkText(record.title)}](${record.key}.md)${suffix}`;
+				});
 			return `### ${topic}\n\n${lines.join("\n")}\n`;
 		})
 		.join("\n");

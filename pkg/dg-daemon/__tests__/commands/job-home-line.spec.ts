@@ -88,18 +88,16 @@ describe("the dg home line of the job group", () => {
 		expect(result.stdout).not.toContain("dg home:");
 	});
 
-	it("is printed by job list and not by the service group", async () => {
+	it("is printed by job list, and the service group is an unknown command", async () => {
 		const dgHome = homes.fresh();
 		seedJobs(dgHome, {});
 
 		const job = await runCli(dgHome, ["job", "list"]);
-		const status = await runCli(dgHome, ["service", "status"]);
-		const start = await runCli(dgHome, ["service", "start", "x"]);
-		const stop = await runCli(dgHome, ["service", "stop", "x"]);
+		const service = await runCli(dgHome, ["service", "status"]);
 
 		expect(homeLines(job.stderr)).toHaveLength(1);
-		for (const result of [status, start, stop]) {
-			expect(result.stderr).not.toContain("dg home:");
-		}
+		expect(service.code).toBe(1);
+		expect(service.stderr).toContain("error: unknown command 'service'");
+		expect(service.stderr).not.toContain("dg home:");
 	});
 });

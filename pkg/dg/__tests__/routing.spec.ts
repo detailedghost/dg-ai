@@ -20,7 +20,6 @@ const EXPECTED_ROUTES: ReadonlyArray<readonly [string, MountName, string[]]> = [
 	["update", "dg-skills", ["update"]],
 	["pw", "dg-skills", ["pw"]],
 	["phone", "dg-agent", ["phone"]],
-	["service", "dg-daemon", ["service"]],
 ];
 
 const UNKNOWN = (word: string) => `dg: unknown command "${word}"; run dg --help\n`;

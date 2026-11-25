@@ -27,7 +27,6 @@ describe("resolveRoute", () => {
 		["mcp", "dg-agent", ["mcp"]],
 		["job", "dg-daemon", ["job"]],
 		["autostart", "dg-daemon", ["autostart"]],
-		["service", "dg-daemon", ["service"]],
 		["upgrade", "dg-skills", ["update"]],
 		["extension", "dg-skills", ["install"]],
 		["skills", "dg-skills", []],
@@ -44,7 +43,7 @@ describe("resolveRoute", () => {
 		},
 	);
 
-	test.each(["nope", "toString", "constructor", "__proto__", "completion", "help", "dg-skills", ""])("%p has no route", (word) => {
+	test.each(["nope", "toString", "constructor", "__proto__", "completion", "help", "dg-skills", "", "service", "channel-review"])("%p has no route", (word) => {
 		expect(resolveRoute(word)).toBeUndefined();
 	});
 

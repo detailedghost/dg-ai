@@ -235,7 +235,7 @@ describe("dg credentials", () => {
 
 	test("list shows grants without tokens", async () => {
 		const grant = {
-			prefix: "channel-review",
+			prefix: "my-service",
 			createdAt: "2026-01-01T00:00:00.000Z",
 			lastUsedAt: null,
 		};
@@ -246,21 +246,21 @@ describe("dg credentials", () => {
 
 	test("grant prints the token file path, never a token", async () => {
 		const cli = fakeCli();
-		await cli.run(["grant", "channel-review"]);
-		expect(cli.calls.at(-1)).toEqual({ op: "grant", args: ["channel-review"] });
+		await cli.run(["grant", "my-service"]);
+		expect(cli.calls.at(-1)).toEqual({ op: "grant", args: ["my-service"] });
 		expect(JSON.parse(cli.lines[0])).toEqual({
 			kind: "credential-grant",
-			prefix: "channel-review",
-			path: "/fixture/grants/channel-review.token",
+			prefix: "my-service",
+			path: "/fixture/grants/my-service.token",
 		});
 	});
 
 	test("revoke deletes the grant", async () => {
 		const cli = fakeCli();
-		await cli.run(["revoke", "channel-review"]);
+		await cli.run(["revoke", "my-service"]);
 		expect(JSON.parse(cli.lines[0])).toEqual({
 			kind: "credential-grant-revoked",
-			prefix: "channel-review",
+			prefix: "my-service",
 			revoked: true,
 		});
 	});

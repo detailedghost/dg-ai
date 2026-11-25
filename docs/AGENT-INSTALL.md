@@ -3,7 +3,7 @@
 How an AI agent (Codex or Claude Code) sets up this repository end-to-end,
 across **two components**:
 
-1. **The DeeGee plugin** (`dg`) — provides browser, demo, prototype, chat, inbox cleanup, channel review, and Google SMS cleanup skills.
+1. **The DeeGee plugin** (`dg`) — provides browser, demo, prototype, chat, inbox cleanup, and Google SMS cleanup skills.
 1. **The `dg-ai-extension` browser extension** — the companion that groups tabs
    and drives in-browser demo tours.
 
@@ -40,7 +40,7 @@ On Windows PowerShell:
 ```
 
 These alternative commands install the CLI, stage the browser extension, and copy the
-shared browser, demo, proto, chat, inbox-cleanup, channel-review, and google-sms-cleanup skills into `$CODEX_HOME/skills` (default
+shared browser, demo, proto, chat, inbox-cleanup, and google-sms-cleanup skills into `$CODEX_HOME/skills` (default
 `~/.codex/skills`). Start a new Codex thread after installation.
 
 ## CLI-only install
@@ -64,7 +64,7 @@ On Windows PowerShell:
 Combined with `--codex` (`-Codex`), only
 the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills`.
 
-- CLI-only skills: `channel-review`, `google-sms-cleanup` (`dg ssms`;
+- CLI-only skills: `google-sms-cleanup` (`dg ssms`;
   it drives Messages for Web and can wrap `signal-cli`), `inbox-cleanup` with explicit
   `--data-path` fixtures, `proto` and `demo`, whose default local modes need no
   extension. Only `proto --ext` and `demo --ext` need the dg-ai-extension.
@@ -332,7 +332,7 @@ dg pw --ext launch --browser brave --group "PRs" <refs...>
 dg --help
 ```
 
-Should list `install`, `pw`, `demo`, `rerun`, and `channel-review`, and
+Should list `install`, `pw`, `demo`, and `rerun`, and
 `dg pw --help` should list `batch-open` and `launch`. Then confirm
 grouping/tours work with the pw or demo skill. For the chat harness:
 
@@ -411,35 +411,6 @@ Explicit --data-path fixtures work without those services. Read
 [provider setup](../plugins/dg/skills/inbox-cleanup/references/providers.md) and
 [cleanup workflow](../plugins/dg/skills/inbox-cleanup/references/workflow.md).
 
-## Channel review
-
-The shared channel-review skill runs the `dg channel-review`
-command. It needs no browser extension. Install thrash separately for each
-runner on every machine; dg does not ship it. Claude is the supported default.
-Read [setup](../plugins/dg/skills/channel-review/references/setup.md) and
-[commands](../plugins/dg/skills/channel-review/references/commands.md) before
-changing config.
-
-| Task | Who runs it |
-| --- | --- |
-| `aws sso login --profile <profile>` | Human: complete AWS SSO sign-in for the profile in `envs.<name>.awsProfile`. |
-| Add the bot (`envs.<name>.botName`, such as Review Bot) to each review chat | Human: select the bot from the org catalog. |
-| Register the bot and run the relay | Human: follow [relay setup](../plugins/dg/skills/channel-review/references/relay-setup.md). |
-| React during `emojis capture` | Human: add the custom reaction to the capture prompt. An agent may start capture. |
-| Approve the fun-pool GIF list | Human: review the list before each release. |
-| `status`, `env`, `start`, `stop`, `run` | Agent: run the requested operation and report its output. |
-| `emojis show`, `emojis set` | Agent: inspect slots or save the supplied custom ID. |
-| Invoke `/dg:channel-review` in Claude Code for the live bootstrap check | Human: verify the installed skill runs status through the installed `dg`. |
-
-Start with `status --env dev` in a test chat. If the service mailbox is
-absent from the chat, set `chat.id` from the Teams **Copy link** URL. Status
-reports runner probes and, while stopped, secret, chat, and reaction preflight.
-The live bootstrap check passes with exit 0 when those services are reachable,
-or with a JSON failure report that names the problem and remedy. This guide
-does not record a completed live check.
-
-______________________________________________________________________
-
 ## Pair the browser with an agent session
 
 Pairing needs no code and no human step. The extension keeps a link socket to
@@ -498,14 +469,14 @@ Older releases paired through pages inside the extension. The first release with
 1. In each agent session, run `dg agent start`. The extension adopts the session.
 1. Run `dg pw --ext open <url>`, or click **Add this tab** in the popup, so the agent has a tab.
 
-Restart the daemon right after the upgrade. A channel-review run can apply schema 13 while an old daemon still runs. The old daemon's `saveSession` then fails until you restart it.
+Restart the daemon right after the upgrade. A newer process can apply schema 13 while an old daemon still runs. The old daemon's `saveSession` then fails until you restart it.
 
 ### What the upgrade removed
 
 | Removed | Replacement |
 | --- | --- |
 | The extension side panel | The daemon `/chat` page. Run `dg agent start --open`, or click **Open chat** in the popup. |
-| The extension dashboard page | `dg job list` and `dg job run <label>` manage jobs. A job with `--notify` sends new feed items to an agent as messages. |
+| The extension dashboard page | `dg job list` and `dg job start <name>` manage jobs. A job with `--notify` sends new feed items to an agent as messages. |
 | The extension overwatch page | The daemon `/board` page. Run `dg overwatch open`. |
 | `dg agent attach` | `dg agent start`. The extension adopts the session. |
 | `dg agent start --fresh` and `dg agent start -s <id>` | `dg agent start` registers the session and the extension adopts it. |
@@ -552,7 +523,7 @@ database schema user_version 13 is newer than this binary's supported version 12
 
 Before it runs step 13, the daemon writes `pre-migration-v13-<ts>-<rand>.db` into the daemon folder that holds `daemon.db`, `<state>/daemon`. The [install guide](install.md#where-dg-keeps-its-files) lists `<state>` for each OS. To roll back:
 
-1. Stop every process that holds the database. That means the daemon and any channel-review process. Run `dg daemon stop` for the daemon. Stop channel-review with `dg channel-review stop --env dev` or `--env prod`.
+1. Stop every process that holds the database. Run `dg daemon stop` for the daemon.
 1. Delete `daemon.db-wal` and `daemon.db-shm` from the daemon folder. The daemon runs SQLite in WAL mode, and a leftover journal from the schema-13 database corrupts the restored file.
 1. Install the older release.
 1. Restore that snapshot as `daemon.db`.

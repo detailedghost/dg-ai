@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { writeSessionToken, resolveDgPaths } from "@dg/common/node";
 import { ChatStore } from "../../src/store";
+import { CURRENT_SCHEMA_VERSION } from "@dg/common/daemon-db";
 import {
 	cleanupDgHome,
 	FILE_ONLY_SEAMS,
@@ -98,7 +99,7 @@ describe("chat sessions in the daemon database", () => {
 
 			const reopened = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 			try {
-				expect(reopened.userVersion()).toBe(14);
+				expect(reopened.userVersion()).toBe(CURRENT_SCHEMA_VERSION);
 				const loaded = reopened.loadSessions();
 				expect(loaded.map((session) => session.sessionId)).toEqual(["pre-drop"]);
 				expect(Object.hasOwn(loaded[0] ?? {}, "awaitingAgent")).toBe(false);

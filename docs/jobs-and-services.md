@@ -15,7 +15,7 @@ A job is a command that the daemon runs for you. A job has one of three modes:
 - `schedule`: the daemon runs it at the times of a `cron` expression.
 - `every`: the daemon runs it at a fixed interval, such as `15m`.
 
-`job` is a flat command: `dg job`, `dg autostart` and `dg service` need no group
+`job` is a flat command: `dg job` and `dg autostart` need no group
 name. Each `dg job`
 verb prints the dg home and the daemon on stderr, so you can see which home and
 which daemon it uses.
@@ -57,9 +57,7 @@ required, and `meta` and `url` are optional. Each line becomes a feed item, and
 the daemon dedupes on `id`, so a second run of the same query adds nothing.
 `--notify <identity>` queues one agent message when a run brings in a new item,
 and it needs `--feed`. A job with no `--feed` writes its output to its log. A
-moved scheduled job and an `add` with the alias `--label` or `--cron` get
-`feed: true`, so a script from before keeps its result. The alias forms also
-write an enabled job.
+moved scheduled job gets `feed: true`, so a script from before keeps its result.
 
 `add` writes this entry to the config file:
 
@@ -160,7 +158,6 @@ daemon one time; see below the table.
 | `dg job enable <name>` | the stored `enabled` state, and acts now | no: it starts the daemon when none runs |
 | `dg job disable <name>` | the stored `enabled` state, and acts now | no, and it starts none; a daemon that runs must answer |
 | `dg job start <name>` | nothing stored: it acts now only | yes |
-| `dg job run <name>` | nothing stored: an alias of `start` | yes |
 | `dg job stop <name>` | nothing stored: it acts now only | yes |
 | `dg job restart <name>` | nothing stored: it acts now only | yes |
 | `dg job list` | nothing | no: it prints `daemon not running` as the state |
@@ -170,7 +167,7 @@ daemon one time; see below the table.
 `dg daemon restart` restarts the daemon, which ends each session, and
 `dg job restart <name>` restarts one job. `dg job update` changes a job that
 runs at its next start, so it prints `next: dg job restart <name>`.
-`dg job start` of a scheduled job, and the alias `run`, need a live daemon: the
+`dg job start` of a scheduled job needs a live daemon: the
 run happens in the daemon and does not change the next scheduled time.
 
 The first write verb on a home that the new daemon has not moved yet starts
@@ -445,30 +442,12 @@ Two limits follow. The grant proves the prefix and not the job, so a holder of t
 `refresh` request, and jobs that share a prefix trust each other. And `refresh` is not a sandbox against a running job: the
 `envFile` of the job can set `PATH` or `AWS_*` for the `aws` process.
 
-## Old and new commands
+## Removed forms
 
-| Old command | New command |
-| --- | --- |
-| `dg service add <label> --cwd <path> -- <command>` | `dg job add --name <name> --cwd <path> --continuous -- <command>` |
-| `dg service rm <label>` | `dg job remove <name>` |
-| `dg service status` | `dg job status` |
-| `dg service status --json` | `dg job status --json` |
-| `dg service start <label>` | `dg job start <name>` |
-| `dg service stop <label>` | `dg job stop <name>` |
-| `dg service add --autostart` | the `enabled` key, set by `dg job enable <name>` |
-| `dg service add --env-file <path>` | `dg job add --env-file <path>` |
-| `dg service add --pass-env <NAME>` | `dg job add --env <NAME>` |
-| `dg service add --stop-timeout <duration>` | `dg job add --stop-timeout <duration>` |
-| `dg service add --grant <prefix>` | the `grant` key; the old option stays on `dg service add` |
-| `dg job add --label <name>` | `dg job add --name <name>` |
-| `dg job add --cron "<cron>"` | `dg job add --schedule "<cron>"` |
-| `dg job add --pass-env <NAME>` | `dg job add --env <NAME>` |
-| `dg job rm <name>` | `dg job remove <name>` |
-| `dg job run <name>` and `dg job exec <name>` | `dg job start <name>` |
-
-The old forms still work, and the alias forms of `dg job` print a note on
-stderr that names the new form. They end in the next major release. The
-`dg service` group keeps working until then.
+The `service` command group, the `/services` route and the alias forms `--label`,
+`--cron`, `--pass-env`, `job rm`, `job run` and `job exec` are gone. Use the
+`dg job` verbs: `add`, `enable`, `disable`, `start`, `stop`, `restart`,
+`setup`, `update`, `remove`, `logs`, `status` and `list`.
 
 ## Run rules
 

@@ -15,14 +15,13 @@ afterEach(() => {
 });
 
 describe("scheduled_jobs schema step 14", () => {
-	it("is the last step and adds moved_at and renamed_from", async () => {
+	it("is step 14 and adds moved_at and renamed_from", async () => {
 		const { dgHome } = await seedHome();
 		homes.push(dgHome);
 		const store = await openStoreAt(dgHome);
 		try {
-			expect(SCHEMA_STEPS.at(-1)?.version).toBe(14);
-			expect(CURRENT_SCHEMA_VERSION).toBe(14);
-			expect(store.userVersion()).toBe(14);
+			expect(SCHEMA_STEPS.map((step) => step.version)).toContain(14);
+			expect(store.userVersion()).toBe(CURRENT_SCHEMA_VERSION);
 			const db = (store as unknown as { db: Database }).db;
 			const columns = db
 				.query("PRAGMA table_info(scheduled_jobs)")
