@@ -43,6 +43,13 @@ regexes = [
 ]
 
 [[allowlists]]
+description = "Synthetic relay secret in channel-review connect tests"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)pkg/skills-cli/__tests__/channel-review-connect\.spec\.ts$''']
+regexes = ['''^fixture-relay-secret-5e2a$''']
+
+[[allowlists]]
 description = "Synthetic GitLab token fixtures in skills CLI redaction tests"
 condition = "AND"
 regexTarget = "secret"
