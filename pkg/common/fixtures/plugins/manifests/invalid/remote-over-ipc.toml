@@ -1,0 +1,9 @@
+name = "remote-ipc"
+version = "1.0.0"
+kind = "hook"
+transport = "ipc"
+endpoint = "x.sock"
+remote = true
+
+[entry]
+command = "x"

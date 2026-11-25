@@ -1,0 +1,1 @@
+{ "route": "/v1/health", "direction": "response", "body": { "status": "great", "version": "1" }, "expect": { "key": "body.status", "includes": "ok, degraded" } }

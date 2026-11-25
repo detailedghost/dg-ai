@@ -1,0 +1,19 @@
+name = "secret-scan"
+version = "0.3.1"
+kind = "hook"
+transport = "ipc"
+endpoint = "secret-scan.sock"
+source = "https://github.com/example/dg-secret-scan"
+commit = "0123456789abcdef0123456789abcdef01234567"
+
+[entry]
+command = "dg-secret-scan"
+args = ["--serve"]
+
+[capabilities]
+fs_read = ["."]
+exec = ["git"]
+
+[permissions]
+env = ["HOME"]
+credentials = ["plugin-secret-scan-token"]

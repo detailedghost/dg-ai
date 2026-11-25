@@ -1,0 +1,1 @@
+{ "route": "/v1/hello", "direction": "response", "body": { "protocol": 1, "encoding": "msgpack", "capabilities": ["hook"] } }

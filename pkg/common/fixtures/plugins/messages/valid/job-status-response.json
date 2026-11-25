@@ -1,0 +1,1 @@
+{ "route": "/v1/job/status", "direction": "response", "body": { "state": "failed", "exitCode": 2 } }

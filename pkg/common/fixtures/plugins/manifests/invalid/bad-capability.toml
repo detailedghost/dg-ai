@@ -1,0 +1,9 @@
+name = "bad-capability"
+version = "1.0.0"
+kind = "hook"
+
+[entry]
+builtin = "x"
+
+[capabilities]
+exec = "git"

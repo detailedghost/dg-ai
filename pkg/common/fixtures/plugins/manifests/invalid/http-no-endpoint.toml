@@ -1,0 +1,7 @@
+name = "no-endpoint"
+version = "1.0.0"
+kind = "hook"
+transport = "http"
+
+[entry]
+command = "x"

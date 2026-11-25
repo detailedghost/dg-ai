@@ -1,0 +1,1 @@
+{ "route": "/v1/hook/decide", "direction": "response", "body": { "decision": "deny", "reason": "blocked by policy" } }
