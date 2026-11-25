@@ -1,0 +1,6 @@
+name = "pr-guard"
+version = "1.0.0"
+kind = "hook"
+
+[entry]
+builtin = "hooks.pr-guard"

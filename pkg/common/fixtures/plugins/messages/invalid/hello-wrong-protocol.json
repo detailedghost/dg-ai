@@ -1,0 +1,1 @@
+{ "route": "/v1/hello", "direction": "request", "body": { "protocol": 2, "encodings": ["json"], "capabilities": [] }, "expect": { "key": "body.protocol", "includes": "protocol 1" } }

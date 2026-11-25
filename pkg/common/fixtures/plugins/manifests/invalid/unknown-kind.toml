@@ -1,0 +1,6 @@
+name = "bad-kind"
+version = "1.0.0"
+kind = "widget"
+
+[entry]
+builtin = "x"

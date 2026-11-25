@@ -1,0 +1,1 @@
+{ "route": "/v1/job/run", "direction": "request", "body": { "job": "nightly-report", "args": ["--all"] } }

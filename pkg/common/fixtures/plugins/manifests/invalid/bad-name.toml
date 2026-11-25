@@ -1,0 +1,6 @@
+name = "Bad.Name"
+version = "1.0.0"
+kind = "hook"
+
+[entry]
+builtin = "x"

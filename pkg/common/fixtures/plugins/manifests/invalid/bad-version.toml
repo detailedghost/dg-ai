@@ -1,0 +1,6 @@
+name = "bad-version"
+version = "one"
+kind = "hook"
+
+[entry]
+builtin = "x"

@@ -1,0 +1,8 @@
+name = "bad-pin"
+version = "1.0.0"
+kind = "skill"
+source = "https://github.com/example/bad"
+sha256 = "abc"
+
+[entry]
+command = "x"
