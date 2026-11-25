@@ -41,38 +41,48 @@ public sealed class HttpTransportProvider(IHttpTransportFactory factory) : IPlug
 {
     private readonly Lock _gate = new();
     private readonly Dictionary<string, OpenTransport> _open = new(StringComparer.Ordinal);
+    private readonly List<IPluginTransport> _retired = [];
 
-    public async ValueTask<IPluginTransport> OpenAsync(PluginManifest manifest, bool allowRemote, CancellationToken ct)
+    public ValueTask<IPluginTransport> OpenAsync(PluginManifest manifest, bool allowRemote, CancellationToken ct)
     {
         var identity = $"{manifest.Endpoint}|{manifest.Remote}|{allowRemote}";
-        IPluginTransport? replaced = null;
-        IPluginTransport current;
         lock (_gate)
         {
             if (_open.TryGetValue(manifest.Name, out var existing))
             {
                 if (existing.Identity == identity)
-                    return existing.Transport;
-                replaced = existing.Transport;
+                    return ValueTask.FromResult(existing.Transport);
+                _retired.Add(existing.Transport);
             }
-            current = factory.Create(manifest, allowRemote);
+            var current = factory.Create(manifest, allowRemote);
             _open[manifest.Name] = new OpenTransport(identity, current);
+            return ValueTask.FromResult(current);
         }
-        if (replaced is not null)
-            await replaced.DisposeAsync().ConfigureAwait(false);
-        return current;
     }
 
     public async ValueTask DisposeAsync()
     {
-        OpenTransport[] open;
+        IPluginTransport[] all;
         lock (_gate)
         {
-            open = [.. _open.Values];
+            all = [.. _retired, .. _open.Values.Select(static entry => entry.Transport)];
+            _retired.Clear();
             _open.Clear();
         }
-        foreach (var entry in open)
-            await entry.Transport.DisposeAsync().ConfigureAwait(false);
+        List<Exception> failures = [];
+        foreach (var transport in all)
+        {
+            try
+            {
+                await transport.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                failures.Add(ex);
+            }
+        }
+        if (failures.Count > 0)
+            throw new AggregateException(failures);
     }
 
     private sealed record OpenTransport(string Identity, IPluginTransport Transport);

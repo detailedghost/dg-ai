@@ -51,7 +51,7 @@ public sealed class HttpTransportProviderTests
     }
 
     [Fact]
-    public async Task OpenAsync_EndpointMoves_DisposesTheReplacedTransport()
+    public async Task OpenAsync_EndpointMoves_KeepsTheReplacedTransportAliveForInFlightCallers()
     {
         var factory = new CountingFactory();
         await using var provider = new HttpTransportProvider(factory);
@@ -59,7 +59,33 @@ public sealed class HttpTransportProviderTests
         await provider.OpenAsync(Manifest("http://127.0.0.1:1"), false, CancellationToken.None);
         await provider.OpenAsync(Manifest("http://127.0.0.1:2"), false, CancellationToken.None);
 
-        Assert.Equal(1, factory.Disposed);
+        Assert.Equal(0, factory.Disposed);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_AfterReplacement_DisposesEveryTransport()
+    {
+        var factory = new CountingFactory();
+        var provider = new HttpTransportProvider(factory);
+        await provider.OpenAsync(Manifest("http://127.0.0.1:1"), false, CancellationToken.None);
+        await provider.OpenAsync(Manifest("http://127.0.0.1:2"), false, CancellationToken.None);
+
+        await provider.DisposeAsync();
+
+        Assert.Equal(2, factory.Disposed);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_OneTransportThrows_StillDisposesTheRest()
+    {
+        var factory = new CountingFactory { ThrowOnDispose = true };
+        var provider = new HttpTransportProvider(factory);
+        await provider.OpenAsync(Manifest("http://127.0.0.1:1"), false, CancellationToken.None);
+        await provider.OpenAsync(Manifest("http://127.0.0.1:2"), false, CancellationToken.None);
+
+        await Assert.ThrowsAsync<AggregateException>(async () => await provider.DisposeAsync());
+
+        Assert.Equal(2, factory.Disposed);
     }
 
     [Fact]
@@ -80,7 +106,11 @@ public sealed class HttpTransportProviderTests
     {
         public int Created { get; private set; }
 
-        public int Disposed { get; set; }
+        public int Disposed { get; private set; }
+
+        public bool ThrowOnDispose { get; init; }
+
+        public void RecordDispose() => Disposed++;
 
         public bool FailFirst { get; init; }
 
@@ -103,8 +133,10 @@ public sealed class HttpTransportProviderTests
 
         public ValueTask DisposeAsync()
         {
-            owner.Disposed++;
-            return ValueTask.CompletedTask;
+            owner.RecordDispose();
+            return owner.ThrowOnDispose
+                ? throw new InvalidOperationException("dispose fails")
+                : ValueTask.CompletedTask;
         }
     }
 }
