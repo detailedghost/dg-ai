@@ -1,0 +1,6 @@
+{
+	"ipcWarmP50Ms": 0.03,
+	"httpWarmP50Ms": 0.1,
+	"ipcFreshProcessMs": 3,
+	"httpFreshProcessMs": 4
+}

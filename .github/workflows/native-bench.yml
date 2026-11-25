@@ -1,0 +1,83 @@
+---
+name: Native dg - Plugin Transport Bench
+
+on:
+  pull_request:
+    paths:
+      - native/src/Dg.Core/**
+      - native/bench/**
+      - .github/workflows/native-bench.yml
+  workflow_dispatch:
+
+concurrency:
+  group: native-bench-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    name: bench-${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: windows-latest
+            rid: win-x64
+          - os: macos-15
+            rid: osx-arm64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up the .NET SDK from native/global.json
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: native/global.json
+
+      - name: Publish the bench with NativeAOT and trim warnings as errors
+        run: >
+          dotnet publish native/bench/Dg.Bench
+          -r ${{ matrix.rid }}
+          -c Release
+          -o native/bench/publish/${{ matrix.rid }}
+          -p:TreatWarningsAsErrors=true
+
+      - name: Measure the plugin round trips
+        env:
+          RID: ${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+          binary="native/bench/publish/${RID}/Dg.Bench"
+          if [ "${RUNNER_OS}" = Windows ]; then
+            binary="${binary}.exe"
+          fi
+          mkdir -p bench-measurements
+          "$binary" --out "bench-measurements/bench-${RID}.json"
+
+      - name: Upload the bench measurements
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-measurements-${{ matrix.rid }}
+          path: bench-measurements/*.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Check that the gate names the transport and both numbers when a budget is missed
+        if: matrix.rid == 'linux-x64'
+        run: bash native/bench/Dg.Bench/gate-selftest.sh native/bench/publish/linux-x64/Dg.Bench
+
+      - name: Gate the round trips against the Linux budgets
+        if: matrix.rid == 'linux-x64'
+        run: >
+          native/bench/publish/linux-x64/Dg.Bench
+          --gate native/bench/Dg.Bench/budgets/bench-linux-x64.json
+          --from bench-measurements/bench-linux-x64.json
