@@ -104,6 +104,7 @@ export function programRun(stdout: string): ProgramRun | undefined {
 
 const ENV_OWNED_BY_BOOTSTRAP = [
 	"DG_HOME",
+	"DG_FRONT",
 	"DG_VERSION",
 	"DG_CLI_ONLY",
 	"DG_AGENT_ONLY",

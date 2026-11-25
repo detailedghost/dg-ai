@@ -25,6 +25,10 @@
 # dg-windows-x64.exe is the fallback), and the unpacked dg-windows-x64.exe is verified against SHA256SUMS and must report
 # the release version before any link changes. Old dg-skills, dg-agent and dg-daemon launchers and dg.cmd are
 # removed. A 6.3 runtime\ and lib\ are left in place. Re-running upgrades in place.
+# The native front door is on by default: bin\<release>\dg.exe is the verified dg-front-win-<arch>.exe, the program
+# above sits beside it as dg-core.exe, and bin\dg-core.exe is a hard link next to bin\dg.exe. DG_FRONT=0 or
+# front.enabled = false in config.toml keeps the program at dg.exe alone. A front door that is missing, fails its
+# checksum or does not run keeps the program at dg.exe.
 param(
 	[string]$Version,
 	[switch]$CliOnly,
@@ -260,6 +264,88 @@ function Set-DgJunction {
 	Rename-Item -LiteralPath $staged -NewName (Split-Path -Leaf $Link)
 }
 
+function Write-DgFrontNote([string]$Reason) {
+	Write-Host "dg: the front door was not installed ($Reason); dg runs the Bun program only"
+}
+
+function Get-DgConfigFile {
+	if ($env:DG_HOME) { return Join-Path $dgRoot "config\config.toml" }
+	$appData = if ($env:APPDATA) { $env:APPDATA } else { Join-Path $env:USERPROFILE "AppData\Roaming" }
+	return Join-Path $appData "dg\config.toml"
+}
+
+function Test-DgConfigFrontOff {
+	$file = Get-DgConfigFile
+	if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return $false }
+	$inTable = $false
+	$inFront = $false
+	foreach ($raw in Get-Content -LiteralPath $file) {
+		$line = (($raw -replace '\s*#.*$', '') -replace '\s', '')
+		if ($line -match '^\[') { $inTable = $true; $inFront = ($line -eq '[front]'); continue }
+		if ($inFront -and $line -eq 'enabled=false') { return $true }
+		if (-not $inTable -and $line -eq 'front.enabled=false') { return $true }
+	}
+	return $false
+}
+
+function Test-DgFrontWanted {
+	$fromEnv = "$env:DG_FRONT".Trim().ToLowerInvariant()
+	if (@("0", "false", "no", "off") -contains $fromEnv) { return $false }
+	if (@("1", "true", "yes", "on") -contains $fromEnv) { return $true }
+	return -not (Test-DgConfigFrontOff)
+}
+
+function Test-DgFrontVersion {
+	param([string]$Path, [string]$Expected)
+	$info = New-Object System.Diagnostics.ProcessStartInfo
+	$info.FileName = $Path
+	$info.Arguments = "--version"
+	$info.UseShellExecute = $false
+	$info.RedirectStandardOutput = $true
+	$info.RedirectStandardError = $true
+	$info.CreateNoWindow = $true
+	try { $process = [System.Diagnostics.Process]::Start($info) } catch { return $false }
+	try {
+		$limit = if ($env:DG_FRONT_TIMEOUT) { [int]$env:DG_FRONT_TIMEOUT * 1000 } else { 10000 }
+		if (-not $process.WaitForExit($limit)) {
+			try { $process.Kill() } catch {}
+			return $false
+		}
+		if ($process.ExitCode -ne 0) { return $false }
+		$first = ($process.StandardOutput.ReadToEnd().Trim() -split '\s+')[0]
+		return $first -eq $Expected
+	} finally { $process.Dispose() }
+}
+
+function Install-DgFrontDoor {
+	param($Release, [string]$Work, [string]$SumsPath, [string]$Stage, [string]$Name, [string]$Version)
+	$expected = Get-DgSumsEntry $SumsPath $Name
+	if (-not $expected) { Write-DgFrontNote "v$Version has no $Name"; return }
+	$fetch = Select-DgAsset $Release $Name
+	Write-Host "Downloading $fetch..."
+	$frontDownloaded = Join-Path $Work $Name
+	try {
+		if ($fetch -eq $Name) {
+			Save-DgAsset $Release $fetch $frontDownloaded
+		} else {
+			$packed = Join-Path $Work $fetch
+			Save-DgAsset $Release $fetch $packed
+			Expand-DgGzip $packed $frontDownloaded
+		}
+	} catch { Write-DgFrontNote "could not download $fetch"; return }
+	try { Assert-DgSha256 $frontDownloaded $Name $expected } catch { Write-DgFrontNote ($_.Exception.Message -replace '^dg: ', ''); return }
+	$dg = Join-Path $Stage "dg.exe"
+	$core = Join-Path $Stage "dg-core.exe"
+	Move-Item -LiteralPath $dg -Destination $core
+	try {
+		Copy-Item -LiteralPath $frontDownloaded -Destination $dg
+		if (-not (Test-DgFrontVersion $dg $Version)) { throw "did not run and report $Version" }
+	} catch {
+		Move-Item -LiteralPath $core -Destination $dg -Force
+		Write-DgFrontNote "$Name $($_.Exception.Message)"
+	}
+}
+
 function Test-DgAvx2 {
 	Add-Type -Namespace Dg -Name Cpu -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool IsProcessorFeaturePresent(uint feature);'
 	return [Dg.Cpu]::IsProcessorFeaturePresent(40)
@@ -307,6 +393,7 @@ $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
 $platform = "windows-$arch"
 if ($platform -eq "windows-x64" -and -not (Test-DgAvx2)) { $platform = "windows-x64-baseline" }
 $asset = "dg-$platform.exe"
+$frontAsset = "dg-front-win-$arch.exe"
 
 function Test-DgLauncher {
 	param([string]$Path)
@@ -375,6 +462,7 @@ try {
 		if ($LASTEXITCODE -ne 0) { throw "dg: the downloaded $asset did not run" }
 		$first = ("$reported".Trim() -split '\s+')[0]
 		if ($first -ne $releaseVersion) { throw "dg: $asset reports '$first', expected $releaseVersion" }
+		if (Test-DgFrontWanted) { Install-DgFrontDoor $rel $work $sumsPath $stage $frontAsset $releaseVersion }
 		if (Test-Path -LiteralPath $versionDir) { Remove-Item -Recurse -Force $versionDir }
 		Move-Item -LiteralPath $stage -Destination $versionDir
 		$stage = $null
@@ -411,6 +499,39 @@ try {
 			throw
 		}
 		if ($aside) { Remove-Item -LiteralPath $aside -Force -ErrorAction SilentlyContinue }
+	}
+
+	Get-ChildItem -LiteralPath $binDir -Filter ".dg-core.exe.*.old" -Force -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+	if ($owned) {
+		$coreExe = Join-Path $binDir "dg-core.exe"
+		$coreProgram = Join-Path $versionDir "dg-core.exe"
+		$coreOwned = $true
+		if (Test-Path -LiteralPath $coreExe) {
+			$coreHave = Get-DgSha256 $coreExe
+			$coreOwned = $false
+			foreach ($known in Get-ChildItem -LiteralPath (Join-Path $dgHome "bin") -Directory -Force -ErrorAction SilentlyContinue) {
+				$coreCandidate = Join-Path $known.FullName "dg-core.exe"
+				if ($known.Name -match '^\d+\.\d+\.\d+$' -and (Test-Path -LiteralPath $coreCandidate -PathType Leaf) -and (Get-DgSha256 $coreCandidate) -eq $coreHave) { $coreOwned = $true; break }
+			}
+		}
+		if (-not $coreOwned) {
+			if (Test-Path -LiteralPath $coreProgram) { Write-Host "dg: kept $coreExe; it is not a dg launcher. Remove it or rename it, then run the bootstrap again" }
+		} elseif (Test-Path -LiteralPath $coreProgram) {
+			$coreAside = $null
+			if (Test-Path -LiteralPath $coreExe) {
+				$coreAside = Join-Path $binDir (".dg-core.exe." + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".old")
+				Rename-Item -LiteralPath $coreExe -NewName (Split-Path -Leaf $coreAside)
+			}
+			try {
+				New-Item -ItemType HardLink -Path $coreExe -Target $coreProgram | Out-Null
+			} catch {
+				if ($coreAside) { Rename-Item -LiteralPath $coreAside -NewName "dg-core.exe" }
+				throw
+			}
+			if ($coreAside) { Remove-Item -LiteralPath $coreAside -Force -ErrorAction SilentlyContinue }
+		} elseif (Test-Path -LiteralPath $coreExe) {
+			try { Remove-Item -LiteralPath $coreExe -Force } catch { Rename-Item -LiteralPath $coreExe -NewName (".dg-core.exe." + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".old") }
+		}
 	}
 
 	$oldDgCmd = Join-Path $binDir "dg.cmd"

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isReleaseCommit } from "../../../scripts/release-version";
 import { SUPPORTED_PLATFORMS } from "./supported-platforms";
@@ -828,8 +828,16 @@ const COMPILED_ASSETS = [
 	"dg-windows-x64-baseline.exe",
 	"dg-windows-arm64.exe",
 ];
+const FRONT_ASSETS = [
+	"dg-front-linux-x64",
+	"dg-front-linux-arm64",
+	"dg-front-osx-x64",
+	"dg-front-osx-arm64",
+	"dg-front-win-x64.exe",
+	"dg-front-win-arm64.exe",
+];
 const COMPANION_ASSETS = ["dg-pw-<v>.tar.zst", "dg-db-<v>.tar.zst"];
-const COMPRESSED_ASSETS = COMPILED_ASSETS.flatMap((name) => [`${name}.zst`, `${name}.gz`]);
+const COMPRESSED_ASSETS = [...COMPILED_ASSETS, ...FRONT_ASSETS].flatMap((name) => [`${name}.zst`, `${name}.gz`]);
 const DOCUMENTED_ASSETS = [
 	"dg-ai-extension-<v>-chrome.zip",
 	"dg-ai-extension-<v>-firefox.zip",
@@ -842,8 +850,18 @@ const DOCUMENTED_ASSETS = [
 	"runtime.json",
 	...COMPANION_ASSETS,
 	...COMPILED_ASSETS,
+	...FRONT_ASSETS,
 	...COMPRESSED_ASSETS,
 ];
+
+function frontUploads(): string[] {
+	const job = workflow.jobs["build-front"] as WorkflowJob;
+	const upload = (job.steps ?? []).find((s) => s.uses?.startsWith("actions/upload-artifact@"));
+	const path = String(upload?.with?.path ?? "");
+	return (job.strategy?.matrix?.include ?? []).map((entry) =>
+		(path.replaceAll("${{ matrix.rid }}", entry.rid ?? "").replaceAll("${{ matrix.ext }}", entry.ext ?? "").split("/").pop() ?? ""),
+	);
+}
 
 function uploadedNames(jobId: string): string[] {
 	const upload = (workflow.jobs[jobId]?.steps ?? []).find((s) =>
@@ -871,7 +889,7 @@ describe("the release builds one bundle and smokes it on all six platforms", () 
 	test("exactly one job builds the bundle and no per-binary build job remains", () => {
 		const builders = Object.keys(workflow.jobs).filter((id) => id.startsWith("build-"));
 
-		expect(builders.sort()).toEqual(["build-bundle", "build-ext", "build-narration"]);
+		expect(builders.sort()).toEqual(["build-bundle", "build-ext", "build-front", "build-narration"]);
 		expect(workflow.jobs["build-bundle"].strategy).toBeUndefined();
 	});
 
@@ -921,13 +939,13 @@ describe("the release builds one bundle and smokes it on all six platforms", () 
 		const id = smokeJobIds()[0] as string;
 
 		expect(jobNeeds(workflow.jobs[id] as WorkflowJob)).toContain("build-bundle");
-		expect(jobNeeds(releaseJob)).toEqual(expect.arrayContaining(["build-bundle", "build-ext", "build-narration", id]));
+		expect(jobNeeds(releaseJob)).toEqual(expect.arrayContaining(["build-bundle", "build-ext", "build-front", "build-narration", id]));
 	});
 });
 
 describe("the release publishes exactly the documented asset names", () => {
 	test("the build jobs, the bootstrap scripts and SHA256SUMS add up to the documented list and nothing else", () => {
-		const fromBuilds = ["build-bundle", "build-ext", "build-narration"].flatMap(uploadedNames);
+		const fromBuilds = [...["build-bundle", "build-ext", "build-narration"].flatMap(uploadedNames), ...frontUploads()];
 		const extras = ["bootstrap.sh", "bootstrap.ps1", "SHA256SUMS"].filter((name) =>
 			(step(STEP.assets).run ?? "").includes(name),
 		);
@@ -950,6 +968,162 @@ describe("the release publishes exactly the documented asset names", () => {
 			.filter(([, job]) => (job.steps ?? []).some((s) => s.uses?.startsWith("actions/upload-artifact@")))
 			.map(([id]) => id);
 
-		expect(uploaders.sort()).toEqual(["build-bundle", "build-ext", "build-narration"]);
+		expect(uploaders.sort()).toEqual(["build-bundle", "build-ext", "build-front", "build-narration"]);
+	});
+});
+
+const FRONT_RIDS = ["linux-x64", "linux-arm64", "win-x64", "win-arm64", "osx-x64", "osx-arm64"];
+const buildFront = workflow.jobs["build-front"] as WorkflowJob;
+const frontSteps = buildFront?.steps ?? [];
+const frontRuns = frontSteps.map((s) => s.run ?? "").join("\n");
+
+describe("the release builds the C# front door on six native runners", () => {
+	test("one build-front job runs a matrix of the six RIDs on the runners native.yml uses, with no cross-OS publish", () => {
+		const nativeMatrix = parseWorkflow("native.yml").jobs.native?.strategy?.matrix?.include ?? [];
+		const front = buildFront.strategy?.matrix?.include ?? [];
+
+		expect(front.map((entry) => entry.rid)).toEqual(FRONT_RIDS);
+		expect(front.map(({ os, rid }) => ({ os, rid }))).toEqual(nativeMatrix.map(({ os, rid }) => ({ os, rid })));
+		expect(front.filter((entry) => entry.rid.startsWith("win-")).map((entry) => entry.ext)).toEqual([".exe", ".exe"]);
+		expect(front.filter((entry) => !entry.rid.startsWith("win-")).every((entry) => entry.ext === "")).toBe(true);
+		expect(buildFront.permissions).toEqual({ contents: "read" });
+	});
+
+	test("it publishes with the release version so --version matches the Bun dg, and treats AOT and trim warnings as errors", () => {
+		const publish = frontSteps.find((s) => /dotnet publish/.test(s.run ?? ""));
+		const command = (publish?.run ?? "").replace(/\s+/g, " ");
+
+		expect(command).toContain("native/src/Dg.Cli");
+		expect(command).toContain('-r "$RID"');
+		expect(command).toContain('-p:Version="$VERSION"');
+		expect(command).toContain("-p:TreatWarningsAsErrors=true");
+		expect(buildFront.env?.VERSION).toBe("${{ needs.detect.outputs.version }}");
+		expect(buildFront.env?.RID).toBe("${{ matrix.rid }}");
+	});
+
+	test("it generates the route table and the completion copy before it publishes", () => {
+		const runs = frontSteps.map((s) => s.run ?? "");
+		const publishAt = runs.findIndex((run) => /dotnet publish/.test(run));
+
+		expect(runs.findIndex((run) => run.includes("bun scripts/native-routes.ts"))).toBeGreaterThan(-1);
+		expect(runs.findIndex((run) => run.includes("bun scripts/native-routes.ts"))).toBeLessThan(publishAt);
+		expect(runs.findIndex((run) => run.includes("bun scripts/native-completion.ts"))).toBeLessThan(publishAt);
+	});
+
+	test("it names the asset dg-front-<rid>, runs it, and fails unless --version prints the release version", () => {
+		const check = frontSteps.find((s) => /--version/.test(s.run ?? ""));
+
+		expect(check?.run).toContain('"front/dg-front-${RID}${EXT}"');
+		expect(check?.run).toContain('[ "$reported" != "$VERSION" ]');
+		expect(check?.run).toContain("exit 1");
+		expect(frontUploads().sort()).toEqual([...FRONT_ASSETS].sort());
+	});
+
+	test("the release job waits for the front doors and compresses each one with zstd and gzip", () => {
+		const compress = step("Compress the compiled dg assets").run ?? "";
+
+		expect(jobNeeds(releaseJob)).toContain("build-front");
+		expect(compress).toContain("dist/dg-front-*");
+		expect(compress).toContain("zstd");
+		expect(compress).toContain("gzip");
+	});
+
+	test("the compress step leaves every front door beside a .zst and a .gz", () => {
+		withSandbox((sandbox) => {
+			mkdirSync(join(sandbox.work, "dist"));
+			for (const name of [...COMPILED_ASSETS, ...FRONT_ASSETS]) writeFileSync(join(sandbox.work, "dist", name), `${name} body ${"x".repeat(200)}\n`);
+
+			const result = sandbox.run(step("Compress the compiled dg assets"));
+
+			expect(result.code, result.stderr).toBe(0);
+			const names = readdirSync(join(sandbox.work, "dist")).sort();
+			expect(names).toEqual([...COMPILED_ASSETS, ...FRONT_ASSETS, ...COMPRESSED_ASSETS].sort());
+		});
+	});
+
+	test("the smoke job puts each front door next to the Bun dg as dg-core and checks the pair", () => {
+		const smoke = workflow.jobs[smokeJobIds()[0] as string] as WorkflowJob;
+		const runs = (smoke.steps ?? []).map((s) => s.run ?? "").join("\n");
+		const downloads = (smoke.steps ?? []).filter((s) => s.uses?.startsWith("actions/download-artifact@")).map((s) => s.with?.name);
+
+		expect(jobNeeds(smoke)).toEqual(expect.arrayContaining(["build-bundle", "build-front"]));
+		expect(downloads).toContain("front-door-${{ matrix.front }}");
+		expect(runs).toContain("dg-core");
+		expect(runs).toContain("DG_FRONT=0");
+		expect(smoke.strategy?.matrix?.include?.map((entry) => entry.front).sort()).toEqual([...FRONT_RIDS].sort());
+	});
+});
+
+const patchesWorkflow = parseWorkflow("release-patches.yml");
+const patchStep = findStep(patchesWorkflow.jobs.patches as WorkflowJob, "Build one patch per target and the PATCHSUMS file");
+const BUN_KEYS = ["linux-x64", "linux-x64-baseline", "linux-arm64", "darwin-x64", "darwin-arm64", "windows-x64", "windows-x64-baseline", "windows-arm64"];
+const ZSTD = Bun.which("zstd");
+
+const GH_DOWNLOAD_STUB = `#!/usr/bin/env bash
+echo "$*" >> "$GH_LOG"
+[ "$1 $2" = "release download" ] || exit 0
+tag="$3"; shift 3
+pattern=""; dir=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --pattern) pattern="$2"; shift 2 ;;
+    --dir) dir="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ -f "$RELEASES/$tag/$pattern" ] || { echo "no assets match the file pattern" >&2; exit 1; }
+cp "$RELEASES/$tag/$pattern" "$dir/$pattern"
+`;
+
+function seedRelease(releases: string, tag: string, names: string[], salt: string): void {
+	mkdirSync(join(releases, tag), { recursive: true });
+	for (const name of names) {
+		const raw = join(releases, tag, name);
+		writeFileSync(raw, `${name} ${salt} ${"payload ".repeat(300)}\n`);
+		const zst = Bun.spawnSync([ZSTD as string, "-q", "-19", "--force", raw, "-o", `${raw}.zst`]);
+		if (zst.exitCode !== 0) throw new Error(zst.stderr.toString());
+		rmSync(raw);
+	}
+}
+
+const compiledName = (key: string): string => (key.startsWith("windows-") ? `dg-${key}.exe` : `dg-${key}`);
+
+describe("the release patches cover the front doors", () => {
+	function runPatches(previousHasFront: boolean) {
+		const sandbox = createStepSandbox();
+		const releases = join(sandbox.root, "releases");
+		writeFileSync(join(sandbox.root, "bin", "gh"), GH_DOWNLOAD_STUB);
+		seedRelease(releases, "v7.0.0", [...BUN_KEYS.map(compiledName), ...(previousHasFront ? FRONT_ASSETS : [])], "old");
+		seedRelease(releases, "v7.0.1", [...BUN_KEYS.map(compiledName), ...FRONT_ASSETS], "new");
+		const result = sandbox.run(patchStep, { TAG: "v7.0.1", PREV: "v7.0.0", RELEASES: releases });
+		return { sandbox, result, patches: join(sandbox.work, "patches") };
+	}
+
+	const patchName = (asset: string): string => `${asset.replace(/\.exe$/, "")}-from-7.0.0.zpatch`;
+
+	test.skipIf(ZSTD === null)("builds one patch for each of the six front doors next to the eight Bun patches, and lists all of them in PATCHSUMS", () => {
+		const { sandbox, result, patches } = runPatches(true);
+		try {
+			expect(result.code, result.stderr).toBe(0);
+			const names = readdirSync(patches).sort();
+			const expected = [...BUN_KEYS.map((key) => patchName(compiledName(key))), ...FRONT_ASSETS.map(patchName)];
+			expect(names).toEqual([...expected, "PATCHSUMS"].sort());
+			const sums = readFileSync(join(patches, "PATCHSUMS"), "utf8").split("\n").filter(Boolean).map((line) => line.split(/\s+/)[1]);
+			expect(sums.sort()).toEqual(expected.sort());
+			expect(FRONT_ASSETS.map(patchName)).toContain("dg-front-win-x64-from-7.0.0.zpatch");
+		} finally {
+			sandbox.cleanup();
+		}
+	});
+
+	test.skipIf(ZSTD === null)("a previous release with no front doors still gets the Bun patches, and the front door patches are skipped", () => {
+		const { sandbox, result, patches } = runPatches(false);
+		try {
+			expect(result.code, result.stderr).toBe(0);
+			expect(readdirSync(patches).sort()).toEqual([...BUN_KEYS.map((key) => patchName(compiledName(key))), "PATCHSUMS"].sort());
+			expect(result.stdout).toContain("no front door patch");
+		} finally {
+			sandbox.cleanup();
+		}
 	});
 });

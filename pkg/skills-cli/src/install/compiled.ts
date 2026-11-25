@@ -10,15 +10,17 @@ import {
 	readdirSync,
 	renameSync,
 	rmSync,
+	statSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { evictFromPageCache } from "@dg/common/node/page-cache";
 import { compiledProgramPath, PROGRAM_NAMES } from "@dg/common/node/program";
 import { decodeProgram, expectedSha256, type PickedProgram, rawAssetName, UA, verifyReleaseAsset } from "../utils/lib";
 import { linkCurrent, programExeName, readCurrent, VERSION_DIR } from "./current";
 import { isDgLauncher } from "./dg-launcher";
+import { coreExeName, frontDoorSkipped, frontEnabled, hasFrontDoor, installLayout, pickFrontDoor } from "./front-door";
 import { applyPatch, patchAssetName } from "./patch";
 
 /** `<root>/bin/<version>/dg[.exe]`. */
@@ -80,24 +82,77 @@ async function download(release: PickedProgram, staged: string, from?: { version
 	chmodSync(staged, 0o755);
 }
 
-/** Installs the verified compiled dg under `<root>/bin/<version>/` and points `bin/current` at it. */
+export type InstallOptions = {
+	front?: boolean;
+	env?: NodeJS.ProcessEnv;
+};
+
+type Installed = { version: string; core: string; front?: string };
+
+function installedOf(root: string, version: string, platform: NodeJS.Platform): Installed {
+	const front = hasFrontDoor(root, version, platform);
+	const layout = installLayout({ root, version, platform, front });
+	return { version, core: layout.dgCore, ...(front ? { front: layout.dg } : {}) };
+}
+
+function moveOver(source: string, dest: string, platform: NodeJS.Platform): void {
+	if (platform !== "win32" || !present(dest)) {
+		renameSync(source, dest);
+		return;
+	}
+	const aside = `${dest}.${process.pid}-${Date.now()}.old`;
+	renameSync(dest, aside);
+	try {
+		renameSync(source, dest);
+	} catch (err) {
+		renameSync(aside, dest);
+		throw err;
+	}
+	rmSync(aside, { force: true });
+}
+
+async function addFrontDoor(staging: string, release: PickedProgram, platform: NodeJS.Platform, from?: Installed): Promise<void> {
+	const dg = join(staging, programExeName(platform));
+	const core = join(staging, coreExeName(platform));
+	const candidate = join(staging, ".front-door");
+	try {
+		const picked = await pickFrontDoor(release);
+		await download(picked, candidate, from?.front ? { version: from.version, program: from.front } : undefined);
+		renameSync(dg, core);
+		try {
+			renameSync(candidate, dg);
+			selfCheck(dg, release.version);
+		} catch (err) {
+			renameSync(core, dg);
+			throw err;
+		}
+	} catch (err) {
+		rmSync(candidate, { force: true });
+		warnOnStderr(frontDoorSkipped(err instanceof Error ? err.message : String(err)));
+	}
+}
+
+/** Installs the verified compiled dg under `<root>/bin/<version>/` and points `bin/current` at it; the front door goes at `dg` and the Bun program at `dg-core` when it passes its checks. */
 export async function installCompiled(
 	root: string,
 	release: PickedProgram,
 	platform: NodeJS.Platform = process.platform,
+	options: InstallOptions = {},
 ): Promise<string> {
 	const bin = join(root, "bin");
+	const front = options.front ?? frontEnabled(options.env);
 	const final = versionProgramPath(root, release.version, platform);
 	const installed = readCurrent(root, "bin");
-	const from = installed && installed !== release.version ? { version: installed, program: versionProgramPath(root, installed, platform) } : undefined;
+	const from = installed && installed !== release.version ? installedOf(root, installed, platform) : undefined;
 	if (!existsSync(final)) {
 		mkdirSync(bin, { recursive: true });
 		const staging = mkdtempSync(join(bin, `.${release.version}.staging-`));
 		try {
 			const staged = join(staging, programExeName(platform));
-			await download(release, staged, from);
+			await download(release, staged, from && { version: from.version, program: from.core });
 			selfCheck(staged, release.version);
 			evictFromPageCache(staged);
+			if (front) await addFrontDoor(staging, release, platform, from);
 			if (!existsSync(final)) {
 				rmSync(join(bin, release.version), { recursive: true, force: true });
 				renameSync(staging, join(bin, release.version));
@@ -105,6 +160,9 @@ export async function installCompiled(
 		} finally {
 			rmSync(staging, { recursive: true, force: true });
 		}
+	} else if (!front && hasFrontDoor(root, release.version, platform)) {
+		const layout = installLayout({ root, version: release.version, platform });
+		moveOver(layout.dgCore, layout.dg, platform);
 	}
 	const replaced = readCurrent(root, "bin");
 	linkCurrent(root, "bin", release.version);
@@ -132,6 +190,8 @@ export function isOwnedLauncher(path: string, root: string, platform: NodeJS.Pla
 	return danglingLink(path) || isDgLauncher(path, platform, root);
 }
 
+const ASIDE_PREFIXES = [".dg.exe.", ".dg-core.exe."];
+
 function sweepAside(binDir: string): void {
 	let names: string[];
 	try {
@@ -140,14 +200,66 @@ function sweepAside(binDir: string): void {
 		return;
 	}
 	for (const name of names) {
-		if (!name.startsWith(".dg.exe.") || !name.endsWith(".old")) continue;
+		if (!ASIDE_PREFIXES.some((prefix) => name.startsWith(prefix)) || !name.endsWith(".old")) continue;
 		try {
 			rmSync(join(binDir, name), { force: true });
 		} catch {}
 	}
 }
 
-/** Points `<binDir>/dg` at the compiled program, keeping a `dg` that dg did not write. */
+function hardLinkOver(dest: string, source: string): void {
+	const aside = join(dirname(dest), `.${basename(dest)}.${process.pid}-${Date.now()}.old`);
+	const moved = present(dest);
+	if (moved) renameSync(dest, aside);
+	try {
+		linkSync(source, dest);
+	} catch (err) {
+		if (moved) {
+			try {
+				renameSync(aside, dest);
+			} catch {
+				throw new Error(`could not link ${dest}; the old ${basename(dest)} is at ${aside}, rename it back`, { cause: err });
+			}
+		}
+		throw err;
+	}
+}
+
+function hardLinksIntoCore(path: string, root: string): boolean {
+	try {
+		const { ino, dev } = statSync(path, { bigint: true });
+		const bin = join(root, "bin");
+		return readdirSync(bin).some((name) => {
+			const installed = join(bin, name, coreExeName("win32"));
+			if (!VERSION_DIR.test(name) || !existsSync(installed)) return false;
+			const other = statSync(installed, { bigint: true });
+			return other.ino === ino && other.dev === dev;
+		});
+	} catch {
+		return false;
+	}
+}
+
+function linkCoreWindows(binDir: string, root: string, version: string, warn: (line: string) => void): void {
+	const dest = join(binDir, coreExeName("win32"));
+	const source = installLayout({ root, version, platform: "win32" }).dgCore;
+	const wanted = existsSync(source);
+	if (present(dest) && !hardLinksIntoCore(dest, root)) {
+		if (wanted) warn(`dg: kept ${dest}; it is not a dg launcher. Remove it or rename it, then run dg install again`);
+		return;
+	}
+	if (wanted) {
+		hardLinkOver(dest, source);
+		return;
+	}
+	try {
+		rmSync(dest, { force: true });
+	} catch {
+		renameSync(dest, join(binDir, `.${coreExeName("win32")}.${process.pid}-${Date.now()}.old`));
+	}
+}
+
+/** Points `<binDir>/dg` at the compiled program, keeping a `dg` that dg did not write; on Windows a front door gets a `dg-core.exe` link beside it. */
 export function writeDgLink(
 	binDir: string,
 	root: string,
@@ -163,21 +275,8 @@ export function writeDgLink(
 	}
 	if (platform === "win32") {
 		sweepAside(binDir);
-		const aside = join(binDir, `.dg.exe.${process.pid}-${Date.now()}.old`);
-		const moved = present(dest);
-		if (moved) renameSync(dest, aside);
-		try {
-			linkSync(versionProgramPath(root, version, platform), dest);
-		} catch (err) {
-			if (moved) {
-				try {
-					renameSync(aside, dest);
-				} catch {
-					throw new Error(`could not link ${dest}; the old dg.exe is at ${aside}, rename it back`, { cause: err });
-				}
-			}
-			throw err;
-		}
+		hardLinkOver(dest, versionProgramPath(root, version, platform));
+		linkCoreWindows(binDir, root, version, warn);
 		return;
 	}
 	const staged = join(binDir, `.dg.${process.pid}.tmp`);
