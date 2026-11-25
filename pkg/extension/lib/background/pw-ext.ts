@@ -1093,7 +1093,12 @@ export function createPwExtHandler({
 		const [first] = await api.tabs.query({ windowId });
 		const tabId = first?.id;
 		if (tabId === undefined) throw new Refusal("The agent window has no tab.");
-		for (let poll = 0; !allowedPage((await api.tabs.get(tabId).catch(() => undefined))?.url); poll++) {
+		const wanted = siteOf(url).key;
+		const onWantedSite = async () => {
+			const loaded = (await api.tabs.get(tabId).catch(() => undefined))?.url;
+			return allowedPage(loaded) && siteOf(loaded).key === wanted;
+		};
+		for (let poll = 0; !(await onWantedSite()); poll++) {
 			if (poll >= AGENT_WINDOW_LOAD_POLLS) throw new Refusal(`${url} did not load in the agent window.`);
 			if (signal.aborted) throw new Refusal(STOPPED_WORK);
 			await new Promise((resolve) => setTimeout(resolve, AGENT_WINDOW_POLL_MS));

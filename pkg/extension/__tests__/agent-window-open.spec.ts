@@ -11,7 +11,7 @@ const SESSION = "session-1";
 const USER_WINDOW = 3;
 const SITE = "https://app.example.test/home";
 
-async function harness(options: { answer?: "allow" | "deny"; allowed?: boolean } = {}) {
+async function harness(options: { answer?: "allow" | "deny"; allowed?: boolean; staleUrl?: string } = {}) {
 	const fake = createFakeBrowser({
 		windows: [windowOf({ id: USER_WINDOW })],
 		lastFocusedWindowId: USER_WINDOW,
@@ -28,7 +28,13 @@ async function harness(options: { answer?: "allow" | "deny"; allowed?: boolean }
 		control,
 		storage,
 		pageUrl: (path) => `chrome-extension://dg${path}`,
-		navigate: agentWindows.navigate,
+		navigate: async (sessionId, url) => {
+			if (options.staleUrl === undefined) return agentWindows.navigate(sessionId, url);
+			const [tab] = await fake.api.tabs.query({ windowId: await agentWindows.openAgentWindow(sessionId) });
+			const stale = fake.tabs.get(tab?.id as number);
+			if (stale) stale.url = options.staleUrl;
+			setTimeout(() => void agentWindows.navigate(sessionId, url), 20);
+		},
 		newId: () => "prompt-1",
 		windows: {
 			open: async (url) => {
@@ -40,9 +46,16 @@ async function harness(options: { answer?: "allow" | "deny"; allowed?: boolean }
 			onRemoved: () => undefined,
 		},
 	});
+	const urlsAtAdopt: (string | undefined)[] = [];
 	const handler = createPwExtHandler({
 		browserApi: fake.api,
-		agentTabs,
+		agentTabs: {
+			...agentTabs,
+			adopt: async (adopted) => {
+				urlsAtAdopt.push(fake.tabs.get(adopted.tabId)?.url);
+				return agentTabs.adopt(adopted);
+			},
+		},
 		lock,
 		control,
 		siteAllow,
@@ -62,7 +75,7 @@ async function harness(options: { answer?: "allow" | "deny"; allowed?: boolean }
 				storeCredential: async () => "",
 			},
 		} as never);
-	return { run, fake, prompts };
+	return { run, fake, prompts, urlsAtAdopt };
 }
 
 const agentWindowTabs = (h: Awaited<ReturnType<typeof harness>>) =>
@@ -84,6 +97,12 @@ describe.each<PwExtRequest["verb"]>(["open", "new"])("%s in the agent window", (
 		expect(h.fake.groups.get(record?.groupId as number)?.windowId).toBe(tabs[0]?.windowId as number);
 		expect(record?.selectedTabId).toBe(tabs[0]?.id as number);
 		expect([...h.fake.tabs.values()].filter((tab) => tab.windowId === USER_WINDOW)).toHaveLength(1);
+	});
+
+	it("adopts the tab only after the requested site committed, not the previous page", async () => {
+		const h = await harness({ allowed: true, staleUrl: "https://old.example.org/" });
+		expect(await h.run(request)).toMatchObject({ ok: true });
+		expect(h.urlsAtAdopt).toEqual([SITE]);
 	});
 
 	it("asks first for a new site, then loads it after Allow", async () => {
