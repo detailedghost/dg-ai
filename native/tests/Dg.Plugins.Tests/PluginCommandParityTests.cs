@@ -140,16 +140,18 @@ internal sealed class TempHome : IDisposable
             ["HOME"] = Root,
         };
         foreach (var (key, value) in extra ?? [])
-            _env[key] = value.Replace("<home>", Root, StringComparison.Ordinal);
+            _env[key] = value.Replace("<home>", Slashed, StringComparison.Ordinal);
     }
 
     public string Root { get; }
+
+    private string Slashed => Root.Replace('\\', '/');
 
     public void Write(string relative, string text)
     {
         var file = Path.Combine(Root, relative);
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-        File.WriteAllText(file, text.Replace("<home>", Root, StringComparison.Ordinal));
+        File.WriteAllText(file, text.Replace("<home>", Slashed, StringComparison.Ordinal));
     }
 
     public void Symlink(string relative, string target)
@@ -192,7 +194,7 @@ internal sealed class TempHome : IDisposable
             files[relative] =
                 new FileInfo(file).LinkTarget is not null
                     ? "<symlink>"
-                    : File.ReadAllText(file).Replace(Root, "<home>", StringComparison.Ordinal);
+                    : Redact(File.ReadAllText(file));
         }
         return new Dictionary<string, string>(files);
     }
@@ -208,6 +210,8 @@ internal sealed class TempHome : IDisposable
         return ExitCodes.NotNative;
     }
 
-    private string Strip(MemoryStream stream) =>
-        Encoding.UTF8.GetString(stream.ToArray()).Replace(Root, "<home>", StringComparison.Ordinal);
+    private string Strip(MemoryStream stream) => Redact(Encoding.UTF8.GetString(stream.ToArray()));
+
+    private string Redact(string text) =>
+        text.Replace(Slashed, "<home>", StringComparison.Ordinal).Replace(Root, "<home>", StringComparison.Ordinal);
 }
