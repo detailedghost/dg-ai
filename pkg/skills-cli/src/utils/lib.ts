@@ -182,10 +182,13 @@ export type Release = {
 
 export type PickedAsset = { name: string; url: string; version: string };
 
+export type ProgramEncoding = "zstd" | "gzip" | "raw";
+
 export type PickedProgram = {
 	version: string;
 	assetName: string;
 	url: string;
+	encoding?: ProgramEncoding;
 	sumsUrl: string;
 };
 
@@ -277,8 +280,15 @@ export function pickExtAsset(
 }
 
 /** The dg-lib bundle and its SHA256SUMS from the pinned or newest vX.Y.Z release, which must also ship runtime.json. */
-/** The compiled dg asset of the `v<version>` release (else the newest) for this host's platform key. */
-export function pickProgram(releases: Release[], version?: string, key: string = platformKey()): PickedProgram {
+const COMPRESSED_SUFFIX = { zstd: ".zst", gzip: ".gz" } as const;
+
+/** The compiled dg asset of the `v<version>` release (else the newest) for this host's platform key; `.zst`, then `.gz`, then raw. */
+export function pickProgram(
+	releases: Release[],
+	version?: string,
+	key: string = platformKey(),
+	{ compressed = true }: { compressed?: boolean } = {},
+): PickedProgram {
 	const rel = pickRelease(releases, version);
 	if (!rel) {
 		throw new Error(
@@ -290,15 +300,35 @@ export function pickProgram(releases: Release[], version?: string, key: string =
 	const found = releaseVersion(rel.tag_name);
 	const assetName = compiledAssetName(key);
 	const url = (name: string) => rel.assets.find((a) => a.name === name)?.browser_download_url;
-	const [programUrl, sumsUrl] = [assetName, "SHA256SUMS"].map(url);
-	if (!programUrl) {
+	const [rawUrl, sumsUrl] = [assetName, "SHA256SUMS"].map(url);
+	if (!rawUrl) {
 		throw new Error(
 			`v${found} has no ${assetName}: releases before the compiled dg ship a bundle; run that release's bootstrap.sh: curl -fsSL https://github.com/${REPO}/releases/download/v${found}/bootstrap.sh | sh`,
 		);
 	}
 	if (!sumsUrl) throw new Error(`v${found} has no SHA256SUMS asset`);
-	return { version: found, assetName, url: programUrl, sumsUrl };
+	const encodings: ("zstd" | "gzip")[] = compressed ? ["zstd", "gzip"] : [];
+	for (const encoding of encodings) {
+		const packed = `${assetName}${COMPRESSED_SUFFIX[encoding]}`;
+		const packedUrl = url(packed);
+		if (packedUrl) return { version: found, assetName: packed, url: packedUrl, encoding, sumsUrl };
+	}
+	return { version: found, assetName, url: rawUrl, encoding: "raw", sumsUrl };
 }
+
+/** The raw program bytes of a downloaded release asset. */
+export function decodeProgram(bytes: Uint8Array<ArrayBuffer>, encoding: ProgramEncoding | undefined, assetName: string): Uint8Array {
+	try {
+		if (encoding === "zstd") return Bun.zstdDecompressSync(bytes);
+		if (encoding === "gzip") return Bun.gunzipSync(bytes);
+	} catch (err) {
+		throw new Error(`${assetName} could not be decompressed: ${err instanceof Error ? err.message : err}`);
+	}
+	return bytes;
+}
+
+/** The raw asset name a compressed release asset was made from. */
+export const rawAssetName = (assetName: string): string => assetName.replace(/\.(zst|gz)$/, "");
 
 /** The hash SHA256SUMS lists for `assetName` (GNU `<hash>  <name>` or `<hash> *<name>`), lowercased. */
 export function expectedSha256(sums: string, assetName: string): string | undefined {
