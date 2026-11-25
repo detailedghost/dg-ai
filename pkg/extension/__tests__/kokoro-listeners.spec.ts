@@ -9,6 +9,7 @@ mock.module("kokoro-js", () => ({
 	KokoroTTS: {
 		from_pretrained: async (_id: string, options: { progress_callback: Progress }) => {
 			captured.progress = options.progress_callback;
+			options.progress_callback({ status: "initiate" });
 			return { generate: async () => ({}) };
 		},
 	},
@@ -20,14 +21,17 @@ const { loadKokoro, narrationLoaded } = await import("@/utils/kokoro");
 
 describe("loadKokoro progress listeners", () => {
 	it("keeps no listener from a caller that arrives after the model loaded", async () => {
-		await loadKokoro(() => undefined);
+		let first = 0;
+		await loadKokoro(() => void first++);
 		await Promise.resolve();
 		expect(narrationLoaded()).toBe(true);
 
 		const calls = 5_000;
 		let delivered = 0;
 		for (let i = 0; i < calls; i++) await loadKokoro(() => void delivered++);
+		expect(captured.progress).toBeDefined();
 		captured.progress?.({ status: "progress" });
+		expect(first).toBe(1);
 
 		console.log(`kokoro retained listeners after ${calls} warm calls: ${delivered}`);
 		expect(delivered).toBe(0);

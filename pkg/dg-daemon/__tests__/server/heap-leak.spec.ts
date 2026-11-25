@@ -8,16 +8,17 @@ import {
 	cleanupDgHome,
 	connectCli,
 	connectPage,
+	EXTENSION_ORIGIN,
 	registerSession,
 	send,
 	sessionCredentials,
 	stopServe,
-	EXTENSION_ORIGIN,
 } from "../utils/daemon-harness";
 import { type HeapReading, measureSlope } from "../utils/heap-slope";
 
 const PRELOAD = join(import.meta.dir, "../utils/heap-probe-preload.ts");
 const BODY = "retained?".repeat(400);
+const MAX_START_ATTEMPTS = 200;
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -35,17 +36,21 @@ async function bootProbed() {
 	});
 	const { daemonConfigPath } = resolveDgPaths({ env: { DG_HOME: dgHome } });
 	mkdirSync(join(daemonConfigPath, ".."), { recursive: true });
-	writeFileSync(daemonConfigPath, JSON.stringify({ jobs: { quick: { argv: ["/bin/echo", "hi"], cwd: dgHome, every: "1h", enabled: true } } }));
+	const quick = { argv: ["/bin/echo", "hi"], cwd: dgHome, every: "1h", enabled: true };
+	writeFileSync(daemonConfigPath, JSON.stringify({ jobs: { quick } }));
 	const heap = async (): Promise<HeapReading> => {
 		rmSync(probeOut, { force: true });
 		process.kill(proc.pid, "SIGUSR2");
+		let lastError: unknown;
 		for (let tries = 0; tries < 100; tries++) {
 			await pause(50);
 			try {
 				return JSON.parse(readFileSync(probeOut, "utf8")) as HeapReading;
-			} catch {}
+			} catch (error) {
+				lastError = error;
+			}
 		}
-		throw new Error("the daemon never wrote a heap reading");
+		throw new Error(`the daemon never wrote a heap reading: ${String(lastError)}`);
 	};
 	return { dgHome, port, heap };
 }
@@ -80,7 +85,8 @@ describe("daemon heap stays flat under churn", () => {
 				iterations: 300,
 				step: async () => {
 					page ??= await connectPage(port, credentials);
-					page.send(JSON.stringify({ type: "user-message", ...credentials, protocolVersion: CHAT_PROTOCOL_VERSION, messageId: crypto.randomUUID(), body: BODY }));
+					const message = { type: "user-message", ...credentials, body: BODY };
+					page.send(JSON.stringify({ ...message, protocolVersion: CHAT_PROTOCOL_VERSION, messageId: crypto.randomUUID() }));
 					await pause(2);
 				},
 			},
@@ -95,13 +101,14 @@ describe("daemon heap stays flat under churn", () => {
 			"scheduled job run": {
 				iterations: 100,
 				step: async () => {
-					for (;;) {
+					for (let attempt = 0; ; attempt++) {
 						const response = await fetch(`http://127.0.0.1:${port}${CHAT_JOBS_PATH}/quick/start`, {
 							method: "POST",
 							headers: { Host: `127.0.0.1:${port}`, Origin: EXTENSION_ORIGIN },
 						});
 						await response.text();
 						if (response.status === 200) break;
+						if (attempt >= MAX_START_ATTEMPTS) throw new Error(`job start kept answering ${response.status}`);
 						await pause(3);
 					}
 					await pause(15);

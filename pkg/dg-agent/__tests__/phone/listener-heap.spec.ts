@@ -7,10 +7,12 @@ import { measureSlope, settledHeap } from "@dg/dg-daemon/heap-slope";
 import { generateSecretKey, getPublicKey } from "nostr-tools";
 import { ring } from "../../src/phone/chat";
 import { PhoneDb } from "../../src/phone/db";
+import type { Schedule } from "../../src/phone/hook";
 import { createFileKey, type KeyClient } from "../../src/phone/keys";
 import { type ListenerDeps, runListener } from "../../src/phone/listener";
-import type { Schedule } from "../../src/phone/hook";
 import { bumpAdmissionEpoch, numberKeyId, writeNumber } from "../../src/phone/store";
+
+const MAX_PENDING_TIMERS = 4;
 
 let home: string;
 let paths: DgPaths;
@@ -82,7 +84,7 @@ describe("phone listener heap stays flat across reconnects", () => {
 				ready();
 			},
 		});
-		await started;
+		await Promise.race([started, run]);
 
 		const step = async () => {
 			now += 300;
@@ -98,7 +100,7 @@ describe("phone listener heap stays flat across reconnects", () => {
 
 		console.log(`listener reconnect slopes: ${result.slopes.join(", ")} bytes per iteration`);
 		expect(live).toBe(1);
-		expect(waiting).toBeLessThanOrEqual(4);
+		expect(waiting).toBeLessThanOrEqual(MAX_PENDING_TIMERS);
 		expect(result.leaking).toBe(false);
 	}, 60_000);
 });
