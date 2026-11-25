@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { heapAfterGc } from "./utils/heap";
 
 type FakeTab = {
 	id: number;
@@ -551,12 +552,6 @@ describe("onTabComplete with an agent group", () => {
 		expect(state.tabs.get(95)?.groupId).toBe(5);
 	});
 });
-
-function heapAfterGc(): number {
-	Bun.gc(true);
-	Bun.gc(true);
-	return process.memoryUsage().heapUsed;
-}
 
 function resetMockHistory(): void {
 	mock.clearAllMocks();

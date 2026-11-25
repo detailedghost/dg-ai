@@ -9,6 +9,7 @@ import { createRememberedWebMcpGrants } from "@/lib/background/webmcp-approval";
 import { createWebMcpSigner } from "@/lib/background/webmcp-signing";
 import { createIdbGrantNonces } from "@/lib/background/webmcp-grant-nonces";
 import { IDBFactory } from "fake-indexeddb";
+import { heapAfterGc } from "./utils/heap";
 import { forgetAgentTabsAndShims } from "@/lib/background/dialog-shim";
 import { createSessionControl, type SessionControl } from "@/lib/background/session-control";
 
@@ -4027,12 +4028,6 @@ describe("Web MCP on the person's own tabs", () => {
 });
 
 describe("pw --ext denied-site memory", () => {
-	function heapAfterGc(): number {
-		Bun.gc(true);
-		Bun.gc(true);
-		return process.memoryUsage().heapUsed;
-	}
-
 	it("keeps no denied-site entry once the session ends", async () => {
 		const h = harness({ sites: "ask", approval: "deny", pageResult: { text: "x" } });
 		const pad = "s".repeat(1_024);
@@ -4040,7 +4035,7 @@ describe("pw --ext denied-site memory", () => {
 			const sessionId = `${pad}${i}`;
 			h.fake.seedRecord(recordOf({ sessionId, agentIdentity: IDENTITY, groupId: GROUP, selectedTabId: 7 }));
 			expect((await h.runAs(sessionId, { verb: "selection" })).ok).toBe(false);
-			await h.handler.forget(sessionId);
+			h.handler.forget(sessionId);
 			for (const key of [...h.fake.session.keys()]) if (key.includes(sessionId)) h.fake.session.delete(key);
 			h.approvalRequests.length = 0;
 			if (i % 100 === 0) mock.clearAllMocks();
