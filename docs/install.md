@@ -13,7 +13,7 @@ when present. To install every recommended plugin at its pinned commit, see
 [Recommended plugins](#recommended-plugins).
 
 **Standalone — one command installs `dg` _and_ the browser extension.** `dg` is
-one compiled program with every command, so you need no Bun of your own:
+a small native front door plus one compiled program with every command, so you need no Bun of your own:
 
 macOS / Linux (x64 or arm64):
 
@@ -31,7 +31,7 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 
 <!-- markdownlint-enable MD013 -->
 
-Both download the `dg` program for your platform into the dg data folder, check
+Both download `dg` for your platform into the dg data folder (compressed, then unpacked), check
 it against the release's `SHA256SUMS`, and link it into the launcher folder (see
 [Where dg keeps its files](#where-dg-keeps-its-files)). Then they run `dg install`.
 That stages the extension and prints the **Load unpacked** steps. Re-run
@@ -311,37 +311,96 @@ safe to run again.
 
 ## Install layout
 
-One release is one compiled program. Install keeps each version it downloads, so
-a rollback needs no download. On Linux the data folder is `~/.local/share/dg`:
+One release is two programs. The front door is a small native program (about
+4.7 MB) that runs at `dg`. The Bun program, which holds every command, runs at
+`dg-core`. Install keeps each version it downloads, so a rollback needs no
+download. On Linux the data folder is `~/.local/share/dg`:
 
 ```text
 <data>/
-  bin/<version>/dg        the compiled program (dg.exe on Windows)
+  bin/<version>/dg        the front door (dg.exe on Windows)
+  bin/<version>/dg-core   the Bun program (dg-core.exe on Windows)
   bin/current -> <version>  symlink, or a directory junction on Windows
+  companions/<name>-<version>/  pw and db, downloaded on first use
 ```
 
 `<bin>/dg` is the launcher, with `<bin>` the launcher folder from the
 [layout table](#where-dg-keeps-its-files). On Linux and macOS it is a symlink to
 `<data>/bin/current/dg`. On Windows it is a hard link,
 `%LOCALAPPDATA%\dg\bin\dg.exe`, to the file in `<data>\bin\<version>`, so each
-update links it again. Install writes no other launcher and no `.cmd`
-file. It replaces `current` by creating a new link and renaming it over the old
-one, so a running program keeps working during an update. The version that the
-install replaces stays in `bin/` for rollback.
+update links it again. Windows also gets a `dg-core.exe` link beside it. Install
+writes no other launcher and no `.cmd` file. It replaces `current` by creating a
+new link and renaming it over the old one, so a running program keeps working
+during an update. The version that the install replaces stays in `bin/` for
+rollback.
 
-The program embeds its own runtime. The installer never uses a `bun` on your
+The Bun program embeds its own runtime. The installer never uses a `bun` on your
 `PATH`.
 
-Every download is checked before anything changes. `SHA256SUMS` lists each
-`dg-<platform>` asset, and install compares the sha256 of the file it fetched.
-Install also runs the new program with `--version` before it moves `current`. A
-failed check prints `checksum mismatch` or the self-check error and leaves the
-old install as it was.
+### What the front door runs
 
-The release has one asset for each platform: `dg-linux-x64`,
+The front door is on by default. It runs these commands itself, with no Bun
+start-up:
+
+- `dg --version`
+- `dg hooks run <id>` for the built-in hook ids
+- `dg completion` words, when there are two or more words
+- `dg config get`, `set`, `list` and `doctor`
+- `dg plugin list` and `dg plugin verify`
+
+Every other command runs `dg-core` with the same arguments. This includes a
+single-word completion, an unknown hook id, `dg plugin enable` and `disable`,
+and every command not in the list above. `dg-core` prints its own output.
+
+### Turn the front door off
+
+Set `DG_FRONT=0` for one shell, or set `front.enabled = false` in `config.toml`
+for good. With either setting, the front door hands every command to `dg-core`.
+The [config table](config.md) lists the key.
+
+To go back to a Bun-only install, run `DG_FRONT=0 dg install`. It moves
+`dg-core` back to `dg` and leaves no front door. To turn the front door on again
+for an installed version, run `dg install` without the setting.
+
+### When the front door is missing or fails
+
+Install checks the front door before it keeps it. When the release has no
+front door asset for your platform, the checksum does not match, or the file
+fails its `--version` probe, install prints one line,
+`dg: the front door was not installed (<reason>); dg runs the Bun program only`,
+and keeps the Bun program at `dg`. The install still succeeds.
+
+### Downloads
+
+Every download is checked before anything changes. `SHA256SUMS` lists the raw
+asset names, and install compares the sha256 of the unpacked file. Install also
+runs the new program with `--version` before it moves `current`. A failed check
+prints `checksum mismatch` or the self-check error and leaves the old install
+as it was.
+
+The release ships each program in three forms: raw, `.zst` (zstd -19) and `.gz`.
+Install picks `.zst`, then `.gz`, then the raw file, and unpacks it. Both
+bootstrap scripts pick `.gz` and unpack it with `gzip`. They fall back to the
+raw file when `gzip` is missing.
+
+An update from an installed version downloads a delta. The release carries a
+zstd patch from the previous release for each program. Install applies the
+patch to the installed program with `zstd --patch-from` and checks the raw
+sha256. When `zstd` is not on `PATH`, or the patch is missing or fails its
+check, install prints one line and downloads the full `.zst` instead.
+
+The `pw` (browser) and `db` (database) libraries are not in the program. They
+ship as `dg-pw-<version>.tar.zst` and `dg-db-<version>.tar.zst`. The first
+command that needs one downloads it, checks its sha256 against `SHA256SUMS`,
+and unpacks it into `<data>/companions/<name>-<version>`. A failed download
+prints a retry line and a manual `curl` command. dg writes no unverified bytes.
+
+The release has one Bun program asset for each platform: `dg-linux-x64`,
 `dg-linux-x64-baseline`, `dg-linux-arm64`, `dg-darwin-x64`, `dg-darwin-arm64`,
 `dg-windows-x64.exe`, `dg-windows-x64-baseline.exe` and `dg-windows-arm64.exe`.
-On x64 without AVX2, install picks the `-baseline` asset.
+The front doors are `dg-front-<rid>` for `linux-x64`, `linux-arm64`, `osx-x64`,
+`osx-arm64`, `win-x64` and `win-arm64`, with `.exe` on Windows. On x64 without
+AVX2, install picks the `-baseline` Bun asset and the shared x64 front door.
 
 ## Shell completion
 
@@ -823,6 +882,28 @@ replaces only folders that have this file. If a folder with the same name is
 already there without the file, dg leaves it alone and prints
 `skipped <name> (a copy dg did not install is already there)`. Delete that
 folder, then run the command again.
+
+## Manage dg plugins
+
+`dg plugin` manages external dg plugins. A plugin is untrusted until you approve
+it. dg does not load its text or run it before then. The contract is in
+[plugin-protocol.md](plugin-protocol.md).
+
+```bash
+dg plugin add <git url or path> [--pin <sha256|commit>] [--name <name>]
+dg plugin verify <name> --approve   # review <data>/plugins/<name>/src first
+dg plugin list [--json]
+dg plugin enable <name>
+dg plugin disable <name>
+dg plugin update <name> [--pin <sha256|commit>]
+dg plugin remove <name>
+```
+
+`add` copies the source and marks it `unapproved`. `verify` checks the copy
+against its recorded hash. With `--approve`, it records that hash as approved.
+`update` fetches the new source. When the source changed, the plugin turns off
+until you run `verify --approve` again. The front door runs `list` and `verify`
+itself. `add`, `remove`, `enable`, `disable` and `update` run in `dg-core`.
 
 ## CLI-only install
 
