@@ -1,4 +1,3 @@
-using System.Collections.Frozen;
 using System.Net;
 
 namespace Dg.Core.Plugins.Manifest;
@@ -7,12 +6,10 @@ internal static class LoopbackEndpoint
 {
     private const string Localhost = "localhost";
 
-    private static readonly FrozenSet<string> Hosts = FrozenSet.ToFrozenSet(
-        ["127.0.0.1", Localhost, "::1", "[::1]"],
-        StringComparer.OrdinalIgnoreCase
-    );
-
-    public static bool IsLoopbackHost(string host) => Hosts.Contains(host);
+    public static bool IsLoopbackHost(string host) =>
+        host.Equals("127.0.0.1", StringComparison.Ordinal)
+        || host.Equals(Localhost, StringComparison.OrdinalIgnoreCase)
+        || host is "::1" or "[::1]";
 
     public static bool TryParse(string endpoint, out IPEndPoint parsed)
     {
