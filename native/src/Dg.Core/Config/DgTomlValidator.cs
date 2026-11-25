@@ -85,7 +85,7 @@ internal static partial class DgTomlValidator
         table.TryGetValue(name, out var value) ? value : null;
 
     private static DgException Fail(Where where, string key, string message, string next) =>
-        throw new DgError(where.File, ConfigLines.LineOfKey(where.Text, key), key, message, next).ToException();
+        new DgError(where.File, ConfigLines.LineOfKey(where.Text, key), key, message, next).ToException();
 
     private static DgException MustBe(Where where, string key, string type, object? value) =>
         Fail(
