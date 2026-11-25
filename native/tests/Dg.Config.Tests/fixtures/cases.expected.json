@@ -196,6 +196,13 @@
 		"file": null
 	},
 	{
+		"name": "get-empty-plugin-name",
+		"stdout": "",
+		"stderr": "dg: dg config: plugins..enabled is not a valid key. Next: use dotted names such as install.cli_only.\n",
+		"exit": 1,
+		"file": null
+	},
+	{
 		"name": "get-syntax-error",
 		"stdout": "",
 		"stderr": "dg: dg config: <home>/config/config.toml:1: Expected ']' to close a table header but found (0x0A). Next: run dg config edit, or dg config set <key> <value>.\n",
@@ -444,6 +451,20 @@
 		"name": "set-google-send-switch",
 		"stdout": "",
 		"stderr": "dg: dg config: ssms.google.send_enabled turns sending on, so dg config set does not change it. Next: run dg config edit.\n",
+		"exit": 1,
+		"file": null
+	},
+	{
+		"name": "set-empty-plugin-name",
+		"stdout": "",
+		"stderr": "dg: dg config: plugins..enabled is not a valid key. Next: use dotted names such as install.cli_only.\n",
+		"exit": 1,
+		"file": null
+	},
+	{
+		"name": "set-ssms-google-table",
+		"stdout": "",
+		"stderr": "dg: dg config: ssms.google turns sending on, so dg config set does not change it. Next: run dg config edit.\n",
 		"exit": 1,
 		"file": null
 	},

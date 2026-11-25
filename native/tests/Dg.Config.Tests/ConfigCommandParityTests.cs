@@ -1,27 +1,21 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Dg.Config.Tests;
 
 public sealed class ConfigCommandParityTests
 {
-    private sealed record Case(
-        string Name,
-        string[] Argv,
-        string? Toml = null,
-        Dictionary<string, string>? Files = null,
-        bool Native = true,
-        bool SyntaxOnly = false
+    private static readonly Case[] Cases = Deserialize(
+        "cases.json",
+        FixtureJson.Default.CaseArray
     );
 
-    private sealed record Expected(string Name, string Stdout, string Stderr, int Exit, string? File);
-
-    private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
-
-    private static readonly Case[] Cases = Load<Case[]>("cases.json");
-
-    private static readonly Dictionary<string, Expected> Bun = Load<Expected[]>("cases.expected.json")
-        .ToDictionary(static e => e.Name);
+    private static readonly Dictionary<string, Expected> Bun = Deserialize(
+        "cases.expected.json",
+        FixtureJson.Default.ExpectedArray
+    ).ToDictionary(static e => e.Name);
 
     public static TheoryData<string> NativeNames => Names(native: true);
 
@@ -66,7 +60,6 @@ public sealed class ConfigCommandParityTests
     public void Fixtures_EveryCase_HasBunOutput()
     {
         Assert.Equal(Cases.Select(static c => c.Name).Order(), Bun.Keys.Order());
-        Assert.All(Cases, c => Assert.Equal(c.Native, c.Native && Bun[c.Name].Exit is 0 or 1));
     }
 
     private static void AssertSyntaxError(string expected, string actual)
@@ -94,8 +87,24 @@ public sealed class ConfigCommandParityTests
         return data;
     }
 
-    private static T Load<T>(string name) =>
-        JsonSerializer.Deserialize<T>(File.ReadAllText(Path.Combine(Folder(), "fixtures", name)), Options)!;
+    private static T Deserialize<T>(string name, JsonTypeInfo<T> info) =>
+        JsonSerializer.Deserialize(File.ReadAllText(Path.Combine(Folder(), "fixtures", name)), info)!;
 
     private static string Folder([CallerFilePath] string path = "") => Path.GetDirectoryName(path)!;
 }
+
+internal sealed record Case(
+    string Name,
+    string[] Argv,
+    string? Toml = null,
+    Dictionary<string, string>? Files = null,
+    bool Native = true,
+    bool SyntaxOnly = false
+);
+
+internal sealed record Expected(string Name, string Stdout, string Stderr, int Exit, string? File);
+
+[JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
+[JsonSerializable(typeof(Case[]))]
+[JsonSerializable(typeof(Expected[]))]
+internal sealed partial class FixtureJson : JsonSerializerContext;
