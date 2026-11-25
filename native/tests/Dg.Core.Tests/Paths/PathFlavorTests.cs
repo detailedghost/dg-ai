@@ -4,6 +4,10 @@ namespace Dg.Core.Tests.Paths;
 
 public sealed class PathFlavorTests
 {
+    private const int ResultOnlyCeilingBytes = 160;
+    private const int ResolveCeilingBytes = 8192;
+    private const int CaptureOverheadCeilingBytes = 8192;
+
     private static readonly PathFlavor Posix = PathFlavor.For(DgPlatform.Linux);
     private static readonly PathFlavor Win = PathFlavor.For(DgPlatform.Windows);
 
@@ -49,7 +53,7 @@ public sealed class PathFlavorTests
     {
         var bytes = AllocationProbe.BytesPerOp(() => Posix.Join("/home/u", ".config", "dg"));
 
-        Assert.True(bytes <= 160, $"Join allocated {bytes} B/op");
+        Assert.True(bytes <= ResultOnlyCeilingBytes, $"Join allocated {bytes} B/op");
     }
 
     [Fact]
@@ -57,7 +61,7 @@ public sealed class PathFlavorTests
     {
         var bytes = AllocationProbe.BytesPerOp(() => Posix.Normalize("/home/u/./a/../.config//dg/config.toml"));
 
-        Assert.True(bytes <= 160, $"Normalize allocated {bytes} B/op");
+        Assert.True(bytes <= ResultOnlyCeilingBytes, $"Normalize allocated {bytes} B/op");
     }
 
     [Fact]
@@ -67,7 +71,7 @@ public sealed class PathFlavorTests
 
         var bytes = AllocationProbe.BytesPerOp(() => DgPaths.Resolve(seams));
 
-        Assert.True(bytes <= 8192, $"DgPaths.Resolve allocated {bytes} B/op");
+        Assert.True(bytes <= ResolveCeilingBytes, $"DgPaths.Resolve allocated {bytes} B/op");
     }
 
     [Fact]
@@ -76,6 +80,6 @@ public sealed class PathFlavorTests
         var table = AllocationProbe.BytesPerOp(() => Environment.GetEnvironmentVariables());
         var capture = AllocationProbe.BytesPerOp(() => ProcessEnvironment.Capture());
 
-        Assert.True(capture - table <= 8192, $"Capture added {capture - table} B/op over the environment table");
+        Assert.True(capture - table <= CaptureOverheadCeilingBytes, $"Capture added {capture - table} B/op over the environment table");
     }
 }

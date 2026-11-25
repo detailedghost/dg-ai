@@ -2,6 +2,9 @@ namespace Dg.Completion.Tests;
 
 public sealed class AllocationTests
 {
+    private const int LoadTreeSlackBytes = 1024;
+    private const double ParseBytesPerJsonByte = 3.2;
+
     [Fact]
     public void LoadTree_EmbeddedResource_CopiesTheResourceOnce()
     {
@@ -10,7 +13,7 @@ public sealed class AllocationTests
 
         var bytes = AllocationProbe.BytesPerOp(() => CompleteCommand.LoadTree(), 100);
 
-        Assert.True(bytes <= tree.Length + 1024, $"LoadTree allocated {bytes} B/op for {tree.Length} B of JSON");
+        Assert.True(bytes <= tree.Length + LoadTreeSlackBytes, $"LoadTree allocated {bytes} B/op for {tree.Length} B of JSON");
     }
 
     [Fact]
@@ -20,6 +23,6 @@ public sealed class AllocationTests
 
         var bytes = AllocationProbe.BytesPerOp(() => CompletionTree.Parse(tree), 100);
 
-        Assert.True(bytes <= tree.Length * 3.2, $"Parse allocated {bytes} B/op for {tree.Length} B of JSON");
+        Assert.True(bytes <= tree.Length * ParseBytesPerJsonByte, $"Parse allocated {bytes} B/op for {tree.Length} B of JSON");
     }
 }

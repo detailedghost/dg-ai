@@ -57,9 +57,10 @@ public sealed partial class RepoParityTests : IDisposable
     [MemberData(nameof(PruneNames))]
     public async Task DailyPruneNow_Fixture_PrunesSamePathsAsBun(string name)
     {
-        if (FixtureCases.Load(name).Entries?.Any(e => e.Kind == "symlink" && e.AgeDays > 0) == true)
+        var entries = FixtureCases.Load(name).Entries;
+        if (entries?.Any(e => e.Kind == "symlink" && e.AgeDays > 0) == true)
             Assert.SkipUnless(OperatingSystem.IsLinux(), "aging a symlink needs GNU touch -h");
-        if (FixtureCases.Load(name).Entries?.Any(e => e.Mode is not null) == true)
+        if (entries?.Any(e => e.Mode is not null) == true)
             Assert.SkipWhen(OperatingSystem.IsWindows(), "POSIX permission bits have no Windows equivalent");
         Assert.Equal(FixtureCases.Expected(name), await RunCase(name));
     }
