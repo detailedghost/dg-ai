@@ -1,4 +1,4 @@
-import { PW_EXT_MAX_TAB_ID } from "@dg/common";
+import { parseTabId } from "./tab-id";
 import { type PageRequest, type PageVerb, RESIZE_MAX, RESIZE_MIN, validate, VERBS } from "@dg/common/pw-ext-verbs/page";
 
 export { VERBS };
@@ -27,15 +27,16 @@ export function pageRequestOf(verb: string | undefined, args: readonly string[],
 	if (args.length !== expected.split(" ").length) throw new PageUsageError(`pw --ext ${verb} takes ${expected}.`);
 	if (verb === "tab-select" && tab !== undefined)
 		throw new PageUsageError("pw --ext tab-select takes the tab id as its argument, not --tab.");
-	if (tab !== undefined && (!/^\d+$/.test(tab) || Number(tab) > PW_EXT_MAX_TAB_ID))
+	const picked = tab === undefined ? undefined : parseTabId(tab);
+	if (tab !== undefined && picked === undefined)
 		throw new PageUsageError("pw --ext --tab takes a tab id from pw --ext tabs.");
-	const tabId = tab === undefined ? {} : { tabId: Number(tab) };
+	const tabId = picked === undefined ? {} : { tabId: picked };
 	let request: Record<string, unknown>;
 	if (verb === "eval") request = { verb, expression: args[0], ...tabId };
 	else if (verb === "tab-select") {
-		if (!/^\d+$/.test(args[0] as string) || Number(args[0]) > PW_EXT_MAX_TAB_ID)
-			throw new PageUsageError("pw --ext tab-select takes a tab id from pw --ext tabs.");
-		request = { verb, tabId: Number(args[0]) };
+		const selected = parseTabId(args[0] as string);
+		if (selected === undefined) throw new PageUsageError("pw --ext tab-select takes a tab id from pw --ext tabs.");
+		request = { verb, tabId: selected };
 	} else {
 		const [width, height] = [parseNumber(args[0]), parseNumber(args[1])];
 		if (Number.isNaN(width) || Number.isNaN(height))

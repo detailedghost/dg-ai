@@ -94,7 +94,9 @@ import { createIdbGrantNonces } from "./webmcp-grant-nonces";
 import { createUnmaskGrants, MAX_FILLED_SECRETS, type UnmaskGrant, type UnmaskGrants } from "./unmask-grants";
 import {
 	allowedPage,
+	discardedTab,
 	mailbox,
+	notInGroup,
 	outlookWeb,
 	PW_EXT_BLOCKED_ERROR,
 	PW_EXT_MAILBOX_ERROR,
@@ -181,10 +183,6 @@ const UNMASK_ENDED = "The unmask ended before the fill ran; nothing was filled. 
 const SELECTED_GONE =
 	"This agent's selected tab was closed or moved out of its group. Run pw --ext tabs, then pw --ext select <id>.";
 const GROUP_FULL = `This agent's tab group is full (${MAX_AGENT_TABS} tabs). Close some with pw --ext close <id>.`;
-const notInGroup = (tabId: number) =>
-	`pw --ext: tab ${tabId} is not in this agent's tab group; run pw --ext tabs to list them.`;
-const discardedTab = (tabId: number) =>
-	`This agent's tab was discarded by the browser. Run pw --ext select ${tabId} again after it reloads.`;
 
 const PAGE_VERBS = [
 	"snapshot",

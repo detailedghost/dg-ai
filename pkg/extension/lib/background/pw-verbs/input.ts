@@ -1,7 +1,6 @@
 import { type InputRequest, type InputResult, validate } from "@dg/common/pw-ext-verbs/input";
-import { PW_EXT_NO_TAB_ERROR } from "@dg/common";
 import type { BrowserTab } from "@/lib/background/agent-tabs";
-import { allowedPage, mailbox, PW_EXT_BLOCKED_ERROR, PW_EXT_MAILBOX_ERROR, PW_EXT_PRIVATE_ERROR } from "@/lib/background/tab-guards";
+import { guardedTab } from "@/lib/background/tab-guards";
 
 export type InputPageAction =
 	| { kind: "check" | "uncheck"; target: string }
@@ -26,11 +25,6 @@ export type InputDeps = {
 		};
 	};
 };
-
-const notInGroup = (tabId: number) =>
-	`pw --ext: tab ${tabId} is not in this agent's tab group; run pw --ext tabs to list them.`;
-const discardedTab = (tabId: number) =>
-	`This agent's tab was discarded by the browser. Run pw --ext select ${tabId} again after it reloads.`;
 
 function pageAction(request: InputRequest): InputPageAction {
 	switch (request.verb) {
@@ -60,16 +54,9 @@ export function createInputHandler({ agentTabs, browserApi }: InputDeps) {
 		} catch {
 			return { ok: false, error: "Unsupported pw --ext request." };
 		}
-		let tabId = request.tabId;
-		if (tabId === undefined) {
-			tabId = (await agentTabs.selected({ sessionId }))?.tabId;
-			if (tabId === undefined) return { ok: false, error: PW_EXT_NO_TAB_ERROR };
-		} else if (!(await agentTabs.owns({ sessionId, tabId }))) return { ok: false, error: notInGroup(tabId) };
-		const tab = await browserApi.tabs.get(tabId);
-		if (tab.incognito) return { ok: false, error: PW_EXT_PRIVATE_ERROR };
-		if (!allowedPage(tab.url)) return { ok: false, error: PW_EXT_BLOCKED_ERROR };
-		if (mailbox(tab.url)) return { ok: false, error: PW_EXT_MAILBOX_ERROR };
-		if (tab.discarded) return { ok: false, error: discardedTab(tabId) };
+		const found = await guardedTab({ agentTabs, tabs: browserApi.tabs, sessionId, requested: request.tabId });
+		if (!found.ok) return { ok: false, error: found.error };
+		const { tabId, tab } = found;
 		const [frame] = await browserApi.scripting.executeScript({
 			target: { tabId },
 			func: pwExtInputAction,

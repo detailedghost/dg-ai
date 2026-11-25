@@ -1,7 +1,7 @@
 import type { PwExtResponse } from "@dg/common";
 import type { PointerRequest, PointerResult } from "@dg/common/pw-ext-verbs/pointer";
 import type { AgentTabs } from "../agent-tabs";
-import { allowedPage, mailbox, PW_EXT_BLOCKED_ERROR, PW_EXT_MAILBOX_ERROR, PW_EXT_PRIVATE_ERROR } from "../tab-guards";
+import { guardedTab } from "../tab-guards";
 
 type Result = { ok: true; data: PwExtResponse } | { ok: false; error: string };
 
@@ -25,9 +25,6 @@ type PointerBrowserApi = {
 	};
 };
 
-const notInGroup = (tabId: number) =>
-	`pw --ext: tab ${tabId} is not in this agent's tab group; run pw --ext tabs to list them.`;
-const NO_TAB = "This agent has no selected tab. Run pw --ext tabs, then pw --ext select <id>.";
 
 /** Self-contained action that scripting.executeScript runs in the tab's isolated world. */
 export function pwExtPointerAction(action: PointerAction, expectUrl: string): PointerResult {
@@ -208,16 +205,9 @@ export function createPointerHandler({
 }) {
 	return async function handlePointer(request: PointerRequest, context: { sessionId: string }): Promise<Result> {
 		const { sessionId } = context;
-		const tabId = request.tabId ?? (await agentTabs.selected({ sessionId }))?.tabId;
-		if (tabId === undefined) return { ok: false, error: NO_TAB };
-		if (!(await agentTabs.owns({ sessionId, tabId }))) return { ok: false, error: notInGroup(tabId) };
-		const tab = await api.tabs.get(tabId).catch(() => undefined);
-		if (!tab) return { ok: false, error: notInGroup(tabId) };
-		if (tab.incognito) return { ok: false, error: PW_EXT_PRIVATE_ERROR };
-		if (!allowedPage(tab.url)) return { ok: false, error: PW_EXT_BLOCKED_ERROR };
-		if (mailbox(tab.url)) return { ok: false, error: PW_EXT_MAILBOX_ERROR };
-		if (tab.discarded)
-			return { ok: false, error: `This agent's tab was discarded by the browser. Run pw --ext select ${tabId} again after it reloads.` };
+		const found = await guardedTab({ agentTabs, tabs: api.tabs, sessionId, requested: request.tabId });
+		if (!found.ok) return { ok: false, error: found.error };
+		const { tabId, tab } = found;
 		const [frame] = await api.scripting.executeScript({
 			target: { tabId },
 			func: pwExtPointerAction,
