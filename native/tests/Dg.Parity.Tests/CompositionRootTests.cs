@@ -137,4 +137,38 @@ public sealed class CompositionRootTests
             return ValueTask.FromResult(7);
         }
     }
+
+    [Theory]
+    [MemberData(nameof(CommandFailures))]
+    public async Task RunNative_CommandThrowsIoFailure_ReturnsOneInsteadOfCrashing(Exception failure)
+    {
+        var exit = await FrontDoor.RunNativeAsync(new ThrowingCommand(failure), Array.Empty<string>(), CancellationToken.None);
+
+        Assert.Equal(1, exit);
+    }
+
+    [Fact]
+    public async Task RunNative_CommandThrowsUnexpectedException_Propagates()
+    {
+        var command = new ThrowingCommand(new InvalidOperationException("bug"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await FrontDoor.RunNativeAsync(command, Array.Empty<string>(), CancellationToken.None)
+        );
+    }
+
+    public static TheoryData<Exception> CommandFailures =>
+        new()
+        {
+            new IOException("disk"),
+            new UnauthorizedAccessException("denied"),
+            new Dg.Core.Errors.DgError("f", 1, "k", "bad", "fix").ToException(),
+        };
+
+    private sealed class ThrowingCommand(Exception failure) : ICommand
+    {
+        public string Name => "throws";
+
+        public ValueTask<int> RunAsync(ReadOnlyMemory<string> args, CancellationToken ct) => throw failure;
+    }
 }
