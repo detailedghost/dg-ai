@@ -121,6 +121,18 @@ describe("reexecWithoutJit", () => {
 		expect(calls).toHaveLength(0);
 	});
 
+	test("keeps the JIT on darwin-arm64, where JSC drops SharedArrayBuffer without it", async () => {
+		const { calls, execve } = recorder();
+		await reexecWithoutJit(["phone", "status"], {}, execve, "darwin-arm64");
+		expect(calls).toHaveLength(0);
+	});
+
+	test("still re-executes on darwin-x64", async () => {
+		const { calls, execve } = recorder();
+		await reexecWithoutJit(["phone", "status"], {}, execve, "darwin-x64");
+		expect(calls).toHaveLength(1);
+	});
+
 	test("keeps a BUN_JSC_useJIT the caller set and does not re-execute", async () => {
 		const { calls, execve } = recorder();
 		const env = { [JIT_ENV]: "1" };
