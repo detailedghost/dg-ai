@@ -66,8 +66,9 @@ import { createWebMcpSigner } from "./webmcp-signing";
 import { createIdbGrantNonces } from "./webmcp-grant-nonces";
 import { forgetAgentTabsAndShims } from "./dialog-shim";
 import { type AgentWindowApi, createAgentWindows } from "./agent-window";
+import { type PopupWindowApi, popupWindows } from "./approval";
 import { createSessionControl } from "./session-control";
-import { createSiteAllow, type SiteAllow, type SiteAllowWindows } from "./site-allow-prompt";
+import { createSiteAllow, type SiteAllow } from "./site-allow-prompt";
 import { PW_EXT_STOP_MESSAGE } from "@/lib/features/pw-ext-banner";
 import {
 	createRelayDispatcher,
@@ -168,28 +169,7 @@ function stagedAsset(
 	);
 }
 
-type SiteAllowWindowApi = {
-	windows?: {
-		create(props: { url: string; type: "popup"; width: number; height: number; focused: true }): Promise<{ id?: number }>;
-		remove(windowId: number): Promise<unknown>;
-		onRemoved?: { addListener(listener: (windowId: number) => void): void };
-	};
-};
-
-const SITE_ALLOW_WINDOW = { type: "popup", width: 480, height: 440, focused: true } as const;
-
-function siteAllowWindows(api: ChatBrowserApi): SiteAllowWindows {
-	const { windows } = api as unknown as SiteAllowWindowApi;
-	return {
-		async open(url) {
-			return (await windows?.create({ url, ...SITE_ALLOW_WINDOW }))?.id;
-		},
-		async close(windowId) {
-			await windows?.remove(windowId);
-		},
-		onRemoved: (listener) => windows?.onRemoved?.addListener(listener),
-	};
-}
+const SITE_ALLOW_POPUP = { width: 480, height: 440 };
 
 function pwExtContext({
 	bootstrap,
@@ -257,7 +237,7 @@ export function registerDaemonLink(
 	const siteAllow = createSiteAllow({
 		control: sessionControl,
 		storage: api.storage as unknown as AgentTabsStorage,
-		windows: siteAllowWindows(api),
+		windows: popupWindows(api as unknown as PopupWindowApi, SITE_ALLOW_POPUP),
 		pageUrl: (path) => api.runtime.getURL(path),
 		navigate: agentWindows.navigate,
 	});
@@ -269,6 +249,7 @@ export function registerDaemonLink(
 		rememberedWebMcpGrants,
 		control: sessionControl,
 		siteAllow,
+		agentWindows,
 	});
 	const relayHandlers: {
 		[N in RelayFeatureName]: RelayHandler<FeatureNamed<N>>;

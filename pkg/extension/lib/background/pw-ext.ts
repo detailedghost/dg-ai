@@ -31,10 +31,10 @@ import {
 	type KeyChord,
 	parseKeyChord,
 } from "@dg/common";
-import { VERBS as INPUT_VERBS } from "../../../common/src/pw-ext-verbs/input";
-import { VERBS as NAVIGATION_VERBS } from "../../../common/src/pw-ext-verbs/navigation";
-import { VERBS as PAGE_MODULE_VERBS } from "../../../common/src/pw-ext-verbs/page";
-import { VERBS as POINTER_VERBS } from "../../../common/src/pw-ext-verbs/pointer";
+import { VERBS as INPUT_VERBS } from "@dg/common/pw-ext-verbs/input";
+import { VERBS as NAVIGATION_VERBS } from "@dg/common/pw-ext-verbs/navigation";
+import { VERBS as PAGE_MODULE_VERBS } from "@dg/common/pw-ext-verbs/page";
+import { VERBS as POINTER_VERBS } from "@dg/common/pw-ext-verbs/pointer";
 import {
 	type PwExtDialogAction,
 	type PwExtDialogRecord,
@@ -78,6 +78,7 @@ import { createPageVerbHandler } from "./pw-verbs/page";
 import { createPointerHandler } from "./pw-verbs/pointer";
 import { createStorageVerbHandler } from "./pw-verbs/storage";
 import { siteOf } from "./site-key";
+import type { AgentWindows } from "./agent-window";
 import { PhiCaptureRefusedError, type SiteAllow } from "./site-allow-prompt";
 import { runningThirdPartyMatches, STOPPED_SCRIPTS_KEY, type WebMcpStoppedScript } from "./webmcp-scripts";
 import {
@@ -148,6 +149,8 @@ export type PwExtResult =
 	| { ok: false; error: string };
 
 const NEW_TAB_URL = "chrome://newtab/";
+const AGENT_WINDOW_LOAD_POLLS = 200;
+const AGENT_WINDOW_POLL_MS = 50;
 const CANCELED: PwExtResult = {
 	ok: false,
 	error: "The request was canceled before it ran.",
@@ -697,6 +700,7 @@ export function createPwExtHandler({
 	lock,
 	control = createSessionControl({ storage: api.storage }),
 	siteAllow,
+	agentWindows,
 }: {
 	browserApi: PwExtBrowserApi;
 	agentTabs?: AgentTabs;
@@ -713,7 +717,8 @@ export function createPwExtHandler({
 	captureDeadlineMs?: number;
 	lock?: AgentTabsLock;
 	control?: SessionControl;
-	siteAllow?: Pick<SiteAllow, "requestSiteAllow" | "assertCaptureAllowed">;
+	siteAllow?: Pick<SiteAllow, "requestSiteAllow" | "assertCaptureAllowed"> & Partial<Pick<SiteAllow, "openSite">>;
+	agentWindows?: Pick<AgentWindows, "openAgentWindow">;
 }) {
 	const navigation = createNavigationHandler({ browserApi: api as never, agentTabs });
 	const pointer = createPointerHandler({ browserApi: api as never, agentTabs });
@@ -1064,18 +1069,47 @@ export function createPwExtHandler({
 		return verb === "call" && tool !== undefined && mailboxToolAllowed(tool, new URL(tab.url as string).origin, await enabledOrNone());
 	}
 
-	async function openInGroup(
+	async function groupAgentWindowTab(
 		url: string,
 		{ sessionId, agentIdentity }: PwExtContext,
 		signal: AbortSignal,
+	): Promise<{ tabId: number; recoveredTabIds: number[] }> {
+		if (!siteAllow?.openSite || !agentWindows) throw new Error("The agent window is not wired.");
+		if (mailbox(url)) throw new Refusal(PW_EXT_MAILBOX_ERROR);
+		if (signal.aborted) throw new Refusal(STOPPED_WORK);
+		if ((await siteAllow.openSite({ sessionId, url })) !== "allow")
+			throw new Refusal(`${SITE_REFUSED.deny}; the agent may not use ${siteOf(url).name}. Nothing ran.`);
+		const windowId = await agentWindows.openAgentWindow(sessionId);
+		const [first] = await api.tabs.query({ windowId });
+		const tabId = first?.id;
+		if (tabId === undefined) throw new Refusal("The agent window has no tab.");
+		for (let poll = 0; !allowedPage((await api.tabs.get(tabId).catch(() => undefined))?.url); poll++) {
+			if (poll >= AGENT_WINDOW_LOAD_POLLS) throw new Refusal(`${url} did not load in the agent window.`);
+			if (signal.aborted) throw new Refusal(STOPPED_WORK);
+			await new Promise((resolve) => setTimeout(resolve, AGENT_WINDOW_POLL_MS));
+		}
+		const { recoveredTabIds } = await agentTabs.adopt({ sessionId, agentIdentity, tabId }).catch((error: unknown) => {
+			if (error instanceof AgentGroupFullError) throw new Refusal(GROUP_FULL);
+			throw error;
+		});
+		return { tabId, recoveredTabIds };
+	}
+
+	async function openInGroup(
+		url: string,
+		context: PwExtContext,
+		signal: AbortSignal,
 	): Promise<PwExtResult> {
-		const { tabId, recoveredTabIds } = await agentTabs
-			.open({ sessionId, agentIdentity, url, canceled: () => signal.aborted })
-			.catch((error: unknown) => {
-				if (error instanceof AgentGroupFullError) throw new Refusal(GROUP_FULL);
-				if (error instanceof AgentTabOpenCanceledError) throw new Refusal(error.message);
-				throw error;
-			});
+		const { sessionId, agentIdentity } = context;
+		const inAgentWindow =
+			siteAllow?.openSite && agentWindows && isPwExtWebUrl(url) && !(await agentTabs.list({ sessionId })).length;
+		const { tabId, recoveredTabIds } = await (inAgentWindow
+			? groupAgentWindowTab(url, context, signal)
+			: agentTabs.open({ sessionId, agentIdentity, url, canceled: () => signal.aborted }).catch((error: unknown) => {
+					if (error instanceof AgentGroupFullError) throw new Refusal(GROUP_FULL);
+					if (error instanceof AgentTabOpenCanceledError) throw new Refusal(error.message);
+					throw error;
+				}));
 		await agentTabs.select({ sessionId, tabId });
 		void syncShim(tabId, false);
 		for (const recovered of recoveredTabIds) void syncShim(recovered, true);

@@ -1,5 +1,5 @@
 import { PW_EXT_NO_TAB_ERROR } from "@dg/common";
-import { type NavigationRequest, type NavigationResult, type NavigationVerb } from "../../../../common/src/pw-ext-verbs/navigation";
+import { type NavigationRequest, type NavigationResult, type NavigationVerb } from "@dg/common/pw-ext-verbs/navigation";
 import type { AgentTabs } from "../agent-tabs";
 import { allowedPage, mailbox, PW_EXT_BLOCKED_ERROR, PW_EXT_MAILBOX_ERROR, PW_EXT_PRIVATE_ERROR } from "../tab-guards";
 
