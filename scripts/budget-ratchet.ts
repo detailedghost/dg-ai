@@ -28,6 +28,7 @@ const BUDGET_FILES = [
 const BUDGET_DIRS = ["native/budgets", "native/bench/Dg.Bench/budgets"];
 const INCREASE_LINE =
 	/^Budget-Increase:[ \t]+(\S+)[ \t]+(-?\d+(?:\.\d+)?)[ \t]+->[ \t]+(-?\d+(?:\.\d+)?)[ \t]+because[ \t]+(\S.*?)[ \t]*$/;
+const REMOVAL_LINE = /^Budget-Removal:[ \t]+(\S+)[ \t]+because[ \t]+\S.*$/;
 
 export function flatten(prefix: string, value: unknown, path = ""): Flat {
 	if (typeof value === "number") return { [`${prefix}:${path}`]: value };
@@ -48,6 +49,15 @@ export function parseIncreases(prBody: string): Increase[] {
 	return out;
 }
 
+export function parseRemovals(prBody: string): string[] {
+	const out: string[] = [];
+	for (const raw of prBody.split(/\r?\n/)) {
+		const m = REMOVAL_LINE.exec(raw.trimEnd());
+		if (m) out.push(m[1]);
+	}
+	return out;
+}
+
 function isLatency(name: string): boolean {
 	const last = name.slice(name.lastIndexOf("/") + 1);
 	return /latency/i.test(name) || /^(ms|p\d+)$/i.test(last) || /ms(budget)?$/i.test(last);
@@ -64,6 +74,7 @@ export function ratchet(input: {
 	const slackPct = input.slackPct ?? DEFAULT_SLACK_PCT;
 	const latencySlackPct = input.latencySlackPct ?? DEFAULT_LATENCY_SLACK_PCT;
 	const increases = parseIncreases(input.prBody);
+	const removals = parseRemovals(input.prBody);
 	const failures: string[] = [];
 	const warnings: string[] = [];
 	const lowered: Lowered[] = [];
@@ -99,6 +110,12 @@ export function ratchet(input: {
 			);
 	}
 
+	for (const budget of Object.keys(input.baseBudgets ?? {}))
+		if (!(budget in input.budgets) && !removals.includes(budget))
+			failures.push(
+				`${budget}: budget removed without a matching "Budget-Removal: ${budget} because <reason>" line in the PR body`,
+			);
+
 	for (const i of increases)
 		if (!(i.budget in input.budgets))
 			warnings.push(`${i.budget}: Budget-Increase line names an unknown budget`);
@@ -130,12 +147,14 @@ export function run(input: {
 	const budgets: Flat = {};
 	const baseBudgets: Flat = {};
 	const measured: Flat = {};
-	for (const path of discoverBudgetFiles(input.root)) {
+	const paths = new Set([...BUDGET_FILES, ...discoverBudgetFiles(input.root)]);
+	for (const path of paths) {
 		const prefix = prefixOf(path);
-		Object.assign(
-			budgets,
-			flatten(prefix, JSON.parse(readFileSync(join(input.root, path), "utf8"))),
-		);
+		if (existsSync(join(input.root, path)))
+			Object.assign(
+				budgets,
+				flatten(prefix, JSON.parse(readFileSync(join(input.root, path), "utf8"))),
+			);
 		const base = input.readBase(path);
 		if (base !== null) Object.assign(baseBudgets, flatten(prefix, JSON.parse(base)));
 		const measuredPath = join(input.measuredDir, basename(path));
