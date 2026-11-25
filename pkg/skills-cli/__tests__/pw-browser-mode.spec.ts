@@ -131,4 +131,20 @@ describe("pw main browser mode", () => {
 		expect(await main(["--ext", "route", "**/*"], env)).toBe(2);
 		expect(env.stderr.join("\n")).toContain("route runs only in local mode");
 	});
+
+	test("auto sends an ext-capable verb to the extension when it is connected", async () => {
+		const seen: string[] = [];
+		const daemon = await startFakeDaemon("web", {}, (request) => {
+			seen.push(request.method);
+			return { text: "clicked", exitCode: 0 };
+		});
+		try {
+			const env = clientEnv();
+			expect(await main(["click", "e1"], env, undefined, async () => true)).toBe(1);
+			expect(seen).toEqual([]);
+			expect(env.stderr.join("\n")).toContain("pw --ext needs a dg daemon session");
+		} finally {
+			daemon.dispose();
+		}
+	});
 });
