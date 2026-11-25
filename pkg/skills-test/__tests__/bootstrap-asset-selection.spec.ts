@@ -195,7 +195,7 @@ describe("bootstrap.ps1 picks the asset", () => {
 
 	test("it prefers the .gz asset, reads it with GZipStream and falls back to the raw asset", () => {
 		expect(ps1).toContain("function Select-DgAsset");
-		expect(ps1).toContain('"$asset.gz"');
+		expect(ps1).toContain('"$Raw.gz"');
 		expect(ps1).toContain("System.IO.Compression.GZipStream");
 		expect(ps1).toContain("Assert-DgSha256 $downloaded $asset $expected");
 	});
