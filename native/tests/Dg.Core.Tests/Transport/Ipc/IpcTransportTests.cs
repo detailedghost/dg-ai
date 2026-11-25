@@ -36,6 +36,7 @@ public sealed class IpcTransportTests
             .ToArray();
         var results = await Task.WhenAll(calls);
 
+        await SpinUntil(() => server.Accepted >= 1);
         Assert.Equal(1, server.Accepted);
         foreach (var (id, i, response) in results)
         {
@@ -55,6 +56,7 @@ public sealed class IpcTransportTests
         var second = await pool.GetAsync("echo", CancellationToken.None);
 
         Assert.Same(first, second);
+        await SpinUntil(() => server.Accepted >= 1);
         Assert.Equal(1, server.Accepted);
     }
 
@@ -72,6 +74,7 @@ public sealed class IpcTransportTests
 
         Assert.NotSame(first, second);
         await Call(second);
+        await SpinUntil(() => server.Accepted >= 2);
         Assert.Equal(2, server.Accepted);
     }
 
