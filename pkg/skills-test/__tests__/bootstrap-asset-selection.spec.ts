@@ -156,6 +156,18 @@ describe("bootstrap.sh picks the asset from uname and the cpu flags", () => {
 		});
 	}
 
+	for (const { key, os, arch, avx2 } of cases) {
+		test(`${key} with a gzip asset downloads exactly dg-${key}.gz`, async () => {
+			const result = await runBootstrap({ os, arch, avx2, gz: "valid" });
+
+			expect(result.code, result.stderr).toBe(0);
+			expect(result.assetRequests).toEqual([
+				`https://github.com/o/r/releases/download/v${result.version}/dg-${key}.gz`,
+			]);
+			expect(programRun(result.stdout)?.asset).toBe(`dg-${key}`);
+		});
+	}
+
 	test("the release asset names are the eight the release workflow publishes", () => {
 		expect(PLATFORMS.map(assetName)).toEqual([
 			"dg-linux-x64",
@@ -179,6 +191,13 @@ describe("bootstrap.ps1 picks the asset", () => {
 		expect(ps1).toContain("Test-DgAvx2");
 		expect(ps1).toContain('"arm64" } else { "x64" }');
 		expect(ps1).toContain('$asset = "dg-$platform.exe"');
+	});
+
+	test("it prefers the .gz asset, reads it with GZipStream and falls back to the raw asset", () => {
+		expect(ps1).toContain("function Select-DgAsset");
+		expect(ps1).toContain('"$asset.gz"');
+		expect(ps1).toContain("System.IO.Compression.GZipStream");
+		expect(ps1).toContain("Assert-DgSha256 $downloaded $asset $expected");
 	});
 
 	test("it downloads no runtime.json, Bun zip or dg-lib tarball", () => {
