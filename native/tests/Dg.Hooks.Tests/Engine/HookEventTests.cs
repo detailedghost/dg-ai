@@ -195,11 +195,14 @@ public sealed class HookEventTests
     [InlineData("[1,2]")]
     [InlineData("\"text\"")]
     [InlineData("""{"tool_name":"Edit""")]
-    public void Parse_EmptyOrInvalidOrNonObject_ReturnsEmptyEvent(string json)
+    public void Parse_EmptyOrInvalidOrNonObject_ReturnsInitializedEmptyEvent(string json)
     {
         var ev = HookEvent.Parse(Encoding.UTF8.GetBytes(json));
 
-        Assert.Equal(default, ev);
+        Assert.Null(ev.EventName);
+        Assert.Null(ev.ToolName);
+        Assert.Empty(ev.Edits);
+        Assert.Empty(ev.Args);
     }
 
     [Fact]
