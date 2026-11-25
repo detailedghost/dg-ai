@@ -94,7 +94,9 @@ import { createIdbGrantNonces } from "./webmcp-grant-nonces";
 import { createUnmaskGrants, MAX_FILLED_SECRETS, type UnmaskGrant, type UnmaskGrants } from "./unmask-grants";
 import {
 	allowedPage,
+	discardedTab,
 	mailbox,
+	notInGroup,
 	outlookWeb,
 	PW_EXT_BLOCKED_ERROR,
 	PW_EXT_MAILBOX_ERROR,
@@ -181,10 +183,6 @@ const UNMASK_ENDED = "The unmask ended before the fill ran; nothing was filled. 
 const SELECTED_GONE =
 	"This agent's selected tab was closed or moved out of its group. Run pw --ext tabs, then pw --ext select <id>.";
 const GROUP_FULL = `This agent's tab group is full (${MAX_AGENT_TABS} tabs). Close some with pw --ext close <id>.`;
-const notInGroup = (tabId: number) =>
-	`pw --ext: tab ${tabId} is not in this agent's tab group; run pw --ext tabs to list them.`;
-const discardedTab = (tabId: number) =>
-	`This agent's tab was discarded by the browser. Run pw --ext select ${tabId} again after it reloads.`;
 
 const PAGE_VERBS = [
 	"snapshot",
@@ -229,7 +227,17 @@ type TabVerbRequest = PwExtRequest & {
 type WebMcpRequest = PwExtRequest & { verb: WebMcpVerb };
 type ModuleRequest = PwExtRequest & { verb: PwExtModuleVerb };
 const MODULE_SITE_ASK: ReadonlySet<PwExtVerb> = new Set([...NAVIGATION_VERBS, ...POINTER_VERBS, ...INPUT_VERBS]);
-const CAPTURE_VERBS: ReadonlySet<PwExtVerb> = new Set(["snapshot", "screenshot"]);
+const PAGE_DATA_VERBS: ReadonlySet<PwExtVerb> = new Set([
+	"snapshot",
+	"screenshot",
+	"selection",
+	"console",
+	"network",
+	"storage",
+	"fetch",
+	"call",
+	"eval",
+]);
 
 const BUILT_INS_KEY = "webmcpScripts";
 
@@ -1083,7 +1091,12 @@ export function createPwExtHandler({
 		const [first] = await api.tabs.query({ windowId });
 		const tabId = first?.id;
 		if (tabId === undefined) throw new Refusal("The agent window has no tab.");
-		for (let poll = 0; !allowedPage((await api.tabs.get(tabId).catch(() => undefined))?.url); poll++) {
+		const wanted = siteOf(url).key;
+		const onWantedSite = async () => {
+			const loaded = (await api.tabs.get(tabId).catch(() => undefined))?.url;
+			return allowedPage(loaded) && siteOf(loaded).key === wanted;
+		};
+		for (let poll = 0; !(await onWantedSite()); poll++) {
 			if (poll >= AGENT_WINDOW_LOAD_POLLS) throw new Refusal(`${url} did not load in the agent window.`);
 			if (signal.aborted) throw new Refusal(STOPPED_WORK);
 			await new Promise((resolve) => setTimeout(resolve, AGENT_WINDOW_POLL_MS));
@@ -1842,6 +1855,12 @@ export function createPwExtHandler({
 		};
 	}
 
+	async function assertPageDataAllowed(sessionId: string, url: string): Promise<void> {
+		await siteAllow?.assertCaptureAllowed(sessionId, url).catch((error: unknown) => {
+			throw error instanceof PhiCaptureRefusedError ? new Refusal(error.message) : error;
+		});
+	}
+
 	async function runModule(request: ModuleRequest, sessionId: string): Promise<PwExtResult> {
 		const at = { sessionId };
 		if ((NAVIGATION_VERBS as readonly string[]).includes(request.verb)) return navigation(request as never, at);
@@ -1874,6 +1893,10 @@ export function createPwExtHandler({
 			if (!live || live.groupId !== tab.groupId || !(await agentTabs.owns({ sessionId: context.sessionId, tabId: tab.id })))
 				throw new Refusal(SELECTED_GONE);
 			if (live.url !== tab.url) throw new Refusal("The page changed while the site question was open; nothing ran. Retry.");
+		}
+		if (PAGE_DATA_VERBS.has(request.verb)) {
+			const tab = await resolveTab(request, context.sessionId);
+			if (tab?.url) await assertPageDataAllowed(context.sessionId, tab.url);
 		}
 		if (signal.aborted) return CANCELED;
 		const result = await runModule(request, context.sessionId);
@@ -1924,10 +1947,7 @@ export function createPwExtHandler({
 			if (live.url !== tab.url)
 				throw new Refusal("The page changed while the site question was open; nothing ran. Retry.");
 		}
-		if (siteAllow && CAPTURE_VERBS.has(request.verb))
-			await siteAllow.assertCaptureAllowed(context.sessionId, tab.url as string).catch((error: unknown) => {
-				throw error instanceof PhiCaptureRefusedError ? new Refusal(error.message) : error;
-			});
+		if (PAGE_DATA_VERBS.has(request.verb)) await assertPageDataAllowed(context.sessionId, tab.url as string);
 		tab.signal = signal;
 		if (signal.aborted) return CANCELED;
 		return run(request, tab, context, signal);

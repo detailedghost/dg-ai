@@ -1,10 +1,10 @@
-import { PW_EXT_MAX_TEXT_CHARS, PW_EXT_NO_TAB_ERROR } from "@dg/common";
+import { PW_EXT_MAX_TEXT_CHARS } from "@dg/common";
 import { type PageRequest, type PageResult, validate } from "@dg/common/pw-ext-verbs/page";
 import type { AgentTabs } from "../agent-tabs";
 import type { PwExtBrowserApi } from "../pw-ext";
 import type { SessionControl } from "../session-control";
 import { siteOf } from "../site-key";
-import { allowedPage, mailbox, PW_EXT_BLOCKED_ERROR, PW_EXT_MAILBOX_ERROR, PW_EXT_PRIVATE_ERROR } from "../tab-guards";
+import { guardedTab, notInGroup, ownedTab, PW_EXT_PRIVATE_ERROR } from "../tab-guards";
 
 type EvalOutcome = { ok: true; text: string } | { ok: false; error: string };
 
@@ -18,13 +18,11 @@ export type PageBrowserApi = Pick<PwExtBrowserApi, "scripting"> & {
 
 const BAD_REPLY = "The page gave an unreadable reply; the script may have run.";
 
-const notInGroup = (tabId: number) =>
-	`pw --ext: tab ${tabId} is not in this agent's tab group; run pw --ext tabs to list them.`;
-
 const refuse = (error: string): PageResult => ({ ok: false, error });
 
 /** Runs inside the page, so it must stay self-contained. Reports only the error name, never its message. */
-export async function evaluate(expression: string): Promise<EvalOutcome> {
+export async function evaluate(expression: string, expectedUrl: string): Promise<EvalOutcome> {
+	if (location.href !== expectedUrl) return { ok: false, error: "The page changed before the script ran; nothing ran." };
 	try {
 		const value = await (0, eval)(expression);
 		return { ok: true, text: value === undefined ? "undefined" : (JSON.stringify(value) ?? String(value)) };
@@ -53,24 +51,10 @@ export function createPageVerbHandler({
 	agentTabs: Pick<AgentTabs, "owns" | "selected" | "select">;
 	control: Pick<SessionControl, "allowed">;
 }) {
-	async function ownedTab(sessionId: string, requested: number | undefined) {
-		const tabId = requested ?? (await agentTabs.selected({ sessionId }))?.tabId;
-		if (tabId === undefined) return { ok: false, error: PW_EXT_NO_TAB_ERROR } as const;
-		if (!(await agentTabs.owns({ sessionId, tabId }))) return { ok: false, error: notInGroup(tabId) } as const;
-		const tab = await browserApi.tabs.get(tabId).catch(() => undefined);
-		if (!tab || !(await agentTabs.owns({ sessionId, tabId }))) return { ok: false, error: notInGroup(tabId) } as const;
-		return { ok: true, tabId, tab } as const;
-	}
-
 	async function run(request: Extract<PageRequest, { verb: "eval" }>, sessionId: string): Promise<PageResult> {
-		const found = await ownedTab(sessionId, request.tabId);
+		const found = await guardedTab({ agentTabs, tabs: browserApi.tabs, sessionId, requested: request.tabId });
 		if (!found.ok) return refuse(found.error);
 		const { tabId, tab } = found;
-		if (tab.incognito) return refuse(PW_EXT_PRIVATE_ERROR);
-		if (!allowedPage(tab.url)) return refuse(PW_EXT_BLOCKED_ERROR);
-		if (mailbox(tab.url)) return refuse(PW_EXT_MAILBOX_ERROR);
-		if (tab.discarded)
-			return refuse(`This agent's tab was discarded by the browser. Run pw --ext select ${tabId} again after it reloads.`);
 		const site = siteOf(tab.url);
 		if (!(await control.allowed(sessionId, site.key)))
 			return refuse(`pw --ext: ${site.name} is not on this session's allowed sites; eval did not run.`);
@@ -78,7 +62,7 @@ export function createPageVerbHandler({
 			target: { tabId },
 			world: "MAIN",
 			func: evaluate as never,
-			args: [request.expression],
+			args: [request.expression, tab.url],
 		});
 		const outcome = outcomeOf(frame?.result);
 		return outcome.ok ? { ok: true, data: { text: `### Result\n${clip(outcome.text)}` } } : refuse(outcome.error);
@@ -95,7 +79,7 @@ export function createPageVerbHandler({
 	}
 
 	async function resize(request: Extract<PageRequest, { verb: "resize" }>, sessionId: string): Promise<PageResult> {
-		const found = await ownedTab(sessionId, request.tabId);
+		const found = await ownedTab({ agentTabs, tabs: browserApi.tabs, sessionId, requested: request.tabId });
 		if (!found.ok) return refuse(found.error);
 		const { windowId, incognito } = found.tab;
 		if (incognito || windowId === undefined) return refuse(PW_EXT_PRIVATE_ERROR);

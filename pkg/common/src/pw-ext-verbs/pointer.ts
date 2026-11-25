@@ -1,5 +1,5 @@
 import { fail, requireRecord, requireString } from "../assert";
-import { PW_EXT_MAX_TAB_ID, PW_EXT_MAX_TARGET_BYTES } from "../pw-ext-format";
+import { PW_EXT_MAX_TARGET_BYTES, requireTabId } from "../pw-ext-limits";
 
 export const VERBS = ["hover", "dblclick", "drag", "mousedown", "mouseup", "mousemove", "mousewheel"] as const;
 export type PointerVerb = (typeof VERBS)[number];
@@ -46,8 +46,7 @@ export function validate(request: unknown): PointerRequest {
 	if (!(VERBS as readonly unknown[]).includes(verb)) fail(`request.verb must be one of ${VERBS.join(", ")}`);
 	const allowed = KEYS[verb as PointerVerb];
 	for (const key of Object.keys(request)) if (!allowed.includes(key)) fail(`request.${key} is not used by ${String(verb)}`);
-	if (request.tabId !== undefined && (!Number.isSafeInteger(request.tabId) || (request.tabId as number) < 0 || (request.tabId as number) > PW_EXT_MAX_TAB_ID))
-		fail("request.tabId must be a tab id");
+	if (request.tabId !== undefined) requireTabId(request.tabId, "request");
 	switch (verb as PointerVerb) {
 		case "hover":
 		case "dblclick":

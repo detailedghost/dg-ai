@@ -3,6 +3,7 @@ import { CHAT_PROTOCOL_VERSION, validateChatFrame, validatePageChatFrame } from 
 import {
 	isPwExtCliResult,
 	isPwExtSecretTooShort,
+	requireTabId,
 	PW_EXT_READ_VERBS,
 	PW_EXT_WRITE_VERBS,
 	PW_EXT_MAX_IMAGE_CHARS,
@@ -755,5 +756,15 @@ describe("pw-ext verb lists", () => {
 		{ verb: "localstorage-clear", key: "a" },
 	])("rejects the module request %j", (request) => {
 		expect(() => validatePwExtRequest(request)).toThrow();
+	});
+});
+
+describe("requireTabId", () => {
+	it.each([0, 7, 2_147_483_647])("accepts %p", (tabId) => {
+		expect(() => requireTabId(tabId, "request")).not.toThrow();
+	});
+
+	it.each([-1, 1.5, 2_147_483_648, "7", null, Number.NaN])("rejects %p with the field name", (tabId) => {
+		expect(() => requireTabId(tabId, "request")).toThrow("request.tabId must be a non-negative integer");
 	});
 });

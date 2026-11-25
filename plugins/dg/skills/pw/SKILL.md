@@ -81,9 +81,9 @@ Some verbs run local in every mode: `route`, `unroute`, `route-list`, `network-s
 
 ## Real browser (`--ext`)
 
-Use ext only when the human asks you to look at or act on a page in their real browser. Plain `--local` stays right for tests, recording, mocking and isolated runs.
+Use ext only when the human asks you to look at or act on a page in their real browser. In `auto` mode a paired extension receives a plain `dg pw` call, so pass `--local` on every call unless the human asked for the real browser.
 Each session gets its own agent window and tab group. You act only on tabs in that group, until the human hands you one from the extension popup.
-The browser asks the human once per site in a session. A PHI checkbox on that popup makes `snapshot` and `screenshot` refuse the site. `eval` and the storage write verbs never ask: they refuse a site that is not allowed yet, so navigate or read first. A Stop click on the page ends your control, so act only on what the human asked for.
+The browser asks the human once per site in a session. A PHI checkbox on that popup makes `snapshot`, `screenshot`, `selection`, `console`, `network`, `storage`, `fetch`, `call` and `eval` refuse the site. `eval` and the storage write verbs never ask: they refuse a site that is not allowed yet, so navigate or read first. A Stop click on the page ends your control, so act only on what the human asked for.
 `tools` and `call` are the Web MCP bridge and use Web MCP approvals, not the site question. To save tokens, run `pw --ext tools` first and prefer a WebMCP tool; else use refs from one snapshot. Verbs, tabs, refs, uploads and blocked pages: `references/real-browser.md`.
 
 ## Tab batches

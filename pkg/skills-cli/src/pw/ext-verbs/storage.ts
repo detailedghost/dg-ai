@@ -1,4 +1,4 @@
-import { PW_EXT_MAX_TAB_ID } from "@dg/common";
+import { parseTabId } from "./tab-id";
 import {
 	storageActionOf,
 	type StorageRequest,
@@ -27,12 +27,13 @@ export function storageRequestOf(verb: StorageVerb, args: readonly string[], tab
 		throw new StorageUsageError(
 			`pw --ext ${verb} takes ${expected === "" ? "no arguments" : expected}.`,
 		);
-	if (tab !== undefined && (!/^\d+$/.test(tab) || Number(tab) > PW_EXT_MAX_TAB_ID))
+	const tabId = tab === undefined ? undefined : parseTabId(tab);
+	if (tab !== undefined && tabId === undefined)
 		throw new StorageUsageError("pw --ext --tab takes a tab id from pw --ext tabs.");
 	const request: Record<string, unknown> = { verb };
 	if (action !== "clear") request.key = args[0];
 	if (action === "set") request.value = args[1];
-	if (tab !== undefined) request.tabId = Number(tab);
+	if (tabId !== undefined) request.tabId = tabId;
 	try {
 		return validate(request);
 	} catch (error) {

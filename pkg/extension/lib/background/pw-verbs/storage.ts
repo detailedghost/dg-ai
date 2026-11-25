@@ -1,4 +1,3 @@
-import { PW_EXT_NO_TAB_ERROR } from "@dg/common";
 import {
 	type StorageAction,
 	type StorageArea,
@@ -12,13 +11,7 @@ import type { AgentTabs } from "../agent-tabs";
 import type { PwExtBrowserApi } from "../pw-ext";
 import type { SessionControl } from "../session-control";
 import { siteOf } from "../site-key";
-import {
-	allowedPage,
-	mailbox,
-	PW_EXT_BLOCKED_ERROR,
-	PW_EXT_MAILBOX_ERROR,
-	PW_EXT_PRIVATE_ERROR,
-} from "../tab-guards";
+import { guardedTab } from "../tab-guards";
 
 type PageOutcome = { ok: true; removed: number } | { ok: false; error: string };
 
@@ -46,9 +39,6 @@ export function writeStorage(
 		return { ok: false, error: `The page refused the write (${name}).` };
 	}
 }
-
-const notInGroup = (tabId: number) =>
-	`pw --ext: tab ${tabId} is not in this agent's tab group; run pw --ext tabs to list them.`;
 
 function outcomeOf(raw: unknown): PageOutcome {
 	if (typeof raw !== "object" || raw === null) return { ok: false, error: BAD_REPLY };
@@ -85,20 +75,9 @@ export function createStorageVerbHandler({
 		} catch (error) {
 			return refuse(error instanceof Error ? error.message : String(error));
 		}
-		let tabId = request.tabId;
-		if (tabId === undefined) {
-			tabId = (await agentTabs.selected({ sessionId }))?.tabId;
-			if (tabId === undefined) return refuse(PW_EXT_NO_TAB_ERROR);
-		} else if (!(await agentTabs.owns({ sessionId, tabId })))
-			return refuse(notInGroup(tabId));
-		const tab = await browserApi.tabs.get(tabId).catch(() => undefined);
-		if (!tab || !(await agentTabs.owns({ sessionId, tabId })))
-			return refuse(notInGroup(tabId));
-		if (tab.incognito) return refuse(PW_EXT_PRIVATE_ERROR);
-		if (!allowedPage(tab.url)) return refuse(PW_EXT_BLOCKED_ERROR);
-		if (mailbox(tab.url)) return refuse(PW_EXT_MAILBOX_ERROR);
-		if (tab.discarded)
-			return refuse(`This agent's tab was discarded by the browser. Run pw --ext select ${tabId} again after it reloads.`);
+		const found = await guardedTab({ agentTabs, tabs: browserApi.tabs, sessionId, requested: request.tabId });
+		if (!found.ok) return refuse(found.error);
+		const { tabId, tab } = found;
 		const site = siteOf(tab.url);
 		if (!(await control.allowed(sessionId, site.key)))
 			return refuse(`pw --ext: ${site.name} is not on this session's allowed sites; storage was not changed.`);

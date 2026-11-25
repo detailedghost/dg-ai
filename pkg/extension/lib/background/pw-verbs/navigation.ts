@@ -1,7 +1,6 @@
-import { PW_EXT_NO_TAB_ERROR } from "@dg/common";
 import { type NavigationRequest, type NavigationResult, type NavigationVerb } from "@dg/common/pw-ext-verbs/navigation";
 import type { AgentTabs } from "../agent-tabs";
-import { allowedPage, mailbox, PW_EXT_BLOCKED_ERROR, PW_EXT_MAILBOX_ERROR, PW_EXT_PRIVATE_ERROR } from "../tab-guards";
+import { guardedTab } from "../tab-guards";
 
 export type NavigationBrowserApi = {
 	tabs: {
@@ -28,14 +27,9 @@ export function createNavigationHandler({
 	agentTabs: Pick<AgentTabs, "owns" | "selected">;
 }) {
 	return async function navigate(request: NavigationRequest, { sessionId }: { sessionId: string }): Promise<NavigationResult> {
-		const tabId = request.tabId ?? (await agentTabs.selected({ sessionId }))?.tabId;
-		if (tabId === undefined) return refused(PW_EXT_NO_TAB_ERROR);
-		if (!(await agentTabs.owns({ sessionId, tabId })))
-			return refused(`pw --ext: tab ${tabId} is not in this agent's tab group; run pw --ext tabs to list them.`);
-		const tab = await api.tabs.get(tabId);
-		if (tab.incognito) return refused(PW_EXT_PRIVATE_ERROR);
-		if (!allowedPage(tab.url)) return refused(PW_EXT_BLOCKED_ERROR);
-		if (mailbox(tab.url)) return refused(PW_EXT_MAILBOX_ERROR);
+		const found = await guardedTab({ agentTabs, tabs: api.tabs, sessionId, requested: request.tabId }, { allowDiscarded: true });
+		if (!found.ok) return refused(found.error);
+		const { tabId } = found;
 		try {
 			if (request.verb === "go-back") await api.tabs.goBack(tabId);
 			else if (request.verb === "go-forward") await api.tabs.goForward(tabId);

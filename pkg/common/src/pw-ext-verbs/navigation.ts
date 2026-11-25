@@ -1,5 +1,5 @@
 import { fail, requireOneOf, requireRecord } from "../assert";
-import { PW_EXT_MAX_TAB_ID } from "../pw-ext-format";
+import { requireTabId } from "../pw-ext-limits";
 
 export const VERBS = ["go-back", "go-forward", "reload"] as const;
 
@@ -15,12 +15,6 @@ export function validate(value: unknown): NavigationRequest {
 	requireOneOf(value.verb, `${path}.verb`, VERBS);
 	for (const key of Object.keys(value)) if (key !== "verb" && key !== "tabId") fail(`${path} has unknown field "${key}"`);
 	if (value.tabId === undefined) return { verb: value.verb };
-	if (
-		typeof value.tabId !== "number" ||
-		!Number.isSafeInteger(value.tabId) ||
-		value.tabId < 0 ||
-		value.tabId > PW_EXT_MAX_TAB_ID
-	)
-		fail(`${path}.tabId must be a non-negative integer`);
+	requireTabId(value.tabId, path);
 	return { verb: value.verb, tabId: value.tabId };
 }

@@ -81,9 +81,11 @@ describe("pickProgram with compressed assets", () => {
 	});
 });
 
+const ASSET_SUFFIX = { zstd: ".zst", gzip: ".gz", raw: "" } as const;
+
 function compressedRelease(version: string, encoding: "zstd" | "gzip" | "raw", body = fakeProgramScript(version), served: Uint8Array | string = body) {
 	const raw = compiledAssetName(platformKey());
-	const assetName = encoding === "zstd" ? `${raw}.zst` : encoding === "gzip" ? `${raw}.gz` : raw;
+	const assetName = `${raw}${ASSET_SUFFIX[encoding]}`;
 	const url = `${RELEASE_BASE}/v${version}/${assetName}`;
 	const sumsUrl = `${RELEASE_BASE}/v${version}/SHA256SUMS`;
 	const sums = `${sha256(body)}  ${raw}\n${sha256(typeof served === "string" ? served : served)}  ${assetName}\n`;

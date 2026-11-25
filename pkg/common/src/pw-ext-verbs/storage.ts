@@ -1,10 +1,5 @@
 import { fail, requireRecord, requireString } from "../assert";
-import {
-	PW_EXT_MAX_KEY_CHARS,
-	PW_EXT_MAX_TAB_ID,
-	PW_EXT_MAX_VALUE_BYTES,
-	type PwExtResponse,
-} from "../pw-ext-format";
+import { PW_EXT_MAX_KEY_CHARS, PW_EXT_MAX_VALUE_BYTES, type PwExtResponse, requireTabId } from "../pw-ext-limits";
 
 export const VERBS = [
 	"localstorage-set",
@@ -48,14 +43,7 @@ export function validate(value: unknown): StorageRequest {
 	for (const name of Object.keys(value))
 		if (name !== "verb" && name !== "tabId" && name !== "key" && name !== "value")
 			fail(`${path}.${name} is not used by "${verb}"`);
-	if (
-		value.tabId !== undefined &&
-		(typeof value.tabId !== "number" ||
-			!Number.isSafeInteger(value.tabId) ||
-			value.tabId < 0 ||
-			value.tabId > PW_EXT_MAX_TAB_ID)
-	)
-		fail(`${path}.tabId must be a non-negative integer`);
+	if (value.tabId !== undefined) requireTabId(value.tabId, path);
 	if (action === "clear") {
 		if (value.key !== undefined) fail(`${path}.key is not used by "${verb}"`);
 	} else {

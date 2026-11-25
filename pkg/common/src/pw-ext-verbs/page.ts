@@ -1,5 +1,5 @@
 import { fail, requireOneOf, requireRecord, requireString } from "../assert";
-import { PW_EXT_MAX_TAB_ID } from "../pw-ext-format";
+import { requireTabId } from "../pw-ext-limits";
 
 export const VERBS = ["eval", "tab-select", "resize"] as const;
 
@@ -21,11 +21,6 @@ const FIELDS = {
 	"tab-select": ["verb", "tabId"],
 	resize: ["verb", "width", "height", "tabId"],
 } as const satisfies Record<PageVerb, readonly string[]>;
-
-function requireTabId(value: unknown, path: string): asserts value is number {
-	if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > PW_EXT_MAX_TAB_ID)
-		fail(`${path}.tabId must be a non-negative integer`);
-}
 
 function requireSize(value: unknown, path: string): asserts value is number {
 	if (typeof value !== "number" || !Number.isSafeInteger(value) || value < RESIZE_MIN || value > RESIZE_MAX)

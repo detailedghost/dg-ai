@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { PageRequest } from "@dg/common/pw-ext-verbs/page";
 import { createPageVerbHandler, evaluate } from "@/lib/background/pw-verbs/page";
 
@@ -70,7 +70,7 @@ describe("page verb handler: eval", () => {
 		const { handler, executed } = setup();
 		const result = await handler(run, CONTEXT);
 		expect(result).toEqual({ ok: true, data: { text: "### Result\n42" } });
-		expect(executed).toEqual([{ tabId: 7, world: "MAIN", args: ["6 * 7"] }]);
+		expect(executed).toEqual([{ tabId: 7, world: "MAIN", args: ["6 * 7", APP.url] }]);
 	});
 
 	it("never echoes the expression", async () => {
@@ -198,20 +198,31 @@ describe("page verb handler: resize", () => {
 });
 
 describe("evaluate", () => {
+	const PAGE = "https://app.example.test/";
+	const real = Object.getOwnPropertyDescriptor(globalThis, "location");
+	beforeEach(() => void Object.defineProperty(globalThis, "location", { value: { href: PAGE }, configurable: true }));
+	afterEach(() => (real ? Object.defineProperty(globalThis, "location", real) : void delete (globalThis as { location?: unknown }).location));
+
+	it("does not run the script when the page moved to another url", async () => {
+		const outcome = await evaluate("globalThis.ran = true", "https://other.example.test/");
+		expect(outcome).toEqual({ ok: false, error: "The page changed before the script ran; nothing ran." });
+		expect((globalThis as { ran?: boolean }).ran).toBeUndefined();
+	});
+
 	it("returns the JSON of a value", async () => {
-		expect(await evaluate("({ a: [1, 2] })")).toEqual({ ok: true, text: '{"a":[1,2]}' });
+		expect(await evaluate("({ a: [1, 2] })", PAGE)).toEqual({ ok: true, text: '{"a":[1,2]}' });
 	});
 
 	it("awaits a promise", async () => {
-		expect(await evaluate("Promise.resolve('x')")).toEqual({ ok: true, text: '"x"' });
+		expect(await evaluate("Promise.resolve('x')", PAGE)).toEqual({ ok: true, text: '"x"' });
 	});
 
 	it("reports undefined as text", async () => {
-		expect(await evaluate("undefined")).toEqual({ ok: true, text: "undefined" });
+		expect(await evaluate("undefined", PAGE)).toEqual({ ok: true, text: "undefined" });
 	});
 
 	it("reports only the error name when the script throws", async () => {
-		expect(await evaluate("(() => { throw new TypeError('hunter2-secret'); })()")).toEqual({
+		expect(await evaluate("(() => { throw new TypeError('hunter2-secret'); })()", PAGE)).toEqual({
 			ok: false,
 			error: "The page refused the script (TypeError).",
 		});
