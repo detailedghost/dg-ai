@@ -59,7 +59,7 @@ compressed `#_proto=` marker for its local CLI/extension handoff.
 Each dg session that drives your browser gets its own agent window, a
 separate unfocused window, so agent tabs never mix with the tabs you work in.
 The first visit to each new site opens a popup that asks you to allow it. A PHI
-checkbox on that popup makes `snapshot` and `screenshot` refuse the site. See
+checkbox on that popup makes every verb that reads page data refuse the site. See
 the [pw guide](pw.md#real-browser---ext).
 
 Tab groups that `dg pw --ext` makes for an agent take their title from the

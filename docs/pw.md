@@ -37,7 +37,8 @@ dg-ai-extension. The default is `auto`.
 
 Order of choice, first match wins:
 
-1. A local-only verb runs local. See the table below.
+1. A local-only verb runs local. `--ext` with one is an error and exits 2. See
+   the table below.
 2. `--local` runs local. `--ext` runs ext.
 3. `DG_BROWSER=ext` or `DG_BROWSER=local`.
 4. `browser.mode` in `config.toml`: `ext`, `local` or `auto` (default).
@@ -181,9 +182,10 @@ Rules:
   browser window that opens on the first verb. The agent's tab group lives
   there, so the agent never takes over the tabs you work in.
 - The site popup has a PHI checkbox. Tick it for a site that shows protected
-  health information. For the rest of the session, `snapshot` and `screenshot`
-  refuse that site, and the refusal says so. Other verbs still follow the
-  Allow.
+  health information. For the rest of the session, every verb that reads page
+  data refuses that site, and the refusal says so. These are `snapshot`,
+  `screenshot`, `selection`, `console`, `network`, `storage`, `fetch`, `call`
+  and `eval`. Other verbs still follow the Allow.
 - `eval` and the storage write verbs (`localstorage-*`, `sessionstorage-*`)
   never open the popup. On a site that is not allowed yet, they refuse. Run a
   navigation or read verb first so the popup asks, then repeat the write.
