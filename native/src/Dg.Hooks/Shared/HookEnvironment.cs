@@ -1,4 +1,4 @@
-using System.Collections;
+using Dg.Core.Paths;
 
 namespace Dg.Hooks.Shared;
 
@@ -6,13 +6,7 @@ internal sealed class HookEnvironment(IReadOnlyDictionary<string, string?> value
 {
     public IReadOnlyDictionary<string, string?> Values => values;
 
-    public static HookEnvironment Process()
-    {
-        Dictionary<string, string?> copy = new(StringComparer.Ordinal);
-        foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
-            copy[(string)entry.Key] = entry.Value as string;
-        return new HookEnvironment(copy);
-    }
+    public static HookEnvironment Process() => new(ProcessEnvironment.Capture());
 
     public string? Value(string name) => values.TryGetValue(name, out var value) ? value : null;
 

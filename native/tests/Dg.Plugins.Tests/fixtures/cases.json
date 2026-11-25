@@ -372,7 +372,7 @@
 			]
 		},
 		{
-			"name": "verify-approve-from-unapproved",
+			"name": "verify-approve-refused-without-terminal",
 			"steps": [
 				{
 					"bun": [
@@ -390,6 +390,25 @@
 			]
 		},
 		{
+			"name": "verify-approve-from-unapproved",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/alpha"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"verify",
+				"alpha",
+				"--approve"
+			],
+			"person": true
+		},
+		{
 			"name": "verify-approve-nested-skills",
 			"steps": [
 				{
@@ -405,7 +424,8 @@
 				"verify",
 				"beta",
 				"--approve"
-			]
+			],
+			"person": true
 		},
 		{
 			"name": "verify-approve-enabled-registers-hosts",
@@ -428,7 +448,8 @@
 				"verify",
 				"beta",
 				"--approve"
-			]
+			],
+			"person": true
 		},
 		{
 			"name": "verify-approve-again-enabled",
@@ -461,7 +482,8 @@
 				"verify",
 				"beta",
 				"--approve"
-			]
+			],
+			"person": true
 		},
 		{
 			"name": "verify-approve-disabled-removes-owned-host-skills",
@@ -499,7 +521,8 @@
 				"verify",
 				"beta",
 				"--approve"
-			]
+			],
+			"person": true
 		},
 		{
 			"name": "verify-approve-foreign-host-skill",
@@ -524,7 +547,8 @@
 				"verify",
 				"beta",
 				"--approve"
-			]
+			],
+			"person": true
 		},
 		{
 			"name": "verify-approve-claude-config-dir",
@@ -551,7 +575,8 @@
 				"verify",
 				"gamma",
 				"--approve"
-			]
+			],
+			"person": true
 		},
 		{
 			"name": "verify-tampered",
@@ -614,7 +639,8 @@
 				"verify",
 				"gamma",
 				"--approve"
-			]
+			],
+			"person": true
 		},
 		{
 			"name": "verify-not-installed",

@@ -60,7 +60,7 @@ public sealed class PluginCommandParityTests
 
     private static TempHome Materialize(Expected expected, Case entry)
     {
-        var home = new TempHome(entry.Env);
+        var home = new TempHome(entry.Env, entry.Person);
         foreach (var (relative, text) in expected.Setup)
         {
             if (text == "<symlink>")
@@ -85,7 +85,7 @@ public sealed class PluginCommandParityTests
     private static string Folder([CallerFilePath] string path = "") => Path.GetDirectoryName(path)!;
 }
 
-internal sealed record Case(string Name, string[] Argv, bool Native = true, Dictionary<string, string>? Env = null);
+internal sealed record Case(string Name, string[] Argv, bool Native = true, Dictionary<string, string>? Env = null, bool Person = false);
 
 internal sealed record Spec(Case[] Cases);
 
@@ -111,31 +111,34 @@ internal sealed class TempHome : IDisposable
 
     private readonly Dictionary<string, string?> _env;
 
-    public TempHome(Dictionary<string, string>? extra = null)
+    private readonly bool _hasTerminal;
+
+    public TempHome(Dictionary<string, string>? extra = null, bool hasTerminal = false)
     {
-        Path = Directory.CreateTempSubdirectory("dg-plugin-test-").FullName;
+        _hasTerminal = hasTerminal;
+        Root = Directory.CreateTempSubdirectory("dg-plugin-test-").FullName;
         _env = new Dictionary<string, string?>
         {
-            ["DG_HOME"] = Path,
-            ["DG_PATH_FENCE"] = Path,
-            ["HOME"] = Path,
+            ["DG_HOME"] = Root,
+            ["DG_PATH_FENCE"] = Root,
+            ["HOME"] = Root,
         };
         foreach (var (key, value) in extra ?? [])
-            _env[key] = value.Replace("<home>", Path, StringComparison.Ordinal);
+            _env[key] = value.Replace("<home>", Root, StringComparison.Ordinal);
     }
 
-    public string Path { get; }
+    public string Root { get; }
 
     public void Write(string relative, string text)
     {
-        var file = System.IO.Path.Combine(Path, relative);
+        var file = System.IO.Path.Combine(Root, relative);
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file)!);
-        File.WriteAllText(file, text.Replace("<home>", Path, StringComparison.Ordinal));
+        File.WriteAllText(file, text.Replace("<home>", Root, StringComparison.Ordinal));
     }
 
     public void Symlink(string relative, string target)
     {
-        var file = System.IO.Path.Combine(Path, relative);
+        var file = System.IO.Path.Combine(Root, relative);
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file)!);
         File.CreateSymbolicLink(file, target);
     }
@@ -149,22 +152,22 @@ internal sealed class TempHome : IDisposable
     }
 
     private ICommand[] Commands(OutputWriter output, OutputWriter error) =>
-        [new PluginListCommand(_env, output, error), new PluginVerifyCommand(_env, output, error)];
+        [new PluginListCommand(_env, output, error), new PluginVerifyCommand(_env, output, error, () => _hasTerminal)];
 
-    public void Dispose() => Directory.Delete(Path, recursive: true);
+    public void Dispose() => Directory.Delete(Root, recursive: true);
 
     private Dictionary<string, string> Snapshot()
     {
         var files = new SortedDictionary<string, string>(StringComparer.Ordinal);
-        foreach (var file in Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
         {
-            var relative = System.IO.Path.GetRelativePath(Path, file).Replace('\\', '/');
+            var relative = System.IO.Path.GetRelativePath(Root, file).Replace('\\', '/');
             if (Skipped.Contains(relative.Split('/')[0]))
                 continue;
             files[relative] =
                 new FileInfo(file).LinkTarget is not null
                     ? "<symlink>"
-                    : File.ReadAllText(file).Replace(Path, "<home>", StringComparison.Ordinal);
+                    : File.ReadAllText(file).Replace(Root, "<home>", StringComparison.Ordinal);
         }
         return new Dictionary<string, string>(files);
     }
@@ -181,5 +184,5 @@ internal sealed class TempHome : IDisposable
     }
 
     private string Strip(MemoryStream stream) =>
-        Encoding.UTF8.GetString(stream.ToArray()).Replace(Path, "<home>", StringComparison.Ordinal);
+        Encoding.UTF8.GetString(stream.ToArray()).Replace(Root, "<home>", StringComparison.Ordinal);
 }

@@ -364,6 +364,26 @@
 		}
 	},
 	{
+		"name": "verify-approve-refused-without-terminal",
+		"setup": {
+			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/alpha/src/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
+			"data/plugins/alpha/src/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
+			"data/plugins/alpha/src/refs/a.md": "reference a\n"
+		},
+		"stdout": "",
+		"stderr": "dg plugin verify --approve needs a person at a terminal; run it yourself.\n",
+		"exit": 1,
+		"after": {
+			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/alpha/src/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
+			"data/plugins/alpha/src/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
+			"data/plugins/alpha/src/refs/a.md": "reference a\n"
+		}
+	},
+	{
 		"name": "verify-approve-from-unapproved",
 		"setup": {
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n",

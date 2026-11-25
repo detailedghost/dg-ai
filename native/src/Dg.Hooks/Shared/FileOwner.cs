@@ -3,7 +3,7 @@ using System.Text;
 
 namespace Dg.Hooks.Shared;
 
-internal static class FileOwner
+internal static partial class FileOwner
 {
     private const int LinuxAtFdCwd = -100;
     private const int LinuxAtSymlinkNofollow = 0x100;
@@ -38,21 +38,21 @@ internal static class FileOwner
         return BitConverter.ToUInt32(buffer[MacUidOffset..]);
     }
 
-    [DllImport("libc", EntryPoint = "getuid")]
-    private static extern uint GetUserId();
+    [LibraryImport("libc", EntryPoint = "getuid")]
+    private static partial uint GetUserId();
 
-    [DllImport("libc", EntryPoint = "statx")]
-    private static extern int Statx(int dirFd, ref byte path, int flags, uint mask, ref byte buffer);
+    [LibraryImport("libc", EntryPoint = "statx")]
+    private static partial int Statx(int dirFd, ref byte path, int flags, uint mask, ref byte buffer);
 
-    [DllImport("libc", EntryPoint = "stat")]
-    private static extern int MacStat(ref byte path, ref byte buffer);
+    [LibraryImport("libc", EntryPoint = "stat")]
+    private static partial int MacStat(ref byte path, ref byte buffer);
 
-    [DllImport("libc", EntryPoint = "lstat")]
-    private static extern int MacLstat(ref byte path, ref byte buffer);
+    [LibraryImport("libc", EntryPoint = "lstat")]
+    private static partial int MacLstat(ref byte path, ref byte buffer);
 
-    [DllImport("libc", EntryPoint = "stat$INODE64")]
-    private static extern int MacStatX64(ref byte path, ref byte buffer);
+    [LibraryImport("libc", EntryPoint = "stat$INODE64")]
+    private static partial int MacStatX64(ref byte path, ref byte buffer);
 
-    [DllImport("libc", EntryPoint = "lstat$INODE64")]
-    private static extern int MacLstatX64(ref byte path, ref byte buffer);
+    [LibraryImport("libc", EntryPoint = "lstat$INODE64")]
+    private static partial int MacLstatX64(ref byte path, ref byte buffer);
 }
