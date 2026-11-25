@@ -166,6 +166,7 @@ export function parseManifest(text: string, file: string): PluginManifest {
 	const kind = oneOf(where, "kind", root.kind, PLUGIN_KINDS);
 	const entry = entryPoint(where, root.entry);
 	const transport = oneOf(where, "transport", root.transport, PLUGIN_TRANSPORTS, "ipc");
+	if (kind === "hook" && transport === "udp") fail(where, "transport", "a hook cannot use the udp transport; udp carries events only, never request and response");
 	const endpoint = optionalString(where, "endpoint", root.endpoint);
 	if (root.remote !== undefined && typeof root.remote !== "boolean") fail(where, "remote", "remote must be true or false");
 	const remote = root.remote === true;
