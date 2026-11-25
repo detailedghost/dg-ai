@@ -1,6 +1,6 @@
 {
-	"ipcWarmP50Ms": 0.042,
-	"httpWarmP50Ms": 0.105,
-	"ipcFreshProcessMs": 7.1,
-	"httpFreshProcessMs": 7.6
+	"ipcWarmP50Ms": 0.032,
+	"httpWarmP50Ms": 0.099,
+	"ipcFreshProcessMs": 6.7,
+	"httpFreshProcessMs": 6.5
 }
