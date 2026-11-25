@@ -1,6 +1,6 @@
 import { fail, requireRecord, requireString } from "../assert";
 import { parseKeyChord } from "../keyboard-keys";
-import { PW_EXT_MAX_TAB_ID, PW_EXT_MAX_TARGET_BYTES, PW_EXT_MAX_VALUE_BYTES } from "../pw-ext-format";
+import { PW_EXT_MAX_TARGET_BYTES, PW_EXT_MAX_VALUE_BYTES, requireTabId } from "../pw-ext-limits";
 
 export const VERBS = ["check", "uncheck", "type", "keydown", "keyup"] as const;
 export type InputVerb = (typeof VERBS)[number];
@@ -30,14 +30,7 @@ export function validate(value: unknown): InputRequest {
 	const verb = value.verb as InputVerb;
 	const allowed: readonly string[] = ["verb", ...FIELDS[verb]];
 	for (const key of Object.keys(value)) if (!allowed.includes(key)) fail(`${path} has unknown field "${key}"`);
-	if (
-		value.tabId !== undefined &&
-		(typeof value.tabId !== "number" ||
-			!Number.isSafeInteger(value.tabId) ||
-			value.tabId < 0 ||
-			value.tabId > PW_EXT_MAX_TAB_ID)
-	)
-		fail(`${path}.tabId must be a non-negative integer`);
+	if (value.tabId !== undefined) requireTabId(value.tabId, path);
 	if (verb === "check" || verb === "uncheck") {
 		requireString(value.target, `${path}.target`, { nonEmpty: true });
 		if (encoder.encode(value.target).length > PW_EXT_MAX_TARGET_BYTES)

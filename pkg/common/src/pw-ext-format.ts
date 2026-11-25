@@ -2,14 +2,33 @@ import { fail, requireRecord, requireString } from "./assert";
 import { parseKeyChord } from "./keyboard-keys";
 import { PROTO_PREVIEW_MAX_CHARS } from "./proto-format";
 import { PW_EXT_NETWORK_MAX_FILTER_CHARS, PW_EXT_NETWORK_MAX_LIMIT } from "./pw-ext-network";
-import { validate as validateInput } from "./pw-ext-verbs/input";
-import { validate as validateNavigation } from "./pw-ext-verbs/navigation";
-import { validate as validatePage } from "./pw-ext-verbs/page";
-import { validate as validatePointer } from "./pw-ext-verbs/pointer";
-import { validate as validateStorage } from "./pw-ext-verbs/storage";
+import { validate as validateInput, VERBS as INPUT_VERBS } from "./pw-ext-verbs/input";
+import { validate as validateNavigation, VERBS as NAVIGATION_VERBS } from "./pw-ext-verbs/navigation";
+import { validate as validatePage, VERBS as PAGE_VERBS } from "./pw-ext-verbs/page";
+import { validate as validatePointer, VERBS as POINTER_VERBS } from "./pw-ext-verbs/pointer";
+import { validate as validateStorage, VERBS as STORAGE_VERBS } from "./pw-ext-verbs/storage";
+import {
+	PW_EXT_MAX_TAB_ID,
+	PW_EXT_MAX_TARGET_BYTES,
+	PW_EXT_MAX_VALUE_BYTES,
+	PW_EXT_MAX_KEY_CHARS,
+	type PwExtResponse,
+	type PwExtTool,
+	requireTabId,
+} from "./pw-ext-limits";
 import { PW_EXT_CREDENTIAL_NAME, PW_EXT_CREDENTIAL_SOURCES, type PwExtCredentialSource } from "./pw-ext-credential-format";
 import type { RelayWire } from "./relay-format";
 import { isDgToolName } from "./webmcp-format";
+
+export {
+	PW_EXT_MAX_KEY_CHARS,
+	PW_EXT_MAX_TAB_ID,
+	PW_EXT_MAX_TARGET_BYTES,
+	PW_EXT_MAX_VALUE_BYTES,
+	type PwExtResponse,
+	type PwExtTool,
+	requireTabId,
+} from "./pw-ext-limits";
 
 export const PW_EXT_READ_VERBS = [
 	"current",
@@ -22,18 +41,6 @@ export const PW_EXT_READ_VERBS = [
 	"count",
 	"network",
 	"storage",
-] as const;
-const NAVIGATION_VERBS = ["go-back", "go-forward", "reload"] as const;
-const POINTER_VERBS = ["hover", "dblclick", "drag", "mousedown", "mouseup", "mousemove", "mousewheel"] as const;
-const INPUT_VERBS = ["check", "uncheck", "type", "keydown", "keyup"] as const;
-const PAGE_VERBS = ["eval", "tab-select", "resize"] as const;
-const STORAGE_VERBS = [
-	"localstorage-set",
-	"localstorage-delete",
-	"localstorage-clear",
-	"sessionstorage-set",
-	"sessionstorage-delete",
-	"sessionstorage-clear",
 ] as const;
 export const PW_EXT_WRITE_VERBS = [
 	"open",
@@ -78,13 +85,10 @@ export const PW_EXT_MAX_TIMEOUT_MS = 300_000;
 export const PW_EXT_MAX_TEXT_CHARS = 100_000;
 export const PW_EXT_MAX_IMAGE_CHARS = PROTO_PREVIEW_MAX_CHARS;
 export const PW_EXT_MAX_URL_CHARS = 2048;
-export const PW_EXT_MAX_TARGET_BYTES = 512;
-export const PW_EXT_MAX_VALUE_BYTES = 4096;
 /** Same cap as the daemon asset store, CHAT_MAX_ASSET_BYTES. */
 export const PW_EXT_MAX_UPLOAD_BYTES = 26_214_400;
 export const PW_EXT_MAX_CALL_ARGS_BYTES = 16_384;
 export const PW_EXT_MAX_TOOL_NAME_CHARS = 128;
-export const PW_EXT_MAX_TAB_ID = 2_147_483_647;
 /** Upper bound and default length of a user-approved unmask grant. */
 export const PW_EXT_UNMASK_MAX_MINUTES = 60;
 export const PW_EXT_UNMASK_DEFAULT_MINUTES = 15;
@@ -160,25 +164,13 @@ export type PwExtRequest = {
 
 export const PW_EXT_FETCH_MAX_BODY_BYTES = 16_384;
 export const PW_EXT_FETCH_MAX_HEADERS = 20;
-export const PW_EXT_MAX_KEY_CHARS = 512;
 export const PW_EXT_MAX_PATH_CHARS = 256;
 const HEADER_TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/;
 const JSON_PATH = /^[A-Za-z0-9_$-]+(?:\.[A-Za-z0-9_$-]+)*$/;
 
-export type PwExtTool = {
-	name: string;
-	title?: string;
-	description: string;
-	inputSchema?: string;
-	annotations?: string;
-};
-
 export const PW_EXT_NO_TAB_ERROR = "This agent has no tab yet. Run pw --ext new <url> first.";
 
 export const PW_EXT_MAX_TOOLS = 100;
-
-/** Redacted, size-capped output; image is a screenshot data URL; tools is the structured list of the tools verb. */
-export type PwExtResponse = { text: string; image?: string; tools?: PwExtTool[] };
 
 export type PwExtCliRequest = {
 	type: "cli-pw-ext-request";
@@ -295,14 +287,7 @@ export function validatePwExtRequest(value: unknown): PwExtRequest {
 	onlyKeys(value, ["verb", ...FIELDS[verb]], path);
 	if ((verb === "tabs" || verb === "new") && value.tabId !== undefined)
 		fail(`${path}.tabId is not used by "${verb}"`);
-	if (
-		(value.tabId !== undefined || verb === "select") &&
-		(typeof value.tabId !== "number" ||
-			!Number.isSafeInteger(value.tabId) ||
-			value.tabId < 0 ||
-			value.tabId > PW_EXT_MAX_TAB_ID)
-	)
-		fail(`${path}.tabId must be a non-negative integer`);
+	if (value.tabId !== undefined || verb === "select") requireTabId(value.tabId, path);
 	if (verb === "storage") {
 		if (value.area !== undefined && value.area !== "local" && value.area !== "session")
 			fail(`${path}.area must be local or session`);
