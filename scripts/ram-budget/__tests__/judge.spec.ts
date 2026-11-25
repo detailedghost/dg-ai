@@ -79,6 +79,6 @@ describe("budgetMismatch", () => {
 	});
 
 	test("names a case without a budget and a budget without a case", () => {
-		expect(budgetMismatch(["a", "c"], budgets)).toEqual(['case "c" has no budget in b.json', 'budget "b" has no case']);
+		expect(budgetMismatch(["a", "c"], budgets)).toEqual(['case "c" has no budget in ram-budgets.json', 'budget "b" has no case']);
 	});
 });
