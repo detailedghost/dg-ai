@@ -86,7 +86,7 @@ function compressedRelease(version: string, encoding: "zstd" | "gzip" | "raw", b
 	const assetName = encoding === "zstd" ? `${raw}.zst` : encoding === "gzip" ? `${raw}.gz` : raw;
 	const url = `${RELEASE_BASE}/v${version}/${assetName}`;
 	const sumsUrl = `${RELEASE_BASE}/v${version}/SHA256SUMS`;
-	const sums = `${sha256(body)}  ${raw}\n${sha256(typeof served === "string" ? served : served)}  ${assetName}\n`;
+	const sums = `${sha256(body)}  ${raw}\n${sha256(served)}  ${assetName}\n`;
 	const stub = stubFetch({ [url]: served, [sumsUrl]: sums });
 	restore = stub.restore;
 	return { picked: { version, assetName, url, encoding, sumsUrl }, calls: stub.calls, raw };

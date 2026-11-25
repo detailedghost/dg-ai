@@ -8,6 +8,7 @@ import { COMPILE_TARGETS, sharedOptions } from "../build/options";
 
 setDefaultTimeout(240_000);
 
+const MIN_COMPANION_SAVINGS_BYTES = 7_000_000;
 const outdir = mkdtempSync(join(tmpdir(), "dg-companions-"));
 afterAll(() => rmSync(outdir, { recursive: true, force: true }));
 
@@ -43,8 +44,7 @@ describe("companion bundles", () => {
 		const compile = { target: COMPILE_TARGETS["linux-x64"], outfile: slimFile, autoloadDotenv: false, autoloadBunfig: false };
 		const built = await Bun.build({ ...excludeCompanions(options), compile });
 		expect(built.success).toBe(true);
-		const slim = slimFile;
-		const saved = statSync(embedded).size - statSync(slim).size;
-		expect(saved).toBeGreaterThan(7_000_000);
+		const saved = statSync(embedded).size - statSync(slimFile).size;
+		expect(saved).toBeGreaterThan(MIN_COMPANION_SAVINGS_BYTES);
 	});
 });

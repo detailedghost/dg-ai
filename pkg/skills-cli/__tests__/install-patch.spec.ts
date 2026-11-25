@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { installCompiled, versionProgramPath } from "../src/install/compiled";
 import { readCurrent } from "../src/install/current";
@@ -25,8 +25,8 @@ function makePatch(dir: string, oldBody: string, newBody: string): Uint8Array {
 	const oldFile = join(dir, "old.bin");
 	const newFile = join(dir, "new.bin");
 	const patchFile = join(dir, "out.zpatch");
-	Bun.write(oldFile, oldBody);
-	Bun.write(newFile, newBody);
+	writeFileSync(oldFile, oldBody);
+	writeFileSync(newFile, newBody);
 	const run = Bun.spawnSync([ZSTD as string, "-q", "-19", "--long=27", "--force", `--patch-from=${oldFile}`, newFile, "-o", patchFile]);
 	if (run.exitCode !== 0) throw new Error(run.stderr.toString());
 	return new Uint8Array(readFileSync(patchFile));

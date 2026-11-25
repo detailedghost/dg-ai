@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -14,9 +14,17 @@ import { REPO_ROOT, readRepoFile } from "./test-support";
 
 const FLOW_NAMES = ["spec-plan", "spec-exec", "phone", "stat", "thrash", "verify", "review-loop", "jot"];
 
+const scratchDirs: string[] = [];
+
 function scratch(): string {
-	return mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "skill-tokens-"));
+	const dir = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "skill-tokens-"));
+	scratchDirs.push(dir);
+	return dir;
 }
+
+afterAll(() => {
+	for (const dir of scratchDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 describe("skill token flows", () => {
 	test("define exactly the eight flows", () => {
@@ -52,7 +60,8 @@ describe("token counting", () => {
 		const root = scratch();
 		const a = join(root, "a");
 		const b = join(root, "b");
-		Bun.spawnSync(["mkdir", "-p", a, b]);
+		mkdirSync(a);
+		mkdirSync(b);
 		writeFileSync(join(a, "SKILL.md"), `---\nname: a\n---\n${"body ".repeat(1000)}`);
 		writeFileSync(join(b, "SKILL.md"), "---\nname: b\n---\nbody");
 		const bytes = "---\nname: a\n---\n".length + "---\nname: b\n---\n".length;

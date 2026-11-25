@@ -23,7 +23,7 @@ function noise(bytes: number, seed: number): Uint8Array {
 }
 
 function run(...args: string[]) {
-	const proc = Bun.spawnSync(["bun", SCRIPT, ...args], { env: { ...process.env, NO_COLOR: "1" } });
+	const proc = Bun.spawnSync([process.execPath, SCRIPT, ...args], { env: { ...process.env, NO_COLOR: "1" } });
 	return { code: proc.exitCode, out: proc.stdout.toString(), err: proc.stderr.toString() };
 }
 
