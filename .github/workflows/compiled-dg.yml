@@ -3,19 +3,6 @@ name: Compiled dg - Build and Smoke
 
 on:
   pull_request:
-    paths:
-      - pkg/launcher/**
-      - pkg/dg/**
-      - pkg/common/**
-      - pkg/skills-cli/**
-      - pkg/dg-agent/**
-      - pkg/dg-daemon/**
-      - scripts/ram-budget.ts
-      - scripts/ram-budget/**
-      - bun.lock
-      - .github/actions/smoke-compiled-dg/**
-      - .github/workflows/compiled-dg.yml
-      - .github/workflows/release.yml
 
 concurrency:
   group: compiled-dg-${{ github.ref }}
@@ -27,9 +14,12 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     outputs:
       version: ${{ steps.version.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -47,12 +37,80 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile --ignore-scripts
 
-      - name: Build the compiled dg for linux-x64 and windows-x64
+      - name: Build the compiled dg for linux-x64, windows-x64 and darwin-arm64 without the companions
         working-directory: pkg/launcher
-        run: bun run build.ts --outdir dist --compiled linux-x64 --compiled windows-x64
+        run: bun run build.ts --outdir dist --compiled linux-x64 --compiled windows-x64 --compiled darwin-arm64 --without-companions
 
-      - name: Check the peak RSS of each dg process against its budget
-        run: bun scripts/ram-budget.ts --dg pkg/launcher/dist/dg-linux-x64 --gate
+      - name: Measure the peak RSS, idle growth and latency of each dg process
+        run: |
+          mkdir -p budget-measurements
+          bun scripts/ram-budget.ts --dg pkg/launcher/dist/dg-linux-x64 --idle 120 --gate --json ram-results.json
+
+      - name: Print the measured latency against its budget
+        if: ${{ !cancelled() && hashFiles('ram-results.json') != '' }}
+        run: |
+          jq '{version: 1, cases: (.results | map_values(
+                {peakMB: ((.peak / 1048576 * 100 | round) / 100)}
+                + (if .ms != null then {msBudget: (.ms | round)} else {} end)
+                + (if .growth != null then {growthMB: ((.growth / 1048576 * 100 | round) / 100)} else {} end)))}' \
+            ram-results.json > budget-measurements/ram-budgets.json
+          {
+            echo "### Latency: measured p50 vs budget (ms), linux-x64"
+            echo
+            echo "| Case | Measured p50 | p90 | Budget | Result |"
+            echo "| --- | ---: | ---: | ---: | --- |"
+            jq -r '.results | to_entries[] | select(.value.msBudget != null)
+              | "| \(.key) | \(.value.ms | round) | \(.value.p90 // 0 | round) | \(.value.msBudget) | \(if .value.ms > .value.msBudget then "OVER" else "ok" end) |"' \
+              ram-results.json
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Download the previous release for the patch size
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p previous-release
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern dg-linux-x64 --dir previous-release
+
+      - name: Check the raw, zstd and patch size of the linux-x64 dg
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p size-input
+          cp pkg/launcher/dist/dg-linux-x64 size-input/dg-linux-x64
+          bun scripts/lean-size.ts --dist size-input --previous previous-release --gate --json budget-measurements/lean-budgets.json
+
+      - name: Check the token budget of each skill flow
+        if: ${{ !cancelled() }}
+        run: |
+          bun scripts/skill-tokens.ts --gate
+          bun -e 'import { measure } from "./scripts/skill-tokens.ts"; console.log(JSON.stringify(measure(process.cwd())))' > budget-measurements/skill-token-budgets.json
+
+      - name: Write the per-package size report for the head commit
+        if: ${{ !cancelled() }}
+        run: bun pkg/launcher/build.ts --report budget-measurements/size-report.json
+
+      - name: Check out the base commit
+        if: ${{ !cancelled() }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+
+      - name: Write the per-package size report for the base commit
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        working-directory: base
+        run: |
+          bun install --frozen-lockfile --ignore-scripts
+          bun pkg/launcher/build.ts --report "$GITHUB_WORKSPACE/budget-measurements/size-report-base.json"
+
+      - name: Upload the budget measurements
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: budget-measurements
+          path: budget-measurements/*.json
+          if-no-files-found: warn
+          retention-days: 7
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -60,8 +118,64 @@ jobs:
           path: |
             pkg/launcher/dist/dg-linux-x64
             pkg/launcher/dist/dg-windows-x64.exe
+            pkg/launcher/dist/dg-darwin-arm64
           if-no-files-found: error
           retention-days: 1
+
+  report:
+    needs: build
+    name: report-${{ matrix.runtime }}
+    timeout-minutes: 30
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            runtime: darwin-arm64
+          - os: windows-latest
+            runtime: windows-x64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: compiled-dg
+
+      - name: Report the raw size of the compiled dg
+        run: |
+          binary="dg-${{ matrix.runtime }}"
+          if [ "$RUNNER_OS" = Windows ]; then binary="${binary}.exe"; fi
+          echo "${binary}: $(wc -c < "$binary" | tr -d ' ') bytes" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: runner.os == 'macOS'
+        with:
+          bun-version: 1.4.1
+
+      - name: Install
+        if: runner.os == 'macOS'
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Report the zstd size of the compiled dg
+        if: runner.os == 'macOS'
+        run: |
+          brew install zstd
+          mkdir size-input
+          cp dg-darwin-arm64 size-input/
+          bun scripts/lean-size.ts --dist size-input | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Report the peak RSS and latency of each dg process without gating
+        if: runner.os == 'macOS'
+        run: |
+          chmod +x dg-darwin-arm64
+          bun scripts/ram-budget.ts --dg ./dg-darwin-arm64 --idle 10
 
   smoke:
     needs: build
