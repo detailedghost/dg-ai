@@ -1,0 +1,26 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Dg.Cli/Dg.Cli.csproj" />
+    <Project Path="src/Dg.Completion/Dg.Completion.csproj" />
+    <Project Path="src/Dg.Config/Dg.Config.csproj" />
+    <Project Path="src/Dg.Core/Dg.Core.csproj" />
+    <Project Path="src/Dg.Hooks/Dg.Hooks.csproj" />
+    <Project Path="src/Dg.Plugins/Dg.Plugins.csproj" />
+    <Project Path="src/Dg.Routing/Dg.Routing.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Dg.Completion.Tests/Dg.Completion.Tests.csproj" />
+    <Project Path="tests/Dg.Config.Tests/Dg.Config.Tests.csproj" />
+    <Project Path="tests/Dg.Core.Tests/Dg.Core.Tests.csproj" />
+    <Project Path="tests/Dg.Hooks.Tests/Dg.Hooks.Tests.csproj" />
+    <Project Path="tests/Dg.Parity.Tests/Dg.Parity.Tests.csproj" />
+    <Project Path="tests/Dg.Plugins.Tests/Dg.Plugins.Tests.csproj" />
+    <Project Path="tests/Dg.Routing.Tests/Dg.Routing.Tests.csproj" />
+  </Folder>
+  <Folder Name="/bench/">
+    <Project Path="bench/Dg.Bench/Dg.Bench.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Dg.SizeReport/Dg.SizeReport.csproj" />
+  </Folder>
+</Solution>
