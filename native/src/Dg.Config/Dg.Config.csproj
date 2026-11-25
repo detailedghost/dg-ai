@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dg.Config.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Dg.Core/Dg.Core.csproj" />
+  </ItemGroup>
+</Project>

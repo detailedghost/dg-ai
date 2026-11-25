@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/Dg.Config/Dg.Config.csproj" />
+  </ItemGroup>
+</Project>

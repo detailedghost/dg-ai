@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>dg</AssemblyName>
+    <RootNamespace>Dg.Cli</RootNamespace>
+    <PublishAot>true</PublishAot>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dg.Parity.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Dg.Core/Dg.Core.csproj" />
+    <ProjectReference Include="../Dg.Hooks/Dg.Hooks.csproj" />
+    <ProjectReference Include="../Dg.Config/Dg.Config.csproj" />
+    <ProjectReference Include="../Dg.Completion/Dg.Completion.csproj" />
+    <ProjectReference Include="../Dg.Routing/Dg.Routing.csproj" />
+    <ProjectReference Include="../Dg.Plugins/Dg.Plugins.csproj" />
+  </ItemGroup>
+</Project>
