@@ -113,8 +113,7 @@ public sealed class IpcTransportTests
     [Fact]
     public async Task ConnectAsync_SocketWithGroupAccess_IsRefused()
     {
-        if (OperatingSystem.IsWindows())
-            return;
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Unix socket modes");
         await using var server = new EchoPluginServer(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
         var connector = new IpcConnector(new FixedResolver(server.SocketPath));
 
@@ -139,8 +138,7 @@ public sealed class IpcTransportTests
     [Fact]
     public async Task ConnectAsync_SymbolicLinkToSocket_IsRefused()
     {
-        if (OperatingSystem.IsWindows())
-            return;
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Unix socket modes");
         await using var server = new EchoPluginServer();
         var link = Path.Combine(server.Directory, "link.sock");
         File.CreateSymbolicLink(link, server.SocketPath);
@@ -154,8 +152,7 @@ public sealed class IpcTransportTests
     [Fact]
     public async Task ConnectAsync_PrivateSocketOwnedByCurrentUser_Connects()
     {
-        if (OperatingSystem.IsWindows())
-            return;
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Unix socket modes");
         await using var server = new EchoPluginServer();
         var connector = new IpcConnector(new FixedResolver(server.SocketPath));
 

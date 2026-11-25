@@ -1,3 +1,4 @@
+using Dg.Core.Abstractions;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -50,7 +51,7 @@ public sealed class ConfigCommandParityTests
 
         var run = home.Run(entry.Argv);
 
-        Assert.Equal(ConfigExit.NotNative, run.Exit);
+        Assert.Equal(ExitCodes.NotNative, run.Exit);
         Assert.Equal("", run.Stdout);
         Assert.Equal("", run.Stderr);
         Assert.Equal(before?.Replace(home.Path, "<home>", StringComparison.Ordinal), run.File);

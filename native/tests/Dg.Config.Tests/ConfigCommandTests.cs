@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using Dg.Core.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -109,34 +110,34 @@ public sealed class ConfigCommandTests
         using var home = new TempHome();
         home.Write("config/cli-only", "");
 
-        Assert.Equal(ConfigExit.NotNative, home.Run("config", "doctor").Exit);
+        Assert.Equal(ExitCodes.NotNative, home.Run("config", "doctor").Exit);
     }
 
     [Fact]
+    [UnsupportedOSPlatform("windows")]
     public void Set_NewFile_CreatesItOwnerOnly()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Unix file modes");
         using var home = new TempHome();
 
-        home.Run("config", "set", "install.cli_only", "true");
+        var run = home.Run("config", "set", "install.cli_only", "true");
 
-        if (!OperatingSystem.IsWindows())
-            Assert.Equal(
-                UnixFileMode.UserRead | UnixFileMode.UserWrite,
-                File.GetUnixFileMode(home.ConfigFile)
-            );
+        Assert.Equal(0, run.Exit);
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(home.ConfigFile));
     }
 
     [Fact]
+    [UnsupportedOSPlatform("windows")]
     public void Set_ExistingFile_KeepsItsMode()
     {
-        if (OperatingSystem.IsWindows())
-            return;
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Unix file modes");
         using var home = new TempHome();
         home.Write("config/config.toml", "[install]\ncli_only = false\n");
         File.SetUnixFileMode(home.ConfigFile, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
 
-        home.Run("config", "set", "install.cli_only", "true");
+        var run = home.Run("config", "set", "install.cli_only", "true");
 
+        Assert.Equal(0, run.Exit);
         Assert.Equal(
             UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead,
             File.GetUnixFileMode(home.ConfigFile)
@@ -150,8 +151,10 @@ public sealed class ConfigCommandTests
         const string original = "[install]\ncli_only = true\n";
         home.Write("config/config.toml", original);
 
-        home.Run("config", "set", "browser.mode", "loud");
+        var run = home.Run("config", "set", "browser.mode", "loud");
 
+        Assert.Equal(1, run.Exit);
+        Assert.Contains("browser.mode must be", run.Stderr);
         Assert.Equal(original, File.ReadAllText(home.ConfigFile));
     }
 }
