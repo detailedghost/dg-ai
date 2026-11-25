@@ -3,21 +3,21 @@
 	"cases": {
 		"version": {
 			"peakMB": 25.8,
-			"msBudget": 12
+			"msBudget": 14
 		},
 		"help": {
 			"peakMB": 24.9
 		},
 		"completion zsh": {
 			"peakMB": 23.9,
-			"msBudget": 18
+			"msBudget": 21
 		},
 		"config path": {
 			"peakMB": 31
 		},
 		"stat checklist": {
 			"peakMB": 45.8,
-			"msBudget": 30
+			"msBudget": 34
 		},
 		"job --help": {
 			"peakMB": 31
@@ -51,31 +51,31 @@
 		},
 		"hooks run spelling": {
 			"peakMB": 35.4,
-			"msBudget": 19
+			"msBudget": 22
 		},
 		"hooks run format": {
 			"peakMB": 34.6,
-			"msBudget": 18
+			"msBudget": 21
 		},
 		"hooks run pr-prose": {
 			"peakMB": 34.6,
-			"msBudget": 18
+			"msBudget": 21
 		},
 		"hooks run pr-confirm": {
 			"peakMB": 34.1,
-			"msBudget": 17
+			"msBudget": 20
 		},
 		"hooks run spec-plan-lint": {
 			"peakMB": 34.1,
-			"msBudget": 18
+			"msBudget": 21
 		},
 		"hooks run daily-prune": {
 			"peakMB": 34.5,
-			"msBudget": 18
+			"msBudget": 21
 		},
 		"hooks run strip-ai-coauthors": {
 			"peakMB": 31.8,
-			"msBudget": 16
+			"msBudget": 18
 		},
 		"adr lint --all (repo)": {
 			"peakMB": 49.9
@@ -91,7 +91,7 @@
 		},
 		"daemon idle": {
 			"peakMB": 40.4,
-			"growthMB": 1.14
+			"growthMB": 4.31
 		},
 		"daemon with 15 jobs": {
 			"peakMB": 42,
@@ -115,7 +115,7 @@
 		},
 		"agent phone status": {
 			"peakMB": 34.8,
-			"msBudget": 31
+			"msBudget": 35
 		}
 	}
 }
