@@ -254,8 +254,15 @@ describe("packaged cls skill", () => {
 
 describe("packaged stat skill", () => {
 	test("is prose only with no helper reference and no --viz", () => {
-		expect(readdirSync(skillDir("stat"))).toEqual(["SKILL.md"]);
-		const text = skillText("stat");
+		expect(readdirSync(skillDir("stat")).sort()).toEqual(["SKILL.md", "references"]);
+		const references = readdirSync(join(skillDir("stat"), "references"));
+		expect(references.every((name) => name.endsWith(".md"))).toBe(true);
+		const text = [
+			skillText("stat"),
+			...references.map((name) =>
+				readFileSync(join(skillDir("stat"), "references", name), "utf8"),
+			),
+		].join("\n");
 		expect(text).not.toMatch(/--viz|viz board|viz-cli/);
 	});
 
@@ -287,7 +294,11 @@ describe("packaged stat skill", () => {
 	});
 
 	test("falls back to the plain checklist when the overwatch agent or the daemon is missing", () => {
-		const text = skillText("stat");
+		const text = readFileSync(
+			join(skillDir("stat"), "references", "maintain.md"),
+			"utf8",
+		);
+		expect(skillText("stat")).toContain("/dg:overwatch");
 		expect(text).toMatch(/overwatch agent binary is missing/);
 		expect(text).toMatch(/fall back to the plain checklist/i);
 		expect(text).toContain("/dg:overwatch");
