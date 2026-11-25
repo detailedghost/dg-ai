@@ -1,15 +1,11 @@
 ---
 name: spec
-description: Plan or execute a durable feature spec bundle. Plan mode (`/dg:spec "<request>"`) runs interview → roundtable → synthesize → durable bundle under .agents/spec/ → plan approval gate → tidy context pack. Fast mode (`/dg:spec --fast "<request>"`) plans and builds in one chat — built-in plan mode as the single gate, then sequential slices. Execute mode (`/dg:spec -s <NNN>_<slug>`) reads only the tidy pack + plan.md and drives /dg:sdlc's slice-wave.
+description: Plan or execute a durable feature spec bundle. Plan mode (`/dg:spec "<request>"`) runs interview, roundtable, synthesis, a bundle under .agents/spec/, an approval gate and a context pack. Fast mode (`--fast`) plans and builds in one chat. Execute mode (`-s <NNN>_<slug>`) reads the pack and plan.md and drives /dg:sdlc.
 ---
 
 # /dg:spec — Plan or Execute a Durable Feature Bundle
 
-Three modes, one skill. Plan mode turns a request into a durable bundle under `.agents/spec/`;
-execute mode reads that bundle's tidy pack and drives `/dg:sdlc`'s slice-wave; fast mode does both in
-one chat. The durable read-boundary is the point: planning sprawl (`initial.md`,
-`roundtable/*.md`) is quarantined so an execution session boots off `context.md` + `plan.md`, never
-the whole planning history.
+Plan mode turns a request into a durable bundle under `.agents/spec/`; execute mode drives `/dg:sdlc`'s slice-wave from it; fast mode does both in one chat. Planning sprawl (`initial.md`, `roundtable/*.md`) stays quarantined: execution boots off `context.md` + `plan.md` only.
 `.agents/` is tracked agent memory; scratch subfolders are ignored. Bundle adds always pass `':(exclude)<bundle>/roundtable/'`.
 If `git add` refuses an ignored `.agents` path, ask to run `/dg:spring-break`; on no, stop and report the uncommitted bundle. Never `-f`.
 
@@ -32,102 +28,71 @@ If a step fails, run dg doctor assign batch-open pw chain proxy spec stash vcs-p
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
-| `"<request>"` | none | The feature request, plain prose. Required unless `-s` is given. Plan and fast modes. | none |
-| `(no flag)` | none | Plan mode: full 10-step pipeline, then a durable bundle, then stop. Resume separately with `-s`. | plan mode |
-| `--fast` | `-f` | Fast mode: plan and build in one chat. One grill pass, no fan-out, built-in Claude plan mode is the single approval gate. Slices build sequentially in the main loop with a compaction between each. All end gates kept. | off |
-| none | `-s <NNN>_<slug>` | Execute mode: build an existing bundle. Always creates a worktree. | off |
-| `--no-worktree` | `-T` | Fast mode only: build in the current checkout instead of a worktree. Creates `feature/<slug>` first if on the default branch. Invalid with `-s` and with bare plan mode. | off (worktree) |
-| `--profile <profile>` | `-p` | Cost profile: `balance`, `cheap` or `expensive`. Persists as `execution.profile`. Two profile flags with different values are an error that names both. | balance |
-| `--cheap` | none | Alias of `--profile cheap`. | off |
-| `--expensive` | none | Alias of `--profile expensive`. | off |
-| `--proxy <backend>` | `-x` | Delegate slices to the named `/dg:proxy` backend: asks per slice in plan mode, and with `-s` for slices without `agents.proxy`. | off |
-| `--bg` | `-b` | Execute mode only (`-s`): run unattended and stay in this session; use `/dg:bg` to detach. Questions become rows in `## Issues Remediation`. Invalid with bare plan mode (stop and say so). | off |
-| `--no-land` | none | Execute and fast modes: stop at the draft PR/MR and do not run `/dg:land`. For other review rounds or CI-fix ceilings, pass it, then run `gh pr ready` and `/dg:land -r N -c N`. Invalid with bare plan mode. | off (land) |
-| `--auto` | none | Execute and fast modes: end with `/dg:land --auto`, which merges right after green CI with no review stop. Only from the person's command line, never from the bundle or config. Invalid with `--no-land`, `--bg`, and bare plan mode. | off (review first) |
+| `"<request>"` | none | Feature request in prose. Required unless `-s`. | none |
+| `(no flag)` | none | Plan mode: 10-step pipeline, durable bundle, stop. Resume with `-s`. | plan mode |
+| `--fast` | `-f` | Plan and build in one chat: one grill pass, no fan-out, built-in plan mode as the single gate, sequential slices. All end gates kept. | off |
+| none | `-s <NNN>_<slug>` | Build an existing bundle in a new worktree. | off |
+| `--no-worktree` | `-T` | Fast mode only: build in the current checkout (makes `feature/<slug>` off the default branch). Invalid with `-s` and bare plan mode. | off (worktree) |
+| `--profile <profile>` | `-p` | Cost profile (`balance`, `cheap`, `expensive`); persists as `execution.profile`. Two profile flags with different values are an error that names both. | balance |
+| `--cheap` | none | Alias: `--profile cheap`. | off |
+| `--expensive` | none | Alias: `--profile expensive`. | off |
+| `--proxy <backend>` | `-x` | Delegate slices to a `/dg:proxy` backend: asks per slice in plan mode, and with `-s` for slices lacking `agents.proxy`. | off |
+| `--bg` | `-b` | Execute mode only (`-s`): run unattended here; `/dg:bg` detaches it. Questions become `## Issues Remediation` rows. Invalid with bare plan mode (stop). | off |
+| `--no-land` | none | Execute/fast modes: stop at the draft PR/MR, skip `/dg:land`. For other review rounds or CI-fix ceilings, pass it, then run `gh pr ready` and `/dg:land -r N -c N`. Invalid with bare plan mode. | off (land) |
+| `--auto` | none | Execute/fast modes: end with `/dg:land --auto`, which merges after green CI, no review stop. Only from the person's command line, never bundle or config. Invalid with `--no-land`, `--bg`, and bare plan mode. | off (review first) |
 
-Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass its map to `/dg:spec`.
+Request too big or foggy? Run `/dg:wayfinder` first, pass its map here.
 
 ## Mode dispatch
 
-`FAST_MODE = HAS(--fast|-f)`, `EXECUTE_MODE = HAS(-s)`, `PROFILE` unset unless a profile flag is given. Parse args before any phase. `--fast` is mutually exclusive with `-s` and with `--proxy`; either pair stops with an error that names both flags. So is `--auto` with `--no-land` and with `--bg`.
+Parse args first. `--fast` is mutually exclusive with `-s` and with `--proxy`; either pair stops with an error that names both flags. So is `--auto` with `--no-land` and with `--bg`.
 
-- **`--fast "<request>"` → FAST MODE.** Follow [references/fast.md](references/fast.md).
-- **Bare `"<request>"` (no `-s`, no `--fast`) → PLAN MODE.** The positional prose is the feature
-  request. Follow [references/plan.md](references/plan.md).
-- **`-s <NNN>_<slug>` → EXECUTE MODE.** The argument is a bundle identifier — the `<NNN>_<slug>`
-  dir name under `.agents/spec/`. Resolve the bundle, follow [references/execute.md](references/execute.md).
-  No positional request is required in this mode.
-- If neither a request nor `-s` is present, ask for the request (one question) before proceeding.
-- `PROFILE`: plan and fast mode read unset as balance; execute mode reads the persisted `execution.profile`. A missing or invalid value after `--profile`/`-p` stops with `--profile must be one of balance, cheap, expensive`. Two profile flags with the same value are allowed.
-- `--proxy <backend>` (plan mode and `-s`): validate it against `dg proxy --list-backends` before any phase, in one Bash call and only when the flag is present. An unknown name stops and lists the valid backends.
+- `--fast "<request>"` runs FAST MODE ([fast.md](references/fast.md)). Bare `"<request>"` runs PLAN MODE ([plan.md](references/plan.md)). `-s <NNN>_<slug>` (a bundle dir name under `.agents/spec/`, no request needed) runs EXECUTE MODE ([execute.md](references/execute.md)).
+- With neither a request nor `-s`, ask for the request first (one question).
+- Profile: unset reads as balance in plan and fast mode; execute mode reads the persisted `execution.profile`. A missing or invalid `--profile`/`-p` value stops with `--profile must be one of balance, cheap, expensive`. Two profile flags with equal values are allowed.
+- `--proxy <backend>` (plan mode and `-s`): when present, validate it against `dg proxy --list-backends` before any phase, in one Bash call. An unknown name stops and lists the valid backends.
 
 ## Plan-mode pipeline
 
-| # | Step | Reference |
-|---|---|---|
-| 1 | arch `/dg:grill-me` the request `[fable, xhigh]` | references/plan.md, references/grill.md |
-| 1.5 | Structure `/dg:grill-me` — code-surface contracts `[lang agent, sonnet]` | references/templates/structure-grill.md |
-| 2 | `dg:foreman` `/dg:grill-me` on ordering/gaps `[fable, xhigh]` | references/plan.md, references/grill.md |
-| 3 | `dg:foreman` emits decision blob → `dg spec scaffold` → `/dg:assign` → write `## Code Structure` | references/plan.md, references/decision-blob.md |
-| 4 | Checkpoint — bundle now has one `roundtable/slice-<N>.md` per slice | references/plan.md |
-| 5 | Per-slice review fan-out (`sonnet` default) | references/plan.md, references/templates/slice-review.md |
-| 6 | `dg:foreman` synthesis `[fable, xhigh]` + `/dg:grill-me` gaps pass | references/plan.md, references/templates/synthesis.md |
-| 7 | Write `plan.md`; --proxy slices; WARN token/context cost | references/plan.md |
-| 8 | Plan approval gate (plan view; Approve as a profile, or Rework); register accepted prototype assets (built with `/dg:proto`) | references/plan.md |
-| 9 | `dg spec context <bundle>` assembles `context.md` | references/plan.md |
-| 10 | Commit bundle; print resume command `/dg:spec -s <NNN>_<slug>` | references/plan.md |
+| # | Step |
+|---|---|
+| 1 | arch `/dg:grill-me` `[fable, xhigh]` |
+| 1.5 | Structure `/dg:grill-me`: code-surface contracts `[lang agent, sonnet]` |
+| 2 | `dg:foreman` `/dg:grill-me` ordering `[fable, xhigh]` |
+| 3 | `dg:foreman` decision blob → `dg spec scaffold` → `/dg:assign` → `## Code Structure` |
+| 4 | Checkpoint: one `roundtable/slice-<N>.md` per slice |
+| 5 | Per-slice review fan-out (`sonnet` default) |
+| 6 | `dg:foreman` synthesis `[fable, xhigh]` + `/dg:grill-me` gaps |
+| 7 | Write `plan.md`; --proxy slices; WARN token/context cost |
+| 8 | Plan approval gate (plan view; Approve as a profile, or Rework); register accepted prototype assets (built with `/dg:proto`) |
+| 9 | `dg spec context <bundle>` writes `context.md` |
+| 10 | Commit bundle; print resume cmd `/dg:spec -s <NNN>_<slug>` |
 
-## Fast-mode pipeline
+## Fast mode
 
-| # | Step | Reference |
-|---|---|---|
-| F1 | `EnterPlanMode` — file writes blocked until approval | references/fast.md |
-| F2 | ONE grill pass, main loop — placement + code surface + slice ordering | references/fast.md, references/grill.md |
-| F3 | Write the plan file, permission set spelled out in it | references/fast.md |
-| F4 | `ExitPlanMode` — the single gate | references/fast.md |
-| F5 | Blob → `dg spec scaffold` → `/dg:assign` → `perms-batch` → `context` → commit | references/fast.md, references/decision-blob.md |
-| F6 | Worktree (or `-T` branch); bind `SPEC_PATH`/`SCRATCH_PATH` | references/fast.md |
-| F7 | Slices sequentially in this chat — red → green → commit → compact | references/fast.md |
-| F8 | `finish.md` 5–8 — final review, docs, draft PR/MR; then ready + `/dg:land` unless `--no-land` | [sdlc finish.md](../sdlc/references/finish.md), references/execute.md §7 |
-
-Fast mode drops the roundtable fan-out, the synthesis pass, the plan approval gate, `/dg:proxy` delegation,
-and the parallel slice waves. It keeps every end gate. Reach for full plan mode when the feature
-spans more than three or four slices or touches unfamiliar architecture.
+Fast mode (F1–F8 in fast.md) drops the roundtable, synthesis, the plan approval gate, `/dg:proxy` delegation and parallel waves; it keeps every end gate. Prefer plan mode beyond 3–4 slices.
 
 ## Execute-mode contract
 
-Read ONLY `context.md` + `plan.md` — never `initial.md`/`roundtable/*`. Set `SPEC_PATH`/`SCRATCH_PATH`,
-reuse `/dg:sdlc`'s worktree setup, SKIP its slice-derivation (this bundle's `slices[]` + `/dg:assign` already
-ran), then drive [sdlc engineering.md](../sdlc/references/engineering.md) 4.1–4.3 and
-[sdlc finish.md](../sdlc/references/finish.md) steps 5–8 (through the direct PR/MR launch — draft always, then a best-effort `dg pw batch-open <url>` (when `batch-open` fails, print the URL and continue), per `finish.md` step 8's `/dg:spec` deltas).
-[references/execute.md](references/execute.md) §6 owns the bookkeeping on top of that (persisting
-the PR/MR URL into `plan.md`, restoring cwd). Then §7 marks the PR ready and runs `/dg:land` with its defaults
-in the main loop; it stops at "ready for your review" and asks (`--auto` merges instead). `--no-land`, `--bg`, and GitLab stop at the draft.
+Read ONLY `context.md` + `plan.md`, never `initial.md` or `roundtable/*`. Reuse `/dg:sdlc`'s worktree setup, SKIP its slice-derivation (`slices[]` and `/dg:assign` already ran), then drive [sdlc engineering.md](../sdlc/references/engineering.md) 4.1–4.3 and [sdlc finish.md](../sdlc/references/finish.md) steps 5–8: draft PR/MR always, then a best-effort `dg pw batch-open <url>` (on failure, print the URL and continue). [references/execute.md](references/execute.md) §6 owns the bookkeeping, §7 marks the PR ready and runs `/dg:land` in the main loop. It stops at "ready for your review" (`--auto` merges). `--no-land`, `--bg`, and GitLab stop at the draft.
 
 ## Reference files (lazy-load)
 
-| File | When to read |
+Read the mode file at mode entry (fast mode never reads plan.md). Also:
+
+| File | Read |
 |---|---|
-| [references/fast.md](references/fast.md) | The `--fast` contract — F1–F8: built-in plan mode → one grill pass → `ExitPlanMode` gate → scaffold + commit → worktree/`-T` → sequential main-loop slices with compaction between → `finish.md` 5–8. Read at fast-mode entry; do NOT read plan.md in this mode. |
-| [references/plan.md](references/plan.md) | Plan-mode orchestration — the 10-step pipeline (grill → roundtable → scaffold → per-slice review → synthesize → write plan.md → plan approval gate → context pack → commit + print resume cmd). Read at plan-mode entry. |
-| [references/decision-blob.md](references/decision-blob.md) | The compact-JSON contract the foreman emits for `scaffold --from-json`. Read before step 3 of plan.md. |
-| [references/execute.md](references/execute.md) | The `-s` contract — read ONLY `context.md` + `plan.md`; set `SPEC_PATH`/`SCRATCH_PATH`; reuse `/dg:sdlc` worktree setup, SKIP its slice-derivation/ephemeral-spec, drive engineering.md 4.1–4.3 → finish.md 5–8, where §6 adds the `/dg:spec` bookkeeping and §7 the `/dg:land` hand-off. Read at execute-mode entry. |
-| [references/grill.md](references/grill.md) | Thin pointer: grill-me protocol is INLINED from the [grill-me protocol](../grill-me/references/protocol.md), followed in-context; each of the four passes scoped to its narrow topic; decision log carries as context (no JSON hand-back). Read at plan.md steps 1/1.5/2/6. |
-| [references/templates/structure-grill.md](references/templates/structure-grill.md) | The code-building pass — admission test (`ratify contracts, never implementations`), research persona, self-collapse/skip rules, `## Code Structure` output shape. Read at plan.md step 1.5. |
-| [references/templates/slice-review.md](references/templates/slice-review.md) | `/dg:spec`'s own per-slice review fan-out prompt. Read at plan.md step 5. |
-| [references/profiles.md](references/profiles.md) | Cost-profile mechanics: plan-mode effort under `--cheap` and `--expensive`, the `-s --profile` sequence. Read only with a profile flag. |
-| [references/proxy.md](references/proxy.md) | The per-slice delegation question, `agents.proxy` and `proxy_skills`. Read only with `--proxy`. |
-| [references/bg.md](references/bg.md) | The unattended `--bg` contract: pre-launch order, permission keys, deferral rows, the pause line. Read only with `--bg`. |
-| [references/templates/synthesis.md](references/templates/synthesis.md) | `/dg:spec`'s own synthesis fan-out prompt (foreman folds slice findings). Read at plan.md step 6. |
+| [references/decision-blob.md](references/decision-blob.md) | Before step 3: the `scaffold --from-json` contract. |
+| [references/grill.md](references/grill.md) | At plan.md steps 1/1.5/2/6: inlined [grill-me protocol](../grill-me/references/protocol.md). |
+| [references/templates/structure-grill.md](references/templates/structure-grill.md) | At step 1.5: admission test, `## Code Structure` shape. |
+| [references/templates/slice-review.md](references/templates/slice-review.md) | At step 5: per-slice review prompt. |
+| [references/templates/synthesis.md](references/templates/synthesis.md) | At step 6: synthesis prompt. |
+| [references/profiles.md](references/profiles.md) | Only with a profile flag. |
+| [references/proxy.md](references/proxy.md) | Only with `--proxy`. |
+| [references/bg.md](references/bg.md) | Only with `--bg`. |
 
 ## General rules
 
-- Use TaskCreate/TaskUpdate to track pipeline steps in every mode.
-- Each agent reads only its relevant `.agents/school/` topic file.
-- NEVER skip a gate condition (the plan approval gate in plan mode, per-slice triage, `ExitPlanMode` approval in
-  fast mode, the `/dg:land` merge gate). No subagent or slice wave ever merges a PR/MR.
-- **Bundle dirs are ALWAYS named `{NNN}_<slug>`** — zero-padded 3-digit prefix + slugified
-  description (e.g. `001_vela_dashboard_favorites`). `dg spec scaffold` enforces this
-  unconditionally, deriving `<NNN>` from the max `NNN_`-prefixed **dir** under `.agents/spec/`
-  (none → `001`); pre-existing non-numbered dirs are ignored and left untouched. Never create or
-  reference a bundle without its prefix — `/dg:spec -s` takes the full `{NNN}_<slug>` dir name.
+- Track steps with TaskCreate/TaskUpdate. Each agent reads only its `.agents/school/` topic file.
+- NEVER skip a gate (plan approval in plan mode, per-slice triage, `ExitPlanMode` approval in fast mode, the `/dg:land` merge gate). No subagent or slice wave ever merges a PR/MR.
+- **Bundle dirs are ALWAYS named `{NNN}_<slug>`** (zero-padded 3-digit prefix, e.g. `001_vela_dashboard_favorites`). `dg spec scaffold` derives `<NNN>` from the max `NNN_` dir under `.agents/spec/` (none → `001`), ignoring non-numbered dirs. Never use a bundle without its prefix; `/dg:spec -s` takes the full `{NNN}_<slug>` name.
