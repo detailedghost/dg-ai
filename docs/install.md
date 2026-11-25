@@ -889,9 +889,12 @@ folder, then run the command again.
 it. dg does not load its text or run it before then. The contract is in
 [plugin-protocol.md](plugin-protocol.md).
 
+An agent must never pass `--approve`. Approval is a human step: the person reads
+the plugin source, then runs the command.
+
 ```bash
 dg plugin add <git url or path> [--pin <sha256|commit>] [--name <name>]
-dg plugin verify <name> --approve   # review <data>/plugins/<name>/src first
+dg plugin verify <name> --approve   # human only: review <data>/plugins/<name>/src first
 dg plugin list [--json]
 dg plugin enable <name>
 dg plugin disable <name>
