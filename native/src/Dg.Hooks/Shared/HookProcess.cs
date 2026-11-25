@@ -32,6 +32,25 @@ internal static class HookProcess
         return null;
     }
 
+    private const int TextFileBusy = 26;
+    private const int StartAttempts = 5;
+
+    private static async Task<Process> StartAsync(ProcessStartInfo start, CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return Process.Start(start) ?? throw new InvalidOperationException("process did not start");
+            }
+            catch (System.ComponentModel.Win32Exception ex)
+                when (!OperatingSystem.IsWindows() && ex.NativeErrorCode == TextFileBusy && attempt < StartAttempts)
+            {
+                await Task.Delay(20 * attempt, ct).ConfigureAwait(false);
+            }
+        }
+    }
+
     public static async Task<CommandResult> RunAsync(
         IReadOnlyDictionary<string, string?> env,
         string[] argv,
@@ -63,7 +82,7 @@ internal static class HookProcess
         Process process;
         try
         {
-            process = Process.Start(start) ?? throw new InvalidOperationException("process did not start");
+            process = await StartAsync(start, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
