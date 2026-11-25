@@ -5,7 +5,17 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 const ROOT = resolve(import.meta.dir, "..");
-const ASSET = /^dg-(.+?)(?:\.exe)?$/;
+export const TARGETS = [
+	"linux-x64",
+	"linux-x64-baseline",
+	"linux-arm64",
+	"darwin-x64",
+	"darwin-arm64",
+	"windows-x64",
+	"windows-x64-baseline",
+	"windows-arm64",
+];
+const ASSET = new RegExp(`^dg-(${TARGETS.join("|")})(?:\\.exe)?$`);
 const FIELDS = ["rawBytes", "zstdBytes", "patchBytes"] as const;
 
 type Field = (typeof FIELDS)[number];
