@@ -1,0 +1,12 @@
+{
+	"validator": "cli-request:pw-ext",
+	"frame": {
+		"type": "cli-pw-ext-request",
+		"requestId": "req-1",
+		"request": {
+			"verb": "snapshot"
+		},
+		"timeoutMs": 30000,
+		"protocolVersion": 1
+	}
+}

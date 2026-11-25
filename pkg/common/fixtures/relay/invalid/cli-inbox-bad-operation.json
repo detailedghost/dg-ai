@@ -1,0 +1,10 @@
+{
+	"validator": "cli-request:inbox",
+	"frame": {
+		"type": "cli-inbox-request",
+		"requestId": "req-1",
+		"operation": "bogus",
+		"protocolVersion": 1
+	},
+	"error": "inbox CLI request.operation must be one of profile-get, profile-set, profile-list, cache-get, cache-set, browser"
+}

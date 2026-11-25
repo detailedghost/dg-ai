@@ -1,0 +1,14 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "inbox-browser-request",
+		"requestId": "req-1",
+		"request": {
+			"operation": "session-status"
+		},
+		"token": "t-1"
+	},
+	"error": "chat frame.token must not be present on outbound \"inbox-browser-request\" frames"
+}

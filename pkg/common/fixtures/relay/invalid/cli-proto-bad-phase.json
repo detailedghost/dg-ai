@@ -1,0 +1,12 @@
+{
+	"validator": "cli-request:proto",
+	"frame": {
+		"type": "cli-proto-request",
+		"requestId": "req-1",
+		"phase": "bogus",
+		"slug": "demo",
+		"markedUrl": "https://example.com/app#_proto=demo",
+		"protocolVersion": 1
+	},
+	"error": "proto cli request.phase must be \"scrape\" or \"plant\""
+}

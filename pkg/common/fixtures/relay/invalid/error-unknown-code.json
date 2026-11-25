@@ -1,0 +1,11 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "error",
+		"message": "protocol version mismatch: daemon expects 1, frame declared 2",
+		"code": "bogus"
+	},
+	"error": "chat frame.code is not a known error code"
+}

@@ -1,0 +1,19 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "inbox-browser-result",
+		"requestId": "req-1",
+		"ok": true,
+		"data": {
+			"folders": [
+				{
+					"id": "f1",
+					"name": "Inbox"
+				}
+			]
+		}
+	},
+	"error": "chat frame.token must be a non-empty string"
+}
