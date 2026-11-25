@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildBundle, run } from "./bundle-fixtures";
+import { reexecWithoutJit } from "../src/dispatch";
+import { buildBundle, cleanupTraces, run, traceChunks } from "./bundle-fixtures";
 
 function headRevision(): string {
 	return Bun.spawnSync(["git", "rev-parse", "HEAD"], { stdout: "pipe" }).stdout.toString().trim();
@@ -81,5 +82,36 @@ describe("dg.js dispatcher", () => {
 			expect(result.exitCode).toBe(1);
 			expect(result.stderr).not.toContain("is removed");
 		}
+	});
+
+	describe("the --version path", () => {
+		afterAll(cleanupTraces);
+
+		test("dg --version loads no chunk beyond the entry", () => {
+			const argv = ["--version"];
+			const { entry, sentinels } = traceChunks(/./);
+			for (const [, name] of readFileSync(entry, "utf8").matchAll(/\bfrom"\.\/(chunks\/[^"]+)"/g)) sentinels.delete(name as string);
+			const result = run(bun, entry, argv);
+			expect(result.stdout).toBe(`${version}\n`);
+			const loaded = [...sentinels].filter(([, sentinel]) => existsSync(sentinel)).map(([name]) => name);
+			expect(loaded).toEqual([]);
+		});
+	});
+});
+
+describe("reexecWithoutJit skips", () => {
+	test.each([[["--version"]], [["dg-skills", "--version"]], [["hooks", "run", "spelling"]], [["skills", "hooks", "run", "format"]]])(
+		"dg %p, which stays in the RSS budget with the JIT on",
+		async (argv) => {
+			const calls: string[] = [];
+			await reexecWithoutJit(argv, { PATH: "/bin" }, (file) => void calls.push(file));
+			expect(calls).toEqual([]);
+		},
+	);
+
+	test.each([[["hooks", "list"]], [["hooks"]], [["phone", "status"]], [["--help"]]])("dg %p still re-executes", async (argv) => {
+		const calls: string[] = [];
+		await reexecWithoutJit(argv, { PATH: "/bin" }, (file) => void calls.push(file));
+		expect(calls).toHaveLength(1);
 	});
 });
