@@ -40,7 +40,8 @@ JIT workaround for every command it moves.
   only.
 - RSS, size, download, latency and skill-token budgets are gated on every PR with a ratchet that only goes down,
   unless a PR carries a reviewed `Budget-Increase:` line. Latency and memory-growth budgets are ceilings that fail
-  only on an overrun (owner decision R18, 2026-11-25).
+  only on an overrun (owner decision R18, 2026-11-25; see "Agent Notes" in
+  `.agents/spec/027_dg_cli_lean/plan.md` and the "Ratchet" section of `docs/lean-baseline.md`).
 
 ## Consequences
 
