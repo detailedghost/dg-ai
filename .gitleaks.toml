@@ -127,3 +127,13 @@ paths = [
   '''(?:^|/)pkg/dg-daemon/__tests__/commands/job-credential-env\.spec\.ts$''',
 ]
 regexes = ['''^api-key=API_KEY$''']
+
+[[allowlists]]
+description = "Fake bearer tokens in the plugin HTTP transport specs"
+condition = "AND"
+regexTarget = "secret"
+paths = [
+  '''(?:^|/)pkg/common/__tests__/plugins-transport-http\.spec\.ts$''',
+  '''(?:^|/)native/tests/Dg\.Core\.Tests/Transport/Http/HttpTransportTests\.cs$''',
+]
+regexes = ['''^tok-secret-1234567890$''', '''^tok-SECRET-123$''']
