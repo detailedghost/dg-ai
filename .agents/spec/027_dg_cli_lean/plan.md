@@ -1330,7 +1330,7 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 
 ## Measured Baseline (2026-11-24, this machine, linux-x64, warm cache, p50 of 40 runs)
 
-Method and scripts: `$CLAUDE_JOB_DIR/tmp/lean/scripts/` (meta.ts, group.ts, lat.ts, lat2.ts, prof.ts). Slice 1 turns them into committed gates.
+Method and scripts: scratch scripts (meta.ts, group.ts, lat.ts, lat2.ts, prof.ts) from the baseline run; they are not committed and are unavailable to readers. Slice 1 turns them into committed gates.
 
 ### Release assets (v7.0.5, raw, uncompressed today)
 
@@ -1417,7 +1417,7 @@ Download shrinks only at the final switch, when no common command needs the Bun 
 
 ### C# prototype, measured on this machine (.NET SDK 11.0.100, net11.0, NativeAOT, linux-x64)
 
-Lean settings: InvariantGlobalization, UseSystemResourceKeys, OptimizationPreference=Size, IlcTrimMetadata, workstation non-concurrent GC, no EventSource, no stack-trace data. Sources: `$CLAUDE_JOB_DIR/tmp/lean/cs/`.
+Lean settings: InvariantGlobalization, UseSystemResourceKeys, OptimizationPreference=Size, IlcTrimMetadata, workstation non-concurrent GC, no EventSource, no stack-trace data. The baseline probe sources were scratch files and are not committed.
 
 | Program | Binary | zstd | p50 / p90 | Peak RSS |
 | --- | --- | --- | --- | --- |
@@ -1815,7 +1815,7 @@ Planned by a subagent with no human questions; open questions are R12-R24 in RAT
 (owner, 2026-11-24): R24 StackTraceSupport off in release builds, symbols shipped as a separate asset.
 (owner, 2026-11-24): earlier decisions hold: macOS on all 6 RIDs; .NET 11 (SDK 11.0.100) with the newest C# idioms; DI with an AddX() per group; config.toml only; the extension stays TypeScript and Bun; plugin kinds hook, job, skill; continuous RAM, size and latency gates with the ratchet; no feature or quality loss for size.
 (owner, 2026-11-24): code reviews run on Claude for now, not Codex: 3 /dg:thrash -s 4 local rounds with /dg:address -l between them, early stop on a dry round.
-(orchestrator, 2026-11-24): execution deviations from the skill texts: integration branch feature/dg_cli_lean (not feat/dg-cli-lean); plan.md lives and commits on the integration branch; one worktree per slice under /home/detailedghost/code/worktrees/dg-ai-027-<slice>, merged with --no-ff; slice agents commit each test-first step; no Workflow tool, so the orchestrator drives each slice with one persona agent.
+(orchestrator, 2026-11-24): execution deviations from the skill texts: integration branch feature/dg_cli_lean (not feat/dg-cli-lean); plan.md lives and commits on the integration branch; one worktree per slice under a sibling worktree directory named dg-ai-027-<slice>, merged with --no-ff; slice agents commit each test-first step; no Workflow tool, so the orchestrator drives each slice with one persona agent.
 Decision records: docs/adr/0058-dg-moves-to-c-nativeaot-in-stages.md and docs/adr/0059-dg-plugins-are-built-in-or-external-with-one-transport-contract.md.
 
 ## Issues Remediation
