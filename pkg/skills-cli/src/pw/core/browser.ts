@@ -12,6 +12,7 @@ import {
 } from "../../utils/find-browser";
 import type { BrowserName, SessionRecord } from "./registry";
 import { closeWindowsBrowser } from "./windows";
+import { loadCompanion } from "../../install/companion";
 
 export type LaunchSpec = Omit<SessionRecord, "pid" | "startedAt"> & {
 	storageState?: string;
@@ -122,7 +123,7 @@ const CDP_CONNECT_TIMEOUT_MS = 15_000;
 async function engine(
 	browser: BrowserName,
 ): Promise<{ type: BrowserType; channel?: string }> {
-	const { chromium, firefox, webkit } = await import("playwright-core");
+	const { chromium, firefox, webkit } = await loadCompanion("pw");
 	switch (browser) {
 		case "chrome":
 		case "msedge":
@@ -148,7 +149,7 @@ function finish(
 
 async function connectCdp(spec: LaunchSpec): Promise<BrowserHandle> {
 	if (!spec.cdpUrl) throw new Error("CDP session needs a cdpUrl");
-	const { chromium } = await import("playwright-core");
+	const { chromium } = await loadCompanion("pw");
 	const browser = await chromium
 		.connectOverCDP(spec.cdpUrl, { timeout: CDP_CONNECT_TIMEOUT_MS })
 		.catch((error: unknown) => {

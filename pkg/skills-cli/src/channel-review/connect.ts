@@ -25,6 +25,7 @@ import {
 	wslChromiumArgs,
 } from "@dg/common/node";
 import { guardedDest } from "../utils/layout-guard";
+import { loadCompanion } from "../install/companion";
 
 export const CONNECT_TOKEN_NAME = "channel-review-daemon";
 export const CONNECT_PROVIDERS = ["datadog", "sentry", "relay"] as const;
@@ -137,7 +138,7 @@ export async function launchChrome(): Promise<BrowserSession> {
 	const profileDir = join(profiles, "connect");
 	ensurePrivateDir(profiles);
 	ensurePrivateDir(profileDir);
-	const { chromium } = await import("playwright-core");
+	const { chromium } = await loadCompanion("pw");
 	const context = await chromium.launchPersistentContext(profileDir, {
 		channel: "chrome",
 		headless: false,

@@ -19,6 +19,7 @@
 		"./node/layout-work": "./src/node/layout-work.ts",
 		"./node/layout-preaction": "./src/node/layout-preaction.ts",
 		"./node/sqlite-unused": "./src/node/sqlite-unused.ts",
+		"./node/companion": "./src/node/companion.ts",
 		"./node/page-cache": "./src/node/page-cache.ts",
 		"./node/pidfile": "./src/node/pidfile.ts",
 		"./node/process-identity": "./src/node/process-identity.ts",

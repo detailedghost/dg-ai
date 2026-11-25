@@ -10,6 +10,7 @@ import {
 	type CaptureShot,
 } from "./capture-model";
 import { isLoopbackHost, isLoopbackUrl } from "./urls";
+import { loadCompanion } from "../install/companion";
 
 function isLoopbackOrigin(origin: string): boolean {
 	return URL.canParse(origin) && isLoopbackUrl(new URL(origin));
@@ -57,7 +58,7 @@ export async function openPlaywrightCapturer(options?: {
 	noSandbox?: boolean;
 	executablePath?: string;
 }): Promise<Capturer> {
-	const { chromium } = await import("playwright-core");
+	const { chromium } = await loadCompanion("pw");
 	const executablePath = options?.executablePath ?? resolveVerifyBrowser();
 	const noSandbox = options?.noSandbox ?? sandboxDisabled();
 	const browser = await chromium.launch({

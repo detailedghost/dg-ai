@@ -4,6 +4,7 @@ import { type SystemChannel, systemBrowserPresent } from "./core/browser";
 import { browsersDir, downloadedChromium, markerPath } from "./core/downloaded";
 import { ensurePrivateDir } from "./core/files";
 import { guardedDest } from "../utils/layout-guard";
+import { loadCompanion } from "../install/companion";
 
 export type BrowserStatus = {
 	system: SystemChannel | "none";
@@ -18,7 +19,7 @@ async function installChromium(
 	browsersPath: string,
 ): Promise<{ version: string; executablePath: string }> {
 	process.env["PLAYWRIGHT_BROWSERS_PATH"] = browsersPath;
-	const { registry } = await import("playwright-core/lib/coreBundle");
+	const { registry } = await loadCompanion("pw");
 	const executable = registry.registry.findExecutable("chromium");
 	if (!executable)
 		throw new Error(
