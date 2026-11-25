@@ -1,0 +1,243 @@
+[
+	{
+		"name": "spelling-write-findings",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "analyse the colour\nColour colour COLOUR\nbehaviour\n"
+			},
+			"cwd": "$CWD/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-multiedit",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "MultiEdit",
+			"tool_input": {
+				"file_path": "src/m.ts",
+				"edits": [
+					{
+						"old_string": "a",
+						"new_string": "first colour"
+					},
+					{
+						"old_string": "b",
+						"new_string": "second\nthird behaviour"
+					}
+				]
+			},
+			"cwd": "$CWD/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-clean",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "color center\n"
+			},
+			"cwd": "$CWD/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-locale-gb",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "color analyze among amongst\n"
+			},
+			"cwd": "$CWD/work",
+			"session_id": "evsess"
+		},
+		"config": "[hooks.spelling]\nlocale = \"en-GB\"\n"
+	},
+	{
+		"name": "spelling-max-two",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour behaviour analyse neighbour favour honour\n"
+			},
+			"cwd": "$CWD/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"HOOK_SPELLING_MAX_FINDINGS": "2"
+		}
+	},
+	{
+		"name": "spelling-bad-json",
+		"hook": "spelling",
+		"stdin": "not json"
+	},
+	{
+		"name": "spelling-empty-stdin",
+		"hook": "spelling",
+		"stdin": ""
+	},
+	{
+		"name": "format-unknown-extension",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "notes.unknownext",
+				"content": "x"
+			},
+			"cwd": "$CWD/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "format-missing-file",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Edit",
+			"tool_input": {
+				"file_path": "$CWD/work/missing.py",
+				"old_string": "a",
+				"new_string": "b"
+			},
+			"cwd": "$CWD/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "pr-confirm-gh-pr-create",
+		"hook": "pr-confirm",
+		"event": {
+			"hook_event_name": "PreToolUse",
+			"tool_name": "Bash",
+			"tool_input": {
+				"command": "gh pr create --fill"
+			},
+			"cwd": "$CWD/work"
+		}
+	},
+	{
+		"name": "pr-confirm-not-a-pr",
+		"hook": "pr-confirm",
+		"event": {
+			"hook_event_name": "PreToolUse",
+			"tool_name": "Bash",
+			"tool_input": {
+				"command": "git status"
+			},
+			"cwd": "$CWD/work"
+		}
+	},
+	{
+		"name": "pr-confirm-bad-json",
+		"hook": "pr-confirm",
+		"stdin": "{not json"
+	},
+	{
+		"name": "strip-needs-file",
+		"hook": "strip-ai-coauthors"
+	},
+	{
+		"name": "daily-prune-dry-run-needs-now",
+		"hook": "daily-prune",
+		"args": [
+			"--dry-run"
+		],
+		"stdin": ""
+	},
+	{
+		"name": "spec-plan-lint-not-a-plan",
+		"hook": "spec-plan-lint",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "$CWD/work/README.md",
+				"content": "x"
+			},
+			"cwd": "$CWD/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spec-plan-lint-fake-dg-pass",
+		"hook": "spec-plan-lint",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "$CWD/repo/.agents/spec/027_x/plan.md",
+				"content": "x"
+			},
+			"cwd": "$CWD/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"repo/.agents/spec/027_x/plan.md": "# plan\n"
+		},
+		"bin": {
+			"dg": "#!/bin/sh\nexit 0\n"
+		}
+	},
+	{
+		"name": "spec-plan-lint-fake-dg-fail",
+		"hook": "spec-plan-lint",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "$CWD/repo/.agents/spec/027_x/plan.md",
+				"content": "x"
+			},
+			"cwd": "$CWD/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"repo/.agents/spec/027_x/plan.md": "# plan\n"
+		},
+		"bin": {
+			"dg": "#!/bin/sh\necho 'missing Testing Criteria'\necho '  line 4' >&2\nexit 1\n"
+		}
+	},
+	{
+		"name": "unknown-hook-id",
+		"argv": [
+			"hooks",
+			"run",
+			"no-such-hook"
+		],
+		"stdin": "{}"
+	},
+	{
+		"name": "hooks-run-without-id",
+		"argv": [
+			"hooks",
+			"run"
+		],
+		"stdin": ""
+	},
+	{
+		"name": "hooks-list",
+		"argv": [
+			"hooks",
+			"list"
+		]
+	}
+]
