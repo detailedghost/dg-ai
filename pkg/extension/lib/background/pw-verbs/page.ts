@@ -24,7 +24,8 @@ const notInGroup = (tabId: number) =>
 const refuse = (error: string): PageResult => ({ ok: false, error });
 
 /** Runs inside the page, so it must stay self-contained. Reports only the error name, never its message. */
-export async function evaluate(expression: string): Promise<EvalOutcome> {
+export async function evaluate(expression: string, expectedUrl: string): Promise<EvalOutcome> {
+	if (location.href !== expectedUrl) return { ok: false, error: "The page changed before the script ran; nothing ran." };
 	try {
 		const value = await (0, eval)(expression);
 		return { ok: true, text: value === undefined ? "undefined" : (JSON.stringify(value) ?? String(value)) };
@@ -78,7 +79,7 @@ export function createPageVerbHandler({
 			target: { tabId },
 			world: "MAIN",
 			func: evaluate as never,
-			args: [request.expression],
+			args: [request.expression, tab.url],
 		});
 		const outcome = outcomeOf(frame?.result);
 		return outcome.ok ? { ok: true, data: { text: `### Result\n${clip(outcome.text)}` } } : refuse(outcome.error);
