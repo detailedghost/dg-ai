@@ -84,6 +84,7 @@ public sealed class TcpTransportTests
     [Fact]
     public async Task ConnectAsync_NothingListening_IsUnreachable()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows retries a refused loopback connect for about 2 s, past the 1 s connect budget");
         var probe = new TcpListener(IPAddress.Loopback, 0);
         probe.Start();
         var port = ((IPEndPoint)probe.LocalEndpoint).Port;

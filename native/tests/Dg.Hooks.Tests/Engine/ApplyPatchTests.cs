@@ -8,7 +8,7 @@ public sealed class ApplyPatchTests
         new()
         {
             ToolName = "apply_patch",
-            Command = patch,
+            Command = patch.ReplaceLineEndings("\n"),
             Cwd = cwd,
         };
 
@@ -51,7 +51,7 @@ public sealed class ApplyPatchTests
             first =>
             {
                 Assert.Equal("Edit", first.ToolName);
-                Assert.Equal("/work/docs/new.md", first.FilePath);
+                Assert.Equal(Path.GetFullPath("/work/docs/new.md"), first.FilePath);
                 Assert.Equal("first\nsecond", first.NewString);
                 Assert.Null(first.Command);
             },
@@ -70,7 +70,7 @@ public sealed class ApplyPatchTests
 
         var edits = ApplyPatch.Expand(Patch(patch));
 
-        Assert.Equal(["/work/kept.md"], edits.Select(e => e.FilePath));
+        Assert.Equal([Path.GetFullPath("/work/kept.md")], edits.Select(e => e.FilePath));
     }
 
     [Fact]
@@ -80,7 +80,7 @@ public sealed class ApplyPatchTests
 
         var edits = ApplyPatch.Expand(Patch(patch));
 
-        Assert.Equal("/work/b/c.md", Assert.Single(edits).FilePath);
+        Assert.Equal(Path.GetFullPath("/work/b/c.md"), Assert.Single(edits).FilePath);
     }
 
     [Fact]

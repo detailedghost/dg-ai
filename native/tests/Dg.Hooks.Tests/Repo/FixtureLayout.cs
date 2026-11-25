@@ -115,6 +115,9 @@ internal sealed class FixtureLayout : IDisposable
     {
         try
         {
+            if (OperatingSystem.IsWindows())
+                foreach (var file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
+                    File.SetAttributes(file, FileAttributes.Normal);
             Directory.Delete(Root, recursive: true);
         }
         catch (IOException) { }

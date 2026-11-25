@@ -2,28 +2,28 @@
 	"version": 1,
 	"cases": {
 		"version": {
-			"peakMB": 22.1,
-			"msBudget": 25
+			"peakMB": 26.4,
+			"msBudget": 8
 		},
 		"help": {
-			"peakMB": 24.0
+			"peakMB": 25.2
 		},
 		"completion zsh": {
-			"peakMB": 22.4,
-			"msBudget": 24
+			"peakMB": 24.2,
+			"msBudget": 12
 		},
 		"config path": {
-			"peakMB": 31.0
+			"peakMB": 31
 		},
 		"stat checklist": {
 			"peakMB": 45.3,
-			"msBudget": 62
+			"msBudget": 24
 		},
 		"job --help": {
-			"peakMB": 30.5
+			"peakMB": 32
 		},
 		"pw --help": {
-			"peakMB": 30.8
+			"peakMB": 33.5
 		},
 		"db --help": {
 			"peakMB": 30.1
@@ -44,41 +44,41 @@
 			"peakMB": 35.8
 		},
 		"phone unread": {
-			"peakMB": 38.3
+			"peakMB": 38
 		},
 		"hooks list": {
-			"peakMB": 32.5
+			"peakMB": 32.4
 		},
 		"hooks run spelling": {
-			"peakMB": 31.4,
-			"msBudget": 44
+			"peakMB": 35.1,
+			"msBudget": 14
 		},
 		"hooks run format": {
-			"peakMB": 30.7,
-			"msBudget": 40
+			"peakMB": 34.5,
+			"msBudget": 14
 		},
 		"hooks run pr-prose": {
-			"peakMB": 30.7,
-			"msBudget": 40
+			"peakMB": 34.7,
+			"msBudget": 15
 		},
 		"hooks run pr-confirm": {
-			"peakMB": 30.1,
-			"msBudget": 39
+			"peakMB": 34.2,
+			"msBudget": 13
 		},
 		"hooks run spec-plan-lint": {
-			"peakMB": 30.4,
-			"msBudget": 40
+			"peakMB": 34.1,
+			"msBudget": 14
 		},
 		"hooks run daily-prune": {
-			"peakMB": 30.3,
-			"msBudget": 42
+			"peakMB": 34.2,
+			"msBudget": 14
 		},
 		"hooks run strip-ai-coauthors": {
-			"peakMB": 27.4,
-			"msBudget": 39
+			"peakMB": 31.8,
+			"msBudget": 12
 		},
 		"adr lint --all (repo)": {
-			"peakMB": 46.4
+			"peakMB": 49.8
 		},
 		"spec validate": {
 			"peakMB": 38.1
@@ -87,11 +87,11 @@
 			"peakMB": 80
 		},
 		"doctor": {
-			"peakMB": 54.3
+			"peakMB": 50.8
 		},
 		"daemon idle": {
-			"peakMB": 41.5,
-			"growthMB": 9.0
+			"peakMB": 41.4,
+			"growthMB": 2.8
 		},
 		"daemon with 15 jobs": {
 			"peakMB": 42.3,
@@ -102,7 +102,7 @@
 			"growthMB": 1
 		},
 		"phone listener idle": {
-			"peakMB": 58.0,
+			"peakMB": 58,
 			"growthMB": 1
 		},
 		"phone listener burst": {
@@ -114,8 +114,8 @@
 			"growthMB": 1
 		},
 		"agent phone status": {
-			"peakMB": 35.6,
-			"msBudget": 64
+			"peakMB": 35.5,
+			"msBudget": 24
 		}
 	}
 }

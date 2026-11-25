@@ -38,7 +38,7 @@ internal sealed class TempHome : IDisposable
             Strip(output),
             Strip(error),
             exit,
-            file?.Replace(Path, "<home>", StringComparison.Ordinal)
+            file is null ? null : Redact(file)
         );
     }
 
@@ -55,6 +55,13 @@ internal sealed class TempHome : IDisposable
         throw new InvalidOperationException($"no command for {string.Join(' ', argv)}");
     }
 
-    private string Strip(MemoryStream stream) =>
-        Encoding.UTF8.GetString(stream.ToArray()).Replace(Path, "<home>", StringComparison.Ordinal);
+    private string Strip(MemoryStream stream) => Redact(Encoding.UTF8.GetString(stream.ToArray()));
+
+    private string Redact(string text)
+    {
+        var redacted = text.Replace(Path, "<home>", StringComparison.Ordinal);
+        return System.IO.Path.DirectorySeparatorChar == '/'
+            ? redacted
+            : redacted.Replace("<home>\\config\\config.toml", "<home>/config/config.toml", StringComparison.Ordinal);
+    }
 }

@@ -48,6 +48,7 @@ public sealed class PluginHostTests
     [Fact]
     public async Task InvokeAsync_EnabledApprovedIpcPlugin_ReturnsPluginReply()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows dials a named pipe, and the echo server listens on a Unix socket");
         await using var fixture = new RuntimeFixture();
         await using var server = new EchoPluginServer(directory: fixture.Folder("scanner"));
         fixture.Install("scanner", IpcManifest(EchoPluginServer.SocketFile), approved: true);
@@ -210,6 +211,7 @@ public sealed class PluginHostTests
     [Fact]
     public async Task HealthAsync_PluginReplyIsNotAHealthBody_ThrowsBadReply()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows dials a named pipe, and the echo server listens on a Unix socket");
         await using var fixture = new RuntimeFixture();
         await using var server = new EchoPluginServer(directory: fixture.Folder("scanner"));
         fixture.Install("scanner", IpcManifest(EchoPluginServer.SocketFile), approved: true);

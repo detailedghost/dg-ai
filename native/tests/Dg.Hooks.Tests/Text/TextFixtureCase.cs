@@ -138,7 +138,19 @@ internal sealed class TextFixtureCase
             Path.Combine(tempBase, $"dg-hooks-text-{Guid.NewGuid():N}"),
             UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
         );
-        return path.ResolveLinkTarget(true)?.FullName ?? path.FullName;
+        return RealPath(path.FullName);
+    }
+
+    private static string RealPath(string path)
+    {
+        var resolved = "/";
+        foreach (var part in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            resolved = Path.Combine(resolved, part);
+            if (new DirectoryInfo(resolved).ResolveLinkTarget(true) is { } target)
+                resolved = target.FullName;
+        }
+        return resolved;
     }
 
     private static void MakeDirs(string path)
