@@ -551,3 +551,73 @@ describe("onTabComplete with an agent group", () => {
 		expect(state.tabs.get(95)?.groupId).toBe(5);
 	});
 });
+
+function heapAfterGc(): number {
+	Bun.gc(true);
+	Bun.gc(true);
+	return process.memoryUsage().heapUsed;
+}
+
+function resetMockHistory(): void {
+	mock.clearAllMocks();
+}
+
+describe("tab grouping retention", () => {
+	it("does not keep a queue per distinct group title", async () => {
+		const titles = 3_000;
+		const pad = "t".repeat(1_024);
+		const run = async (from: number, to: number) => {
+			for (let i = from; i < to; i++) {
+				const id = 1_000 + i;
+				addTab(id, 1, addGroupMarker(`https://github.com/o/r/pull/${id}`, `${pad}${i}`));
+				await onTabComplete(id);
+				state.tabs.delete(id);
+				forgetTab(id);
+				if (i % 200 === 0) resetMockHistory();
+			}
+			resetMockHistory();
+		};
+		await run(0, 200);
+		const base = heapAfterGc();
+		await run(200, titles);
+		const grown = heapAfterGc() - base;
+		console.log(`group title queues: ${titles - 200} titles, heap grew ${(grown / 1024).toFixed(0)} KiB`);
+		expect(grown).toBeLessThan(512 * 1024);
+	});
+
+	it("does not keep a batch slot for a tab that closed while it was being grouped", async () => {
+		const tabs = 20_000;
+		const batch = newBatchId();
+		const run = async (from: number, to: number) => {
+			for (let i = from; i < to; i++) {
+				const id = 100_000 + i;
+				markedTab(id, 1, 0, batch, "IP");
+				const group = browser.tabs.group;
+				const once = async (args: Parameters<typeof group>[0]) => {
+					const groupId = await group(args);
+					state.tabs.delete(id);
+					for (const ids of state.windows.values()) {
+						const at = ids.indexOf(id);
+						if (at >= 0) ids.splice(at, 1);
+					}
+					forgetTab(id);
+					return groupId;
+				};
+				(browser.tabs as { group: unknown }).group = once;
+				try {
+					await onTabComplete(id);
+				} finally {
+					(browser.tabs as { group: unknown }).group = group;
+				}
+				if (i % 200 === 0) resetMockHistory();
+			}
+			resetMockHistory();
+		};
+		await run(0, 500);
+		const base = heapAfterGc();
+		await run(500, tabs);
+		const grown = heapAfterGc() - base;
+		console.log(`batch slots: ${tabs - 500} closed tabs, heap grew ${(grown / 1024).toFixed(0)} KiB`);
+		expect(grown).toBeLessThan(512 * 1024);
+	});
+});

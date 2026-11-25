@@ -543,6 +543,7 @@ export function registerDaemonLink(
 			() => sessionControl.forget(sessionId),
 			() => agentWindows.forget(sessionId),
 			() => siteAllow.forget(sessionId),
+			() => pwExtRelay.forget(sessionId),
 		])
 			void Promise.resolve()
 				.then(cleanup)
