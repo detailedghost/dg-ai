@@ -1,0 +1,1 @@
+dg config: config.toml:2: front.enabled must be a boolean, got "yes". Next: run dg config edit, or dg config set front.enabled <value>.

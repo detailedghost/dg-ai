@@ -1,0 +1,1 @@
+dg config: config.toml:2: hooks.pre must be a table, got "x". Next: run dg config edit, or dg config set hooks.pre <value>.

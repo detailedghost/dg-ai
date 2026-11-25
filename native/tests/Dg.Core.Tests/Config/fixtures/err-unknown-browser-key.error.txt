@@ -1,0 +1,1 @@
+dg config: config.toml:3: browser.colour is not a dg config key. Next: run dg config edit, or dg config set browser.<key> <value>.

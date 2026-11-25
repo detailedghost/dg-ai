@@ -1,0 +1,127 @@
+[
+  {
+    "name": "linux-default",
+    "platform": "linux",
+    "home": "/home/u",
+    "env": {}
+  },
+  {
+    "name": "linux-xdg",
+    "platform": "linux",
+    "home": "/home/u",
+    "env": {
+      "XDG_CONFIG_HOME": "/xdg/config",
+      "XDG_DATA_HOME": "/xdg/data",
+      "XDG_STATE_HOME": "/xdg/state",
+      "XDG_CACHE_HOME": "/xdg/cache"
+    }
+  },
+  {
+    "name": "linux-xdg-relative-ignored",
+    "platform": "linux",
+    "home": "/home/u",
+    "env": {
+      "XDG_CONFIG_HOME": "rel/config",
+      "XDG_STATE_HOME": ""
+    }
+  },
+  {
+    "name": "linux-dg-home",
+    "platform": "linux",
+    "home": "/home/u",
+    "env": {
+      "DG_HOME": "/srv/dg",
+      "XDG_CONFIG_HOME": "/xdg/config"
+    }
+  },
+  {
+    "name": "linux-dg-home-dots",
+    "platform": "linux",
+    "home": "/home/u",
+    "env": {
+      "DG_HOME": "/srv/x/../dg/./home/"
+    }
+  },
+  {
+    "name": "darwin-default",
+    "platform": "darwin",
+    "home": "/Users/u",
+    "env": {
+      "XDG_CONFIG_HOME": "/ignored"
+    }
+  },
+  {
+    "name": "darwin-dg-home",
+    "platform": "darwin",
+    "home": "/Users/u",
+    "env": {
+      "DG_HOME": "/srv/dg"
+    }
+  },
+  {
+    "name": "win32-default",
+    "platform": "win32",
+    "home": "C:\\Users\\u",
+    "env": {}
+  },
+  {
+    "name": "win32-appdata",
+    "platform": "win32",
+    "home": "C:\\Users\\u",
+    "env": {
+      "LOCALAPPDATA": "D:\\Local",
+      "APPDATA": "D:\\Roam",
+      "USERPROFILE": "D:\\Profile"
+    }
+  },
+  {
+    "name": "win32-dg-home",
+    "platform": "win32",
+    "home": "C:\\Users\\u",
+    "env": {
+      "DG_HOME": "E:\\dg"
+    }
+  },
+  {
+    "name": "fence-inside",
+    "platform": "linux",
+    "home": "/fence/home",
+    "env": {
+      "DG_PATH_FENCE": "/fence"
+    }
+  },
+  {
+    "name": "fence-dg-home-inside",
+    "platform": "linux",
+    "home": "/home/u",
+    "env": {
+      "DG_HOME": "/fence/dg",
+      "DG_PATH_FENCE": "/fence"
+    }
+  },
+  {
+    "name": "fence-outside",
+    "platform": "linux",
+    "home": "/home/u",
+    "env": {
+      "DG_PATH_FENCE": "/fence"
+    }
+  },
+  {
+    "name": "fence-sibling-prefix",
+    "platform": "linux",
+    "home": "/home/u",
+    "env": {
+      "DG_HOME": "/fence-other/dg",
+      "DG_PATH_FENCE": "/fence"
+    }
+  },
+  {
+    "name": "fence-relative",
+    "platform": "linux",
+    "home": "/home/u",
+    "env": {
+      "DG_PATH_FENCE": "fence"
+    }
+  }
+]

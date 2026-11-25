@@ -1,0 +1,1 @@
+dg config: config.toml:4: colors is not a dg config section. Next: run dg config edit, or dg config set <section>.<key> <value>.
