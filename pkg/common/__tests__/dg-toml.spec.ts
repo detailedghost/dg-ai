@@ -65,7 +65,7 @@ describe("readDgToml", () => {
 		expect(doc.hooks).toEqual({ spelling: { locale: "en-GB" } });
 		expect(doc.install.cli_only).toBe(true);
 		expect(doc.refs).toEqual({ default_repo: "acme/app", aliases: { app: "acme/app" } });
-		expect(doc.plugins.foo).toEqual({ enabled: false, source: "github:acme/foo", settings: { depth: 3 } });
+		expect(doc.plugins.foo).toEqual({ enabled: false, allow_remote: false, source: "github:acme/foo", settings: { depth: 3 } });
 	});
 
 	test("throws a DgCliError with file, line, key and a next step for a wrong type", () => {
@@ -270,5 +270,62 @@ describe("writeDgToml", () => {
 
 	test("refuses an unknown section", () => {
 		expect(() => writeDgToml("nope.x", 1, env)).toThrow(DgCliError);
+	});
+});
+
+describe("browser and front keys", () => {
+	test("default browser.mode to auto and front.enabled to true", () => {
+		expect(setting<string>("browser.mode", { env })).toBe("auto");
+		expect(setting<boolean>("front.enabled", { env })).toBe(true);
+		expect(readDgToml(env).browser.mode).toBe("auto");
+		expect(readDgToml(env).front.enabled).toBe(true);
+	});
+
+	test("reads both keys from config.toml", () => {
+		writeFileSync(file, ["[browser]", 'mode = "local"', "[front]", "enabled = false", ""].join("\n"));
+
+		expect(readDgToml(env).browser.mode).toBe("local");
+		expect(readDgToml(env).front.enabled).toBe(false);
+	});
+
+	test("rejects a browser.mode outside ext, local and auto", () => {
+		writeFileSync(file, ["[browser]", 'mode = "both"', ""].join("\n"));
+
+		expect(caught(() => readDgToml(env)).message).toBe(
+			`dg config: ${file}:2: browser.mode must be ext, local or auto, got "both". Next: run dg config edit, or dg config set browser.mode <value>.`,
+		);
+	});
+
+	test("rejects a front.enabled that is not a boolean", () => {
+		writeFileSync(file, ["[front]", 'enabled = "no"', ""].join("\n"));
+
+		expect(caught(() => readDgToml(env)).message).toBe(
+			`dg config: ${file}:2: front.enabled must be a boolean, got "no". Next: run dg config edit, or dg config set front.enabled <value>.`,
+		);
+	});
+
+	test("rejects an unknown key in either section", () => {
+		writeFileSync(file, ["[front]", "speed = 1", ""].join("\n"));
+
+		expect(caught(() => readDgToml(env)).message).toContain("front.speed is not a dg config key");
+	});
+});
+
+describe("plugins allow_remote", () => {
+	test("defaults to false and reads true from config.toml", () => {
+		writeFileSync(file, ["[plugins.foo]", "enabled = true", "[plugins.bar]", "allow_remote = true", ""].join("\n"));
+
+		const { plugins } = readDgToml(env);
+
+		expect(plugins.foo?.allow_remote).toBe(false);
+		expect(plugins.bar?.allow_remote).toBe(true);
+	});
+
+	test("rejects a value that is not a boolean", () => {
+		writeFileSync(file, ["[plugins.foo]", 'allow_remote = "yes"', ""].join("\n"));
+
+		expect(caught(() => readDgToml(env)).message).toBe(
+			`dg config: ${file}:2: plugins.foo.allow_remote must be a boolean, got "yes". Next: run dg config edit, or dg config set plugins.foo.allow_remote <value>.`,
+		);
 	});
 });

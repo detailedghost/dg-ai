@@ -12,9 +12,15 @@ type Table = Record<string, unknown>;
 
 export type SecretRef = { credential: string };
 
-export type PluginEntry = { enabled: boolean; source?: string; settings: Table };
+export type PluginEntry = { enabled: boolean; allow_remote: boolean; source?: string; settings: Table };
+
+export const BROWSER_MODES = ["ext", "local", "auto"] as const;
+
+export type BrowserMode = (typeof BROWSER_MODES)[number];
 
 export type DgToml = {
+	browser: { mode: BrowserMode };
+	front: { enabled: boolean };
 	hooks: Record<string, Record<string, string>>;
 	install: { cli_only: boolean };
 	refs: { default_repo?: string; aliases: Record<string, string> };
@@ -24,9 +30,11 @@ export type DgToml = {
 	meta: { migrated: Record<string, string> };
 };
 
-export const DG_TOML_SECTIONS = ["hooks", "install", "refs", "inbox", "ssms", "plugins", "meta"] as const;
+export const DG_TOML_SECTIONS = ["browser", "front", "hooks", "install", "refs", "inbox", "ssms", "plugins", "meta"] as const;
 
 export const DG_TOML_DEFAULTS: Readonly<Record<string, unknown>> = {
+	"browser.mode": "auto",
+	"front.enabled": true,
 	"install.cli_only": false,
 	"ssms.allow_send": false,
 	"ssms.google.send_enabled": false,
@@ -186,6 +194,12 @@ function optionalString(where: Where, key: string, value: unknown): string | und
 	return value;
 }
 
+function browserMode(where: Where, key: string, value: unknown): BrowserMode {
+	if (value === undefined) return "auto";
+	if (!(BROWSER_MODES as readonly unknown[]).includes(value)) mustBe(where, key, "ext, local or auto", value);
+	return value as BrowserMode;
+}
+
 function onlyKeys(where: Where, key: string, value: Table, allowed: readonly string[]): void {
 	for (const name of Object.keys(value))
 		if (!allowed.includes(name)) fail(where, `${key}.${name}`, `${key}.${name} is not a dg config key. ${NEXT_EDIT} ${key}.<key> <value>.`);
@@ -195,10 +209,11 @@ function plugin(where: Where, key: string, value: unknown): PluginEntry {
 	if (key.split(".").length !== 2)
 		fail(where, key, `${key} is not a valid plugin name; a plugin name has no dot. ${NEXT_EDIT} plugins.<name>.enabled <value>.`);
 	const entry = table(where, key, value);
-	onlyKeys(where, key, entry, ["enabled", "source", "settings"]);
+	onlyKeys(where, key, entry, ["enabled", "allow_remote", "source", "settings"]);
 	const source = optionalString(where, `${key}.source`, entry.source);
 	return {
 		enabled: optionalBoolean(where, `${key}.enabled`, entry.enabled, true),
+		allow_remote: optionalBoolean(where, `${key}.allow_remote`, entry.allow_remote, false),
 		...(source === undefined ? {} : { source }),
 		settings: table(where, `${key}.settings`, entry.settings),
 	};
@@ -214,6 +229,10 @@ export function validateDgToml(raw: unknown, where: Where): DgToml {
 		checkStrings(where, name, value);
 		checkSecrets(where, name, value);
 	}
+	const browser = table(where, "browser", root.browser);
+	onlyKeys(where, "browser", browser, ["mode"]);
+	const front = table(where, "front", root.front);
+	onlyKeys(where, "front", front, ["enabled"]);
 	const hooksTable = table(where, "hooks", root.hooks);
 	const hooks: DgToml["hooks"] = {};
 	for (const [id, value] of Object.entries(hooksTable)) hooks[id] = stringTable(where, `hooks.${id}`, value);
@@ -231,6 +250,8 @@ export function validateDgToml(raw: unknown, where: Where): DgToml {
 	const meta = table(where, "meta", root.meta);
 	onlyKeys(where, "meta", meta, ["migrated"]);
 	return {
+		browser: { mode: browserMode(where, "browser.mode", browser.mode) },
+		front: { enabled: optionalBoolean(where, "front.enabled", front.enabled, true) },
 		hooks,
 		install: { cli_only: optionalBoolean(where, "install.cli_only", install.cli_only, false) },
 		refs: { ...(defaultRepo === undefined ? {} : { default_repo: defaultRepo }), aliases: stringTable(where, "refs.aliases", refs.aliases) },
