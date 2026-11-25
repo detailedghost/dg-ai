@@ -198,10 +198,12 @@ describe("run", () => {
 		const root = repo({
 			"scripts/lean-budgets.json": { size: { t: { rawBytes: 100 } } },
 			"native/budgets/hook.json": { totalBytes: 100 },
+			"native/bench/Dg.Bench/budgets/bench-linux-x64.json": { ipcWarmP50Ms: 1 },
 		});
 		const measured = repo({
 			"lean-budgets.json": { size: { t: { rawBytes: 120 } } },
 			"hook.json": { totalBytes: 98 },
+			"bench-linux-x64.json": { ipcWarmP50Ms: 1 },
 		});
 		const result = run({
 			root,
@@ -212,6 +214,7 @@ describe("run", () => {
 		expect(result.failures).toHaveLength(1);
 		expect(result.failures[0]).toContain("lean-budgets:size/t/rawBytes");
 		expect(result.rows.map((r) => r.budget).sort()).toEqual([
+			"bench-linux-x64:ipcWarmP50Ms",
 			"hook:totalBytes",
 			"lean-budgets:size/t/rawBytes",
 		]);
@@ -255,5 +258,10 @@ describe("budgets.yml", () => {
 	test("reads the PR body from the event through an env var, never inline in a script", () => {
 		expect(yml).toContain("PR_BODY: ${{ github.event.pull_request.body }}");
 		expect(yml).not.toMatch(/run:[^\n]*\$\{\{ github\.event\.pull_request\.body/);
+	});
+
+	test("downloads the bench measurements from the native-bench run on the head SHA", () => {
+		expect(yml).toContain("--workflow native-bench.yml");
+		expect(yml).toContain("--pattern 'bench-measurements-*'");
 	});
 });
