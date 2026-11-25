@@ -33,7 +33,8 @@ type Pending = {
 	windowId?: number;
 };
 
-const phiKey = (sessionId: string) => `agentWindowPhi:${sessionId}`;
+const phiPrefix = (sessionId: string) => `agentWindowPhi:${sessionId}:`;
+const phiKey = (sessionId: string, siteKey: string) => `${phiPrefix(sessionId)}${siteKey}`;
 
 /** Asks the person to allow each new site per session before the agent window loads it. */
 export function createSiteAllow({
@@ -55,11 +56,6 @@ export function createSiteAllow({
 }) {
 	const pending = new Map<string, Pending>();
 	const asking = new Map<string, Promise<SiteAllowAnswer>>();
-
-	async function phiSites(sessionId: string): Promise<string[]> {
-		const stored = (await storage.session.get(phiKey(sessionId)))[phiKey(sessionId)];
-		return Array.isArray(stored) ? stored.filter((site): site is string => typeof site === "string") : [];
-	}
 
 	windows.onRemoved((windowId) => {
 		for (const entry of pending.values()) if (entry.windowId === windowId) entry.resolve("deny", false);
@@ -97,10 +93,11 @@ export function createSiteAllow({
 	async function ask({ sessionId, siteKey }: SiteAllowRequest): Promise<SiteAllowAnswer> {
 		const { answer, phi } = await prompt({ sessionId, siteKey });
 		if (answer !== "allow") return "deny";
+		if (phi) await storage.session.set({ [phiKey(sessionId, siteKey)]: true });
 		await control.allow(sessionId, siteKey);
-		if (!(await control.allowed(sessionId, siteKey))) return "deny";
-		if (phi) await storage.session.set({ [phiKey(sessionId)]: [...(await phiSites(sessionId)), siteKey] });
-		return "allow";
+		if (await control.allowed(sessionId, siteKey)) return "allow";
+		if (phi) await storage.session.remove(phiKey(sessionId, siteKey));
+		return "deny";
 	}
 
 	async function requestSiteAllow(request: SiteAllowRequest): Promise<SiteAllowAnswer> {
@@ -131,11 +128,14 @@ export function createSiteAllow({
 
 		async assertCaptureAllowed(sessionId: string, url: string): Promise<void> {
 			const { key } = siteOf(url);
-			if ((await phiSites(sessionId)).includes(key)) throw new PhiCaptureRefusedError(key);
+			if ((await storage.session.get(phiKey(sessionId, key)))[phiKey(sessionId, key)] === true)
+				throw new PhiCaptureRefusedError(key);
 		},
 
-		forget(sessionId: string): Promise<void> {
-			return storage.session.remove(phiKey(sessionId));
+		async forget(sessionId: string): Promise<void> {
+			const prefix = phiPrefix(sessionId);
+			const keys = Object.keys(await storage.session.get(null)).filter((key) => key.startsWith(prefix));
+			await Promise.all(keys.map((key) => storage.session.remove(key)));
 		},
 
 		/** What the prompt page shows; undefined once answered or expired. */

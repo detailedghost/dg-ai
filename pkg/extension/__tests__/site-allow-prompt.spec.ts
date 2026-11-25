@@ -20,11 +20,26 @@ function memoryStorage() {
 	};
 }
 
-const tick = () => Bun.sleep(2);
+const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-function setup({ timeoutMs = 60_000, open }: { timeoutMs?: number; open?: () => Promise<number | undefined> } = {}) {
+function setup({
+	timeoutMs = 60_000,
+	open,
+	onAllow,
+}: {
+	timeoutMs?: number;
+	open?: () => Promise<number | undefined>;
+	onAllow?: (storage: ReturnType<typeof memoryStorage>) => void;
+} = {}) {
 	const storage = memoryStorage();
-	const control = createSessionControl({ storage });
+	const sessionControl = createSessionControl({ storage });
+	const control = {
+		allowed: sessionControl.allowed,
+		allow: async (sessionId: string, siteKey: string) => {
+			onAllow?.(storage);
+			return sessionControl.allow(sessionId, siteKey);
+		},
+	};
 	const opened: string[] = [];
 	const closed: number[] = [];
 	const removed: ((windowId: number) => void)[] = [];
@@ -44,7 +59,7 @@ function setup({ timeoutMs = 60_000, open }: { timeoutMs?: number; open?: () => 
 		newId: () => `id${++ids}`,
 		navigate: async (sessionId, url) => void loaded.push({ sessionId, url }),
 	});
-	return { allow, control, storage, opened, closed, removed, loaded };
+	return { allow, control: sessionControl, storage, opened, closed, removed, loaded };
 }
 
 describe("requestSiteAllow", () => {
@@ -70,13 +85,16 @@ describe("requestSiteAllow", () => {
 		expect(await control.allowed("s1", "https://example.com")).toBe(false);
 	});
 
-	it.each([
-		["timeout", async (s: ReturnType<typeof setup>) => void (await Bun.sleep(30))],
-		["closed window", async (s: ReturnType<typeof setup>) => void (await Bun.sleep(5), s.removed[0]?.(501))],
-	])("resolves deny on %s", async (_name, act) => {
-		const s = setup({ timeoutMs: 20 });
+	it("resolves deny on timeout", async () => {
+		const s = setup({ timeoutMs: 1 });
+		expect(await s.allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" })).toBe("deny");
+	});
+
+	it("resolves deny when the prompt window closes", async () => {
+		const s = setup();
 		const pending = s.allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" });
-		await act(s);
+		await tick();
+		s.removed[0]?.(501);
 		expect(await pending).toBe("deny");
 	});
 
@@ -129,7 +147,7 @@ describe("openSite", () => {
 	it("keeps the page unloaded until the person allows", async () => {
 		const { allow, loaded } = setup();
 		const pending = allow.openSite({ sessionId: "s1", url: "https://www.example.com/a" });
-		await Bun.sleep(5);
+		await tick();
 		expect(loaded).toEqual([]);
 		expect(allow.show("id1")?.siteKey).toBe("https://example.com");
 		await tick();
@@ -200,6 +218,37 @@ describe("PHI sites", () => {
 		await allowWithPhi(s, true);
 		await s.allow.forget("s1");
 		await expect(s.allow.assertCaptureAllowed("s1", "https://ehr.example.com/")).resolves.toBeUndefined();
+	});
+
+	it("stores the flag before the site counts as allowed", async () => {
+		let flagged = false;
+		const s = setup({
+			onAllow: (storage) => void (flagged = Object.values(storage.data).some((value) => value === true)),
+		});
+		await allowWithPhi(s, true);
+		expect(flagged).toBe(true);
+	});
+
+	it("keeps both flags when two sites are flagged in one session at once", async () => {
+		const s = setup();
+		const a = s.allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" });
+		const b = s.allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.org" });
+		await tick();
+		s.allow.answer("id1", true, true);
+		s.allow.answer("id2", true, true);
+		await Promise.all([a, b]);
+		for (const site of ["https://a.example.com/", "https://b.example.org/"])
+			await expect(s.allow.assertCaptureAllowed("s1", site)).rejects.toBeInstanceOf(PhiCaptureRefusedError);
+	});
+
+	it("leaves no flag behind when a stopped session refuses the allow", async () => {
+		const s = setup();
+		await s.control.stop("s1");
+		const pending = s.allow.requestSiteAllow({ sessionId: "s1", siteKey: "https://example.com" });
+		await tick();
+		s.allow.answer("id1", true, true);
+		expect(await pending).toBe("deny");
+		await expect(s.allow.assertCaptureAllowed("s1", "https://example.com/")).resolves.toBeUndefined();
 	});
 
 	it("does not store the flag on a deny", async () => {
