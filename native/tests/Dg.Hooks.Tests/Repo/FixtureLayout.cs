@@ -130,7 +130,7 @@ internal sealed class FixtureLayout : IDisposable
             var name = Path.GetFileName(path);
             if (name == ".git")
                 continue;
-            var rel = Path.GetRelativePath(Root, path);
+            var rel = Path.GetRelativePath(Root, path).Replace('\\', '/');
             var info = new FileInfo(path);
             if (info.LinkTarget is { } target)
                 lines.Add($"{rel} -> {target.Replace(Root, "<ROOT>", StringComparison.Ordinal)}");
