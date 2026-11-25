@@ -25,7 +25,7 @@ const BUDGET_FILES = [
 	"scripts/lean-budgets.json",
 	"scripts/skill-token-budgets.json",
 ];
-const BUDGET_DIRS = ["native/budgets", "bench/budgets"];
+const BUDGET_DIRS = ["native/budgets", "native/bench/Dg.Bench/budgets"];
 const INCREASE_LINE =
 	/^Budget-Increase:[ \t]+(\S+)[ \t]+(-?\d+(?:\.\d+)?)[ \t]+->[ \t]+(-?\d+(?:\.\d+)?)[ \t]+because[ \t]+(\S.*?)[ \t]*$/;
 
