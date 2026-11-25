@@ -48,6 +48,7 @@ jobs:
           front_rids="linux-x64 linux-arm64 win-x64 win-arm64 osx-x64 osx-arm64"
           mkdir -p old new patches
           from="${PREV#v}"
+          prev_assets="$(gh release view "$PREV" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
           patch_asset() {
             asset="$1"
             name="${asset%.exe}-from-${from}.zpatch"
@@ -62,19 +63,21 @@ jobs:
           for key in $keys; do
             asset="dg-${key}"
             case "$key" in windows-*) asset="${asset}.exe" ;; esac
-            if ! gh release download "$PREV" --repo "$GITHUB_REPOSITORY" --pattern "${asset}.zst" --dir old; then
+            if ! grep -qxF "${asset}.zst" <<< "$prev_assets"; then
               echo "${PREV} has no ${asset}.zst, so there is no patch for ${key}."
               continue
             fi
+            gh release download "$PREV" --repo "$GITHUB_REPOSITORY" --pattern "${asset}.zst" --dir old
             patch_asset "$asset"
           done
           for rid in $front_rids; do
             asset="dg-front-${rid}"
             case "$rid" in win-*) asset="${asset}.exe" ;; esac
-            if ! gh release download "$PREV" --repo "$GITHUB_REPOSITORY" --pattern "${asset}.zst" --dir old; then
+            if ! grep -qxF "${asset}.zst" <<< "$prev_assets"; then
               echo "${PREV} has no ${asset}.zst, so there is no front door patch for ${rid}."
               continue
             fi
+            gh release download "$PREV" --repo "$GITHUB_REPOSITORY" --pattern "${asset}.zst" --dir old
             patch_asset "$asset"
           done
           if ! ls patches/*.zpatch > /dev/null 2>&1; then

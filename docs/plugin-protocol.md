@@ -110,8 +110,8 @@ dg keeps one warm connection per plugin and never starts a process per call.
 ### TCP loopback trade-off
 
 On TCP, any local process can listen on the port first and receive the token that dg sends in the `hello`
-request. An authenticated plugin should prefer IPC, where file permissions guard the socket. The owner
-decision on this is pending.
+request. An authenticated plugin must use IPC, where file permissions guard the socket. Use TCP only for
+plugins that hold no secret.
 
 ## plugin.toml
 

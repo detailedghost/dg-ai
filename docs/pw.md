@@ -40,7 +40,7 @@ Order of choice, first match wins:
 1. A local-only verb runs local. `--ext` with one is an error and exits 2. See
    the table below.
 2. `--local` runs local. `--ext` runs ext.
-3. `DG_BROWSER=ext` or `DG_BROWSER=local`.
+3. `DG_BROWSER=ext` or `DG_BROWSER=local`. `DG_BROWSER=auto` forces nothing and falls through.
 4. `browser.mode` in `config.toml`: `ext`, `local` or `auto` (default).
 5. `auto`: ext when a paired extension is connected to a running daemon and
    the call fits the extension, else local.
