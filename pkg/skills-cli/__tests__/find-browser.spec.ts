@@ -33,6 +33,17 @@ describe("findInstalledChromium", () => {
 		).toBe("/opt/x/browser");
 	});
 
+	test.each(["ext", "local", "auto"])("ignores DG_BROWSER=%s because it is a pw browser mode", (mode) => {
+		expect(
+			findInstalledChromium(
+				seams({ env: { DG_BROWSER: mode, DG_VERIFY_BROWSER: "/opt/y" }, which: onPath("brave-browser") }),
+			),
+		).toBe("/opt/y");
+		expect(
+			findInstalledChromium(seams({ env: { DG_BROWSER: mode }, which: onPath("brave-browser") })),
+		).toBe("/usr/bin/brave-browser");
+	});
+
 	test("accepts DG_VERIFY_BROWSER as an alias", () => {
 		expect(findInstalledChromium(seams({ env: { DG_VERIFY_BROWSER: "/opt/y" } }))).toBe("/opt/y");
 	});
@@ -142,9 +153,9 @@ describe("chromiumExecutable", () => {
 });
 
 describe("BrowserMissingError", () => {
-	test("lists what it checked and DG_BROWSER before the download hint", () => {
+	test("lists what it checked and DG_VERIFY_BROWSER before the download hint", () => {
 		const message = new BrowserMissingError().message;
 		for (const name of ["Chrome", "Edge", ...PATH_CANDIDATES]) expect(message).toContain(name);
-		expect(message.indexOf("DG_BROWSER")).toBeLessThan(message.indexOf("install-browser"));
+		expect(message.indexOf("DG_VERIFY_BROWSER")).toBeLessThan(message.indexOf("install-browser"));
 	});
 });
