@@ -1,6 +1,6 @@
 # dg plugins are built in or external with one transport contract
 
-Status: Accepted (not yet implemented; plan in `.agents/spec/027_dg_cli_lean/plan.md`)
+Status: Accepted (implemented in the native front door and the Bun CLI; plan in `.agents/spec/027_dg_cli_lean/plan.md`)
 Date: 2026-11-24
 Topic: Platform
 
