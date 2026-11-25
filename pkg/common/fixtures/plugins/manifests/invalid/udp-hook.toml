@@ -1,0 +1,8 @@
+name = "udp-hook"
+version = "1.0.0"
+kind = "hook"
+transport = "udp"
+endpoint = "127.0.0.1:9000"
+
+[entry]
+command = "x"
