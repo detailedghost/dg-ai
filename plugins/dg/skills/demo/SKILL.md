@@ -1,13 +1,13 @@
 ---
 name: demo
-description: Produce a guided demo that plays in a local browser (the default, no extension) — a recorded MP4 of a feature or PR with chapter cards, captions, and a highlight on each target, optionally after preparing authenticated, configured, or seeded setup state. Write a plan, verify it, and run it. Pass --ext to play it through the dg-ai-extension instead. Use when someone asks to demo, show off, walk through, or record a feature in the browser.
+description: Produce a guided demo that plays in a local browser (the default, no extension): a recorded MP4 of a feature or PR with chapter cards, captions and a highlight on each target, after optional login or seed setup. Write a plan, verify it, run it. Pass --ext to play it through the dg-ai-extension. Use when asked to demo, show off, walk through or record a feature in the browser.
 ---
 
 # Guided-tour demo
 
 Turn a feature or PR into a demo. **Local mode always records.** It has no start
-screen, no review, and no walkthrough. Your job: write a plan, verify it, run it,
-and report the MP4 path. `--ext` keeps the interactive extension tour.
+screen, no review, and no walkthrough. Write a plan, verify it, run it, and report
+the MP4 path. `--ext` keeps the interactive extension tour.
 
 ## Step 1 — Write the plan
 
@@ -30,9 +30,8 @@ outro: "Done | That is the basics | Thanks for watching"
 ```
 
 A step is `N. **title** [`selector`] [→ navigate-url] [action] — body [`timing`]`.
-The timing is `4s`, `500ms`, or a bare ms count. Keep each body to a sentence or two.
-The recorder clicks and types for real. Use `@click` and `@type="..."` for every
-interaction. Full grammar: [references/authoring.md](references/authoring.md).
+The timing is `4s`, `500ms`, or a bare ms count. Keep bodies short.
+The recorder clicks and types for real: use `@click` and `@type="..."`. Full grammar: [references/authoring.md](references/authoring.md).
 
 `intro` and `outro` are `"Eyebrow | Title | Detail"`. The intro defaults to the eyebrow
 `Demo` and the plan `title`. No outro plays unless you set one.
@@ -80,12 +79,10 @@ On Windows PowerShell, pipe the raw `bootstrap.ps1` to `Invoke-Expression`.
 If a step fails, run dg doctor demo install rerun pw.
 The `demo doctor` subcommand checks the browser, `ffmpeg`, and `ffprobe`.
 
-Walk the plan first, so you hit a bad selector before the human does.
-Run `dg demo --verify /tmp/ai/demo/tour.md`. It drives the recorder in a dry run
+Walk the plan first, so you hit a bad selector before the human does. Run `dg demo --verify /tmp/ai/demo/tour.md`. It drives the recorder in a dry run
 and prints `{"ok": boolean, "findings": [...]}`. A finding is `selector-unresolved`,
 `env-unset` (it names the variable), `plan-unreadable`, or `harness-error`.
-A click that submits a form and navigates is fine. Fix the plan and rerun, at most 3 passes.
-If a finding cannot be fixed, surface it to the human.
+A click that submits a form and navigates is fine. Fix and rerun, at most 3 passes; surface a finding you cannot fix.
 
 Then record:
 
@@ -94,8 +91,7 @@ dg demo /tmp/ai/demo/tour.md
 ```
 
 Add `-n` only when the human asks for voice. The command starts the recorder and returns.
-Run `dg demo status <slug>` until it prints the result. The result holds the MP4
-path. Report that path to the human.
+Run `dg demo status <slug>` until it prints the result. The result holds the MP4 path. Report that path to the human.
 
 ## Flags
 
@@ -114,31 +110,33 @@ path. Report that path to the human.
 | `--edit` | none | `--ext` only: open the review panel first. | off |
 | `--attach-pr <pr>` | none | Skill flag, not a CLI flag: after the run, attach the video to a GitHub PR. See [references/attach-pr.md](references/attach-pr.md). | off |
 
-Local-only flags with `--ext` fail with exit 1.
+Local-only flags with `--ext` exit 1.
 
-## Browser
+## Browser mode
 
-One finder picks the browser. It checks `DG_BROWSER` (alias `DG_VERIFY_BROWSER`),
-Chrome, Edge, Brave, Chromium, Vivaldi, Chrome for Testing on PATH, the usual macOS and
-Windows app folders, then the downloaded Chromium. Only then does it suggest
-`dg pw install-browser`. Set `DG_BROWSER` to force one.
+Local mode records with its own Playwright recorder and stays local in every
+`browser.mode`, so video never drives the human's real profile. `auto` never switches
+`demo`. `--ext` plays in the agent window, and the first visit to each new site opens
+the allow popup.
 
-On WSL, `demo` drives the Windows browser by default and falls back to headless
-Chromium inside WSL. The Windows browser opens a remote-debugging port on 127.0.0.1
-while the run is live. For a recording with no port, pass `--browser chromium`. See
+One finder picks the browser: `DG_BROWSER` (alias `DG_VERIFY_BROWSER`) as a binary path,
+then Chrome, Edge, Brave, Chromium, Vivaldi, Chrome for Testing, the usual app folders,
+then the downloaded Chromium. Only then does it suggest `dg pw install-browser`.
+
+On WSL, `demo` drives the Windows browser by default, else headless Chromium inside WSL.
+The Windows browser opens a remote-debugging port on 127.0.0.1 during the run; pass
+`--browser chromium` for no port. See
 [ADR 0029](https://github.com/detailedghost/dg-ai/blob/master/docs/adr/0029-local-demo-player-wsl-debug-port.md).
 
 ## Output and narration
 
 The output is an MP4: H.264, 1440x810, 30 fps, checked with `ffprobe`. It needs
-`ffmpeg`. Without it, the raw webm stays, with a sidecar `.wav` when narrated, and the
-CLI prints a warning.
+`ffmpeg`. Without it, the raw webm stays, with a sidecar `.wav` when narrated, and the CLI warns.
 
-The voice model downloads on the first voiced run (about 86 MB, pinned revision). The
-CLI checksum-verifies the asset zip. The recorder makes the voice before the recording,
-on a page it controls, so a site Content Security Policy cannot block it. The overlays
-are plain DOM, so a strict policy does not block them either. Offline, the run falls
-back to captions.
+The voice model downloads on the first voiced run (about 86 MB, pinned revision), and the
+CLI checksum-verifies the asset zip. The recorder makes the voice before the recording, on
+a page it controls, so a site Content Security Policy cannot block it. The overlays are plain
+DOM, so a strict policy does not block them either. Offline, the run falls back to captions.
 
 ## Replay and extension
 

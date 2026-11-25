@@ -131,3 +131,4 @@ belong with their owning private tooling repository.
 - [0048 — Outlook mail Web MCP tools over OWA service calls](0048-outlook-mail-webmcp-tools.md)
 - [0050 — Fold browser skill into pw](0050-fold-browser-skill-into-pw.md)
 - [0051 — pw --ext: read the network calls of an agent tab, shape first](0051-pw-ext-network.md)
+- [0060 — dg pw picks its browser per call, and the extension gains 24 verbs behind new safety rules](0060-pw-auto-mode-and-ext-verbs-for-the-real-browser.md)

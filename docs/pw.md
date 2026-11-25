@@ -10,7 +10,7 @@ URL tabs with no pw session. See [Browser tabs and extension](browser.md).
 
 ## Browser
 
-`pw open` picks `DG_BROWSER` (a browser binary path) when set, then a system Chrome, then Edge, then
+`pw open` picks `DG_VERIFY_BROWSER` (a browser binary path) when set, then a system Chrome, then Edge, then
 another Chromium-family browser on PATH or in the usual app folders (Brave,
 Chromium, Vivaldi), then a Chromium that `dg pw install-browser`
 downloaded. `--browser=chromium` uses the same list without the Chrome and Edge
@@ -28,6 +28,76 @@ On WSL, `pw open` uses Windows Chrome or Edge over CDP when one exists, and
 headless Chromium inside WSL otherwise. `--windows` forces the Windows browser.
 `--wsl-headed` opens a headed browser through WSLg and is experimental. Agents
 never pass it unless the human asks.
+
+## Browser mode: auto, ext and local
+
+`dg pw` picks one of two engines for each call. `local` drives a Playwright
+browser that dg starts. `ext` drives your real browser through the paired
+dg-ai-extension. The default is `auto`.
+
+Order of choice, first match wins:
+
+1. A local-only verb runs local. See the table below.
+2. `--local` runs local. `--ext` runs ext.
+3. `DG_BROWSER=ext` or `DG_BROWSER=local`.
+4. `browser.mode` in `config.toml`: `ext`, `local` or `auto` (default).
+5. `auto`: ext when a paired extension is connected to a running daemon and
+   the call fits the extension, else local.
+
+`DG_BROWSER=auto` and `browser.mode = "auto"` force nothing. Any other
+`DG_BROWSER` value makes `dg pw` stop with `DG_BROWSER must be ext, local or
+auto`. The browser finders of `demo` and `verify` still read `DG_BROWSER` as a
+browser binary path. To name a binary for `dg pw`, set `DG_VERIFY_BROWSER`
+instead.
+
+Set the mode for every shell with `dg config set browser.mode local`, or for
+one command with `DG_BROWSER=local dg pw ...`. See [config](config.md).
+
+`--ext` with a local-only verb exits 2 with `pw <verb> runs only in local
+mode`. CI, recorded fixtures and the extension's own tests use `--local`.
+
+### What auto sends to the extension
+
+Auto sends a call to the extension only when all of these hold:
+
+- The extension is paired and reports connected. Otherwise the call runs local,
+  with no error.
+- The verb has an ext verb. The pw name maps to the ext name: `goto` to `open`,
+  `tab-list` to `tabs`, `tab-new` to `new`, `tab-close` to `close`. Every other
+  ext verb keeps its name.
+- The call has no options and no session. `-s=<name>`, `--headless`,
+  `--browser`, `--depth` and any other option keep the call local. The one
+  option auto accepts is `type --submit`.
+- The positional count fits the ext verb.
+
+`pw select`, `close`, `tab-select` and `upload` stay local in auto mode, and
+so does `tab-close` with an index. Their pw meaning differs from the ext verb
+of the same name: `pw select` picks an option, `pw close` ends a browser
+session, `tab-select` and `tab-close <n>` take a tab index, and `pw upload`
+takes a path on this machine. Use the ext verbs with `--ext`, for example
+`dg pw --ext select <tabId>`.
+
+### Local-only verbs
+
+These verbs never go to the extension, in auto mode or with `--ext`.
+
+| Verb | Why it stays local |
+|---|---|
+| `route`, `unroute`, `route-list` | Request mocking uses Playwright interception. The extension cannot intercept or fulfill requests of your real profile |
+| `network-state-set` | Offline and throttle emulation set a Playwright context state, not a real-browser state |
+| `state-save`, `state-load` | They write or read a full cookie jar and storage in a plain file. That would copy the sign-ins of your real profile |
+| `delete-data` | It wipes cookies and storage of a profile. The extension never does that in your real profile |
+| `cookie-set`, `cookie-delete`, `cookie-clear` | Cookie writes in your real profile are refused. Local cookies belong to a throwaway Playwright profile |
+| `video-start`, `video-stop`, `video-chapter` | Recording uses the Playwright context recorder |
+| `tracing-start`, `tracing-stop` | Tracing uses the Playwright tracer |
+| `pdf` | It uses `page.pdf()` of Playwright |
+| `install-browser` | It downloads Playwright's Chromium. Your real browser needs no install |
+| `kill-all` | It stops local pw daemons and sessions |
+| `attach` | It connects to a browser over CDP, which is a local engine |
+
+Firefox, WebKit, headless runs and CI also need local mode. Multi-viewport
+capture for `verify`, demo video recording and the proto fingerprint use
+Playwright, so they stay local too.
 
 ## Real browser (`--ext`)
 
@@ -73,6 +143,19 @@ popup.
 | `dialog` | write | Shows the page's last `alert`, `confirm` or `prompt`, how it was answered, and the answer set for the next one |
 | `dialog accept [--text <answer>]` | write | Accepts the next dialog on the page. `--text` is the answer a `prompt` gets |
 | `dialog dismiss` | write | Dismisses the next dialog on the page. Each new page starts at dismiss |
+| `go-back`, `go-forward`, `reload` | write | Moves the selected tab one history entry back or forward, or reloads it |
+| `hover <ref or selector>`, `dblclick <ref or selector>` | write | Moves the pointer over one element, or double-clicks it |
+| `drag <from> <to>` | write | Drags one element onto another |
+| `mousemove <x> <y>`, `mousewheel <dx> <dy>` | write | Moves the pointer to viewport coordinates, or scrolls the wheel at the pointer |
+| `mousedown [button]`, `mouseup [button]` | write | Presses or releases `left`, `middle` or `right` at the pointer |
+| `check <ref or selector>`, `uncheck <ref or selector>` | write | Sets one checkbox or radio button to the wanted state |
+| `type <text> [--submit]` | write | Types text key by key into the focused element. `--submit` presses Enter after it |
+| `keydown <key>`, `keyup <key>` | write | Sends one key down or up event, for chords and held keys |
+| `tab-select <tabId>` | write | Makes a tab of the group the selected tab, like `select` |
+| `resize <width> <height>` | write | Resizes the agent window. Each side is 200 to 10000 |
+| `eval <expression>` | write | Runs one JavaScript expression in the page and prints its value. It refuses a site you have not allowed, with no popup |
+| `localstorage-set <key> <value>`, `localstorage-delete <key>`, `localstorage-clear` | write | Writes the page's localStorage. It refuses a site you have not allowed, with no popup |
+| `sessionstorage-set <key> <value>`, `sessionstorage-delete <key>`, `sessionstorage-clear` | write | The same for sessionStorage |
 
 Rules:
 
@@ -95,6 +178,16 @@ Rules:
   `close` ask nothing. `tools` and `call` are the Web MCP bridge: this site
   question does not gate them, and `call` uses [Web MCP approvals](webmcp.md)
   instead. Mailbox origins keep their guard.
+- Each dg session gets its own agent window: a separate, unfocused, non-private
+  browser window that opens on the first verb. The agent's tab group lives
+  there, so the agent never takes over the tabs you work in.
+- The site popup has a PHI checkbox. Tick it for a site that shows protected
+  health information. For the rest of the session, `snapshot` and `screenshot`
+  refuse that site, and the refusal says so. Other verbs still follow the
+  Allow.
+- `eval` and the storage write verbs (`localstorage-*`, `sessionstorage-*`)
+  never open the popup. On a site that is not allowed yet, they refuse. Run a
+  navigation or read verb first so the popup asks, then repeat the write.
 - Each agent tab shows an "Agent is driving this tab" banner with a Stop button.
   The banner is a small pill in the bottom-left corner, so it does not cover a
   page's fixed top header or search box. It does not change the page layout.

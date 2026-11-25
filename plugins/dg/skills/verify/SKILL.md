@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Review finished work before it lands. Capture before-and-after screenshots of each change at desktop, tablet, and mobile, light and dark, per role, including scrolled pages and open menus, then show them round by round on a local board with test results and an accessibility summary. Dante approves, approves with a note, sends back, or skips each item. Use when an agent has finished a branch, worktree, or page and a person needs to see it, or when the user says "verify this", "show me before and after", or "let me approve the change".
+description: Review finished work before it lands. Capture before-and-after screenshots at desktop, tablet and mobile, light and dark, per role, then show them round by round on a local board with test results. Dante approves, sends back or skips each item. Use when an agent has finished a branch or page, or the user says "verify this" or "show me before and after".
 ---
 
 First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
@@ -59,59 +59,13 @@ Every command takes `--dir=PATH`. The default session is `.agents/verify/<name>/
 
 ## Build the manifest
 
-Write a JSON file. Every URL must be loopback (`127.0.0.1`, `localhost`, or `::1`).
-Do not point at production.
-Do not put real sessions, passwords, or access tokens in headers or cookies.
-Use seed roles only.
-A role may name a saved sign-in instead: set `"state": "<name>"`, where `<name>` is a state saved with `dg pw state save <name>`.
-Verify loads the state and signs in as that user. Only loopback pages are captured.
-A state role needs the `playwright` engine. The `http` engine refuses it.
-The manifest holds the state name only. The cookies stay in the saved state and never reach the board, the session files, or the logs.
-If a page lands on another path, such as a sign-in page, capture stops and tells you to save a sign-in and add `state` to the role.
+Write a JSON file. Every URL must be loopback (`127.0.0.1`, `localhost` or `::1`). Never point at production. Never put real sessions, passwords or tokens in headers or cookies. Use seed roles, or a saved sign-in with `"state": "<name>"` (needs the `playwright` engine). The manifest holds the state name only.
+Each item has `id`, `title`, `beforeUrl`, `afterUrl` and `roles`, and may have `what`, `owner`, `beforeRef`, `afterRef`, `targetUrl`, `record` and `rootSelector`. The top level has `name`, `stackUrl` and `tests`. `owner` is the agent who owns the after side: [references/owners.md](references/owners.md).
+Full example and every field: [references/manifest.md](references/manifest.md). Capture details and viewports: [references/capture.md](references/capture.md).
 
-```json
-{
-  "name": "settings-nav",
-  "stackUrl": "http://127.0.0.1:3000/",
-  "tests": { "summary": "12 passed", "passed": 12, "failed": 0 },
-  "items": [
-    {
-      "id": "settings",
-      "title": "Settings",
-      "what": "Moves the settings links into a side menu.",
-      "owner": "dg:implementer",
-      "beforeRef": "master",
-      "afterRef": "feat/settings-nav",
-      "beforeUrl": "http://127.0.0.1:4001/settings",
-      "afterUrl": "http://127.0.0.1:4002/settings",
-      "targetUrl": "http://127.0.0.1:4321/",
-      "record": ".agents/spec/007_notes/prototype/slice_2_accepted.json",
-      "rootSelector": "[data-verify-root=\"settings-nav\"]",
-      "roles": [
-        { "id": "admin", "headers": { "x-seed-role": "admin" } },
-        { "id": "member", "headers": { "x-seed-role": "member" } }
-      ]
-    }
-  ]
-}
-```
+## Browser mode
 
-`what` is optional. It is one or two sentences on what changed, shown under the title.
-`owner` is the agent who owns the after side. Name them the way the work was assigned. See [references/owners.md](references/owners.md).
-
-`beforeRef` and `afterRef` are labels (a branch or a worktree).
-This command does not check out branches or boot apps.
-Start the before stack and the after stack yourself, then put their URLs in the manifest.
-`stackUrl` is the after stack. Each captured round shows an "Open in app" link to it.
-`targetUrl` is optional.
-Set it only when a prototype page is already running.
-The column says there is no prototype target when the field is absent.
-
-`record` is the committed `slice_N_accepted.json` that `spec prototype-ref` copied into the bundle. See Layout check. `rootSelector` is optional and defaults to `[data-verify-root]`.
-
-`tests` is the suite result for the change. A `cmd` array is an argv that runs without a shell. Only put a command in it that you would run yourself. A `summary` is enough when the suite already ran.
-
-Capture details, viewports, and the accessibility check: [references/capture.md](references/capture.md).
+Capture runs a Playwright browser, so it stays local even when `browser.mode` is `auto`. It never drives the human's real browser through the extension.
 
 ## Run the review
 
@@ -121,73 +75,17 @@ dg verify serve settings-nav
 dg verify wait settings-nav
 ```
 
-Each item becomes a section with the id `<item>-r<round>`.
-Rounds of one item link through `follows`.
-The left panel shows the title, the progress, and one entry per item with a timeline of its rounds.
-Overview and Needs attention stay pinned at the top. Needs attention goes to the next round with no verdict.
-Drag the panel edge, or focus it and use the arrow keys, to change its width. Enter or a double-click resets it.
-The board checks for changes every 5 seconds. A changed round that is open updates in place and keeps the note draft. A new round opens by itself, unless Dante is typing a note.
-The theme button shows the board and the screenshots in light or dark.
-A screenshot is dark when its label or file name has the word `dark`. Every other screenshot is light.
-Put `light` or `dark` in the names of shots you add yourself.
-Each pair shows side by side. The board marks what changed with numbered boxes on both images and a count such as `2 changed areas` in the card header. The highlight button in the picker turns the boxes off and on, and the board remembers the choice. Each pair also has a Side by side, Before, and After switch to see one image at full width. A pair with no before has no highlights.
-The collapse button in the panel head shrinks the panel to an icon rail. Expanding it resets the panel to the default width.
-The note field grows with its text and can be resized. Shift+Enter adds a line. Enter alone does not save.
-Each screenshot has its own "Note on this" button.
-A verdict keeps the screenshot notes in `shotNotes` and the main note in `mainNote`.
-`note` holds the main note and one `[label] text` line per screenshot note, so `status`, `wait`, and `watch` show all of them.
-A screenshot note alone counts as a note: Approve becomes approve with a note, and Needs changes is allowed.
-When several items wait, only the first one in each list animates.
-The browser tab shows the number of rounds that wait, the open round, and the board title, for example `(2) Settings r2 · Settings polish`.
-It adds `● New round` when a round arrives while the tab is in the background.
-The tab icon shows the same count in a red dot.
-Needs attention is also the alert bell. The first click asks the browser once for alert permission. After that, a click goes to the next waiting round. An alert shows only when a round arrives and the tab is in the background.
-`status` and `watch` print `more versions` for a round where Dante asked for more versions. `rerun` treats it like a round that was sent back.
-`wait` returns when every round has a verdict. Read its lines. They name each item, its rounds, and the latest note.
-`ALL APPROVED` shows only when every item ends in a plain approve and no agent work is pending.
-When Dante approves the last open round and no agent work is pending, the board counts down 5 seconds and closes its tab. Keep open cancels it. A board that was already finished when it opened does not close itself.
-After `wait` prints `ALL APPROVED`, run `verify stop <name>` to stop the board server.
+Each item becomes a section `<item>-r<round>`. Rounds of one item link through `follows`. `wait` returns when every round has a verdict. Read its lines: they name each item, its rounds, and the latest note.
+`ALL APPROVED` shows only when every item ends in a plain approve and no agent work is pending. Then run `verify stop <name>` to stop the board server.
+Board controls, tab alerts, notes, themes and highlights: [references/board.md](references/board.md).
 
 ## Layout check
 
-An item that builds a prototyped slice is incomplete without `record`.
-`verify capture` reads the record before it takes any shot. A missing or malformed record stops the run and names the path.
-For each role, viewport, and theme, it reads the layout of the after page in the default state and compares it with the reading in the record.
-A row has one of these kinds:
-
-- `root-missing`: the page has no single visible feature root.
-- `missing`: the prototype had a control that the build lacks.
-- `extra`: the build has a control that the prototype lacked.
-- `reordered`: a control is out of order against the others.
-- `moved`: a control changed its top, middle, or bottom band, or its left, center, or right band, by a tenth of the root or more.
-- `visibility`: a control is shown or hidden against the prototype.
-- `occluded`: a control is covered by another element in the build but not in the prototype, or the other way round.
-- `theme`: the build did not apply the theme that the record read.
-- `not-checked`: the layout was not read. The http engine, an `--ext` record, and a record made with `--no-fingerprint` each give one row per role with the reason.
-
-The board shows a Layout pill and a table of the rows.
-Each row has an Accept box, and the header has one for all rows.
-Approve is refused until every row is accepted or the verdict has a note.
-An accepted row stays accepted in later rounds of the same item. A round added by hand shows the rows of the latest earlier round that has them.
-`status` prints `| layout: N unaccepted` for an item with open rows. `ALL APPROVED` waits until N is 0.
-A control that shows record data, such as a select of names or a button with a user title, needs a `data-testid`. The test id wins identity, so the row does not break when the data changes.
-Pixel differences never fail a review.
-When no prototype page runs, the board shows the reference shots from the prototype sandbox in the prototype column. A missing sandbox, a prototype name found in two worktrees, or a sandbox that accepted a different pick since, leaves the column empty.
+An item that builds a prototyped slice needs `record`. `verify capture` reads the layout of the after page and compares it with the record. The board shows a Layout pill and a table of rows. Approve is refused until every row is accepted or the verdict has a note. Pixel differences never fail a review. Row kinds and rules: [references/layout-check.md](references/layout-check.md).
 
 ## Versions
 
-A round can hold more than one version, like `/dg:proto` variants.
-Run `add` once per version with the same round id:
-
-```bash
-dg verify add settings-nav nav-r2 --title="Nav" --follows=nav-r1 --round=2 --variant=A --variant-label="Tabs" --shots=./shots/a
-dg verify add settings-nav nav-r2 --title="Nav" --follows=nav-r1 --round=2 --variant=B --variant-label="Rail" --shots=./shots/b --pending=nav-r2
-```
-
-A version key is 1 to 16 letters or digits.
-Dante flips versions with the switcher, the arrow keys, or the keys 1 to 9. The captions read "Now" and "Version B".
-Approve records the shown version. `status` and `watch` print `picked B`.
-A version `add` clears a pending entry only when you pass `--pending=KEY`.
+A round can hold more than one version, like `/dg:proto` variants. Run `add` once per version with the same round id and `--variant=KEY`. Dante picks one; `status` prints `picked B`. Commands and rules: [references/versions.md](references/versions.md).
 
 ## Send notes back and rerun
 
@@ -215,14 +113,4 @@ Use `--summary` to say in a few words what changed. Without it, the summary is t
 
 ## Local only
 
-The board is static files that ship with the skill in `assets/`: `index.html`, `board.js`, and `board.css`.
-The icons come from `/dg:proto`'s `assets/dg-icons.js`, so both skills draw the same toolbar.
-The HTML has no inline script and no inline style.
-The server sends a Content-Security-Policy that allows only `'self'` for scripts, styles, and connections. Images also allow `data:`, so the board can draw its tab icon.
-Nothing is loaded from a CDN.
-
-Screenshots and verdicts stay in `.agents/verify/<name>/`.
-That directory is gitignored. Do not commit them.
-Do not copy real user data into the manifest or the fixture.
-
-The page does not inject a script into the app under review. Capture navigates and screenshots. The app's own CSP is left alone.
+The board is static files in `assets/` with no inline script, a strict Content-Security-Policy and no CDN. Screenshots and verdicts stay in `.agents/verify/<name>/`, which is gitignored: never commit them. Never copy real user data into the manifest. Details: [references/local-only.md](references/local-only.md).

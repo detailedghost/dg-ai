@@ -18,6 +18,12 @@ you review the plan in the extension, and video lands in your Downloads folder.
 Type a password with `@type="$DG_DEMO_VELORA_PW"` in the plan. Only `$DG_DEMO_*`
 variables resolve, and only into password fields. The plan never holds the value.
 
+Local recording uses its own Playwright recorder and stays local in every
+`browser.mode`, so video never drives your real profile. `--ext` plays through
+the extension in the agent window, and the first visit to each new site opens
+the allow popup. `demo` and `proto` read `--ext` as an explicit flag; `auto`
+mode does not switch them. See [browser mode](pw.md#browser-mode-auto-ext-and-local).
+
 Tours can include a setup phase for login, configuration, or seeded data. Setup
 is excluded from the tutorial and recording by default, but can be explicitly
 included as the opening steps. See [ADR 0040](adr/0040-local-demo-recorder.md).
@@ -59,6 +65,8 @@ companion extension. For authenticated or private pages, review the privacy
 warning before allowing the style scrape. The CLI writes approved answers under
 `.agents/prototype/<slug>/` and removes temporary Downloads and scratch files
 after export.
+
+The local fingerprint capture uses Playwright and stays local in every mode.
 
 Plain `/dg:proto` used to run the extension workflow. It now runs the local
 mode, so add `--ext` to keep the extension workflow. The CLI form follows:

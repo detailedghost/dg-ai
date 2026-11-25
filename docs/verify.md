@@ -36,6 +36,10 @@ The board then closes its own tab after a short countdown, and the agent runs `v
 `rerun` captures the next round for items that were sent back or approved with a note.
 The open tab finds the new round by itself.
 
+Capture runs a Playwright browser, so it stays in `--local` mode even when
+`browser.mode` is `auto`. It never touches the extension or your real profile.
+See [browser mode](pw.md#browser-mode-auto-ext-and-local).
+
 Screenshots stay in `.agents/verify/<name>/` and are not committed. The board loads no CDN. Its scripts are static files.
 
 See the [verify skill](../plugins/dg/skills/verify/SKILL.md) and [ADR 0023](adr/0023-verify-local-review.md).

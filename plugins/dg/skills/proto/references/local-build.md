@@ -136,3 +136,52 @@ With `--publish`, publish the winning variant as a shareable Artifact after the 
 Without a prior selection, default to `?variant=A`, or the current URL parameter when the user is browsing.
 Port resolution order: `$PROTOTYPE_PORT`, then `4321` (Astro), then `3000` (Next, Vite). If the port is unknown, ask.
 `--light` with `--publish` works the same way. Publish only the final approved variant of a chain.
+
+## Rendering: local first, always
+
+A prototype that does not render is worthless. Never `<script src>` or `<link href>` an external
+URL (CDN scripts, web fonts) in a prototype: it renders blank when the network is blocked.
+Vendor or inline every dependency, or hand-render to plain HTML and CSS.
+
+**The local mode never reaches the network at run time.** Never install a package or framework, and
+never fetch one from the network, to satisfy this: use what the project already has installed. If a
+dependency is genuinely missing, stop and name the one command the user should run (the same way the
+pw skill asks before `pw install-browser`) and let them run it. `--ext` mode never writes a browser
+download either: the extension hands scrape and plant results straight to the CLI over the paired
+dg session. A `~/Downloads/dg-proto/` folder from an older `dg` version is safe to
+delete; nothing reads or writes it anymore.
+
+A prototype of an existing app's UI renders **in that app**. When the thing being prototyped is a
+page, panel, dialog, or component of a web app in the repo, mount the variants in the real running
+app (UI sub-shape A in [references/local-ui.md](local-ui.md)). Never rebuild the app's chrome as a standalone
+look-alike: the user then judges the copy, not the design.
+
+With no host app, or with `--self-contained`, serve the content on the `prototype serve` page
+with `dg prototype ui`. Prose, tables, code, and compare cards are plain HTML inside a
+variant, so no other viewer is needed. See [references/local-formats.md](local-formats.md).
+
+Verify the page renders before handing it over. Load it (an already-installed Playwright, through
+the `pw` skill or an MCP tool, or a headless check of the produced HTML) and confirm the real
+content is present — never install Playwright or download a browser for this check. Never ask "does
+this look right?" about a page you have not confirmed renders.
+
+## When done
+
+The answer is the only thing worth keeping from a prototype. Capture it somewhere durable (commit
+message, ADR, issue, or the `NOTES.md` next to the prototype) along with the question it answered.
+If the user is around, that capture is a quick conversation. If not, leave the placeholder so they,
+or you on the next pass, can fill in the verdict before deleting the prototype.
+
+Returning to a prototype rather than building one? A UI prototype's pick may already be sitting
+unclaimed. See "Claim an outstanding pick" in [references/local-ui.md](local-ui.md) before assuming the verdict was lost.
+
+## When a prototype feeds a planning document
+
+If a planning document (a `/dg:spec` spec, a plan, a `/dg:prd` deliverable) references the
+prototype's outcome, the prototype stops being throwaway for the life of that plan and becomes the
+source of truth for the design it settled.
+
+1. **Keep the asset available.** The prototype must live in the durable `.agents/prototype/<name>/` location, never only in the `--light` scratch sandbox, which is wiped on reboot while the plan is still open. If it was built with `--light`, copy it into `.agents/prototype/<name>/` before referencing it. Record its path, and the winning variant key for a UI prototype, in the planning document.
+   Link the planning document to the text-only `ACCEPTED.md` and `accepted.json` that the `/dg:spec` plan step copies into the bundle from the sandbox record with `prototype-ref`. Every variant's feature root carries `data-verify-root="<prototype name>"`, so `/dg:verify` can compare the built layout with the accepted one. Give every control that shows record data a `data-testid`, so its identity survives changed data. Never commit screenshots.
+2. **Follow it completely.** Agents that implement a prototyped decision reproduce the prototype's design and feature set faithfully. Do not silently drop features or re-decide the look or flow it already resolved.
+3. **Ask when it does not fit the code.** Where the prototype conflicts with the current code design (data shape, existing components, framework limits it could not see), surface the mismatch instead of diverging or force-fitting. Ask directly when interactive, or escalate to the orchestrator inside a workflow that forbids prompts.
