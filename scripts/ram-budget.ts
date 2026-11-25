@@ -432,7 +432,7 @@ async function main(): Promise<number> {
 		}
 		const floorBytes = await floor(root);
 		console.log(`floor (compiled console.log): ${fmt(floorBytes)} MB`);
-		const header = ["case", "peak MB", "over floor", "idle MB", "anon MB", "ms", "ms p50", "ms p90", "ms p95", "growth MB", "budget MB", "budget ms", "budget growth MB"];
+		const header = ["case", "peak MB", "over floor", "idle MB", "anon MB", "ms p50", "ms p90", "ms p95", "growth MB", "budget MB", "budget ms", "budget growth MB"];
 		console.log(header.join("\t"));
 		const results: Record<string, Sample & { budget: number; msBudget?: number; growthBudget?: number }> = {};
 		let failed = 0;
