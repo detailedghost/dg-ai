@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { quantile } from "./ram-budget/judge";
 
 type FrontCase = { name: string; args: string[]; expect: RegExp; stdin?: string };
 type Measurement = { peakRssBytes?: number; p50Ms: number };
@@ -55,19 +56,21 @@ export function defaultRid(platform = process.platform, arch = process.arch): st
 }
 
 export function median(values: number[]): number {
-	const sorted = [...values].sort((a, b) => a - b);
-	return sorted[Math.floor((sorted.length - 1) / 2)];
+	return quantile([...values].sort((a, b) => a - b), 0.5);
 }
 
 export function overBudget(measured: Record<string, Measurement>, budget: Budget): string[] {
 	const failures: string[] = [];
+	for (const name of Object.keys(measured))
+		if (!(name in budget)) failures.push(`${name}: measured but has no budget entry`);
 	for (const [name, limits] of Object.entries(budget)) {
 		const got = measured[name];
 		if (!got) continue;
 		for (const key of ["peakRssBytes", "p50Ms"] as const) {
 			const limit = limits[key];
-			if (limit !== undefined && got[key] > limit)
-				failures.push(`${name}/${key}: measured ${got[key]} is over the budget ${limit}`);
+			const value = got[key];
+			if (limit !== undefined && value !== undefined && value > limit)
+				failures.push(`${name}/${key}: measured ${value} is over the budget ${limit}`);
 		}
 	}
 	return failures;
@@ -188,8 +191,9 @@ if (import.meta.main) {
 	if (!existsSync(bin)) usageError(`${bin} does not exist`);
 
 	const budgetPath = values.budgets ?? join(ROOT, "native", "budgets", `native-ram-${values.rid}.json`);
-	const budget: Budget = existsSync(budgetPath) ? JSON.parse(readFileSync(budgetPath, "utf8")) : {};
 	const gating = values.gate && process.platform === "linux";
+	if (gating && !existsSync(budgetPath)) usageError(`${budgetPath} does not exist; check --rid ${values.rid}`);
+	const budget: Budget = existsSync(budgetPath) ? JSON.parse(readFileSync(budgetPath, "utf8")) : {};
 
 	const root = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "native-ram-"));
 	const measured: Record<string, Measurement> = {};
