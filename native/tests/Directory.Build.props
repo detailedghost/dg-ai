@@ -6,13 +6,12 @@
     <IsAotCompatible>false</IsAotCompatible>
     <PublishAot>false</PublishAot>
     <OutputType>Exe</OutputType>
+    <TestingPlatformCommandLineArguments>--ignore-exit-code 8</TestingPlatformCommandLineArguments>
     <InvariantGlobalization>false</InvariantGlobalization>
     <UseSystemResourceKeys>false</UseSystemResourceKeys>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
-    <PackageReference Include="xunit.runner.visualstudio" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <Using Include="Xunit" />
   </ItemGroup>
 </Project>
