@@ -15,11 +15,11 @@ export function hasConfiguredPlugins(env: HookEnv): boolean {
 	return existsSync(configTomlPath) && PLUGINS_SECTION.test(readFileSync(configTomlPath, "utf8"));
 }
 
-function isApprovedPlugin(id: string, env: HookEnv): boolean {
+function approvalProblem(id: string, env: HookEnv): string | undefined {
 	try {
-		return isApproved(readRecord(id, env), env);
-	} catch {
-		return false;
+		return isApproved(readRecord(id, env), env) ? undefined : `Next: review it, then run dg plugin verify ${id} --approve.`;
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
 	}
 }
 
@@ -39,8 +39,8 @@ export async function resolveExternalHook(id: string, env: HookEnv): Promise<Ext
 	const manifest = parseManifest(readFileSync(file, "utf8"), file);
 	if (manifest.name !== id)
 		throw new DgCliError(`dg hooks: ${file}: plugin.toml names ${manifest.name}, not ${id}. Next: fix name in plugin.toml.`);
-	if (!isApprovedPlugin(id, env))
-		throw new DgCliError(`dg hooks: plugin ${id} is not approved. Next: review it, then run dg plugin verify ${id} --approve.`);
+	const problem = approvalProblem(id, env);
+	if (problem !== undefined) throw new DgCliError(`dg hooks: plugin ${id} is not approved. ${problem}`);
 	if (manifest.kind !== "hook" || "builtin" in manifest.entry) return undefined;
 	const { allowRemote } = resolvePluginConfig(config, manifest, file);
 	return { manifest, pluginDir, allowRemote };
