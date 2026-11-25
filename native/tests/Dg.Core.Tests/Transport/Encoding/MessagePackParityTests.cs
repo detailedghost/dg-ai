@@ -90,4 +90,15 @@ public sealed class MessagePackParityTests
 
         Assert.Equal("bad-payload", ex.Code);
     }
+
+    [Theory]
+    [InlineData(new byte[] { 0xcb, 0x7f, 0xf8, 0, 0, 0, 0, 0, 0 })]
+    [InlineData(new byte[] { 0xcb, 0x7f, 0xf0, 0, 0, 0, 0, 0, 0 })]
+    [InlineData(new byte[] { 0xca, 0x7f, 0xc0, 0, 0 })]
+    public void ToJson_NonFiniteFloat_ThrowsContractException(byte[] packed)
+    {
+        var error = Assert.Throws<PluginContractException>(() => MessagePackTranscoder.ToJson(packed));
+
+        Assert.Contains("finite", error.Message);
+    }
 }

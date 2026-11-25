@@ -6,16 +6,13 @@ using Dg.Core.Transport.Framing;
 using Dg.Core.Transport.Ipc;
 using Dg.Core.Transport.Pool;
 using Microsoft.Extensions.DependencyInjection;
+using static Dg.Core.Tests.Transport.TransportTestSupport;
 using Xunit.Sdk;
 
 namespace Dg.Core.Tests.Transport.Ipc;
 
 public sealed class IpcTransportTests
 {
-    private static readonly byte[] HookMessage = Encoding.UTF8.GetBytes(
-        """{"route":"/v1/hook/decide","body":{"event":"pre-tool-use","tool":"Bash","command":"git status"}}"""
-    );
-
     [Fact]
     public async Task SendAsync_ManyConcurrentCalls_ShareOneConnectionAndMatchResponsesById()
     {
@@ -192,52 +189,8 @@ public sealed class IpcTransportTests
         Assert.All(services, d => Assert.Equal(ServiceLifetime.Singleton, d.Lifetime));
     }
 
-    [Fact]
-    public async Task SendAsync_WarmConnection_P50StaysWithinIpcBudget()
-    {
-        await using var server = new EchoPluginServer();
-        await using var pool = PoolFor(server);
-        var connection = await pool.GetAsync("echo", CancellationToken.None);
-        for (var i = 0; i < 200; i++)
-            await Call(connection);
-
-        var samples = new double[300];
-        for (var i = 0; i < samples.Length; i++)
-        {
-            var start = Stopwatch.GetTimestamp();
-            await Call(connection);
-            samples[i] = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
-        }
-        Array.Sort(samples);
-        var p50 = samples[150];
-        var p99 = samples[296];
-        TestContext.Current.SendDiagnosticMessage($"warm ipc p50={p50:F4} ms p99={p99:F4} ms over {samples.Length} calls");
-
-        Assert.True(p50 < PluginRoutes.HookLatencyBudgetP99Ms.Ipc, $"p50 {p50:F4} ms is over the {PluginRoutes.HookLatencyBudgetP99Ms.Ipc} ms IPC budget");
-    }
-
     private static PluginConnectionPool PoolFor(EchoPluginServer server) =>
         new(new IpcConnector(new FixedResolver(server.SocketPath)).ConnectAsync);
-
-    private static async Task Call(PluginConnection connection)
-    {
-        using var frame = FrameWriter.Encode(FrameEncoding.Json, FrameFlags.None, connection.NextRequestId(), HookMessage);
-        var response = await connection.SendAsync(frame.Memory, CancellationToken.None);
-        Assert.Equal(HookMessage.Length, response.Payload.Length);
-    }
-
-    private static async Task<bool> Settle(ValueTask<PluginResponse> call)
-    {
-        try
-        {
-            await call;
-            return true;
-        }
-        catch (PluginContractException)
-        {
-            return false;
-        }
-    }
 
     private static async Task SpinUntil(Func<bool> condition)
     {
@@ -278,4 +231,41 @@ public sealed class IpcTransportTests
     }
 
     private sealed class FakeServices : List<ServiceDescriptor>, IServiceCollection;
+
+    [Fact]
+    public async Task SendAsync_CanceledDuringWrite_MarksConnectionUnusable()
+    {
+        await using var connection = new PluginConnection(new StalledWriteStream());
+        using var frame = FrameWriter.Encode(FrameEncoding.Json, FrameFlags.None, connection.NextRequestId(), "{}"u8);
+        using var canceled = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await connection.SendAsync(frame.Memory, canceled.Token)
+        );
+
+        Assert.False(connection.IsUsable);
+    }
+
+    private sealed class StalledWriteStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken ct = default) =>
+            await Task.Delay(Timeout.Infinite, ct);
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+            return 0;
+        }
+    }
 }

@@ -47,12 +47,24 @@ public sealed class HttpTransport : IPluginTransport
         };
     }
 
+    private static PluginEnvelope ReadEnvelope(ReadOnlySpan<byte> payload)
+    {
+        try
+        {
+            if (JsonSerializer.Deserialize(payload, PluginJsonContext.Default.PluginEnvelope) is { Route: not null } envelope)
+                return envelope;
+        }
+        catch (JsonException) { }
+        throw new PluginContractException(
+            "message",
+            "dg plugin: route: the payload needs a route and a body. Next: send {\"route\": ..., \"body\": ...}."
+        );
+    }
+
     public async ValueTask<PluginResponse> SendAsync(ReadOnlyMemory<byte> frame, CancellationToken ct)
     {
         var decoded = FrameCodec.Decode(frame);
-        var envelope = JsonSerializer.Deserialize(decoded.Payload.Span, PluginJsonContext.Default.PluginEnvelope);
-        if (envelope is null || envelope.Route is null)
-            throw new PluginContractException("message", "dg plugin: route: the payload needs a route and a body. Next: send {\"route\": ..., \"body\": ...}.");
+        var envelope = ReadEnvelope(decoded.Payload.Span);
         var route = envelope.Route;
         MessageValidator.Validate(route, MessageDirection.Request, envelope.Body);
         if (!_routes.TryGetValue(route, out var uri))

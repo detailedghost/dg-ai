@@ -3,11 +3,14 @@ using System.Net.Sockets;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using Dg.Core.Errors;
+using Dg.Core.Transport.Http;
 
 namespace Dg.Core.Transport.Ipc;
 
 public sealed class IpcConnector(IIpcEndpointResolver resolver)
 {
+    private const int ConnectTimeoutMs = 1000;
+
     public static string WindowsPipeName(string plugin) => $"dg-plugin-{plugin}";
 
     public ValueTask<Stream> ConnectAsync(string plugin, CancellationToken ct)
@@ -22,9 +25,16 @@ public sealed class IpcConnector(IIpcEndpointResolver resolver)
         var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         try
         {
-            await socket.ConnectAsync(new UnixDomainSocketEndPoint(path), ct).ConfigureAwait(false);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(ConnectTimeoutMs);
+            await socket.ConnectAsync(new UnixDomainSocketEndPoint(path), timeout.Token).ConfigureAwait(false);
             PeerCredentials.VerifyPeer(socket, path);
             return new NetworkStream(socket, ownsSocket: true);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            socket.Dispose();
+            throw TimedOut(path);
         }
         catch
         {
@@ -40,9 +50,14 @@ public sealed class IpcConnector(IIpcEndpointResolver resolver)
         var pipe = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous);
         try
         {
-            await pipe.ConnectAsync(ct).ConfigureAwait(false);
+            await pipe.ConnectAsync(ConnectTimeoutMs, ct).ConfigureAwait(false);
             VerifyPipeAcl(pipe, name);
             return pipe;
+        }
+        catch (TimeoutException)
+        {
+            await pipe.DisposeAsync().ConfigureAwait(false);
+            throw TimedOut(name);
         }
         catch
         {
@@ -50,6 +65,12 @@ public sealed class IpcConnector(IIpcEndpointResolver resolver)
             throw;
         }
     }
+
+    private static PluginTransportException TimedOut(string endpoint) =>
+        new(
+            PluginTransportCodes.Timeout,
+            $"{endpoint}: connect timed out after {ConnectTimeoutMs} ms. Next: check that the plugin is running."
+        );
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     private static void VerifyPipeAcl(NamedPipeClientStream pipe, string name)

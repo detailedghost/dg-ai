@@ -11,6 +11,8 @@ public sealed class UdpTransport : IEventSink, IAsyncDisposable
 {
     public const int DefaultCapacity = 1_024;
 
+    private static readonly TimeSpan DrainTimeout = TimeSpan.FromMilliseconds(200);
+
     private readonly Channel<byte[]> _queue;
     private readonly UdpClient _client;
     private readonly CancellationTokenSource _stop = new();
@@ -54,12 +56,15 @@ public sealed class UdpTransport : IEventSink, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _queue.Writer.TryComplete();
-        await _stop.CancelAsync().ConfigureAwait(false);
         try
         {
-            await _sender.ConfigureAwait(false);
+            await _sender.WaitAsync(DrainTimeout).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) { }
+        catch (TimeoutException) { }
+        await _stop.CancelAsync().ConfigureAwait(false);
+        await _sender.ConfigureAwait(false);
+        while (_queue.Reader.TryRead(out _))
+            Interlocked.Increment(ref _dropped);
         _client.Dispose();
         _stop.Dispose();
     }

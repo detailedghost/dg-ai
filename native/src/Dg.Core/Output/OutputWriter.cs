@@ -11,34 +11,30 @@ public sealed class OutputWriter(Stream stream)
 
     public static OutputWriter Err { get; } = new(Console.OpenStandardError());
 
-    public void Write(ReadOnlySpan<char> text)
-    {
-        var max = Encoding.UTF8.GetMaxByteCount(text.Length);
-        if (max <= StackLimit)
-        {
-            Span<byte> buffer = stackalloc byte[StackLimit];
-            stream.Write(buffer[..Encoding.UTF8.GetBytes(text, buffer)]);
-            return;
-        }
+    public void Write(ReadOnlySpan<char> text) => Emit(text, newline: false);
 
-        var rented = ArrayPool<byte>.Shared.Rent(max);
+    public void WriteLine(ReadOnlySpan<char> text) => Emit(text, newline: true);
+
+    public void WriteLine() => stream.WriteByte((byte)'\n');
+
+    private void Emit(ReadOnlySpan<char> text, bool newline)
+    {
+        var max = Encoding.UTF8.GetMaxByteCount(text.Length) + 1;
+        byte[]? rented = null;
+        Span<byte> buffer = max <= StackLimit ? stackalloc byte[StackLimit] : rented = ArrayPool<byte>.Shared.Rent(max);
         try
         {
-            stream.Write(rented, 0, Encoding.UTF8.GetBytes(text, rented));
+            var length = Encoding.UTF8.GetBytes(text, buffer);
+            if (newline)
+                buffer[length++] = (byte)'\n';
+            stream.Write(buffer[..length]);
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(rented);
+            if (rented is not null)
+                ArrayPool<byte>.Shared.Return(rented);
         }
     }
-
-    public void WriteLine(ReadOnlySpan<char> text)
-    {
-        Write(text);
-        WriteLine();
-    }
-
-    public void WriteLine() => stream.WriteByte((byte)'\n');
 
     public void Flush() => stream.Flush();
 }
