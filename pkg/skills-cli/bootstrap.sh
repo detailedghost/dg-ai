@@ -18,7 +18,8 @@
 #
 # Layout: bin/<release>/dg and a bin/current link in the data dir (~/.local/share/dg on Linux,
 # ~/Library/Application Support/dg on macOS, $DG_HOME/data), and a dg link to bin/current/dg in
-# ~/.local/bin (or $DG_HOME/bin). The dg-linux-x64 style asset is verified against SHA256SUMS and must
+# ~/.local/bin (or $DG_HOME/bin). The release's dg-linux-x64.gz is unpacked with gzip (the raw dg-linux-x64
+# is the fallback), and the unpacked dg-linux-x64 is verified against SHA256SUMS. It must
 # report the release version before any link changes. Old dg-skills, dg-agent and dg-daemon launchers are
 # removed. A 6.3 runtime/ and lib/ are left in place. Re-running upgrades in place.
 # Windows: use bootstrap.ps1 instead.
@@ -458,14 +459,29 @@ ASSET="dg-${platform}"
 VERSION_DIR="${ROOT}/bin/${VERSION}"
 mkdir -p "${ROOT}/bin" "${BIN}"
 
+select_asset() {
+  FETCH="${ASSET}"
+  GZIP="${DG_GZIP:-gzip}"
+  if command -v "$GZIP" >/dev/null 2>&1 && [ -n "$(asset_url "${ASSET}.gz")" ]; then
+    FETCH="${ASSET}.gz"
+  fi
+}
+
+fetch_program() {
+  echo "Downloading ${FETCH}..."
+  download_asset "${FETCH}" "${WORK}/${FETCH}"
+  [ "${FETCH}" = "${ASSET}" ] && return
+  "$GZIP" -dc "${WORK}/${FETCH}" >"${WORK}/${ASSET}" || die "could not unpack ${FETCH}"
+}
+
 install_program() {
   WORK=$(mktemp -d)
   track_tmp "${WORK}"
   download_asset SHA256SUMS "${WORK}/SHA256SUMS"
   expected=$(sums_entry "${ASSET}")
   [ -n "${expected}" ] || die "SHA256SUMS in ${tag} has no entry for ${ASSET}"
-  echo "Downloading ${ASSET}..."
-  download_asset "${ASSET}" "${WORK}/${ASSET}"
+  select_asset
+  fetch_program
   verify_sha256 "${WORK}/${ASSET}" "${ASSET}" "${expected}"
   stage=$(mktemp -d "${ROOT}/bin/.stage.XXXXXX")
   track_tmp "${stage}"

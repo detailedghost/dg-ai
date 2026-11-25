@@ -21,7 +21,8 @@
 # DG_INSTALL_CODEX or DG_VERSION; those keep working, and a switch always wins.
 #
 # Layout: bin\<release>\dg.exe and a bin\current junction in the data dir, and bin\dg.exe as a hard link to
-# the release's dg.exe. The dg-windows-x64.exe style asset is verified against SHA256SUMS and must report
+# the release's dg.exe. The release's dg-windows-x64.exe.gz is unpacked with GZipStream (the raw
+# dg-windows-x64.exe is the fallback), and the unpacked dg-windows-x64.exe is verified against SHA256SUMS and must report
 # the release version before any link changes. Old dg-skills, dg-agent and dg-daemon launchers and dg.cmd are
 # removed. A 6.3 runtime\ and lib\ are left in place. Re-running upgrades in place.
 param(
@@ -232,6 +233,24 @@ function Save-DgAsset {
 	Invoke-WebRequest -Headers $headers -Uri $url -OutFile $Destination
 }
 
+function Select-DgAsset {
+	param($Release, [string]$Raw)
+	if ($Release.assets | Where-Object { $_.name -eq "$Raw.gz" }) { return "$Raw.gz" }
+	return $Raw
+}
+
+function Expand-DgGzip {
+	param([string]$Path, [string]$Destination)
+	$in = [System.IO.File]::OpenRead($Path)
+	try {
+		$gzip = New-Object System.IO.Compression.GZipStream($in, [System.IO.Compression.CompressionMode]::Decompress)
+		try {
+			$out = [System.IO.File]::Create($Destination)
+			try { $gzip.CopyTo($out) } finally { $out.Dispose() }
+		} finally { $gzip.Dispose() }
+	} finally { $in.Dispose() }
+}
+
 function Set-DgJunction {
 	param([string]$Link, [string]$Target)
 	$staged = "$Link.$PID.tmp"
@@ -335,9 +354,16 @@ try {
 		Save-DgAsset $rel "SHA256SUMS" $sumsPath
 		$expected = Get-DgSumsEntry $sumsPath $asset
 		if (-not $expected) { throw "dg: SHA256SUMS in $tag has no entry for $asset" }
-		Write-Host "Downloading $asset..."
+		$fetch = Select-DgAsset $rel $asset
+		Write-Host "Downloading $fetch..."
 		$downloaded = Join-Path $work $asset
-		Save-DgAsset $rel $asset $downloaded
+		if ($fetch -eq $asset) {
+			Save-DgAsset $rel $fetch $downloaded
+		} else {
+			$packed = Join-Path $work $fetch
+			Save-DgAsset $rel $fetch $packed
+			try { Expand-DgGzip $packed $downloaded } catch { throw "dg: could not unpack $fetch" }
+		}
 		Assert-DgSha256 $downloaded $asset $expected
 
 		New-Item -ItemType Directory -Force -Path (Join-Path $dgHome "bin"), $binDir | Out-Null
