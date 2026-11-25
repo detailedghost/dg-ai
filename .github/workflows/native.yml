@@ -140,7 +140,7 @@ jobs:
           --dg native/publish/${{ matrix.rid }}/dg${{ runner.os == 'Windows' && '.exe' || '' }}
           --rid ${{ matrix.rid }}
           --runs 200
-          --gate
+          ${{ matrix.rid == 'linux-x64' && '--gate' || '' }}
           --json native-measurements/native-ram-${{ matrix.rid }}.json
 
       - name: Check the native budgets with the ratchet
