@@ -66,7 +66,7 @@ public sealed class HttpTransportProvider(IHttpTransportFactory factory) : IPlug
 
     public ValueTask<TransportLease> OpenAsync(PluginManifest manifest, bool allowRemote, CancellationToken ct)
     {
-        var identity = $"{manifest.Endpoint}|{manifest.Remote}|{allowRemote}";
+        var identity = new Identity(manifest.Endpoint, manifest.Remote, allowRemote);
         Entry? toDispose = null;
         TransportLease lease;
         lock (_gate)
@@ -151,9 +151,11 @@ public sealed class HttpTransportProvider(IHttpTransportFactory factory) : IPlug
         return DisposeQuietlyAsync(entry);
     }
 
-    private sealed class Entry(HttpTransportProvider owner, string identity, IPluginTransport transport) : ITransportLeaseOwner
+    private readonly record struct Identity(string? Endpoint, bool Remote, bool AllowRemote);
+
+    private sealed class Entry(HttpTransportProvider owner, Identity identity, IPluginTransport transport) : ITransportLeaseOwner
     {
-        public string Identity { get; } = identity;
+        public Identity Identity { get; } = identity;
 
         public IPluginTransport Transport { get; } = transport;
 

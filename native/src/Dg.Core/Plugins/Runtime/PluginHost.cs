@@ -3,6 +3,7 @@ using System.Text.Json;
 using Dg.Core.Config;
 using Dg.Core.Plugins.Contract;
 using Dg.Core.Plugins.Manifest;
+using Dg.Core.Transport.Framing;
 using Dg.Core.Transport.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -17,6 +18,7 @@ public sealed class PluginHost(
 ) : IPluginHost
 {
     private static readonly JsonElement EmptyBody = JsonDocument.Parse("{}").RootElement.Clone();
+    private readonly IBuiltinPlugin[] _builtins = [.. builtins];
     private int _lastId;
 
     public async ValueTask<PluginResponse> InvokeAsync(string name, PluginEnvelope message, CancellationToken ct)
@@ -24,7 +26,7 @@ public sealed class PluginHost(
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(message);
         MessageValidator.Validate(message.Route, MessageDirection.Request, message.Body);
-        foreach (var builtin in builtins)
+        foreach (var builtin in _builtins)
             if (string.Equals(builtin.Name, name, StringComparison.Ordinal))
             {
                 if (config.Plugins.TryGetValue(name, out var configured) && !configured.Enabled)
@@ -37,7 +39,7 @@ public sealed class PluginHost(
         var provider = services.GetRequiredKeyedService<IPluginTransportProvider>(key);
         await using var lease = await provider.OpenAsync(manifest, allowRemote, ct).ConfigureAwait(false);
         var payload = JsonSerializer.SerializeToUtf8Bytes(message, PluginJsonContext.Default.PluginEnvelope);
-        var frame = FrameCodec.Encode(FrameEncoding.Json, FrameFlags.None, NextId(), payload);
+        using var frame = FrameWriter.Encode(FrameEncoding.Json, FrameFlags.None, NextId(), payload);
 
         var timeout = PluginRoutes.TimeoutFor(message.Route);
         using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -45,7 +47,7 @@ public sealed class PluginHost(
         var started = Stopwatch.GetTimestamp();
         try
         {
-            var response = await lease.Transport.SendAsync(frame, limit.Token).ConfigureAwait(false);
+            var response = await lease.Transport.SendAsync(frame.Memory, limit.Token).ConfigureAwait(false);
             Observe(manifest.Name, message.Route, manifest.Transport, Stopwatch.GetElapsedTime(started));
             return response;
         }

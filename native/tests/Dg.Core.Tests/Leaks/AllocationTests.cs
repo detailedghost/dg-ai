@@ -92,4 +92,39 @@ public sealed class AllocationTests
 
         Assert.Equal(0, bytes);
     }
+
+    [Fact]
+    public void UdpEncode_ManyThreads_EveryFrameMatchesItsEvent()
+    {
+        var failures = new System.Collections.Concurrent.ConcurrentBag<string>();
+
+        Parallel.For(
+            0,
+            16,
+            worker =>
+            {
+                for (var i = 0; i < 2_000; i++)
+                {
+                    var body = $"{{\"w\":{worker},\"i\":{i}}}";
+                    var frame = UdpTransport.Encode(new PluginEvent("/v1/job/status", Encoding.UTF8.GetBytes(body)));
+                    var text = frame is null ? null : Encoding.UTF8.GetString(FrameCodec.Decode(frame).Payload.Span);
+                    if (text != $"{{\"route\":\"/v1/job/status\",\"body\":{body}}}")
+                        failures.Add(text ?? "null");
+                }
+            }
+        );
+
+        Assert.Empty(failures);
+    }
+
+    [Fact]
+    public void UdpEncode_AfterOversizeBody_StillEncodesSmallEvents()
+    {
+        var huge = new PluginEvent("/v1/job/status", Encoding.UTF8.GetBytes("{\"x\":\"" + new string('a', 200_000) + "\"}"));
+        var small = new PluginEvent("/v1/job/status", Encoding.UTF8.GetBytes("{\"a\":1}"));
+
+        Assert.Null(UdpTransport.Encode(huge));
+
+        Assert.NotNull(UdpTransport.Encode(small));
+    }
 }
