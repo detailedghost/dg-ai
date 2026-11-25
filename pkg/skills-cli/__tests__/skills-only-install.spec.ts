@@ -89,6 +89,7 @@ function childEnv(home: string, extra: Record<string, string> = {}): Record<stri
 	delete env.DG_PLUGIN_ROOT;
 	env.HOME = home;
 	env.DG_HOME = home;
+	env.DG_FRONT = "0";
 	env.LC_ALL = "C";
 	return { ...env, ...extra };
 }

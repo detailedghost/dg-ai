@@ -223,9 +223,10 @@ describe.skipIf(!POSIX)("a default install", () => {
 	});
 
 	test("prints nothing about the front door when it installs", async () => {
-		box = scratch("front-quiet");
+		const tree = scratch("front-quiet");
+		box = tree;
 		const { picked } = serve("7.0.0");
-		const lines = await stderrOf(() => installCompiled(box.root, picked, "linux", { env: hermeticEnv(box) }));
+		const lines = await stderrOf(() => installCompiled(tree.root, picked, "linux", { env: hermeticEnv(tree) }));
 		expect(lines).toEqual([]);
 	});
 });
@@ -613,9 +614,9 @@ const bootstrapFront = (asset: string, opts: { exit?: number; printed?: string; 
 	`#!/bin/sh\nif [ "\${1:-}" = "--version" ]; then ${opts.marker ? 'echo ran >> "$STUBDIR/front-ran"; ' : ""}${opts.exit ? `exit ${opts.exit}` : `echo "${opts.printed ?? BOOTSTRAP_VERSION}"; exit 0`}; fi\nprintf 'FAKE_DG %s\\n' "${asset}"\nfor arg in "$@"; do printf 'FAKE_ARG %s\\n' "$arg"; done\n`;
 
 async function bootstrapWithFront(
-	options: Parameters<typeof runBootstrap>[0] & { front?: string | null; frontSum?: "match" | "wrong"; asset?: string; gz?: boolean } = {},
+	options: Parameters<typeof runBootstrap>[0] & { front?: string | null; frontSum?: "match" | "wrong"; asset?: string; frontGz?: boolean } = {},
 ) {
-	const { front = bootstrapFront("dg-front-linux-x64"), frontSum = "match", asset = "dg-front-linux-x64", gz = false, ...rest } = options;
+	const { front = bootstrapFront("dg-front-linux-x64"), frontSum = "match", asset = "dg-front-linux-x64", frontGz = false, ...rest } = options;
 	const stage = scratch("bootstrap-front-files");
 	box = stage;
 	const serveMap: Record<string, string> = {};
@@ -623,7 +624,7 @@ async function bootstrapWithFront(
 	if (front !== null) {
 		const sum = frontSum === "wrong" ? "0".repeat(64) : hashOf(front);
 		extra[asset] = sum;
-		if (gz) {
+		if (frontGz) {
 			const packed = Buffer.from(Bun.gzipSync(front));
 			serveMap[`${asset}.gz`] = frontFixture(stage.directory, `${asset}.gz`, "");
 			writeFileSync(serveMap[`${asset}.gz`] as string, packed);
@@ -656,7 +657,7 @@ posixBootstrap("bootstrap.sh places the front door at dg by default", () => {
 	});
 
 	test("prefers the .gz front door asset and verifies the unpacked bytes", async () => {
-		const run = await bootstrapWithFront({ gz: true });
+		const run = await bootstrapWithFront({ frontGz: true });
 
 		expect(run.code, run.stderr).toBe(0);
 		expect(run.requests.some((url) => url.endsWith("/dg-front-linux-x64.gz"))).toBe(true);
