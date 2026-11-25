@@ -9,3 +9,6 @@
 - [2026-11-23] Import nostr-tools by subpath; the index pulls nip04 and the noble AES tables.
 - [2026-11-23] `require()` of a package keeps it in the importer's chunk; use `await import()` for heavy drivers.
 - [2026-11-23] `Bun.YAML.parse` is native; the `yaml` package plus the JIT cost adr lint about 12 MB.
+- [2026-11-25] C# front door: measure allocations with GC.GetAllocatedBytesForCurrentThread over N calls after a warmup; pin the result as a ceiling in a test through tests/Shared/AllocationProbe.cs.
+- [2026-11-25] C# hot paths: PathFlavor, config key checks, and PrBodyScanner work on spans with stackalloc (ArrayPool above 512 chars); JsonProperty.NameEquals(u8) avoids a string per JSON property; cache SpellingTable per locale.
+- [2026-11-25] ProcessEnvironment.Capture cannot go below the runtime's Hashtable snapshot (about 30 KB); keep callers from capturing twice.
