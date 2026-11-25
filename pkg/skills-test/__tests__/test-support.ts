@@ -26,7 +26,7 @@ export function removeTempDirs(): void {
 
 export const REPO_ROOT = join(import.meta.dir, "..", "..", "..");
 
-export const LOCAL_DEFAULT = /off \(local is the default\)/;
+export const EXT_OFF = /^off\b/;
 export const GATE_COMMAND = /\bdg\s+require-extension\s+\S+\s*\|\|/;
 
 export function frontmatter(text: string): string {

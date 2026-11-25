@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import {
 	frontmatter,
 	GATE_COMMAND,
-	LOCAL_DEFAULT,
+	EXT_OFF,
 	REPO_ROOT,
 } from "./test-support";
 
@@ -197,18 +197,26 @@ describe("ext opt-in rule B: the require-extension gate runs only with --ext", (
 	});
 });
 
-describe("ext opt-in rule C: Flags tables document --ext with the local default", () => {
+describe("ext opt-in rule C: Flags tables document --ext as off by default", () => {
 	for (const skill of FLAG_TABLE_SKILLS) {
-		test(`${skill}/SKILL.md has an --ext row whose Default cell says local is the default`, () => {
+		test(`${skill}/SKILL.md has an --ext row whose Default cell starts with off`, () => {
 			const file = join(SKILLS_DIR, skill, "SKILL.md");
 			expect(existsSync(file)).toBe(true);
 			const row = flagsTable(readFileSync(file, "utf8")).find((cells) =>
 				cells[0]?.includes("--ext"),
 			);
 			expect(row).toBeDefined();
-			expect(row?.[3] ?? "").toMatch(LOCAL_DEFAULT);
+			expect(row?.[3] ?? "").toMatch(EXT_OFF);
 		});
 	}
+
+	test("pw/SKILL.md names auto as the one mode that uses a paired extension without --ext", () => {
+		const row = flagsTable(
+			readFileSync(join(SKILLS_DIR, "pw", "SKILL.md"), "utf8"),
+		).find((cells) => cells[0]?.includes("--ext"));
+		expect(row?.[3]).toMatch(/\bauto\b/);
+		expect(row?.[3]).not.toMatch(/local is the default/);
+	});
 });
 
 describe("ext opt-in user docs: launch and grouped batch-open examples carry --ext", () => {
@@ -317,11 +325,11 @@ describe("ext opt-in passthrough: a skill whose references name batch-open --ext
 	});
 
 	for (const skill of passthrough) {
-		test(`${skill}/SKILL.md has an --ext row in its Flags table with the local default`, () => {
+		test(`${skill}/SKILL.md has an --ext row in its Flags table that defaults to off`, () => {
 			const text = readFileSync(join(SKILLS_DIR, skill, "SKILL.md"), "utf8");
 			const row = flagsTable(text).find((cells) => cells[0]?.includes("--ext"));
 			expect(row).toBeDefined();
-			expect(row?.[3] ?? "").toMatch(LOCAL_DEFAULT);
+			expect(row?.[3] ?? "").toMatch(EXT_OFF);
 		});
 	}
 });
