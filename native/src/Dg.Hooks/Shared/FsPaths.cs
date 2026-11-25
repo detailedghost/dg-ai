@@ -1,4 +1,4 @@
-namespace Dg.Hooks.Defs.Repo;
+namespace Dg.Hooks.Shared;
 
 internal readonly record struct Lstat(bool IsLink, bool IsDirectory, double MtimeMs);
 

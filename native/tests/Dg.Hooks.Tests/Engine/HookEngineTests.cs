@@ -1,5 +1,7 @@
+using System.Runtime.Versioning;
 using System.Text;
 using Dg.Hooks.Engine;
+using Dg.Hooks.Shared;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dg.Hooks.Tests.Engine;
@@ -18,6 +20,32 @@ public sealed class HookEngineTests
         {
             Seen.Add(ev);
             return ValueTask.FromResult(codes[Math.Min(_next++, codes.Length - 1)]);
+        }
+    }
+
+    private sealed class ContextHook(string eventName, TextWriter direct) : IHook
+    {
+        public string Id => "ctx";
+
+        public ValueTask<int> RunAsync(HookEvent ev, CancellationToken ct)
+        {
+            HookJson.EmitContext(ev, eventName, $"note {Path.GetFileName(ev.FilePath)}", direct.Write);
+            return ValueTask.FromResult(0);
+        }
+    }
+
+    private sealed class StdinFreeHook(bool usesStdin) : IHook
+    {
+        public string Id => "free";
+
+        public List<HookEvent> Seen { get; } = [];
+
+        public bool UsesStdin(string[] args) => usesStdin;
+
+        public ValueTask<int> RunAsync(HookEvent ev, CancellationToken ct)
+        {
+            Seen.Add(ev);
+            return ValueTask.FromResult(0);
         }
     }
 
@@ -214,5 +242,149 @@ public sealed class HookEngineTests
         var engine = Assert.IsType<HookEngine>(descriptor.ImplementationFactory!(new FakeProvider([hook])));
         await engine.RunAsync("format", [], Stdin("{}"), CancellationToken.None);
         Assert.Single(hook.Seen);
+    }
+
+    [Fact]
+    public async Task RunAsync_ApplyPatchContexts_AreJoinedIntoOneJson()
+    {
+        var output = new StringWriter();
+        var direct = new StringWriter();
+        var engine = new HookEngine([new ContextHook("PostToolUse", direct)], new StringWriter(), output);
+        var json = """{"tool_name":"apply_patch","cwd":"/w","tool_input":{"command":"*** Add File: a.md\n+x\n*** Add File: b.md\n+y"}}""";
+
+        await engine.RunAsync("ctx", [], Stdin(json), CancellationToken.None);
+
+        Assert.Equal(
+            """{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"note a.md\nnote b.md"}}""",
+            output.ToString()
+        );
+        Assert.Equal("", direct.ToString());
+    }
+
+    [Fact]
+    public async Task RunAsync_SingleEventContext_WritesOneJson()
+    {
+        var output = new StringWriter();
+        var engine = new HookEngine([new ContextHook("PreToolUse", new StringWriter())], new StringWriter(), output);
+
+        await engine.RunAsync("ctx", [], Stdin("""{"tool_name":"Edit","tool_input":{"file_path":"/w/a.md"}}"""), CancellationToken.None);
+
+        Assert.Equal(
+            """{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"note a.md"}}""",
+            output.ToString()
+        );
+    }
+
+    [Fact]
+    public async Task EmitContext_WithoutSink_WritesDirectly()
+    {
+        var direct = new StringWriter();
+
+        HookJson.EmitContext(default, "PostToolUse", "hi", direct.Write);
+
+        Assert.Equal(
+            """{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"hi"}}""",
+            direct.ToString()
+        );
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task RunAsync_HookThatSkipsStdin_DoesNotReadIt()
+    {
+        var hook = new StdinFreeHook(usesStdin: false);
+        var engine = new HookEngine([hook], new StringWriter());
+
+        var code = await engine.RunAsync("free", ["--now"], new ThrowOnReadStream(), CancellationToken.None);
+
+        Assert.Equal(0, code);
+        Assert.Equal(["--now"], Assert.Single(hook.Seen).Args);
+    }
+
+    [Fact]
+    public async Task RunAsync_StdinIsTerminal_DoesNotReadIt()
+    {
+        var hook = new StdinFreeHook(usesStdin: true);
+        var engine = new HookEngine([hook], new StringWriter(), stdinIsTerminal: () => true);
+
+        var code = await engine.RunAsync("free", [], new ThrowOnReadStream(), CancellationToken.None);
+
+        Assert.Equal(0, code);
+        Assert.Null(Assert.Single(hook.Seen).ToolName);
+    }
+
+    [Fact]
+    public void UsesStdin_CommitMsgHook_IsFalse()
+    {
+        var strip = new Dg.Hooks.Defs.Pr.StripAiCoauthorsHook(new Dg.Hooks.Defs.Pr.PrHookHost());
+
+        Assert.False(strip.UsesStdin(["msg"]));
+        Assert.False(strip.UsesStdin([]));
+    }
+
+    [Theory]
+    [InlineData(new string[] { "--now" }, false)]
+    [InlineData(new string[] { "--now", "--dry-run" }, false)]
+    [InlineData(new string[] { "--dry-run" }, false)]
+    [InlineData(new string[] { }, true)]
+    public void UsesStdin_DailyPrune_DependsOnFlags(string[] args, bool expected)
+    {
+        var hook = new Dg.Hooks.Defs.Repo.DailyPruneHook(
+            _ => null,
+            "/h",
+            null!,
+            null!,
+            TimeProvider.System,
+            TextWriter.Null,
+            TextWriter.Null
+        );
+
+        Assert.Equal(expected, hook.UsesStdin(args));
+    }
+
+    [Fact]
+    [SupportedOSPlatform("linux")]
+    [SupportedOSPlatform("macos")]
+    public async Task RunAsync_UnsafeScratchDirectory_FailsBeforeRunningHook()
+    {
+        using var temp = TempRoot.Create();
+        File.SetUnixFileMode(temp.Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.OtherWrite);
+        Dictionary<string, string?> env = new() { ["AI_SCRATCH_DIR"] = temp.Path, ["AI_STATE_DIR"] = System.IO.Path.Combine(temp.Path, "state") };
+        var hook = new RecordingHook("format", 0);
+        var error = new StringWriter();
+        var engine = new HookEngine(
+            [hook],
+            error,
+            directories: new HookDirectories(name => env.GetValueOrDefault(name), temp.Path)
+        );
+
+        var code = await engine.RunAsync("format", [], Stdin("{}"), CancellationToken.None);
+
+        Assert.Equal(1, code);
+        Assert.Empty(hook.Seen);
+        Assert.StartsWith("hooks run format: unsafe scratch/state directory:", error.ToString());
+    }
+
+    [Fact]
+    public async Task RunAsync_SafeDirectories_CreatesHooksChildrenAndRunsHook()
+    {
+        using var temp = TempRoot.Create();
+        Dictionary<string, string?> env = new()
+        {
+            ["AI_SCRATCH_DIR"] = System.IO.Path.Combine(temp.Path, "scratch"),
+            ["AI_STATE_DIR"] = System.IO.Path.Combine(temp.Path, "state"),
+        };
+        var hook = new RecordingHook("format", 0);
+        var engine = new HookEngine(
+            [hook],
+            new StringWriter(),
+            directories: new HookDirectories(name => env.GetValueOrDefault(name), temp.Path)
+        );
+
+        await engine.RunAsync("format", [], Stdin("{}"), CancellationToken.None);
+
+        Assert.Single(hook.Seen);
+        Assert.True(Directory.Exists(System.IO.Path.Combine(temp.Path, "scratch", "hooks")));
+        Assert.True(Directory.Exists(System.IO.Path.Combine(temp.Path, "state", "hooks")));
     }
 }

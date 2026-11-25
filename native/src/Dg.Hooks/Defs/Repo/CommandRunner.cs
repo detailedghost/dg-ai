@@ -1,10 +1,9 @@
+using Dg.Hooks.Shared;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 
 namespace Dg.Hooks.Defs.Repo;
-
-internal readonly record struct CommandResult(int Status, string Stdout, string Stderr);
 
 internal interface ICommandRunner
 {

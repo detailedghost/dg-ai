@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Dg.Hooks.Engine;
+using Dg.Hooks.Shared;
 
 namespace Dg.Hooks.Defs.Text;
 
@@ -33,7 +34,7 @@ internal sealed class FormatHook(TextHookIo? injected = null) : IHook
             );
         if (notes.Count == 0)
             return 0;
-        io.Out.Write(HookJson.AdditionalContext("PostToolUse", string.Join('\n', notes)));
+        HookJson.EmitContext(ev, "PostToolUse", string.Join('\n', notes), text => io.Out.Write(text));
         return 0;
     }
 
@@ -45,7 +46,7 @@ internal sealed class FormatHook(TextHookIo? injected = null) : IHook
 
     private static List<string> FirstWarnings(HookRuntime runtime, List<string> tools)
     {
-        HookRuntime.EnsurePrivateDirectory(runtime.ScratchDir);
+        ManagedRoots.EnsurePrivateDirectory(runtime.ScratchDir);
         List<string> fresh = [];
         foreach (var tool in tools)
         {
@@ -126,7 +127,7 @@ internal sealed class FormatHook(TextHookIo? injected = null) : IHook
                 Missing.Add(bin);
         }
 
-        private string? Which(string bin) => CommandRunner.Which(bin, Env);
+        private string? Which(string bin) => HookProcess.Which(bin, Env);
 
         private bool Have(string bin)
         {
@@ -137,7 +138,7 @@ internal sealed class FormatHook(TextHookIo? injected = null) : IHook
         }
 
         private Task<CommandResult> ProbeAsync(string[] argv, string? cwd = null) =>
-            CommandRunner.RunAsync(Env, argv, cwd, ct);
+            HookProcess.RunAsync(Env, argv, cwd, ct);
 
         private async Task<CommandResult> ExecAsync(string[] argv, string? cwd = null)
         {
@@ -175,7 +176,7 @@ internal sealed class FormatHook(TextHookIo? injected = null) : IHook
 
         private void WriteMarker(string marker, bool value)
         {
-            HookRuntime.EnsurePrivateDirectory(runtime.ScratchDir);
+            ManagedRoots.EnsurePrivateDirectory(runtime.ScratchDir);
             File.WriteAllText(marker, value ? "1" : "0");
         }
 

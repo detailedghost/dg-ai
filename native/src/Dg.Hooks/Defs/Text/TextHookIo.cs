@@ -1,5 +1,5 @@
-using System.Collections;
 using Dg.Core.Output;
+using Dg.Hooks.Shared;
 
 namespace Dg.Hooks.Defs.Text;
 
@@ -9,11 +9,6 @@ internal sealed record TextHookIo(
     OutputWriter Err
 )
 {
-    public static TextHookIo Process()
-    {
-        Dictionary<string, string?> env = new(StringComparer.Ordinal);
-        foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
-            env[(string)entry.Key] = entry.Value as string;
-        return new TextHookIo(env, OutputWriter.Out, OutputWriter.Err);
-    }
+    public static TextHookIo Process() =>
+        new(HookEnvironment.Process().Values, OutputWriter.Out, OutputWriter.Err);
 }

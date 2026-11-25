@@ -1,3 +1,4 @@
+using Dg.Hooks.Shared;
 namespace Dg.Hooks.Defs.Repo;
 
 internal sealed class PruneContext(double nowMs, bool dryRun, Action<string> log)

@@ -1,3 +1,4 @@
+using Dg.Hooks.Shared;
 namespace Dg.Hooks.Defs.Repo;
 
 internal static class TtlPruner
