@@ -26,7 +26,7 @@ no downgrade after it, except a restore of a `pre-migration` snapshot (see
 below) with the older release. The stored credentials under `channel-review/` and the
 grant file `<state>/grants/channel-review.token` stay, so the job can read them.
 
-## If you upgraded before step 3
+## If you upgraded before the export step
 
 The major cannot export, but it keeps your state. Before it drops the tables,
 the daemon writes `channel-review-state.<env>.json` beside `daemon.db`, one

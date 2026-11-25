@@ -1,3 +1,5 @@
+redactions = ["DATADOG_*", "SENTRY_*"]
+
 [tools]
 bun = "1.4.1"
 node = "22"

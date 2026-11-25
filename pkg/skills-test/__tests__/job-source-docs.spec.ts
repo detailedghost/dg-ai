@@ -281,7 +281,8 @@ describe("each documented command passes its --help form", () => {
 	}, 120_000);
 
 	test("each dg name in a code span or fence of the changed documents resolves through resolveRoute", () => {
-		const removed = (file: string, name: string) => file === CHANNEL_REVIEW && ["channel-review", "service"].includes(name);
+		const removedNames = ["channel-review", "service"];
+		const removed = (file: string, name: string) => file === CHANNEL_REVIEW && removedNames.includes(name);
 		const bad = CHANGED.flatMap((file) =>
 			dgCommandForms(read(file))
 				.map((words) => words[0])
