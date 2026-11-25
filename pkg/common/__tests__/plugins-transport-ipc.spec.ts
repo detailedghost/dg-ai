@@ -39,7 +39,7 @@ type Handler = (route: string, body: unknown, frame: Frame, reply: (frame: Frame
 async function startPlugin(path: string, handler: Handler, mode = 0o600): Promise<void> {
 	const server = createServer((socket: Socket) => {
 		const reader = new FrameReader();
-		socket.on("data", (chunk) => {
+		socket.on("data", (chunk: Buffer) => {
 			for (const frame of reader.push(chunk)) {
 				const message = JSON.parse(new TextDecoder().decode(frame.payload)) as { route: string; body: unknown };
 				handler(message.route, message.body, frame, (out) => socket.write(encodeFrame(out)));
@@ -214,7 +214,7 @@ describe("IPC connection", () => {
 		const server = createServer((socket) => {
 			socketRef = socket;
 			const reader = new FrameReader();
-			socket.on("data", (chunk) => {
+			socket.on("data", (chunk: Buffer) => {
 				for (const frame of reader.push(chunk)) {
 					const message = JSON.parse(new TextDecoder().decode(frame.payload)) as { route: string };
 					if (message.route === "/v1/hello") socket.write(encodeFrame(respond(frame, helloOk)));
@@ -285,11 +285,11 @@ describe("warm connection per plugin", () => {
 
 describe("endpoint paths", () => {
 	test("puts a relative socket name under the plugin directory on Unix", () => {
-		expect(ipcEndpoint("/home/u/plugins/secret-scan", "secret-scan.sock", "linux")).toBe("/home/u/plugins/secret-scan/secret-scan.sock");
+		expect(ipcEndpoint("secret-scan", "/home/u/plugins/secret-scan", "secret-scan.sock", "linux")).toBe("/home/u/plugins/secret-scan/secret-scan.sock");
 	});
 
 	test("maps a plugin name to a named pipe path on Windows", () => {
 		expect(windowsPipePath("secret-scan")).toBe("\\\\.\\pipe\\dg-plugin-secret-scan");
-		expect(ipcEndpoint("C:\\plugins\\secret-scan", "secret-scan.sock", "win32")).toBe("\\\\.\\pipe\\dg-plugin-secret-scan");
+		expect(ipcEndpoint("secret-scan", "C:\\plugins\\secret-scan", "secret-scan.sock", "win32")).toBe("\\\\.\\pipe\\dg-plugin-secret-scan");
 	});
 });
