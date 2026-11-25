@@ -88,7 +88,7 @@ function printVersion(): Promise<number> {
 async function runFast(args: readonly string[]): Promise<number | undefined> {
 	if (isVersionOnly(args)) return printVersion();
 	if (args[0] !== "hooks" && args[0] !== "__complete") return undefined;
-	const { fastRoute, runFastRoute } = await import("../../dg/src/fast-route");
+	const { fastRoute, runFastRoute } = await import("@dg/dg/fast-route");
 	switch (fastRoute(args)) {
 		case "hooks": {
 			const { normalizeDgHome } = await import("@dg/common/node/dg-paths");
@@ -98,7 +98,7 @@ async function runFast(args: readonly string[]): Promise<number | undefined> {
 		case "completion": {
 			const words = args.slice(1);
 			if (words.length < 2) return undefined;
-			const { completeFast } = await import("../../skills-cli/src/completion/fast");
+			const { completeFast } = await import("@dg/skills-cli/completion/fast");
 			const lines = completeFast(words);
 			if (lines.length === 0) return undefined;
 			process.stdout.write(`${lines.join("\n")}\n`);

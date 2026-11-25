@@ -5,7 +5,8 @@
 	"type": "module",
 	"description": "The dg command: one front door that routes to dg-daemon, dg-skills and dg-agent.",
 	"exports": {
-		"./main": "./src/main.ts"
+		"./main": "./src/main.ts",
+		"./fast-route": "./src/fast-route.ts"
 	},
 	"scripts": {
 		"lint": "tsc --noEmit",

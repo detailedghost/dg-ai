@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, renameSync } from "node:fs";
 import { basename, join } from "node:path";
 import { DgCliError } from "@dg/common";
-import { parseManifest, permissionReport, type PluginManifest } from "../../../common/src/plugins/manifest";
+import { parseManifest, permissionReport, type PluginManifest } from "@dg/common/plugins/manifest";
 import { SKILL_NAME } from "../install/recommended-skills-only";
 import { registerOnHosts, unregisterFromHosts } from "./hosts";
 import { type Pin, stageSource } from "./source";

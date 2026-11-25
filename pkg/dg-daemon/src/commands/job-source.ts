@@ -40,7 +40,7 @@ import {
 	describeCredentials,
 	parseJobDeclaration,
 } from "../jobs/declaration";
-import type { PluginManifest } from "../../../common/src/plugins/manifest";
+import type { PluginManifest } from "@dg/common/plugins/manifest";
 import {
 	MANIFEST_FILE,
 	MAX_MANIFEST_BYTES,

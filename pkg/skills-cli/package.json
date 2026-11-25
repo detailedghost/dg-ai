@@ -7,6 +7,8 @@
 	"exports": {
 		"./lib": "./src/utils/lib.ts",
 		"./main": "./src/main.ts",
+		"./hooks/cli": "./src/hooks/cli.ts",
+		"./completion/fast": "./src/completion/fast.ts",
 		"./finish-upgrade": "./src/install/finish-upgrade.ts"
 	},
 	"scripts": {

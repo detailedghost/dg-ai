@@ -19,7 +19,7 @@ export async function runFastRoute(route: RunnableFastRoute, argv: readonly stri
 
 async function runHooks(argv: string[]): Promise<number> {
 	try {
-		const { main } = await import("../../skills-cli/src/hooks/cli");
+		const { main } = await import("@dg/skills-cli/hooks/cli");
 		return await main(argv);
 	} catch (err) {
 		const [{ DgCliError, describeError }, { emitRedacted }] = await Promise.all([
