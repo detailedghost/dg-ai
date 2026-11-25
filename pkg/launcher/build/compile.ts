@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { packLib } from "./companions";
+import { excludeCompanions, packLib } from "./companions";
 import { type CompileKey, COMPILE_TARGETS, type SharedOptions, sharedOptions } from "./options";
 import { writeBuildInfo } from "./report";
 
@@ -9,12 +9,15 @@ export async function buildCompiled({
 	target,
 	outfile,
 	shared,
+	withoutCompanions,
 }: {
 	target: CompileKey;
 	outfile: string;
 	shared?: SharedOptions;
+	withoutCompanions?: boolean;
 }): Promise<string> {
-	const { options } = shared ?? (await sharedOptions());
+	const { options: full } = shared ?? (await sharedOptions());
+	const options = withoutCompanions ? excludeCompanions(full) : full;
 	mkdirSync(dirname(outfile), { recursive: true });
 	const compile = { target: COMPILE_TARGETS[target], outfile, autoloadDotenv: false, autoloadBunfig: false };
 	const result = await Bun.build({ ...options, bytecode: true, format: "esm" as const, compile });

@@ -3,6 +3,7 @@ import { isWSL, tryOpen } from "@dg/common/node";
 import type { ConnectionConfig } from "../credentials";
 import type { QueryResult } from "../output";
 import type { DbSchemaForeignKey, DbSchemaResult, DbSchemaTable } from "../types";
+import { loadCompanion } from "../../install/companion";
 
 type SnowflakeSdk = typeof import("snowflake-sdk");
 
@@ -10,8 +11,7 @@ let snowflakeSdk: SnowflakeSdk | undefined;
 
 async function getSnowflakeSdk(): Promise<SnowflakeSdk> {
 	if (!snowflakeSdk) {
-		const mod = (await import("snowflake-sdk")) as { default?: SnowflakeSdk } & SnowflakeSdk;
-		snowflakeSdk = mod.default ?? mod;
+		snowflakeSdk = (await loadCompanion("db")).snowflake;
 		snowflakeSdk.configure({ logLevel: "OFF" });
 	}
 	return snowflakeSdk;

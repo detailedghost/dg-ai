@@ -40,6 +40,7 @@ import {
 } from "./recorder/narrate";
 import { type DemoResult, writeResult } from "./result";
 import { clearOverlays, showCaption, THEME } from "./recorder/overlays";
+import { loadCompanion } from "../install/companion";
 
 export { VIEWPORT };
 
@@ -117,7 +118,7 @@ export async function launchLocal(
 	job: PlayerJob,
 	plan: LocalPlan,
 ): Promise<PlayerSession> {
-	const { chromium } = await import("playwright-core");
+	const { chromium } = await loadCompanion("pw");
 	const profile = job.profile ?? guardedDest("demo-profile", profileDir());
 	ensurePrivateDir(profile);
 	let current: BrowserContext | undefined;
@@ -147,7 +148,7 @@ async function launchWindows(
 ): Promise<PlayerSession> {
 	const { closeWindowsBrowser, startWindowsBrowser, windowsProfileDir } =
 		await import("../pw/core/windows");
-	const { chromium } = await import("playwright-core");
+	const { chromium } = await loadCompanion("pw");
 	const profile = await windowsProfileDir("demo");
 	const windows = await startWindowsBrowser({
 		browser: plan.browser,

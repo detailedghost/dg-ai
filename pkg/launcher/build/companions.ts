@@ -1,5 +1,6 @@
 import { mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { companionAssetName } from "@dg/common/node/companion";
 import { playwrightMetadata } from "../../skills-cli/build";
 import { ROOT } from "./options";
 
@@ -22,7 +23,7 @@ export async function packLib(lib: string, outdir: string, version: string): Pro
 const SKILLS_CLI = join(ROOT, "..", "skills-cli");
 
 const COMPANION_ENTRIES = {
-	pw: 'export * from "playwright-core";\n',
+	pw: 'export * from "playwright-core";\nexport { registry } from "playwright-core/lib/coreBundle";\n',
 	db: 'import pg from "pg";\nimport snowflake from "snowflake-sdk";\nexport { pg, snowflake };\n',
 } as const;
 
@@ -56,7 +57,7 @@ export async function buildCompanions(outdir: string, version: string): Promise<
 			});
 			if (!result.success) throw new AggregateError(result.logs, `Companion ${name} build failed.`);
 			const index = new Uint8Array(await result.outputs[0].arrayBuffer());
-			const tarball = join(outdir, `dg-${name}-${version}.tar.zst`);
+			const tarball = join(outdir, companionAssetName(name, version));
 			await Bun.write(tarball, Bun.zstdCompressSync(await new Bun.Archive({ "index.js": index }).bytes(), { level: 19 }));
 			return tarball;
 		}),
