@@ -20,7 +20,7 @@ function setup({
 }: {
 	tabs?: Tab[];
 	owned?: number[];
-	selected?: number | undefined;
+	selected?: number | null;
 	sites?: string[];
 	frame?: Frame;
 } = {}) {
@@ -43,7 +43,7 @@ function setup({
 		} as never,
 		agentTabs: {
 			owns: async ({ tabId }: { tabId: number }) => owned.includes(tabId),
-			selected: async () => (selected === undefined ? undefined : { tabId: selected }),
+			selected: async () => (selected === null ? undefined : { tabId: selected }),
 		} as never,
 		control: { allowed: async (_session: string, site: string) => sites.includes(site) } as never,
 	});
@@ -112,7 +112,7 @@ describe("storage verb handler", () => {
 	});
 
 	it("reports when the agent has no tab", async () => {
-		const { handler } = setup({ selected: undefined });
+		const { handler } = setup({ selected: null });
 		expect(await handler(set, CONTEXT)).toEqual({
 			ok: false,
 			error: "This agent has no tab yet. Run pw --ext new <url> first.",
