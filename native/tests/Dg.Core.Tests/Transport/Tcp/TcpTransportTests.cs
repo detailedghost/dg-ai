@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using Dg.Core.Abstractions;
 using Dg.Core.Plugins.Contract;
 using Dg.Core.Plugins.Manifest;
 using Dg.Core.Transport.Framing;
