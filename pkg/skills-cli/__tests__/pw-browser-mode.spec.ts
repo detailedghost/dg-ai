@@ -126,6 +126,38 @@ describe("pw main browser mode", () => {
 		}
 	});
 
+	test.each([
+		["goto", ["goto", "https://example.com"]],
+		["tab-list", ["tab-list"]],
+		["tab-new", ["tab-new", "https://example.com"]],
+	])("DG_BROWSER=ext maps %s to its ext verb", async (_verb, argv) => {
+		const previous = process.env.DG_BROWSER;
+		process.env.DG_BROWSER = "ext";
+		try {
+			const env = clientEnv();
+			expect(await main(argv, env)).toBe(1);
+			const message = env.stderr.join("\n");
+			expect(message).toContain("pw --ext needs a dg daemon session");
+			expect(message).not.toContain("Unknown pw --ext verb");
+		} finally {
+			if (previous === undefined) delete process.env.DG_BROWSER;
+			else process.env.DG_BROWSER = previous;
+		}
+	});
+
+	test("DG_DEBUG prints the chosen browser and why", async () => {
+		const previous = process.env.DG_DEBUG;
+		process.env.DG_DEBUG = "1";
+		try {
+			const env = clientEnv();
+			await main(["--local", "--version"], env);
+			expect(env.stderr.join("\n")).toContain("dg pw: local browser (--local)");
+		} finally {
+			if (previous === undefined) delete process.env.DG_DEBUG;
+			else process.env.DG_DEBUG = previous;
+		}
+	});
+
 	test("--ext on a local-only verb names the verb and the local fix", async () => {
 		const env = clientEnv();
 
