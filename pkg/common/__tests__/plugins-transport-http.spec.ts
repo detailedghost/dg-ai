@@ -22,13 +22,13 @@ function manifestFor(endpoint: string, extra = ""): PluginManifest {
 	);
 }
 
-function credentials(value: string | undefined = TOKEN) {
+function credentials(value: string | null = TOKEN) {
 	const asked: string[] = [];
 	return {
 		asked,
 		resolveCredential: async (name: string) => {
 			asked.push(name);
-			return value === undefined ? undefined : { value, source: "store" as const };
+			return value === null ? undefined : { value, source: "store" as const };
 		},
 	};
 }
@@ -146,7 +146,7 @@ describe("httpTransport errors", () => {
 			hits += 1;
 			return Response.json({});
 		});
-		const error = await caught(httpTransport(manifestFor(endpoint), { credentials: credentials(null as never as undefined) }).request({ route: "/v1/health", body: {} }));
+		const error = await caught(httpTransport(manifestFor(endpoint), { credentials: credentials(null) }).request({ route: "/v1/health", body: {} }));
 		expect((error as PluginTransportError).code).toBe("auth");
 		expect((error as Error).message).toContain("plugin-local-hook-token");
 		expect(hits).toBe(0);
