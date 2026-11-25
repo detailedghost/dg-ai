@@ -1,5 +1,9 @@
+using System.Runtime.Versioning;
+
 namespace Dg.Routing.Tests;
 
+[SupportedOSPlatform("linux")]
+[SupportedOSPlatform("macos")]
 public sealed class CoreLauncherTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("dg-core-test").FullName;
