@@ -13,7 +13,7 @@ type Spec = { bundles: Record<string, Record<string, string>>; cases: Case[] };
 const spec: Spec = JSON.parse(readFileSync(join(dir, "cases.json"), "utf8"));
 const SKIPPED = new Set(["sources", ".bun", ".cache"]);
 
-const AT_A_TERMINAL = ["python3", "-c", "import os, pty, sys; os.dup2(pty.openpty()[1], 0); os.execvp(sys.argv[1], sys.argv[1:])"];
+const AT_A_TERMINAL = ["python3", "-c", "import os, pty, sys; m, s = pty.openpty(); os.set_inheritable(m, True); os.dup2(s, 0); os.execvp(sys.argv[1], sys.argv[1:])"];
 
 function dg(home: string, argv: string[], extra: Record<string, string> = {}, terminal = false) {
 	const env = { PATH: process.env.PATH ?? "", HOME: home, DG_HOME: home, DG_PATH_FENCE: home, ...extra };
