@@ -234,7 +234,7 @@ internal sealed class FixtureLayout : IDisposable
     }
 
     private bool IsUnderRoot([NotNullWhen(true)] string? directory) =>
-        directory is not null && directory.StartsWith(Root + "/", StringComparison.Ordinal);
+        directory is not null && directory.StartsWith(Root + Path.DirectorySeparatorChar, StringComparison.Ordinal);
 
     private static void Run(string file, string cwd, string[] args)
     {
