@@ -24,3 +24,5 @@ mutation.json
 # migrate-env backups still contain credentials.
 .env.bak-*
 .no-local-zone.local
+native/**/bin/
+native/**/obj/

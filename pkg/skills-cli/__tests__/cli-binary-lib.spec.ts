@@ -132,6 +132,7 @@ describe("pickProgram", () => {
 			version: "1.28.0",
 			assetName: "dg-linux-x64",
 			url: "https://x/v1.28.0/dg-linux-x64",
+			encoding: "raw",
 			sumsUrl: "https://x/v1.28.0/SHA256SUMS",
 		});
 		expect(pickProgram(releases, undefined, "darwin-arm64").assetName).toBe("dg-darwin-arm64");

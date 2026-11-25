@@ -90,8 +90,6 @@ describe("reexecWithoutJit", () => {
 
 	test.each([
 		[["phone", "status"]],
-		[["hooks", "run", "spelling"]],
-		[["--version"]],
 		[["dg-agent", "phone", "listen"]],
 		[["daemon", "serve"]],
 	])("re-executes dg %p with the JIT off and a marker", async (argv) => {

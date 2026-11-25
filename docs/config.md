@@ -30,6 +30,8 @@ default.
 
 | Key | Type | Default | What it does |
 | --- | --- | --- | --- |
+| `browser.mode` | string | `auto` | Which browser `dg pw` drives: `ext`, `local` or `auto`. `auto` uses the extension when it is paired and running, else a local browser. |
+| `front.enabled` | boolean | `true` | Runs the native front door as `dg`. Set `false` to run the Bun dg for every command. `DG_FRONT=0` does the same for one shell. |
 | `hooks.<id>.<setting>` | string | the hook's default | A hook setting, for example `hooks.spelling.locale = "en-GB"`. See [hooks](hooks.md). |
 | `install.cli_only` | boolean | `false` | `true` on an install made with `--cli-only`, which has no extension. |
 | `refs.default_repo` | string | none | The repo that a bare PR number means in `dg pw batch-open`. |
@@ -39,6 +41,7 @@ default.
 | `ssms.google.send_enabled` | boolean | `false` | Turns on Google Messages sends. |
 | `plugins.<name>.enabled` | boolean | `true` | Turns a plugin on or off. |
 | `plugins.<name>.source` | string | none | Where the plugin comes from. |
+| `plugins.<name>.allow_remote` | boolean | `false` | Lets a plugin whose manifest says `remote = true` connect to a remote URL. Both must be set. |
 | `plugins.<name>.settings` | table | empty | The plugin's own settings. |
 | `meta.migrated` | table | empty | Written by dg: each old config file that moved into this file, with its sha256. Do not edit it. |
 
@@ -185,7 +188,7 @@ that file, the same rule that held for `ssms/config.yaml` (ADR 0024).
 
 ## Memory and the JIT
 
-On Linux and macOS, every dg command starts itself once more with the JavaScript
+On Linux and macOS, every dg command except `dg --version` and `dg hooks run` starts itself once more with the JavaScript
 JIT turned off (ADR 0057). That keeps each dg process 2 to 20 MB smaller and adds
 about 5 ms to each start. Commands with heavy CPU work, such as `dg adr lint --all`
 on a large repo, run slower without the JIT.

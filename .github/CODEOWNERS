@@ -1,3 +1,6 @@
 /scripts/blt-gate.ts @detailedghost
 /.github/workflows/ @detailedghost
 /.github/CODEOWNERS @detailedghost
+/scripts/*budgets.json @detailedghost
+/native/budgets/ @detailedghost
+/bench/budgets/ @detailedghost
