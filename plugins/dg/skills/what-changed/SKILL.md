@@ -1,6 +1,6 @@
 ---
 name: what-changed
-description: Draft release notes or a changelog from a repository's tags, merged pull requests, and commits for a requested release or range. Supports technical notes for engineers and non-technical notes for non-engineers. Use when asked what changed or what shipped, for "/dg:what-changed", "release notes", "technical release notes", "non-technical release notes", "changelog", or to prepare release copy; publishing is a separate action. Flags: -t/--technical (default), -n/--nontechnical, or both; -d/--demo runs /dg:demo on the user-visible changes after the notes; an optional range argument overrides the default range.
+description: Draft release notes or a changelog from a repository's tags, merged pull requests, and commits for a release or range. Technical notes for engineers, non-technical for others. Use for "/dg:what-changed", "release notes", "changelog", or "what shipped"; publishing is separate. Flags: -t/--technical (default), -n/--nontechnical, -d/--demo; an optional range argument overrides the default range.
 ---
 
 First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
