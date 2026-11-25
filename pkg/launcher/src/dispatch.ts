@@ -1,4 +1,5 @@
 import type { ProgramName } from "@dg/common/node/program";
+import { fastRoute, runFastRoute } from "../../dg/src/fast-route";
 
 type Program = { main(argv: string[]): Promise<number> };
 
@@ -77,6 +78,30 @@ function printVersion(): number {
 	return 0;
 }
 
+/** Answers hooks, completion and --version without the flat route tree; undefined means the full program must run. */
+async function runFast(args: readonly string[]): Promise<number | undefined> {
+	switch (fastRoute(args)) {
+		case "version":
+			return runFastRoute(args);
+		case "hooks": {
+			const { normalizeDgHome } = await import("@dg/common/node/dg-paths");
+			normalizeDgHome();
+			return runFastRoute(args);
+		}
+		case "completion": {
+			const words = args.slice(1);
+			if (words.length < 2) return undefined;
+			const { completeFast } = await import("../../skills-cli/src/completion/fast");
+			const lines = completeFast(words);
+			if (lines.length === 0) return undefined;
+			process.stdout.write(`${lines.join("\n")}\n`);
+			return 0;
+		}
+		default:
+			return undefined;
+	}
+}
+
 /** Runs dg with `argv`; an old program name as first word is the 6.3 bridge, as invoked name it exits 1. */
 export async function dispatch(argv: readonly string[], argv0?: string): Promise<number> {
 	const invoked = invokedName(argv0);
@@ -89,8 +114,11 @@ export async function dispatch(argv: readonly string[], argv0?: string): Promise
 	const name: ProgramName = bridge ? (first as ProgramName) : "dg";
 	const args = bridge ? rest : [...argv];
 	if (isOldName(name)) process.stderr.write(removed(name, args));
+	if (!isOldName(first)) {
+		const code = await runFast(args);
+		if (code !== undefined) return code;
+	}
 	const versionOnly = args.length === 1 && args[0] === "--version";
-	if (versionOnly && !bridge) return printVersion();
 	const { normalizeDgHome } = await import("@dg/common/node/dg-paths");
 	normalizeDgHome();
 	if (versionOnly) return printVersion();
