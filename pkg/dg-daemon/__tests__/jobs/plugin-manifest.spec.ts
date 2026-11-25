@@ -20,6 +20,7 @@ command = "bun"
 args = ["run", "report.ts"]
 `;
 const manifest = (extra = "") => parseManifest(manifestText(extra), "plugin.toml");
+const withCredentials = `${manifestText()}\n[permissions]\ncredentials = ["api-token"]\n`;
 
 describe("jobFromManifest", () => {
 	it("returns the declared job shape that package.json gives for the same argv", () => {
@@ -36,10 +37,7 @@ describe("jobFromManifest", () => {
 	});
 
 	it("binds the credentials the manifest asks for", () => {
-		const job = jobFromManifest(
-			manifest('[permissions]\ncredentials = ["api-token"]\n'.replace(/^/, "")),
-			context,
-		);
+		const job = jobFromManifest(parseManifest(withCredentials, "plugin.toml"), context);
 
 		expect(job.entry.credentials).toEqual(["api-token"]);
 		expect(job.entry.grant).toBe("tools");
@@ -48,7 +46,7 @@ describe("jobFromManifest", () => {
 	it("refuses a manifest of another kind", () => {
 		const hook = parseManifest(manifestText().replace('kind = "job"', 'kind = "hook"'), "plugin.toml");
 
-		expect(() => jobFromManifest(hook, context)).toThrow(/kind job/);
+		expect(() => jobFromManifest(hook, context)).toThrow(/not a job/);
 	});
 
 	it("refuses a built-in entry because it has no argv", () => {

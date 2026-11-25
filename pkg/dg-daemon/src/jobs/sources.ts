@@ -8,6 +8,8 @@ import {
 	writeFilePreserving,
 } from "@dg/common/node";
 
+export type SourcePin = { kind: "sha256" | "commit"; value: string };
+
 export type SourceMarks = { prefixAccepted?: boolean; setupDone?: string[] };
 
 export type GitSourceRecord = {
@@ -18,6 +20,7 @@ export type GitSourceRecord = {
 	jobs: string[];
 	declarationHash: string;
 	credentials: Record<string, unknown>;
+	pin?: SourcePin;
 } & SourceMarks;
 
 export type PathSourceRecord = {
@@ -26,6 +29,7 @@ export type PathSourceRecord = {
 	jobs: string[];
 	declarationHash?: string;
 	credentials: Record<string, unknown>;
+	pin?: SourcePin;
 } & SourceMarks;
 
 export type CommandSourceRecord = { kind: "command" } & SourceMarks;
@@ -40,10 +44,22 @@ const SHA = /^[0-9a-f]{40}$/;
 const HASH = /^[0-9a-f]{64}$/;
 const MARK_KEYS = ["prefixAccepted", "setupDone"];
 const KEYS = {
-	git: ["kind", "url", "ref", "sha", "jobs", "declarationHash", "credentials", ...MARK_KEYS],
-	path: ["kind", "path", "jobs", "declarationHash", "credentials", ...MARK_KEYS],
+	git: ["kind", "url", "ref", "sha", "jobs", "declarationHash", "credentials", "pin", ...MARK_KEYS],
+	path: ["kind", "path", "jobs", "declarationHash", "credentials", "pin", ...MARK_KEYS],
 	command: ["kind", ...MARK_KEYS],
 };
+
+function checkPin(raw: Record<string, unknown>, bad: (why: string) => never): void {
+	const pin = raw.pin;
+	if (pin === undefined) return;
+	const ok =
+		isRecord(pin) &&
+		Object.keys(pin).length === 2 &&
+		(pin.kind === "sha256" || pin.kind === "commit") &&
+		typeof pin.value === "string" &&
+		/^[0-9a-f]+$/.test(pin.value);
+	if (!ok) bad('has a "pin" that is not a sha256 or commit pin');
+}
 
 function checkPathRecord(
 	raw: Record<string, unknown>,
@@ -60,6 +76,7 @@ function checkPathRecord(
 		bad('has a "declarationHash" that is not 64 hexadecimal characters');
 	}
 	if (!isRecord(raw.credentials)) bad('has "credentials" that is not an object');
+	checkPin(raw, bad);
 	return raw as PathSourceRecord;
 }
 
@@ -110,6 +127,7 @@ function checkRecord(file: string, source: string, raw: unknown): SourceRecord {
 		bad('has a "declarationHash" that is not a string');
 	}
 	if (!isRecord(raw.credentials)) bad('has "credentials" that is not an object');
+	checkPin(raw, bad);
 	return raw as GitSourceRecord;
 }
 
