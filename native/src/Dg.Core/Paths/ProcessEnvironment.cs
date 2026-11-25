@@ -6,9 +6,11 @@ public static class ProcessEnvironment
 {
     public static Dictionary<string, string?> Capture()
     {
-        var env = new Dictionary<string, string?>(StringComparer.Ordinal);
-        foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
-            env[(string)entry.Key] = entry.Value as string;
+        var source = Environment.GetEnvironmentVariables();
+        Dictionary<string, string?> env = new(source.Count, StringComparer.Ordinal);
+        IDictionaryEnumerator entries = source.GetEnumerator();
+        while (entries.MoveNext())
+            env[(string)entries.Key] = entries.Value as string;
         return env;
     }
 }

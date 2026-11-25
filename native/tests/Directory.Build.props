@@ -12,5 +12,7 @@
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <Using Include="Xunit" />
+    <Using Include="Dg.Tests.Shared" />
+    <Compile Include="$(MSBuildThisFileDirectory)Shared/AllocationProbe.cs" Link="Shared/AllocationProbe.cs" />
   </ItemGroup>
 </Project>

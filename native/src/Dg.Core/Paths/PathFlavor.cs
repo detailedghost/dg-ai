@@ -1,4 +1,4 @@
-using System.Text;
+using System.Buffers;
 
 namespace Dg.Core.Paths;
 
@@ -11,6 +11,8 @@ public enum DgPlatform
 
 internal readonly record struct PathFlavor(bool Windows)
 {
+    private const int StackLimit = 512;
+
     public static PathFlavor For(DgPlatform platform) => new(platform == DgPlatform.Windows);
 
     public char Separator => Windows ? '\\' : '/';
@@ -20,42 +22,92 @@ internal readonly record struct PathFlavor(bool Windows)
             ? path.Length > 0 && path[0] is '/' or '\\' || path.Length > 2 && path[1] == ':' && path[2] is '/' or '\\'
             : path.StartsWith('/');
 
-    public string Join(params string[] parts) => Normalize(string.Join(Separator, parts));
+    public string Join(params ReadOnlySpan<string> parts)
+    {
+        var length = Math.Max(parts.Length - 1, 0);
+        foreach (var part in parts)
+            length += part.Length;
+        char[]? rented = null;
+        Span<char> joined = length <= StackLimit ? stackalloc char[StackLimit] : rented = ArrayPool<char>.Shared.Rent(length);
+        try
+        {
+            var at = 0;
+            for (var i = 0; i < parts.Length; i++)
+            {
+                if (i > 0)
+                    joined[at++] = Separator;
+                parts[i].CopyTo(joined[at..]);
+                at += parts[i].Length;
+            }
+            return Normalize(joined[..at]);
+        }
+        finally
+        {
+            if (rented is not null)
+                ArrayPool<char>.Shared.Return(rented);
+        }
+    }
 
     public string Resolve(string path, string cwd) => IsAbsolute(path) ? Normalize(path) : Join(cwd, path);
 
-    public string Normalize(string path)
+    public string Normalize(ReadOnlySpan<char> path)
     {
-        var text = Windows ? path.Replace('/', '\\') : path;
-        var root = Root(text);
-        List<string> kept = [];
-        foreach (var part in text[root.Length..].Split(Separator))
+        char[]? rented = null;
+        Span<char> text = path.Length <= StackLimit ? stackalloc char[StackLimit] : rented = ArrayPool<char>.Shared.Rent(path.Length);
+        try
         {
-            if (part.Length == 0 || part == ".")
-                continue;
-            if (part == "..")
+            text = text[..path.Length];
+            path.CopyTo(text);
+            if (Windows)
+                text.Replace('/', '\\');
+            var rootLength = RootLength(text);
+            var write = rootLength;
+            var read = rootLength;
+            while (read < text.Length)
             {
-                if (kept.Count > 0 && kept[^1] != "..")
-                    kept.RemoveAt(kept.Count - 1);
-                else if (root.Length == 0)
-                    kept.Add(part);
-                continue;
+                var next = text[read..].IndexOf(Separator);
+                var end = next < 0 ? text.Length : read + next;
+                var segment = text[read..end];
+                read = end + 1;
+                if (segment.IsEmpty || segment is ".")
+                    continue;
+                if (segment is "..")
+                {
+                    var kept = text[rootLength..write];
+                    var cut = kept.LastIndexOf(Separator);
+                    if (!kept.IsEmpty && kept[(cut + 1)..] is not "..")
+                        write = cut < 0 ? rootLength : rootLength + cut;
+                    else if (rootLength == 0)
+                        write = Append(text, write, rootLength, segment);
+                    continue;
+                }
+                write = Append(text, write, rootLength, segment);
             }
-            kept.Add(part);
+            return write == 0 ? "." : new string(text[..write]);
         }
-        var builder = new StringBuilder(root);
-        builder.AppendJoin(Separator, kept);
-        return builder.Length == 0 ? "." : builder.ToString();
+        finally
+        {
+            if (rented is not null)
+                ArrayPool<char>.Shared.Return(rented);
+        }
     }
 
-    private string Root(string text)
+    private int Append(Span<char> text, int write, int rootLength, ReadOnlySpan<char> segment)
+    {
+        if (write > rootLength)
+            text[write++] = Separator;
+        segment.CopyTo(text[write..]);
+        return write + segment.Length;
+    }
+
+    private int RootLength(ReadOnlySpan<char> text)
     {
         if (!Windows)
-            return text.StartsWith('/') ? "/" : "";
-        if (text.StartsWith(@"\\", StringComparison.Ordinal))
-            return @"\\";
+            return !text.IsEmpty && text[0] == '/' ? 1 : 0;
+        if (text.StartsWith(@"\\"))
+            return 2;
         if (text.Length > 1 && text[1] == ':')
-            return text.Length > 2 && text[2] == '\\' ? text[..3] : text[..2];
-        return text.StartsWith('\\') ? "\\" : "";
+            return text.Length > 2 && text[2] == '\\' ? 3 : 2;
+        return !text.IsEmpty && text[0] == '\\' ? 1 : 0;
     }
 }
