@@ -6,6 +6,7 @@ import {
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
+	readFileSync,
 	readdirSync,
 	renameSync,
 	rmSync,
@@ -15,9 +16,10 @@ import {
 import { join } from "node:path";
 import { evictFromPageCache } from "@dg/common/node/page-cache";
 import { compiledProgramPath, PROGRAM_NAMES } from "@dg/common/node/program";
-import { decodeProgram, type PickedProgram, rawAssetName, UA, verifyReleaseAsset } from "../utils/lib";
+import { decodeProgram, expectedSha256, type PickedProgram, rawAssetName, UA, verifyReleaseAsset } from "../utils/lib";
 import { linkCurrent, programExeName, readCurrent, VERSION_DIR } from "./current";
 import { isDgLauncher } from "./dg-launcher";
+import { applyPatch, patchAssetName } from "./patch";
 
 /** `<root>/bin/<version>/dg[.exe]`. */
 export const versionProgramPath = (root: string, version: string, platform: NodeJS.Platform = process.platform): string =>
@@ -44,12 +46,36 @@ function pruneVersions(bin: string, keep: ReadonlySet<string>): void {
 	}
 }
 
-async function download(release: PickedProgram, staged: string): Promise<void> {
-	const res = await fetch(release.url, { headers: UA });
-	if (!res.ok) throw new Error(`${release.assetName} download failed: HTTP ${res.status}`);
-	const downloaded = new Uint8Array(await res.arrayBuffer());
-	const bytes = decodeProgram(downloaded, release.encoding, release.assetName);
-	await verifyReleaseAsset(release.sumsUrl, rawAssetName(release.assetName), bytes, `v${release.version}`);
+async function downloadPatched(release: PickedProgram, from: string, fromProgram: string): Promise<Uint8Array | undefined> {
+	const patchUrl = new URL(patchAssetName(release.assetName, from), release.url).href;
+	const res = await fetch(patchUrl, { headers: UA });
+	if (!res.ok) return undefined;
+	const patch = new Uint8Array(await res.arrayBuffer());
+	const sums = await fetch(release.sumsUrl, { headers: UA });
+	if (!sums.ok) return undefined;
+	const expected = expectedSha256(await sums.text(), rawAssetName(release.assetName));
+	if (!expected) return undefined;
+	return applyPatch(readFileSync(fromProgram), patch, expected);
+}
+
+async function download(release: PickedProgram, staged: string, from?: { version: string; program: string }): Promise<void> {
+	let bytes: Uint8Array | undefined;
+	if (from && existsSync(from.program) && !Bun.which("zstd")) {
+		warnOnStderr("dg: zstd is not on PATH, so the patch is skipped; downloading the full program");
+	} else if (from && existsSync(from.program)) {
+		try {
+			bytes = await downloadPatched(release, from.version, from.program);
+		} catch (err) {
+			warnOnStderr(`dg: patch from ${from.version} failed (${err instanceof Error ? err.message : err}); downloading the full program`);
+		}
+	}
+	if (!bytes) {
+		const res = await fetch(release.url, { headers: UA });
+		if (!res.ok) throw new Error(`${release.assetName} download failed: HTTP ${res.status}`);
+		const downloaded = new Uint8Array(await res.arrayBuffer());
+		bytes = decodeProgram(downloaded, release.encoding, release.assetName);
+		await verifyReleaseAsset(release.sumsUrl, rawAssetName(release.assetName), bytes, `v${release.version}`);
+	}
 	writeFileSync(staged, bytes);
 	chmodSync(staged, 0o755);
 }
@@ -62,12 +88,14 @@ export async function installCompiled(
 ): Promise<string> {
 	const bin = join(root, "bin");
 	const final = versionProgramPath(root, release.version, platform);
+	const installed = readCurrent(root, "bin");
+	const from = installed && installed !== release.version ? { version: installed, program: versionProgramPath(root, installed, platform) } : undefined;
 	if (!existsSync(final)) {
 		mkdirSync(bin, { recursive: true });
 		const staging = mkdtempSync(join(bin, `.${release.version}.staging-`));
 		try {
 			const staged = join(staging, programExeName(platform));
-			await download(release, staged);
+			await download(release, staged, from);
 			selfCheck(staged, release.version);
 			evictFromPageCache(staged);
 			if (!existsSync(final)) {

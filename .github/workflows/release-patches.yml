@@ -1,0 +1,67 @@
+name: Release patches
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build patches for, for example v7.0.6.
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-patches-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  patches:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Find the previous release
+        id: previous
+        run: |
+          set -euo pipefail
+          prev="$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq '.[] | select((.draft | not) and (.prerelease | not)) | .tag_name' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V \
+            | awk -v tag="$TAG" '$0 == tag { print last; exit } { last = $0 }')"
+          if [ -z "$prev" ]; then
+            echo "No release before ${TAG}; no patches to build."
+          fi
+          echo "tag=${prev}" >> "$GITHUB_OUTPUT"
+
+      - name: Build one patch per target and the PATCHSUMS file
+        if: steps.previous.outputs.tag != ''
+        env:
+          PREV: ${{ steps.previous.outputs.tag }}
+        run: |
+          set -euo pipefail
+          keys="linux-x64 linux-x64-baseline linux-arm64 darwin-x64 darwin-arm64 windows-x64 windows-x64-baseline windows-arm64"
+          mkdir -p old new patches
+          from="${PREV#v}"
+          for key in $keys; do
+            asset="dg-${key}"
+            case "$key" in windows-*) asset="${asset}.exe" ;; esac
+            gh release download "$PREV" --repo "$GITHUB_REPOSITORY" --pattern "${asset}.zst" --dir old
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "${asset}.zst" --dir new
+            zstd -d -q --force "old/${asset}.zst" -o "old/${asset}"
+            zstd -d -q --force "new/${asset}.zst" -o "new/${asset}"
+            name="dg-${key}-from-${from}.zpatch"
+            zstd -q -19 --long=27 --force --patch-from="old/${asset}" "new/${asset}" -o "patches/${name}"
+            zstd -d -q --force --long=27 --patch-from="old/${asset}" "patches/${name}" -o "patches/check"
+            cmp "patches/check" "new/${asset}"
+            rm -f "patches/check" "old/${asset}" "new/${asset}" "old/${asset}.zst" "new/${asset}.zst"
+          done
+          (cd patches && sha256sum -- *.zpatch > PATCHSUMS)
+
+      - name: Upload the patches to the release
+        if: steps.previous.outputs.tag != ''
+        run: gh release upload "$TAG" patches/*.zpatch patches/PATCHSUMS --repo "$GITHUB_REPOSITORY" --clobber
