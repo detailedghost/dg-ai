@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { REPO_ROOT } from "./test-support";
@@ -30,7 +30,7 @@ function run(...args: string[]) {
 function reportOf(args: string[]) {
 	const json = join(work, `report-${Math.random().toString(36).slice(2)}.json`);
 	const result = run(...args, "--json", json);
-	return { ...result, report: result.code === 0 ? JSON.parse(require("node:fs").readFileSync(json, "utf8")) : null };
+	return { ...result, report: result.code === 0 ? JSON.parse(readFileSync(json, "utf8")) : null };
 }
 
 beforeAll(() => {
