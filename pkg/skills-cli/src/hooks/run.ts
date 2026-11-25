@@ -94,7 +94,8 @@ async function runExternal(
 			return 1;
 		}
 		const event = await readStdinJson(stdin);
-		const timeoutMs = Number(env["DG_HOOK_TIMEOUT_MS"]) || DEFAULT_EXTERNAL_TIMEOUT_MS;
+		const requested = Number(env["DG_HOOK_TIMEOUT_MS"]);
+		const timeoutMs = requested > 0 && Number.isFinite(requested) ? requested : DEFAULT_EXTERNAL_TIMEOUT_MS;
 		const { runExternalHook, externalHookResult } = await import("./external");
 		const outcome = await runExternalHook(
 			plugin.manifest,

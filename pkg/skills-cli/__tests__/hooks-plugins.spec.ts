@@ -149,6 +149,14 @@ describe("hooks run with an external hook plugin", () => {
 		expect(result).toEqual({ code: 2, stdout: "", stderr: "secret found\n" });
 	});
 
+	test.each(["-1", "0", "abc"])("uses the default timeout when DG_HOOK_TIMEOUT_MS is %s", async (value) => {
+		const world = hookWorld();
+		const dir = installPlugin(world, "scan", ENABLED);
+		await startPlugin(join(dir, "p.sock"), () => ({ decision: "deny", reason: "secret found" }));
+		const result = await world.run("scan", bashInput("ls"), { env: { DG_HOOK_TIMEOUT_MS: value } });
+		expect(result).toEqual({ code: 2, stdout: "", stderr: "secret found\n" });
+	});
+
 	test("lets the tool call go on when the plugin allows", async () => {
 		const world = hookWorld();
 		const dir = installPlugin(world, "scan", ENABLED);
