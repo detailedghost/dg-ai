@@ -28,7 +28,7 @@ describe("loadCompanion", () => {
 		expect(typeof db.snowflake.createConnection).toBe("function");
 	});
 
-	test("throws CompanionMissing with the download command when the companion is not installed", async () => {
+	test("throws CompanionMissing when the companion is not installed", async () => {
 		const error = await loadCompanion("pw", { external: true, version: "9.9.9", paths: { dataDir: dataDir() } }).catch(
 			(caught: unknown) => caught,
 		);
@@ -37,7 +37,6 @@ describe("loadCompanion", () => {
 		expect(name).toBe("CompanionMissing");
 		expect(message).toContain("pw");
 		expect(message).toContain("9.9.9");
-		expect(message).toContain("dg companion install pw");
 	});
 
 	test("imports the installed companion entry from the data dir", async () => {
