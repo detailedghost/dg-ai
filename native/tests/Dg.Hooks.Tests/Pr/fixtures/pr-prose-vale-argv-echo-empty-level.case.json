@@ -1,0 +1,20 @@
+{
+	"hook": "pr-prose",
+	"posixOnly": true,
+	"event": {
+		"hook_event_name": "PreToolUse",
+		"tool_name": "Bash",
+		"tool_input": {
+			"command": "gh pr create --title t --body 'This change adds a retry to the upload call. It keeps the old behavior for other calls.'"
+		},
+		"cwd": "$CWD/work"
+	},
+	"bin": {
+		"vale": "#!/bin/sh\necho \"body.md:1:1:Arg.Check:$2\"\nexit 0\n"
+	},
+	"env": {
+		"PATH": "$CWD/bin:/usr/bin:/bin",
+		"HOOK_PR_PROSE_VALE_CONFIG": "x.ini",
+		"HOOK_PR_PROSE_LEVEL": ""
+	}
+}

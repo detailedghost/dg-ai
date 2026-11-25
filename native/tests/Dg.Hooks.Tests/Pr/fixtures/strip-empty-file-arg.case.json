@@ -1,0 +1,7 @@
+{
+	"hook": "strip-ai-coauthors",
+	"posixOnly": true,
+	"args": [
+		""
+	]
+}

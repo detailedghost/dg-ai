@@ -1,0 +1,11 @@
+{
+	"hook": "pr-prose",
+	"event": {
+		"hook_event_name": "PreToolUse",
+		"tool_name": "Bash",
+		"tool_input": {
+			"command": "bash -c 'gh pr create --fill' --body 'This change adds a retry. It keeps the old behavior for other calls.'"
+		},
+		"cwd": "$CWD/work"
+	}
+}

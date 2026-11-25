@@ -1,0 +1,6 @@
+{
+	"exit": 2,
+	"stdout": "",
+	"stderr": "PR body does not read as plain English (6 issue(s)):\n  body line 1: --config=<work>/conf/.vale.ini (Arg.Check)\n  body line 1: --minAlertLevel=error (Arg.Check)\n  body line 1: --filter=.Name != \"Vale.Spelling\" (Arg.Check)\n  body line 1: --output=line (Arg.Check)\n  body line 1: body.md (Arg.Check)\n  body line 2: This change adds a retry to the upload call. It keeps the old behavior for other calls.| (Body.Text)\nfix: rewrite the body as plain English - short active sentences that say what changed and why - then retry.\n",
+	"after": {}
+}

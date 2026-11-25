@@ -1,0 +1,6 @@
+{
+	"exit": 2,
+	"stdout": "",
+	"stderr": "PR body does not read as plain English (2 issue(s)):\n  body line 1: Avoid passive voice: really (maybe) (Style.Passive)\n  body line 2: Use the term (Style.Terms)\nfix: rewrite the body as plain English - short active sentences that say what changed and why - then retry.\n",
+	"after": {}
+}

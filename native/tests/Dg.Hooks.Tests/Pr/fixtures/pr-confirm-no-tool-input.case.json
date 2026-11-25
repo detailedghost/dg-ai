@@ -1,0 +1,6 @@
+{
+	"hook": "pr-confirm",
+	"event": {
+		"tool_name": "Bash"
+	}
+}

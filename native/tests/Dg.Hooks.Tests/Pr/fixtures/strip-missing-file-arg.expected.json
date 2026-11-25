@@ -1,0 +1,6 @@
+{
+	"exit": 2,
+	"stdout": "",
+	"stderr": "hooks run strip-ai-coauthors: needs the commit message file\n",
+	"after": {}
+}
