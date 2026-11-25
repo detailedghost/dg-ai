@@ -56,7 +56,8 @@ export async function reexecWithoutJit(
 		delete env[REEXEC_MARK];
 		return;
 	}
-	if (target === "darwin-arm64" || typeof execve !== "function" || env[JIT_ENV] !== undefined || env[KEEP_JIT] === "1" || needsFfi(argv) || staysInBudgetWithJit(argv)) return;
+	const keepsJit = target === "darwin-arm64" || typeof execve !== "function";
+	if (keepsJit || env[JIT_ENV] !== undefined || env[KEEP_JIT] === "1" || needsFfi(argv) || staysInBudgetWithJit(argv)) return;
 	try {
 		const { isCompiled } = await import("@dg/common/node/program");
 		const execArgv = [process.argv0, ...(isCompiled() ? [] : [Bun.main]), ...argv];
