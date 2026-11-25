@@ -1,0 +1,8 @@
+== log 644
+shfmt -i 2 -w <ROOT>/work/run.bash | cwd=-
+
+== work/.git/HEAD 644
+
+== work/run.bash 644
+echo hi
+

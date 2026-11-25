@@ -1,0 +1,11 @@
+== log 644
+biome --version | cwd=-
+biome format --write <ROOT>/work/a.jsx | cwd=-
+biome check --help | cwd=-
+biome check --fix --organize-imports-enabled=true <ROOT>/work/a.jsx | cwd=-
+
+== work/.git/HEAD 644
+
+== work/a.jsx 644
+x
+

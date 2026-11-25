@@ -1,0 +1,8 @@
+== log 644
+black --quiet <ROOT>/work/BUILD | cwd=-
+
+== work/.git/HEAD 644
+
+== work/BUILD 644
+x
+

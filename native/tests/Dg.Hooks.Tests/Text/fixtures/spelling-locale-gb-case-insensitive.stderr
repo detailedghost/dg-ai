@@ -1,0 +1,3 @@
+spelling: write en-GB in src/a.ts
+1: color -> colour
+fix: use the en-GB spelling in code, identifiers, tests, comments and docs.

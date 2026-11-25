@@ -1,0 +1,8 @@
+== log 644
+gofmt -w <ROOT>/work/a.go | cwd=-
+
+== work/.git/HEAD 644
+
+== work/a.go 644
+x
+

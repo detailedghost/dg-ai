@@ -1,0 +1,1 @@
+{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"format: dotnet failed (status 127): Executable not found in $PATH: \"dotnet\""}}

@@ -1,0 +1,4 @@
+hooks: spelling.locale is "fr" but must be one of en-US, en-GB; using en-US
+spelling: write en-US in src/a.ts
+1: colour -> color
+fix: use the en-US spelling in code, identifiers, tests, comments and docs.

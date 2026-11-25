@@ -1,0 +1,8 @@
+== log 644
+biome --version | cwd=-
+
+== work/.git/HEAD 644
+
+== work/a.ts 644
+x
+

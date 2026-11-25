@@ -1,0 +1,4 @@
+spelling: write en-US in src/a.ts
+2: colour -> color
+3: analyse -> analyze
+fix: use the en-US spelling in code, identifiers, tests, comments and docs.
