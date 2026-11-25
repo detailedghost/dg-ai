@@ -61,6 +61,8 @@ describe("parseReportFlag", () => {
 		expect(parseReportFlag(["--outdir", "x", "--report", "r.json"])).toBe("r.json");
 		expect(parseReportFlag(["--report=r.json"])).toBe("r.json");
 		expect(parseReportFlag(["--outdir", "x"])).toBeUndefined();
+		expect(parseReportFlag(["--report", "--other"])).toBeUndefined();
+		expect(parseReportFlag(["--report"])).toBeUndefined();
 	});
 });
 

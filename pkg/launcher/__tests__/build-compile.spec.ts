@@ -1,7 +1,8 @@
 import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
-import { join } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { buildCompiled } from "../build/compile";
+import { join } from "node:path";
+import { buildCompiled, buildLauncher } from "../build/compile";
 import { COMPILE_TARGETS, type CompileKey, type SharedOptions } from "../build/options";
 
 const shared = {
@@ -26,4 +27,25 @@ describe("buildCompiled options", () => {
 			expect(config.compile).toMatchObject({ target: COMPILE_TARGETS[target] });
 		});
 	}
+});
+
+describe("buildLauncher output directory", () => {
+	const build = spyOn(Bun, "build");
+	afterEach(() => build.mockReset());
+	afterAll(() => build.mockRestore());
+
+	test("clears the lib folder and leaves other files in the output directory alone", async () => {
+		const outdir = mkdtempSync(join(tmpdir(), "dg-build-launcher-"));
+		try {
+			mkdirSync(join(outdir, "lib"));
+			writeFileSync(join(outdir, "lib", "stale.js"), "");
+			writeFileSync(join(outdir, "keep.txt"), "keep");
+			build.mockResolvedValue({ success: true, outputs: [], logs: [] } as unknown as Bun.BuildOutput);
+			await buildLauncher(outdir);
+			expect(existsSync(join(outdir, "lib", "stale.js"))).toBe(false);
+			expect(existsSync(join(outdir, "keep.txt"))).toBe(true);
+		} finally {
+			rmSync(outdir, { recursive: true, force: true });
+		}
+	});
 });

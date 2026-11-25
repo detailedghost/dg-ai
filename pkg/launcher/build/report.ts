@@ -40,7 +40,10 @@ export function sizeReportFrom(metafile: Metafile): SizeReport {
 
 export function parseReportFlag(argv: string[]): string | undefined {
 	for (const [index, arg] of argv.entries()) {
-		if (arg === "--report") return argv[index + 1];
+		if (arg === "--report") {
+			const next = argv[index + 1];
+			return next === undefined || next.startsWith("-") ? undefined : next;
+		}
 		if (arg.startsWith("--report=")) return arg.slice("--report=".length);
 	}
 	return undefined;
