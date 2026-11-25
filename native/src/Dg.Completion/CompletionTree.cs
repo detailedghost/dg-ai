@@ -20,27 +20,18 @@ internal static class CompletionTree
         var path = false;
         foreach (var property in element.EnumerateObject())
         {
-            switch (property.Name)
-            {
-                case "name":
-                    name = property.Value.GetString() ?? "";
-                    break;
-                case "description":
-                    description = property.Value.GetString();
-                    break;
-                case "commands":
-                    commands = ReadArray(property.Value, ReadNode);
-                    break;
-                case "options":
-                    options = ReadArray(property.Value, ReadOption);
-                    break;
-                case "values":
-                    values = ReadArray(property.Value, static item => item.GetString() ?? "");
-                    break;
-                case "path":
-                    path = property.Value.GetBoolean();
-                    break;
-            }
+            if (property.NameEquals("name"u8))
+                name = property.Value.GetString() ?? "";
+            else if (property.NameEquals("description"u8))
+                description = property.Value.GetString();
+            else if (property.NameEquals("commands"u8))
+                commands = ReadArray(property.Value, ReadNode);
+            else if (property.NameEquals("options"u8))
+                options = ReadArray(property.Value, ReadOption);
+            else if (property.NameEquals("values"u8))
+                values = ReadArray(property.Value, static item => item.GetString() ?? "");
+            else if (property.NameEquals("path"u8))
+                path = property.Value.GetBoolean();
         }
 
         return new CompletionNode(name, description, commands, options, values, path);
@@ -55,25 +46,19 @@ internal static class CompletionTree
         CompletionNode? mode = null;
         foreach (var property in element.EnumerateObject())
         {
-            switch (property.Name)
+            if (property.NameEquals("flags"u8))
+                flags = ReadArray(property.Value, static item => item.GetString() ?? "");
+            else if (property.NameEquals("description"u8))
+                description = property.Value.GetString();
+            else if (property.NameEquals("value"u8) && property.Value.ValueKind == JsonValueKind.Array)
             {
-                case "flags":
-                    flags = ReadArray(property.Value, static item => item.GetString() ?? "");
-                    break;
-                case "description":
-                    description = property.Value.GetString();
-                    break;
-                case "value" when property.Value.ValueKind == JsonValueKind.Array:
-                    kind = ValueKind.Choices;
-                    choices = ReadArray(property.Value, static item => item.GetString() ?? "");
-                    break;
-                case "value":
-                    kind = property.Value.GetString() == "path" ? ValueKind.Path : ValueKind.Any;
-                    break;
-                case "mode":
-                    mode = ReadNode(property.Value);
-                    break;
+                kind = ValueKind.Choices;
+                choices = ReadArray(property.Value, static item => item.GetString() ?? "");
             }
+            else if (property.NameEquals("value"u8))
+                kind = property.Value.GetString() == "path" ? ValueKind.Path : ValueKind.Any;
+            else if (property.NameEquals("mode"u8))
+                mode = ReadNode(property.Value);
         }
 
         return new CompletionOption(flags, description, kind, choices, mode);
