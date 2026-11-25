@@ -1,5 +1,7 @@
 using System.Runtime.Versioning;
 using System.Text;
+using Dg.Hooks.Defs.Pr;
+using Dg.Hooks.Defs.Repo;
 using Dg.Hooks.Engine;
 using Dg.Hooks.Shared;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +23,11 @@ public sealed class HookEngineTests
             Seen.Add(ev);
             return ValueTask.FromResult(codes[Math.Min(_next++, codes.Length - 1)]);
         }
+    }
+
+    private sealed class NoopSpawner : IDetachedSpawner
+    {
+        public void Spawn(IReadOnlyList<string> argv) { }
     }
 
     private sealed class ContextHook(string eventName, TextWriter direct) : IHook
@@ -276,7 +283,7 @@ public sealed class HookEngineTests
     }
 
     [Fact]
-    public async Task EmitContext_WithoutSink_WritesDirectly()
+    public void EmitContext_WithoutSink_WritesDirectly()
     {
         var direct = new StringWriter();
 
@@ -286,7 +293,6 @@ public sealed class HookEngineTests
             """{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"hi"}}""",
             direct.ToString()
         );
-        await Task.CompletedTask;
     }
 
     [Fact]
@@ -316,7 +322,7 @@ public sealed class HookEngineTests
     [Fact]
     public void UsesStdin_CommitMsgHook_IsFalse()
     {
-        var strip = new Dg.Hooks.Defs.Pr.StripAiCoauthorsHook(new Dg.Hooks.Defs.Pr.PrHookHost());
+        var strip = new StripAiCoauthorsHook(new PrHookHost());
 
         Assert.False(strip.UsesStdin(["msg"]));
         Assert.False(strip.UsesStdin([]));
@@ -329,11 +335,11 @@ public sealed class HookEngineTests
     [InlineData(new string[] { }, true)]
     public void UsesStdin_DailyPrune_DependsOnFlags(string[] args, bool expected)
     {
-        var hook = new Dg.Hooks.Defs.Repo.DailyPruneHook(
+        var hook = new DailyPruneHook(
             _ => null,
             "/h",
-            null!,
-            null!,
+            new ProcessCommandRunner(),
+            new NoopSpawner(),
             TimeProvider.System,
             TextWriter.Null,
             TextWriter.Null
@@ -347,9 +353,10 @@ public sealed class HookEngineTests
     [SupportedOSPlatform("macos")]
     public async Task RunAsync_UnsafeScratchDirectory_FailsBeforeRunningHook()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "unix file modes");
         using var temp = TempRoot.Create();
         File.SetUnixFileMode(temp.Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.OtherWrite);
-        Dictionary<string, string?> env = new() { ["AI_SCRATCH_DIR"] = temp.Path, ["AI_STATE_DIR"] = System.IO.Path.Combine(temp.Path, "state") };
+        Dictionary<string, string?> env = new() { ["AI_SCRATCH_DIR"] = temp.Path, ["AI_STATE_DIR"] = Path.Combine(temp.Path, "state") };
         var hook = new RecordingHook("format", 0);
         var error = new StringWriter();
         var engine = new HookEngine(
@@ -371,8 +378,8 @@ public sealed class HookEngineTests
         using var temp = TempRoot.Create();
         Dictionary<string, string?> env = new()
         {
-            ["AI_SCRATCH_DIR"] = System.IO.Path.Combine(temp.Path, "scratch"),
-            ["AI_STATE_DIR"] = System.IO.Path.Combine(temp.Path, "state"),
+            ["AI_SCRATCH_DIR"] = Path.Combine(temp.Path, "scratch"),
+            ["AI_STATE_DIR"] = Path.Combine(temp.Path, "state"),
         };
         var hook = new RecordingHook("format", 0);
         var engine = new HookEngine(
@@ -384,7 +391,7 @@ public sealed class HookEngineTests
         await engine.RunAsync("format", [], Stdin("{}"), CancellationToken.None);
 
         Assert.Single(hook.Seen);
-        Assert.True(Directory.Exists(System.IO.Path.Combine(temp.Path, "scratch", "hooks")));
-        Assert.True(Directory.Exists(System.IO.Path.Combine(temp.Path, "state", "hooks")));
+        Assert.True(Directory.Exists(Path.Combine(temp.Path, "scratch", "hooks")));
+        Assert.True(Directory.Exists(Path.Combine(temp.Path, "state", "hooks")));
     }
 }

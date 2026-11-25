@@ -1,9 +1,9 @@
-using Dg.Hooks.Shared;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Dg.Hooks.Defs.Repo;
+using Dg.Hooks.Shared;
 
 namespace Dg.Hooks.Tests.Repo;
 
@@ -48,25 +48,25 @@ internal sealed partial class FixtureJson : JsonSerializerContext;
 
 internal static class FixtureCases
 {
-    public static string Directory { get; } =
-        System.IO.Path.Combine(System.IO.Path.GetDirectoryName(ThisFile())!, "fixtures");
+    public static string FixturesPath { get; } =
+        Path.Combine(Path.GetDirectoryName(ThisFile())!, "fixtures");
 
     public static TheoryData<string> Names(string prefix)
     {
         var data = new TheoryData<string>();
-        foreach (var file in System.IO.Directory.GetFiles(Directory, $"{prefix}*.case.json").Order())
-            data.Add(System.IO.Path.GetFileName(file)[..^".case.json".Length]);
+        foreach (var file in Directory.GetFiles(FixturesPath, $"{prefix}*.case.json").Order())
+            data.Add(Path.GetFileName(file)[..^".case.json".Length]);
         return data;
     }
 
     public static FixtureCase Load(string name) =>
         JsonSerializer.Deserialize<FixtureCase>(
-            File.ReadAllText(System.IO.Path.Combine(Directory, $"{name}.case.json")),
+            File.ReadAllText(Path.Combine(FixturesPath, $"{name}.case.json")),
             FixtureJson.Default.FixtureCase
         )!;
 
     public static string Expected(string name) =>
-        File.ReadAllText(System.IO.Path.Combine(Directory, $"{name}.expected.txt"));
+        File.ReadAllText(Path.Combine(FixturesPath, $"{name}.expected.txt"));
 
     private static string ThisFile([CallerFilePath] string path = "") => path;
 }
@@ -91,8 +91,8 @@ internal sealed class FixtureLayout : IDisposable
 
     public static FixtureLayout Build(FixtureCase c)
     {
-        var temp = FsPaths.RealPath(System.IO.Path.GetTempPath());
-        var root = FsPaths.RealPath(System.IO.Directory.CreateTempSubdirectory("dg-hooks-repo-").FullName);
+        var temp = FsPaths.RealPath(Path.GetTempPath());
+        var root = FsPaths.RealPath(Directory.CreateTempSubdirectory("dg-hooks-repo-").FullName);
         if (!root.StartsWith(temp, StringComparison.Ordinal))
             throw new InvalidOperationException($"refusing fixture root outside {temp}: {root}");
         var layout = new FixtureLayout(root);
@@ -100,7 +100,7 @@ internal sealed class FixtureLayout : IDisposable
         return layout;
     }
 
-    public string Join(params string[] parts) => System.IO.Path.Combine([Root, .. parts]);
+    public string Join(params string[] parts) => Path.Combine([Root, .. parts]);
 
     public List<string> Tree()
     {
@@ -114,19 +114,19 @@ internal sealed class FixtureLayout : IDisposable
     {
         try
         {
-            System.IO.Directory.Delete(Root, recursive: true);
+            Directory.Delete(Root, recursive: true);
         }
         catch (IOException) { }
     }
 
     private void Walk(string dir, List<string> lines)
     {
-        foreach (var path in System.IO.Directory.GetFileSystemEntries(dir))
+        foreach (var path in Directory.GetFileSystemEntries(dir))
         {
-            var name = System.IO.Path.GetFileName(path);
+            var name = Path.GetFileName(path);
             if (name == ".git")
                 continue;
-            var rel = System.IO.Path.GetRelativePath(Root, path);
+            var rel = Path.GetRelativePath(Root, path);
             var info = new FileInfo(path);
             if (info.LinkTarget is { } target)
                 lines.Add($"{rel} -> {target.Replace(Root, "<ROOT>", StringComparison.Ordinal)}");
@@ -143,7 +143,7 @@ internal sealed class FixtureLayout : IDisposable
     private void Populate(FixtureCase c)
     {
         foreach (var sub in new[] { "scratch", "state", "code", "home", "outside", "xdg" })
-            System.IO.Directory.CreateDirectory(Join(sub));
+            Directory.CreateDirectory(Join(sub));
         foreach (var repo in c.Repos ?? [])
             BuildRepo(repo);
 
@@ -157,7 +157,7 @@ internal sealed class FixtureLayout : IDisposable
             var kind = e.Kind ?? "file";
             kinds[path] = kind;
             ages[path] = e.AgeDays ?? 0;
-            System.IO.Directory.CreateDirectory(kind == "dir" ? path : System.IO.Path.GetDirectoryName(path)!);
+            Directory.CreateDirectory(kind == "dir" ? path : Path.GetDirectoryName(path)!);
             if (kind == "symlink")
             {
                 File.CreateSymbolicLink(path, e.Target!.Replace("<ROOT>", Root, StringComparison.Ordinal));
@@ -171,7 +171,7 @@ internal sealed class FixtureLayout : IDisposable
         Dictionary<string, double> implicitAges = [];
         foreach (var (path, age) in ages)
         {
-            for (var d = System.IO.Path.GetDirectoryName(path); d is not null && d.StartsWith(Root + "/", StringComparison.Ordinal); d = System.IO.Path.GetDirectoryName(d))
+            for (var d = Path.GetDirectoryName(path); d is not null && d.StartsWith(Root + "/", StringComparison.Ordinal); d = Path.GetDirectoryName(d))
             {
                 if (kinds.ContainsKey(d))
                     continue;
@@ -185,8 +185,8 @@ internal sealed class FixtureLayout : IDisposable
             var when = DateTimeOffset.FromUnixTimeSeconds((long)(nowSec - age * 86_400)).UtcDateTime;
             if (links.Contains(path))
                 TouchLink(path, when);
-            else if (System.IO.Directory.Exists(path))
-                System.IO.Directory.SetLastWriteTimeUtc(path, when);
+            else if (Directory.Exists(path))
+                Directory.SetLastWriteTimeUtc(path, when);
             else
                 File.SetLastWriteTimeUtc(path, when);
         }
@@ -203,19 +203,19 @@ internal sealed class FixtureLayout : IDisposable
     private void BuildRepo(LayoutRepo repo)
     {
         var path = Join(repo.Path);
-        System.IO.Directory.CreateDirectory(path);
+        Directory.CreateDirectory(path);
         Git(path, "init", "-q", "-b", "main");
         foreach (var (rel, text) in repo.Files)
         {
-            var file = System.IO.Path.Combine(path, rel);
-            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file)!);
+            var file = Path.Combine(path, rel);
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
             File.WriteAllText(file, text);
         }
         Git(path, "add", "-A");
         Git(path, "commit", "-q", "-m", "init");
         foreach (var wt in repo.Worktrees ?? [])
         {
-            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Join(wt.Path))!);
+            Directory.CreateDirectory(Path.GetDirectoryName(Join(wt.Path))!);
             Git(path, "worktree", "add", "-q", "-b", wt.Branch, Join(wt.Path));
         }
     }
@@ -224,7 +224,7 @@ internal sealed class FixtureLayout : IDisposable
         Run("git", cwd, ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", .. args]);
 
     private static void TouchLink(string path, DateTime when) =>
-        Run("touch", System.IO.Path.GetDirectoryName(path)!, ["-h", "-d", $"@{new DateTimeOffset(when).ToUnixTimeSeconds()}", path]);
+        Run("touch", Path.GetDirectoryName(path)!, ["-h", "-d", $"@{new DateTimeOffset(when).ToUnixTimeSeconds()}", path]);
 
     private static void Run(string file, string cwd, string[] args)
     {
@@ -238,7 +238,7 @@ internal sealed class FixtureLayout : IDisposable
             info.ArgumentList.Add(arg);
         foreach (var (key, value) in GitEnv)
             info.Environment[key] = value;
-        info.Environment["XDG_CONFIG_HOME"] = System.IO.Path.Combine(cwd, ".no-xdg");
+        info.Environment["XDG_CONFIG_HOME"] = Path.Combine(cwd, ".no-xdg");
         using var process = Process.Start(info)!;
         var error = process.StandardError.ReadToEndAsync();
         process.StandardOutput.ReadToEnd();

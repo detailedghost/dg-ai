@@ -27,7 +27,7 @@ public sealed class TextParityTests
     {
         foreach (var entry in TextFixtureCase.All.Where(c => c.Requires.Count == 0))
             foreach (var extension in new[] { "stdout", "stderr", "code", "files" })
-                Assert.True(File.Exists(Path.Combine(TextFixtureCase.Directory, $"{entry.Name}.{extension}")), $"{entry.Name}.{extension}");
+                Assert.True(File.Exists(Path.Combine(TextFixtureCase.FixturesPath, $"{entry.Name}.{extension}")), $"{entry.Name}.{extension}");
     }
 
     private static async Task AssertMatchesBun(string name)
