@@ -1961,6 +1961,9 @@ describe("thrash review checkout", () => {
   *"pr diff"*)
     cat "$FAKE_DIFF"
     ;;
+  *"pr view 13"*)
+    printf '{"number":13,"title":"t","body":"","headRefName":"b","baseRefName":"a","headRefOid":"${remote.sha13}"}'
+    ;;
   *"pr view"*)
     printf '{"number":12,"title":"t","body":"","headRefName":"a","baseRefName":"main","headRefOid":"%s"}' "$(cat "${headFile}")"
     ;;
