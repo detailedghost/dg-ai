@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import { compiledAssetName } from "../skills-cli/src/utils/lib";
 import { buildCompiled, buildLauncher } from "./build/compile";
 import { COMPILE_TARGETS, type CompileKey, ROOT, sharedOptions } from "./build/options";
+import { buildReport } from "./build/report";
 
 export { buildCompiled, buildLauncher, COMPILE_TARGETS, compiledAssetName };
 export type { CompileKey };
@@ -12,7 +13,7 @@ const isCompileKey = (key: string): key is CompileKey => Object.hasOwn(COMPILE_T
 if (import.meta.main) {
 	const { values } = parseArgs({
 		args: Bun.argv.slice(2),
-		options: { outdir: { type: "string" }, compiled: { type: "string", multiple: true } },
+		options: { outdir: { type: "string" }, compiled: { type: "string", multiple: true }, report: { type: "string" } },
 	});
 	const outdir = values.outdir ?? join(ROOT, "dist");
 	if (!values.compiled) await buildLauncher(outdir);
@@ -27,4 +28,5 @@ if (import.meta.main) {
 			console.log(await buildCompiled({ target, outfile: join(outdir, compiledAssetName(target)), shared }));
 		}
 	}
+	if (values.report) await buildReport(values.report);
 }
