@@ -77,7 +77,8 @@ jobs:
           fi
 
       - name: Run the native tests
-        run: dotnet test native/Dg.slnx -c Release
+        working-directory: native
+        run: dotnet test --solution Dg.slnx -c Release
 
       - name: Check that every NativeAOT size lever is on
         env:
