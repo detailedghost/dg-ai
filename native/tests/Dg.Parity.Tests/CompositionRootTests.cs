@@ -1,10 +1,6 @@
 using Dg.Cli;
 using Dg.Config;
 using Dg.Core.Abstractions;
-using Dg.Core.Config;
-using Dg.Core.Credentials;
-using Dg.Core.Paths;
-using Dg.Core.Plugins.Runtime;
 using Dg.Hooks.Engine;
 using Dg.Plugins;
 using Dg.Routing;
@@ -12,12 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Dg.Parity.Tests;
 
-public sealed class CompositionRootTests : IDisposable
+public sealed class CompositionRootTests
 {
-    private readonly string _home = Directory.CreateTempSubdirectory("dg-compose-").FullName;
-
-    public void Dispose() => Directory.Delete(_home, recursive: true);
-
     public static TheoryData<string, string> NativeCommands =>
         new()
         {
@@ -36,7 +28,7 @@ public sealed class CompositionRootTests : IDisposable
     [MemberData(nameof(NativeCommands))]
     public void Resolve_StageOneCommand_IsNative(string argv, string name)
     {
-        using var provider = CompositionRoot.Build(Env(), toml: null);
+        using var provider = CompositionRoot.Build();
 
         var target = provider.GetRequiredService<Route>().Resolve(argv.Split(' '));
 
@@ -52,34 +44,12 @@ public sealed class CompositionRootTests : IDisposable
     [InlineData("")]
     public void Resolve_EverythingElse_IsCoreWithArgvUnchanged(string argv)
     {
-        using var provider = CompositionRoot.Build(Env(), toml: null);
+        using var provider = CompositionRoot.Build();
         var words = argv.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         var target = provider.GetRequiredService<Route>().Resolve(words);
 
         Assert.Equal(words, Assert.IsType<Route.Core>(target).Argv);
-    }
-
-    [Fact]
-    public void Build_BadPathsAndNoToml_DoesNotThrowUntilPathsAreNeeded()
-    {
-        var env = Env(("DG_PATH_FENCE", Path.Combine(_home, "inside")));
-
-        using var provider = CompositionRoot.Build(env, toml: null);
-
-        Assert.NotNull(provider.GetRequiredService<Route>());
-    }
-
-    [Fact]
-    public async Task Build_PluginsRuntime_ResolvesHostFromRootPieces()
-    {
-        var toml = DgConfig.Parse("", "config.toml").Value!;
-        using var provider = CompositionRoot.Build(Env(), toml);
-
-        Assert.NotNull(provider.GetRequiredService<IPluginHost>());
-        Assert.Same(toml, provider.GetRequiredService<DgToml>());
-        Assert.StartsWith(_home, provider.GetRequiredService<DgPaths>().ConfigTomlPath);
-        Assert.Null(await provider.GetRequiredService<ICredentialStore>().GetAsync("any", CancellationToken.None));
     }
 
     [Fact]
@@ -145,19 +115,6 @@ public sealed class CompositionRootTests : IDisposable
         Assert.Equal(0, await gate.RunAsync(new[] { "stat", "ch" }, CancellationToken.None));
         Assert.Equal(1, inner.Calls);
         Assert.Equal("__complete", gate.Name);
-    }
-
-    private Dictionary<string, string?> Env(params (string Key, string Value)[] extra)
-    {
-        Dictionary<string, string?> env = new(StringComparer.Ordinal)
-        {
-            ["DG_HOME"] = _home,
-            ["DG_PATH_FENCE"] = _home,
-            ["HOME"] = _home,
-        };
-        foreach (var (key, value) in extra)
-            env[key] = value;
-        return env;
     }
 
     private sealed class FakeCommand(string name, int exit) : ICommand

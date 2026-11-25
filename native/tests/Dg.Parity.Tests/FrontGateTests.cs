@@ -1,5 +1,4 @@
 using Dg.Cli;
-using Dg.Core.Config;
 
 namespace Dg.Parity.Tests;
 
@@ -10,74 +9,68 @@ public sealed class FrontGateTests : IDisposable
     public void Dispose() => Directory.Delete(_home, recursive: true);
 
     [Fact]
-    public void Decide_NoEnvNoConfigFile_IsNativeWithoutParsing()
+    public void IsNative_NoEnvNoConfigFile_IsTrue()
     {
-        var choice = FrontGate.Decide(Env());
-
-        Assert.True(choice.Native);
-        Assert.Null(choice.Toml);
+        Assert.True(FrontGate.IsNative(Env()));
     }
 
     [Fact]
-    public void Decide_DgFrontZero_IsCoreEvenWithValidConfig()
+    public void IsNative_DgFrontZero_IsFalseEvenWithValidConfig()
     {
         WriteConfig("[front]\nenabled = true\n");
 
-        Assert.False(FrontGate.Decide(Env(("DG_FRONT", "0"))).Native);
+        Assert.False(FrontGate.IsNative(Env(("DG_FRONT", "0"))));
     }
 
     [Fact]
-    public void Decide_DgFrontZero_IsCoreEvenWithBrokenConfig()
+    public void IsNative_DgFrontZero_IsFalseEvenWithBrokenConfig()
     {
         WriteConfig("[front\n");
 
-        Assert.False(FrontGate.Decide(Env(("DG_FRONT", "0"))).Native);
+        Assert.False(FrontGate.IsNative(Env(("DG_FRONT", "0"))));
     }
 
     [Fact]
-    public void Decide_DgFrontOne_BeatsConfigThatDisablesFront()
+    public void IsNative_DgFrontOne_BeatsConfigThatDisablesFront()
     {
         WriteConfig("[front]\nenabled = false\n");
 
-        Assert.True(FrontGate.Decide(Env(("DG_FRONT", "1"))).Native);
+        Assert.True(FrontGate.IsNative(Env(("DG_FRONT", "1"))));
     }
 
     [Fact]
-    public void Decide_ConfigFrontDisabled_IsCore()
+    public void IsNative_ConfigFrontDisabled_IsFalse()
     {
         WriteConfig("[front]\nenabled = false\n");
 
-        Assert.False(FrontGate.Decide(Env()).Native);
+        Assert.False(FrontGate.IsNative(Env()));
     }
 
     [Fact]
-    public void Decide_ConfigFrontEnabled_IsNativeAndKeepsParsedToml()
+    public void IsNative_ConfigFrontEnabledWithOtherKeys_IsTrue()
     {
         WriteConfig("[front]\nenabled = true\n\n[browser]\nmode = \"ext\"\n");
 
-        var choice = FrontGate.Decide(Env());
-
-        Assert.True(choice.Native);
-        Assert.Equal(BrowserMode.Ext, choice.Toml!.BrowserMode);
+        Assert.True(FrontGate.IsNative(Env()));
     }
 
     [Theory]
     [InlineData("[browser\nmode = \"ext\"\n")]
     [InlineData("[browser]\nmode = \"loud\"\n")]
     [InlineData("[nope]\nx = 1\n")]
-    public void Decide_ConfigDoesNotLoad_IsCore(string config)
+    public void IsNative_ConfigDoesNotLoad_IsFalse(string config)
     {
         WriteConfig(config);
 
-        Assert.False(FrontGate.Decide(Env()).Native);
+        Assert.False(FrontGate.IsNative(Env()));
     }
 
     [Fact]
-    public void Decide_PathsEscapeTheFence_IsCore()
+    public void IsNative_PathsEscapeTheFence_IsFalse()
     {
         var env = Env(("DG_PATH_FENCE", Path.Combine(_home, "inside")));
 
-        Assert.False(FrontGate.Decide(env).Native);
+        Assert.False(FrontGate.IsNative(env));
     }
 
     private Dictionary<string, string?> Env(params (string Key, string Value)[] extra)

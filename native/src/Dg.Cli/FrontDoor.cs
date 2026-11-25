@@ -8,12 +8,10 @@ internal static class FrontDoor
 {
     public static async ValueTask<int> RunAsync(string[] args, CancellationToken ct)
     {
-        var env = EnvSnapshot.Capture();
-        var choice = FrontGate.Decide(env);
-        if (!choice.Native)
+        if (!FrontGate.IsNative(EnvSnapshot.Capture()))
             return new CoreLauncher(CoreLauncher.DefaultPath()).Launch(args);
 
-        using var provider = CompositionRoot.Build(env, choice.Toml);
+        using var provider = CompositionRoot.Build();
         var launcher = provider.GetRequiredService<CoreLauncher>();
         if (provider.GetRequiredService<Route>().Resolve(args) is not Route.Native native)
             return launcher.Launch(args);
