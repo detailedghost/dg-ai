@@ -42,7 +42,7 @@ describe("openDaemonDatabase", () => {
 		db.close(true);
 		const retry = openDaemonDatabase(paths);
 		expect(readSchemaVersion(retry)).toBe(CURRENT_SCHEMA_VERSION);
-		expect(retry.query("SELECT count(*) AS n FROM sqlite_master WHERE name LIKE 'channel_review%'").get()).toEqual({ n: 0 });
+		expect(retry.query("SELECT count(*) AS n FROM sqlite_master WHERE name GLOB 'channel_review*'").get()).toEqual({ n: 0 });
 		retry.close(true);
 	});
 
@@ -94,7 +94,7 @@ describe("openDaemonDatabase", () => {
 		expect(results).toEqual(children.map(() => ({ code: 0, stderr: "" })));
 		const raw = new Database(paths.dbPath, { readonly: true });
 		expect(readSchemaVersion(raw)).toBe(CURRENT_SCHEMA_VERSION);
-		expect(raw.query("SELECT count(*) AS n FROM sqlite_master WHERE name LIKE 'channel_review%'").get()).toEqual({ n: 0 });
+		expect(raw.query("SELECT count(*) AS n FROM sqlite_master WHERE name GLOB 'channel_review*'").get()).toEqual({ n: 0 });
 		raw.close(true);
 	});
 });

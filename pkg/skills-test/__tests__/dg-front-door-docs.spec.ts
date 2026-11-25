@@ -56,9 +56,12 @@ function amendment(): string {
 	return (end < 0 ? rest : rest.slice(0, end)).join("\n");
 }
 
+const lastAmendmentIndex = (lines: string[]): number =>
+	lines.map((l, i) => (/^## Amendment \(\d{4}-\d{2}-\d{2}\)$/.test(l) ? i : -1)).filter((i) => i >= 0).at(-1) ?? -1;
+
 function lastAmendment(): string {
 	const lines = read(ADR_PATH).split("\n");
-	const start = lines.map((l, i) => (/^## Amendment \(\d{4}-\d{2}-\d{2}\)$/.test(l) ? i : -1)).filter((i) => i >= 0).at(-1) ?? -1;
+	const start = lastAmendmentIndex(lines);
 	if (start < 0) return "";
 	const rest = lines.slice(start + 1);
 	const end = rest.findIndex((l) => /^## /.test(l));
@@ -119,7 +122,7 @@ describe("ADR 0020 amendment", () => {
 		expect(text).not.toBe("");
 		expect(adr).toMatch(/^Status: Accepted$/m);
 		const lines = adr.split("\n");
-		const at = lines.map((l, i) => (/^## Amendment \(\d{4}-\d{2}-\d{2}\)$/.test(l) ? i : -1)).filter((i) => i >= 0).at(-1) ?? -1;
+		const at = lastAmendmentIndex(lines);
 		const lastH2 = lines.map((l, i) => (/^## /.test(l) ? i : -1)).filter((i) => i >= 0).at(-1);
 		const refs = lines.findIndex((l) => l === "## References");
 		expect(refs).toBeGreaterThanOrEqual(0);

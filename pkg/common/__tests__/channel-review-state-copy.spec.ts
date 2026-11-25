@@ -36,7 +36,7 @@ function insertState(db: Database, env: string, state: unknown, revision: number
 }
 
 function channelReviewObjects(db: Database): string[] {
-	return (db.query("SELECT name FROM sqlite_master WHERE name LIKE 'channel_review%'").all() as { name: string }[]).map(
+	return (db.query("SELECT name FROM sqlite_master WHERE name GLOB 'channel_review*'").all() as { name: string }[]).map(
 		(row) => row.name,
 	);
 }
@@ -55,8 +55,24 @@ function copyFiles(paths: Paths): string[] {
 
 const devState = {
 	lastEventIds: { "chat-1": "event-9" },
-	current: { messageId: "m-3", chatId: "chat-1", url: "https://example.test/pr/3", number: 3, startedAt: "2026-11-01T00:03:00.000Z", pid: 41, pidStart: "x" },
-	running: { "m-3": { messageId: "m-3", chatId: "chat-1", url: "https://example.test/pr/3", number: 3, startedAt: "2026-11-01T00:03:00.000Z" } },
+	current: {
+		messageId: "m-3",
+		chatId: "chat-1",
+		url: "https://example.test/pr/3",
+		number: 3,
+		startedAt: "2026-11-01T00:03:00.000Z",
+		pid: 41,
+		pidStart: "x",
+	},
+	running: {
+		"m-3": {
+			messageId: "m-3",
+			chatId: "chat-1",
+			url: "https://example.test/pr/3",
+			number: 3,
+			startedAt: "2026-11-01T00:03:00.000Z",
+		},
+	},
 	handled: {
 		"m-2": { status: "done", at: "2026-11-01T00:02:00.000Z" },
 		"m-1": { status: "failed", at: "2026-11-01T00:02:00.000Z", chatId: "chat-1" },
@@ -181,7 +197,7 @@ describe("channel-review state copy at the drop step", () => {
 		expect(copyFiles(paths)).toEqual(["channel-review-state.dev.json"]);
 	});
 
-	test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+	test.skipIf(process.platform === "win32")(
 		"fails the open with the copy path when the copy cannot be written and keeps the row",
 		() => {
 			const paths = freshPaths();

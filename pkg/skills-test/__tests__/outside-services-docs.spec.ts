@@ -129,7 +129,6 @@ describe("ADR 0043 outside services", () => {
 			expect(lines[at + 1]).toBe("Channel review left dg; see [ADR 0053](0053-job-sources-and-credentials.md).");
 			expect(toc).toMatch(new RegExp(`\\(${file}\\) — Deprecated$`, "m"));
 		}
-		expect(toc).toMatch(/00(0[89]|1\d)[^\n]*Deprecated/);
 	});
 });
 

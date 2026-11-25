@@ -125,7 +125,7 @@ describe("job add against a live daemon that left no mark", () => {
 			["job", "add", "--name", "x", "--continuous", "--cwd", cwd, "--", "bun", "run", "bot.ts"],
 			{ port: boot.port },
 		);
-		expect(Date.now() - started).toBeLessThan(25_000);
+		expect(Date.now() - started).toBeLessThan(15_000);
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(
 			`the daemon config is not migrated — a dg daemon from before this release runs (pid ${before.pid}); run dg daemon restart, then run this command again`,

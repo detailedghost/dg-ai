@@ -151,10 +151,10 @@ async function forceStop(
 	);
 	if (!gone) {
 		throw new DgCliError(
-			`dg daemon (pid ${handle.pid}) or a service did not exit after the kill${
+			`dg daemon (pid ${handle.pid}) or a job did not exit after the kill${
 				listFailure === undefined
 					? ""
-					: `; could not list the services (${listFailure}); a service process can still run`
+					: `; could not list the jobs (${listFailure}); a job process can still run`
 			}`,
 			EXIT_GENERAL_FAILURE,
 		);
@@ -162,7 +162,7 @@ async function forceStop(
 	removeOwnPidFile(paths, handle);
 	if (listFailure !== undefined) {
 		throw new DgCliError(
-			`could not list the services (${listFailure}); a service process can still run`,
+			`could not list the jobs (${listFailure}); a job process can still run`,
 			EXIT_GENERAL_FAILURE,
 		);
 	}

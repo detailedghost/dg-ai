@@ -51,7 +51,8 @@ function setup() {
 	return { dgHome, cwd: freshTempDir("job-cwd") };
 }
 
-const BUN = Bun.which("bun") as string;
+const BUN = Bun.which("bun") ?? "";
+if (BUN === "") throw new Error("bun is not on PATH");
 const add = (
 	dgHome: string,
 	name: string,
@@ -136,7 +137,7 @@ describe("job add --continuous config writes", () => {
 		expect(readFileSync(configPathOf(dgHome), "utf8")).toBe(SEED);
 	});
 
-	it("refuses a path that is not a file", async () => {
+	it("refuses a path that does not exist", async () => {
 		const { dgHome, cwd } = setup();
 		const result = await add(dgHome, "bot", ["--cwd", cwd], ["./missing.sh"], { cwd });
 		expect(result.code).toBe(1);
@@ -221,8 +222,7 @@ describe("job add --continuous config writes", () => {
 		expect(JSON.parse(readFileSync(target, "utf8")).jobs.bot).toBeDefined();
 	});
 
-	it("keeps the mode of an existing config file", async () => {
-		if (process.platform === "win32") return;
+	it.skipIf(process.platform === "win32")("keeps the mode of an existing config file", async () => {
 		const existing = setup();
 		const file = configPathOf(existing.dgHome);
 		chmodSync(file, 0o640);

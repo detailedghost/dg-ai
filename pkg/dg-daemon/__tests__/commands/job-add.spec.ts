@@ -362,17 +362,17 @@ describe("job add name rules", () => {
 		expect(readFileSync(configPathOf(dgHome), "utf8")).toBe(before);
 	});
 
-	it.each([["--env", "PATH", "passEnv", ["PATH"]]])("stores %s of a scheduled add in the table entry", async (flag, value, key, stored) => {
+	it("stores --env of a scheduled add in the table entry", async () => {
 		const dir = freshTempDir("job-cwd");
 		const dgHome = preparedHome();
 
 		const result = await runCli(
 			dgHome,
-			addArgs(dir, ["--name", "s1", "--every", "15m", flag, value]),
+			addArgs(dir, ["--name", "s1", "--every", "15m", "--env", "PATH"]),
 		);
 
 		expect(result.code).toBe(0);
-		expect((await scheduledRow(dgHome, "s1"))?.[key]).toEqual(stored);
+		expect((await scheduledRow(dgHome, "s1"))?.passEnv).toEqual(["PATH"]);
 	});
 
 	it("stores an absolute --env-file path on a scheduled add", async () => {

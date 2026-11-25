@@ -83,7 +83,7 @@ export async function buildProgram(): Promise<Command> {
 	program
 		.command("stop")
 		.description("stop the daemon and its jobs")
-		.option("--force", "kill the daemon and each service process tree at once")
+		.option("--force", "kill the daemon and each job process tree at once")
 		.action(async (options: { force?: boolean }) => {
 			const { cmdStop } = await import("./commands/stop");
 			await cmdStop(options);
@@ -92,7 +92,7 @@ export async function buildProgram(): Promise<Command> {
 	program
 		.command("restart")
 		.description("stop the daemon, then start it again")
-		.option("--force", "kill the daemon and each service process tree at once")
+		.option("--force", "kill the daemon and each job process tree at once")
 		.action(async (options: { force?: boolean }) => {
 			const { cmdRestart } = await import("./commands/stop");
 			await cmdRestart(options);

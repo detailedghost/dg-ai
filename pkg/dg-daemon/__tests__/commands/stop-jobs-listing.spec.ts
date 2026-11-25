@@ -123,7 +123,7 @@ describe("dg daemon stop --force job listing", () => {
 		});
 		const failure = await rejection(() => cmdStop({ force: true }, seams(table)));
 		expect(failure).toBeInstanceOf(DgCliError);
-		expect((failure as Error).message).toContain("could not list the services (");
+		expect((failure as Error).message).toContain("could not list the jobs (");
 	});
 
 	it.each([
@@ -146,7 +146,7 @@ describe("dg daemon stop --force job listing", () => {
 		const { requests } = setup(424242, {});
 		const failure = await rejection(() => cmdStop({ force: true }, seams(table)));
 		expect(failure).toBeInstanceOf(DgCliError);
-		expect((failure as Error).message).toContain("could not list the services (404");
+		expect((failure as Error).message).toContain("could not list the jobs (404");
 		expect(requests).not.toContain("/services");
 	});
 
@@ -157,7 +157,7 @@ describe("dg daemon stop --force job listing", () => {
 		});
 		const failure = await rejection(() => cmdStop({ force: true }, seams(table)));
 		expect(failure).toBeInstanceOf(DgCliError);
-		expect((failure as Error).message).toContain("could not list the services (403");
+		expect((failure as Error).message).toContain("could not list the jobs (403");
 	});
 
 	it("names the failure on a network error", async () => {

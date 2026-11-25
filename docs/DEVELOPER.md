@@ -682,8 +682,7 @@ and binary distribution contracts. Run `bun run test:all` at the root. Refresh
 
 The review caller puts fresh JSON in `THRASH_EXECUTION_CONTEXT`: `origin`, `backend`, optional `model`, and
 `modelSource` (`requested`, `configured`, or `default`). These model fields describe the orchestrator,
-not the reviewer. Child spawning strips inherited `THRASH_*` variables before applying
-this attempt's context.
+not the reviewer. A caller that starts a review for each attempt sets fresh JSON for each attempt.
 
 The thrash helper owns the compiled review contract. It reads the
 `THRASH_EXECUTION_CONTEXT` JSON above and needs a helper version that understands

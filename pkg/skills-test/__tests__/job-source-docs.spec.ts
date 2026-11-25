@@ -281,10 +281,11 @@ describe("each documented command passes its --help form", () => {
 	}, 120_000);
 
 	test("each dg name in a code span or fence of the changed documents resolves through resolveRoute", () => {
-		const bad = CHANGED.filter((file) => file !== CHANNEL_REVIEW).flatMap((file) =>
+		const removed = (file: string, name: string) => file === CHANNEL_REVIEW && ["channel-review", "service"].includes(name);
+		const bad = CHANGED.flatMap((file) =>
 			dgCommandForms(read(file))
 				.map((words) => words[0])
-				.filter((name) => resolveRoute(name) === undefined && !OWN_WORDS.includes(name))
+				.filter((name) => resolveRoute(name) === undefined && !OWN_WORDS.includes(name) && !removed(file, name))
 				.map((name) => `${file}: dg ${name}`),
 		);
 		expect(bad).toEqual([]);
@@ -430,11 +431,11 @@ describe("the migration note in docs/channel-review.md", () => {
 	const doc = flat(read(CHANGED[2]));
 	const steps = [
 		"`dg job add <bot repository URL>`",
+		"Remove the SessionStart hook that starts `dg channel-review`",
 		"`dg channel-review stop --env <env>`",
 		"`dg channel-review export --env <env> --label <name>`",
 		"`dg job enable <name>`",
 		"Make sure that a review runs.",
-		"Remove the SessionStart hook that starts `dg channel-review`",
 		"`dg job remove review-<env>`",
 		"Upgrade to the major.",
 	];

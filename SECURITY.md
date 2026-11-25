@@ -133,4 +133,6 @@ Inbox profiles and caches use the daemon's encrypted store.
 
 Name the variable or credential in a report, issue, pull request, or
 transcript, and redact the value. Leave `.env`, `credentials.db`, `daemon.db`,
-`daemon/key`, and grant token files out of git.
+`daemon/key`, grant token files, `import.json`, `channel-review-state.<env>.json`
+and `pre-migration-v*.db` snapshots out of git and out of reports. They can
+hold review URLs and error text.

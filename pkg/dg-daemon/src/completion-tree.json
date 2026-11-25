@@ -30,7 +30,7 @@
 					"flags": [
 						"--force"
 					],
-					"description": "kill the daemon and each service process tree at once"
+					"description": "kill the daemon and each job process tree at once"
 				}
 			]
 		},
@@ -42,7 +42,7 @@
 					"flags": [
 						"--force"
 					],
-					"description": "kill the daemon and each service process tree at once"
+					"description": "kill the daemon and each job process tree at once"
 				}
 			]
 		},

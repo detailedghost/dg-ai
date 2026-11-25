@@ -292,8 +292,8 @@ describe("dg daemon stop", () => {
 		const result = await dg(dgHome, port, ["stop", "--force"]);
 
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain("could not list the services (");
-		expect(result.stderr).toContain("); a service process can still run");
+		expect(result.stderr).toContain("could not list the jobs (");
+		expect(result.stderr).toContain("); a job process can still run");
 		await until(() => !pidAlive(fake.pid), 2000);
 	});
 });
@@ -522,7 +522,7 @@ describe("dg daemon stop seams", () => {
 
 		expect(failure).toBeInstanceOf(DgCliError);
 		expect((failure as DgCliError).message).toContain(
-			"a service process can still run",
+			"a job process can still run",
 		);
 		expect(table.signals().map((call) => Math.abs(call.pid))).toEqual([424242]);
 		expect(existsSync(paths.pidPath)).toBe(false);
@@ -594,7 +594,7 @@ describe("dg daemon stop seams", () => {
 
 		expect(failure).toBeInstanceOf(DgCliError);
 		expect((failure as DgCliError).message).toContain(
-			"could not list the services (",
+			"could not list the jobs (",
 		);
 		expect(table.signals()).toEqual([{ pid: 424242, signal: "SIGKILL" }]);
 	});
@@ -617,7 +617,7 @@ describe("dg daemon stop seams", () => {
 
 		expect(failure).toBeInstanceOf(DgCliError);
 		expect((failure as DgCliError).message).toContain(
-			"could not list the services (",
+			"could not list the jobs (",
 		);
 		expect(table.signals().map((call) => Math.abs(call.pid))).toEqual([424242]);
 	});
