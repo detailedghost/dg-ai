@@ -498,6 +498,13 @@ slices:
     agents:
       primary: dg:lore
       confidence: high
+permissions:
+  run_commands: true
+  git_push: true
+  gh_pr_create: true
+  auto_cleanup_worktree: true
+  slice_commits: true
+  housekeeping_commit: true
 ---
 
 # Lean dg CLI: latency, binary and download size, skill token weight, and the C# front door
@@ -514,7 +521,7 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 - Skill diet by group and a size cap
 - Browser auto mode, ext gap verbs (TypeScript and Bun), agent window
 - Relay protocol contract with shared fixtures
-- C# stage 1 front door (opt-in) with parity tests, 6-runner NativeAOT CI, two-binary install
+- C# stage 1 front door (on by default, DG_FRONT=0 or front.enabled = false opts out, Bun fallback) with parity tests, 6-runner NativeAOT CI, two-binary install
 ### Excluded
 - C# stages 2+ (phone listener, daemon, command groups): later bundles
 - Any change to the extension toolchain; it stays TypeScript and Bun
@@ -718,6 +725,7 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 #### Engineering
 - [ ] resolveBrowserMode: --local or --ext, else DG_BROWSER, else browser.mode in config.toml (ext, local, auto), else auto: ext when the extension is paired and running and the verb is ext-capable, else local
 - [ ] Add browser.mode to DG_TOML_DEFAULTS with the same validation and error text as other keys
+- [ ] Add front.enabled (boolean, default true) to DG_TOML_DEFAULTS for the R13 front-door opt-out, with the same validation and error text
 
 #### Testing Criteria
 ##### Contracts
@@ -1271,6 +1279,7 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 #### Engineering
 - [ ] Composition root: ServiceCollection with AddHooks, AddConfig, AddCompletion, AddRouting, AddPlugins; ValidateOnBuild off, no open generics, no scanning (container build measured 0.1 ms)
 - [ ] Parity suite runs every fixture through the Bun dg and the C# front door
+- [ ] Opt-out at run time: DG_FRONT=0 or front.enabled = false in config.toml makes the front door exec dg-core for every command; a missing dg-core prints one error line with the reinstall command
 
 #### Testing Criteria
 ##### Contracts
@@ -1294,20 +1303,23 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 61 — two-binary-install
 
 #### Engineering
-- [ ] Release the C# front door dg-front-<rid> (6 RIDs) next to the Bun dg; install puts the Bun binary at dg-core and the front door at dg when DG_FRONT=1 (opt-in, R13); update and delta patches cover both; uninstall and rollback restore the Bun-only layout
+- [ ] Release the C# front door dg-front-<rid> (6 RIDs) next to the Bun dg; install puts the Bun binary at dg-core and the front door at dg by default (R13, owner 2026-11-24); DG_FRONT=0 or front.enabled = false in config.toml keeps the Bun-only layout; update and delta patches cover both; uninstall and rollback restore the Bun-only layout
+- [ ] Safe fallback: install runs the downloaded front door with --version before it places it; a missing asset, a failed download or a front door that fails to start keeps the Bun binary at dg and prints one line
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: installLayout({ front }) returns { dg, dgCore } paths; with front off dg is the Bun binary
+- [ ] Contract: installLayout({ front }) returns { dg, dgCore } paths; front defaults to on; with front off dg is the Bun binary
+- [ ] Unit test: the default install (no DG_FRONT, no config key) places the front door at dg and the Bun binary at dg-core
+- [ ] Unit test: a front door that fails its --version check falls back to the Bun-only layout
 - [ ] Unit test: a failed front-door download leaves the Bun-only layout working
 
 #### Acceptance Criteria
-- [ ] Given DG_FRONT=1, when dg update runs, then both binaries update and hooks run through the front door
+- [ ] Given a default install, when dg update runs, then both binaries update and hooks run through the front door; given DG_FRONT=0, the layout stays Bun-only
 
 ### Slice 62 — lean-docs
 
 #### Engineering
-- [ ] Document compressed assets, delta updates, companions, the opt-in C# front door, the native/ build (dotnet SDK 11) and that Bun stays the dev toolchain for the extension and the sidecar
+- [ ] Document compressed assets, delta updates, companions, the default-on C# front door (opt-out with DG_FRONT=0 or front.enabled = false), the native/ build (dotnet SDK 11) and that Bun stays the dev toolchain for the extension and the sidecar
 
 #### Testing Criteria
 ##### Contracts
@@ -1388,7 +1400,7 @@ Median SKILL.md is 5.3 KB; 16 skills are over 8 KB.
 
 ## Language Decision: staged C# NativeAOT port (option D in C#)
 
-Dante picked option D in C# (R1, 2026-11-24). This bundle builds the Bun trims and stage 1, the C# front door, which ships opt-in. Stages 2 and later are separate bundles. Bun stays in the repo as a permanent dev toolchain: the extension, its tests and packaging, and the Bun sidecar until the port finishes.
+Dante picked option D in C# (R1, 2026-11-24). This bundle builds the Bun trims and stage 1, the C# front door, which ships on by default with an opt-out and a Bun fallback (R13, owner 2026-11-24). Stages 2 and later are separate bundles. Bun stays in the repo as a permanent dev toolchain: the extension, its tests and packaging, and the Bun sidecar until the port finishes.
 
 ### Options compared (linux-x64, measured floors)
 
@@ -1442,7 +1454,7 @@ DI choice: the full container, with explicit registrations, ValidateOnBuild off,
 | Stage | Contents | Binary / download | Hooks p50 | RAM | Cost |
 | --- | --- | --- | --- | --- | --- |
 | 0 (this bundle, Bun) | slices for baseline, bundle, fast paths, release, diet, browser, plugins | 92.9 to ~120 MB raw with bytecode, ~-7.5 MB with companions; update ~5 MB patch | 33.8 to 12-13 ms | unchanged | ~6-8 eng-weeks, ~20-28M tokens |
-| 1 (this bundle, C#, opt-in) | front door: hooks (every id), --version, completion, config, routing, plugins list/enable/disable/verify, plugin transports; execs dg-core for the rest | + 2-4 MB C# (about 1-1.5 MB zstd) | 2-3 ms | hooks 29.5 to ~5 MB | ~4-6 eng-weeks, ~8-12M tokens |
+| 1 (this bundle, C#, on by default) | front door: hooks (every id), --version, completion, config, routing, plugins list/enable/disable/verify, plugin transports; execs dg-core for the rest | + 2-4 MB C# (about 1-1.5 MB zstd) | 2-3 ms | hooks 29.5 to ~5 MB | ~4-6 eng-weeks, ~8-12M tokens |
 | 2 | phone listener (NIP-17, 44, 59) and daemon on HttpListener, relay contract from relay-contract | + 3-8 MB | - | listener 43-55 to 12-19 MB; daemon 32-40 to 13-17 MB | ~8-12 eng-weeks, ~15-20M tokens |
 | 3a | stat, jot, jobs client, worktree, chain, bg, stash (frequent, small) | + 1-2 MB | - | 20-36 to 4-8 MB per command | ~3-4 eng-weeks |
 | 3b | spec, adr, assign, monolith, skill | + 1-2 MB | - | same | ~4-6 eng-weeks |
@@ -1468,7 +1480,7 @@ Bun builds all 8 targets on one Linux runner; release.yml already runs smoke tes
 ### Two binaries during the transition
 
 - Assets: the Bun `dg-<key>` (8 targets) plus `dg-front-<rid>` (6 RIDs), each with .zst, .gz and a patch from the previous release, all in SHA256SUMS.
-- Install with DG_FRONT=1 (opt-in, R13): the front door at `dg`, the Bun binary at `dg-core`. Without it, the layout stays Bun-only. Update and patches cover both; a failed front-door download keeps the Bun layout.
+- Install by default (R13, owner 2026-11-24): the front door at `dg`, the Bun binary at `dg-core`. DG_FRONT=0 or front.enabled = false keeps the Bun-only layout, and a front door that is missing or fails its --version check falls back to Bun. Update and patches cover both; a failed front-door download keeps the Bun layout.
 - Gates for both: the ram-budget RSS and latency cases run against the Bun dg and the front door. native.yml gates the front door's size, RSS and hook p50.
 
 ## C# Coding Standard (native/)
@@ -1601,31 +1613,31 @@ Heavy packages are judged by their size cost first; the BCL is preferred.
 - File ownership is the conflict guard: lint-waves proves that no two slices in a wave share a file, and every later owner of a file depends on the earlier one. A slice that needs a file it does not own stops and reports; it never edits it.
 - Merge order: the gate slices first (baseline-latency, baseline-size, baseline-skill-tokens, budget-ratchet, then ci-lean-gates), then the rest of each wave in id order. Each slice rebases on the integration branch, runs its own tests, the full suites and every gate, then merges with `--no-ff`. Wave N+1 starts from the integration branch after every wave N slice merged.
 - Generated files are not committed (the C# route table and completion copies build from the TS sources), so no generator can conflict.
-- One PR from the integration branch to master after wave 9, reviewed with three Codex rounds per the global rules.
+- One PR from the integration branch to master after wave 9, reviewed with three Claude /dg:thrash -s 4 rounds (owner, 2026-11-24).
 
 ## Owner Decisions (2026-11-24)
 
 R1 D in C#; R2 bytecode yes; R3 companions yes; R4 patch from the previous release only; R5 no shared runtime; R6 no UPX; R7 8 KB cap and 400-character descriptions; R8 auto browser mode; R9 dedicated agent window with a prompt for each new site; R10 local-only list as proposed; R11 moot (dg:csharp); keep macOS; extension stays TypeScript and Bun; config.toml is the only config; plugins built-in plus external; external transports IPC default, then TCP and HTTP, UDP for events only.
 
-## RATIFY Items (open)
+## RATIFY Items (all decided 2026-11-24)
 
-- ⚑ RATIFY R12: Concurrency per wave — all 25 at once / 8 / 4 — Recommend 8: wave 1 has 25 slices and the merge queue is serial.
-- ⚑ RATIFY R13: The C# front door in this PR — opt-in with DG_FRONT=1 / default on — Recommend opt-in; flip after one release with green parity gates.
-- ⚑ RATIFY R14: ChaCha20 for NIP-44 (stage 2) — hand-rolled RFC 8439 with test vectors / BouncyCastle — Recommend hand-rolled; .NET has no raw ChaCha20 and BouncyCastle adds size.
-- ⚑ RATIFY R15: The plugin contract shape — the binary frame header plus JSON v1 with /v1/hook/decide, /v1/job/run, /v1/job/status, /v1/skill/describe, /v1/health / JSON-RPC 2.0 framing — Recommend the custom frame: smaller, request ids, encoding negotiation.
-- ⚑ RATIFY R16: Daemon-brokered hook connections — direct IPC now / always through the daemon — Recommend direct; measured 1.99 vs 1.89 ms, within noise; revisit when a plugin handshake costs more than 0.2 ms.
-- ⚑ RATIFY R17: MessagePack — optional per plugin / required for hot plugins / not at all — Recommend optional, negotiated in hello; JSON stays the default for third parties.
-- ⚑ RATIFY R18: Ratchet slack threshold — 2% / 5% / 10% — Recommend 5%; latency gets 10% because CI timing is noisy.
-- ⚑ RATIFY R19: Budget-increase process — a `Budget-Increase:` line in the PR body plus approval by Dante / a label / a CODEOWNERS file on the budget JSON — Recommend the PR-body line plus CODEOWNERS on budgets/**, so Dante reviews every raise.
-- ⚑ RATIFY R20: Plugin auth — a per-plugin token in the credential store for HTTP and TCP, socket permissions for IPC / mTLS for remote — Recommend the token for local and remote over HTTPS; mTLS deferred.
-- ⚑ RATIFY R21: Remote plugin opt-in — `remote = true` in the manifest plus `[plugins.<name>].allow_remote = true` in config.toml / one of them — Recommend both, so a downloaded manifest cannot opt itself in.
-- ⚑ RATIFY R22: Plugin permission model — declared capabilities enforced where dg can (exec allowlist, cwd, env, credentials, timeouts) and reported where it cannot (network and file access of an external process) / OS sandboxing (bubblewrap, AppContainer, sandbox-exec) — Recommend declared and reported now; sandboxing in a later bundle.
-- ⚑ RATIFY R23: Skill import trust — pinned and untrusted until approved, approval again on any change, helper commands run only after approval / auto-approve signed sources — Recommend pinned and untrusted until approved; no auto-approve.
-- ⚑ RATIFY R24: StackTraceSupport=false in release builds — saves 246 KB, but crash reports lose frame names — yes / no — Recommend yes, with the symbols asset for local decoding.
+- (decided) R12: Concurrency per wave — all 25 at once / 8 / 4 — Recommend 8: wave 1 has 25 slices and the merge queue is serial.
+- (decided) R13: The C# front door in this PR — opt-in / default on — Decided: default on, with DG_FRONT=0 or front.enabled = false to opt out and a Bun fallback.
+- (decided) R14: ChaCha20 for NIP-44 (stage 2) — hand-rolled RFC 8439 with test vectors / BouncyCastle — Recommend hand-rolled; .NET has no raw ChaCha20 and BouncyCastle adds size.
+- (decided) R15: The plugin contract shape — the binary frame header plus JSON v1 with /v1/hook/decide, /v1/job/run, /v1/job/status, /v1/skill/describe, /v1/health / JSON-RPC 2.0 framing — Recommend the custom frame: smaller, request ids, encoding negotiation.
+- (decided) R16: Daemon-brokered hook connections — direct IPC now / always through the daemon — Recommend direct; measured 1.99 vs 1.89 ms, within noise; revisit when a plugin handshake costs more than 0.2 ms.
+- (decided) R17: MessagePack — optional per plugin / required for hot plugins / not at all — Recommend optional, negotiated in hello; JSON stays the default for third parties.
+- (decided) R18: Ratchet slack threshold — 2% / 5% / 10% — Recommend 5%; latency gets 10% because CI timing is noisy.
+- (decided) R19: Budget-increase process — a `Budget-Increase:` line in the PR body plus approval by Dante / a label / a CODEOWNERS file on the budget JSON — Recommend the PR-body line plus CODEOWNERS on budgets/**, so Dante reviews every raise.
+- (decided) R20: Plugin auth — a per-plugin token in the credential store for HTTP and TCP, socket permissions for IPC / mTLS for remote — Recommend the token for local and remote over HTTPS; mTLS deferred.
+- (decided) R21: Remote plugin opt-in — `remote = true` in the manifest plus `[plugins.<name>].allow_remote = true` in config.toml / one of them — Recommend both, so a downloaded manifest cannot opt itself in.
+- (decided) R22: Plugin permission model — declared capabilities enforced where dg can (exec allowlist, cwd, env, credentials, timeouts) and reported where it cannot (network and file access of an external process) / OS sandboxing (bubblewrap, AppContainer, sandbox-exec) — Recommend declared and reported now; sandboxing in a later bundle.
+- (decided) R23: Skill import trust — pinned and untrusted until approved, approval again on any change, helper commands run only after approval / auto-approve signed sources — Recommend pinned and untrusted until approved; no auto-approve.
+- (decided) R24: StackTraceSupport=false in release builds — saves 246 KB, but crash reports lose frame names — yes / no — Recommend yes, with the symbols asset for local decoding.
 
 ## Risks
 
-- 62 slices in one PR: a long review and a serial merge queue. Mitigation: gate slices first, waves merge in id order, and three Codex review rounds on the integration branch.
+- 62 slices in one PR: a long review and a serial merge queue. Mitigation: gate slices first, waves merge in id order, and three Claude /dg:thrash review rounds on the integration branch.
 - Waves 5-9 are a serial tail (plugins runtime, group, compose, install, docs) that sets the wall time.
 - Parity drift between Bun and C#: shared fixtures (config, plugins, relay, hooks, routes) run through both in CI.
 - NativeAOT needs 6 runners and does not cross-compile across OSes; macOS minutes are the most expensive.
@@ -1729,6 +1741,15 @@ Slices per wave: W1 25, W2 17, W3 11, W4 4, W5 1, W6 1, W7 1, W8 1, W9 1
 (owner, 2026-11-24): external transports: IPC default, HTTP for remote and simple authoring, TCP, UDP for events only; speed is a first-class goal.
 (owner, 2026-11-24): RAM and binary size are gated on every PR with a ratchet; cuts never drop features, tests or error quality.
 Planned by a subagent with no human questions; open questions are R12-R24 in RATIFY Items. Roundtable shells are not filled; the main loop runs the approval gate.
+(owner, 2026-11-24): R12 no concurrency cap; every slice of a wave runs at once, each in its own git worktree.
+(owner, 2026-11-24): R13 changed: the C# front door is on by default in this PR, with an opt-out (DG_FRONT=0 or front.enabled = false in config.toml) and a fallback to the Bun dg when the native binary is missing or fails to start; tests cover the default path and the fallback.
+(owner, 2026-11-24): R14 hand-rolled RFC 8439 ChaCha20; R15 custom binary frame with a JSON payload; R16 hooks reach plugins directly over IPC; R17 MessagePack optional per plugin.
+(owner, 2026-11-24): R18 ratchet slack 5 percent (10 percent for latency); R19 a Budget-Increase: line plus CODEOWNERS on the budget files.
+(owner, 2026-11-24): R20 token auth for HTTP and TCP, file permissions for IPC, mTLS later; R21 remote needs both the manifest flag and allow_remote; R22 permissions declared and reported now, sandboxing later; R23 imported skills pinned and untrusted until approved.
+(owner, 2026-11-24): R24 StackTraceSupport off in release builds, symbols shipped as a separate asset.
+(owner, 2026-11-24): earlier decisions hold: macOS on all 6 RIDs; .NET 11 (SDK 11.0.100) with the newest C# idioms; DI with an AddX() per group; config.toml only; the extension stays TypeScript and Bun; plugin kinds hook, job, skill; continuous RAM, size and latency gates with the ratchet; no feature or quality loss for size.
+(owner, 2026-11-24): code reviews run on Claude for now, not Codex: 3 /dg:thrash -s 4 local rounds with /dg:address -l between them, early stop on a dry round.
+(orchestrator, 2026-11-24): execution deviations from the skill texts: integration branch feature/dg_cli_lean (not feat/dg-cli-lean); plan.md lives and commits on the integration branch; one worktree per slice under /home/detailedghost/code/worktrees/dg-ai-027-<slice>, merged with --no-ff; slice agents commit each test-first step; no Workflow tool, so the orchestrator drives each slice with one persona agent.
 Decision records: docs/adr/0058-dg-moves-to-c-nativeaot-in-stages.md and docs/adr/0059-dg-plugins-are-built-in-or-external-with-one-transport-contract.md.
 
 ## Issues Remediation
