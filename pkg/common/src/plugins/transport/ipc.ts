@@ -157,8 +157,16 @@ const warm = new Map<string, Promise<IpcConnection>>();
 
 export function getIpcConnection(plugin: string, path: string): Promise<IpcConnection> {
 	const existing = warm.get(plugin);
-	if (existing) return existing.then((connection) => (connection.closed ? open(plugin, path) : connection), () => open(plugin, path));
-	return open(plugin, path);
+	if (!existing) return open(plugin, path);
+	return existing.then(
+		(connection) => (connection.closed ? reopen(plugin, path, existing) : connection),
+		() => reopen(plugin, path, existing),
+	);
+}
+
+function reopen(plugin: string, path: string, stale: Promise<IpcConnection>): Promise<IpcConnection> {
+	const current = warm.get(plugin);
+	return current !== undefined && current !== stale ? current : open(plugin, path);
 }
 
 function open(plugin: string, path: string): Promise<IpcConnection> {

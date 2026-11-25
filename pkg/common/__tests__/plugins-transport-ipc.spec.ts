@@ -283,6 +283,22 @@ describe("warm connection per plugin", () => {
 	});
 });
 
+describe("reconnect after a failed warm attempt", () => {
+	test("shares one replacement connection between concurrent callers", async () => {
+		const path = socketPath();
+		let hellos = 0;
+		await startPlugin(path, (_route, _body, frame, reply) => {
+			hellos += 1;
+			reply(respond(frame, helloOk));
+		});
+		const failed = getIpcConnection("p", socketPath());
+		const [a, b] = await Promise.all([getIpcConnection("p", path), getIpcConnection("p", path)]);
+		await expect(failed).rejects.toThrow("Next:");
+		expect(a).toBe(b);
+		expect(hellos).toBe(1);
+	});
+});
+
 describe("endpoint paths", () => {
 	test("puts a relative socket name under the plugin directory on Unix", () => {
 		expect(ipcEndpoint("secret-scan", "/home/u/plugins/secret-scan", "secret-scan.sock", "linux")).toBe("/home/u/plugins/secret-scan/secret-scan.sock");
