@@ -12,9 +12,14 @@ internal sealed class SpellingTable
             _longestKey = Math.Max(_longestKey, key.Length);
     }
 
-    public static SpellingTable For(string locale)
+    private static SpellingTable? _american;
+    private static SpellingTable? _british;
+
+    public static SpellingTable For(string locale) =>
+        locale == "en-US" ? _american ??= Build(usLocale: true) : _british ??= Build(usLocale: false);
+
+    private static SpellingTable Build(bool usLocale)
     {
-        var usLocale = locale == "en-US";
         Dictionary<string, string> map = new(StringComparer.Ordinal);
         foreach (var raw in SpellingPairs.Text.Split('\n'))
         {

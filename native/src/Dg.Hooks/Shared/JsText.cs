@@ -21,7 +21,11 @@ internal static class JsText
         return text[start..end];
     }
 
-    public static string Trim(string text) => Trim(text.AsSpan()).ToString();
+    public static string Trim(string text)
+    {
+        var trimmed = Trim(text.AsSpan());
+        return trimmed.Length == text.Length ? text : trimmed.ToString();
+    }
 
     public static bool IsBlank(string text) => Trim(text.AsSpan()).IsEmpty;
 
