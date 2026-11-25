@@ -48,7 +48,13 @@ mode 0600. Do not commit it.
 dg also writes a `pre-migration-v<version>-….db` snapshot into `<state>/daemon/`
 before each schema step, and never removes it. A database at version 14 gets
 `pre-migration-v15-….db`. A database at version 12 gets the files for v13, v14
-and v15. To restore the database, use the file of the lowest step.
+and v15. To restore the database, use the file of the lowest step:
+
+1. Stop the daemon: `dg daemon stop`.
+1. Install the last release before the major.
+1. Copy the `pre-migration` file of the lowest step over `<state>/daemon/daemon.db`,
+   and remove `daemon.db-wal` and `daemon.db-shm` beside it.
+1. Start the daemon: `dg daemon start`.
 
 ## Removed in the major
 
