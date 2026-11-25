@@ -66,6 +66,18 @@ describe("parseBudgets", () => {
 		expect(() => parseBudgets(slow, "b.json")).toThrow('case "version" msBudget must be a positive number');
 	});
 
+	test("rejects a misspelled key so no gate is dropped silently", () => {
+		const typo = JSON.stringify({ version: 1, cases: { version: { peakMB: 1, msBugdet: 5 } } });
+		expect(() => parseBudgets(typo, "b.json")).toThrow('b.json: case "version" has unknown key "msBugdet"');
+	});
+
+	test("rejects an entry that is not an object", () => {
+		for (const entry of ["1", "null", "[]", '"x"']) {
+			const bad = `{"version":1,"cases":{"version":${entry}}}`;
+			expect(() => parseBudgets(bad, "b.json")).toThrow('b.json: case "version" must be an object');
+		}
+	});
+
 	test("rejects an unknown version", () => {
 		expect(() => parseBudgets('{"version":2,"cases":{}}', "b.json")).toThrow("b.json: version must be 1");
 	});

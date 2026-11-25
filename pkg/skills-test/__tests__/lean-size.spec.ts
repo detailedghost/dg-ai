@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { COMPILE_TARGETS } from "../../launcher/build/options";
+import { TARGETS } from "../../../scripts/lean-size";
 import { REPO_ROOT } from "./test-support";
 
 const SCRIPT = join(REPO_ROOT, "scripts", "lean-size.ts");
@@ -68,6 +70,21 @@ describe("lean-size measurement", () => {
 		const { report } = reportOf(["--dist", dist, "--previous", previous]);
 		expect(Object.keys(report.size).sort()).toEqual(["linux-x64", "windows-x64"]);
 		expect(report.size["windows-x64"].patchBytes).toBeNull();
+	});
+
+	test("lists the same targets as the compile table", () => {
+		expect([...TARGETS].sort()).toEqual(Object.keys(COMPILE_TARGETS).sort());
+	});
+
+	test("ignores compressed and front door files next to the binaries", () => {
+		const mixed = join(work, "mixed");
+		mkdirSync(mixed);
+		writeFileSync(join(mixed, "dg-linux-x64"), noise(1024, 3));
+		for (const stray of ["dg-linux-x64.gz", "dg-linux-x64.zst", "dg-front-linux-x64", "dg-linux-x64-from-1.0.0.zpatch"])
+			writeFileSync(join(mixed, stray), noise(64, 4));
+		const { code, report } = reportOf(["--dist", mixed]);
+		expect(code).toBe(0);
+		expect(Object.keys(report.size)).toEqual(["linux-x64"]);
 	});
 
 	test("omits patch bytes without --previous", () => {

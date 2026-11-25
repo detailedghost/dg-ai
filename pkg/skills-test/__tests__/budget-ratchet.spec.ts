@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
 	flatten,
 	parseIncreases,
+	parseRemovals,
 	ratchet,
 	renderComment,
 	run,
@@ -40,8 +41,42 @@ describe("parseIncreases", () => {
 	});
 });
 
+describe("parseRemovals", () => {
+	test("reads the budget names of well-formed lines only", () => {
+		const body = ["Budget-Removal: a:b/c because gone", "Budget-Removal: x because ", "Budget-Removal: broken"].join("\n");
+		expect(parseRemovals(body)).toEqual(["a:b/c"]);
+	});
+});
+
 describe("ratchet", () => {
 	const budgets = { "lean:a": 100 };
+
+	test("a budget key removed from the head fails without a Budget-Removal line", () => {
+		const r = ratchet({ budgets: {}, baseBudgets: { "lean:a": 100 }, measured: {}, prBody: "" });
+		expect(r.failures).toHaveLength(1);
+		expect(r.failures[0]).toContain("lean:a");
+		expect(r.failures[0]).toContain("Budget-Removal: lean:a because <reason>");
+	});
+
+	test("a matching Budget-Removal line allows the removal", () => {
+		const r = ratchet({
+			budgets: {},
+			baseBudgets: { "lean:a": 100 },
+			measured: {},
+			prBody: "Budget-Removal: lean:a because the case was deleted",
+		});
+		expect(r.failures).toEqual([]);
+	});
+
+	test("a Budget-Removal line for another key does not allow the removal", () => {
+		const r = ratchet({
+			budgets: {},
+			baseBudgets: { "lean:a": 100 },
+			measured: {},
+			prBody: "Budget-Removal: lean:b because nope",
+		});
+		expect(r.failures).toHaveLength(1);
+	});
 
 	test("passes when the measurement sits inside the slack", () => {
 		const r = ratchet({ budgets, measured: { "lean:a": 96 }, prBody: "" });
@@ -230,6 +265,19 @@ describe("run", () => {
 			readBase: () => JSON.stringify({ raw: 100 }),
 		});
 		expect(result.failures[0]).toContain("Budget-Increase");
+	});
+
+	test("a budget file deleted from the head fails through its base text", () => {
+		const root = repo({});
+		const measured = repo({});
+		const result = run({
+			root,
+			measuredDir: measured,
+			prBody: "",
+			readBase: (path) => (path === "scripts/lean-budgets.json" ? JSON.stringify({ raw: 100 }) : null),
+		});
+		expect(result.failures).toHaveLength(1);
+		expect(result.failures[0]).toContain("lean-budgets:raw");
 	});
 
 	test("renders one comment with a marker, the table and the growth text", () => {

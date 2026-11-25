@@ -5,6 +5,8 @@ export type Budgets = { version: 1; cases: Record<string, CaseBudget> };
 export type Sample = { peak: number; ms: number; idle?: number; anon?: number; growth?: number; p90?: number; p95?: number };
 export type Verdict = { over: boolean; slow: boolean; leaking: boolean };
 
+const BUDGET_KEYS = ["peakMB", "msBudget", "growthMB"];
+
 function positive(value: unknown): value is number {
 	return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
@@ -14,7 +16,11 @@ export function parseBudgets(text: string, source: string): Budgets {
 	if (data.version !== 1) throw new Error(`${source}: version must be 1`);
 	const cases: Record<string, CaseBudget> = {};
 	for (const [name, entry] of Object.entries(data.cases ?? {})) {
-		for (const key of ["peakMB", "msBudget", "growthMB"]) {
+		if (entry === null || typeof entry !== "object" || Array.isArray(entry))
+			throw new Error(`${source}: case "${name}" must be an object`);
+		for (const key of Object.keys(entry))
+			if (!BUDGET_KEYS.includes(key)) throw new Error(`${source}: case "${name}" has unknown key "${key}"`);
+		for (const key of BUDGET_KEYS) {
 			const value = entry[key];
 			if (value === undefined && key !== "peakMB") continue;
 			if (!positive(value)) throw new Error(`${source}: case "${name}" ${key} must be a positive number`);
