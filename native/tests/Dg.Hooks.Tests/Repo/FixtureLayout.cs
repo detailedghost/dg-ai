@@ -41,14 +41,12 @@ internal sealed record FixtureCase
     public bool SpawnThrows { get; init; }
 }
 
+[JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
+[JsonSerializable(typeof(FixtureCase))]
+internal sealed partial class FixtureJson : JsonSerializerContext;
+
 internal static class FixtureCases
 {
-    private static readonly JsonSerializerOptions Options = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        Converters = { new JsonStringEnumConverter() },
-    };
-
     public static string Directory { get; } =
         System.IO.Path.Combine(System.IO.Path.GetDirectoryName(ThisFile())!, "fixtures");
 
@@ -63,7 +61,7 @@ internal static class FixtureCases
     public static FixtureCase Load(string name) =>
         JsonSerializer.Deserialize<FixtureCase>(
             File.ReadAllText(System.IO.Path.Combine(Directory, $"{name}.case.json")),
-            Options
+            FixtureJson.Default.FixtureCase
         )!;
 
     public static string Expected(string name) =>
@@ -144,7 +142,7 @@ internal sealed class FixtureLayout : IDisposable
     private void Populate(FixtureCase c)
     {
         foreach (var sub in new[] { "scratch", "state", "code", "home", "outside", "xdg" })
-            System.IO.Directory.CreateDirectory(Join(sub), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            System.IO.Directory.CreateDirectory(Join(sub));
         foreach (var repo in c.Repos ?? [])
             BuildRepo(repo);
 
@@ -197,7 +195,7 @@ internal sealed class FixtureLayout : IDisposable
         foreach (var (path, age) in implicitAges)
             Stamp(path, age);
         foreach (var e in c.Entries ?? [])
-            if (e.Mode is { } mode)
+            if (e.Mode is { } mode && !OperatingSystem.IsWindows())
                 File.SetUnixFileMode(Join(e.Path), (UnixFileMode)Convert.ToInt32(mode, 8));
     }
 
