@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { median, overBudget } from "../../../scripts/native-ram-budget";
-import { quantile } from "../../../scripts/ram-budget/judge";
 import { makeTempDir, removeTempDirs, REPO_ROOT } from "./test-support";
 
 const SCRIPT = join(REPO_ROOT, "scripts", "native-ram-budget.ts");
@@ -10,9 +9,8 @@ const SCRIPT = join(REPO_ROOT, "scripts", "native-ram-budget.ts");
 afterEach(removeTempDirs);
 
 describe("native ram budget", () => {
-	test("takes the same p50 as the ram-budget judge for even counts", () => {
-		const values = [40, 10, 30, 20];
-		expect(median(values)).toBe(quantile([10, 20, 30, 40], 0.5));
+	test("takes the upper middle value as the p50 for an even count", () => {
+		expect(median([40, 10, 30, 20])).toBe(30);
 	});
 
 	test("reports a measured case that has no budget entry", () => {
