@@ -140,6 +140,16 @@ describe("addPlugin", () => {
 		expect(() => checkSource("ssh://git@example.com/org/repo.git")).not.toThrow();
 	});
 
+	test.each([
+		"https://ghp_token@example.com/org/repo.git",
+		"git+https://ghp_token@example.com/org/repo.git",
+		"https://ghp_token@bad host/x",
+		"ssh://git:secret@example.com/org/repo.git",
+		"http://user:pw@example.com/x",
+	])("refuses credentials in the source URL %s", (source) => {
+		expect(() => checkSource(source)).toThrow(/credentials/);
+	});
+
 	test("refuses an installed record that names another plugin or has the wrong shape", () => {
 		const source = skillRepo("notes");
 		addPlugin({ source }, env);
