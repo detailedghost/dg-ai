@@ -156,10 +156,7 @@ internal static partial class DgTomlValidator
                 foreach (var (name, item) in table)
                     CheckSecrets(where, $"{key}.{name}", item);
                 return;
-            case string text
-                when key.StartsWith("plugins.", StringComparison.Ordinal)
-                    && key.Split('.') is [_, _, "settings", ..]
-                    && TokenLike().IsMatch(text):
+            case string text when ConfigRules.IsPluginSetting(key) && TokenLike().IsMatch(text):
                 throw MustBeSecretRef(where, key);
             case string:
                 return;
@@ -223,10 +220,10 @@ internal static partial class DgTomlValidator
         }
     }
 
-    private static void OnlyKeys(Where where, string key, TomlTable value, string[] allowed)
+    private static void OnlyKeys(Where where, string key, TomlTable value, ReadOnlySpan<string> allowed)
     {
         foreach (var name in value.Keys)
-            if (Array.IndexOf(allowed, name) < 0)
+            if (!allowed.Contains(name))
                 throw Fail(
                     where,
                     $"{key}.{name}",
