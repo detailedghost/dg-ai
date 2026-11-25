@@ -12,7 +12,7 @@ type Table = Record<string, unknown>;
 
 export type SecretRef = { credential: string };
 
-export type PluginEntry = { enabled: boolean; source?: string; settings: Table };
+export type PluginEntry = { enabled: boolean; allow_remote: boolean; source?: string; settings: Table };
 
 export const BROWSER_MODES = ["ext", "local", "auto"] as const;
 
@@ -209,10 +209,11 @@ function plugin(where: Where, key: string, value: unknown): PluginEntry {
 	if (key.split(".").length !== 2)
 		fail(where, key, `${key} is not a valid plugin name; a plugin name has no dot. ${NEXT_EDIT} plugins.<name>.enabled <value>.`);
 	const entry = table(where, key, value);
-	onlyKeys(where, key, entry, ["enabled", "source", "settings"]);
+	onlyKeys(where, key, entry, ["enabled", "allow_remote", "source", "settings"]);
 	const source = optionalString(where, `${key}.source`, entry.source);
 	return {
 		enabled: optionalBoolean(where, `${key}.enabled`, entry.enabled, true),
+		allow_remote: optionalBoolean(where, `${key}.allow_remote`, entry.allow_remote, false),
 		...(source === undefined ? {} : { source }),
 		settings: table(where, `${key}.settings`, entry.settings),
 	};
