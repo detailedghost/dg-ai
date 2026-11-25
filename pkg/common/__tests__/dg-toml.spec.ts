@@ -272,3 +272,41 @@ describe("writeDgToml", () => {
 		expect(() => writeDgToml("nope.x", 1, env)).toThrow(DgCliError);
 	});
 });
+
+describe("browser and front keys", () => {
+	test("default browser.mode to auto and front.enabled to true", () => {
+		expect(setting<string>("browser.mode", { env })).toBe("auto");
+		expect(setting<boolean>("front.enabled", { env })).toBe(true);
+		expect(readDgToml(env).browser.mode).toBe("auto");
+		expect(readDgToml(env).front.enabled).toBe(true);
+	});
+
+	test("reads both keys from config.toml", () => {
+		writeFileSync(file, ["[browser]", 'mode = "local"', "[front]", "enabled = false", ""].join("\n"));
+
+		expect(readDgToml(env).browser.mode).toBe("local");
+		expect(readDgToml(env).front.enabled).toBe(false);
+	});
+
+	test("rejects a browser.mode outside ext, local and auto", () => {
+		writeFileSync(file, ["[browser]", 'mode = "both"', ""].join("\n"));
+
+		expect(caught(() => readDgToml(env)).message).toBe(
+			`dg config: ${file}:2: browser.mode must be ext, local or auto, got "both". Next: run dg config edit, or dg config set browser.mode <value>.`,
+		);
+	});
+
+	test("rejects a front.enabled that is not a boolean", () => {
+		writeFileSync(file, ["[front]", 'enabled = "no"', ""].join("\n"));
+
+		expect(caught(() => readDgToml(env)).message).toBe(
+			`dg config: ${file}:2: front.enabled must be a boolean, got "no". Next: run dg config edit, or dg config set front.enabled <value>.`,
+		);
+	});
+
+	test("rejects an unknown key in either section", () => {
+		writeFileSync(file, ["[front]", "speed = 1", ""].join("\n"));
+
+		expect(caught(() => readDgToml(env)).message).toContain("front.speed is not a dg config key");
+	});
+});
