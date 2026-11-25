@@ -1,4 +1,3 @@
-import { buildVersion } from "@dg/common/build-version";
 import type { ProgramName } from "@dg/common/node/program";
 
 type Program = { main(argv: string[]): Promise<number> };
@@ -78,9 +77,10 @@ export function isVersionOnly(argv: readonly string[]): boolean {
 	return argv.length === 1 && argv[0] === "--version";
 }
 
+/** Inlined, not imported: a shared module would become a static chunk import of the entry. Matches buildVersion in @dg/common/build-version. */
 function printVersion(): Promise<number> {
 	return new Promise((resolve) => {
-		process.stdout.write(`${buildVersion()}\n`, () => resolve(0));
+		process.stdout.write(`${process.env.DG_BUILD_VERSION || "dev"}\n`, () => resolve(0));
 	});
 }
 
