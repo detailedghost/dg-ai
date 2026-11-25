@@ -10,7 +10,10 @@ public sealed class SpellingPairsTests
     {
         var source = Path.GetFullPath(Path.Combine(Folder(), "../../../../pkg/skills-cli/src/hooks/data/spelling-pairs.txt"));
 
-        Assert.Equal(SpellingPairs.Text, File.ReadAllText(source).TrimEnd('\n'));
+        Assert.Equal(
+            SpellingPairs.Text.ReplaceLineEndings("\n"),
+            File.ReadAllText(source).ReplaceLineEndings("\n").TrimEnd('\n')
+        );
     }
 
     private static string Folder([CallerFilePath] string path = "") => Path.GetDirectoryName(path)!;

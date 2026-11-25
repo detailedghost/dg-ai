@@ -13,7 +13,7 @@ internal sealed class PrFixtureCase
 {
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
-    public static string Directory { get; } = Path.Combine(Folder(), "fixtures");
+    public static string FixturesPath { get; } = Path.Combine(Folder(), "fixtures");
 
     private readonly JsonElement _case;
 
@@ -24,17 +24,20 @@ internal sealed class PrFixtureCase
     public static TheoryData<string> Names()
     {
         var data = new TheoryData<string>();
-        foreach (var file in System.IO.Directory.GetFiles(Directory, "*.case.json").Order())
+        foreach (var file in Directory.GetFiles(FixturesPath, "*.case.json").Order())
             data.Add(Path.GetFileName(file)[..^".case.json".Length]);
         return data;
     }
 
-    public static PrFixtureCase Load(string name) =>
-        new(JsonDocument.Parse(File.ReadAllText(Path.Combine(Directory, $"{name}.case.json"))).RootElement.Clone());
+    public static PrFixtureCase Load(string name)
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(FixturesPath, $"{name}.case.json")));
+        return new PrFixtureCase(document.RootElement.Clone());
+    }
 
     public static PrRun LoadExpected(string name)
     {
-        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(Directory, $"{name}.expected.json")));
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(FixturesPath, $"{name}.expected.json")));
         var root = document.RootElement;
         SortedDictionary<string, string> after = new(StringComparer.Ordinal);
         foreach (var file in root.GetProperty("after").EnumerateObject())
@@ -49,11 +52,11 @@ internal sealed class PrFixtureCase
 
     public async Task<PrRun> RunAsync()
     {
-        var root = System.IO.Directory.CreateTempSubdirectory("dg-hooks-pr-").FullName;
+        var root = Directory.CreateTempSubdirectory("dg-hooks-pr-").FullName;
         try
         {
             foreach (var sub in new[] { "work", "bin", "home", "repo" })
-                System.IO.Directory.CreateDirectory(Path.Combine(root, sub));
+                Directory.CreateDirectory(Path.Combine(root, sub));
             var env = BuildEnv(root);
             Plant(root);
             WriteConfig(root, env);
@@ -74,7 +77,7 @@ internal sealed class PrFixtureCase
         }
         finally
         {
-            System.IO.Directory.Delete(root, recursive: true);
+            Directory.Delete(root, recursive: true);
         }
     }
 
@@ -103,10 +106,10 @@ internal sealed class PrFixtureCase
                 var target = Path.Combine(root, entry.Name.TrimEnd('/'));
                 if (entry.Name.EndsWith('/'))
                 {
-                    System.IO.Directory.CreateDirectory(target);
+                    Directory.CreateDirectory(target);
                     continue;
                 }
-                System.IO.Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 if (entry.Value.ValueKind == JsonValueKind.String)
                     File.WriteAllBytes(target, Encoding.UTF8.GetBytes(Substitute(entry.Value.GetString()!, root)));
                 else
@@ -127,7 +130,7 @@ internal sealed class PrFixtureCase
         if (!_case.TryGetProperty("config", out var config))
             return;
         var file = DgPaths.Resolve(DgPathSeams.Current(env)).Value!.ConfigTomlPath;
-        System.IO.Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         File.WriteAllText(file, config.GetString()!);
     }
 
@@ -160,10 +163,10 @@ internal sealed class PrFixtureCase
 
     private static void Walk(string root, string current, SortedDictionary<string, string> files)
     {
-        foreach (var directory in System.IO.Directory.GetDirectories(current))
+        foreach (var directory in Directory.GetDirectories(current))
             if (Path.GetFileName(directory) is not (".git" or "home" or "bin"))
                 Walk(root, directory, files);
-        foreach (var file in System.IO.Directory.GetFiles(current))
+        foreach (var file in Directory.GetFiles(current))
         {
             var bytes = File.ReadAllBytes(file);
             string text;

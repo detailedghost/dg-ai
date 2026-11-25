@@ -57,12 +57,49 @@ internal static class JsText
     public static double FiniteOr(string? raw, double fallback) =>
         !string.IsNullOrEmpty(raw) && ToNumber(raw) is var value && double.IsFinite(value) ? value : fallback;
 
-    public static string Format(double value) =>
-        double.IsNaN(value) ? "NaN"
-        : double.IsInfinity(value) ? (value > 0 ? "Infinity" : "-Infinity")
-        : value == 0 ? "0"
-        : value == Math.Floor(value) && Math.Abs(value) < 1e21 ? value.ToString("F0", CultureInfo.InvariantCulture)
-        : value.ToString("R", CultureInfo.InvariantCulture);
+    public static string Format(double value)
+    {
+        if (double.IsNaN(value))
+            return "NaN";
+        if (double.IsInfinity(value))
+            return value > 0 ? "Infinity" : "-Infinity";
+        if (value == 0)
+            return "0";
+
+        var (digits, point) = ShortestDigits(Math.Abs(value));
+        var sign = value < 0 ? "-" : "";
+        var count = digits.Length;
+        if (count <= point && point <= 21)
+            return $"{sign}{digits}{new string('0', point - count)}";
+        if (0 < point && point <= 21)
+            return $"{sign}{digits[..point]}.{digits[point..]}";
+        if (-6 < point && point <= 0)
+            return $"{sign}0.{new string('0', -point)}{digits}";
+        var exponent = point - 1;
+        var mantissa = count == 1 ? digits : $"{digits[0]}.{digits[1..]}";
+        return $"{sign}{mantissa}e{(exponent >= 0 ? "+" : "-")}{Math.Abs(exponent)}";
+    }
+
+    private static (string Digits, int Point) ShortestDigits(double magnitude)
+    {
+        var text = magnitude.ToString("R", CultureInfo.InvariantCulture);
+        var exponent = 0;
+        var marker = text.IndexOf('E');
+        if (marker >= 0)
+        {
+            exponent = int.Parse(text.AsSpan(marker + 1), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
+            text = text[..marker];
+        }
+        var dot = text.IndexOf('.');
+        var whole = dot < 0 ? text : text[..dot];
+        var digits = dot < 0 ? whole : whole + text[(dot + 1)..];
+        var point = whole.Length + exponent;
+        var lead = 0;
+        while (lead < digits.Length - 1 && digits[lead] == '0')
+            lead++;
+        digits = digits[lead..].TrimEnd('0');
+        return (digits, point - lead);
+    }
 
     public static int Words(ReadOnlySpan<char> text)
     {

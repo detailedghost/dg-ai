@@ -69,7 +69,21 @@
 			"tool_name": "Write",
 			"tool_input": {
 				"file_path": "src/a.ts",
-				"content": "const colourPicker = behaviourOf(analyseThis);\nXMLColour\nsnake_colour_value\n"
+				"content": "const colourPicker = behaviourOf(analyseThis);\nsnake_colour_value\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-acronym-prefix-not-split",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "XMLColour\n"
 			},
 			"cwd": "<ROOT>/work",
 			"session_id": "evsess"
@@ -391,7 +405,7 @@
 			"tool_name": "Write",
 			"tool_input": {
 				"file_path": "src/a.ts",
-				"content": "colour behaviour analyse neighbour favour honour labour rumour humour vigour harbour\n"
+				"content": "colour behaviour analyse neighbour favour honour labour centre defence catalogue licence\n"
 			},
 			"cwd": "<ROOT>/work",
 			"session_id": "evsess"
@@ -1973,9 +1987,6 @@
 			"cwd": "<ROOT>/work",
 			"session_id": "evsess"
 		},
-		"env": {
-			"PATH": "<ROOT>/bin:/usr/bin:/bin"
-		},
 		"requires": [
 			"jq"
 		],
@@ -1994,9 +2005,6 @@
 			},
 			"cwd": "<ROOT>/work",
 			"session_id": "evsess"
-		},
-		"env": {
-			"PATH": "<ROOT>/bin:/usr/bin:/bin"
 		},
 		"requires": [
 			"gofmt"

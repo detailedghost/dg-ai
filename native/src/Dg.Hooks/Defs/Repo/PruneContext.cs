@@ -12,7 +12,15 @@ internal sealed class PruneContext(double nowMs, bool dryRun, Action<string> log
     public void Remove(string path, string reason)
     {
         log($"{(dryRun ? "would remove" : "removed")} {path} ({reason})");
-        if (!dryRun)
+        if (dryRun)
+            return;
+        try
+        {
             FsPaths.DeleteForce(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            log($"kept {path} ({ex.Message})");
+        }
     }
 }

@@ -1,24 +1,19 @@
-using Dg.Hooks.Shared;
 using System.Text;
 using System.Text.RegularExpressions;
 using Dg.Hooks.Defs.Repo;
 using Dg.Hooks.Engine;
+using Dg.Hooks.Shared;
 
 namespace Dg.Hooks.Tests.Repo;
 
-public sealed partial class RepoParityTests
+[Collection(GitEnvironment.Name)]
+public sealed partial class RepoParityTests : IDisposable
 {
     private const string DefaultStdin = """{"hook_event_name":"SessionStart"}""";
 
-    static RepoParityTests()
-    {
-        Environment.SetEnvironmentVariable("GIT_CONFIG_NOSYSTEM", "1");
-        Environment.SetEnvironmentVariable("GIT_CONFIG_GLOBAL", "/dev/null");
-        Environment.SetEnvironmentVariable(
-            "XDG_CONFIG_HOME",
-            Path.Combine(Path.GetTempPath(), "dg-hooks-repo-no-xdg")
-        );
-    }
+    private readonly GitEnvironment _git = GitEnvironment.Isolate();
+
+    public void Dispose() => _git.Dispose();
 
     public static TheoryData<string> LintNames => FixtureCases.Names("lint-");
 

@@ -1,3 +1,5 @@
+using Dg.Hooks.Shared;
+
 namespace Dg.Hooks.Tests;
 
 internal sealed class TempRoot : IDisposable
@@ -7,7 +9,7 @@ internal sealed class TempRoot : IDisposable
     public string Path { get; }
 
     public static TempRoot Create() =>
-        new(FsRealPath(Directory.CreateTempSubdirectory("dg-hooks-shared-").FullName));
+        new(FsPaths.RealPath(Directory.CreateTempSubdirectory("dg-hooks-shared-").FullName));
 
     public void Dispose()
     {
@@ -15,6 +17,4 @@ internal sealed class TempRoot : IDisposable
             File.SetUnixFileMode(Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         Directory.Delete(Path, recursive: true);
     }
-
-    private static string FsRealPath(string path) => Directory.ResolveLinkTarget(path, true)?.FullName ?? path;
 }

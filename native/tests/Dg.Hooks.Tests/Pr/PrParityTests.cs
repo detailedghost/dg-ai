@@ -27,7 +27,7 @@ public sealed class PrParityTests
     [Fact]
     public void Fixtures_EveryCase_HasExpectedFile()
     {
-        foreach (var file in Directory.GetFiles(PrFixtureCase.Directory, "*.case.json"))
+        foreach (var file in Directory.GetFiles(PrFixtureCase.FixturesPath, "*.case.json"))
             Assert.True(File.Exists(file.Replace(".case.json", ".expected.json", StringComparison.Ordinal)), file);
     }
 

@@ -46,11 +46,11 @@ public readonly record struct HookEvent
             var reader = new Utf8JsonReader(utf8.StartsWith("\uFEFF"u8) ? utf8[3..] : utf8);
             return reader.Read() && reader.TokenType == JsonTokenType.StartObject
                 ? ReadEvent(ref reader)
-                : default;
+                : new HookEvent();
         }
         catch (JsonException)
         {
-            return default;
+            return new HookEvent();
         }
     }
 

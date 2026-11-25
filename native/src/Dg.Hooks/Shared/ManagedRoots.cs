@@ -26,7 +26,7 @@ internal static class ManagedRoots
         var systemUid = uid is null ? 0 : FileOwner.Of(Path.GetPathRoot(root)!, follow: false);
         if (Path.GetDirectoryName(root) is { } parent)
             SafeAncestors(parent, uid, systemUid);
-        var entry = DirectoryEntry(root);
+        var entry = EnsureEntry(root);
         if (entry.IsLink)
         {
             if (!allowRootLink || (uid is not null && FileOwner.Of(root, follow: false) != uid))
@@ -41,7 +41,7 @@ internal static class ManagedRoots
     {
         AssertSafe(basePath, allowRootLink);
         var dir = Path.Join(Path.GetFullPath(basePath), name);
-        var entry = DirectoryEntry(dir);
+        var entry = EnsureEntry(dir);
         if (entry.IsLink || !entry.IsDirectory || !OwnedPrivately(dir, FileOwner.CurrentUser, follow: false))
             Unsafe(dir);
         return dir;
@@ -60,7 +60,8 @@ internal static class ManagedRoots
         var parent = Path.GetDirectoryName(dir);
         if (parent is not null && parent != dir)
             SafeAncestors(parent, uid, systemUid);
-        var entry = DirectoryEntry(dir);
+        if (FsPaths.TryLstat(dir) is not { } entry)
+            return;
         if (uid is { } self && FileOwner.Of(dir, follow: false) is var owner && owner != self && owner != 0 && owner != systemUid)
             Unsafe(dir);
         if (entry.IsLink)
@@ -83,7 +84,7 @@ internal static class ManagedRoots
         || uid is not { } self
         || (FileOwner.Of(dir, follow) == self && (File.GetUnixFileMode(dir) & OthersCanWrite) == 0);
 
-    private static Lstat DirectoryEntry(string dir)
+    private static Lstat EnsureEntry(string dir)
     {
         if (FsPaths.TryLstat(dir) is { } existing)
             return existing;

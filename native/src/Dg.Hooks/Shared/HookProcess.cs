@@ -7,7 +7,7 @@ internal static class HookProcess
 {
     private const int TimeoutMs = 30_000;
     private const int CapBytes = 1024 * 1024;
-    private const int DrainAfterKillMs = 1000;
+    private const int DrainMs = 1000;
     private static readonly string[] WindowsExtensions = [".exe", ".cmd", ".bat", ".com"];
     private const string TruncatedNote = "\n[output truncated]\n";
 
@@ -79,28 +79,36 @@ internal static class HookProcess
             var timedOut = false;
             try
             {
-                await Task.WhenAll(stdout, stderr, process.WaitForExitAsync(ct))
+                await process
+                    .WaitForExitAsync(ct)
                     .WaitAsync(TimeSpan.FromMilliseconds(TimeoutMs), ct)
                     .ConfigureAwait(false);
             }
             catch (TimeoutException)
             {
                 timedOut = true;
-                process.Kill();
-                try
-                {
-                    await Task.WhenAll(stdout, stderr)
-                        .WaitAsync(TimeSpan.FromMilliseconds(DrainAfterKillMs), ct)
-                        .ConfigureAwait(false);
-                }
-                catch (TimeoutException)
-                {
-                    await drain.CancelAsync().ConfigureAwait(false);
-                }
+                Kill(process);
+            }
+            catch (OperationCanceledException)
+            {
+                Kill(process);
+                await drain.CancelAsync().ConfigureAwait(false);
+                throw;
             }
 
-            var (outBytes, outTruncated) = await Settled(stdout).ConfigureAwait(false);
-            var (errBytes, errTruncated) = await Settled(stderr).ConfigureAwait(false);
+            try
+            {
+                await Task.WhenAll(stdout, stderr)
+                    .WaitAsync(TimeSpan.FromMilliseconds(DrainMs), ct)
+                    .ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                await drain.CancelAsync().ConfigureAwait(false);
+            }
+
+            var (outBytes, outTruncated) = await stdout.ConfigureAwait(false);
+            var (errBytes, errTruncated) = await stderr.ConfigureAwait(false);
             var outText = Decode(outBytes, outTruncated);
             var errText = Decode(errBytes, errTruncated);
             return timedOut
@@ -114,16 +122,13 @@ internal static class HookProcess
         }
     }
 
-    private static async Task<(byte[] Bytes, bool Truncated)> Settled(Task<(byte[], bool)> read)
+    private static void Kill(Process process)
     {
         try
         {
-            return await read.ConfigureAwait(false);
+            process.Kill(entireProcessTree: true);
         }
-        catch (OperationCanceledException)
-        {
-            return ([], false);
-        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { }
     }
 
     private static string Decode(byte[] bytes, bool truncated)
@@ -137,19 +142,23 @@ internal static class HookProcess
         using MemoryStream kept = new();
         var buffer = new byte[16 * 1024];
         var truncated = false;
-        int read;
-        while ((read = await stream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+        try
         {
-            var room = CapBytes - (int)kept.Length;
-            if (room <= 0)
+            int read;
+            while ((read = await stream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
             {
-                truncated = true;
-                continue;
+                var room = CapBytes - (int)kept.Length;
+                if (room <= 0)
+                {
+                    truncated = true;
+                    continue;
+                }
+                var take = Math.Min(room, read);
+                kept.Write(buffer, 0, take);
+                truncated |= take < read;
             }
-            var take = Math.Min(room, read);
-            kept.Write(buffer, 0, take);
-            truncated |= take < read;
         }
+        catch (OperationCanceledException) { }
         return (kept.ToArray(), truncated);
     }
 

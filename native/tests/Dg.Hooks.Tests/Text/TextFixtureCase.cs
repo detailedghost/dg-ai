@@ -1,7 +1,8 @@
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Runtime.Versioning;
+using System.Text;
 using System.Text.Json;
+using Dg.Hooks.Shared;
 
 namespace Dg.Hooks.Tests.Text;
 
@@ -10,6 +11,8 @@ namespace Dg.Hooks.Tests.Text;
 internal sealed class TextFixtureCase
 {
     private const string Placeholder = "<ROOT>";
+    private const string FallbackTempBase = "/tmp";
+    private static readonly string[] AgentToolMarkers = ["/.claude/", "/.agents/", "/.opencode/"];
 
     public required string Name { get; init; }
     public required string Hook { get; init; }
@@ -20,7 +23,7 @@ internal sealed class TextFixtureCase
     public required IReadOnlyList<(string Rel, string Mode)> Chmod { get; init; }
     public required IReadOnlyList<string> Requires { get; init; }
 
-    public static string Directory { get; } = Path.Combine(Folder(), "fixtures");
+    public static string FixturesPath { get; } = Path.Combine(Folder(), "fixtures");
 
     private const string LogHead =
         "#!/bin/sh\n"
@@ -39,23 +42,20 @@ internal sealed class TextFixtureCase
 
     public static TextFixtureCase Get(string name) => All.Single(c => c.Name == name);
 
-    public string Expected(string extension) => File.ReadAllText(Path.Combine(Directory, $"{Name}.{extension}"));
+    public string Expected(string extension) => File.ReadAllText(Path.Combine(FixturesPath, $"{Name}.{extension}"));
 
-    public bool Available()
-    {
-        var path = Env.TryGetValue("PATH", out var value) && value is not null ? value : $"{Placeholder}/bin";
-        var dirs = path.Split(':').Where(d => !d.Contains(Placeholder, StringComparison.Ordinal));
-        return Requires.All(bin => dirs.Any(d => File.Exists(Path.Combine(d, bin))));
-    }
+    public bool Available() => Requires.All(bin => HostBinary(bin) is not null);
 
     public Materialized Materialize()
     {
-        var root = Path.GetFullPath(Directory_Create());
+        var root = Path.GetFullPath(CreateRoot());
         string Sub(string text) => text.Replace(Placeholder, root, StringComparison.Ordinal);
         MakeDirs(Path.Combine(root, "bin"));
         MakeDirs(Path.Combine(root, "home"));
         Put(Path.Combine(root, "log"), "", null, null);
         Put(Path.Combine(root, "work", ".git", "HEAD"), "", null, null);
+        foreach (var bin in Requires)
+            File.CreateSymbolicLink(Path.Combine(root, "bin", bin), HostBinary(bin)!);
         foreach (var (name, text) in Bin)
             Put(Path.Combine(root, "bin", name), text, "755", null);
         foreach (var (rel, spec) in Files)
@@ -122,15 +122,15 @@ internal sealed class TextFixtureCase
         }
     }
 
-    private static string Directory_Create()
+    private static string? HostBinary(string bin) => HookProcess.Which(bin, HookEnvironment.Process().Values);
+
+    private static string CreateRoot()
     {
         var temp = Path.GetTempPath();
-        var tempBase = temp.Contains("/.claude/", StringComparison.Ordinal)
-            || temp.Contains("/.agents/", StringComparison.Ordinal)
-            || temp.Contains("/.opencode/", StringComparison.Ordinal)
-            ? "/tmp"
+        var tempBase = Array.Exists(AgentToolMarkers, marker => temp.Contains(marker, StringComparison.Ordinal))
+            ? FallbackTempBase
             : temp;
-        var path = System.IO.Directory.CreateDirectory(
+        var path = Directory.CreateDirectory(
             Path.Combine(tempBase, $"dg-hooks-text-{Guid.NewGuid():N}"),
             UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
         );
@@ -139,10 +139,10 @@ internal sealed class TextFixtureCase
 
     private static void MakeDirs(string path)
     {
-        if (System.IO.Directory.Exists(path))
+        if (Directory.Exists(path))
             return;
         MakeDirs(Path.GetDirectoryName(path)!);
-        System.IO.Directory.CreateDirectory(path);
+        Directory.CreateDirectory(path);
         File.SetUnixFileMode(path, (UnixFileMode)Convert.ToInt32("755", 8));
     }
 
@@ -165,7 +165,7 @@ internal sealed class TextFixtureCase
 
     private static List<TextFixtureCase> Load()
     {
-        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(Directory, "cases.json")));
+        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(FixturesPath, "cases.json")));
         List<TextFixtureCase> cases = [];
         foreach (var item in doc.RootElement.EnumerateArray())
         {
