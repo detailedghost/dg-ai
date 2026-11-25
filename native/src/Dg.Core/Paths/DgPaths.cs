@@ -114,11 +114,11 @@ public sealed record DgPaths
                 path.Join(home, "Library", "Logs", "dg")
             );
         }
-        string Xdg(string name, string first, string? second = null)
+        string Xdg(string name, params ReadOnlySpan<string> fallback)
         {
             var root = Env(seams.Env, name);
             if (root is null || !path.IsAbsolute(root))
-                root = second is null ? path.Join(home, first) : path.Join(home, first, second);
+                root = path.Join([home, .. fallback]);
             return path.Join(root, "dg");
         }
         var state = Xdg("XDG_STATE_HOME", ".local", "state");

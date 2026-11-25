@@ -25,15 +25,16 @@ public static class MessageValidator
         {
             case (PluginRoutes.Hello, MessageDirection.Request):
                 ProtocolOne(body);
-                if (!StringList(body, "encodings", "json"))
+                RequireStringList(body, "encodings");
+                if (!ListContains(body.GetProperty("encodings"), "json"))
                     throw Bad("body.encodings", "encodings must include json, every plugin reads json");
-                StringList(body, "capabilities");
+                RequireStringList(body, "capabilities");
                 OptionalString(body, "token");
                 break;
             case (PluginRoutes.Hello, MessageDirection.Response):
                 ProtocolOne(body);
                 OneOf(body, "encoding", Encodings);
-                StringList(body, "capabilities");
+                RequireStringList(body, "capabilities");
                 break;
             case (PluginRoutes.HookDecide, MessageDirection.Request):
                 RequireString(body, "event");
@@ -48,7 +49,7 @@ public static class MessageValidator
             case (PluginRoutes.JobRun, MessageDirection.Request):
                 RequireString(body, "job");
                 if (body.TryGetProperty("args", out _))
-                    StringList(body, "args");
+                    RequireStringList(body, "args");
                 break;
             case (PluginRoutes.JobRun, MessageDirection.Response):
                 RequireString(body, "runId");
@@ -64,7 +65,7 @@ public static class MessageValidator
             case (PluginRoutes.SkillDescribe, MessageDirection.Response):
                 RequireString(body, "name");
                 RequireString(body, "description");
-                StringList(body, "files");
+                RequireStringList(body, "files");
                 break;
             case (PluginRoutes.Health, MessageDirection.Response):
                 OneOf(body, "status", HealthStates);
@@ -109,18 +110,25 @@ public static class MessageValidator
             throw Bad($"body.{name}", $"{name} must be a string");
     }
 
-    private static bool StringList(JsonElement body, string name, string? wanted = null)
+    private static void RequireStringList(JsonElement body, string name)
     {
         if (!body.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Array)
             throw Bad($"body.{name}", $"{name} must be a list of strings");
-        var found = false;
         foreach (var item in value.EnumerateArray())
         {
             if (item.ValueKind != JsonValueKind.String)
                 throw Bad($"body.{name}", $"{name} must be a list of strings");
-            found |= wanted is not null && item.ValueEquals(wanted);
         }
-        return found;
+    }
+
+    private static bool ListContains(JsonElement list, string wanted)
+    {
+        foreach (var item in list.EnumerateArray())
+        {
+            if (item.ValueEquals(wanted))
+                return true;
+        }
+        return false;
     }
 
     private static void OneOf(JsonElement body, string name, string[] allowed)

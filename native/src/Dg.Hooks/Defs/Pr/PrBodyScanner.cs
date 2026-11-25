@@ -1,5 +1,4 @@
 using Dg.Hooks.Shared;
-using System.Buffers;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -11,7 +10,6 @@ internal static partial class PrBodyScanner
 {
     private const int MinProseWords = 4;
     private const int MinBodyWords = 12;
-    private const int LowerStackChars = 512;
 
     private static readonly string[] Filler =
     [
@@ -77,22 +75,10 @@ internal static partial class PrBodyScanner
                 start = match.Index + match.Length;
             }
             CheckSentence(text.AsSpan(start), paragraphLine, maxSentence, findings);
-            char[]? rented = null;
-            Span<char> lower = text.Length <= LowerStackChars
-                ? stackalloc char[LowerStackChars]
-                : rented = ArrayPool<char>.Shared.Rent(text.Length);
-            try
-            {
-                var lowered = lower[..text.AsSpan().ToLowerInvariant(lower)];
-                foreach (var word in Filler)
-                    if (lowered.Contains(word, StringComparison.Ordinal))
-                        findings.Add(new Finding(paragraphLine, $"marketing filler: '{word}' - say what it actually does"));
-            }
-            finally
-            {
-                if (rented is not null)
-                    ArrayPool<char>.Shared.Return(rented);
-            }
+            var lowered = text.ToLowerInvariant();
+            foreach (var word in Filler)
+                if (lowered.Contains(word, StringComparison.Ordinal))
+                    findings.Add(new Finding(paragraphLine, $"marketing filler: '{word}' - say what it actually does"));
             paragraph.Clear();
             paragraphLine = 0;
         }

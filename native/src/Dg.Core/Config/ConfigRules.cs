@@ -58,24 +58,18 @@ public static partial class ConfigRules
         return false;
     }
 
-    public static bool IsPluginSetting(string key)
-    {
-        var rest = key.AsSpan();
-        if (!rest.StartsWith("plugins.", StringComparison.Ordinal))
-            return false;
-        rest = rest["plugins.".Length..];
-        var name = rest.IndexOf('.');
-        if (name < 0)
-            return false;
-        rest = rest[(name + 1)..];
-        var section = rest.IndexOf('.');
-        return (section < 0 ? rest : rest[..section]).SequenceEqual("settings");
-    }
+    public static bool IsPluginSetting(string key) => TryPluginSettingTail(key, out _);
 
     public static bool IsSecretKey(string key)
     {
         if (IsSecretField(key))
             return true;
+        return TryPluginSettingTail(key, out var tail) && SecretKeyName().IsMatch(tail[(tail.LastIndexOf('.') + 1)..]);
+    }
+
+    private static bool TryPluginSettingTail(string key, out ReadOnlySpan<char> tail)
+    {
+        tail = default;
         var rest = key.AsSpan();
         if (!rest.StartsWith("plugins.", StringComparison.Ordinal))
             return false;
@@ -85,9 +79,9 @@ public static partial class ConfigRules
             return false;
         rest = rest[(name + 1)..];
         var section = rest.IndexOf('.');
-        if (section < 0 || !rest[..section].SequenceEqual("settings"))
+        if (!(section < 0 ? rest : rest[..section]).SequenceEqual("settings"))
             return false;
-        var tail = rest[(section + 1)..];
-        return SecretKeyName().IsMatch(tail[(tail.LastIndexOf('.') + 1)..]);
+        tail = section < 0 ? default : rest[(section + 1)..];
+        return true;
     }
 }

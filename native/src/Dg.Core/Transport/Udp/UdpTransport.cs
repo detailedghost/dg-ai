@@ -77,6 +77,14 @@ public sealed class UdpTransport : IEventSink, IAsyncDisposable
         _stop.Dispose();
     }
 
+    private static void TrimScratch(ArrayBufferWriter<byte> buffer)
+    {
+        if (buffer.Capacity <= ScratchCapacityLimit)
+            return;
+        _scratch = null;
+        _json = null;
+    }
+
     internal static byte[]? Encode(in PluginEvent ev)
     {
         var buffer = _scratch ??= new ArrayBufferWriter<byte>(PluginProtocol.UdpMaxFrameBytes);
@@ -102,14 +110,11 @@ public sealed class UdpTransport : IEventSink, IAsyncDisposable
         }
         catch (JsonException)
         {
+            TrimScratch(buffer);
             return null;
         }
         var total = buffer.WrittenCount;
-        if (buffer.Capacity > ScratchCapacityLimit)
-        {
-            _scratch = null;
-            _json = null;
-        }
+        TrimScratch(buffer);
         if (total > PluginProtocol.UdpMaxFrameBytes)
             return null;
         var frame = GC.AllocateUninitializedArray<byte>(total);
