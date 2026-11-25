@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildCompiled } from "../build/compile";
@@ -13,6 +13,7 @@ const shared = {
 describe("buildCompiled options", () => {
 	const build = spyOn(Bun, "build");
 	afterEach(() => build.mockReset());
+	afterAll(() => build.mockRestore());
 
 	for (const target of Object.keys(COMPILE_TARGETS) as CompileKey[]) {
 		test(`${target} compiles with bytecode and splitting on`, async () => {
