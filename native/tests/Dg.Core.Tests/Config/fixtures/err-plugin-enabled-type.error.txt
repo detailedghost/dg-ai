@@ -1,0 +1,1 @@
+dg config: config.toml:2: plugins.acme.enabled must be a boolean, got "true". Next: run dg config edit, or dg config set plugins.acme.enabled <value>.

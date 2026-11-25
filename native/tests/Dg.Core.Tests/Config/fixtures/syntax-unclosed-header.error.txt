@@ -1,0 +1,1 @@
+dg config: config.toml:1: Expected ']' to close a table header but found (0x0A). Next: run dg config edit, or dg config set <key> <value>.

@@ -1,0 +1,42 @@
+[browser]
+mode = "local"
+
+[front]
+enabled = false
+
+[hooks.pre-commit]
+lint = "bun run lint"
+test = "bun test"
+
+[install]
+cli_only = true
+
+[refs]
+default_repo = "detailedghost/dg-ai"
+
+[refs.aliases]
+dg = "detailedghost/dg-ai"
+
+[inbox.gmail]
+clientId = "abc"
+clientSecret = { credential = "dg-config/inbox-gmail-client-secret" }
+
+[ssms]
+allow_send = true
+
+[ssms.google]
+send_enabled = true
+
+[plugins.acme]
+enabled = false
+allow_remote = true
+source = "https://example.com/acme"
+
+[plugins.acme.settings]
+region = "us-east-1"
+api_key = { credential = "acme/api-key" }
+retries = 3
+tags = ["a", "b"]
+
+[meta.migrated]
+hooks = "2026-01-01"

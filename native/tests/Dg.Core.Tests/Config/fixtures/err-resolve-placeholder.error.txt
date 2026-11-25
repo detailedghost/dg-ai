@@ -1,0 +1,1 @@
+dg config: config.toml:2: inbox.gmail.clientId must not hold a {{resolve:...}} placeholder. Next: run dg config edit, or dg config set inbox.gmail.clientId <value>.

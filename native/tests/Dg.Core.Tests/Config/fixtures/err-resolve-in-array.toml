@@ -1,0 +1,3 @@
+[plugins.acme.settings]
+tokens = ["a", "b"]
+nested = [{ note = "{{resolve:x}}" }]

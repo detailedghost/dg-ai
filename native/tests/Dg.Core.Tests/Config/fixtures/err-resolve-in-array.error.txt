@@ -1,0 +1,1 @@
+dg config: config.toml:3: plugins.acme.settings.nested.0.note must not hold a {{resolve:...}} placeholder. Next: run dg config edit, or dg config set plugins.acme.settings.nested.0.note <value>.

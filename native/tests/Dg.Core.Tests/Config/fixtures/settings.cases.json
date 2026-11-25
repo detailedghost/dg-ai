@@ -1,0 +1,208 @@
+[
+  {
+    "name": "default-bool",
+    "type": "bool",
+    "key": "front.enabled",
+    "toml": "",
+    "env": {}
+  },
+  {
+    "name": "default-string",
+    "type": "string",
+    "key": "browser.mode",
+    "toml": "",
+    "env": {}
+  },
+  {
+    "name": "toml-bool",
+    "type": "bool",
+    "key": "front.enabled",
+    "toml": "[front]\nenabled = false\n",
+    "env": {}
+  },
+  {
+    "name": "toml-string",
+    "type": "string",
+    "key": "browser.mode",
+    "toml": "[browser]\nmode = \"local\"\n",
+    "env": {}
+  },
+  {
+    "name": "env-beats-toml",
+    "type": "bool",
+    "key": "front.enabled",
+    "toml": "[front]\nenabled = true\n",
+    "envVar": "DG_FRONT",
+    "env": {
+      "DG_FRONT": "0"
+    }
+  },
+  {
+    "name": "env-yes",
+    "type": "bool",
+    "key": "install.cli_only",
+    "toml": "",
+    "envVar": "DG_CLI_ONLY",
+    "env": {
+      "DG_CLI_ONLY": "YES"
+    }
+  },
+  {
+    "name": "env-off",
+    "type": "bool",
+    "key": "front.enabled",
+    "toml": "",
+    "envVar": "DG_FRONT",
+    "env": {
+      "DG_FRONT": "Off"
+    }
+  },
+  {
+    "name": "env-bad-bool",
+    "type": "bool",
+    "key": "front.enabled",
+    "toml": "",
+    "envVar": "DG_FRONT",
+    "env": {
+      "DG_FRONT": "maybe"
+    }
+  },
+  {
+    "name": "env-empty-bool",
+    "type": "bool",
+    "key": "front.enabled",
+    "toml": "",
+    "envVar": "DG_FRONT",
+    "env": {
+      "DG_FRONT": ""
+    }
+  },
+  {
+    "name": "env-string",
+    "type": "string",
+    "key": "browser.mode",
+    "toml": "",
+    "envVar": "DG_BROWSER_MODE",
+    "env": {
+      "DG_BROWSER_MODE": "ext"
+    }
+  },
+  {
+    "name": "env-unset-falls-to-toml",
+    "type": "string",
+    "key": "browser.mode",
+    "toml": "[browser]\nmode = \"ext\"\n",
+    "envVar": "DG_BROWSER_MODE",
+    "env": {}
+  },
+  {
+    "name": "flag-beats-env",
+    "type": "bool",
+    "key": "front.enabled",
+    "toml": "",
+    "envVar": "DG_FRONT",
+    "flag": true,
+    "env": {
+      "DG_FRONT": "0"
+    }
+  },
+  {
+    "name": "flag-false-beats-toml",
+    "type": "bool",
+    "key": "front.enabled",
+    "toml": "[front]\nenabled = true\n",
+    "flag": false,
+    "env": {}
+  },
+  {
+    "name": "flag-string",
+    "type": "string",
+    "key": "browser.mode",
+    "toml": "[browser]\nmode = \"ext\"\n",
+    "envVar": "DG_BROWSER_MODE",
+    "flag": "local",
+    "env": {
+      "DG_BROWSER_MODE": "auto"
+    }
+  },
+  {
+    "name": "ssms-default",
+    "type": "bool",
+    "key": "ssms.allow_send",
+    "toml": "",
+    "env": {}
+  },
+  {
+    "name": "ssms-toml",
+    "type": "bool",
+    "key": "ssms.google.send_enabled",
+    "toml": "[ssms.google]\nsend_enabled = true\n",
+    "env": {}
+  },
+  {
+    "name": "plugin-allow-remote-default",
+    "type": "bool",
+    "key": "plugins.acme.allow_remote",
+    "toml": "[plugins.acme]\nenabled = true\n",
+    "env": {}
+  },
+  {
+    "name": "plugin-allow-remote-toml",
+    "type": "bool",
+    "key": "plugins.acme.allow_remote",
+    "toml": "[plugins.acme]\nallow_remote = true\n",
+    "env": {}
+  },
+  {
+    "name": "plugin-enabled-toml",
+    "type": "bool",
+    "key": "plugins.acme.enabled",
+    "toml": "[plugins.acme]\nenabled = false\n",
+    "env": {}
+  },
+  {
+    "name": "plugin-setting",
+    "type": "string",
+    "key": "plugins.acme.settings.region",
+    "toml": "[plugins.acme.settings]\nregion = \"us-east-1\"\n",
+    "env": {}
+  },
+  {
+    "name": "plugin-missing",
+    "type": "string",
+    "key": "plugins.nope.source",
+    "toml": "",
+    "env": {}
+  },
+  {
+    "name": "refs-default-repo",
+    "type": "string",
+    "key": "refs.default_repo",
+    "toml": "[refs]\ndefault_repo = \"a/b\"\n",
+    "env": {}
+  },
+  {
+    "name": "bad-key-empty-part",
+    "type": "string",
+    "key": "browser..mode",
+    "toml": "",
+    "env": {}
+  },
+  {
+    "name": "bad-key-unsafe",
+    "type": "string",
+    "key": "inbox.__proto__.x",
+    "toml": "",
+    "env": {}
+  },
+  {
+    "name": "bad-key-beats-env",
+    "type": "bool",
+    "key": "front..enabled",
+    "toml": "",
+    "envVar": "DG_FRONT",
+    "env": {
+      "DG_FRONT": "1"
+    }
+  }
+]

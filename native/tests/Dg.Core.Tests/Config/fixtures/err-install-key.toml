@@ -1,0 +1,3 @@
+[install]
+cli_only = false
+other = 1

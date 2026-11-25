@@ -1,0 +1,1 @@
+dg config: config.toml:1: plugins.a.b is not a valid plugin name; a plugin name has no dot. Next: run dg config edit, or dg config set plugins.<name>.enabled <value>.
