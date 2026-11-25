@@ -1126,4 +1126,22 @@ describe("the release patches cover the front doors", () => {
 			sandbox.cleanup();
 		}
 	});
+
+	test.skipIf(ZSTD === null)("a previous release with no compressed Bun asset skips that key instead of failing the job", () => {
+		const sandbox = createStepSandbox();
+		const releases = join(sandbox.root, "releases");
+		writeFileSync(join(sandbox.root, "bin", "gh"), GH_DOWNLOAD_STUB);
+		seedRelease(releases, "v7.0.0", BUN_KEYS.filter((key) => key !== "linux-arm64").map(compiledName), "old");
+		seedRelease(releases, "v7.0.1", [...BUN_KEYS.map(compiledName), ...FRONT_ASSETS], "new");
+		try {
+			const result = sandbox.run(patchStep, { TAG: "v7.0.1", PREV: "v7.0.0", RELEASES: releases });
+			expect(result.code, result.stderr).toBe(0);
+			const names = readdirSync(join(sandbox.work, "patches"));
+			expect(names).not.toContain(patchName("dg-linux-arm64"));
+			expect(names).toContain(patchName("dg-linux-x64"));
+			expect(result.stdout).toContain("no patch for linux-arm64");
+		} finally {
+			sandbox.cleanup();
+		}
+	});
 });

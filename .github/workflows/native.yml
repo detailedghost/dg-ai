@@ -60,21 +60,11 @@ jobs:
       - name: Install the Bun dependencies
         run: bun install --frozen-lockfile --ignore-scripts
 
-      - name: Generate the route table when its script exists
-        run: |
-          if [ -f scripts/native-routes.ts ]; then
-            bun scripts/native-routes.ts
-          else
-            echo "scripts/native-routes.ts is not present yet; skipping"
-          fi
+      - name: Generate the route table
+        run: bun scripts/native-routes.ts
 
-      - name: Generate the completion copy when its script exists
-        run: |
-          if [ -f scripts/native-completion.ts ]; then
-            bun scripts/native-completion.ts
-          else
-            echo "scripts/native-completion.ts is not present yet; skipping"
-          fi
+      - name: Generate the completion copy
+        run: bun scripts/native-completion.ts
 
       - name: Run the native tests
         working-directory: native
