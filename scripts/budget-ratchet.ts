@@ -18,7 +18,6 @@ export type Row = {
 };
 
 const DEFAULT_SLACK_PCT = 5;
-const DEFAULT_LATENCY_SLACK_PCT = 10;
 const COMMENT_MARKER = "<!-- budget-ratchet -->";
 const BUDGET_FILES = [
 	"scripts/ram-budgets.json",
@@ -58,9 +57,16 @@ export function parseRemovals(prBody: string): string[] {
 	return out;
 }
 
-function isLatency(name: string): boolean {
+function floorSignificant(value: number): number {
+	if (value >= 100) return Math.floor(value);
+	const scale = 10 ** (2 - Math.floor(Math.log10(value)));
+	return Math.floor(value * scale) / scale;
+}
+
+/** True for a latency or memory-growth budget, which gates overruns only. */
+function isCeiling(name: string): boolean {
 	const last = name.slice(name.lastIndexOf("/") + 1);
-	return /latency/i.test(name) || /^(ms|p\d+)$/i.test(last) || /ms(budget)?$/i.test(last);
+	return /latency/i.test(name) || /^(ms|p\d+)$/i.test(last) || /ms(budget)?$/i.test(last) || /^growthMB$/i.test(last);
 }
 
 export function ratchet(input: {
@@ -68,11 +74,9 @@ export function ratchet(input: {
 	measured: Flat;
 	prBody: string;
 	slackPct?: number;
-	latencySlackPct?: number;
 	baseBudgets?: Flat;
 }): RatchetResult {
 	const slackPct = input.slackPct ?? DEFAULT_SLACK_PCT;
-	const latencySlackPct = input.latencySlackPct ?? DEFAULT_LATENCY_SLACK_PCT;
 	const increases = parseIncreases(input.prBody);
 	const removals = parseRemovals(input.prBody);
 	const failures: string[] = [];
@@ -103,10 +107,10 @@ export function ratchet(input: {
 			);
 			continue;
 		}
-		const pct = isLatency(budget) ? latencySlackPct : slackPct;
-		if (value > 0 && (limit - value) * 100 > pct * value)
+		if (isCeiling(budget)) continue;
+		if (value > 0 && (limit - value) * 100 > slackPct * value)
 			failures.push(
-				`${budget}: measured ${value} leaves more than ${pct}% slack under the budget ${limit}; lower the budget to ${Math.floor(value * (1 + pct / 100))}`,
+				`${budget}: measured ${value} leaves more than ${slackPct}% slack under the budget ${limit}; lower the budget to ${floorSignificant(value * (1 + slackPct / 100))}`,
 			);
 	}
 
