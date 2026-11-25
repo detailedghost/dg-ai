@@ -34,6 +34,7 @@ public sealed class CoreLauncherTests : IDisposable
     [Fact]
     public void Check_FileWithoutExecuteBit_ReturnsOneLineWithReinstallCommand()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the fake dg-core is a POSIX script");
         var path = Script("exit 0", UnixFileMode.UserRead | UnixFileMode.UserWrite);
 
         var line = CoreLauncher.Check(path);
@@ -54,6 +55,7 @@ public sealed class CoreLauncherTests : IDisposable
     [Fact]
     public void Check_ExecutableFile_ReturnsNull()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the fake dg-core is a POSIX script");
         Assert.Null(CoreLauncher.Check(Script("exit 0")));
     }
 
@@ -68,6 +70,7 @@ public sealed class CoreLauncherTests : IDisposable
     [Fact]
     public void Launch_NonExecutableCore_Returns126()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the fake dg-core is a POSIX script");
         var launcher = new CoreLauncher(Script("exit 0", UnixFileMode.UserRead | UnixFileMode.UserWrite));
 
         Assert.Equal(126, launcher.Launch([]));
@@ -76,6 +79,7 @@ public sealed class CoreLauncherTests : IDisposable
     [Fact]
     public void Spawn_ChildScript_ReceivesArgvAndEnvAndReturnsItsExitCode()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the fake dg-core is a POSIX script");
         var log = Path.Combine(_dir, "log");
         var launcher = new CoreLauncher(Script($"printf '%s|' \"$@\" > '{log}'\nprintf '%s' \"$DG_ROUTING_PROBE\" >> '{log}'\nexit 7"));
         Environment.SetEnvironmentVariable("DG_ROUTING_PROBE", "probe-value");
