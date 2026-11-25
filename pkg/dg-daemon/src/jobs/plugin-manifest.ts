@@ -5,7 +5,7 @@ import { parseManifest, type PluginManifest } from "../../../common/src/plugins/
 import { type DeclaredJob, type DeclarationContext, parseJobDeclaration } from "./declaration";
 
 export const MANIFEST_FILE = "plugin.toml";
-const MAX_MANIFEST_BYTES = 64 * 1024;
+export const MAX_MANIFEST_BYTES = 64 * 1024;
 
 export type FolderManifest = {
 	manifest: PluginManifest;
@@ -39,6 +39,12 @@ export function jobFromManifest(manifest: PluginManifest, context: DeclarationCo
 	return declaration.jobs[0] as DeclaredJob;
 }
 
+/** Parses a plugin.toml text into the manifest and the dg block that stands in for package.json. */
+export function parseFolderManifest(text: string, file: string): FolderManifest {
+	const manifest = parseManifest(text, file);
+	return { manifest, dg: manifestDg(manifest) };
+}
+
 /** Reads plugin.toml from a folder; undefined when the folder has none. */
 export function readFolderManifest(dir: string): FolderManifest | undefined {
 	const file = join(dir, MANIFEST_FILE);
@@ -46,6 +52,11 @@ export function readFolderManifest(dir: string): FolderManifest | undefined {
 	if (statSync(file).size > MAX_MANIFEST_BYTES) {
 		throw new DgCliError(`dg job: ${file} is larger than 64 KiB. Next: shrink ${MANIFEST_FILE}.`);
 	}
-	const manifest = parseManifest(readFileSync(file, "utf8"), file);
-	return { manifest, dg: manifestDg(manifest) };
+	return parseFolderManifest(readFileSync(file, "utf8"), file);
+}
+
+export function withManifestPin<T extends object>(record: T, manifest: PluginManifest | undefined): T {
+	if (!manifest) return record;
+	const { pin: _stale, ...rest } = record as T & { pin?: unknown };
+	return (manifest.pin ? { ...rest, pin: manifest.pin } : rest) as T;
 }

@@ -40,6 +40,14 @@ import {
 	describeCredentials,
 	parseJobDeclaration,
 } from "../jobs/declaration";
+import type { PluginManifest } from "../../../common/src/plugins/manifest";
+import {
+	MANIFEST_FILE,
+	MAX_MANIFEST_BYTES,
+	parseFolderManifest,
+	readFolderManifest,
+	withManifestPin,
+} from "../jobs/plugin-manifest";
 import { sanitize } from "../jobs/sanitize";
 import {
 	findMarkRecord,
@@ -593,6 +601,23 @@ export async function readBlock(
 	}
 }
 
+async function readManifestText(
+	deps: JobSourceDeps,
+	cloneDir: string,
+	sha: string,
+	prefix: string,
+): Promise<string | undefined> {
+	const listing = await git(deps, ["ls-tree", "-l", "-z", sha, "--", MANIFEST_FILE], cloneDir);
+	const [header] = listing.stdout.split("\t");
+	const [mode, , , size] = header.trim().split(/\s+/);
+	if (listing.code !== 0 || !mode) return undefined;
+	if (!mode.startsWith("100")) stop(`${MANIFEST_FILE} is not a regular file`, prefix);
+	if (Number(size) > MAX_MANIFEST_BYTES) stop(`${MANIFEST_FILE} is larger than 64 KiB`, prefix);
+	const shown = await git(deps, ["show", `${sha}:${MANIFEST_FILE}`], cloneDir);
+	if (shown.code !== 0) stop(`could not read ${MANIFEST_FILE}`, prefix);
+	return shown.stdout;
+}
+
 export type DeclaredAt = { paths: DgPaths; source: string; cloneDir: string; url: string };
 
 export async function readDeclared(
@@ -602,9 +627,12 @@ export async function readDeclared(
 	prefix: string,
 ): Promise<{
 	pkg: { dg: unknown };
+	manifest?: PluginManifest;
 	declaration: Extract<Declaration, { ok: true }>;
 }> {
-	const pkg = await readBlock(deps, at.cloneDir, sha, at.url, prefix);
+	const text = await readManifestText(deps, at.cloneDir, sha, prefix);
+	const found = text === undefined ? undefined : parseFolderManifest(text, `${displayUrl(at.url)}:${MANIFEST_FILE}`);
+	const pkg = found ? { dg: found.dg } : await readBlock(deps, at.cloneDir, sha, at.url, prefix);
 	if (!isRecord(pkg) || !Object.hasOwn(pkg, "dg")) {
 		stop(`${displayUrl(at.url)} has no "dg" key in package.json`, prefix);
 	}
@@ -615,7 +643,7 @@ export async function readDeclared(
 	});
 	if (!declaration.ok) return stop(declaration.error, prefix);
 	if (declaration.jobs.length === 0) stop(`${displayUrl(at.url)} declares no jobs`, prefix);
-	return { pkg: pkg as { dg: unknown }, declaration };
+	return { pkg: pkg as { dg: unknown }, manifest: found?.manifest, declaration };
 }
 
 export function readState(paths: DgPaths): { config: Record<string, unknown>; registry: NamedRegistry } {
@@ -757,7 +785,7 @@ async function addGit(
 		const head = (await git(deps, ["rev-parse", "HEAD"], cloneDir)).stdout.trim();
 		if (!FULL_SHA.test(head)) stop("git did not give a full commit id");
 
-		const { pkg, declaration } = await readDeclared(
+		const { pkg, manifest, declaration } = await readDeclared(
 			deps,
 			{ paths, source, cloneDir, url },
 			head,
@@ -817,15 +845,18 @@ async function addGit(
 
 		await ensureMigrated(paths);
 		release();
-		const record: GitSourceRecord = {
-			kind: "git",
-			url,
-			ref,
-			sha: head,
-			jobs: resolved.jobs.map(({ name }) => name),
-			declarationHash: declarationHash(pkg.dg),
-			credentials: declaration.credentials,
-		};
+		const record: GitSourceRecord = withManifestPin(
+			{
+				kind: "git",
+				url,
+				ref,
+				sha: head,
+				jobs: resolved.jobs.map(({ name }) => name),
+				declarationHash: declarationHash(pkg.dg),
+				credentials: declaration.credentials,
+			},
+			manifest,
+		);
 		try {
 			await withConfigLock(paths, () => commitToDisk(paths, source, record, resolved.jobs));
 		} catch (err) {
@@ -906,8 +937,13 @@ export function readFolderDeclared(
 	source: string,
 	dir: string,
 	prefix: string,
-): { pkg: { dg: unknown }; declaration: Extract<Declaration, { ok: true }> } {
-	const pkg = readFolderPackage(dir, prefix);
+): {
+	pkg: { dg: unknown };
+	manifest?: PluginManifest;
+	declaration: Extract<Declaration, { ok: true }>;
+} {
+	const found = readFolderManifest(dir);
+	const pkg = found ? { dg: found.dg } : readFolderPackage(dir, prefix);
 	const declaration = parseJobDeclaration(pkg, {
 		source,
 		sourceDir: dir,
@@ -915,7 +951,7 @@ export function readFolderDeclared(
 	});
 	if (!declaration.ok) return stop(declaration.error, prefix);
 	if (declaration.jobs.length === 0) stop(`${dir} declares no jobs`, prefix);
-	return { pkg, declaration };
+	return { pkg, manifest: found?.manifest, declaration };
 }
 
 export type SourceState = "ok" | "changed" | "missing" | "invalid";

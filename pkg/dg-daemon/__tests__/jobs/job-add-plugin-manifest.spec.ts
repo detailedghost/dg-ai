@@ -35,6 +35,8 @@ const manifest = (extra = "", args = '["--fast"]') =>
 		`args = ${args}`,
 	].join("\n");
 
+const argvOf = () => readConfig(sb).jobs.bot.argv as string[];
+
 describe("job add of a folder with a plugin.toml", () => {
 	it("stores the manifest argv and the sha256 pin", async () => {
 		sb = box.create();
@@ -45,7 +47,7 @@ describe("job add of a folder with a plugin.toml", () => {
 		const result = await runJob(["add", dir], withBun(sb));
 
 		expect(result.code).toBe(0);
-		expect(readConfig(sb).jobs.bot).toMatchObject({ argv: ["./bin/run", "--fast"] });
+		expect(argvOf()).toEqual([expect.stringMatching(/\/bin\/run$/), "--fast"]);
 		const record = readRegistry(sb).toolkit;
 		expect(record.pin).toEqual({ kind: "sha256", value: SHA256 });
 		expect(record.jobs).toEqual(["bot"]);
@@ -89,7 +91,7 @@ describe("job add of a folder with a plugin.toml", () => {
 		const result = await runJob(["update", "bot"], withBun(sb));
 
 		expect(result.code).toBe(0);
-		expect(readConfig(sb).jobs.bot).toMatchObject({ argv: ["./bin/run", "--slow"] });
+		expect(argvOf()).toEqual([expect.stringMatching(/\/bin\/run$/), "--slow"]);
 		expect(readRegistry(sb).toolkit.pin).toEqual({ kind: "commit", value: COMMIT });
 	});
 });
@@ -103,7 +105,7 @@ describe("job add of a repository with a plugin.toml", () => {
 
 		await addFixture(sb, repo, "tools");
 
-		expect(readConfig(sb).jobs.bot).toMatchObject({ argv: ["./bin/run", "--fast"] });
+		expect(argvOf()).toEqual([expect.stringMatching(/\/bin\/run$/), "--fast"]);
 		const record = readRegistry(sb).tools;
 		expect(record.pin).toEqual({ kind: "commit", value: COMMIT });
 		expect(record.sha).toBe(repo.sha);
@@ -137,7 +139,7 @@ describe("job add of a repository with a plugin.toml", () => {
 		const result = await runJob(["update", "bot"], withBun(sb));
 
 		expect(result.code).toBe(0);
-		expect(readConfig(sb).jobs.bot).toMatchObject({ argv: ["./bin/run", "--slow"] });
+		expect(argvOf()).toEqual([expect.stringMatching(/\/bin\/run$/), "--slow"]);
 		const record = readRegistry(sb).tools;
 		expect(record.sha).toBe(next);
 		expect(record.pin).toEqual({ kind: "sha256", value: SHA256 });
