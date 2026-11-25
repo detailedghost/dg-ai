@@ -1,6 +1,6 @@
 # Lean baseline and gates
 
-Numbers that the lean gates compare against, and the exact commands to re-run each gate on your machine. The budgets live in `scripts/*.json`. The gates run on every pull request in `.github/workflows/compiled-dg.yml` (Linux x64 gates; macOS and Windows report only). `.github/workflows/budgets.yml` then runs the ratchet over the measurements.
+Numbers that the lean gates compare against, and the exact commands to re-run each gate on your machine. The budgets live in `scripts/*.json`, `native/budgets/*.json` and `native/bench/Dg.Bench/budgets/*.json`. The gates run on every pull request in `.github/workflows/compiled-dg.yml` (Linux x64 gates; macOS and Windows report only). `.github/workflows/budgets.yml` then runs the ratchet over the measurements.
 
 ## Baseline
 
