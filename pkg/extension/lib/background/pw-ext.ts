@@ -836,6 +836,11 @@ export function createPwExtHandler({
 		return sessionId ? control.valuesAllowed(sessionId, valuesSiteOf(tab.url)) : false;
 	}
 
+	/** Drops what pw --ext remembers about a session that has ended. */
+	function forget(sessionId: string): void {
+		for (const key of deniedThrough.keys()) if (key.startsWith(`${sessionId}\n`)) deniedThrough.delete(key);
+	}
+
 	/** Ends a session's control at once: verbs in flight end, unmask and value grants and sites go, and its tabs return to the person; Web MCP grants stay. */
 	async function stop(sessionId: string): Promise<void> {
 		halted.add(sessionId);
@@ -844,7 +849,7 @@ export function createPwExtHandler({
 			run.stopped();
 		}
 		await control.stop(sessionId);
-		for (const key of deniedThrough.keys()) if (key.startsWith(`${sessionId}\n`)) deniedThrough.delete(key);
+		forget(sessionId);
 		await Promise.allSettled([
 			grants.forget(sessionId),
 			forgetAgentTabsAndShims({ browserApi: api, storage: api.storage, agentTabs, sessionId, ...(lock ? { lock } : {}) }),
@@ -2013,5 +2018,5 @@ export function createPwExtHandler({
 		if (running.size === 0) live.delete(sessionId);
 		return halted.has(sessionId) ? STOPPED : outcome;
 	};
-	return Object.assign(handler, { stop, stopTab });
+	return Object.assign(handler, { stop, stopTab, forget });
 }
