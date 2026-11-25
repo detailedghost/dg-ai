@@ -283,8 +283,6 @@ Example, a form and then its buttons:
 3. `approve B: tighten the spacing` builds round 3 from round 2 B.
 4. `approve D` ends the chain. `--publish` publishes round 3 D only.
 
-Details: [references/local-ui.md](local-ui.md).
-
 ## Choosing a branch
 
 The three branches produce very different artifacts. A single state machine or data model is

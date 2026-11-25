@@ -48,7 +48,7 @@ Start the before stack and the after stack yourself, then put their URLs in the 
 Set it only when a prototype page is already running.
 The column says there is no prototype target when the field is absent.
 
-`record` is the committed `slice_N_accepted.json` that `spec prototype-ref` copied into the bundle. See Layout check. `rootSelector` is optional and defaults to `[data-verify-root]`.
+`record` is the committed `slice_N_accepted.json` that `spec prototype-ref` copied into the bundle. See [layout-check.md](layout-check.md). `rootSelector` is optional and defaults to `[data-verify-root]`.
 
 `tests` is the suite result for the change. A `cmd` array is an argv that runs without a shell. Only put a command in it that you would run yourself. A `summary` is enough when the suite already ran.
 

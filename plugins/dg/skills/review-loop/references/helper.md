@@ -30,7 +30,7 @@ Review-thread and bot-review operations go through
 the same host approvals.
 `dg address` is no longer GitHub-only — its review-thread,
 bot-review and CI-failure subcommands work against GitLab too — but the
-seven Copilot-bot subcommands this skill calls on it below are gated on
+seven Copilot-bot subcommands this skill calls on it are gated on
 Copilot specifically, not on merely having some reviewer: six refuse
 outright on GitLab (`EXIT.UNSUPPORTED`), and `check-copilot` alone still
 answers with its existing `{available: false, reason}` JSON rather than
