@@ -282,6 +282,19 @@ describe("type in the page", () => {
 		expect(pwExtInputAction({ kind: "type", text: "x" }, URL_OK)).toEqual({ error: 'textbox is read-only or disabled.' });
 	});
 
+	it("stops and reports when the page cancels a key", () => {
+		page(`<input id="n">`);
+		const field = el<HTMLInputElement>("#n");
+		field.focus();
+		field.addEventListener("keydown", (event) => {
+			if ((event as unknown as KeyboardEvent).key === "b") event.preventDefault();
+		});
+		expect(pwExtInputAction({ kind: "type", text: "abc" }, URL_OK)).toEqual({
+			error: 'Typed only 1 of 3 characters into textbox; the page blocked the rest.',
+		});
+		expect(field.value).toBe("a");
+	});
+
 	it("submits the form after typing when asked", () => {
 		page(`<form id="f"><input id="n"><button type="submit">Send</button></form>`);
 		el<HTMLInputElement>("#n").focus();
