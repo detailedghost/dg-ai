@@ -31,8 +31,20 @@ export function parsePin(text: string): Pin {
 export function checkSource(source: string): void {
 	if (source === "" || source.startsWith("-") || /^ext::/i.test(source))
 		throw new DgCliError(`dg plugin: ${source} is not a usable source. Next: pass a git url or a folder path.`);
-	if (/^[a-z][a-z0-9+.-]*:\/\/[^/@]*:[^/@]*@/i.test(source))
-		throw new DgCliError("dg plugin: the source holds a password in its URL. Next: remove it; dg never stores secrets in config.toml.");
+	if (holdsCredentials(source))
+		throw new DgCliError("dg plugin: the source holds credentials in its URL. Next: remove them; dg never stores secrets in config.toml.");
+}
+
+function holdsCredentials(source: string): boolean {
+	if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(source)) return false;
+	let url: URL;
+	try {
+		url = new URL(source);
+	} catch {
+		return /^[a-z][a-z0-9+.-]*:\/\/[^/@]*:[^/@]*@/i.test(source);
+	}
+	const web = url.protocol === "http:" || url.protocol === "https:";
+	return url.password !== "" || (web && url.username !== "");
 }
 
 function isFolder(source: string): boolean {
