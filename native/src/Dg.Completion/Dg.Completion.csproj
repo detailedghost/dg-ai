@@ -3,6 +3,9 @@
     <InternalsVisibleTo Include="Dg.Completion.Tests" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="bin/completion/tree.json" LogicalName="completion-tree.json" Condition="Exists('bin/completion/tree.json')" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Dg.Core/Dg.Core.csproj" />
   </ItemGroup>
 </Project>
