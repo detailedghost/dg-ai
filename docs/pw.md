@@ -46,9 +46,8 @@ Order of choice, first match wins:
 
 `DG_BROWSER=auto` and `browser.mode = "auto"` force nothing. Any other
 `DG_BROWSER` value makes `dg pw` stop with `DG_BROWSER must be ext, local or
-auto`. The browser finders of `demo` and `verify` still read `DG_BROWSER` as a
-browser binary path. To name a binary for `dg pw`, set `DG_VERIFY_BROWSER`
-instead.
+auto`. The browser finders of `demo` and `verify` ignore `DG_BROWSER` when it
+is `ext`, `local` or `auto`. To name a browser binary, set `DG_VERIFY_BROWSER`.
 
 Set the mode for every shell with `dg config set browser.mode local`, or for
 one command with `DG_BROWSER=local dg pw ...`. See [config](config.md).
