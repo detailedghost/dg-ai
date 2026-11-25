@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Dg.Core.Paths;
 using Dg.Core.Plugins.Contract;
 using Dg.Core.Plugins.Manifest;
@@ -6,16 +5,13 @@ using Dg.Core.Transport.Tcp;
 
 namespace Dg.Core.Plugins.Runtime;
 
-public sealed partial class PluginManifestStore(DgPaths paths) : ITcpManifestResolver
+public sealed class PluginManifestStore(DgPaths paths) : ITcpManifestResolver
 {
     private const string ManifestFile = "plugin.toml";
 
-    [GeneratedRegex(@"^[a-z][a-z0-9-]{0,63}\z")]
-    private static partial Regex NamePattern();
-
     public string Folder(string name)
     {
-        if (!NamePattern().IsMatch(name))
+        if (!PluginNames.IsValid(name))
             throw new PluginContractException(
                 PluginRuntimeCodes.BadName,
                 $"dg plugin: {name} is not a plugin name. Next: use lowercase letters, digits and hyphens, starting with a letter."
@@ -25,11 +21,8 @@ public sealed partial class PluginManifestStore(DgPaths paths) : ITcpManifestRes
 
     public PluginManifest? TryLoad(string name)
     {
-        var folder = Folder(name);
-        foreach (var file in new[] { Path.Combine(folder, ManifestFile), Path.Combine(folder, "src", ManifestFile) })
-            if (File.Exists(file))
-                return ManifestParser.Parse(File.ReadAllText(file), file);
-        return null;
+        var file = Path.Combine(Folder(name), "src", ManifestFile);
+        return File.Exists(file) ? ManifestParser.Parse(File.ReadAllText(file), file) : null;
     }
 
     public PluginManifest Manifest(string plugin) =>

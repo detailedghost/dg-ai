@@ -1,22 +1,19 @@
 using System.Text;
-using System.Text.RegularExpressions;
 using Dg.Core.Config;
 using Dg.Core.Paths;
 using Dg.Core.Plugins.Runtime;
+using PluginNames = Dg.Core.Plugins.Manifest.PluginNames;
 
 namespace Dg.Plugins;
 
-internal sealed partial class PluginStore(DgPaths paths, DgPathSeams seams)
+internal sealed class PluginStore(DgPaths paths, DgPathSeams seams)
 {
     private const string RecordFile = "dg-plugin.json";
-
-    [GeneratedRegex(@"^[a-z][a-z0-9-]{0,63}\z")]
-    private static partial Regex NamePattern();
 
     public string Root => Path.Combine(paths.DataDir, "plugins");
 
     public string Folder(string name) =>
-        NamePattern().IsMatch(name) ? Path.Combine(Root, name) : throw new NotNativeException();
+        PluginNames.IsValid(name) ? Path.Combine(Root, name) : throw new NotNativeException();
 
     public string Src(string name) => Path.Combine(Folder(name), "src");
 
@@ -52,7 +49,7 @@ internal sealed partial class PluginStore(DgPaths paths, DgPathSeams seams)
         if (!Directory.Exists(Root))
             return names;
         foreach (var dir in new DirectoryInfo(Root).EnumerateDirectories())
-            if (dir.LinkTarget is null && NamePattern().IsMatch(dir.Name) && File.Exists(Path.Combine(dir.FullName, RecordFile)))
+            if (dir.LinkTarget is null && PluginNames.IsValid(dir.Name) && File.Exists(Path.Combine(dir.FullName, RecordFile)))
                 names.Add(dir.Name);
         names.Sort(StringComparer.Ordinal);
         return names;

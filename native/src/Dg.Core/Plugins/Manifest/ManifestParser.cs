@@ -26,10 +26,6 @@ public static partial class ManifestParser
     ];
     private static readonly string[] Kinds = ["hook", "job", "skill"];
     private static readonly string[] Transports = ["ipc", "http", "tcp", "udp"];
-    private static readonly string[] LoopbackHosts = ["127.0.0.1", "localhost", "::1", "[::1]"];
-
-    [GeneratedRegex(@"^[a-z][a-z0-9-]{0,63}\z")]
-    private static partial Regex NamePattern();
 
     [GeneratedRegex(@"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\z")]
     private static partial Regex SemverPattern();
@@ -73,7 +69,7 @@ public static partial class ManifestParser
         {
             OnlyKeys("", root, RootKeys);
             var name = RequiredString("name", Get(root, "name"));
-            if (!NamePattern().IsMatch(name))
+            if (!PluginNames.IsValid(name))
                 throw Fail("name", "name must be lowercase letters, digits and hyphens, starting with a letter");
             var version = RequiredString("version", Get(root, "version"));
             if (!SemverPattern().IsMatch(version))
@@ -229,6 +225,8 @@ public static partial class ManifestParser
             {
                 if (remote)
                     throw Fail("remote", "remote needs the http transport with an https endpoint");
+                if (endpoint is not null && !IpcEndpoint.IsBareFileName(endpoint))
+                    throw Fail("endpoint", $"an ipc endpoint must be a plain file name, got {endpoint}");
                 return;
             }
             if (endpoint is null)
@@ -244,7 +242,7 @@ public static partial class ManifestParser
                     );
                 if (remote && url.Scheme != "https")
                     throw Fail("endpoint", "a remote endpoint must use https");
-                if (!remote && Array.IndexOf(LoopbackHosts, url.Host) < 0)
+                if (!remote && !LoopbackEndpoint.IsLoopbackHost(url.Host))
                     throw Fail(
                         "endpoint",
                         $"endpoint host {url.Host} is not loopback; set remote = true in plugin.toml and allow_remote = true in config.toml"
@@ -257,7 +255,7 @@ public static partial class ManifestParser
             if (!match.Success || !int.TryParse(match.Groups[2].ValueSpan, out var port) || port is < 1 or > 65535)
                 throw Fail("endpoint", $"endpoint must be host:port for the {transportText} transport, got {endpoint}");
             var host = match.Groups[1].Value;
-            if (Array.IndexOf(LoopbackHosts, host) < 0)
+            if (!LoopbackEndpoint.IsLoopbackHost(host))
                 throw Fail(
                     "endpoint",
                     $"endpoint host {host} is not loopback; {transportText} plugins are local only, use the http transport with remote = true"

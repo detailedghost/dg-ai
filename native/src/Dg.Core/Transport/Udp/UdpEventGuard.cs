@@ -16,7 +16,7 @@ public static class UdpEventGuard
             throw Refuse(manifest, "a hook needs a reply and udp carries events only");
         if (manifest.Remote)
             throw Refuse(manifest, "udp is loopback only");
-        if (manifest.Endpoint is not { } endpoint || !IPEndPoint.TryParse(endpoint, out var parsed))
+        if (manifest.Endpoint is not { } endpoint || !LoopbackEndpoint.TryParse(endpoint, out var parsed))
             throw Refuse(manifest, "the endpoint must be a loopback ip:port");
         if (!IPAddress.IsLoopback(parsed.Address) || parsed.Port is < 1 or > 65535)
             throw Refuse(manifest, "the endpoint must be a loopback ip:port");

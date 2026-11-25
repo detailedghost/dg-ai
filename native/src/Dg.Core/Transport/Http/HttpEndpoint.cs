@@ -6,11 +6,6 @@ namespace Dg.Core.Transport.Http;
 
 internal static class HttpEndpoint
 {
-    private static readonly FrozenSet<string> LoopbackHosts = FrozenSet.ToFrozenSet(
-        ["127.0.0.1", "localhost", "::1", "[::1]"],
-        StringComparer.OrdinalIgnoreCase
-    );
-
     public static FrozenDictionary<string, Uri> Resolve(PluginManifest manifest, bool allowRemote)
     {
         var name = manifest.Name;
@@ -40,7 +35,7 @@ internal static class HttpEndpoint
         {
             if (url.Scheme != Uri.UriSchemeHttp && url.Scheme != Uri.UriSchemeHttps)
                 throw Refused(name, "endpoint must be an http or https URL. Next: fix endpoint in plugin.toml.");
-            if (!LoopbackHosts.Contains(url.Host))
+            if (!LoopbackEndpoint.IsLoopbackHost(url.Host))
                 throw Refused(
                     name,
                     $"endpoint host {url.Host} is not loopback. Next: set remote = true in plugin.toml and allow_remote = true in config.toml."

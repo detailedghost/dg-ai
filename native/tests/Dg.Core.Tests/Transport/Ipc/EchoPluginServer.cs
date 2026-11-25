@@ -14,16 +14,22 @@ internal sealed class EchoPluginServer : IAsyncDisposable
     private readonly Task _accept;
     private int _accepted;
 
-    public EchoPluginServer(UnixFileMode mode = UnixFileMode.UserRead | UnixFileMode.UserWrite)
+    private readonly bool _ownsDirectory;
+
+    public EchoPluginServer(UnixFileMode mode = UnixFileMode.UserRead | UnixFileMode.UserWrite, string? directory = null)
     {
-        Directory = System.IO.Directory.CreateTempSubdirectory("dgp").FullName;
-        SocketPath = Path.Combine(Directory, "p.sock");
+        _ownsDirectory = directory is null;
+        Directory = directory ?? System.IO.Directory.CreateTempSubdirectory("dgp").FullName;
+        System.IO.Directory.CreateDirectory(Directory);
+        SocketPath = Path.Combine(Directory, SocketFile);
         _listener.Bind(new UnixDomainSocketEndPoint(SocketPath));
         if (!OperatingSystem.IsWindows())
             File.SetUnixFileMode(SocketPath, mode);
         _listener.Listen(8);
         _accept = Task.Run(AcceptLoop);
     }
+
+    public const string SocketFile = "p.sock";
 
     public string Directory { get; }
 
@@ -51,7 +57,10 @@ internal sealed class EchoPluginServer : IAsyncDisposable
             await _accept;
         }
         catch (Exception) { }
-        System.IO.Directory.Delete(Directory, true);
+        if (_ownsDirectory)
+            System.IO.Directory.Delete(Directory, true);
+        else
+            File.Delete(SocketPath);
     }
 
     private async Task AcceptLoop()
