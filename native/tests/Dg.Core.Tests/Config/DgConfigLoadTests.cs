@@ -45,16 +45,16 @@ public sealed class DgConfigLoadTests : IDisposable
     [Fact]
     public void Load_BadKey_NamesFileLineKeyAndNextStep()
     {
-        WriteConfig("[browser]\nmode = \"ext\"\ncolour = \"red\"\n");
+        WriteConfig("[browser]\nmode = \"ext\"\ncolor = \"red\"\n");
 
         var error = DgConfig.Load(Env()).Error;
 
         Assert.NotNull(error);
         Assert.Equal(Path.Combine(_home, "config", "config.toml"), error.File);
         Assert.Equal(3, error.Line);
-        Assert.Equal("browser.colour", error.Key);
+        Assert.Equal("browser.color", error.Key);
         Assert.Equal(
-            $"dg config: {error.File}:3: browser.colour is not a dg config key. Next: run dg config edit, or dg config set browser.<key> <value>.",
+            $"dg config: {error.File}:3: browser.color is not a dg config key. Next: run dg config edit, or dg config set browser.<key> <value>.",
             ConfigErrorText.Render(error)
         );
     }

@@ -14,6 +14,7 @@ internal sealed class LoopbackServer : IAsyncDisposable
     private readonly Func<SeenRequest, Reply> _handler;
     private readonly CancellationTokenSource _stop = new();
     private readonly List<SeenRequest> _seen = [];
+    private readonly ServerFault _fault = new();
     private int _connections;
 
     public LoopbackServer(Func<SeenRequest, Reply> handler)
@@ -40,6 +41,7 @@ internal sealed class LoopbackServer : IAsyncDisposable
     {
         await _stop.CancelAsync();
         _listener.Stop();
+        _fault.ThrowIfFaulted();
     }
 
     private async Task AcceptLoopAsync()
@@ -112,7 +114,10 @@ internal sealed class LoopbackServer : IAsyncDisposable
                 await stream.WriteAsync(response, _stop.Token);
             }
         }
-        catch (Exception) { }
+        catch (Exception ex)
+        {
+            _fault.Record(ex);
+        }
     }
 
     private static int IndexOfHeadEnd(byte[] buffer, int filled) =>

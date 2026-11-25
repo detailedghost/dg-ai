@@ -6,7 +6,6 @@
     <IsAotCompatible>false</IsAotCompatible>
     <PublishAot>false</PublishAot>
     <OutputType>Exe</OutputType>
-    <TestingPlatformCommandLineArguments>--ignore-exit-code 8</TestingPlatformCommandLineArguments>
     <InvariantGlobalization>false</InvariantGlobalization>
     <UseSystemResourceKeys>false</UseSystemResourceKeys>
   </PropertyGroup>

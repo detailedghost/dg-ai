@@ -65,8 +65,12 @@ public sealed class ConfigCommandParityTests
 
     private static void AssertSyntaxError(string expected, string actual)
     {
-        var prefix = expected[..(expected.IndexOf(": ", expected.IndexOf("config.toml:", StringComparison.Ordinal), StringComparison.Ordinal) + 2)];
-        Assert.StartsWith(prefix, actual);
+        const string Location = "config.toml:";
+        var location = expected.IndexOf(Location, StringComparison.Ordinal);
+        Assert.True(location >= 0, $"fixture text has no {Location}: {expected}");
+        var detail = expected.IndexOf(": ", location, StringComparison.Ordinal);
+        Assert.True(detail >= 0, $"fixture text has no detail after {Location}: {expected}");
+        Assert.StartsWith(expected[..(detail + 2)], actual);
         Assert.EndsWith(". Next: run dg config edit, or dg config set <key> <value>.\n", actual);
     }
 

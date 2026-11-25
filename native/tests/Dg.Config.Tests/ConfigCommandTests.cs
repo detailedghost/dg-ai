@@ -32,7 +32,8 @@ public sealed class ConfigCommandTests
 
         Assert.Equal(0, run.Exit);
         Assert.Equal(
-            "browser.mode = auto\nfront.enabled = true\ninstall.cli_only = false\nssms.allow_send = false\nssms.google.send_enabled = false\n",
+            "browser.mode = auto\nfront.enabled = true\ninstall.cli_only = false\n"
+                + "ssms.allow_send = false\nssms.google.send_enabled = false\n",
             run.Stdout
         );
     }
@@ -43,13 +44,17 @@ public sealed class ConfigCommandTests
         using var home = new TempHome();
         home.Write(
             "config/config.toml",
-            "[browser]\nmode = \"ext\"\n[refs]\ndefault_repo = \"o/r\"\n[refs.aliases]\napp = \"o/app\"\n[plugins.x]\nsource = \"./x\"\n"
+            "[browser]\nmode = \"ext\"\n[refs]\ndefault_repo = \"o/r\"\n"
+                + "[refs.aliases]\napp = \"o/app\"\n[plugins.x]\nsource = \"./x\"\n"
         );
 
         var run = home.Run("config", "list");
 
         Assert.Equal(
-            "browser.mode = ext\nfront.enabled = true\ninstall.cli_only = false\nssms.allow_send = false\nssms.google.send_enabled = false\nrefs.default_repo = o/r\nrefs.aliases.app = o/app\nplugins.x.enabled = true\nplugins.x.source = ./x\n",
+            "browser.mode = ext\nfront.enabled = true\ninstall.cli_only = false\n"
+                + "ssms.allow_send = false\nssms.google.send_enabled = false\n"
+                + "refs.default_repo = o/r\nrefs.aliases.app = o/app\n"
+                + "plugins.x.enabled = true\nplugins.x.source = ./x\n",
             run.Stdout
         );
     }
@@ -64,7 +69,8 @@ public sealed class ConfigCommandTests
 
         Assert.Equal(1, run.Exit);
         Assert.Equal(
-            "dg: dg config: <home>/config/config.toml:1: nope is not a dg config section. Next: run dg config edit, or dg config set <section>.<key> <value>.\n",
+            "dg: dg config: <home>/config/config.toml:1: nope is not a dg config section. "
+                + "Next: run dg config edit, or dg config set <section>.<key> <value>.\n",
             run.Stderr
         );
     }

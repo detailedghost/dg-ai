@@ -12,6 +12,7 @@ internal sealed class EchoPluginServer : IAsyncDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly List<Socket> _clients = [];
     private readonly Task _accept;
+    private readonly ServerFault _fault = new();
     private int _accepted;
 
     private readonly bool _ownsDirectory;
@@ -56,11 +57,15 @@ internal sealed class EchoPluginServer : IAsyncDisposable
         {
             await _accept;
         }
-        catch (Exception) { }
+        catch (Exception ex)
+        {
+            _fault.Record(ex);
+        }
         if (_ownsDirectory)
             System.IO.Directory.Delete(Directory, true);
         else
             File.Delete(SocketPath);
+        _fault.ThrowIfFaulted();
     }
 
     private async Task AcceptLoop()
@@ -76,10 +81,13 @@ internal sealed class EchoPluginServer : IAsyncDisposable
                 _ = Task.Run(() => Serve(client));
             }
         }
-        catch (Exception) { }
+        catch (Exception ex)
+        {
+            _fault.Record(ex);
+        }
     }
 
-    private static async Task Serve(Socket client)
+    private async Task Serve(Socket client)
     {
         try
         {
@@ -101,6 +109,9 @@ internal sealed class EchoPluginServer : IAsyncDisposable
                     return;
             }
         }
-        catch (Exception) { }
+        catch (Exception ex)
+        {
+            _fault.Record(ex);
+        }
     }
 }

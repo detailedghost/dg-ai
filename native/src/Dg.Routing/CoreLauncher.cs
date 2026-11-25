@@ -6,8 +6,10 @@ namespace Dg.Routing;
 
 public sealed class CoreLauncher(string path)
 {
-    private const string Reinstall = "curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh";
-    private const UnixFileMode AnyExecute = UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+    private const string Reinstall =
+        "curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh";
+    private const UnixFileMode AnyExecute =
+        UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
 
     public static string DefaultPath() =>
         Path.Combine(
@@ -43,7 +45,8 @@ public sealed class CoreLauncher(string path)
             return Spawn(args);
         }
         Exec(args);
-        OutputWriter.Err.WriteLine($"dg: cannot start dg-core at {path} (errno {Marshal.GetLastPInvokeError()}); reinstall with: {Reinstall}");
+        var errno = Marshal.GetLastPInvokeError();
+        OutputWriter.Err.WriteLine($"dg: cannot start dg-core at {path} (errno {errno}); reinstall with: {Reinstall}");
         OutputWriter.Err.Flush();
         return 126;
     }

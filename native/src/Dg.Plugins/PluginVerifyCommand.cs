@@ -18,7 +18,10 @@ internal sealed class PluginVerifyCommand(
         var (name, approve) = Parse(args);
         var record = store.TryRead(name);
         if (record is null)
-            return Fail(stderr, $"dg plugin: {name} is not installed. Next: run dg plugin list, or dg plugin add <source>.");
+            return Fail(
+                stderr,
+                $"dg plugin: {name} is not installed. Next: run dg plugin list, or dg plugin add <source>."
+            );
         if (!string.Equals(store.TreeHash(name), record.TreeSha256, StringComparison.Ordinal))
             throw new NotNativeException();
         var manifest = ReadManifest(store.Src(name));

@@ -3,23 +3,15 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { resolveDgPaths } from "../../../../../pkg/common/src/node/dg-paths";
 import { parseDgToml, setting } from "../../../../../pkg/common/src/node/dg-toml";
+import { createEmitter } from "../../../fixture-support";
 
 const dir = import.meta.dir;
 const check = process.argv.includes("--check");
-const stale: string[] = [];
-
-function emit(name: string, text: string): void {
-	const file = join(dir, name);
-	if (check) {
-		let current = "";
-		try {
-			current = readFileSync(file, "utf8");
-		} catch {}
-		if (current !== text) stale.push(name);
-		return;
-	}
-	writeFileSync(file, text);
-}
+const { emit, finish } = createEmitter(
+	dir,
+	check,
+	(name) => name.endsWith(".ok.json") || name.endsWith(".error.txt") || name.endsWith(".expected.json"),
+);
 
 function message(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -78,7 +70,4 @@ const pathResults = pathCases.map((entry) => {
 });
 emit("paths.expected.json", `${JSON.stringify(pathResults, null, "\t")}\n`);
 
-if (check && stale.length) {
-	console.error(`stale fixtures: ${stale.join(", ")}`);
-	process.exit(1);
-}
+finish("run bun generate.ts");

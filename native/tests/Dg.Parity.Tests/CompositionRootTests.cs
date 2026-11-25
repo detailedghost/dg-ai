@@ -53,6 +53,17 @@ public sealed class CompositionRootTests
     }
 
     [Fact]
+    public void Commands_AfterComposition_HaveUniqueNonEmptyNames()
+    {
+        using var provider = CompositionRoot.Build();
+
+        var names = provider.GetServices<ICommand>().Select(static c => c.Name).ToArray();
+
+        Assert.All(names, static name => Assert.False(string.IsNullOrWhiteSpace(name)));
+        Assert.Equal(names.Length, names.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
     public async Task HooksRun_UnknownId_IsNotNativeAndTouchesNoEngine()
     {
         var command = new HooksRunCommand(
