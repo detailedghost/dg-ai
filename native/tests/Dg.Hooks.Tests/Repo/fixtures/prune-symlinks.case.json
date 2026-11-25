@@ -1,0 +1,40 @@
+{
+  "hook": "daily-prune",
+  "args": [
+    "--now"
+  ],
+  "entries": [
+    {
+      "path": "outside/precious/data.txt",
+      "ageDays": 0
+    },
+    {
+      "path": "scratch/claude/eeeeeeee/link",
+      "kind": "symlink",
+      "target": "../../../outside/precious",
+      "ageDays": 40
+    },
+    {
+      "path": "scratch/claude/eeeeeeee/old.txt",
+      "ageDays": 40
+    },
+    {
+      "path": "scratch/tool-link",
+      "kind": "symlink",
+      "target": "../outside/precious",
+      "ageDays": 40
+    },
+    {
+      "path": "state/tool-link",
+      "kind": "symlink",
+      "target": "../outside/precious",
+      "ageDays": 90
+    },
+    {
+      "path": "state/claude/entry-link",
+      "kind": "symlink",
+      "target": "../../outside/precious",
+      "ageDays": 90
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+--- exit
+2
+--- stdout
+--- stderr
+C:\proj\.agents\spec\027_x\plan.md
+spec lint-waves failed (exit 1):
+x
+--- calls
+call: spec lint-waves C:\proj\.agents\spec\027_x\plan.md (cwd=/proj)
+call: spec validate C:\proj\.agents\spec\027_x\plan.md (cwd=/proj)

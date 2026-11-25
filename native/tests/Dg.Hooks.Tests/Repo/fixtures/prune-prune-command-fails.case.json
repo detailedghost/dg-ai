@@ -1,0 +1,50 @@
+{
+  "hook": "daily-prune",
+  "args": [
+    "--now"
+  ],
+  "repos": [
+    {
+      "path": "code/alpha",
+      "files": {
+        ".gitignore": ".agents/cache/\n.agents/tmp/\n.agents/scratch.txt\n",
+        "README.md": "hi\n",
+        ".agents/school/rules.md": "kept\n"
+      },
+      "worktrees": [
+        {
+          "path": "code/worktrees/alpha-merged",
+          "branch": "merged-clean"
+        },
+        {
+          "path": "code/worktrees/alpha-dirty",
+          "branch": "dirty-one"
+        },
+        {
+          "path": "code/worktrees/alpha-other",
+          "branch": "zz-last"
+        }
+      ]
+    }
+  ],
+  "entries": [
+    {
+      "path": "code/alpha/.agents/cache/old.bin",
+      "ageDays": 45
+    },
+    {
+      "path": "code/alpha/.agents/cache/new.bin",
+      "ageDays": 5
+    }
+  ],
+  "runner": [
+    {
+      "match": [
+        "worktree",
+        "prune"
+      ],
+      "status": 1,
+      "stderr": "boom\nlast \u001b[1mline\u001b[0m\n"
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "hook": "daily-prune",
+  "args": [
+    "--now",
+    "--dry-run"
+  ],
+  "entries": [
+    {
+      "path": "scratch/claude/aaaaaaaa/old.txt",
+      "ageDays": 20
+    },
+    {
+      "path": "scratch/claude/bbbbbbbb/new.txt",
+      "ageDays": 1
+    },
+    {
+      "path": "scratch/claude/cccccccc/deep/er/old.txt",
+      "ageDays": 20
+    },
+    {
+      "path": "scratch/claude/cccccccc/deep/er/new.txt",
+      "ageDays": 2
+    },
+    {
+      "path": "scratch/claude/global-old.json",
+      "ageDays": 16
+    },
+    {
+      "path": "scratch/claude/global-new.json",
+      "ageDays": 3
+    },
+    {
+      "path": "scratch/codex/dddddddd/old.txt",
+      "ageDays": 15
+    },
+    {
+      "path": "scratch/flat-old.txt",
+      "ageDays": 30
+    },
+    {
+      "path": "scratch/flat-new.txt",
+      "ageDays": 1
+    },
+    {
+      "path": "scratch/adhoc/x/old.txt",
+      "ageDays": 90
+    },
+    {
+      "path": "scratch/bg/1.pid",
+      "ageDays": 90
+    },
+    {
+      "path": "scratch/bg/2.log",
+      "ageDays": 90
+    },
+    {
+      "path": "scratch/pw/states/s.json",
+      "ageDays": 90
+    },
+    {
+      "path": "scratch/pw/sessions/s.json",
+      "ageDays": 90
+    },
+    {
+      "path": "scratch/pw/other/o.json",
+      "ageDays": 90
+    },
+    {
+      "path": "scratch/hooks/daily-prune.stamp",
+      "ageDays": 90
+    },
+    {
+      "path": "scratch/hooks/session.marker",
+      "ageDays": 40
+    },
+    {
+      "path": "state/claude/handoff/old.md",
+      "ageDays": 40
+    },
+    {
+      "path": "state/claude/handoff2/new.md",
+      "ageDays": 10
+    },
+    {
+      "path": "state/codex/old.md",
+      "ageDays": 35
+    },
+    {
+      "path": "state/flat-old.txt",
+      "ageDays": 90
+    },
+    {
+      "path": "state/hooks/daily-prune.stamp",
+      "ageDays": 90
+    },
+    {
+      "path": "state/adhoc/job/old.txt",
+      "ageDays": 90
+    },
+    {
+      "path": "state/pw/log/l.txt",
+      "ageDays": 90
+    },
+    {
+      "path": "state/pw/keep/old.txt",
+      "ageDays": 31
+    },
+    {
+      "path": "state/empty-tool/aaaaaaaa/old.txt",
+      "ageDays": 50
+    }
+  ]
+}

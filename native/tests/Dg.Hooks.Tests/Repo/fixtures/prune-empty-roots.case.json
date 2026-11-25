@@ -1,0 +1,6 @@
+{
+  "hook": "daily-prune",
+  "args": [
+    "--now"
+  ]
+}

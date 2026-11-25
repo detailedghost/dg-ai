@@ -1,0 +1,14 @@
+{
+  "hook": "spec-plan-lint",
+  "stdin": {
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Write",
+    "cwd": "/proj",
+    "tool_input": {
+      "file_path": "/proj/other.md"
+    },
+    "tool_response": {
+      "filePath": "/proj/.agents/spec/todo/030_y/plan.md"
+    }
+  }
+}
