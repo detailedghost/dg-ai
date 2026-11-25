@@ -39,7 +39,9 @@ internal sealed class FactoryProvider(IEnumerable<ServiceDescriptor> descriptors
         var made = descriptor.IsKeyedService
             ? descriptor.KeyedImplementationInstance
                 ?? descriptor.KeyedImplementationFactory!(this, descriptor.ServiceKey)
-            : descriptor.ImplementationInstance ?? descriptor.ImplementationFactory!(this);
+            : descriptor.ImplementationInstance
+                ?? descriptor.ImplementationFactory?.Invoke(this)
+                ?? ActivatorUtilities.CreateInstance(this, descriptor.ImplementationType!);
         _built[descriptor] = made;
         return made;
     }
