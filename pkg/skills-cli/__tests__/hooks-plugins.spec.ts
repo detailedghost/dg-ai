@@ -213,6 +213,24 @@ describe("hooks run with an external hook plugin", () => {
 		expect(result.stderr).toContain("allow_remote");
 	});
 
+	test("exits on its own after the decision, with no warm connection left open", async () => {
+		const world = hookWorld();
+		const dir = installPlugin(world, "scan", ENABLED);
+		await startPlugin(join(dir, "p.sock"), () => ({ decision: "allow" }));
+		const cli = join(import.meta.dir, "..", "src", "hooks", "cli.ts");
+		const driver = `const { main } = await import(${JSON.stringify(cli)}); process.exitCode = await main(["run", "scan"]);`;
+		const proc = Bun.spawn([process.execPath, "-e", driver], {
+			env: { ...process.env, ...world.env() },
+			stdin: new Blob([JSON.stringify(bashInput("ls"))]),
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		const timer = setTimeout(() => proc.kill(), 5_000);
+		const code = await proc.exited;
+		clearTimeout(timer);
+		expect(code).toBe(0);
+	});
+
 	test("keeps built-in hooks in process and unchanged with plugins configured", async () => {
 		const world = hookWorld();
 		installPlugin(world, "scan", ENABLED);

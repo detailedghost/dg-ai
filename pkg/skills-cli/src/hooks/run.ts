@@ -78,6 +78,50 @@ function sessionOf(env: HookEnv, fromInput: string | undefined): string {
 	return sanitize(raw);
 }
 
+const DEFAULT_EXTERNAL_TIMEOUT_MS = 2_000;
+
+async function runExternal(
+	id: string,
+	stdin: AsyncIterable<string | Uint8Array>,
+	env: HookEnv,
+	seams: HookSeams,
+): Promise<number> {
+	try {
+		const { hasConfiguredPlugins, resolveExternalHook } = await import("./plugins");
+		const plugin = hasConfiguredPlugins(env) ? await resolveExternalHook(id, env) : undefined;
+		if (!plugin) {
+			seams.stderr(`hooks run: unknown hook '${id}'\n`);
+			return 1;
+		}
+		const event = await readStdinJson(stdin);
+		const timeoutMs = Number(env["DG_HOOK_TIMEOUT_MS"]) || DEFAULT_EXTERNAL_TIMEOUT_MS;
+		const { runExternalHook, externalHookResult } = await import("./external");
+		const outcome = await runExternalHook(
+			plugin.manifest,
+			{
+				event: (event as { hook_event_name?: string }).hook_event_name ?? "PreToolUse",
+				...(event.tool_name ? { tool: event.tool_name } : {}),
+				...(event.tool_input ? { input: event.tool_input } : {}),
+			},
+			{ pluginDir: plugin.pluginDir, allowRemote: plugin.allowRemote, timeoutMs },
+		);
+		const result = externalHookResult(id, outcome, timeoutMs);
+		if (result.stdout) seams.stdout(result.stdout);
+		if (result.stderr) seams.stderr(result.stderr);
+		return result.exitCode;
+	} catch (error) {
+		seams.stderr(
+			`hooks run ${id}: ${error instanceof Error ? error.message : String(error)}\n`,
+		);
+		return 1;
+	} finally {
+		const { closeIpcConnections } = await import(
+			"@dg/common/plugins/transport/ipc"
+		);
+		closeIpcConnections();
+	}
+}
+
 /** Runs one hook against the stdin event and returns the process exit code. */
 export async function runHook(
 	id: string,
@@ -86,10 +130,7 @@ export async function runHook(
 	seams: HookSeams = defaultSeams(),
 ): Promise<number> {
 	const def = HOOKS.find((h) => h.id === id);
-	if (!def) {
-		seams.stderr(`hooks run: unknown hook '${id}'\n`);
-		return 1;
-	}
+	if (!def) return runExternal(id, stdin, env, seams);
 	if (!def.load) {
 		seams.stderr(`hooks run ${id}: runs from git, not from a tool event\n`);
 		return 1;
