@@ -6,6 +6,7 @@ using Dg.Core.Transport.Http;
 
 namespace Dg.Core.Tests.Leaks;
 
+[Collection(LeakCollection.Name)]
 public sealed class ProviderLeakTests
 {
     private const int Moves = 2_000;
@@ -59,7 +60,7 @@ public sealed class ProviderLeakTests
         await using var provider = new HttpTransportProvider(factory);
 
         for (var i = 0; i < Moves; i++)
-            await provider.OpenAsync(Manifest(1 + i), false, CancellationToken.None);
+            await (await provider.OpenAsync(Manifest(1 + i), false, CancellationToken.None)).DisposeAsync();
 
         Assert.Equal(1, factory.Live);
     }
@@ -71,7 +72,7 @@ public sealed class ProviderLeakTests
         var port = 0;
 
         var report = await LeakMeter.MeasureAsync(
-            async () => await provider.OpenAsync(Manifest(1 + port++ % 60_000), false, CancellationToken.None),
+            async () => await (await provider.OpenAsync(Manifest(1 + port++ % 60_000), false, CancellationToken.None)).DisposeAsync(),
             batches: 5,
             perBatch: 1_000,
             warmup: 100

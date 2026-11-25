@@ -35,7 +35,7 @@ public sealed class PluginHost(
         var manifest = Admit(name, out var allowRemote);
         var key = PluginTransportKeys.For(manifest);
         var provider = services.GetRequiredKeyedService<IPluginTransportProvider>(key);
-        var transport = await provider.OpenAsync(manifest, allowRemote, ct).ConfigureAwait(false);
+        await using var lease = await provider.OpenAsync(manifest, allowRemote, ct).ConfigureAwait(false);
         var payload = JsonSerializer.SerializeToUtf8Bytes(message, PluginJsonContext.Default.PluginEnvelope);
         var frame = FrameCodec.Encode(FrameEncoding.Json, FrameFlags.None, NextId(), payload);
 
@@ -45,7 +45,7 @@ public sealed class PluginHost(
         var started = Stopwatch.GetTimestamp();
         try
         {
-            var response = await transport.SendAsync(frame, limit.Token).ConfigureAwait(false);
+            var response = await lease.Transport.SendAsync(frame, limit.Token).ConfigureAwait(false);
             Observe(manifest.Name, message.Route, manifest.Transport, Stopwatch.GetElapsedTime(started));
             return response;
         }
