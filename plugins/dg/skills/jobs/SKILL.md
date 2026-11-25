@@ -11,8 +11,8 @@ This skill is a thin front end over two existing daemons. It adds no new
 commands to either one; it only calls what `dg job`, `dg service` and
 `dg channel-review` already expose.
 
-Commands use the compiled binary `dg`. Bootstrap once if
-needed; the default installer (no `--cli-only`) pulls it with the extension:
+Commands use the compiled `dg` binary. Bootstrap it once if needed (the
+default installer, without `--cli-only`, pulls it with the extension):
 
 ```sh
 { dg daemon --help >/dev/null 2>&1 &&
@@ -29,9 +29,8 @@ If a step fails, run dg doctor channel-review.
 
 ## Status (default, read-only)
 
-When invoked with no action, report status only. Run all that apply and show
-each command's own JSON; do not reshape it or add fields it does not already
-print:
+With no action, report status only. Run all that apply and show each
+command's own JSON unchanged:
 
 ```sh
 dg job list
@@ -40,13 +39,11 @@ dg channel-review status --env dev
 dg channel-review status --env prod
 ```
 
-`job list` reads the daemon's store directly and works with no daemon running.
-`service status` needs a live daemon and calls it over loopback; with none
-running it fails cleanly with
+`job list` works with no daemon running. `service status` needs a live daemon;
+with none it fails cleanly with
 `no live dg daemon — services run inside it, so start it with dg daemon start`
-instead of starting one. Report that message as the service
-section's status, and do not start the daemon yourself to work around it —
-that is a `start` action, not part of a status check.
+Report that message as the service status. Never start the daemon to work
+around it.
 
 Skip an env the human does not use. `channel-review status`'s `credentials`
 field already holds only redacted source/expiry metadata, never a secret
@@ -74,7 +71,7 @@ directly for those, outside this skill.
 
 ### Add and remove a service
 
-Run these only on a request from the human that names the label. A `service
+Run these only on a request that names the label. A `service
 add` request also needs the argv and `--cwd` from the human; never invent them.
 
 ```sh
@@ -82,12 +79,10 @@ dg service add <label> --cwd <absolute-path> -- <command> [args...]
 dg service rm <label>
 ```
 
-`service add` also takes `--autostart`, `--env-file <path>`, `--pass-env
-<NAME>`, `--stop-timeout <duration>` and `--grant <prefix>`; pass one only when
-the human names it. Both commands edit the daemon config and work with no
-daemon running. `service rm` refuses a service that is running. This skill
-does not stop a running service to make `service rm` pass; tell the human to
-ask for the stop.
+Pass an optional `service add` flag only when the human names it
+([flags](references/details.md#service)). `service rm` refuses a
+running service. This skill does not stop a running service to make
+`service rm` pass; tell the human to ask for the stop.
 
 ### Start, stop or restart the dg daemon
 
@@ -99,41 +94,33 @@ dg daemon stop
 dg daemon restart
 ```
 
-`dg daemon start` is idempotent and starts the daemon in the background, or
-reports the one that runs. Before a stop or a restart, tell the human that each
-service stops and each session ends, then wait for the go-ahead. A regular
-stop waits for the `stopTimeoutMs` of each service. This skill uses `--force`
-only when the human says so; it kills the daemon and each service process tree
-at once. A `restart` starts only the `autostart` services.
+Before a stop or a restart, tell the human that each service stops and each
+session ends, then wait for the go-ahead. Use `--force` only when the human
+says so; it kills the daemon and each service process tree at once. Timeouts
+and scope: [details](references/details.md#daemon).
 
 ### Restart
 
-A service restart is stop then start; a generic service holds no in-flight
-review, so there is nothing to wait for.
+A service restart is stop then start.
 
 A `channel-review-<env>` restart must not drop a review in progress:
 
 1. Run `dg channel-review status --env <env>` and read `current`.
 2. If `current` is `null`, stop then start that env and report done.
-3. If `current` is not `null`, wait and re-check every 15 seconds, for up to
-   2 minutes total.
-4. If `current` becomes `null` within that window, stop then start and report
-   done.
-5. If `current` is still not `null` after 2 minutes, stop waiting. Tell the
-   human which PR or MR `current.url` points at and how long it has run
-   (`current.startedAt`), and ask whether to restart anyway and drop that job,
-   or wait longer. Do not stop or start until they answer.
+3. Otherwise re-check every 15 seconds for up to 2 minutes, then stop then start
+   once it is `null`. After 2 minutes, tell the human which PR or MR
+   `current.url` names and how long it has run (`current.startedAt`). Ask
+   whether to restart anyway or wait longer. Do not stop or start until they
+   answer.
 
 ## Job verbs
 
-`dg job` manages each job, continuous or scheduled, with these verbs:
+`dg job` verbs:
 
 ```sh
 dg job list
 dg job status [<name>] [--json]
-dg job add --name <name> --cwd <absolute-path> --continuous -- <command> [args...]
-dg job add --name <name> --cwd <absolute-path> --every <duration> [--feed] -- <command> [args...]
-dg job add --name <name> --cwd <absolute-path> --schedule "<cron>" [--feed] -- <command> [args...]
+dg job add --name <name> --cwd <absolute-path> (--continuous | --every <duration> | --schedule "<cron>") [--feed] [--timeout <duration>] -- <command> [args...]
 dg job add <url>
 dg job add <path>
 dg job update <name> --every <duration>
@@ -150,30 +137,27 @@ dg job logs <name> [-n <lines>] [-f]
 ```
 
 `list`, `status` and `logs` are read-only. Run each other verb only on a
-request from the human that names the job. An `add` request also needs the
-argv and `--cwd` from the human; never invent them. `add` also takes
-`--timeout <duration>`, `--notify <identity>`, `--env-file <path>`,
-`--env <NAME>` and `--stop-timeout <duration>`; pass one only when the human
-names it. `update` takes one mode flag (`--continuous`, `--schedule` or
-`--every`) and `--timeout`, `--feed` and `--notify`.
+request that names the job. An `add` request also needs the
+argv and `--cwd` from the human; never invent them. Pass an optional flag such as
+`--env <NAME>` only when named
+([flags](references/details.md#job)).
 
 `add` writes a job that is not enabled. `enable` turns it on and starts the
 daemon when none runs. `start`, `stop` and `restart` act now only and need a
 live daemon. `remove`, `disable` and `autostart install|remove` need a request
 from the human that names the job or the login unit.
 
-`job add <url>` takes a repository (`<git-url>[@ref]`) and `job add <path>` takes a script or a
-folder. A repository job asks for consent: `add` and `update` print the request and ask at a
+`job add <url>` takes `<git-url>[@ref]`; `job add <path>` takes a script or folder. A repository job asks for consent: `add` and `update` print the request and ask at a
 terminal. This skill does not answer the consent question and does not add `--yes` on its own.
-It gives the command, and the human runs it. The agent never adds `--yes`, because with `--yes` a
-process runs repository code with no question. A local path asks nothing, but run it only on a request that names the path.
+It gives the command, and the human runs it. The agent never adds `--yes`:
+with it, repository code runs unasked. Run a local path only on a request that names it.
 
-`job setup <name>` asks questions at a terminal, so give the command to the human.
-`job setup <name> --refresh` fetches each credential of the job again from its declared
+`job setup <name>` asks questions at a terminal; give the human the command.
+`job setup <name> --refresh` fetches each credential again from its declared
 source; run it only on a request that names the job, and then give the command
 `job restart <name>` that it prints. A prefix that already holds credentials needs one `y` at a terminal, also for an agent,
 so this skill does not answer that question either. `job enable <name> --setup <file|->` takes
-a file path or `-` and never JSON text; never write a secret on a command line.
+a file path or `-`, never JSON text; never put a secret on a command line.
 
 The first `job enable` at a terminal asks whether to start dg at login. This
 skill does not answer the login unit question of `job enable`: the human
@@ -209,7 +193,6 @@ before you print the block, because each session starts in its own folder:
 ```
 
 `channel-review start` already refuses a second start against a pid it finds
-running and exits nonzero without starting a duplicate, so this hook is safe
-to run on every session start; the redirect only keeps that expected
-already-running case quiet. There is no autostart for the dg daemon itself until the human runs `dg autostart install`: `dg agent start` and
+running and exits nonzero, so this hook is safe on every session start; the
+redirect only silences that case. There is no autostart for the dg daemon itself until the human runs `dg autostart install`: `dg agent start` and
 `dg daemon start` start it, and no other `dg` command does.
