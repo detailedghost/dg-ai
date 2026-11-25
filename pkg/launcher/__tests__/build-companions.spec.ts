@@ -2,8 +2,9 @@ import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildCompanions } from "../build/companions";
+import { buildCompanions, excludeCompanions } from "../build/companions";
 import { buildCompiled } from "../build/compile";
+import { COMPILE_TARGETS, sharedOptions } from "../build/options";
 
 setDefaultTimeout(240_000);
 
@@ -37,8 +38,13 @@ describe("companion bundles", () => {
 
 	test("a compiled build that excludes companions is smaller than one that embeds them", async () => {
 		const embedded = await buildCompiled({ target: "linux-x64", outfile: join(outdir, "full", "dg") });
-		const slim = await buildCompiled({ target: "linux-x64", outfile: join(outdir, "slim", "dg"), excludeCompanions: true });
+		const { options } = await sharedOptions();
+		const slimFile = join(outdir, "slim", "dg");
+		const compile = { target: COMPILE_TARGETS["linux-x64"], outfile: slimFile, autoloadDotenv: false, autoloadBunfig: false };
+		const built = await Bun.build({ ...excludeCompanions(options), compile });
+		expect(built.success).toBe(true);
+		const slim = slimFile;
 		const saved = statSync(embedded).size - statSync(slim).size;
-		expect(saved).toBeGreaterThan(3_000_000);
+		expect(saved).toBeGreaterThan(7_000_000);
 	});
 });
