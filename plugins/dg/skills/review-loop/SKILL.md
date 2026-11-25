@@ -1,14 +1,11 @@
 ---
 name: review-loop
 description: >-
-  Antagonistic review loop for a branch. Default mode drives GitHub
-  Copilot review on an open PR, filters its comments through a
-  copilot-antagonist agent, hands accepted items to /dg:address, and
-  repeats. `--proxy <backend>` mode swaps the reviewer for a local
-  proxy-backend coding agent (codex/copilot/pi/opencode/grok) instead —
-  no PR or GitHub Copilot access required, findings flow straight
-  into /dg:address's local code-review path. Both modes are
-  fire-and-forget and capped at a few rounds by default.
+  Antagonistic review loop for a branch. Default mode drives GitHub Copilot
+  review on an open PR, filters comments through a copilot-antagonist agent,
+  hands accepted items to /dg:address, and repeats. `--proxy <backend>` swaps
+  in a local coding agent (codex/copilot/pi/opencode/grok): no PR or Copilot
+  access needed. Fire-and-forget, a few rounds by default.
 ---
 
 <!-- markdownlint-disable MD003 MD013 MD022 MD033 MD041 MD060 -->
@@ -40,13 +37,8 @@ posted back to the merge request. See
 [references/workflow.md](references/workflow.md) Phase 1 for the gate.
 
 `capabilities` names the reviewer in `aiReviewBotNames`. On GitLab that
-comes from explicit `AI_VCS_GITLAB_REVIEW_BOT` configuration (comma-separated).
-With that variable unset, empty, or `none`, GitLab reports no reviewer and
-uses the proxy route.
-
-**Proxy mode** (`--proxy <backend>`) needs no PR and no GitHub Copilot
-access — it reviews the current branch's diff with a local external
-coding agent instead. See [Proxy mode](#proxy-mode) below.
+comes from `AI_VCS_GITLAB_REVIEW_BOT` (comma-separated). Unset, empty, or
+`none` means no reviewer, so GitLab uses the proxy route.
 
 **Usage:** `/dg:review-loop [-r N] [-w <sec>] [-s] [-n] [-k]`
 **Usage (proxy):** `/dg:review-loop -p <codex|copilot|pi|opencode|grok> [-b <ref>] [-r N] [-s] [-k]`
@@ -76,21 +68,19 @@ If Copilot doesn't engage within 5 min of a trigger, the skill escalates:
 re-post a perturbed comment, then fall back to the `requested_reviewers`
 API, then fail loud with a diagnostic.
 
-Use `--single` for manual round-by-round control, or set
-`REVIEW_LOOP_MAX_ROUNDS=1` to cap at one round globally.
+Use `--single` for manual control, or set `REVIEW_LOOP_MAX_ROUNDS=1` to cap at one round.
 
 In a subagent, run each round by the "Nested run" rule in `/dg:thrash`.
 
 ### Proxy mode
 
 `--proxy <backend>` replaces the GitHub Copilot reviewer with a local
-`/dg:proxy` backend (codex/copilot/pi/opencode/grok) reviewing `base..HEAD` on
-the current branch — no PR, no `gh`, no GitHub Copilot access needed.
+`/dg:proxy` backend reviewing `base..HEAD` on the current branch. No PR, no
+`gh`, no GitHub Copilot access needed.
 
 Round shape: diff → `/dg:proxy <backend>` reviews it and writes findings
 to a `.agents/code-review/*.md` file → `/dg:address -l --round N` (its
-existing local-review triage/fix/QA/commit path, unchanged) → next
-round, up to `--rounds N` (default 2). A round where the backend finds
+existing local-review path, unchanged) → next round, up to `--rounds N` (default 2). A round where the backend finds
 nothing closes the loop immediately (dry-round close-out) instead of
 burning further rounds.
 
@@ -128,56 +118,19 @@ Call `dg` in every later step. If `dg` alone does not answer, also after the boo
 If a step fails, run dg doctor address bg proxy stash vcs-provider.
 
 Repeat this resolution in every fresh shell, including delegated execution and
-resumed commands; shell variables do not persist between tool calls. Use the
-host's existing narrow approvals for the specific operation and honor permission
-already granted in this session. Do not edit permission files or assume that the
-compiled binary grants blanket approval to its subcommands.
-
-Resolve cross-skill instructions from this installed tree using sibling paths
-(`../<skill>/SKILL.md` from this directory, `../../<skill>/SKILL.md` from
-`references/`). If an unmigrated skill is missing, use only an explicitly
-configured personal skill root (`DG_PERSONAL_SKILLS_DIR/<skill>/SKILL.md`). Pass
-the resulting real absolute paths to delegates. Report missing instructions;
-never assume a private checkout or cache location. Agent names below refer to
-the host's configured personas; resolve their files through the host registry or
-explicit `DG_PERSONAS_DIR` / `DG_AGENTS_DIR` configuration when needed.
-The plugin ships its personas in `agents/` (Claude Code loads them as
-`dg:<name>`; `dg proxy` embeds them), so use those when the host has none.
+resumed commands. Use the host's existing narrow approvals for the specific
+operation. Do not edit permission files or assume that the compiled binary grants
+blanket approval to its subcommands. Cross-skill paths and persona lookup:
+`references/helper.md`.
 
 ## Helper
 
-Provider capability checks go through
-`dg vcs-provider capabilities`. Use the compiled entrypoint with the
-host's existing narrow approvals and session authorization.
-
-Review-thread and bot-review operations go through
-`dg address` (the same compiled command `/dg:address` uses), subject to
-the same host approvals.
-`dg address` is no longer GitHub-only — its review-thread,
-bot-review and CI-failure subcommands work against GitLab too — but the
-seven Copilot-bot subcommands this skill calls on it below are gated on
-Copilot specifically, not on merely having some reviewer: six refuse
-outright on GitLab (`EXIT.UNSUPPORTED`), and `check-copilot` alone still
-answers with its existing `{available: false, reason}` JSON rather than
-refusing. Subcommands used by
-this skill: `check-copilot`, `check-bot-review`, `request-copilot`,
-`verify-copilot-engaged`, `await-copilot-review`, `check-no-findings`,
-`fetch-copilot-review`, `count-copilot-reviews`, `resolve-silent`,
-`resolve-with-reply`. Bot-prefix on replies is enforced inside the
-helper — callers never construct `🤖 ...` themselves.
-
-`check-no-findings` is the single owner of the graphql scan for
-`copilot-swe-agent` no-findings ack comments. It reads
-`REVIEW_LOOP_NO_FINDINGS_PATTERN` (jq Oniguruma) for the match pattern.
-
-Default mode never reaches the Copilot-bot subcommands on GitLab —
-Phase 1's `capabilities` check routes to the bot-review flow, or to
-proxy mode when no reviewer is configured, first (see
-[references/workflow.md](references/workflow.md) Phase 1 and 1b).
-**The
-proxy-mode steps of this skill never call `dg address`** — round counting and diff-base
-resolution there are plain `git`
-(see [references/proxy-workflow.md](references/proxy-workflow.md)). The hand-off to `/dg:address -l` runs its own helper calls.
+Provider capability checks go through `dg vcs-provider capabilities`. Review-thread and
+bot-review operations go through `dg address`, with the host's narrow approvals. Six of
+its seven Copilot-bot subcommands refuse on GitLab (`EXIT.UNSUPPORTED`); `check-copilot`
+answers `{available: false, reason}`. Default mode never reaches them on GitLab. The
+proxy-mode steps never call `dg address`. `references/helper.md` lists every subcommand,
+`check-no-findings` and the bot-prefix rule.
 
 ## General Rules
 
