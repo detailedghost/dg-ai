@@ -432,6 +432,14 @@ jobs:
       - name: Package the chat skills
         run: bun scripts/package-chat-skills.ts --out dist --version "$VERSION"
 
+      - name: Compress the compiled dg assets
+        run: |
+          set -euo pipefail
+          for raw in dist/dg-linux-* dist/dg-darwin-* dist/dg-windows-*; do
+            zstd --quiet -19 --force "$raw" -o "${raw}.zst"
+            gzip --best --no-name --keep --force "$raw"
+          done
+
       - name: Add the bootstrap scripts and checksums
         run: |
           cp pkg/skills-cli/bootstrap.sh pkg/skills-cli/bootstrap.ps1 dist/

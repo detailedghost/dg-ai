@@ -15,7 +15,7 @@ import {
 import { join } from "node:path";
 import { evictFromPageCache } from "@dg/common/node/page-cache";
 import { compiledProgramPath, PROGRAM_NAMES } from "@dg/common/node/program";
-import { type PickedProgram, UA, verifyReleaseAsset } from "../utils/lib";
+import { decodeProgram, type PickedProgram, rawAssetName, UA, verifyReleaseAsset } from "../utils/lib";
 import { linkCurrent, programExeName, readCurrent, VERSION_DIR } from "./current";
 import { isDgLauncher } from "./dg-launcher";
 
@@ -47,8 +47,9 @@ function pruneVersions(bin: string, keep: ReadonlySet<string>): void {
 async function download(release: PickedProgram, staged: string): Promise<void> {
 	const res = await fetch(release.url, { headers: UA });
 	if (!res.ok) throw new Error(`${release.assetName} download failed: HTTP ${res.status}`);
-	const bytes = new Uint8Array(await res.arrayBuffer());
-	await verifyReleaseAsset(release.sumsUrl, release.assetName, bytes, `v${release.version}`);
+	const downloaded = new Uint8Array(await res.arrayBuffer());
+	const bytes = decodeProgram(downloaded, release.encoding, release.assetName);
+	await verifyReleaseAsset(release.sumsUrl, rawAssetName(release.assetName), bytes, `v${release.version}`);
 	writeFileSync(staged, bytes);
 	chmodSync(staged, 0o755);
 }
