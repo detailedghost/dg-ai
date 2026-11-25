@@ -65,7 +65,7 @@ describe("readDgToml", () => {
 		expect(doc.hooks).toEqual({ spelling: { locale: "en-GB" } });
 		expect(doc.install.cli_only).toBe(true);
 		expect(doc.refs).toEqual({ default_repo: "acme/app", aliases: { app: "acme/app" } });
-		expect(doc.plugins.foo).toEqual({ enabled: false, source: "github:acme/foo", settings: { depth: 3 } });
+		expect(doc.plugins.foo).toEqual({ enabled: false, allow_remote: false, source: "github:acme/foo", settings: { depth: 3 } });
 	});
 
 	test("throws a DgCliError with file, line, key and a next step for a wrong type", () => {
