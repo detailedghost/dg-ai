@@ -531,14 +531,14 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 1 — baseline-latency
 
 #### Engineering
-- [ ] Move every RSS and latency budget out of ram-budget.ts into scripts/ram-budgets.json
+- [x] Move every RSS and latency budget out of ram-budget.ts into scripts/ram-budgets.json
 - [ ] Add idle RSS after N minutes and a growth check (leak) for the daemon, phone listener and plugin host; gate on Linux (/proc), report on Windows (GetProcessMemoryInfo) and macOS (rusage)
-- [ ] Add latency cases with p50, p90 and msBudget to scripts/ram-budget.ts for dg --version, dg completion, dg agent phone status and dg stat
+- [x] Add latency cases with p50, p90 and msBudget to scripts/ram-budget.ts for dg --version, dg completion, dg agent phone status and dg stat
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: every new case reports { peak, ms, p95 } like the existing hook cases
-- [ ] Unit test: a case over msBudget is marked SLOW and fails --gate
+- [x] Contract: every new case reports { peak, ms, p95 } like the existing hook cases
+- [x] Unit test: a case over msBudget is marked SLOW and fails --gate
 
 #### Acceptance Criteria
 - [ ] Given a compiled dg, when ram-budget.ts --gate runs, then the new cases pass at the 2026-11-24 baseline plus 5 percent
@@ -546,11 +546,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 2 — baseline-size
 
 #### Engineering
-- [ ] scripts/lean-size.ts: raw, gzip -9, zstd -19 --long=27 size per compiled target, and the zstd --patch-from delta against the previous release
+- [x] scripts/lean-size.ts: raw, gzip -9, zstd -19 --long=27 size per compiled target, and the zstd --patch-from delta against the previous release
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: lean-budgets.json is { size: { [target]: { rawBytes, zstdBytes, patchBytes } } }; --gate exits 1 on any overrun
+- [x] Contract: lean-budgets.json is { size: { [target]: { rawBytes, zstdBytes, patchBytes } } }; --gate exits 1 on any overrun
 
 #### Acceptance Criteria
 - [ ] Given a 2 MB larger binary, when lean-size.ts --gate runs, then it fails with the target and both numbers
@@ -558,12 +558,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 3 — baseline-skill-tokens
 
 #### Engineering
-- [ ] scripts/skill-tokens.ts: bytes/4 tokens per SKILL.md, per flow (spec-plan, spec-exec, phone, stat, thrash, verify, review-loop, jot) and for all descriptions
+- [x] scripts/skill-tokens.ts: bytes/4 tokens per SKILL.md, per flow (spec-plan, spec-exec, phone, stat, thrash, verify, review-loop, jot) and for all descriptions
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: skill-token-budgets.json is { perFlow: { [flow]: number }, descriptions: number }; --gate exits 1 on overrun
-- [ ] Unit test: every flow lists only files that exist
+- [x] Contract: skill-token-budgets.json is { perFlow: { [flow]: number }, descriptions: number }; --gate exits 1 on overrun
+- [x] Unit test: every flow lists only files that exist
 
 #### Acceptance Criteria
 - [ ] Given the current skills, when skill-tokens.ts --gate runs, then it passes at baseline
@@ -571,13 +571,13 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 4 — budget-ratchet
 
 #### Engineering
-- [ ] A ratchet over every versioned budget JSON (ram-budgets.json, lean-budgets.json, skill-token-budgets.json, native budgets, bench budgets): a measurement above budget fails unless the PR body has a reviewed Budget-Increase: <budget> <old> -> <new> because <reason> line; slack above the threshold (R18) fails until the PR lowers the budget
-- [ ] budgets.yml runs on every PR and posts one diff table comment (budgets, measurements, module growth from the size reports)
+- [x] A ratchet over every versioned budget JSON (ram-budgets.json, lean-budgets.json, skill-token-budgets.json, native budgets, bench budgets): a measurement above budget fails unless the PR body has a reviewed Budget-Increase: <budget> <old> -> <new> because <reason> line; slack above the threshold (R18) fails until the PR lowers the budget
+- [x] budgets.yml runs on every PR and posts one diff table comment (budgets, measurements, module growth from the size reports)
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: ratchet({ budgets, measured, prBody, slackPct }) returns { failures, warnings, lowered } and is pure
-- [ ] Unit test: a lower measurement with slack over the threshold fails; a raise with a valid Budget-Increase line passes
+- [x] Contract: ratchet({ budgets, measured, prBody, slackPct }) returns { failures, warnings, lowered } and is pure
+- [x] Unit test: a lower measurement with slack over the threshold fails; a raise with a valid Budget-Increase line passes
 
 #### Acceptance Criteria
 - [ ] Given a PR that saves 3 MB, when budgets.yml runs, then it fails until the size budget is lowered in the same PR
@@ -585,12 +585,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 5 — build-split
 
 #### Engineering
-- [ ] Split pkg/launcher/build.ts into build/options.ts, build/compile.ts, build/report.ts and build/companions.ts with no behavior change, so later slices own one module each
+- [x] Split pkg/launcher/build.ts into build/options.ts, build/compile.ts, build/report.ts and build/companions.ts with no behavior change, so later slices own one module each
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: buildCompiled and buildLauncher keep their signatures and outputs
-- [ ] Regression: build.spec.ts and a compiled linux-x64 build stay green
+- [x] Contract: buildCompiled and buildLauncher keep their signatures and outputs
+- [x] Regression: build.spec.ts and a compiled linux-x64 build stay green
 
 #### Acceptance Criteria
 - [ ] Given the split, when the compiled dg is built, then its size is within 1 KB of the build before
@@ -598,12 +598,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 6 — version-path
 
 #### Engineering
-- [ ] Answer --version before the dg-paths import (4.5 ms)
-- [ ] Skip the JIT re-exec (5 ms) for hooks run when its RSS stays in budget
+- [x] Answer --version before the dg-paths import (4.5 ms)
+- [x] Skip the JIT re-exec (5 ms) for hooks run when its RSS stays in budget
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: dispatch(['--version']) imports no chunk beyond the entry
+- [x] Contract: dispatch(['--version']) imports no chunk beyond the entry
 
 #### Acceptance Criteria
 - [ ] Given compiled dg, when --version runs 50 times, then p50 is at most 9 ms (baseline 19.3)
@@ -611,13 +611,13 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 7 — hooks-fast-route
 
 #### Engineering
-- [ ] fastRoute(argv) for hooks run imports only hooks/cli and skips the flat route tree (about 11 ms)
-- [ ] Read hook stdin with Bun.stdin.text() (node:stream init about 5 ms)
+- [x] fastRoute(argv) for hooks run imports only hooks/cli and skips the flat route tree (about 11 ms)
+- [x] Read hook stdin with Bun.stdin.text() (node:stream init about 5 ms)
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: fastRoute(argv) returns 'hooks' | 'completion' | 'version' | undefined and is pure
-- [ ] Parity test: every hook id gives the same output and exit code through the fast route and the full tree
+- [x] Contract: fastRoute(argv) returns 'hooks' | 'completion' | 'version' | undefined and is pure
+- [x] Parity test: every hook id gives the same output and exit code through the fast route and the full tree
 
 #### Acceptance Criteria
 - [ ] Given compiled dg after dispatch-wire, when hooks run pr-confirm runs 50 times, then p50 is at most 20 ms (at most 13 with bytecode)
@@ -625,11 +625,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 8 — completion-fast-path
 
 #### Engineering
-- [ ] Answer completion requests from tree.json without building the command tree
+- [x] Answer completion requests from tree.json without building the command tree
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: completeFast(words) returns the same candidates as the full completion for every fixture
+- [x] Contract: completeFast(words) returns the same candidates as the full completion for every fixture
 
 #### Acceptance Criteria
 - [ ] Given compiled dg after dispatch-wire, when a completion runs 50 times, then p50 is at most 9 ms (baseline 17.8)
@@ -637,13 +637,13 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 9 — release-compress
 
 #### Engineering
-- [ ] Publish dg-<key>.zst and dg-<key>.gz next to the raw asset for all 8 targets (Linux, Windows, macOS); SHA256SUMS covers all
-- [ ] dg update downloads .zst and decompresses with Bun.zstdDecompressSync; raw stays as fallback
+- [x] Publish dg-<key>.zst and dg-<key>.gz next to the raw asset for all 8 targets (Linux, Windows, macOS); SHA256SUMS covers all
+- [x] dg update downloads .zst and decompresses with Bun.zstdDecompressSync; raw stays as fallback
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: pickProgram(releases, version, key, { compressed }) returns { url, assetName, encoding: 'zstd' | 'gzip' | 'raw', sumsUrl }
-- [ ] Unit test: a missing .zst falls back to raw
+- [x] Contract: pickProgram(releases, version, key, { compressed }) returns { url, assetName, encoding: 'zstd' | 'gzip' | 'raw', sumsUrl }
+- [x] Unit test: a missing .zst falls back to raw
 
 #### Acceptance Criteria
 - [ ] Given a release, when dg update runs, then it downloads about 31.8 MB instead of 92.9 MB on linux-x64
@@ -651,11 +651,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 10 — bootstrap-gz
 
 #### Engineering
-- [ ] bootstrap.sh reads dg-<key>.gz with gzip; bootstrap.ps1 reads it with System.IO.Compression.GZipStream; both fall back to raw
+- [x] bootstrap.sh reads dg-<key>.gz with gzip; bootstrap.ps1 reads it with System.IO.Compression.GZipStream; both fall back to raw
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: asset selection picks .gz, else raw, on every platform key including darwin
+- [x] Contract: asset selection picks .gz, else raw, on every platform key including darwin
 
 #### Acceptance Criteria
 - [ ] Given a new machine, when bootstrap runs, then it downloads about 39.6 MB on linux-x64 and installs a working dg
@@ -663,11 +663,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 11 — skill-diet-phone
 
 #### Engineering
-- [ ] Diet for phone: move rare detail into references/, cut repeated text, each SKILL.md at most 8 KB, each description at most 400 characters
+- [x] Diet for phone: move rare detail into references/, cut repeated text, each SKILL.md at most 8 KB, each description at most 400 characters
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Regression: every pkg/skills-test skill guard for these skills stays green
+- [x] Regression: every pkg/skills-test skill guard for these skills stays green
 
 #### Acceptance Criteria
 - [ ] Given skill-tokens.ts, when it runs, then every SKILL.md in this group is at most 8 KB
@@ -675,11 +675,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 12 — skill-diet-status
 
 #### Engineering
-- [ ] Diet for stat, jobs, bg, jot, overwatch: move rare detail into references/, cut repeated text, each SKILL.md at most 8 KB, each description at most 400 characters
+- [x] Diet for stat, jobs, bg, jot, overwatch: move rare detail into references/, cut repeated text, each SKILL.md at most 8 KB, each description at most 400 characters
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Regression: every pkg/skills-test skill guard for these skills stays green
+- [x] Regression: every pkg/skills-test skill guard for these skills stays green
 
 #### Acceptance Criteria
 - [ ] Given skill-tokens.ts, when it runs, then every SKILL.md in this group is at most 8 KB
@@ -687,11 +687,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 13 — skill-diet-review
 
 #### Engineering
-- [ ] Diet for thrash, review-loop, address, polish, sniff, land: move rare detail into references/, cut repeated text, each SKILL.md at most 8 KB, each description at most 400 characters
+- [x] Diet for thrash, review-loop, address, polish, sniff, land: move rare detail into references/, cut repeated text, each SKILL.md at most 8 KB, each description at most 400 characters
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Regression: every pkg/skills-test skill guard for these skills stays green
+- [x] Regression: every pkg/skills-test skill guard for these skills stays green
 
 #### Acceptance Criteria
 - [ ] Given skill-tokens.ts, when it runs, then every SKILL.md in this group is at most 8 KB
@@ -699,11 +699,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 14 — skill-diet-planning
 
 #### Engineering
-- [ ] Diet for spec, sdlc, kick, pickup, assign, grill-me, prd, wayfinder, walk, refactor, chain: move rare detail into references/, cut repeated text, each SKILL.md at most 8 KB, each description at most 400 characters
+- [x] Diet for spec, sdlc, kick, pickup, assign, grill-me, prd, wayfinder, walk, refactor, chain: move rare detail into references/, cut repeated text, each SKILL.md at most 8 KB, each description at most 400 characters
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Regression: every pkg/skills-test skill guard for these skills stays green
+- [x] Regression: every pkg/skills-test skill guard for these skills stays green
 
 #### Acceptance Criteria
 - [ ] Given skill-tokens.ts, when it runs, then every SKILL.md in this group is at most 8 KB
@@ -711,11 +711,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 15 — skill-diet-rest
 
 #### Engineering
-- [ ] Diet for adr, agent-seed, bot-commit-email, catchup, chat, channel-review, clipboard-img, cls, db, deps-upgrade, doctor, eli5, erd, file, find-work, google-sms-cleanup, hook-comment-disable, hooks, hunt, inbox-cleanup, meaningful, monolith, nope, proxy, pushup, rename-session, spring-break, standard-test, stash, teach, ticket, update, what-changed, worktree: move rare detail into references/, cut repeated text, each SKILL.md at most 8 KB, each description at most 400 characters
+- [x] Diet for adr, agent-seed, bot-commit-email, catchup, chat, channel-review, clipboard-img, cls, db, deps-upgrade, doctor, eli5, erd, file, find-work, google-sms-cleanup, hook-comment-disable, hooks, hunt, inbox-cleanup, meaningful, monolith, nope, proxy, pushup, rename-session, spring-break, standard-test, stash, teach, ticket, update, what-changed, worktree: move rare detail into references/, cut repeated text, each SKILL.md at most 8 KB, each description at most 400 characters
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Regression: every pkg/skills-test skill guard for these skills stays green
+- [x] Regression: every pkg/skills-test skill guard for these skills stays green
 
 #### Acceptance Criteria
 - [ ] Given skill-tokens.ts, when it runs, then every SKILL.md in this group is at most 8 KB
@@ -723,14 +723,14 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 16 — browser-mode-flag
 
 #### Engineering
-- [ ] resolveBrowserMode: --local or --ext, else DG_BROWSER, else browser.mode in config.toml (ext, local, auto), else auto: ext when the extension is paired and running and the verb is ext-capable, else local
-- [ ] Add browser.mode to DG_TOML_DEFAULTS with the same validation and error text as other keys
-- [ ] Add front.enabled (boolean, default true) to DG_TOML_DEFAULTS for the R13 front-door opt-out, with the same validation and error text
+- [x] resolveBrowserMode: --local or --ext, else DG_BROWSER, else browser.mode in config.toml (ext, local, auto), else auto: ext when the extension is paired and running and the verb is ext-capable, else local
+- [x] Add browser.mode to DG_TOML_DEFAULTS with the same validation and error text as other keys
+- [x] Add front.enabled (boolean, default true) to DG_TOML_DEFAULTS for the R13 front-door opt-out, with the same validation and error text
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: resolveBrowserMode({ flags, env, config, extConnected, verb }) returns { mode: 'ext' | 'local', reason } and is pure
-- [ ] Unit test: --local always wins; a local-only verb never resolves to ext
+- [x] Contract: resolveBrowserMode({ flags, env, config, extConnected, verb }) returns { mode: 'ext' | 'local', reason } and is pure
+- [x] Unit test: --local always wins; a local-only verb never resolves to ext
 
 #### Acceptance Criteria
 - [ ] Given DG_BROWSER=local, when dg pw click runs, then Playwright handles it
@@ -738,12 +738,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 17 — ext-verbs-navigation
 
 #### Engineering
-- [ ] TypeScript and Bun only. Add the go-back, go-forward, reload verbs as a self-contained module on each side (extension handler, shared request shape and validator, CLI client); slice ext-verbs-wire registers them
+- [x] TypeScript and Bun only. Add the go-back, go-forward, reload verbs as a self-contained module on each side (extension handler, shared request shape and validator, CLI client); slice ext-verbs-wire registers them
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: the shared module exports VERBS, validate(request) and the request and result types for go-back, go-forward, reload
-- [ ] Unit test: each verb refuses a tab outside the agent tab group
+- [x] Contract: the shared module exports VERBS, validate(request) and the request and result types for go-back, go-forward, reload
+- [x] Unit test: each verb refuses a tab outside the agent tab group
 
 #### Acceptance Criteria
 - [ ] Given auto mode and a paired extension, when a go-back, go-forward, reload verb runs after ext-verbs-wire, then Playwright does not start
@@ -751,12 +751,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 18 — ext-verbs-pointer
 
 #### Engineering
-- [ ] TypeScript and Bun only. Add the hover, dblclick, drag, mousedown, mouseup, mousemove, mousewheel verbs as a self-contained module on each side (extension handler, shared request shape and validator, CLI client); slice ext-verbs-wire registers them
+- [x] TypeScript and Bun only. Add the hover, dblclick, drag, mousedown, mouseup, mousemove, mousewheel verbs as a self-contained module on each side (extension handler, shared request shape and validator, CLI client); slice ext-verbs-wire registers them
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: the shared module exports VERBS, validate(request) and the request and result types for hover, dblclick, drag, mousedown, mouseup, mousemove, mousewheel
-- [ ] Unit test: each verb refuses a tab outside the agent tab group
+- [x] Contract: the shared module exports VERBS, validate(request) and the request and result types for hover, dblclick, drag, mousedown, mouseup, mousemove, mousewheel
+- [x] Unit test: each verb refuses a tab outside the agent tab group
 
 #### Acceptance Criteria
 - [ ] Given auto mode and a paired extension, when a hover, dblclick, drag, mousedown, mouseup, mousemove, mousewheel verb runs after ext-verbs-wire, then Playwright does not start
@@ -764,12 +764,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 19 — ext-verbs-input
 
 #### Engineering
-- [ ] TypeScript and Bun only. Add the check, uncheck, type, keydown, keyup verbs as a self-contained module on each side (extension handler, shared request shape and validator, CLI client); slice ext-verbs-wire registers them
+- [x] TypeScript and Bun only. Add the check, uncheck, type, keydown, keyup verbs as a self-contained module on each side (extension handler, shared request shape and validator, CLI client); slice ext-verbs-wire registers them
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: the shared module exports VERBS, validate(request) and the request and result types for check, uncheck, type, keydown, keyup
-- [ ] Unit test: each verb refuses a tab outside the agent tab group
+- [x] Contract: the shared module exports VERBS, validate(request) and the request and result types for check, uncheck, type, keydown, keyup
+- [x] Unit test: each verb refuses a tab outside the agent tab group
 
 #### Acceptance Criteria
 - [ ] Given auto mode and a paired extension, when a check, uncheck, type, keydown, keyup verb runs after ext-verbs-wire, then Playwright does not start
@@ -777,12 +777,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 20 — ext-verbs-page
 
 #### Engineering
-- [ ] TypeScript and Bun only. Add the eval, tab-select, resize verbs as a self-contained module on each side (extension handler, shared request shape and validator, CLI client); slice ext-verbs-wire registers them
+- [x] TypeScript and Bun only. Add the eval, tab-select, resize verbs as a self-contained module on each side (extension handler, shared request shape and validator, CLI client); slice ext-verbs-wire registers them
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: the shared module exports VERBS, validate(request) and the request and result types for eval, tab-select, resize
-- [ ] Unit test: each verb refuses a tab outside the agent tab group
+- [x] Contract: the shared module exports VERBS, validate(request) and the request and result types for eval, tab-select, resize
+- [x] Unit test: each verb refuses a tab outside the agent tab group
 
 #### Acceptance Criteria
 - [ ] Given auto mode and a paired extension, when a eval, tab-select, resize verb runs after ext-verbs-wire, then Playwright does not start
@@ -790,12 +790,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 21 — ext-verbs-storage
 
 #### Engineering
-- [ ] TypeScript and Bun only. Add the localstorage and sessionstorage set, delete, clear on allowlisted origins verbs as a self-contained module on each side (extension handler, shared request shape and validator, CLI client); slice ext-verbs-wire registers them
+- [x] TypeScript and Bun only. Add the localstorage and sessionstorage set, delete, clear on allowlisted origins verbs as a self-contained module on each side (extension handler, shared request shape and validator, CLI client); slice ext-verbs-wire registers them
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: the shared module exports VERBS, validate(request) and the request and result types for localstorage and sessionstorage set, delete, clear on allowlisted origins
-- [ ] Unit test: each verb refuses a tab outside the agent tab group
+- [x] Contract: the shared module exports VERBS, validate(request) and the request and result types for localstorage and sessionstorage set, delete, clear on allowlisted origins
+- [x] Unit test: each verb refuses a tab outside the agent tab group
 
 #### Acceptance Criteria
 - [ ] Given auto mode and a paired extension, when a localstorage and sessionstorage set, delete, clear on allowlisted origins verb runs after ext-verbs-wire, then Playwright does not start
@@ -803,12 +803,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 22 — ext-agent-window
 
 #### Engineering
-- [ ] TypeScript and Bun only. A dedicated agent window for ext sessions, and a prompt to allow each new site before the agent navigates there; PHI-flagged sites refuse snapshot and screenshot
+- [x] TypeScript and Bun only. A dedicated agent window for ext sessions, and a prompt to allow each new site before the agent navigates there; PHI-flagged sites refuse snapshot and screenshot
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: openAgentWindow(sessionId) returns the window id and reuses it per session
-- [ ] Contract: requestSiteAllow(siteKey) resolves 'allow' | 'deny' and stores allow per session
+- [x] Contract: openAgentWindow(sessionId) returns the window id and reuses it per session
+- [x] Contract: requestSiteAllow(siteKey) resolves 'allow' | 'deny' and stores allow per session
 
 #### Acceptance Criteria
 - [ ] Given an ext session, when the agent opens a new site, then the user sees an allow prompt and the page does not load until allowed
@@ -816,12 +816,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 23 — relay-contract
 
 #### Engineering
-- [ ] Write the daemon relay protocol as a contract: message shapes, protocol version field, version negotiation and error frames, from the existing TS validators
-- [ ] Add a shared fixture set (valid and invalid frames per message type) that the Bun side tests now and the C# side tests in stage 2
+- [x] Write the daemon relay protocol as a contract: message shapes, protocol version field, version negotiation and error frames, from the existing TS validators
+- [x] Add a shared fixture set (valid and invalid frames per message type) that the Bun side tests now and the C# side tests in stage 2
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: every fixture under pkg/common/fixtures/relay/valid passes the TS validator and every one under invalid fails with the documented error
+- [x] Contract: every fixture under pkg/common/fixtures/relay/valid passes the TS validator and every one under invalid fails with the documented error
 
 #### Acceptance Criteria
 - [ ] Given a frame shape change in TS, when tests run, then the fixture test fails until docs and fixtures change
@@ -829,15 +829,15 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 24 — plugin-contract
 
 #### Engineering
-- [ ] Define plugin.toml (name, version, kind hook | job | skill, entry builtin id or command and args, capabilities, permissions, sha256 or commit pin, source) transport (ipc default, http, tcp, udp) and endpoint
-- [ ] Write the message contract v1 shared by all transports: a protocol version field, hello with capability and encoding negotiation, request ids, /v1/hook/decide, /v1/job/run, /v1/job/status, /v1/skill/describe, /v1/health; frames are a length-prefixed binary header (version, encoding, flags, request id, length) plus a UTF-8 JSON payload, MessagePack optional; size limits, timeouts, latency budgets, per-plugin token auth from the credential store for http and tcp, remote URLs only with remote = true
-- [ ] Read [plugins.<name>] (enabled, source, settings) through the existing dg-toml reader; secrets only as credential references
-- [ ] Shared fixtures (valid and invalid manifests, JSON messages and binary frames) used by Bun now and C# in cs-plugins-core
+- [x] Define plugin.toml (name, version, kind hook | job | skill, entry builtin id or command and args, capabilities, permissions, sha256 or commit pin, source) transport (ipc default, http, tcp, udp) and endpoint
+- [x] Write the message contract v1 shared by all transports: a protocol version field, hello with capability and encoding negotiation, request ids, /v1/hook/decide, /v1/job/run, /v1/job/status, /v1/skill/describe, /v1/health; frames are a length-prefixed binary header (version, encoding, flags, request id, length) plus a UTF-8 JSON payload, MessagePack optional; size limits, timeouts, latency budgets, per-plugin token auth from the credential store for http and tcp, remote URLs only with remote = true
+- [x] Read [plugins.<name>] (enabled, source, settings) through the existing dg-toml reader; secrets only as credential references
+- [x] Shared fixtures (valid and invalid manifests, JSON messages and binary frames) used by Bun now and C# in cs-plugins-core
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: parseManifest(text, file) returns a PluginManifest or a DgCliError with file:line, key and next step
-- [ ] Contract: every fixture under valid parses and every one under invalid fails with the documented error
+- [x] Contract: parseManifest(text, file) returns a PluginManifest or a DgCliError with file:line, key and next step
+- [x] Contract: every fixture under valid parses and every one under invalid fails with the documented error
 
 #### Acceptance Criteria
 - [ ] Given a plugin.toml with an unknown kind, when it is parsed, then the error names the line and the allowed kinds
@@ -845,14 +845,14 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 25 — cs-scaffold
 
 #### Engineering
-- [ ] global.json pins SDK 11.0.100 with rollForward latestFeature; net11.0; default C# version; Nullable, TreatWarningsAsErrors, AOT and trim analyzers on
-- [ ] Central package management; every project file for stage 1 created now (Core, Hooks, Config, Completion, Routing, Plugins, Cli and their xUnit v3 tests, Parity tests), so no later slice edits a .csproj or the .slnx
-- [ ] Core: ICommand, IPlugin and PluginKind (hook, job, skill), DgError with file:line, key and next step, output helpers; Cli: an empty composition root
+- [x] global.json pins SDK 11.0.100 with rollForward latestFeature; net11.0; default C# version; Nullable, TreatWarningsAsErrors, AOT and trim analyzers on
+- [x] Central package management; every project file for stage 1 created now (Core, Hooks, Config, Completion, Routing, Plugins, Cli and their xUnit v3 tests, Parity tests), so no later slice edits a .csproj or the .slnx
+- [x] Core: ICommand, IPlugin and PluginKind (hook, job, skill), DgError with file:line, key and next step, output helpers; Cli: an empty composition root
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: ICommand { string Name { get; } ValueTask<int> RunAsync(ReadOnlyMemory<string> args, CancellationToken ct); }
-- [ ] Gate: dotnet publish -r linux-x64 with PublishAot gives zero IL2xxx or IL3xxx warnings
+- [x] Contract: ICommand { string Name { get; } ValueTask<int> RunAsync(ReadOnlyMemory<string> args, CancellationToken ct); }
+- [x] Gate: dotnet publish -r linux-x64 with PublishAot gives zero IL2xxx or IL3xxx warnings
 
 #### Acceptance Criteria
 - [ ] Given a clean clone, when dotnet test native/Dg.slnx runs, then it builds and passes
@@ -860,12 +860,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 26 — ci-lean-gates
 
 #### Engineering
-- [ ] Run the RSS, idle, leak, size, download, latency and skill-token gates on every PR in compiled-dg.yml: gate on linux-x64, report on Windows and macOS; feed budget-ratchet
-- [ ] docs/lean-baseline.md: the baseline tables and how to re-run
+- [x] Run the RSS, idle, leak, size, download, latency and skill-token gates on every PR in compiled-dg.yml: gate on linux-x64, report on Windows and macOS; feed budget-ratchet
+- [x] docs/lean-baseline.md: the baseline tables and how to re-run
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Regression: compiled-dg.yml passes at baseline
+- [x] Regression: compiled-dg.yml passes at baseline
 
 #### Acceptance Criteria
 - [ ] Given a PR that breaks a budget, when CI runs, then compiled-dg fails and names the budget
@@ -873,12 +873,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 27 — build-report
 
 #### Engineering
-- [ ] build --report <file> writes bytes per module and package from the Bun metafile
-- [ ] scripts/size-diff.ts compares two reports and prints the modules that grew, for the budgets.yml comment
+- [x] build --report <file> writes bytes per module and package from the Bun metafile
+- [x] scripts/size-diff.ts compares two reports and prints the modules that grew, for the budgets.yml comment
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: report JSON is { totalBytes, packages: { [name]: bytes } }; @aws-sdk, @smithy and @aws-crypto are one row
+- [x] Contract: report JSON is { totalBytes, packages: { [name]: bytes } }; @aws-sdk, @smithy and @aws-crypto are one row
 
 #### Acceptance Criteria
 - [ ] Given a build, when --report runs, then playwright-core is the top row
@@ -886,11 +886,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 28 — build-bytecode
 
 #### Engineering
-- [ ] Turn on bytecode for compiled targets (R2 accepted); keep splitting on
+- [x] Turn on bytecode for compiled targets (R2 accepted); keep splitting on
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Unit test: compile options include bytecode and splitting for every target
+- [x] Unit test: compile options include bytecode and splitting for every target
 
 #### Acceptance Criteria
 - [ ] Given the bytecode build, when hooks run pr-confirm runs 50 times, then p50 is at most 13 ms
@@ -898,11 +898,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 29 — build-companions
 
 #### Engineering
-- [ ] Emit the pw chunk and the db chunk as companion bundles dg-pw-<ver>.tar.zst and dg-db-<ver>.tar.zst outside the compiled binary (R3 accepted); loadCompanion(name) imports them from the dg data dir
+- [x] Emit the pw chunk and the db chunk as companion bundles dg-pw-<ver>.tar.zst and dg-db-<ver>.tar.zst outside the compiled binary (R3 accepted); loadCompanion(name) imports them from the dg data dir
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: loadCompanion('pw' | 'db') returns the module or throws CompanionMissing with the download command
+- [x] Contract: loadCompanion('pw' | 'db') returns the module or throws CompanionMissing with the download command
 
 #### Acceptance Criteria
 - [ ] Given the build, when the compiled dg is measured, then it is about 7.5 MB smaller raw
@@ -910,11 +910,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 30 — dispatch-wire
 
 #### Engineering
-- [ ] Call fastRoute and completeFast from dispatch before the full program loads
+- [x] Call fastRoute and completeFast from dispatch before the full program loads
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Unit test: hooks, completion and --version never import the flat route tree
+- [x] Unit test: hooks, completion and --version never import the flat route tree
 
 #### Acceptance Criteria
 - [ ] Given compiled dg, when the ram-budget latency cases run, then they meet the new budgets
@@ -922,13 +922,13 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 31 — delta-patches
 
 #### Engineering
-- [ ] release-patches.yml builds dg-<key>-from-<prev>.zpatch (zstd --patch-from, previous release only) for all 8 targets and a PATCHSUMS file
-- [ ] dg update applies the patch, checks the raw sha256, else falls back to .zst
+- [x] release-patches.yml builds dg-<key>-from-<prev>.zpatch (zstd --patch-from, previous release only) for all 8 targets and a PATCHSUMS file
+- [x] dg update applies the patch, checks the raw sha256, else falls back to .zst
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: applyPatch(oldBytes, patchBytes, expectedSha256) returns new bytes or throws PatchMismatch
-- [ ] Unit test: a corrupt patch falls back to the full .zst
+- [x] Contract: applyPatch(oldBytes, patchBytes, expectedSha256) returns new bytes or throws PatchMismatch
+- [x] Unit test: a corrupt patch falls back to the full .zst
 
 #### Acceptance Criteria
 - [ ] Given the previous release installed, when dg update runs, then it downloads about 5 MB
@@ -936,14 +936,14 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 32 — cs-core-config
 
 #### Engineering
-- [ ] Paths per ADR 0054: XDG_CONFIG_HOME/dg/config.toml, <DG_HOME>/config/config.toml when DG_HOME is set
-- [ ] An AOT-safe TOML configuration provider over Tomlyn source-generated models feeding IOptions through the binding source generator; precedence flag > documented DG_* env > TOML > default; no JSON, appsettings, launchSettings or .env sources
-- [ ] Secrets only through {credential = "..."} references resolved from the credential store
+- [x] Paths per ADR 0054: XDG_CONFIG_HOME/dg/config.toml, <DG_HOME>/config/config.toml when DG_HOME is set
+- [x] An AOT-safe TOML configuration provider over Tomlyn source-generated models feeding IOptions through the binding source generator; precedence flag > documented DG_* env > TOML > default; no JSON, appsettings, launchSettings or .env sources
+- [x] Secrets only through {credential = "..."} references resolved from the credential store
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: DgConfig.Load(env) returns a readonly record or a DgError with file:line, key and next step, matching the Bun text
-- [ ] Parity test: the shared config fixtures give the same values and error text in Bun and C#
+- [x] Contract: DgConfig.Load(env) returns a readonly record or a DgError with file:line, key and next step, matching the Bun text
+- [x] Parity test: the shared config fixtures give the same values and error text in Bun and C#
 
 #### Acceptance Criteria
 - [ ] Given a config.toml with a bad key, when C# and Bun load it, then both print the same error
@@ -951,12 +951,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 33 — cs-hooks-engine
 
 #### Engineering
-- [ ] Hook stdin parsed with Utf8JsonReader into a readonly record struct; FrozenDictionary of hook id to IHook; AddHooks() calls AddPrHooks, AddTextHooks and AddRepoHooks (stub Registration.cs per group)
+- [x] Hook stdin parsed with Utf8JsonReader into a readonly record struct; FrozenDictionary of hook id to IHook; AddHooks() calls AddPrHooks, AddTextHooks and AddRepoHooks (stub Registration.cs per group)
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: IHook { string Id { get; } ValueTask<int> RunAsync(HookEvent ev, CancellationToken ct); }
-- [ ] Contract: HookEvent.Parse(ReadOnlySpan<byte>) handles every ram-budget hook fixture
+- [x] Contract: IHook { string Id { get; } ValueTask<int> RunAsync(HookEvent ev, CancellationToken ct); }
+- [x] Contract: HookEvent.Parse(ReadOnlySpan<byte>) handles every ram-budget hook fixture
 
 #### Acceptance Criteria
 - [ ] Given an unknown hook id, when the engine runs, then it exits 0 and prints nothing, like Bun
@@ -964,12 +964,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 34 — cs-routing-version
 
 #### Engineering
-- [ ] --version and the route table (FrozenDictionary from the flat routes, generated at build time by scripts/native-routes.ts, not committed); exec the Bun dg-core with argv, env, stdin and exit code unchanged
+- [x] --version and the route table (FrozenDictionary from the flat routes, generated at build time by scripts/native-routes.ts, not committed); exec the Bun dg-core with argv, env, stdin and exit code unchanged
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: Route.Resolve(ReadOnlySpan<string> argv) returns Native(ICommand) | Core(string[] argv)
-- [ ] Parity test: every Bun flat route resolves to the same target
+- [x] Contract: Route.Resolve(ReadOnlySpan<string> argv) returns Native(ICommand) | Core(string[] argv)
+- [x] Parity test: every Bun flat route resolves to the same target
 
 #### Acceptance Criteria
 - [ ] Given dg spec validate, when the front door runs, then dg-core handles it with the same output
@@ -977,11 +977,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 35 — cs-completion
 
 #### Engineering
-- [ ] Completion from the Bun completion trees (copied at build time by scripts/native-completion.ts)
+- [x] Completion from the Bun completion trees (copied at build time by scripts/native-completion.ts)
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Parity test: every completion fixture gives the same candidates as Bun
+- [x] Parity test: every completion fixture gives the same candidates as Bun
 
 #### Acceptance Criteria
 - [ ] Given a partial word, when completion runs, then p50 is at most 3 ms
@@ -989,11 +989,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 36 — cs-ci
 
 #### Engineering
-- [ ] NativeAOT build and test on 6 runners: ubuntu x64 and arm64, windows x64 and arm64, macos-15-intel and macos-15; AOT and trim warnings as errors; size, RSS and latency gates for the front door
+- [x] NativeAOT build and test on 6 runners: ubuntu x64 and arm64, windows x64 and arm64, macos-15-intel and macos-15; AOT and trim warnings as errors; size, RSS and latency gates for the front door
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Regression: native.yml green on all 6 runners
+- [x] Regression: native.yml green on all 6 runners
 
 #### Acceptance Criteria
 - [ ] Given an AOT warning, when native.yml runs, then the build fails
@@ -1001,13 +1001,13 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 37 — plugin-cli-bun
 
 #### Engineering
-- [ ] dg plugin list, add, remove, enable, disable, update, verify; add takes a git url or path, pins by commit or sha256, installs into the plugin folder, registers skill bundles with the Claude and Codex hosts as today, and marks imported skill text untrusted until approved; any change asks for approval again
-- [ ] Regenerate the completion tree
+- [x] dg plugin list, add, remove, enable, disable, update, verify; add takes a git url or path, pins by commit or sha256, installs into the plugin folder, registers skill bundles with the Claude and Codex hosts as today, and marks imported skill text untrusted until approved; any change asks for approval again
+- [x] Regenerate the completion tree
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: addPlugin({ source, pin }) returns { name, kind, pin, approved: false } and writes nothing outside the plugin folder and [plugins.<name>]
-- [ ] Unit test: a changed sha256 sets approved false and disables the plugin until verify --approve
+- [x] Contract: addPlugin({ source, pin }) returns { name, kind, pin, approved: false } and writes nothing outside the plugin folder and [plugins.<name>]
+- [x] Unit test: a changed sha256 sets approved false and disables the plugin until verify --approve
 
 #### Acceptance Criteria
 - [ ] Given dg plugin add <git url>, when the repo ships a skill plugin, then the skill is installed, pinned and not loaded until approved
@@ -1015,12 +1015,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 38 — bun-transport-http
 
 #### Engineering
-- [ ] HTTP transport for the Bun dg: keep-alive client, /v1 routes, bearer token from the credential store, loopback only unless remote = true, size limit and timeout
+- [x] HTTP transport for the Bun dg: keep-alive client, /v1 routes, bearer token from the credential store, loopback only unless remote = true, size limit and timeout
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: httpTransport(manifest).request(message, { timeoutMs }) returns a contract Response or a typed timeout or auth error
-- [ ] Unit test: a remote URL without remote = true is refused; the token never appears in logs or errors
+- [x] Contract: httpTransport(manifest).request(message, { timeoutMs }) returns a contract Response or a typed timeout or auth error
+- [x] Unit test: a remote URL without remote = true is refused; the token never appears in logs or errors
 
 #### Acceptance Criteria
 - [ ] Given a local HTTP plugin, when dg sends a hook decide, then the fixtures round-trip
@@ -1028,12 +1028,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 39 — bun-transport-ipc
 
 #### Engineering
-- [ ] IPC transport for the Bun dg (default for local plugins): Unix domain socket with 0600 permissions on Linux and macOS, named pipe with a user-only ACL on Windows, length-prefixed frames, one warm connection per plugin with request ids
+- [x] IPC transport for the Bun dg (default for local plugins): Unix domain socket with 0600 permissions on Linux and macOS, named pipe with a user-only ACL on Windows, length-prefixed frames, one warm connection per plugin with request ids
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: frame encode and decode match every binary frame fixture byte for byte
-- [ ] Unit test: a socket file with wider permissions than 0600 is refused
+- [x] Contract: frame encode and decode match every binary frame fixture byte for byte
+- [x] Unit test: a socket file with wider permissions than 0600 is refused
 
 #### Acceptance Criteria
 - [ ] Given a local IPC plugin, when dg sends a hook decide, then the fixtures round-trip
@@ -1041,12 +1041,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 40 — hook-plugins-bun
 
 #### Engineering
-- [ ] Today hook ids become built-in hook plugins; external hook plugins get a /v1/hook/decide request over IPC (default) or HTTP under a timeout (default 2 s) and a latency budget; an already-running plugin is never spawned per call; built-ins stay in process
+- [x] Today hook ids become built-in hook plugins; external hook plugins get a /v1/hook/decide request over IPC (default) or HTTP under a timeout (default 2 s) and a latency budget; an already-running plugin is never spawned per call; built-ins stay in process
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: runExternalHook(manifest, event, { timeoutMs }) returns { decision, latencyMs } or a timeout result that never blocks the tool call
-- [ ] Unit test: a disabled or unapproved external hook never spawns
+- [x] Contract: runExternalHook(manifest, event, { timeoutMs }) returns { decision, latencyMs } or a timeout result that never blocks the tool call
+- [x] Unit test: a disabled or unapproved external hook never spawns
 
 #### Acceptance Criteria
 - [ ] Given an external hook plugin, when it times out, then dg prints one line and the tool call goes on
@@ -1054,11 +1054,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 41 — job-plugins-bun
 
 #### Engineering
-- [ ] dg job add <git url|path> reads a plugin.toml of kind job when present (ADR 0049 argv model unchanged); a repo without one keeps working
+- [x] dg job add <git url|path> reads a plugin.toml of kind job when present (ADR 0049 argv model unchanged); a repo without one keeps working
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: jobFromManifest(manifest) returns the same JobDeclaration shape as today
+- [x] Contract: jobFromManifest(manifest) returns the same JobDeclaration shape as today
 
 #### Acceptance Criteria
 - [ ] Given a repo with a job plugin.toml, when dg job add runs, then the job stores the manifest argv and pin
@@ -1066,11 +1066,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 42 — cs-plugin-contract
 
 #### Engineering
-- [ ] Contract messages as records with a source-generated JsonSerializerContext; manifest parse; the frame header as a readonly record struct parsed from ReadOnlySpan<byte>
+- [x] Contract messages as records with a source-generated JsonSerializerContext; manifest parse; the frame header as a readonly record struct parsed from ReadOnlySpan<byte>
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Parity test: every shared plugin fixture (manifest, message, frame) parses and serializes the same as Bun
+- [x] Parity test: every shared plugin fixture (manifest, message, frame) parses and serializes the same as Bun
 
 #### Acceptance Criteria
 - [ ] Given the fixtures, when C# serializes a response, then the bytes equal the fixture
@@ -1078,11 +1078,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 43 — ext-verbs-wire
 
 #### Engineering
-- [ ] Register the verb modules in the verb lists, the CLI and the extension dispatcher; turn on the agent window and allow prompt for ext sessions
+- [x] Register the verb modules in the verb lists, the CLI and the extension dispatcher; turn on the agent window and allow prompt for ext sessions
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: PW_EXT_READ_VERBS and PW_EXT_WRITE_VERBS grow only by the new verbs
+- [x] Contract: PW_EXT_READ_VERBS and PW_EXT_WRITE_VERBS grow only by the new verbs
 
 #### Acceptance Criteria
 - [ ] Given auto mode, when open, click, fill, back, reload, hover and eval run, then none starts Playwright
@@ -1090,11 +1090,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 44 — cs-hooks-pr
 
 #### Engineering
-- [ ] pr-confirm, pr-prose and strip-ai-coauthors in C# with [GeneratedRegex] and SearchValues
+- [x] pr-confirm, pr-prose and strip-ai-coauthors in C# with [GeneratedRegex] and SearchValues
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Parity test: same output and exit code as Bun for every fixture
+- [x] Parity test: same output and exit code as Bun for every fixture
 
 #### Acceptance Criteria
 - [ ] Given gh pr create, when pr-confirm runs, then p50 is at most 3 ms
@@ -1102,11 +1102,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 45 — cs-hooks-text
 
 #### Engineering
-- [ ] spelling and format in C#; format execs the same formatter as Bun
+- [x] spelling and format in C#; format execs the same formatter as Bun
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Parity test: same output and exit code as Bun for every fixture
+- [x] Parity test: same output and exit code as Bun for every fixture
 
 #### Acceptance Criteria
 - [ ] Given an Edit event, when spelling runs, then p50 is at most 4 ms
@@ -1114,11 +1114,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 46 — cs-hooks-repo
 
 #### Engineering
-- [ ] spec-plan-lint and daily-prune in C#; git through Process (no LibGit2Sharp)
+- [x] spec-plan-lint and daily-prune in C#; git through Process (no LibGit2Sharp)
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Parity test: same output and exit code as Bun for every fixture
+- [x] Parity test: same output and exit code as Bun for every fixture
 
 #### Acceptance Criteria
 - [ ] Given a SessionStart event, when daily-prune runs, then it prunes the same paths as Bun
@@ -1126,11 +1126,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 47 — cs-config-group
 
 #### Engineering
-- [ ] dg config get, set, list and doctor in C# over Core config, writing TOML with the same layout as Bun
+- [x] dg config get, set, list and doctor in C# over Core config, writing TOML with the same layout as Bun
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Parity test: same output for every config fixture
+- [x] Parity test: same output for every config fixture
 
 #### Acceptance Criteria
 - [ ] Given dg config get browser.mode, when C# runs it, then the output equals Bun
@@ -1138,12 +1138,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 48 — cs-transport-http
 
 #### Engineering
-- [ ] HttpTransport: one SocketsHttpHandler per plugin with keep-alive, source-generated JSON, bearer token from the credential store, loopback only unless remote = true, size limit, timeout; AddHttpTransport()
+- [x] HttpTransport: one SocketsHttpHandler per plugin with keep-alive, source-generated JSON, bearer token from the credential store, loopback only unless remote = true, size limit, timeout; AddHttpTransport()
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: IPluginTransport.SendAsync(ReadOnlyMemory<byte> frame, CancellationToken ct) returns ValueTask<PluginResponse>
-- [ ] Unit test: no secret in URLs or logs
+- [x] Contract: IPluginTransport.SendAsync(ReadOnlyMemory<byte> frame, CancellationToken ct) returns ValueTask<PluginResponse>
+- [x] Unit test: no secret in URLs or logs
 
 #### Acceptance Criteria
 - [ ] Given a keep-alive HTTP plugin, when 300 calls run, then p50 is at most 0.1 ms (measured 0.047)
@@ -1151,12 +1151,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 49 — cs-transport-ipc
 
 #### Engineering
-- [ ] Default transport. UnixDomainSocketEndPoint (0600) on Linux and macOS, NamedPipeClientStream with a user-only ACL on Windows; System.IO.Pipelines framing with PipeReader and PipeWriter, header and payload in one write, ArrayPool buffers, Utf8JsonReader over ReadOnlySequence; a connection pool with request ids so one warm connection serves many calls; AddIpcTransport()
+- [x] Default transport. UnixDomainSocketEndPoint (0600) on Linux and macOS, NamedPipeClientStream with a user-only ACL on Windows; System.IO.Pipelines framing with PipeReader and PipeWriter, header and payload in one write, ArrayPool buffers, Utf8JsonReader over ReadOnlySequence; a connection pool with request ids so one warm connection serves many calls; AddIpcTransport()
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: FrameReader.TryRead(ref ReadOnlySequence<byte>, out Frame) is allocation-free on the hot path (checked with GC.GetAllocatedBytesForCurrentThread)
-- [ ] Unit test: oversize frames are refused before the payload is read
+- [x] Contract: FrameReader.TryRead(ref ReadOnlySequence<byte>, out Frame) is allocation-free on the hot path (checked with GC.GetAllocatedBytesForCurrentThread)
+- [x] Unit test: oversize frames are refused before the payload is read
 
 #### Acceptance Criteria
 - [ ] Given a warm IPC plugin, when 300 calls run, then p50 is at most 0.03 ms (measured 0.010)
@@ -1164,11 +1164,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 50 — cs-transport-tcp
 
 #### Engineering
-- [ ] TcpTransport over the IPC framing: NoDelay on both ends (a two-write frame without it measured 41 ms from Nagle and delayed ACK), loopback only unless remote = true, token auth in hello; AddTcpTransport()
+- [x] TcpTransport over the IPC framing: NoDelay on both ends (a two-write frame without it measured 41 ms from Nagle and delayed ACK), loopback only unless remote = true, token auth in hello; AddTcpTransport()
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Unit test: the hello without a valid token closes the connection
+- [x] Unit test: the hello without a valid token closes the connection
 
 #### Acceptance Criteria
 - [ ] Given a warm TCP plugin, when 300 calls run, then p50 is at most 0.05 ms (measured 0.022)
@@ -1176,12 +1176,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 51 — cs-transport-udp
 
 #### Engineering
-- [ ] UdpTransport for fire-and-forget events only (job progress, notifications, telemetry): batched, datagrams at most 1200 bytes, loss accepted, never used for hook decisions or any request and response; AddUdpTransport()
+- [x] UdpTransport for fire-and-forget events only (job progress, notifications, telemetry): batched, datagrams at most 1200 bytes, loss accepted, never used for hook decisions or any request and response; AddUdpTransport()
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: IEventSink.Post(in PluginEvent) never blocks and drops when the batch is full
-- [ ] Unit test: a manifest with transport = udp and kind hook is refused
+- [x] Contract: IEventSink.Post(in PluginEvent) never blocks and drops when the batch is full
+- [x] Unit test: a manifest with transport = udp and kind hook is refused
 
 #### Acceptance Criteria
 - [ ] Given 10k events, when they post, then the caller never waits on the network
@@ -1189,11 +1189,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 52 — cs-transport-msgpack
 
 #### Engineering
-- [ ] Optional MessagePack encoding (MessagePack-CSharp 3.1.12 source-generated resolver, AOT-safe) negotiated in hello for hot plugins; JSON stays the default
+- [x] Optional MessagePack encoding (MessagePack-CSharp 3.1.12 source-generated resolver, AOT-safe) negotiated in hello for hot plugins; JSON stays the default
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Parity test: every message fixture round-trips JSON to MessagePack to JSON unchanged
+- [x] Parity test: every message fixture round-trips JSON to MessagePack to JSON unchanged
 
 #### Acceptance Criteria
 - [ ] Given a plugin that offers msgpack, when hello runs, then both sides agree on msgpack
@@ -1201,14 +1201,14 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 53 — cs-native-gates
 
 #### Engineering
-- [ ] Size attribution: IlcGenerateMstatFile plus Dg.SizeReport (System.Reflection.Metadata, sizoscope-style) per assembly and namespace; budgets per RID for raw and zstd size
+- [x] Size attribution: IlcGenerateMstatFile plus Dg.SizeReport (System.Reflection.Metadata, sizoscope-style) per assembly and namespace; budgets per RID for raw and zstd size
 - [ ] scripts/native-ram-budget.ts: peak RSS and p50 for every front-door case, idle and growth for the plugin host; gate on Linux, report on Windows and macOS
-- [ ] Keep the size levers on and checked: InvariantGlobalization, UseSystemResourceKeys, OptimizationPreference=Size, StackTraceSupport=false, EventSourceSupport=false, DebuggerSupport=false, stripped symbols shipped as a separate asset
+- [x] Keep the size levers on and checked: InvariantGlobalization, UseSystemResourceKeys, OptimizationPreference=Size, StackTraceSupport=false, EventSourceSupport=false, DebuggerSupport=false, stripped symbols shipped as a separate asset
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: Dg.SizeReport --mstat <file> --json prints { totalBytes, assemblies: { [name]: bytes }, namespaces: { [name]: bytes } }
-- [ ] Gate: native budgets in native/budgets/*.json through budget-ratchet
+- [x] Contract: Dg.SizeReport --mstat <file> --json prints { totalBytes, assemblies: { [name]: bytes }, namespaces: { [name]: bytes } }
+- [x] Gate: native budgets in native/budgets/*.json through budget-ratchet
 
 #### Acceptance Criteria
 - [ ] Given a new package that adds 500 KB, when native.yml runs, then the PR comment names the package and the ratchet fails without a Budget-Increase line
@@ -1216,11 +1216,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 54 — cs-plugin-bench
 
 #### Engineering
-- [ ] A NativeAOT bench harness (BenchmarkDotNet does not run under NativeAOT) for round-trip p50 and p99: built-in, IPC direct, IPC through a broker, TCP, HTTP keep-alive, HTTP and IPC from a fresh process, JSON and MessagePack; gates in native-bench.yml
+- [x] A NativeAOT bench harness (BenchmarkDotNet does not run under NativeAOT) for round-trip p50 and p99: built-in, IPC direct, IPC through a broker, TCP, HTTP keep-alive, HTTP and IPC from a fresh process, JSON and MessagePack; gates in native-bench.yml
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Gate: warm IPC p50 at most 0.03 ms, warm HTTP p50 at most 0.1 ms, fresh-process IPC hook at most 3 ms, fresh-process HTTP hook at most 4 ms on the CI runner, set from the first CI run plus 20 percent
+- [x] Gate: warm IPC p50 at most 0.03 ms, warm HTTP p50 at most 0.1 ms, fresh-process IPC hook at most 3 ms, fresh-process HTTP hook at most 4 ms on the CI runner, set from the first CI run plus 20 percent
 
 #### Acceptance Criteria
 - [ ] Given a regression in framing, when native-bench runs, then the gate fails with the transport and both numbers
@@ -1228,11 +1228,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 55 — cs-plugins-runtime
 
 #### Engineering
-- [ ] Select the transport from the manifest through DI keyed registrations; health check, timeouts, latency budget; built-in plugins resolve in process with no transport
+- [x] Select the transport from the manifest through DI keyed registrations; health check, timeouts, latency budget; built-in plugins resolve in process with no transport
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: IPluginHost.InvokeAsync(name, message, ct) returns ValueTask<PluginResponse> and never spawns a process for a running plugin
+- [x] Contract: IPluginHost.InvokeAsync(name, message, ct) returns ValueTask<PluginResponse> and never spawns a process for a running plugin
 
 #### Acceptance Criteria
 - [ ] Given a disabled or unapproved plugin, when it is invoked, then nothing connects
@@ -1244,7 +1244,7 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Parity test: list and verify output equal Bun for every fixture
+- [x] Parity test: list and verify output equal Bun for every fixture
 
 #### Acceptance Criteria
 - [ ] Given an unapproved plugin, when dg plugin verify runs in C#, then it reports the same state as Bun
@@ -1252,11 +1252,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 57 — companion-release
 
 #### Engineering
-- [ ] Upload companion bundles in release.yml; dg downloads, checks sha256 and unpacks a companion on first pw --local or db snowflake use
+- [x] Upload companion bundles in release.yml; dg downloads, checks sha256 and unpacks a companion on first pw --local or db snowflake use
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: ensureCompanion(name, version) returns the unpacked path or throws with the download error and the manual command
+- [x] Contract: ensureCompanion(name, version) returns the unpacked path or throws with the download error and the manual command
 
 #### Acceptance Criteria
 - [ ] Given a fresh install, when dg pw --local open runs, then it downloads the pw companion once and runs
@@ -1264,12 +1264,12 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 58 — browser-docs-skills
 
 #### Engineering
-- [ ] Document auto mode, --ext, --local, DG_BROWSER and browser.mode, the local-only list, the agent window and allow prompt; apply the 8 KB diet to these skills
+- [x] Document auto mode, --ext, --local, DG_BROWSER and browser.mode, the local-only list, the agent window and allow prompt; apply the 8 KB diet to these skills
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Regression: all skill guards pass
-- [ ] Unit test: docs/config.md lists browser.mode with ext, local and auto
+- [x] Regression: all skill guards pass
+- [x] Unit test: docs/config.md lists browser.mode with ext, local and auto
 
 #### Acceptance Criteria
 - [ ] Given docs/pw.md, when a reader looks up a local-only verb, then the table gives the reason
@@ -1277,13 +1277,13 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 59 — cs-cli-compose
 
 #### Engineering
-- [ ] Composition root: ServiceCollection with AddHooks, AddConfig, AddCompletion, AddRouting, AddPlugins; ValidateOnBuild off, no open generics, no scanning (container build measured 0.1 ms)
-- [ ] Parity suite runs every fixture through the Bun dg and the C# front door
-- [ ] Opt-out at run time: DG_FRONT=0 or front.enabled = false in config.toml makes the front door exec dg-core for every command; a missing dg-core prints one error line with the reinstall command
+- [x] Composition root: ServiceCollection with AddHooks, AddConfig, AddCompletion, AddRouting, AddPlugins; ValidateOnBuild off, no open generics, no scanning (container build measured 0.1 ms)
+- [x] Parity suite runs every fixture through the Bun dg and the C# front door
+- [x] Opt-out at run time: DG_FRONT=0 or front.enabled = false in config.toml makes the front door exec dg-core for every command; a missing dg-core prints one error line with the reinstall command
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Parity test: hooks, --version, completion, config and routing fixtures match Bun byte for byte
+- [x] Parity test: hooks, --version, completion, config and routing fixtures match Bun byte for byte
 
 #### Acceptance Criteria
 - [ ] Given the front door, when hooks run pr-confirm runs 50 times, then p50 is at most 3 ms and peak RSS at most 8 MB
@@ -1291,11 +1291,11 @@ Make the dg CLI fast and lean: hot-path latency, binary and download size, and s
 ### Slice 60 — skill-size-cap
 
 #### Engineering
-- [ ] Add the cap test (SKILL.md 8 KB, description 400 characters) and lower the skill-token budgets to the new values
+- [x] Add the cap test (SKILL.md 8 KB, description 400 characters) and lower the skill-token budgets to the new values
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: the test reads the caps from one constant and lists each file over a cap with its size
+- [x] Contract: the test reads the caps from one constant and lists each file over a cap with its size
 
 #### Acceptance Criteria
 - [ ] Given the merged diets, when bun test runs, then the cap test passes and descriptions are at most 2.5k tokens
@@ -1721,6 +1721,72 @@ R1 D in C#; R2 bytecode yes; R3 companions yes; R4 patch from the previous relea
 Slices per wave: W1 25, W2 17, W3 11, W4 4, W5 1, W6 1, W7 1, W8 1, W9 1
 
 ## Slice Summaries
+- Slice 1 (needs-attention): ram-budgets.json; latency cases p50 budgets version 25 completion 24 stat checklist 62 phone status 64 (loaded host); hook msBudgets 39-44; growth floor 1 MB; latency flaps under load -> CI rebaseline; --idle 120 in 26. Not done: plugin host case; Windows memory sampling (exits 2 on win32).
+- Slice 2 (clean): lean-size; BEFORE linux-x64 raw 92,845,536 gzip 39,445,982 zstd 31,805,174 patch(v7.0.5) 4,738,851. Only linux-x64 seeded; 26 gates linux-x64 only.
+- Slice 3 (clean): skill-tokens budgets spec-plan 14285 spec-exec 7706 phone 9490 stat 5190 thrash 4788 verify 3743 review-loop 4012 jot 1453 descriptions 5408. FLOWS const in scripts/skill-tokens.ts.
+- Slice 4 (needs-attention): ratchet names <basename>:<path>; measurements in budget-measurements/<basename>.json artifact from compiled-dg; reads scripts/*budgets.json, native/budgets/*.json, bench/budgets/*.json (bench path guess). TODO orchestrator: .github/CODEOWNERS for budgets (R19). Tell 26/53/54/27 the artifact contract; size-diff.ts <base> <head>. RATIFY (reversible, orchestrator took artifact) recorded.
+- Slice 5 (clean): build split into build/{options,compile,report,companions}.ts; size identical 92845536. 2 commits (refactor + revert of tsconfig edit).
+- Slice 6 (needs-attention): --version early + no JIT re-exec for --version and hooks run. p50 under load 25.6 (old 41.7), est ~9.7 idle. FIXUP: jit-off.spec.ts drop 2 rows (hooks run spelling, --version). ADR 0056/0057 say hooks keep re-exec -> add amendment link note.
+- Slice 7 (clean): fastRoute/runFastRoute in pkg/dg/src/fast-route.ts (hooks, version; completion via completeFast in 30). Pre-existing fail format-chain.spec.ts mdformat. p50 needs 30.
+- Slice 8 (clean): completeFast in completion/fast.ts (returns lines; slice 30 prints them). p50 needs slice 30.
+- Slice 9 (needs-attention): zst/gz release + pickProgram encoding. FIXUP at merge: cli-binary-lib.spec.ts:131 add encoding:"raw"; check skills-test tsc.
+- Slice 10 (clean): bootstrap gz with raw fallback; select_asset/Select-DgAsset; DG_GZIP seam. Deferral: .gz own sha not checked (raw checked after unpack).
+- Slice 11 (clean): phone SKILL 37960->8172 B, desc 374; 9 references.
+- Slice 12 (clean): stat 20760->8159, jobs 9504->8170, jot desc 381.
+- Slice 13 (clean): thrash 19150->8188, review-loop 10778->8170, land desc 371.
+- Slice 14 (clean): spec SKILL 12775->8188 B.
+- Slice 15 (clean): chat 13561->8189 B; cls/monolith/what-changed descriptions under 400. skills-test 1922 pass.
+- Slice 16 (needs-attention): resolveBrowserMode; browser.mode + front.enabled added. FIXUP at merge: docs/config.md add browser/front sections+keys (config-docs.spec). Pre-existing fail: 4 protected-session tests (DG_PATH_FENCE/TMPDIR). For 43: real paired-extension probe; auto + -s/--session falls back to local; name map goto->open, tab-list->tabs etc.
+- Slice 17 (clean): navigation modules. For 43: add ./pw-ext-verbs/* subpath to @dg/common package.json exports (grant pkg/common/package.json to 43), PwExtVerb/FIELDS/relay/help, widen browser api types.
+- Slice 18 (clean): pointer modules, relative imports to common (43 switch to subpath export), PointerUsageError->ExtUsageError, --tab/help in ext.ts. RATIFY reversible: mousedown/up/wheel at last position (kept).
+- Slice 19 (clean): input verbs; 43 must add allowSite + masking + --submit; RATIFY reversible: no contenteditable (kept). Check commit order.
+- Slice 20 (clean): eval (MAIN world), tab-select, resize; for 43: syncShim after tab-select.
+- Slice 21 (clean): 6 storage verbs; refuse unapproved sites without prompting (kept). 43 wires SessionControl.
+- Slice 22 (clean): agent window + site allow + per-session PHI checkbox. For 43: assertCaptureAllowed before snapshot/screenshot; navigate from createAgentWindows; registerSiteAllow; forget on session end. RATIFY-HUMAN: PHI flag source (per-session checkbox built vs persistent config list) - rec checkbox now.
+- Slice 23 (clean): relay contract + 40 fixtures. Deferral: connect handshake fixtures (isConnectHandshake unexported in dg-daemon) -> stage 2.
+- Slice 24 (needs-attention): plugin manifest/contract/frame (12-byte BE header u8 ver,u8 enc,u16 flags,u32 reqid,u32 len; 1 MiB; fixtures frames.json hex). allow_remote -> asked slice 16 agent. FIXUP: pkg/common package.json exports ./plugins/* and ./pw-ext-verbs/*. RATIFY reversible (kept): no section = disabled for external; remote only https; invented timeouts 1/2/10 s and p99 budgets IPC 1/TCP 2/HTTP 5 ms.
+- Slice 25 (needs-attention): native scaffold, hello 1,911,624 B, 0 IL warnings. FIXUP: .gitignore native bin/obj. Core tests at native/tests/Dg.Core.Tests/*.cs (outside globs, new files). Options/DI.Abstractions are shared framework (NU1510).
+- Slice 26 (needs-attention): compiled-dg gates every PR; budgets.yml ingests native measurements; lean budgets raw 94,703,000->101,400,000 (meas 99,374,560), zstd 32,442,000->36,400,000 (35,677,831), patch 4,976,000->10,700,000 (10,412,359 vs v7.0.5). docs/lean-baseline.md. FIXUP: release-workflow.spec.ts 4 failures (release job write perm, 8 compiled assets) from slices 9/31/57.
+- Slice 27 (needs-attention): report.ts buildReport/parseReportFlag; size-diff.ts. FIXUP: build.ts 3-line hook for --report.
+- Slice 28 (clean): bytecode + format esm. raw 92,849,632->127,981,024 (+35.1 MB), zstd 32,220,113->44,462,050. hooks p50 under load 49.7->19.8 ms. TODO: lean-budgets raw/zstd raise after 29 lands + Budget-Increase line in PR body.
+- Slice 29 (needs-attention): companions built (pw 802,768 B, db 702,904 B zstd); excluded binary 85,132,768 (-7.7 MB). Wiring folded into 57: compile.ts exclude option + build flag, common exports ./node/companion, call sites (pw/core/browser.ts:125,151; verify/playwright-capturer.ts:60; channel-review/connect.ts:140; demo/verify-local.ts:16; demo/player-process.ts:120,150; pw/browsers.ts:21 coreBundle registry; db/engines/postgresql.ts:29; db/engines/snowflake.ts:13). Command name `dg companion install <name>` placeholder.
+- Slice 30 (needs-attention): dispatch fast paths; p50 hooks 30.3->26.9, complete multi 26.0->21.6 under load. DEFERRAL: single-word completion still full path (needs root tree) -> follow-up.
+- Slice 31 (needs-attention): patch.ts zstd --patch-from, release-patches.yml + PATCHSUMS (informational, kept). For 57: release.yml last step gh workflow run release-patches.yml -f tag + actions: write.
+- Slice 32 (needs-attention): C# config/paths/creds parity 49 fixtures. DEFERRALS: syntax reason wording; no legacy fold-in/migration/write in C#; DgSettings scalar only; Tomlyn accepts duplicate keys.
+- Slice 33 (clean): hook engine; partial Register files per group (Defs/<G>/<G>HooksRegistration.Hooks.cs); HookEvent.Args; RunAsync(id,args,stdin?,ct).
+- Slice 33b (needs-attention): engine parity a-d, owner-uid (statx/stat P/Invoke DllImport), Shared/ helpers; 459 hooks tests. AOT publish fails ONLY on IL2101 from Tomlyn.Signed (TreatWarningsAsErrors). macOS stat offsets untested.
+- Slice 34 (clean): Route.Resolve Native/Core; native-routes.ts -> native/src/Dg.Routing/Generated/obj/RouteTable.g.cs + routes.json; publish -p:Version=<ver>; CoreLauncher execv, missing 127 / non-exec 126 + reinstall line. 59 does opt-out + fallback.
+- Slice 35 (needs-attention): Dg.Completion port; native-completion.ts -> native/src/Dg.Completion/bin/completion/{tree,parity}.json. p50 2-3 ms AOT 1.66 MB. FIXUP: EmbeddedResource in Dg.Completion.csproj (orchestrator chose (a)). 59 registers __complete.
+- Slice 36 (clean): native.yml 6 runners, artifacts native-dg-<rid> (7 days), not run yet.
+- Slice 37 (needs-attention): dg plugin cmds; untrusted until verify --approve. FIXUP-AGENT 37b: host registration of approved skills (Claude/Codex as today) + reuse helpers from install/recommended-skills-only.ts instead of plugin/source.ts, plugin/tree.ts copies.
+- Slice 37b (clean): host registration copies to Claude/Codex skill dirs with .dg-plugin marker; only approved+enabled; git helpers shared (+hardened protocol.ext.allow=never, hooksPath=/dev/null).
+- Slice 38 (clean): http transport; PluginTransportError codes; JSON only.
+- Slice 39 (clean): IPC transport (FrameReader, getIpcConnection, assertSocketPrivate 0600+uid). RATIFY-HUMAN: Windows pipe ACL not enforceable in Bun - verify DACL in C# (slice 49) vs plugin's duty. JSON only.
+- Slice 40 (clean): external hook plugins over IPC/HTTP; manifests at <dataDir>/plugins/<id>/plugin.toml (same as 37); approved = enabled (37 disables on sha change); DG_HOOK_TIMEOUT_MS.
+- Slice 41 (needs-attention): plugin-manifest.ts jobFromManifest + pin in source records. FIXUP-AGENT: wire job-source.ts (readDeclared git ~L607, readFolderDeclared ~L884-918), job-local.ts L214/297, job-update.ts L288. RATIFY-HUMAN: manifest jobs continuous only (no schedule key) vs [job] table later; pin verification rule.
+- Slice 41b (clean): job add/update read plugin.toml (wins over package.json); pin stored only. RATIFY-HUMAN (with 41): verify commit pin vs clone sha?
+- Slice 42 (clean): C# contract parity (Tomlyn syntax-error wording differs). Orchestrator aligned IPluginTransport.SendAsync(frame)->PluginResponse, IEventSink.Post(in PluginEvent). config.ts [plugins.<name>] port not done -> 55/56 use Core Config (slice 32).
+- Slice 43 (needs-attention): 21 write verbs wired; allow prompt; PHI check after prompt; auto mode (a)(b)(c). Gaps -> 43b: ext open does not use the agent window (openSite unused; R9). ADR for new verbs (ADR 0035 rule) -> 58 writes ADR. wxt alias for @dg/common/pw-ext-verbs (relative imports used).
+- Slice 43b (clean): ext open/new first page via openSite in agent window, adopt into group; polling 50 ms/10 s (agent-tabs windowId later); alias + shared popupWindows.
+- Slice 44 (clean): pr hooks C# 204 fixtures; probe p50 3.40 ms loaded (3.8 MB). Note IL2101 from Tomlyn.Signed on AOT publish -> check in 59. FIXUP-END: owner-uid check for scratch dir too; maybe hoist PrHookHost/JsText/PrProcess.
+- Slice 45 (clean): spelling+format C# 142 fixtures (2 skipped engine gaps); spelling p50 ~3-5 ms net loaded. Engine gaps -> fixup 33b.
+- Slice 46 (clean): spec-plan-lint + daily-prune C#, 25 fixtures incl pruned set. FIXUP-END: restore owner-uid root check (libc lstat P/Invoke, like slice 49 peer uid) since front door default-on runs it natively. For 59: null stdin for daily-prune --now and commit-msg runs/terminal.
+- Slice 47 (clean): config get/set/list/doctor C#, 76 Bun fixtures, TomlWriter; ConfigExit.NotNative=-1 -> exec dg-core. RATIFY-HUMAN: Bun has no config list/doctor; C# has them (plan named them) -> front door and DG_FRONT=0 differ; keep vs route to dg-core vs add to Bun.
+- Slice 48 (clean): HttpTransport p50 ~0.093-0.118 ms; IPluginTokenProvider in Transport/Http (55 registers); PluginTransportException codes = Bun.
+- Slice 49 (needs-attention): pipelines framing alloc-free, PluginConnection/PluginConnectionPool (transport-agnostic), IpcConnector 0600+symlink+peer uid, Windows DACL (user+SYSTEM+Admins, RATIFY reversible kept), p50 0.027-0.037 ms loaded (target 0.03). 55 must register IIpcEndpointResolver.
+- Slice 50 (clean): TcpTransport p50 0.048-0.134 loaded; TcpConnector(ITcpManifestResolver, IPluginTokenProvider); keyed pool TcpTransportKeys.Pool="tcp".
+- Slice 51 (clean): UdpTransport + UdpEventGuard. FIXUP-LATER: parsers (TS manifest.ts + C# ManifestParser) refuse transport=udp with kind hook at parse time, same text.
+- Slice 52 (clean): MessagePackTranscoder (Writer/Reader, no source-gen resolver since records unowned) + EncodingNegotiator; namespace Dg.Core.Transport.Codec. Flaky? IpcTransportTests.GetAsync_SecondCall_ReusesWarmConnection.
+- Slice 53 (needs-attention): SizeReport mstat; native budgets native-linux-x64.json raw 2,007,205 zstd 872,941 (hello 1,911,624 / 831,373); native-ram-budget.ts; lever check; symbols artifact. TODO: native-ram-<rid>.json after 59; budgets.yml must also fetch native-budget-measurements-<rid> from native.yml (give 26 budgets.yml); base size report for delta. smoke action runs `dg pw --help` on companion-less binary -> verify at end.
+- Slice 53b (needs-attention): native-ram-budget.ts via wait4 C helper; hooks case pr-confirm; seeded native-ram-linux-x64.json (version 7532851 B/2.41 ms, completion 7969382/2.9, hooks 7937126/2.88); size budget raw 2007205->4659880, zstd 872941->1902943. RATIFY-HUMAN: R18 slack 5/10% smaller than run noise -> NOT changed (classifier refused weakening R18); R18 stays strict; options for owner: one-sided slack for RAM/latency, wider latency slack, or gate only overruns. Also ratchet hint Math.floor wrong for small floats.
+- Slice 54 (needs-attention): Dg.Bench 7.6 MB, native-bench.yml; local p50 IPC warm 0.10, TCP 0.098, HTTP 0.14, IPC fresh 10.1, HTTP fresh 4.4 (loaded). FIXUP-END: ratchet BUDGET_DIRS + native/bench/Dg.Bench/budgets; .gitignore native/**/publish/; budgets.yml fetch bench-measurements-<rid>; rebaseline from CI.
+- Slice 55 (needs-attention): IPluginHost + AddPluginsRuntime; approval = dg-plugin.json approvedSha256 == tree hash of src; built-ins skip gates. Root must register DgPaths, DgToml, ICredentialStore.
+- Slice 56 (needs-attention): plugin list/verify C# parity 30+ fixtures; enable/disable NOT native (no Core TOML writer) -> dg-core (DEFERRAL; RATIFY move TomlWriter to Core later). PluginsExit.NotNative=-1.
+- Slice 57 (needs-attention): companions excluded in release; ensureCompanion sha256-checked; dispatch-patches job. raw full 128,017,888, excluded 99,210,720. Check smoke-compiled-dg does not run pw/db. playwright-registry.d.ts ref from common.
+- Slice 58 (needs-attention): docs + ADR 0060 + diets (verify 14971->7776, proto 13893->8109, demo desc 392); browser-docs.spec. RATIFY-HUMAN: DG_BROWSER means mode for pw (plan) but binary path for demo/verify finders -> docs say DG_VERIFY_BROWSER for path; rec rename finder var. FIXUP-END: finders ignore ext|local|auto values; ext-opt-in.spec/demo-skill.spec wording to auto default; .agents/decisions/0060 + README row; re-run package-chat-skills --refresh-sources after skill merges.
+- Slice 59 (needs-attention): lean root; DG_FRONT/front.enabled opt-out; 233 parity tests (172 live Bun). pr-confirm p50 2.8-3.2 ms, RSS 7.4-7.9 MB; --version 2.5-2.9, __complete 2.8-3.2. Binary raw 4,659,880 zstd 1,902,943 gzip 2,221,628. Plugins runtime omitted from root (RATIFY reversible: +0.6 MB RSS breaks 8 MB). IL2101 Tomlyn.Signed substitution name -> NoWarn in Directory.Build.props (orchestrator). native-ram-budget.ts broken for RSS (Bun.spawn maxRSS inherits Bun) + skips hooks -> fixup. single-word completion execs dg-core; unknown hook ids exec dg-core.
+- Slice 60 (needs-attention): skill-size-cap spec; tokens after: spec-plan 13138, spec-exec 6559, phone 2043, stat 2040, thrash 2047, verify 1944, review-loop 3360, jot 1405, descriptions 4797. RATIFY-HUMAN: 2.5k descriptions target unmet (4797, counts whole frontmatter); options cap 200 chars / count description line only / relax.
+- Slice fix-end (clean): ratchet bench dir + budgets.yml bench step; .gitignore publish; udp+hook parse refusal both runtimes; finder ignores mode values; auto-default wording; decisions 0060; ADR 0056/0057 superseded-in-part lines.
 
 ## Agent Notes
 (owner, 2026-11-24): R1 language path is D in C#, a staged NativeAOT port; slices for the Bun trims stay.
