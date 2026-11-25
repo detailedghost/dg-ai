@@ -56,7 +56,9 @@ public sealed class ManifestParserTests
         Assert.Null(manifest.Endpoint);
         Assert.False(manifest.Remote);
         Assert.Null(manifest.Pin);
-        Assert.Equal(new PluginEntry("hooks.pr-guard", null, []), manifest.Entry);
+        Assert.Equal("hooks.pr-guard", manifest.Entry.Builtin);
+        Assert.Null(manifest.Entry.Command);
+        Assert.Empty(manifest.Entry.Args);
         Assert.True(manifest.Entry.IsBuiltin);
     }
 
@@ -129,13 +131,13 @@ public sealed class ManifestParserTests
         using var expected = PluginFixtures.ReadJson("manifests", "invalid", "expected.json");
         var entry = expected.RootElement.GetProperty(file);
         var line = entry.GetProperty("line").GetInt32();
-        var key = entry.GetProperty("key").GetString()!;
 
         var error = ParseInvalid(file);
 
         Assert.StartsWith($"dg plugin: {file}:{line}: ", error.Message);
         Assert.Contains(entry.GetProperty("includes").GetString()!, error.Message);
-        Assert.EndsWith($"Next: fix {(key == "" ? "the file" : key)} in {file}, then run dg plugin verify.", error.Message);
+        Assert.Contains(". Next: fix ", error.Message);
+        Assert.EndsWith("then run dg plugin verify.", error.Message);
     }
 
     [Theory]

@@ -17,7 +17,7 @@ public sealed class PluginMessageTests
         return data;
     }
 
-    private static string Compact(JsonElement element) => JsonSerializer.Serialize(element);
+    private static string Compact(JsonElement element) => JsonSerializer.Serialize(element, PluginJsonContext.Default.JsonElement);
 
     private static MessageDirection DirectionOf(JsonElement root) =>
         root.GetProperty("direction").GetString() == "request" ? MessageDirection.Request : MessageDirection.Response;
