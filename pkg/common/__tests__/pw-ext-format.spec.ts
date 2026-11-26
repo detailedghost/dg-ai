@@ -438,9 +438,11 @@ describe("PW_EXT_RELAY table", () => {
 
 	it.each([
 		[minVersion, true],
-		["1.99.0", true],
+		["7.99.0", true],
+		["8.0.0", true],
 		[`${minVersion}+build.1`, true],
-		["1.41.99", false],
+		["7.0.5", false],
+		["1.44.0", false],
 		[undefined, false],
 		["1.42", false],
 	])("accepts extension version %p: %p", (version, expected) => {
@@ -587,11 +589,11 @@ describe("validatePwExtRequest tab verbs and tabId", () => {
 });
 
 describe("PW_EXT_MIN_EXTENSION_VERSION", () => {
-	it("is at least the first release with per-agent tab groups", () => {
+	it("is at least the first release that understands phiSites and pw-ext-stop", () => {
 		const [major, minor, patch] = PW_EXT_MIN_EXTENSION_VERSION;
 		const floor = major * 1_000_000 + minor * 1_000 + patch;
 
-		expect(floor).toBeGreaterThanOrEqual(1_044_000);
+		expect(floor).toBeGreaterThanOrEqual(7_001_000);
 	});
 });
 
