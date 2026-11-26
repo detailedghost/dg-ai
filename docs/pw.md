@@ -112,8 +112,8 @@ Playwright, so they stay local too.
 Chromium browser through the paired dg-ai-extension. It needs a running
 dg daemon session with the extension paired. The extension must be at least the
 version in `PW_EXT_MIN_EXTENSION_VERSION` (`pkg/common/src/pw-ext-format.ts`),
-which is the first release that understands `phiSites` and reports Stop to the daemon. An older extension is
-refused with the update text: `pw --ext requires dg-ai-extension <version> or
+which is the first release that understands `phiSites` and reports Stop to the
+daemon. An older extension is refused with the update text: `pw --ext requires dg-ai-extension <version> or
 newer; update the extension, reload it, and reconnect this session.`
 
 Each paired agent gets its own Chrome tab group, titled with the agent name and

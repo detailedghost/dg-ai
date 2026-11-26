@@ -50,14 +50,14 @@ Related: [ADR 0059](0059-dg-plugins-are-built-in-or-external-with-one-transport-
   so no process can forge a MAC offline. Any active session can still ask the daemon to sign: the TTY gate lives in
   the CLI, not in the daemon. An agent that can run code as the user and reach a session can still get a record
   signed, so the gate and the daemon raise the cost, they do not remove it.
-- Deleting the key credential (`dg credentials delete dg/plugin-approval-key`) rotates it. Every approval then fails
-  until the user approves again.
+- Deleting the key credential (`dg credentials delete dg/plugin-approval-key`) rotates it. A session may delete it.
+  Every approval then fails closed until the user approves again.
 - The native plugin runtime asks an `IApprovalSigner` and never sees the key. No daemon client implements it yet, and
   the front-door binary does not include the runtime, so tests use a fake signer.
 - Each admission costs one daemon round trip for the approval and one for the stat cache.
 - Records written before this change are unsigned. Users approve each plugin again once.
 - External hook plugins need a running dg daemon and a registered session to be admitted. A plugin that fails
-  admission never blocks the tool call, even with `fail_closed = true`. The C# front door has no credential client, so
+  admission never blocks the tool call, even with `fail_closed = true`. The C# front door has no daemon client, so
   native `dg plugin list`, `verify` and `enable` hand a record that claims approval to the Bun program.
 - Most admissions skip the tree hash; a daily full hash bounds how long a stat-preserving edit can last.
 

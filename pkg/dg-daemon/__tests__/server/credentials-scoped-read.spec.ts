@@ -119,6 +119,10 @@ describe("scopedRead and the plugin approval key", () => {
 			expect(scopedRead({ operation: "get", name }, "dg", keyed)).toMatchObject({ ok: false });
 		expect(scopedRead({ operation: "get", name: "dg/other" }, "dg", keyed)).toMatchObject({ ok: true });
 		const listed = scopedRead({ operation: "list" }, "dg", keyed);
+		expect(listed).toMatchObject({ ok: true });
+		const entries = (listed as { value: Record<string, unknown>[] }).value;
+		expect(entries.map((entry) => entry.name)).toContain("dg/plugin-approval-key");
+		expect(entries.every((entry) => !("value" in entry))).toBe(true);
 		expect(JSON.stringify(listed)).not.toContain("ffff");
 	});
 });

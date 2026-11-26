@@ -211,8 +211,8 @@ describe("approval operations", () => {
 		{ operation: "approval-sign", purpose: "statcache", fields: three },
 		{ operation: "approval-verify", purpose: "approval", fields: seven, mac: "a".repeat(64) },
 		{ operation: "approval-verify", purpose: "statcache", fields: three, mac: "b".repeat(64) },
-	])("accepts %p", (fields) => {
-		expect(validateCredentialsCliRequest({ ...base, ...fields })).toMatchObject(fields);
+	])("accepts %p", (request) => {
+		expect(validateCredentialsCliRequest({ ...base, ...request })).toMatchObject(request);
 	});
 
 	it.each([
@@ -230,7 +230,7 @@ describe("approval operations", () => {
 		{ operation: "approval-verify", purpose: "approval", fields: seven, mac: "A".repeat(64) },
 		{ operation: "approval-verify", purpose: "approval", fields: seven, mac: "a".repeat(63) },
 		{ operation: "get", name: "x/y", purpose: "approval" },
-	])("rejects %p", (fields) => {
-		expect(() => validateCredentialsCliRequest({ ...base, ...fields })).toThrow();
+	])("rejects %p", (request) => {
+		expect(() => validateCredentialsCliRequest({ ...base, ...request })).toThrow();
 	});
 });

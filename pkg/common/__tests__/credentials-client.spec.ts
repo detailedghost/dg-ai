@@ -196,6 +196,7 @@ describe("createCredentialClient", () => {
 			const client = createCredentialClient({ paths, session: sessionId });
 			try {
 				await expect(client.approvalSign("statcache", fields)).rejects.toThrow(/exactly 3/);
+				expect(daemon.requests).toEqual([]);
 			} finally {
 				client.close();
 				daemon.stop();

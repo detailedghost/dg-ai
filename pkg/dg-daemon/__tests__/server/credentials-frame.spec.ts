@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { CLI_GRANT_PREFIX_HEADER, CLI_GRANT_TOKEN_HEADER } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
+import { APPROVAL_KEY_REFUSED } from "../../src/server/credentials";
 import {
 	cleanupDgHome,
 	cliSocket,
@@ -312,7 +313,6 @@ describe("daemon credential grants", () => {
 describe("daemon plugin approval operations", () => {
 	const KEY = "dg/plugin-approval-key";
 	const fields = ["demo", "skill", "https://example.org/demo.git", "commit", "0123", "aa", "aa"];
-	const SEALED = /never|sealed|not allowed/i;
 
 	it("signs and verifies for a session, creates the key on first sign, and never returns the key", async () => {
 		const { cli, results } = await boot();
@@ -345,10 +345,24 @@ describe("daemon plugin approval operations", () => {
 			{ operation: "exec", exec: { bindings: [{ name: KEY, env: "K" }], argv: ["/bin/true"], cwd: "/tmp", env: {} } },
 		]) {
 			const answer = await result(results, request(cli, body));
-			expect([body.operation, answer.ok, answer.error]).toEqual([body.operation, false, expect.stringMatching(SEALED)]);
+			expect([body.operation, answer.ok, answer.error]).toEqual([body.operation, false, APPROVAL_KEY_REFUSED]);
 		}
 		const verify = await result(results, request(cli, { operation: "approval-verify", purpose: "approval", fields, mac: "0".repeat(64) }));
 		expect(verify.value).toBe(false);
+	});
+
+	it("lets a session delete the key, which rotates it so every earlier approval fails verification", async () => {
+		const { cli, results } = await boot();
+		const signed = await result(results, request(cli, { operation: "approval-sign", purpose: "approval", fields }));
+		const mac = signed.value as string;
+		const verify = () => request(cli, { operation: "approval-verify", purpose: "approval", fields, mac });
+		expect((await result(results, verify())).value).toBe(true);
+
+		expect((await result(results, request(cli, { operation: "delete", name: KEY }))).value).toBe(true);
+		expect((await result(results, verify())).value).toBe(false);
+
+		const rotated = await result(results, request(cli, { operation: "approval-sign", purpose: "approval", fields }));
+		expect(rotated.value).not.toBe(mac);
 	});
 
 	it("signs and verifies the statcache purpose for a session", async () => {

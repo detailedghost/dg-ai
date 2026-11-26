@@ -17,13 +17,24 @@ export type FakeDaemon = {
 	verifies: number;
 };
 
-const hmac = (key: Buffer, fields: string[]) => createHmac("sha256", key).update([DOMAIN, ...fields].join("\0")).digest();
+const hmac = (key: Buffer, fields: string[]) =>
+	createHmac("sha256", key)
+		.update([DOMAIN, ...fields].join("\0"))
+		.digest();
 
 /** Signs a record the way the daemon does for the fixture key, to forge test fixtures. */
-export const signRecord = (record: PluginRecord, keyHex = TEST_KEY_HEX): string => hmac(Buffer.from(keyHex, "hex"), approvalFields(record)).toString("hex");
+export const signRecord = (record: PluginRecord, keyHex = TEST_KEY_HEX): string =>
+	hmac(Buffer.from(keyHex, "hex"), approvalFields(record)).toString("hex");
 
 export function fakeDaemon(initial: string | null = TEST_KEY_HEX): FakeDaemon {
-	return { key: initial === null ? undefined : Buffer.from(initial, "hex"), opened: 0, closed: 0, keyReads: 0, signs: 0, verifies: 0 };
+	return {
+		key: initial === null ? undefined : Buffer.from(initial, "hex"),
+		opened: 0,
+		closed: 0,
+		keyReads: 0,
+		signs: 0,
+		verifies: 0,
+	};
 }
 
 export type DownDaemon = { error: Error };
@@ -57,7 +68,9 @@ export function useApprovalDaemon(daemon: FakeDaemon | DownDaemon | undefined): 
 				if (purpose !== "approval") throw new Error(`unexpected purpose ${purpose}`);
 				daemon.verifies++;
 				if (daemon.key === undefined) return false;
-				return timingSafeEqual(hmac(daemon.key, fields), Buffer.from(mac, "hex"));
+				const expected = hmac(daemon.key, fields);
+				const claimed = Buffer.from(mac, "hex");
+				return claimed.length === expected.length && timingSafeEqual(expected, claimed);
 			},
 			get: refuseKey,
 			set: refuseKey,
