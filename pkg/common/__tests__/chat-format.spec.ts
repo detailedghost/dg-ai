@@ -412,6 +412,16 @@ function buildPwExtCredentialStoredFrame(overrides: Record<string, unknown> = {}
 	};
 }
 
+function buildPwExtStopFrame(overrides: Record<string, unknown> = {}) {
+	return {
+		type: "pw-ext-stop" as const,
+		sessionId: "session-a",
+		token: "token-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		...overrides,
+	};
+}
+
 function buildOverwatchOpenResultFrame(
 	overrides: Record<string, unknown> = {},
 ) {
@@ -467,6 +477,7 @@ const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["overwatch-open-result", buildOverwatchOpenResultFrame],
 	["pw-ext-credential-store", buildPwExtCredentialStoreFrame],
 	["pw-ext-credential-stored", buildPwExtCredentialStoredFrame],
+	["pw-ext-stop", buildPwExtStopFrame],
 ];
 
 function ratifiedDiscriminants(): string[] {
@@ -859,6 +870,7 @@ const MASTER_CHAT_FRAME_TYPES = [
 	"overwatch-open-result",
 	"pw-ext-credential-store",
 	"pw-ext-credential-stored",
+	"pw-ext-stop",
 ];
 
 const MASTER_INBOUND_FRAME_TYPES = [
@@ -877,6 +889,7 @@ const MASTER_INBOUND_FRAME_TYPES = [
 	"config-set",
 	"overwatch-open-result",
 	"pw-ext-credential-store",
+	"pw-ext-stop",
 ];
 
 describe("pw-ext-credential-store frame", () => {
@@ -1163,5 +1176,16 @@ describe("CHAT_JOBS_PATH", () => {
 		expect(CHAT_JOBS_PATH).toBe("/jobs");
 		expect(CHAT_JOBS_PATH).not.toBe(CHAT_SERVICES_PATH);
 		expect(SERVICE_API_CREDENTIALS_PATH.startsWith(CHAT_JOBS_PATH)).toBe(false);
+	});
+});
+
+describe("validateChatFrame - pw-ext-stop", () => {
+	it("needs the session token", () => {
+		const { token: _token, ...bare } = buildPwExtStopFrame();
+		expect(() => validateChatFrame(bare)).toThrow(/token/);
+	});
+
+	it("is an inbound frame", () => {
+		expect(() => validateChatFrame(buildPwExtStopFrame())).not.toThrow();
 	});
 });
