@@ -1,0 +1,13 @@
+{
+	"validator": "cli-request:pw-ext",
+	"frame": {
+		"type": "cli-pw-ext-request",
+		"requestId": "req-1",
+		"request": {
+			"verb": "snapshot",
+			"phiSites": ["ehr.example.org"]
+		},
+		"protocolVersion": 1
+	},
+	"error": "pw-ext request.phiSites[0] must be a site key such as \"https://example.org\""
+}

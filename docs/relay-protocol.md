@@ -126,7 +126,7 @@ Requires dg-ai-extension 1.44.0 or newer. The daemon checks the verb against the
 
 `cli-pw-ext-cancel`: `requestId`, optional `protocolVersion`. No other field is allowed.
 
-`pw-ext-browser-request`: `requestId`, `request`, `timeoutMs`. The `request` has a `verb` and only the fields that verb allows. An unknown verb or field is rejected.
+`pw-ext-browser-request`: `requestId`, `request`, `timeoutMs`. The `request` has a `verb` and only the fields that verb allows. An unknown verb or field is rejected. Every verb also accepts an optional `phiSites`: at most 256 site keys such as `https://example.org`, copied from `[pw] phi_sites` in `config.toml`. The CLI sends it only when the list is not empty. The extension refuses the page data verbs on those sites. An extension that does not know `phiSites` rejects the request.
 
 `pw-ext-browser-cancel`: outbound. `requestId` only. The daemon sends it when a request times out or the CLI cancels.
 

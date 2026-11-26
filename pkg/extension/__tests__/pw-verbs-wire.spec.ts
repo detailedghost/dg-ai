@@ -225,4 +225,47 @@ describe("registered verb modules", () => {
 		expect(result).toMatchObject({ ok: false, error: expect.stringContaining("PHI") });
 		expect(h.scriptRuns()).toBe(0);
 	});
+
+	describe("persisted PHI sites from config.toml", () => {
+		const phiSites = ["https://example.test"];
+
+		it.each<PwExtRequest>([
+			{ verb: "snapshot" },
+			{ verb: "screenshot" },
+			{ verb: "selection" },
+			{ verb: "console" },
+			{ verb: "network" },
+			{ verb: "storage" },
+			{ verb: "fetch", url: "https://app.example.test/api" },
+			{ verb: "eval", expression: "document.body.innerText" },
+		])("refuses $verb on a listed site and names phi_sites", async (request) => {
+			const h = await harness({ approveSite: true });
+			const result = await h.run({ ...request, phiSites });
+			expect(result).toMatchObject({ ok: false, error: expect.stringContaining("[pw] phi_sites") });
+			expect(h.scriptRuns()).toBe(0);
+		});
+
+		it.each<PwExtRequest>([
+			{ verb: "eval", expression: "1" },
+			{ verb: "go-back" },
+			{ verb: "localstorage-clear" },
+			{ verb: "resize", width: 800, height: 600 },
+		])("runs $verb on a site that is not listed with phiSites on the request", async (request) => {
+			const h = await harness({ approveSite: true, script: () => ({ ok: true, text: "2", removed: 1 }) });
+			const result = await h.run({ ...request, phiSites: ["https://other.example.org"] });
+			expect(result).toMatchObject({ ok: true });
+		});
+
+		it("does not refuse a site that is not listed", async () => {
+			const h = await harness({ approveSite: true });
+			const result = await h.run({ verb: "snapshot", phiSites: ["https://other.example.org"] });
+			expect(result).toMatchObject({ ok: true });
+		});
+
+		it("still refuses a session-flagged site when the list is empty", async () => {
+			const h = await harness({ approveSite: true, flagged: true });
+			const result = await h.run({ verb: "snapshot", phiSites: [] });
+			expect(result).toMatchObject({ ok: false, error: expect.stringContaining("PHI") });
+		});
+	});
 });
