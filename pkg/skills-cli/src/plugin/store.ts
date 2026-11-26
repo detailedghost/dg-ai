@@ -17,6 +17,7 @@ export type PluginRecord = {
 };
 
 const PLUGIN_NAME = /^[a-z][a-z0-9-]{0,63}$/;
+export const HEX64 = /^[0-9a-f]{64}$/;
 const RECORD_FILE = "dg-plugin.json";
 
 export function assertName(name: string): void {
@@ -59,7 +60,7 @@ function parseRecord(name: string, file: string, text: string): PluginRecord {
 	const { pin } = value;
 	const pinOk = isObject(pin) && Object.keys(pin).sort().join() === "kind,value" && (pin.kind === "sha256" || pin.kind === "commit") && typeof pin.value === "string";
 	const textOk = value.kind === "skill" && typeof value.source === "string" && typeof value.treeSha256 === "string";
-	const macOk = legacy || value.mac === null || (typeof value.mac === "string" && /^[0-9a-f]{64}$/.test(value.mac));
+	const macOk = legacy || value.mac === null || (typeof value.mac === "string" && HEX64.test(value.mac));
 	if (!pinOk || !textOk || !macOk || !(value.approvedSha256 === null || typeof value.approvedSha256 === "string")) throw broken("has a field of the wrong type");
 	return { ...(value as Omit<PluginRecord, "mac">), mac: legacy ? null : (value.mac as string | null) };
 }

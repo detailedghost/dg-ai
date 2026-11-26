@@ -67,15 +67,26 @@ export async function runExternalHook(manifest: PluginManifest, event: ExternalH
 	}
 }
 
-export function externalHookResult(name: string, outcome: ExternalHookOutcome, timeoutMs: number, failClosed = false): HookResult {
+export function externalHookResult(
+	name: string,
+	outcome: ExternalHookOutcome,
+	timeoutMs: number,
+	failClosed = false,
+): HookResult {
 	if ("failure" in outcome) {
-		const what = outcome.failure === "timeout" ? `gave no answer within ${timeoutMs} ms` : `is unavailable. ${outcome.message.split("\n")[0]}`.replace(/\.?$/, "");
-		if (failClosed)
-			return { exitCode: 2, stderr: `dg hooks: plugin ${name} ${what}. The tool call is blocked because plugins.${name}.fail_closed is true.\n` };
+		const detail = outcome.message.split("\n")[0];
+		const what =
+			outcome.failure === "timeout"
+				? `gave no answer within ${timeoutMs} ms`
+				: `is unavailable. ${detail}`.replace(/\.?$/, "");
+		if (failClosed) {
+			const reason = `The tool call is blocked because plugins.${name}.fail_closed is true.`;
+			return { exitCode: 2, stderr: `dg hooks: plugin ${name} ${what}. ${reason}\n` };
+		}
 		const line =
 			outcome.failure === "timeout"
 				? `dg hooks: plugin ${name} gave no answer within ${timeoutMs} ms; the tool call goes on.`
-				: `dg hooks: plugin ${name} is unavailable, the tool call goes on. ${outcome.message.split("\n")[0]}`;
+				: `dg hooks: plugin ${name} is unavailable, the tool call goes on. ${detail}`;
 		return { exitCode: 0, stderr: `${line}\n` };
 	}
 	if (outcome.decision === "deny") return { exitCode: 2, stderr: `${outcome.reason ?? `plugin ${name} denied the tool call`}\n` };

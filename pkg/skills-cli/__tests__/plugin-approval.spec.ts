@@ -3,10 +3,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DaemonNotRunningError } from "@dg/common/node";
-import { approvalProblem, credentialApprovalKeys, isApproved, macOf } from "../src/plugin/approval";
+import { approvalProblem, credentialApprovalKeys, defaultApprovalKeys, isApproved, macOf } from "../src/plugin/approval";
 import { type PluginRecord, readRecord } from "../src/plugin/store";
 import fixture from "../../common/fixtures/plugins/approval/cases.json";
-import { downKeys, fakeKeys } from "./support/approval-keys";
+import { downKeys, fakeKeys, TEST_KEY_HEX, useApprovalKeys } from "./support/approval-keys";
 
 const key = Buffer.from(fixture.key, "hex");
 let root: string;
@@ -27,6 +27,10 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 const record = (name: keyof typeof fixture.records): PluginRecord => structuredClone(fixture.records[name]) as unknown as PluginRecord;
 
 describe("macOf", () => {
+	test("refuses to sign a record whose signed fields hold a NUL byte", () => {
+		expect(() => macOf(record("nul-in-source"), key)).toThrow(/NUL/);
+	});
+
 	test("signs the NUL-joined record fields with HMAC-SHA256 and matches the shared fixture", () => {
 		expect(macOf(record("signed"), key)).toBe(fixture.expectedMac);
 	});
@@ -94,6 +98,18 @@ describe("isApproved", () => {
 		const problem = await approvalProblem(record("signed"), env, downKeys());
 		expect(problem).toMatch(/dg agent start/);
 		expect(await isApproved(record("signed"), env, downKeys())).toBe(false);
+	});
+
+	test("never approves the nul-in-source fixture, whose mac matches the raw NUL join", async () => {
+		const nul = record("nul-in-source");
+		expect(await isApproved(nul, env, fakeKeys())).toBe(false);
+		expect(await approvalProblem(nul, env, fakeKeys())).toMatch(/NUL/);
+	});
+
+	test("a failure that is not a stopped daemon names dg doctor, not dg agent start", async () => {
+		const problem = await approvalProblem(record("signed"), env, downKeys(new Error("no usable session x is registered on the daemon.")));
+		expect(problem).toMatch(/no usable session.*dg doctor/);
+		expect(problem).not.toMatch(/dg agent start/);
 	});
 
 	test("refuses a different key", async () => {
@@ -187,10 +203,17 @@ describe("credentialApprovalKeys", () => {
 		await keys.ensure();
 		expect(closed).toBe(2);
 	});
+});
 
-	test("a failure that is not a stopped daemon names dg doctor, not dg agent start", async () => {
-		const problem = await approvalProblem(record("signed"), env, downKeys(new Error("no usable session x is registered on the daemon.")));
-		expect(problem).toMatch(/no usable session.*dg doctor/);
-		expect(problem).not.toMatch(/dg agent start/);
+describe("defaultApprovalKeys", () => {
+	afterEach(() => useApprovalKeys(undefined));
+
+	test("reads the key for each environment it is given, not the first one it saw", async () => {
+		const first = fakeKeys(TEST_KEY_HEX);
+		useApprovalKeys(first);
+		expect((await defaultApprovalKeys(env).read())?.toString("hex")).toBe(TEST_KEY_HEX);
+		const other = "ff".repeat(32);
+		useApprovalKeys(fakeKeys(other));
+		expect((await defaultApprovalKeys({ ...env, DG_HOME: join(root, "other") }).read())?.toString("hex")).toBe(other);
 	});
 });

@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import { mock } from "bun:test";
+import * as common from "@dg/common/node";
 import { DaemonNotRunningError } from "@dg/common/node";
 import type { ApprovalKeys } from "../../src/plugin/approval";
 
@@ -20,4 +22,20 @@ export function downKeys(error: Error = new DaemonNotRunningError()): ApprovalKe
 		throw error;
 	};
 	return { read: fail, ensure: fail };
+}
+
+const realCreateCredentialClient = common.createCredentialClient;
+
+export function useApprovalKeys(keys: ApprovalKeys | undefined): void {
+	const create = keys === undefined ? realCreateCredentialClient : () => ({
+		get: async () => {
+			const key = await keys.read();
+			return key === undefined ? undefined : { value: key.toString("hex") };
+		},
+		set: async (_name: string, value: string) => {
+			(keys as FakeKeys).stored = Buffer.from(value, "hex");
+		},
+		close: () => undefined,
+	});
+	mock.module("@dg/common/node", () => ({ ...common, createCredentialClient: create }));
 }

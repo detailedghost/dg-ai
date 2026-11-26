@@ -5,8 +5,7 @@ import { join } from "node:path";
 import { resolveDgPaths } from "@dg/common/node/dg-paths";
 import { addPlugin, removePlugin, setPluginEnabled, updatePlugin, verifyPlugin } from "../src/plugin/lifecycle";
 
-import { overrideApprovalKeys } from "../src/plugin/approval";
-import { fakeKeys } from "./support/approval-keys";
+import { fakeKeys, useApprovalKeys } from "./support/approval-keys";
 
 let root: string;
 let env: Record<string, string | undefined>;
@@ -15,7 +14,7 @@ const claudeSkill = (name: string) => join(root, "claude", "skills", name);
 const codexSkill = (name: string) => join(root, "codex", "skills", name);
 
 beforeEach(() => {
-	overrideApprovalKeys(fakeKeys());
+	useApprovalKeys(fakeKeys());
 	root = mkdtempSync(join(tmpdir(), "dg-plugin-hosts-"));
 	env = {
 		DG_HOME: join(root, "dg"),
@@ -27,7 +26,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	overrideApprovalKeys(undefined);
+	useApprovalKeys(undefined);
 	rmSync(root, { recursive: true, force: true });
 });
 

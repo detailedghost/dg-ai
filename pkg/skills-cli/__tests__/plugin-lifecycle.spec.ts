@@ -13,11 +13,10 @@ import {
 	updatePlugin,
 	verifyPlugin,
 } from "../src/plugin/lifecycle";
-import { checkSource } from "../src/plugin/source";
-
-import { overrideApprovalKeys } from "../src/plugin/approval";
 import { macOf } from "../src/plugin/approval";
-import { downKeys, fakeKeys, type FakeKeys, TEST_KEY_HEX } from "./support/approval-keys";
+import { checkSource } from "../src/plugin/source";
+import type { PluginRecord } from "../src/plugin/store";
+import { downKeys, fakeKeys, type FakeKeys, TEST_KEY_HEX, useApprovalKeys } from "./support/approval-keys";
 
 let keys: FakeKeys;
 let root: string;
@@ -25,13 +24,13 @@ let env: Record<string, string | undefined>;
 
 beforeEach(() => {
 	keys = fakeKeys();
-	overrideApprovalKeys(keys);
+	useApprovalKeys(keys);
 	root = mkdtempSync(join(tmpdir(), "dg-plugin-lifecycle-"));
 	env = { DG_HOME: join(root, "dg"), HOME: join(root, "home"), DG_PATH_FENCE: root };
 });
 
 afterEach(() => {
-	overrideApprovalKeys(undefined);
+	useApprovalKeys(undefined);
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -87,12 +86,19 @@ describe("approval signing", () => {
 		addPlugin({ source: skillRepo("notes") }, env);
 		await verifyPlugin("notes", { approve: true }, env);
 		const written = record();
-		expect(written.mac).toBe(macOf(written as never, Buffer.from(TEST_KEY_HEX, "hex")));
+		expect(written.mac).toBe(macOf(written as PluginRecord, Buffer.from(TEST_KEY_HEX, "hex")));
+	});
+
+	test("verify --approve refuses to sign a source that holds a NUL byte", async () => {
+		addPlugin({ source: skillRepo("notes") }, env);
+		writeFileSync(recordFile(), JSON.stringify({ ...record(), source: "folder\0x" }));
+		await expect(verifyPlugin("notes", { approve: true }, env)).rejects.toThrow(/NUL/);
+		expect(record().mac).toBeNull();
 	});
 
 	test("verify --approve creates the key on first use", async () => {
 		keys = fakeKeys(null);
-		overrideApprovalKeys(keys);
+		useApprovalKeys(keys);
 		addPlugin({ source: skillRepo("notes") }, env);
 		expect(keys.stored).toBeUndefined();
 		await verifyPlugin("notes", { approve: true }, env);
@@ -103,7 +109,7 @@ describe("approval signing", () => {
 	test("verify --approve changes nothing when the daemon is down", async () => {
 		addPlugin({ source: skillRepo("notes") }, env);
 		const before = readFileSync(recordFile(), "utf8");
-		overrideApprovalKeys(downKeys());
+		useApprovalKeys(downKeys());
 		await expect(verifyPlugin("notes", { approve: true }, env)).rejects.toThrow(/dg agent start/);
 		expect(readFileSync(recordFile(), "utf8")).toBe(before);
 	});
@@ -126,11 +132,11 @@ describe("approval signing", () => {
 	test("verify without --approve reports why a claimed approval does not hold", async () => {
 		addPlugin({ source: skillRepo("notes") }, env);
 		await verifyPlugin("notes", { approve: true }, env);
-		overrideApprovalKeys(downKeys());
+		useApprovalKeys(downKeys());
 		const down = await verifyPlugin("notes", { approve: false }, env);
 		expect(down.approved).toBe(false);
 		expect(down.problems.join("\n")).toMatch(/claims approval but is not approved.*dg agent start/);
-		overrideApprovalKeys(fakeKeys(null));
+		useApprovalKeys(fakeKeys(null));
 		expect((await verifyPlugin("notes", { approve: false }, env)).problems.join("\n")).toMatch(/no approval key.*dg plugin verify notes --approve/);
 	});
 
@@ -142,7 +148,7 @@ describe("approval signing", () => {
 	test("list shows unapproved and enable names the daemon when it is down", async () => {
 		addPlugin({ source: skillRepo("notes") }, env);
 		await verifyPlugin("notes", { approve: true }, env);
-		overrideApprovalKeys(downKeys());
+		useApprovalKeys(downKeys());
 		expect((await listPlugins(env))[0]).toMatchObject({ approved: false });
 		await expect(setPluginEnabled("notes", true, env)).rejects.toThrow(/dg agent start/);
 	});
