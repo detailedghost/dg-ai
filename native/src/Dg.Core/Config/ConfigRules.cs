@@ -7,7 +7,8 @@ public static partial class ConfigRules
 {
     private static readonly KeyValuePair<string, object>[] Entries =
     [
-        new("browser.mode", "auto"),
+        new("pw.mode", "auto"),
+        new("pw.phi_sites", Array.Empty<string>()),
         new("front.enabled", true),
         new("install.cli_only", false),
         new("ssms.allow_send", false),

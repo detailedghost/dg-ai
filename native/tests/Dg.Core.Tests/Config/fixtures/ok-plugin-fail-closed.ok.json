@@ -1,0 +1,1 @@
+{"pw":{"mode":"auto","phi_sites":[]},"front":{"enabled":true},"hooks":{},"install":{"cli_only":false},"refs":{"aliases":{}},"inbox":{},"ssms":{},"plugins":{"a":{"enabled":true,"allow_remote":false,"fail_closed":true,"settings":{}},"b":{"enabled":true,"allow_remote":false,"fail_closed":false,"settings":{}}},"meta":{"migrated":{}}}

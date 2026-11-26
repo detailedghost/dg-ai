@@ -1,5 +1,6 @@
-[browser]
+[pw]
 mode = "local"
+phi_sites = ["https://ehr.example.org"]
 
 [front]
 enabled = false
@@ -30,6 +31,7 @@ send_enabled = true
 [plugins.acme]
 enabled = false
 allow_remote = true
+fail_closed = true
 source = "https://example.com/acme"
 
 [plugins.acme.settings]

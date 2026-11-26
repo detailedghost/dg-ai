@@ -12,6 +12,8 @@ internal static class Cases
     [
         "get-syntax-error",
         "get-bad-value",
+        "get-retired-browser-mode",
+        "get-pw-phi-sites-bad-item",
         "get-unknown-section-in-file",
         "set-on-invalid-file",
         "set-on-syntax-error-file",

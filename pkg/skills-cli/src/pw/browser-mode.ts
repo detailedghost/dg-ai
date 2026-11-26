@@ -1,11 +1,12 @@
 import { DgCliError } from "@dg/common";
-import { BROWSER_MODES, type BrowserMode } from "@dg/common/node";
+import { PW_MODES, type PwMode } from "@dg/common/node";
+import { assertBrowserPath } from "../utils/find-browser";
 import { optionArgs } from "./core/args";
 
 export type BrowserModeInput = {
 	flags: { local?: boolean; ext?: boolean };
 	env: Readonly<Record<string, string | undefined>>;
-	config: BrowserMode | undefined;
+	config: PwMode | undefined;
 	extConnected: boolean;
 	verb: string | undefined;
 	fits?: boolean;
@@ -95,23 +96,24 @@ export function autoExtArgv(argv: readonly string[]): string[] | undefined {
 	return [call.ext, ...rest];
 }
 
-function envMode(value: string | undefined): BrowserMode | undefined {
+function envMode(value: string | undefined): PwMode | undefined {
 	if (value === undefined || value === "") return undefined;
-	if (!(BROWSER_MODES as readonly string[]).includes(value))
+	if (!(PW_MODES as readonly string[]).includes(value))
 		throw new DgCliError(
-			`dg pw: DG_BROWSER must be ext, local or auto, got "${value}". Next: fix or unset DG_BROWSER.`,
+			`dg pw: DG_PW_MODE must be ext, local or auto, got "${value}". Next: fix or unset DG_PW_MODE.`,
 		);
-	return value as BrowserMode;
+	return value as PwMode;
 }
 
-/** The mode a flag, DG_BROWSER or the config forces, with where it came from; undefined means auto. */
+/** The mode a flag, DG_PW_MODE or the config forces, with where it came from; undefined means auto. */
 export function forcedBrowserMode(
 	input: Pick<BrowserModeInput, "flags" | "env" | "config">,
 ): { mode: "ext" | "local"; reason: string } | undefined {
 	if (input.flags.local) return { mode: "local", reason: "--local" };
 	if (input.flags.ext) return { mode: "ext", reason: "--ext" };
-	const fromEnv = envMode(input.env["DG_BROWSER"]);
-	if (fromEnv && fromEnv !== "auto") return { mode: fromEnv, reason: "DG_BROWSER" };
+	assertBrowserPath(input.env);
+	const fromEnv = envMode(input.env["DG_PW_MODE"]);
+	if (fromEnv && fromEnv !== "auto") return { mode: fromEnv, reason: "DG_PW_MODE" };
 	if (input.config && input.config !== "auto") return { mode: input.config, reason: "config" };
 	return undefined;
 }

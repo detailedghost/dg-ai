@@ -49,14 +49,14 @@ public sealed class FrontGateTests : IDisposable
     [Fact]
     public void IsNative_ConfigFrontEnabledWithOtherKeys_IsTrue()
     {
-        WriteConfig("[front]\nenabled = true\n\n[browser]\nmode = \"ext\"\n");
+        WriteConfig("[front]\nenabled = true\n\n[pw]\nmode = \"ext\"\n");
 
         Assert.True(FrontGate.IsNative(Env()));
     }
 
     [Theory]
-    [InlineData("[browser\nmode = \"ext\"\n")]
-    [InlineData("[browser]\nmode = \"loud\"\n")]
+    [InlineData("[pw\nmode = \"ext\"\n")]
+    [InlineData("[pw]\nmode = \"loud\"\n")]
     [InlineData("[nope]\nx = 1\n")]
     public void IsNative_ConfigDoesNotLoad_IsFalse(string config)
     {

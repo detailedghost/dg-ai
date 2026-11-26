@@ -33,6 +33,7 @@ function knownKey(key: string): Known | undefined {
 	if (key === "refs.default_repo" || (section === "refs" && name === "aliases" && parts.length === 3)) return { text: true };
 	if ((section === "inbox" || section === "ssms") && parts.length >= 2) return { text: false };
 	if (section === "plugins" && parts.length === 3 && field === "enabled") return { fallback: true, text: false };
+	if (section === "plugins" && parts.length === 3 && field === "fail_closed") return { fallback: false, text: false };
 	if (section === "plugins" && parts.length === 3 && field === "source") return { text: true };
 	if (section === "plugins" && field === "settings" && rest !== undefined) return { text: false };
 	return undefined;

@@ -1,0 +1,1 @@
+dg config: config.toml:2: pw.phi_sites.1 must be a site key such as "https://example.org", got "example.org". Next: run dg config edit, or dg config set pw.phi_sites.1 <value>.
