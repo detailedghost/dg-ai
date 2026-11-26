@@ -35,7 +35,7 @@ internal sealed class PluginVerifyCommand(
         var manifest = ReadManifest(store.Src(name));
         if (approve)
             throw new NotNativeException();
-        PluginStore.AssertUnapproved(record);
+        PluginStore.DeferIfApproved(record);
         stdout.Append(name).Append(": unapproved\n");
         var report = manifest is null ? new PermissionReport([], []) : PermissionReport.For(manifest);
         Section(stdout, "dg enforces:", report.Enforced);

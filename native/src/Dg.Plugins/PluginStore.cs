@@ -17,8 +17,6 @@ internal sealed class PluginStore(DgPaths paths, DgPathSeams seams)
 
     public string Src(string name) => Path.Combine(Folder(name), "src");
 
-    public string Loaded(string name) => Path.Combine(Folder(name), "skills");
-
     public PluginApprovalRecord? TryRead(string name)
     {
         var file = Path.Combine(Folder(name), RecordFile);
@@ -62,7 +60,7 @@ internal sealed class PluginStore(DgPaths paths, DgPathSeams seams)
         return PluginApproval.HashTree(src);
     }
 
-    public static void AssertUnapproved(PluginApprovalRecord record)
+    public static void DeferIfApproved(PluginApprovalRecord record)
     {
         if (record.HasApproval)
             throw new NotNativeException();

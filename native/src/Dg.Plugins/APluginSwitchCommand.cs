@@ -21,10 +21,10 @@ internal abstract class APluginSwitchCommand(
                 $"dg plugin: {name} is not installed. Next: run dg plugin list, or dg plugin add <source>."
             );
         var config = store.Config();
-        config.Check(name, enable);
         if (enable)
         {
-            PluginStore.AssertUnapproved(record);
+            config.Check(name, enable);
+            PluginStore.DeferIfApproved(record);
             return Fail(
                 stderr,
                 $"dg plugin: {name} is not approved, so its text and helper stay untrusted. "
