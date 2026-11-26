@@ -69,6 +69,8 @@ function fixture(
 			daemonDir: join(root, "daemon"),
 			logDir: join(root, "logs"),
 			grantsDir: join(root, "grants"),
+			jobsDir: join(root, "jobs"),
+			jobSourcesPath: join(root, "jobs", "sources.json"),
 			jobStateRoot: join(root, "state", "jobs"),
 		},
 		loadConfig: () => ({ jobs: asContinuous(services) }),

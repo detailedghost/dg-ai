@@ -39,6 +39,8 @@ function kit() {
 			daemonDir: join(root, "daemon"),
 			logDir: join(root, "logs"),
 			grantsDir: join(root, "grants"),
+			jobsDir: join(root, "jobs"),
+			jobSourcesPath: join(root, "jobs", "sources.json"),
 			jobStateRoot: join(root, "state", "jobs"),
 		},
 		daemonUrl: () => "http://127.0.0.1:4242",
