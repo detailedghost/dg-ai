@@ -244,6 +244,9 @@ describe("launchJob without a supervisor", () => {
 	});
 });
 
+const finished = async (decl: Parameters<typeof startJobRun>[0], deps: Parameters<typeof startJobRun>[1]) =>
+	(await startJobRun(decl, deps)).done;
+
 describe("startJobRun", () => {
 	const scheduled = (root: string, script: string, extra = {}) => {
 		const parsed = parseJobEntry("bot", {
@@ -277,14 +280,11 @@ describe("startJobRun", () => {
 	it("gives stdout of a feed run through the pipe and stderr to the log file", async () => {
 		const { root, deps } = kit();
 
-		const result = await (
-			await startJobRun(
+		const result = await finished(
 			scheduled(root, 'console.log("piped");console.error("logged")', {
 				feed: true,
 			}),
-			deps,
-		)
-		).done;
+			deps,);
 
 		expect(result.stdout).toBe("piped\n");
 		const log = readFileSync(jobLogFile(deps.paths.logDir, "bot"), "utf8");
@@ -312,7 +312,7 @@ describe("startJobRun", () => {
 			}),
 		})) as unknown as typeof Bun.spawn);
 		try {
-			const result = await (await startJobRun(decl, deps)).done;
+			const result = await finished(decl, deps);
 
 			expect(result.readError).toBe("pipe broke");
 			await child.exited;
@@ -326,12 +326,9 @@ describe("startJobRun", () => {
 	it("ends the process group at timeoutMs and reports timedOut", async () => {
 		const { root, deps } = kit();
 
-		const result = await (
-			await startJobRun(
+		const result = await finished(
 			scheduled(root, "setTimeout(() => {}, 60000)", { timeoutMs: 300 }),
-			deps,
-		)
-		).done;
+			deps,);
 
 		expect(result.timedOut).toBe(true);
 		expect(result.exitCode).not.toBe(0);
@@ -340,12 +337,9 @@ describe("startJobRun", () => {
 	it("keeps a run with no timeoutMs and no feed unlimited", async () => {
 		const { root, deps } = kit();
 
-		const result = await (
-			await startJobRun(
+		const result = await finished(
 			scheduled(root, "setTimeout(() => {}, 400)"),
-			deps,
-		)
-		).done;
+			deps,);
 
 		expect(result).toMatchObject({ exitCode: 0, timedOut: false });
 	});
@@ -353,16 +347,13 @@ describe("startJobRun", () => {
 	it("reports outputCapped and ends a feed run that passes the output limit", async () => {
 		const { root, deps } = kit();
 
-		const result = await (
-			await startJobRun(
+		const result = await finished(
 			scheduled(
 				root,
 				`process.stdout.write("x".repeat(${DISPATCH_MAX_OUTPUT_BYTES + 1024}));setTimeout(() => {}, 60000)`,
 				{ feed: true },
 			),
-			deps,
-		)
-		).done;
+			deps,);
 
 		expect(result.outputCapped).toBe(true);
 		expect(result.timedOut).toBe(false);
@@ -381,10 +372,10 @@ describe("startJobRun", () => {
 			return (original as (...args: unknown[]) => unknown)(fn, delay, ...rest);
 		}) as unknown as typeof setTimeout);
 		try {
-			await (await startJobRun(scheduled(root, "", { feed: true }), deps)).done;
+			await finished(scheduled(root, "", { feed: true }), deps);
 			expect(delays).toContain(DISPATCH_MAX_TIMEOUT_MS);
 			delays.length = 0;
-			await (await startJobRun(scheduled(root, ""), deps)).done;
+			await finished(scheduled(root, ""), deps);
 			expect(delays).not.toContain(DISPATCH_MAX_TIMEOUT_MS);
 		} finally {
 			spy.mockRestore();

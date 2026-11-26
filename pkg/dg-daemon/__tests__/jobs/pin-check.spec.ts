@@ -133,39 +133,97 @@ describe("assertJobPinned", () => {
 	});
 });
 
-describe("job launch with a pin check", () => {
-	it("starts no process for a tampered clone", async () => {
+describe("assertJobPinned against a hidden edit", () => {
+	it("refuses a tracked file marked assume-unchanged", async () => {
+		const { paths, clone, save } = rig();
+		save();
+		git(clone, "update-index", "--assume-unchanged", "run.sh");
+		writeFileSync(join(clone, "run.sh"), "echo evil\n");
+		await expect(assertJobPinned("bot", paths)).rejects.toThrow(/assume-unchanged.*run\.sh/s);
+	});
+
+	it("refuses a tracked file marked skip-worktree", async () => {
+		const { paths, clone, save } = rig();
+		save();
+		git(clone, "update-index", "--skip-worktree", "run.sh");
+		writeFileSync(join(clone, "run.sh"), "echo evil\n");
+		await expect(assertJobPinned("bot", paths)).rejects.toThrow(/skip-worktree.*run\.sh/s);
+	});
+
+	it("refuses a clone whose info/exclude hides an untracked file", async () => {
+		const { paths, clone, save } = rig();
+		save();
+		mkdirSync(join(clone, ".git", "info"), { recursive: true });
+		writeFileSync(join(clone, ".git", "info", "exclude"), "extra.sh\n");
+		writeFileSync(join(clone, "extra.sh"), "echo evil\n");
+		await expect(assertJobPinned("bot", paths)).rejects.toThrow(/info\/exclude/);
+	});
+
+	it("accepts the comment-only info/exclude that git clone writes", async () => {
+		const { paths, clone, save } = rig();
+		save();
+		mkdirSync(join(clone, ".git", "info"), { recursive: true });
+		writeFileSync(join(clone, ".git", "info", "exclude"), "# git ls-files --others\n");
+		await expect(assertJobPinned("bot", paths)).resolves.toBeUndefined();
+	});
+
+	it("ignores a global excludes file", async () => {
 		const { root, paths, clone, save } = rig();
 		save();
-		writeFileSync(join(clone, "run.sh"), "echo evil\n");
-		git(clone, "commit", "-am", "tamper");
-		const parsed = parseJobEntry("bot", { argv: [process.execPath, "-e", "0"], cwd: root, continuous: true });
-		if (!parsed.ok) throw new Error(parsed.error);
-		const deps = {
-			paths,
-			daemonUrl: () => "http://127.0.0.1:1",
-			logger: { warn: () => {} },
-			maxLogBytes: 1_000_000,
-			readCredential: () => undefined,
-		};
+		const excludes = join(root, "global-ignore");
+		writeFileSync(excludes, "extra.sh\n");
+		git(clone, "config", "core.excludesFile", excludes);
+		writeFileSync(join(clone, "extra.sh"), "echo evil\n");
+		await expect(assertJobPinned("bot", paths)).rejects.toThrow(/uncommitted.*extra\.sh/s);
+	});
+});
+
+function launchKit(rigResult: ReturnType<typeof rig>) {
+	const { root, paths } = rigResult;
+	const parsed = parseJobEntry("bot", { argv: [process.execPath, "-e", "0"], cwd: root, continuous: true });
+	if (!parsed.ok) throw new Error(parsed.error);
+	const reads: string[] = [];
+	const deps = {
+		paths,
+		daemonUrl: () => "http://127.0.0.1:1",
+		logger: { warn: () => {} },
+		maxLogBytes: 1_000_000,
+		readCredential: (name: string) => {
+			reads.push(name);
+			return undefined;
+		},
+	};
+	return { parsed, deps, reads };
+}
+
+describe("job launch with a pin check", () => {
+	it("starts no process for a tampered clone", async () => {
+		const kit = rig();
+		kit.save();
+		writeFileSync(join(kit.clone, "run.sh"), "echo evil\n");
+		git(kit.clone, "commit", "-am", "tamper");
+		const { parsed, deps } = launchKit(kit);
 		expect(() => launchJob(parsed, deps)).toThrow(/not the pinned commit/);
 		await expect(startJobRun(parsed, deps)).rejects.toThrow(/not the pinned commit/);
 	});
 
 	it("starts no process for a clone with an uncommitted edit", async () => {
-		const { root, paths, clone, save } = rig();
-		save();
-		writeFileSync(join(clone, "run.sh"), "echo evil\n");
-		const parsed = parseJobEntry("bot", { argv: [process.execPath, "-e", "0"], cwd: root, continuous: true });
-		if (!parsed.ok) throw new Error(parsed.error);
-		const deps = {
-			paths,
-			daemonUrl: () => "http://127.0.0.1:1",
-			logger: { warn: () => {} },
-			maxLogBytes: 1_000_000,
-			readCredential: () => undefined,
-		};
+		const kit = rig();
+		kit.save();
+		writeFileSync(join(kit.clone, "run.sh"), "echo evil\n");
+		const { parsed, deps } = launchKit(kit);
 		expect(() => launchJob(parsed, deps)).toThrow(/uncommitted/);
 		await expect(startJobRun(parsed, deps)).rejects.toThrow(/uncommitted/);
+	});
+
+	it("resolves no credential for a refused job", async () => {
+		const kit = rig();
+		kit.save();
+		writeFileSync(join(kit.clone, "run.sh"), "echo evil\n");
+		const { parsed, deps, reads } = launchKit(kit);
+		parsed.credentialEnv = { TOKEN: "secret" };
+		parsed.grant = "svc";
+		await expect(startJobRun(parsed, deps)).rejects.toThrow(/uncommitted/);
+		expect(reads).toEqual([]);
 	});
 });

@@ -20,7 +20,7 @@ import {
 	declarationHash,
 	describeCredentials,
 } from "../jobs/declaration";
-import { findRecordByJob, type GitSourceRecord, isTreeId, writeSource } from "../jobs/sources";
+import { findRecordByJob, type GitSourceRecord, writeSource } from "../jobs/sources";
 import { writeJobEntry } from "../server/config-store";
 import {
 	credentialLines,
@@ -43,6 +43,7 @@ import {
 	resolveJobs,
 	RollbackFailure,
 	rollBack,
+	treeOf,
 	SAFE_GIT,
 	show,
 	snapshotOf,
@@ -386,8 +387,7 @@ export async function updateSource(
 			insideClone(cloneDir, path, `job "${job}": "argv" must stay inside the repository`, PREFIX);
 		}
 
-		const tree = (await run(["rev-parse", "HEAD^{tree}"], cloneDir)).stdout.trim();
-		if (!isTreeId(tree)) stop("git did not give a tree id");
+		const tree = await treeOf(run, cloneDir);
 		await withConfigLock(paths, async () => {
 			const state = readState(paths);
 			requireMigrated(state.config);

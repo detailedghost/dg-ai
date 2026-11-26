@@ -3,10 +3,10 @@ import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
 import {
-	isTreeId,
 	findMarkRecord,
 	findRecordByJob,
 	type GitSourceRecord,
+	isTreeId,
 	readNamedSources,
 	readSourceRecords,
 	updateMarks,
