@@ -229,7 +229,10 @@ export function registerDaemonLink(
 			nonces: createIdbGrantNonces(),
 		});
 	const pwExtApi = api as unknown as PwExtBrowserApi;
-	const sessionControl = createSessionControl({ storage: api.storage as unknown as AgentTabsStorage });
+	const sessionControl = createSessionControl({
+		storage: api.storage as unknown as AgentTabsStorage,
+		isPaired: async (sessionId) => (await pairingStore.list()).some((paired) => paired.sessionId === sessionId),
+	});
 	const agentWindows = createAgentWindows({
 		browserApi: api as unknown as AgentWindowApi,
 		storage: api.storage as unknown as AgentTabsStorage,

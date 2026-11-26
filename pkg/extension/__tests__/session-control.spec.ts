@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { createSessionControl, MAX_SESSION_SITES } from "@/lib/background/session-control";
+import { afterEach, describe, expect, it, setSystemTime } from "bun:test";
+import { createSessionControl, MAX_SESSION_SITES, STOP_TTL_MS } from "@/lib/background/session-control";
 
 function memoryStorage() {
 	const data: Record<string, unknown> = {};
@@ -79,5 +79,62 @@ describe("session control", () => {
 		const storage = memoryStorage();
 		storage.data["pwExtSites:s1"] = "bad";
 		expect(await createSessionControl({ storage }).allowed("s1", "https://a.test")).toBe(false);
+	});
+});
+
+describe("session control stop expiry", () => {
+	const START = Date.UTC(2026, 0, 1);
+	const stoppedKeys = (data: Record<string, unknown>) => Object.keys(data).filter((key) => key.startsWith("pwExtStopped:"));
+
+	afterEach(() => setSystemTime());
+
+	it("records the stop time and refuses the session until 24 hours pass", async () => {
+		setSystemTime(new Date(START));
+		const storage = memoryStorage();
+		const control = createSessionControl({ storage });
+		await control.stop("s1");
+		expect(storage.data["pwExtStopped:s1"]).toBe(START);
+		setSystemTime(new Date(START + STOP_TTL_MS));
+		expect(await control.stopped("s1")).toBe(true);
+	});
+
+	it("drops the tombstone of an ended session 24 hours and 1 ms after the stop", async () => {
+		setSystemTime(new Date(START));
+		const storage = memoryStorage();
+		const control = createSessionControl({ storage, isPaired: async () => false });
+		await control.stop("s1");
+		setSystemTime(new Date(START + STOP_TTL_MS + 1));
+		expect(await control.stopped("s1")).toBe(false);
+		expect(stoppedKeys(storage.data)).toEqual([]);
+	});
+
+	it("keeps a session refused past 24 hours while its pairing is live", async () => {
+		setSystemTime(new Date(START));
+		const storage = memoryStorage();
+		const control = createSessionControl({ storage, isPaired: async (id) => id === "s1" });
+		await control.stop("s1");
+		setSystemTime(new Date(START + STOP_TTL_MS + 1));
+		expect(await control.stopped("s1")).toBe(true);
+		expect(stoppedKeys(storage.data)).toEqual(["pwExtStopped:s1"]);
+	});
+
+	it("sweeps every expired tombstone when another session stops", async () => {
+		setSystemTime(new Date(START));
+		const storage = memoryStorage();
+		const control = createSessionControl({ storage, isPaired: async () => false });
+		for (let i = 0; i < 50; i++) await control.stop(`old${i}`);
+		expect(stoppedKeys(storage.data)).toHaveLength(50);
+		setSystemTime(new Date(START + STOP_TTL_MS + 1));
+		await control.stop("fresh");
+		expect(stoppedKeys(storage.data)).toEqual(["pwExtStopped:fresh"]);
+	});
+
+	it("reads a tombstone from before timestamps as a stop that starts now", async () => {
+		setSystemTime(new Date(START));
+		const storage = memoryStorage();
+		storage.data["pwExtStopped:s1"] = true;
+		const control = createSessionControl({ storage, isPaired: async () => false });
+		expect(await control.stopped("s1")).toBe(true);
+		expect(storage.data["pwExtStopped:s1"]).toBe(START);
 	});
 });

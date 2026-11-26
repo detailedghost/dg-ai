@@ -69,7 +69,7 @@ import {
 import { defaultIsChromium } from "@/lib/browser-call";
 import { type ApprovalAnswer, type Approvals, browserApprovals } from "./approval";
 import { forgetAgentTabsAndShims, forgetDialogShim, syncDialogShim } from "./dialog-shim";
-import { createSessionControl, type SessionControl } from "./session-control";
+import { createSessionControl, STOP_TTL_MS, type SessionControl } from "./session-control";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
 import { createInputHandler } from "./pw-verbs/input";
@@ -735,8 +735,13 @@ export function createPwExtHandler({
 	const storageVerbs = createStorageVerbHandler({ browserApi: api as never, agentTabs, control });
 	type Running = { controller: AbortController; stopped(): void };
 	const live = new Map<string, Set<Running>>();
-	const halted = new Set<string>();
-	const isStopped = async (sessionId: string) => halted.has(sessionId) || (await control.stopped(sessionId));
+	const halted = new Map<string, number>();
+	const isHalted = (sessionId: string): boolean => {
+		const now = Date.now();
+		for (const [id, stoppedAt] of halted) if (now - stoppedAt > STOP_TTL_MS) halted.delete(id);
+		return halted.has(sessionId);
+	};
+	const isStopped = async (sessionId: string) => isHalted(sessionId) || (await control.stopped(sessionId));
 	const asking = new Map<string, Promise<ApprovalAnswer>>();
 	const deniedThrough = new Map<string, number>();
 	let verbs = 0;
@@ -843,7 +848,7 @@ export function createPwExtHandler({
 
 	/** Ends a session's control at once: verbs in flight end, unmask and value grants and sites go, and its tabs return to the person; Web MCP grants stay. */
 	async function stop(sessionId: string): Promise<void> {
-		halted.add(sessionId);
+		halted.set(sessionId, Date.now());
 		for (const run of live.get(sessionId) ?? []) {
 			run.controller.abort();
 			run.stopped();
@@ -1978,7 +1983,7 @@ export function createPwExtHandler({
 		if (request.verb === "fill" && request.secret && isPwExtSecretTooShort(request.value as string))
 			return { ok: false, error: SECRET_TOO_SHORT };
 		const { sessionId } = context;
-		if (halted.has(sessionId)) return STOPPED;
+		if (isHalted(sessionId)) return STOPPED;
 		const typed = request.verb === "fill" && request.secret ? [request.value as string] : [];
 		const held = async () => [...typed, ...(await grants.secrets(sessionId).catch(() => []))];
 		const verb = ++verbs;
@@ -2016,7 +2021,7 @@ export function createPwExtHandler({
 		signal?.removeEventListener("abort", relay);
 		running.delete(run);
 		if (running.size === 0) live.delete(sessionId);
-		return halted.has(sessionId) ? STOPPED : outcome;
+		return isHalted(sessionId) ? STOPPED : outcome;
 	};
 	return Object.assign(handler, { stop, stopTab, forget });
 }

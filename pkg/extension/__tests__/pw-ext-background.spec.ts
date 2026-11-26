@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it, mock, setSystemTime } from "bun:test";
 import { PW_EXT_MAX_TEXT_CHARS, PW_EXT_MAX_TOOLS, type PwExtRequest } from "@dg/common";
 import { PW_EXT_MAILBOX_ERROR } from "@/lib/background/tab-guards";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
@@ -11,7 +11,7 @@ import { createIdbGrantNonces } from "@/lib/background/webmcp-grant-nonces";
 import { IDBFactory } from "fake-indexeddb";
 import { heapAfterGc } from "./utils/heap";
 import { forgetAgentTabsAndShims } from "@/lib/background/dialog-shim";
-import { createSessionControl, type SessionControl } from "@/lib/background/session-control";
+import { createSessionControl, STOP_TTL_MS, type SessionControl } from "@/lib/background/session-control";
 
 const allowAllSites: SessionControl = {
 	allowed: async () => true,
@@ -84,6 +84,7 @@ type Options = {
 	pageDeadlineMs?: number;
 	captureDeadlineMs?: number;
 	sites?: "ask";
+	paired?: boolean;
 	cookies?: Record<string, { value: string; expirationDate?: number }>;
 	store?: (entry: { site: string; name: string; value: string; meta: Record<string, unknown> }) => Promise<string>;
 };
@@ -188,7 +189,7 @@ function harness(options: Options = {}) {
 		...(options.pageDeadlineMs ? { pageDeadlineMs: options.pageDeadlineMs } : {}),
 		...(options.captureDeadlineMs ? { captureDeadlineMs: options.captureDeadlineMs } : {}),
 		lock: agentTabsLock,
-		control: options.sites === "ask" ? createSessionControl({ storage: fake.api.storage }) : allowAllSites,
+		control: options.sites === "ask" ? createSessionControl({ storage: fake.api.storage, isPaired: async () => options.paired === true }) : allowAllSites,
 	});
 	const call = (
 		request: PwExtRequest,
@@ -3057,6 +3058,33 @@ describe("pw --ext Stop", () => {
 		expect(h.fake.record(SESSION)).toBeUndefined();
 		expect([...h.fake.session.keys()].filter((key) => key.endsWith(SESSION))).toEqual([`pwExtStopped:${SESSION}`]);
 		expect((await h.runAs(OTHER_SESSION, { verb: "tabs" })).ok).toBe(true);
+	});
+
+	describe("expiry", () => {
+		const START = Date.UTC(2026, 0, 1);
+		const stoppedKeys = (h: ReturnType<typeof harness>) => [...h.fake.session.keys()].filter((key) => key.startsWith("pwExtStopped:"));
+		afterEach(() => setSystemTime());
+
+		it("refuses the session for 24 hours, then frees the record of an ended session", async () => {
+			setSystemTime(new Date(START));
+			const h = harness({ sites: "ask", approval: "allow", pageResult: { tree: "t", text: "x" } });
+			await h.handler.stop(SESSION);
+			setSystemTime(new Date(START + STOP_TTL_MS));
+			expect(await h.run({ verb: "tabs" })).toEqual({ ok: false, error: STOPPED });
+			setSystemTime(new Date(START + STOP_TTL_MS + 1));
+			const after = await h.run({ verb: "tabs" });
+			expect(after).not.toEqual({ ok: false, error: STOPPED });
+			expect(stoppedKeys(h)).toEqual([]);
+		});
+
+		it("keeps refusing a session whose pairing is live after 24 hours and 1 ms", async () => {
+			setSystemTime(new Date(START));
+			const h = harness({ sites: "ask", approval: "allow", paired: true, pageResult: { tree: "t", text: "x" } });
+			await h.handler.stop(SESSION);
+			setSystemTime(new Date(START + STOP_TTL_MS + 1));
+			expect(await h.run({ verb: "tabs" })).toEqual({ ok: false, error: STOPPED });
+			expect(stoppedKeys(h)).toEqual([`pwExtStopped:${SESSION}`]);
+		});
 	});
 
 	it("cancels a verb in flight at once with the Stop error", async () => {
