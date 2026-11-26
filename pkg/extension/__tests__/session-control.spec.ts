@@ -98,30 +98,31 @@ describe("session control stop expiry", () => {
 		expect(await control.stopped("s1")).toBe(true);
 	});
 
-	it("drops the tombstone of an ended session 24 hours and 1 ms after the stop", async () => {
+	it("drops the tombstone 24 hours and 1 ms after the stop", async () => {
 		setSystemTime(new Date(START));
 		const storage = memoryStorage();
-		const control = createSessionControl({ storage, isPaired: async () => false });
+		const control = createSessionControl({ storage });
 		await control.stop("s1");
 		setSystemTime(new Date(START + STOP_TTL_MS + 1));
 		expect(await control.stopped("s1")).toBe(false);
 		expect(stoppedKeys(storage.data)).toEqual([]);
 	});
 
-	it("keeps a session refused past 24 hours while its pairing is live", async () => {
+	it("lists the ids whose stop has not expired", async () => {
 		setSystemTime(new Date(START));
-		const storage = memoryStorage();
-		const control = createSessionControl({ storage, isPaired: async (id) => id === "s1" });
-		await control.stop("s1");
+		const control = createSessionControl({ storage: memoryStorage() });
+		await control.stop("old");
+		setSystemTime(new Date(START + STOP_TTL_MS));
+		await control.stop("fresh");
+		expect(await control.stoppedIds()).toEqual(["old", "fresh"]);
 		setSystemTime(new Date(START + STOP_TTL_MS + 1));
-		expect(await control.stopped("s1")).toBe(true);
-		expect(stoppedKeys(storage.data)).toEqual(["pwExtStopped:s1"]);
+		expect(await control.stoppedIds()).toEqual(["fresh"]);
 	});
 
 	it("sweeps every expired tombstone when another session stops", async () => {
 		setSystemTime(new Date(START));
 		const storage = memoryStorage();
-		const control = createSessionControl({ storage, isPaired: async () => false });
+		const control = createSessionControl({ storage });
 		for (let i = 0; i < 50; i++) await control.stop(`old${i}`);
 		expect(stoppedKeys(storage.data)).toHaveLength(50);
 		setSystemTime(new Date(START + STOP_TTL_MS + 1));
@@ -133,7 +134,7 @@ describe("session control stop expiry", () => {
 		setSystemTime(new Date(START));
 		const storage = memoryStorage();
 		storage.data["pwExtStopped:s1"] = true;
-		const control = createSessionControl({ storage, isPaired: async () => false });
+		const control = createSessionControl({ storage });
 		expect(await control.stopped("s1")).toBe(true);
 		expect(storage.data["pwExtStopped:s1"]).toBe(START);
 	});

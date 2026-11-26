@@ -229,10 +229,7 @@ export function registerDaemonLink(
 			nonces: createIdbGrantNonces(),
 		});
 	const pwExtApi = api as unknown as PwExtBrowserApi;
-	const sessionControl = createSessionControl({
-		storage: api.storage as unknown as AgentTabsStorage,
-		isPaired: async (sessionId) => (await pairingStore.list()).some((paired) => paired.sessionId === sessionId),
-	});
+	const sessionControl = createSessionControl({ storage: api.storage as unknown as AgentTabsStorage });
 	const agentWindows = createAgentWindows({
 		browserApi: api as unknown as AgentWindowApi,
 		storage: api.storage as unknown as AgentTabsStorage,
@@ -251,6 +248,7 @@ export function registerDaemonLink(
 		webmcpGrants,
 		rememberedWebMcpGrants,
 		control: sessionControl,
+		onStop: (sessionId) => sendPwExtStop(sessionId),
 		siteAllow,
 		agentWindows,
 	});
@@ -528,6 +526,31 @@ export function registerDaemonLink(
 		return { grants } satisfies WebMcpGrantsReply;
 	}
 
+	const stopReportedOn = new Map<string, ChatClientSocket>();
+
+	function sendPwExtStop(sessionId: string): void {
+		const socket = currentSocket;
+		const bootstrap = bootstrapsBySession.get(sessionId);
+		if (!socket || !bootstrap || !keepaliveEligible.has(sessionId)) return;
+		try {
+			socket.send(
+				JSON.stringify({
+					type: "pw-ext-stop",
+					sessionId,
+					token: bootstrap.token,
+					protocolVersion: CHAT_PROTOCOL_VERSION,
+				}),
+			);
+			stopReportedOn.set(sessionId, socket);
+		} catch {}
+	}
+
+	async function reportStopsOnNewSocket(): Promise<void> {
+		const stopped = await sessionControl.stoppedIds();
+		for (const sessionId of stopReportedOn.keys()) if (!stopped.includes(sessionId)) stopReportedOn.delete(sessionId);
+		for (const sessionId of stopped) if (stopReportedOn.get(sessionId) !== currentSocket) sendPwExtStop(sessionId);
+	}
+
 	function forgetStoredPairing(sessionId: string): void {
 		void pairingStore.remove({ sessionId }).catch(logStoreError);
 	}
@@ -795,6 +818,7 @@ export function registerDaemonLink(
 			return;
 		}
 		if (frame.type !== "session-list") return;
+		void reportStopsOnNewSocket().catch(() => undefined);
 		const presenceChanged = frame.sessions.some(
 			({ sessionId, presence }) =>
 				bootstrapsBySession.has(sessionId) &&

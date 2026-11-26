@@ -134,6 +134,8 @@ Requires dg-ai-extension 1.44.0 or newer. The daemon checks the verb against the
 
 `cli-pw-ext-result`: `sessionId`, `requestId`, and `ok: true` with `data`, or `ok: false` with `error`.
 
+`pw-ext-stop`: inbound, from the extension only. It has the envelope fields (`sessionId`, `token`, `protocolVersion`) and no others. The extension sends it when the person clicks Stop for a session, and again on each new socket for every Stop younger than 24 hours. The daemon then refuses each later `cli-pw-ext-request` for that session with `ok: false` and an error that starts `The person clicked Stop in the browser`. A frame from a socket that is not the extension, or with a wrong token, changes nothing. The daemon holds the revoked ids in memory and drops one when its session closes. Session ids come from `randomUUID`, so a dropped id never returns. The extension keeps its own record of a Stop for 24 hours, so expiry there only frees memory. A hand-written frame has no fixture, like `connect`.
+
 ## Fixtures
 
 Each file under `pkg/common/fixtures/relay` is language-neutral JSON.

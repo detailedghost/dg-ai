@@ -19,6 +19,7 @@ const allowAllSites: SessionControl = {
 	valuesAllowed: async () => false,
 	allowValues: async () => undefined,
 	stopped: async () => false,
+	stoppedIds: async () => [],
 	stop: async () => undefined,
 	forget: async () => undefined,
 };
@@ -84,7 +85,7 @@ type Options = {
 	pageDeadlineMs?: number;
 	captureDeadlineMs?: number;
 	sites?: "ask";
-	paired?: boolean;
+	onStop?: (sessionId: string) => void;
 	cookies?: Record<string, { value: string; expirationDate?: number }>;
 	store?: (entry: { site: string; name: string; value: string; meta: Record<string, unknown> }) => Promise<string>;
 };
@@ -189,7 +190,8 @@ function harness(options: Options = {}) {
 		...(options.pageDeadlineMs ? { pageDeadlineMs: options.pageDeadlineMs } : {}),
 		...(options.captureDeadlineMs ? { captureDeadlineMs: options.captureDeadlineMs } : {}),
 		lock: agentTabsLock,
-		control: options.sites === "ask" ? createSessionControl({ storage: fake.api.storage, isPaired: async () => options.paired === true }) : allowAllSites,
+		control: options.sites === "ask" ? createSessionControl({ storage: fake.api.storage }) : allowAllSites,
+		...(options.onStop ? { onStop: options.onStop } : {}),
 	});
 	const call = (
 		request: PwExtRequest,
@@ -3077,13 +3079,11 @@ describe("pw --ext Stop", () => {
 			expect(stoppedKeys(h)).toEqual([]);
 		});
 
-		it("keeps refusing a session whose pairing is live after 24 hours and 1 ms", async () => {
-			setSystemTime(new Date(START));
-			const h = harness({ sites: "ask", approval: "allow", paired: true, pageResult: { tree: "t", text: "x" } });
+		it("tells onStop which session stopped", async () => {
+			const stops: string[] = [];
+			const h = harness({ sites: "ask", approval: "allow", onStop: (id) => void stops.push(id) });
 			await h.handler.stop(SESSION);
-			setSystemTime(new Date(START + STOP_TTL_MS + 1));
-			expect(await h.run({ verb: "tabs" })).toEqual({ ok: false, error: STOPPED });
-			expect(stoppedKeys(h)).toEqual([`pwExtStopped:${SESSION}`]);
+			expect(stops).toEqual([SESSION]);
 		});
 	});
 

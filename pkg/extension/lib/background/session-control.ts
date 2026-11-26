@@ -11,14 +11,8 @@ const sitesKey = (sessionId: string) => `pwExtSites:${sessionId}`;
 const stoppedKey = (sessionId: string) => `${STOPPED_PREFIX}${sessionId}`;
 const valuesKey = (sessionId: string) => `pwExtValues:${sessionId}`;
 
-/** Per-session site allowlist, network values grants and Stop state in storage.session; sites and values grants end with the session or on Stop. A Stop holds for 24 hours and for as long as the session stays paired, so a live session id that comes back stays stopped and an ended one frees its record. */
-export function createSessionControl({
-	storage,
-	isPaired = async () => false,
-}: {
-	storage: AgentTabsStorage;
-	isPaired?: (sessionId: string) => Promise<boolean>;
-}) {
+/** Per-session site allowlist, network values grants and Stop state in storage.session; sites and values grants end with the session or on Stop. A Stop holds for 24 hours; the daemon refuses the session for good, so expiry only frees this record. */
+export function createSessionControl({ storage }: { storage: AgentTabsStorage }) {
 	const enqueue = createSerialQueue();
 
 	async function sites(sessionId: string): Promise<string[]> {
@@ -31,9 +25,7 @@ export function createSessionControl({
 		return Array.isArray(stored) ? stored.filter((site): site is string => typeof site === "string") : [];
 	}
 
-	async function expired(sessionId: string, stoppedAt: number): Promise<boolean> {
-		return Date.now() - stoppedAt > STOP_TTL_MS && !(await isPaired(sessionId));
-	}
+	const expired = (stoppedAt: number): boolean => Date.now() - stoppedAt > STOP_TTL_MS;
 
 	async function stopped(sessionId: string): Promise<boolean> {
 		const key = stoppedKey(sessionId);
@@ -43,20 +35,26 @@ export function createSessionControl({
 			return true;
 		}
 		if (typeof held !== "number") return false;
-		if (!(await expired(sessionId, held))) return true;
+		if (!expired(held)) return true;
 		await storage.session.remove(key);
 		return false;
 	}
 
-	async function sweep(): Promise<void> {
+	async function stoppedIds(): Promise<string[]> {
+		const live: string[] = [];
 		for (const [key, held] of Object.entries(await storage.session.get(null))) {
 			if (!key.startsWith(STOPPED_PREFIX) || typeof held !== "number") continue;
-			if (await expired(key.slice(STOPPED_PREFIX.length), held)) await storage.session.remove(key);
+			if (expired(held)) await storage.session.remove(key);
+			else live.push(key.slice(STOPPED_PREFIX.length));
 		}
+		return live;
 	}
+
+	const sweep = async (): Promise<void> => void (await stoppedIds());
 
 	return {
 		stopped,
+		stoppedIds,
 
 		async allowed(sessionId: string, site: string): Promise<boolean> {
 			return (await sites(sessionId)).includes(site);
