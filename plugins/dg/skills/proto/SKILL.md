@@ -50,7 +50,7 @@ mode. Add `--ext` to keep the extension flow. `dg proto scrape|plant|cleanup` no
 
 ## Browser mode
 
-Local mode uses its own server and Playwright fingerprint capture, so it stays local in every `browser.mode`. `auto` never switches `proto`; only `--ext` does.
+Local mode uses its own server and Playwright fingerprint capture, so it stays local in every `pw.mode`. `auto` never switches `proto`; only `--ext` does.
 
 ## Local mode: pick a branch
 

@@ -74,8 +74,8 @@ public sealed class FrontDoorTests
     }
 
     [Theory]
-    [InlineData("[browser\nmode = \"ext\"\n")]
-    [InlineData("[browser]\nmode = \"loud\"\n")]
+    [InlineData("[pw\nmode = \"ext\"\n")]
+    [InlineData("[pw]\nmode = \"loud\"\n")]
     public async Task Run_ConfigDoesNotLoad_ExecsCore(string config)
     {
         var run = await Front(["--version"], config: config, env: Versioned());

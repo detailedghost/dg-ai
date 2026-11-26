@@ -1,4 +1,5 @@
 import { stripVTControlCharacters } from "node:util";
+import { isPhiSite } from "@dg/common";
 import type { Page } from "playwright-core";
 import { UsageError } from "./args";
 import { installHint } from "./install-hint";
@@ -28,7 +29,24 @@ export type DispatchOptions = {
 	state: DispatchState;
 	sessionDepth?: number;
 	envDepth?: number;
+	phiSites?: readonly string[];
 };
+
+const PHI_VERBS: ReadonlySet<string> = new Set([
+	"snapshot",
+	"screenshot",
+	"eval",
+	"run-code",
+	"console",
+	"network",
+	"localstorage-get",
+	"localstorage-list",
+	"sessionstorage-get",
+	"sessionstorage-list",
+	"cookie-get",
+	"cookie-list",
+	"pdf",
+]);
 
 export type Dispatched = { text: string; exitCode: number };
 
@@ -112,6 +130,12 @@ async function runHandler(
 	}
 }
 
+function onPhiSite(ctx: Ctx, options: DispatchOptions): string | undefined {
+	if (!options.phiSites?.length) return undefined;
+	const url = currentPage(ctx)?.url();
+	return url && isPhiSite(url, options.phiSites) ? new URL(url).origin : undefined;
+}
+
 export async function dispatch(
 	handler: DaemonHandler,
 	spec: CommandSpec,
@@ -119,6 +143,17 @@ export async function dispatch(
 	ctx: Ctx,
 	options: DispatchOptions,
 ): Promise<Dispatched> {
+	const refusedSite = PHI_VERBS.has(spec.name) ? onPhiSite(ctx, options) : undefined;
+	if (refusedSite)
+		return {
+			text: render(
+				{
+					error: `${refusedSite} is listed in [pw] phi_sites in config.toml; pw ${spec.name} is refused there. Next: remove the site from phi_sites if the page holds no patient data.`,
+				},
+				options,
+			),
+			exitCode: 1,
+		};
 	let outcome: HandlerResult;
 	try {
 		outcome = await runHandler(handler, ctx, args);
@@ -148,7 +183,7 @@ export async function dispatch(
 				.catch(() => undefined);
 		}
 		try {
-			if (!outcome.error && !ctx.restricted)
+			if (!outcome.error && !ctx.restricted && !onPhiSite(ctx, options))
 				await attachSnapshot(ctx, page, outcome, parts, options);
 		} catch (error) {
 			parts.error = describeError(error);
@@ -159,7 +194,8 @@ export async function dispatch(
 		if (parts.snapshot || parts.error || key !== options.state.lastHeader)
 			parts.page = header;
 		options.state.lastHeader = key;
-		parts.events = ctx.events.drain(page);
+		const events = ctx.events.drain(page);
+		parts.events = onPhiSite(ctx, options) ? undefined : events;
 		parts.notices = ctx.events.drainNotices(page);
 		parts.modal = ctx.events.modal(page);
 	}

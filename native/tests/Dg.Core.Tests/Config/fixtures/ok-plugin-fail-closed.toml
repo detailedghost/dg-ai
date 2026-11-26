@@ -1,0 +1,5 @@
+[plugins.a]
+fail_closed = true
+
+[plugins.b]
+enabled = true

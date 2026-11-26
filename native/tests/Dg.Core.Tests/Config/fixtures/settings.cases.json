@@ -9,7 +9,7 @@
   {
     "name": "default-string",
     "type": "string",
-    "key": "browser.mode",
+    "key": "pw.mode",
     "toml": "",
     "env": {}
   },
@@ -23,8 +23,8 @@
   {
     "name": "toml-string",
     "type": "string",
-    "key": "browser.mode",
-    "toml": "[browser]\nmode = \"local\"\n",
+    "key": "pw.mode",
+    "toml": "[pw]\nmode = \"local\"\n",
     "env": {}
   },
   {
@@ -80,7 +80,7 @@
   {
     "name": "env-string",
     "type": "string",
-    "key": "browser.mode",
+    "key": "pw.mode",
     "toml": "",
     "envVar": "DG_BROWSER_MODE",
     "env": {
@@ -90,8 +90,8 @@
   {
     "name": "env-unset-falls-to-toml",
     "type": "string",
-    "key": "browser.mode",
-    "toml": "[browser]\nmode = \"ext\"\n",
+    "key": "pw.mode",
+    "toml": "[pw]\nmode = \"ext\"\n",
     "envVar": "DG_BROWSER_MODE",
     "env": {}
   },
@@ -117,8 +117,8 @@
   {
     "name": "flag-string",
     "type": "string",
-    "key": "browser.mode",
-    "toml": "[browser]\nmode = \"ext\"\n",
+    "key": "pw.mode",
+    "toml": "[pw]\nmode = \"ext\"\n",
     "envVar": "DG_BROWSER_MODE",
     "flag": "local",
     "env": {

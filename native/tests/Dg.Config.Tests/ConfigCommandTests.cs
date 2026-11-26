@@ -32,7 +32,7 @@ public sealed class ConfigCommandTests
 
         Assert.Equal(0, run.Exit);
         Assert.Equal(
-            "browser.mode = auto\nfront.enabled = true\ninstall.cli_only = false\n"
+            "pw.mode = auto\npw.phi_sites = []\nfront.enabled = true\ninstall.cli_only = false\n"
                 + "ssms.allow_send = false\nssms.google.send_enabled = false\n",
             run.Stdout
         );
@@ -44,17 +44,17 @@ public sealed class ConfigCommandTests
         using var home = new TempHome();
         home.Write(
             "config/config.toml",
-            "[browser]\nmode = \"ext\"\n[refs]\ndefault_repo = \"o/r\"\n"
+            "[pw]\nmode = \"ext\"\nphi_sites = [\"https://a.org\"]\n[refs]\ndefault_repo = \"o/r\"\n"
                 + "[refs.aliases]\napp = \"o/app\"\n[plugins.x]\nsource = \"./x\"\n"
         );
 
         var run = home.Run("config", "list");
 
         Assert.Equal(
-            "browser.mode = ext\nfront.enabled = true\ninstall.cli_only = false\n"
+            "pw.mode = ext\npw.phi_sites = [\"https://a.org\"]\nfront.enabled = true\ninstall.cli_only = false\n"
                 + "ssms.allow_send = false\nssms.google.send_enabled = false\n"
                 + "refs.default_repo = o/r\nrefs.aliases.app = o/app\n"
-                + "plugins.x.enabled = true\nplugins.x.source = ./x\n",
+                + "plugins.x.enabled = true\nplugins.x.fail_closed = false\nplugins.x.source = ./x\n",
             run.Stdout
         );
     }
@@ -102,12 +102,12 @@ public sealed class ConfigCommandTests
     public void Doctor_InvalidFile_PrintsErrorAndExitsOne()
     {
         using var home = new TempHome();
-        home.Write("config/config.toml", "[browser]\nmode = \"loud\"\n");
+        home.Write("config/config.toml", "[pw]\nmode = \"loud\"\n");
 
         var run = home.Run("config", "doctor");
 
         Assert.Equal(1, run.Exit);
-        Assert.StartsWith("dg: dg config: <home>/config/config.toml:2: browser.mode must be", run.Stderr);
+        Assert.StartsWith("dg: dg config: <home>/config/config.toml:2: pw.mode must be", run.Stderr);
     }
 
     [Fact]
@@ -157,10 +157,10 @@ public sealed class ConfigCommandTests
         const string original = "[install]\ncli_only = true\n";
         home.Write("config/config.toml", original);
 
-        var run = home.Run("config", "set", "browser.mode", "loud");
+        var run = home.Run("config", "set", "pw.mode", "loud");
 
         Assert.Equal(1, run.Exit);
-        Assert.Contains("browser.mode must be", run.Stderr);
+        Assert.Contains("pw.mode must be", run.Stderr);
         Assert.Equal(original, File.ReadAllText(home.ConfigFile));
     }
 }

@@ -17,16 +17,16 @@ const resolve = (input: Partial<BrowserModeInput>) => resolveBrowserMode({ ...ba
 
 describe("resolveBrowserMode", () => {
 	test("--local wins over --ext, the env and the config", () => {
-		expect(resolve({ flags: { local: true, ext: true }, env: { DG_BROWSER: "ext" }, config: "ext" }).mode).toBe("local");
+		expect(resolve({ flags: { local: true, ext: true }, env: { DG_PW_MODE: "ext" }, config: "ext" }).mode).toBe("local");
 	});
 
 	test("--ext wins over the env and the config", () => {
-		expect(resolve({ flags: { ext: true }, env: { DG_BROWSER: "local" }, config: "local", extConnected: false }).mode).toBe("ext");
+		expect(resolve({ flags: { ext: true }, env: { DG_PW_MODE: "local" }, config: "local", extConnected: false }).mode).toBe("ext");
 	});
 
-	test("DG_BROWSER wins over the config", () => {
-		expect(resolve({ env: { DG_BROWSER: "local" }, config: "ext" }).mode).toBe("local");
-		expect(resolve({ env: { DG_BROWSER: "ext" }, config: "local", extConnected: false }).mode).toBe("ext");
+	test("DG_PW_MODE wins over the config", () => {
+		expect(resolve({ env: { DG_PW_MODE: "local" }, config: "ext" }).mode).toBe("local");
+		expect(resolve({ env: { DG_PW_MODE: "ext" }, config: "local", extConnected: false }).mode).toBe("ext");
 	});
 
 	test("the config applies when no flag or env is set", () => {
@@ -34,8 +34,8 @@ describe("resolveBrowserMode", () => {
 		expect(resolve({ config: "ext", extConnected: false })).toEqual({ mode: "ext", reason: "config" });
 	});
 
-	test("an empty DG_BROWSER counts as unset", () => {
-		expect(resolve({ env: { DG_BROWSER: "" }, config: "local" }).mode).toBe("local");
+	test("an empty DG_PW_MODE counts as unset", () => {
+		expect(resolve({ env: { DG_PW_MODE: "" }, config: "local" }).mode).toBe("local");
 	});
 
 	test("auto picks ext for an ext-capable verb when the extension is connected", () => {
@@ -51,26 +51,38 @@ describe("resolveBrowserMode", () => {
 		expect(resolve({ verb: "cookie-get" })).toEqual({ mode: "local", reason: "auto: verb is not ext-capable" });
 	});
 
-	test("DG_BROWSER=auto is the same as no setting", () => {
-		expect(resolve({ env: { DG_BROWSER: "auto" } }).mode).toBe("ext");
+	test("DG_PW_MODE=auto is the same as no setting", () => {
+		expect(resolve({ env: { DG_PW_MODE: "auto" } }).mode).toBe("ext");
 	});
 
 	test.each([...LOCAL_ONLY_VERBS])("%s never resolves to ext", (verb) => {
 		expect(isExtCapable(verb)).toBe(false);
 		expect(resolve({ verb, flags: { ext: true } }).mode).toBe("local");
-		expect(resolve({ verb, env: { DG_BROWSER: "ext" } }).mode).toBe("local");
+		expect(resolve({ verb, env: { DG_PW_MODE: "ext" } }).mode).toBe("local");
 		expect(resolve({ verb, config: "ext" }).mode).toBe("local");
 		expect(resolve({ verb }).mode).toBe("local");
 	});
 
-	test("an unknown DG_BROWSER value names the key and the next step", () => {
-		expect(() => resolve({ env: { DG_BROWSER: "chrome" } })).toThrow(
-			'dg pw: DG_BROWSER must be ext, local or auto, got "chrome". Next: fix or unset DG_BROWSER.',
+	test("a mode word in DG_BROWSER points at DG_PW_MODE, in any case", () => {
+		for (const word of ["auto", "ext", "local", "EXT", "Local"])
+			expect(() => resolve({ env: { DG_BROWSER: word } })).toThrow(
+				`DG_BROWSER is the browser executable path; set DG_PW_MODE=${word.toLowerCase()} for the pw mode.`,
+			);
+	});
+
+	test("a browser path in DG_BROWSER does not touch the mode", () => {
+		expect(resolve({ env: { DG_BROWSER: "/opt/x/browser" } }).mode).toBe("ext");
+		expect(resolve({ env: { DG_BROWSER: "/opt/x/browser", DG_PW_MODE: "local" } }).mode).toBe("local");
+	});
+
+	test("an unknown DG_PW_MODE value names the key and the next step", () => {
+		expect(() => resolve({ env: { DG_PW_MODE: "chrome" } })).toThrow(
+			'dg pw: DG_PW_MODE must be ext, local or auto, got "chrome". Next: fix or unset DG_PW_MODE.',
 		);
 	});
 
 	test("is pure: the same input gives the same answer and leaves the input alone", () => {
-		const input: BrowserModeInput = { ...base, env: { DG_BROWSER: "auto" } };
+		const input: BrowserModeInput = { ...base, env: { DG_PW_MODE: "auto" } };
 		const frozen = structuredClone(input);
 
 		expect(resolveBrowserMode(input)).toEqual(resolveBrowserMode(input));
@@ -89,39 +101,54 @@ describe("withoutLocalFlag", () => {
 });
 
 describe("pw main browser mode", () => {
-	test("DG_BROWSER=local sends dg pw click to the Playwright daemon", async () => {
+	test("DG_PW_MODE=local sends dg pw click to the Playwright daemon", async () => {
 		const seen: string[] = [];
 		const daemon = await startFakeDaemon("web", {}, (request) => {
 			seen.push(request.method);
 			return { text: "clicked", exitCode: 0 };
 		});
-		const previous = process.env.DG_BROWSER;
-		process.env.DG_BROWSER = "local";
+		const previous = process.env.DG_PW_MODE;
+		process.env.DG_PW_MODE = "local";
 		try {
 			const env = clientEnv();
 			expect(await main(["-s=web", "click", "e1"], env)).toBe(0);
 			expect(seen).toEqual(["run"]);
 		} finally {
-			if (previous === undefined) delete process.env.DG_BROWSER;
-			else process.env.DG_BROWSER = previous;
+			if (previous === undefined) delete process.env.DG_PW_MODE;
+			else process.env.DG_PW_MODE = previous;
 			daemon.dispose();
 		}
 	});
 
-	test("--local sends the verb to the Playwright daemon even with DG_BROWSER=ext", async () => {
+	test("a mode word in DG_BROWSER stops the call and names DG_PW_MODE", async () => {
+		const previous = process.env.DG_BROWSER;
+		process.env.DG_BROWSER = "Local";
+		try {
+			const env = clientEnv();
+			expect(await main(["-s=web", "click", "e1"], env)).toBe(1);
+			expect(env.stderr.join("")).toContain(
+				"DG_BROWSER is the browser executable path; set DG_PW_MODE=local for the pw mode.",
+			);
+		} finally {
+			if (previous === undefined) delete process.env.DG_BROWSER;
+			else process.env.DG_BROWSER = previous;
+		}
+	});
+
+	test("--local sends the verb to the Playwright daemon even with DG_PW_MODE=ext", async () => {
 		const seen: string[] = [];
 		const daemon = await startFakeDaemon("web", {}, (request) => {
 			seen.push(request.method);
 			return { text: "clicked", exitCode: 0 };
 		});
-		const previous = process.env.DG_BROWSER;
-		process.env.DG_BROWSER = "ext";
+		const previous = process.env.DG_PW_MODE;
+		process.env.DG_PW_MODE = "ext";
 		try {
 			expect(await main(["-s=web", "--local", "click", "e1"], clientEnv())).toBe(0);
 			expect(seen).toEqual(["run"]);
 		} finally {
-			if (previous === undefined) delete process.env.DG_BROWSER;
-			else process.env.DG_BROWSER = previous;
+			if (previous === undefined) delete process.env.DG_PW_MODE;
+			else process.env.DG_PW_MODE = previous;
 			daemon.dispose();
 		}
 	});
@@ -130,9 +157,9 @@ describe("pw main browser mode", () => {
 		["goto", ["goto", "https://example.com"]],
 		["tab-list", ["tab-list"]],
 		["tab-new", ["tab-new", "https://example.com"]],
-	])("DG_BROWSER=ext maps %s to its ext verb", async (_verb, argv) => {
-		const previous = process.env.DG_BROWSER;
-		process.env.DG_BROWSER = "ext";
+	])("DG_PW_MODE=ext maps %s to its ext verb", async (_verb, argv) => {
+		const previous = process.env.DG_PW_MODE;
+		process.env.DG_PW_MODE = "ext";
 		try {
 			const env = clientEnv();
 			expect(await main(argv, env)).toBe(1);
@@ -140,8 +167,8 @@ describe("pw main browser mode", () => {
 			expect(message).toContain("pw --ext needs a dg daemon session");
 			expect(message).not.toContain("Unknown pw --ext verb");
 		} finally {
-			if (previous === undefined) delete process.env.DG_BROWSER;
-			else process.env.DG_BROWSER = previous;
+			if (previous === undefined) delete process.env.DG_PW_MODE;
+			else process.env.DG_PW_MODE = previous;
 		}
 	});
 

@@ -340,3 +340,60 @@ describe("describeError", () => {
 		expect(describeError("oops")).toBe("oops");
 	});
 });
+
+describe("dispatch phi_sites", () => {
+	const phiSites = ["https://example.test"];
+	const DATA_VERBS = [
+		"snapshot",
+		"screenshot",
+		"eval",
+		"run-code",
+		"console",
+		"network",
+		"localstorage-get",
+		"localstorage-list",
+		"sessionstorage-get",
+		"sessionstorage-list",
+		"cookie-get",
+		"cookie-list",
+		"pdf",
+	];
+
+	test.each(DATA_VERBS)("refuses %s on a listed site before the handler runs", async (verb) => {
+		const { ctx } = fakeCtx(scratch.dir);
+		let ran = false;
+		const handler: DaemonHandler = async () => {
+			ran = true;
+			return { result: "chart row 42" };
+		};
+		const out = await dispatch(handler, { ...evalSpec, name: verb }, argsFor(evalSpec, "x"), ctx, options({ phiSites }));
+		expect(ran).toBe(false);
+		expect(out.exitCode).toBe(1);
+		expect(out.text).toContain("https://example.test is listed in [pw] phi_sites");
+		expect(out.text).not.toContain("chart row 42");
+	});
+
+	test("runs a data verb on a site that is not listed", async () => {
+		const { ctx } = fakeCtx(scratch.dir);
+		const out = await dispatch(returning({ result: "fine" }), evalSpec, argsFor(evalSpec, "x"), ctx, options({ phiSites: ["https://other.org"] }));
+		expect(out.exitCode).toBe(0);
+		expect(out.text).toContain("fine");
+	});
+
+	test("runs a data verb when the list is empty", async () => {
+		const { ctx } = fakeCtx(scratch.dir);
+		const out = await dispatch(returning({ result: "fine" }), evalSpec, argsFor(evalSpec, "x"), ctx, options({ phiSites: [] }));
+		expect(out.exitCode).toBe(0);
+	});
+
+	test("writes no automatic snapshot and no console lines on a listed site", async () => {
+		const { ctx, page } = fakeCtx(scratch.dir, undefined, {
+			drain: () => [{ type: "log", text: "patient 42", timestamp: 0 }] as never,
+		});
+		const out = await dispatch(returning({ snapshot: true }), goto, argsFor(goto, "a.test"), ctx, options({ phiSites }));
+		expect(out.exitCode).toBe(0);
+		expect(out.text).not.toContain("### Snapshot");
+		expect(out.text).not.toContain("patient 42");
+		expect(page.snapshotCalls).toEqual([]);
+	});
+});

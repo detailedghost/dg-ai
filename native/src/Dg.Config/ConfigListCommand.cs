@@ -34,6 +34,7 @@ public sealed class ConfigListCommand(
         foreach (var (name, plugin) in toml.Plugins)
         {
             Line($"plugins.{name}.enabled", plugin.Enabled);
+            Line($"plugins.{name}.fail_closed", plugin.FailClosed);
             if (plugin.Source is { } source)
                 Line($"plugins.{name}.source", source);
         }

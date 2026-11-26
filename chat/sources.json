@@ -2,14 +2,14 @@
 	"dg-demo": {
 		"source": "plugins/dg/skills/demo",
 		"files": {
-			"SKILL.md": "b42a2208e7fb57b7b3d6c65503ffe9a0c3dc58ef164125ab9eee40ae47eea5b2",
+			"SKILL.md": "6f8a588397e39547d6099fbeeeadfe5467bb6d9014388e4c6ac3ccd96587e496",
 			"references/authoring.md": "a0f111e32176830e493abf94ca0888247e247864b75877bf86016c2a243a464a"
 		}
 	},
 	"dg-proto": {
 		"source": "plugins/dg/skills/proto",
 		"files": {
-			"SKILL.md": "c3b13cd382290252a18ab7005b9ef473bdffcc2ffdc342e4828430f6d60fe4be",
+			"SKILL.md": "b5312134e958a3e19cbff5b6640a2a8d7aff506b5c43b5cf30d0d43a4d23a399",
 			"references/local-ui.md": "eb984a691e77aac7dd99ba9104323844545306f7e5ba3e4af0f9a6c6d641a4c3",
 			"references/local-plan.md": "53d599bc1f3c5622550f3b3af7952a4f35620c9592ce4d3f234e2c95015747c0",
 			"references/local-logic.md": "4d6194bcc6ecec93c8ee1182a7407875bb69446065978dbdd9610aac751e39cf"

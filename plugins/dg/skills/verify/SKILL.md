@@ -65,7 +65,7 @@ Full example and every field: [references/manifest.md](references/manifest.md). 
 
 ## Browser mode
 
-Capture runs a Playwright browser, so it stays local even when `browser.mode` is `auto`. It never drives the human's real browser through the extension.
+Capture runs a Playwright browser, so it stays local even when `pw.mode` is `auto`. It never drives the human's real browser through the extension.
 
 ## Run the review
 

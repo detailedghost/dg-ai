@@ -75,6 +75,34 @@ function deps(
 	};
 }
 
+describe("pw --ext phi_sites", () => {
+	const ok = () => ({ ok: true, data: { text: "done" } });
+
+	test("sends the configured phi_sites with the request", async () => {
+		const d = deps(ok, { phiSites: () => ["https://ehr.example.org"] });
+		expect(await runExt(["snapshot"], clientEnv(), d.value)).toBe(0);
+		expect(d.sent[0]?.request).toEqual({ verb: "snapshot", phiSites: ["https://ehr.example.org"] });
+	});
+
+	test("leaves phiSites off the request when the list is empty", async () => {
+		const d = deps(ok, { phiSites: () => [] });
+		expect(await runExt(["snapshot"], clientEnv(), d.value)).toBe(0);
+		expect(d.sent[0]?.request).toEqual({ verb: "snapshot" });
+	});
+
+	test("stops with the config error when config.toml does not load", async () => {
+		const d = deps(ok, {
+			phiSites: () => {
+				throw new Error("dg config: broken");
+			},
+		});
+		const env = clientEnv();
+		expect(await runExt(["snapshot"], env, d.value)).toBe(1);
+		expect(env.stderr.join("")).toContain("dg config: broken");
+		expect(d.sent).toEqual([]);
+	});
+});
+
 describe("pw --ext", () => {
 	test("sends one verb and prints the redacted text", async () => {
 		const env = clientEnv();

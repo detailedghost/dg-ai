@@ -11,7 +11,8 @@ internal static class ConfigValues
         var parts = key.Split('.');
         return parts switch
         {
-            ["browser", "mode"] => toml.BrowserMode.Wire(),
+            ["pw", "mode"] => toml.PwMode.Wire(),
+            ["pw", "phi_sites"] => toml.PwPhiSites,
             ["front", "enabled"] => toml.FrontEnabled,
             ["install", "cli_only"] => toml.InstallCliOnly,
             ["refs", "default_repo"] => toml.RefsDefaultRepo,
@@ -22,6 +23,7 @@ internal static class ConfigValues
                 rest switch
                 {
                     ["enabled"] => plugin.Enabled,
+                    ["fail_closed"] => plugin.FailClosed,
                     ["source"] => plugin.Source,
                     ["settings", .. var path] => Walk(plugin.Settings, path),
                     _ => null,

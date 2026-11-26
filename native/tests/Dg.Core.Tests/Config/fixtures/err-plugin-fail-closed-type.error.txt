@@ -1,0 +1,1 @@
+dg config: config.toml:2: plugins.a.fail_closed must be a boolean, got "yes". Next: run dg config edit, or dg config set plugins.a.fail_closed <value>.

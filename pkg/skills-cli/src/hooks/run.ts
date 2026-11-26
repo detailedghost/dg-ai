@@ -106,7 +106,7 @@ async function runExternal(
 			},
 			{ pluginDir: plugin.pluginDir, allowRemote: plugin.allowRemote, timeoutMs },
 		);
-		const result = externalHookResult(id, outcome, timeoutMs);
+		const result = externalHookResult(id, outcome, timeoutMs, plugin.failClosed);
 		if (result.stdout) seams.stdout(result.stdout);
 		if (result.stderr) seams.stderr(result.stderr);
 		return result.exitCode;

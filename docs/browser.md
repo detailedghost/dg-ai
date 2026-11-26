@@ -2,8 +2,8 @@
 
 `dg pw` picks its browser per call: `auto` (the
 default) drives your real browser through the extension when it is paired and
-connected, and a Playwright browser otherwise. `--ext`, `--local`, `DG_BROWSER`
-and `browser.mode` force one. See [browser mode](pw.md#browser-mode-auto-ext-and-local).
+connected, and a Playwright browser otherwise. `--ext`, `--local`, `DG_PW_MODE`
+and `pw.mode` force one. `DG_BROWSER` is the browser executable path. See [browser mode](pw.md#browser-mode-auto-ext-and-local).
 
 Tab batches are pw verbs. Ask `/dg:pw` in Claude Code or `$dg:pw` in Codex, or
 run the commands below in a terminal.
@@ -59,7 +59,8 @@ compressed `#_proto=` marker for its local CLI/extension handoff.
 Each dg session that drives your browser gets its own agent window, a
 separate unfocused window, so agent tabs never mix with the tabs you work in.
 The first visit to each new site opens a popup that asks you to allow it. A PHI
-checkbox on that popup makes every verb that reads page data refuse the site. See
+checkbox on that popup makes every verb that reads page data refuse the site, and
+`pw.phi_sites` in `config.toml` does the same for good. See
 the [pw guide](pw.md#real-browser---ext).
 
 Tab groups that `dg pw --ext` makes for an agent take their title from the

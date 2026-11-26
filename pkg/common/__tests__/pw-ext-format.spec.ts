@@ -25,6 +25,35 @@ import * as page from "../src/pw-ext-verbs/page";
 import * as pointer from "../src/pw-ext-verbs/pointer";
 import * as storage from "../src/pw-ext-verbs/storage";
 
+describe("validatePwExtRequest phiSites", () => {
+	const phiSites = ["https://ehr.example.org", "http://localhost:8080"];
+
+	it.each<PwExtRequest>([
+		{ verb: "snapshot" },
+		{ verb: "click", target: "e1" },
+		{ verb: "eval", expression: "1" },
+		{ verb: "hover", target: "e1" },
+		{ verb: "go-back" },
+		{ verb: "localstorage-clear" },
+		{ verb: "storage", area: "local" },
+	])("carries phiSites on $verb", (request) => {
+		expect(validatePwExtRequest({ ...request, phiSites })).toEqual({ ...request, phiSites });
+	});
+
+	it.each([
+		["a string", "https://ehr.example.org"],
+		["a bare host", ["ehr.example.org"]],
+		["a number", [3]],
+		["too many entries", Array.from({ length: 257 }, (_, i) => `https://a${i}.example.org`)],
+	])("rejects phiSites that is %s", (_name, value) => {
+		expect(() => validatePwExtRequest({ verb: "snapshot", phiSites: value })).toThrow(/phiSites/);
+	});
+
+	it("still rejects an unknown field next to phiSites", () => {
+		expect(() => validatePwExtRequest({ verb: "snapshot", phiSites, approved: true })).toThrow(/unknown field/);
+	});
+});
+
 describe("validatePwExtRequest", () => {
 	it.each([
 		{ verb: "current" },

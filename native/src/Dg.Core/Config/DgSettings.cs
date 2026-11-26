@@ -74,7 +74,8 @@ public sealed class DgSettings(DgToml toml, IReadOnlyDictionary<string, string?>
         var parts = key.Split('.');
         return parts switch
         {
-            ["browser", "mode"] => toml.BrowserMode.Wire(),
+            ["pw", "mode"] => toml.PwMode.Wire(),
+            ["pw", "phi_sites"] => toml.PwPhiSites,
             ["front", "enabled"] => toml.FrontEnabled,
             ["install", "cli_only"] => toml.InstallCliOnly,
             ["refs", "default_repo"] => toml.RefsDefaultRepo,
@@ -85,6 +86,7 @@ public sealed class DgSettings(DgToml toml, IReadOnlyDictionary<string, string?>
                 {
                     ["enabled"] => plugin.Enabled,
                     ["allow_remote"] => plugin.AllowRemote,
+                    ["fail_closed"] => plugin.FailClosed,
                     ["source"] => plugin.Source,
                     ["settings", .. var path] => Walk(plugin.Settings, path),
                     _ => null,

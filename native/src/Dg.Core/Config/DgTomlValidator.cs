@@ -12,7 +12,7 @@ internal static partial class DgTomlValidator
 
     private static readonly string[] Sections =
     [
-        "browser",
+        "pw",
         "front",
         "hooks",
         "install",
@@ -28,9 +28,13 @@ internal static partial class DgTomlValidator
     )]
     private static partial Regex TokenLike();
 
+    [GeneratedRegex(@"^https?://[a-z0-9.:\[\]-]+\z")]
+    private static partial Regex SiteKey();
+
     public static DgToml Validate(TomlTable root, string file, string text)
     {
         var where = new Where(file, text);
+        RejectRetiredBrowser(where, Get(root, "browser"));
         foreach (var name in root.Keys)
             if (Array.IndexOf(Sections, name) < 0)
                 throw Fail(where, name, $"{name} is not a dg config section.", $"{NextEdit} <section>.<key> <value>.");
@@ -39,8 +43,8 @@ internal static partial class DgTomlValidator
             CheckStrings(where, name, value);
             CheckSecrets(where, name, value);
         }
-        var browser = Table(where, "browser", Get(root, "browser"));
-        OnlyKeys(where, "browser", browser, ["mode"]);
+        var pw = Table(where, "pw", Get(root, "pw"));
+        OnlyKeys(where, "pw", pw, ["mode", "phi_sites"]);
         var front = Table(where, "front", Get(root, "front"));
         OnlyKeys(where, "front", front, ["enabled"]);
         var hooksTable = Table(where, "hooks", Get(root, "hooks"));
@@ -66,7 +70,8 @@ internal static partial class DgTomlValidator
         var meta = Table(where, "meta", Get(root, "meta"));
         OnlyKeys(where, "meta", meta, ["migrated"]);
         return new DgToml(
-            ParseBrowserMode(where, "browser.mode", Get(browser, "mode")),
+            ParsePwMode(where, "pw.mode", Get(pw, "mode")),
+            SiteKeys(where, "pw.phi_sites", Get(pw, "phi_sites")),
             OptionalBoolean(where, "front.enabled", Get(front, "enabled"), true),
             hooks,
             OptionalBoolean(where, "install.cli_only", Get(install, "cli_only"), false),
@@ -203,21 +208,47 @@ internal static partial class DgTomlValidator
         return value as string ?? throw MustBe(where, key, "a string", value);
     }
 
-    private static BrowserMode ParseBrowserMode(Where where, string key, object? value)
+    private static PwMode ParsePwMode(Where where, string key, object? value)
     {
         switch (value)
         {
             case null:
-                return BrowserMode.Auto;
+                return PwMode.Auto;
             case "ext":
-                return BrowserMode.Ext;
+                return PwMode.Ext;
             case "local":
-                return BrowserMode.Local;
+                return PwMode.Local;
             case "auto":
-                return BrowserMode.Auto;
+                return PwMode.Auto;
             default:
                 throw MustBe(where, key, "ext, local or auto", value);
         }
+    }
+
+    private static List<string> SiteKeys(Where where, string key, object? value)
+    {
+        List<string> sites = [];
+        if (value is null)
+            return sites;
+        if (value is not IEnumerable items || value is string or TomlTable)
+            throw MustBe(where, key, "a list of site keys such as \"https://example.org\"", value);
+        var index = 0;
+        foreach (var item in items)
+        {
+            if (item is not string text || !SiteKey().IsMatch(text))
+                throw MustBe(where, $"{key}.{index}", "a site key such as \"https://example.org\"", item);
+            sites.Add(text);
+            index++;
+        }
+        return sites;
+    }
+
+    private static void RejectRetiredBrowser(Where where, object? value)
+    {
+        if (value is null)
+            return;
+        var key = value is TomlTable table && table.ContainsKey("mode") ? "browser.mode" : "browser";
+        throw Fail(where, key, $"{key} moved to pw.mode.", $"{NextEdit} pw.mode <value>.");
     }
 
     private static void OnlyKeys(Where where, string key, TomlTable value, ReadOnlySpan<string> allowed)
@@ -242,11 +273,12 @@ internal static partial class DgTomlValidator
                 $"{NextEdit} plugins.<name>.enabled <value>."
             );
         var entry = Table(where, key, value);
-        OnlyKeys(where, key, entry, ["enabled", "allow_remote", "source", "settings"]);
+        OnlyKeys(where, key, entry, ["enabled", "allow_remote", "fail_closed", "source", "settings"]);
         var source = OptionalString(where, $"{key}.source", Get(entry, "source"));
         return new PluginEntry(
             OptionalBoolean(where, $"{key}.enabled", Get(entry, "enabled"), true),
             OptionalBoolean(where, $"{key}.allow_remote", Get(entry, "allow_remote"), false),
+            OptionalBoolean(where, $"{key}.fail_closed", Get(entry, "fail_closed"), false),
             source,
             Table(where, $"{key}.settings", Get(entry, "settings"))
         );

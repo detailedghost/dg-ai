@@ -1,17 +1,17 @@
 [
 	{
-		"name": "get-browser-mode-default",
+		"name": "get-pw-mode-default",
 		"stdout": "auto\n",
 		"stderr": "",
 		"exit": 0,
 		"file": null
 	},
 	{
-		"name": "get-browser-mode-ext",
+		"name": "get-pw-mode-ext",
 		"stdout": "ext\n",
 		"stderr": "",
 		"exit": 0,
-		"file": "[browser]\nmode = \"ext\"\n"
+		"file": "[pw]\nmode = \"ext\"\n"
 	},
 	{
 		"name": "get-front-enabled-default",
@@ -207,14 +207,14 @@
 		"stdout": "",
 		"stderr": "dg: dg config: <home>/config/config.toml:1: Expected ']' to close a table header but found (0x0A). Next: run dg config edit, or dg config set <key> <value>.\n",
 		"exit": 1,
-		"file": "[browser\nmode = \"ext\"\n"
+		"file": "[pw\nmode = \"ext\"\n"
 	},
 	{
 		"name": "get-bad-value",
 		"stdout": "",
-		"stderr": "dg: dg config: <home>/config/config.toml:2: browser.mode must be ext, local or auto, got \"loud\". Next: run dg config edit, or dg config set browser.mode <value>.\n",
+		"stderr": "dg: dg config: <home>/config/config.toml:2: pw.mode must be ext, local or auto, got \"loud\". Next: run dg config edit, or dg config set pw.mode <value>.\n",
 		"exit": 1,
-		"file": "[browser]\nmode = \"loud\"\n"
+		"file": "[pw]\nmode = \"loud\"\n"
 	},
 	{
 		"name": "get-unknown-section-in-file",
@@ -245,6 +245,97 @@
 		"file": "[install]\ncli_only = true\n\n[meta.migrated]\n\"<home>/config/cli-only\" = \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n"
 	},
 	{
+		"name": "get-pw-phi-sites-default",
+		"stdout": "[]\n",
+		"stderr": "",
+		"exit": 0,
+		"file": null
+	},
+	{
+		"name": "get-pw-phi-sites-set",
+		"stdout": "[\"https://ehr.example.org\",\"http://localhost:8080\"]\n",
+		"stderr": "",
+		"exit": 0,
+		"file": "[pw]\nphi_sites = [\"https://ehr.example.org\", \"http://localhost:8080\"]\n"
+	},
+	{
+		"name": "get-pw-phi-sites-bad-item",
+		"stdout": "",
+		"stderr": "dg: dg config: <home>/config/config.toml:2: pw.phi_sites.0 must be a site key such as \"https://example.org\", got \"example.org\". Next: run dg config edit, or dg config set pw.phi_sites.0 <value>.\n",
+		"exit": 1,
+		"file": "[pw]\nphi_sites = [\"example.org\"]\n"
+	},
+	{
+		"name": "get-retired-browser-mode",
+		"stdout": "",
+		"stderr": "dg: dg config: <home>/config/config.toml:2: browser.mode moved to pw.mode. Next: run dg config edit, or dg config set pw.mode <value>.\n",
+		"exit": 1,
+		"file": "[browser]\nmode = \"ext\"\n"
+	},
+	{
+		"name": "get-browser-mode-unknown-key",
+		"stdout": "",
+		"stderr": "dg: dg config: browser.mode is not a dg config key. Next: see docs/config.md for the keys, or run dg config edit.\n",
+		"exit": 1,
+		"file": null
+	},
+	{
+		"name": "get-plugin-fail-closed-default",
+		"stdout": "false\n",
+		"stderr": "",
+		"exit": 0,
+		"file": "[plugins.x]\nsource = \"./x\"\n"
+	},
+	{
+		"name": "get-plugin-fail-closed-true",
+		"stdout": "true\n",
+		"stderr": "",
+		"exit": 0,
+		"file": "[plugins.x]\nfail_closed = true\n"
+	},
+	{
+		"name": "set-pw-phi-sites",
+		"stdout": "",
+		"stderr": "",
+		"exit": 0,
+		"file": "[pw]\nphi_sites = [ \"https://ehr.example.org\" ]\n"
+	},
+	{
+		"name": "set-pw-phi-sites-bad-item",
+		"stdout": "",
+		"stderr": "dg: dg config: <home>/config/config.toml:2: pw.phi_sites.0 must be a site key such as \"https://example.org\", got \"example.org\". Next: run dg config edit, or dg config set pw.phi_sites.0 <value>.\n",
+		"exit": 1,
+		"file": null
+	},
+	{
+		"name": "set-pw-phi-sites-not-list",
+		"stdout": "",
+		"stderr": "dg: dg config: <home>/config/config.toml:2: pw.phi_sites must be a list of site keys such as \"https://example.org\", got \"https://a.org\". Next: run dg config edit, or dg config set pw.phi_sites <value>.\n",
+		"exit": 1,
+		"file": null
+	},
+	{
+		"name": "set-plugin-fail-closed",
+		"stdout": "",
+		"stderr": "",
+		"exit": 0,
+		"file": "[plugins.x]\nfail_closed = true\n"
+	},
+	{
+		"name": "set-plugin-fail-closed-invalid",
+		"stdout": "",
+		"stderr": "dg: dg config: <home>/config/config.toml:2: plugins.x.fail_closed must be a boolean, got \"maybe\". Next: run dg config edit, or dg config set plugins.x.fail_closed <value>.\n",
+		"exit": 1,
+		"file": null
+	},
+	{
+		"name": "set-browser-mode-unknown-key",
+		"stdout": "",
+		"stderr": "dg: dg config: browser.mode is not a dg config key. Next: see docs/config.md for the keys, or run dg config edit.\n",
+		"exit": 1,
+		"file": null
+	},
+	{
 		"name": "set-cli-only-new-file",
 		"stdout": "",
 		"stderr": "",
@@ -252,16 +343,16 @@
 		"file": "[install]\ncli_only = true\n"
 	},
 	{
-		"name": "set-browser-mode",
+		"name": "set-pw-mode",
 		"stdout": "",
 		"stderr": "",
 		"exit": 0,
-		"file": "[browser]\nmode = \"ext\"\n"
+		"file": "[pw]\nmode = \"ext\"\n"
 	},
 	{
-		"name": "set-browser-mode-invalid",
+		"name": "set-pw-mode-invalid",
 		"stdout": "",
-		"stderr": "dg: dg config: <home>/config/config.toml:5: browser.mode must be ext, local or auto, got \"loud\". Next: run dg config edit, or dg config set browser.mode <value>.\n",
+		"stderr": "dg: dg config: <home>/config/config.toml:5: pw.mode must be ext, local or auto, got \"loud\". Next: run dg config edit, or dg config set pw.mode <value>.\n",
 		"exit": 1,
 		"file": "[install]\ncli_only = true\n"
 	},
@@ -277,14 +368,14 @@
 		"stdout": "",
 		"stderr": "",
 		"exit": 0,
-		"file": "[refs.aliases]\napp = \"o/a\"\n\n[browser]\nmode = \"local\"\n\n[install]\ncli_only = true\n"
+		"file": "[refs.aliases]\napp = \"o/a\"\n\n[pw]\nmode = \"local\"\n\n[install]\ncli_only = true\n"
 	},
 	{
 		"name": "set-overwrites-existing",
 		"stdout": "",
 		"stderr": "",
 		"exit": 0,
-		"file": "[browser]\nmode = \"ext\"\n"
+		"file": "[pw]\nmode = \"ext\"\n"
 	},
 	{
 		"name": "set-alias",
@@ -515,7 +606,7 @@
 		"stdout": "",
 		"stderr": "dg: dg config: <home>/config/config.toml:1: Expected ']' to close a table header but found (0x0A). Next: run dg config edit, or dg config set <key> <value>.\n",
 		"exit": 1,
-		"file": "[browser\nmode = \"ext\"\n"
+		"file": "[pw\nmode = \"ext\"\n"
 	},
 	{
 		"name": "set-credential",
@@ -543,7 +634,7 @@
 		"stdout": "",
 		"stderr": "",
 		"exit": 0,
-		"file": "[install]\ncli_only = true\n\n[meta.migrated]\n\"<home>/config/cli-only\" = \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n\n[browser]\nmode = \"ext\"\n"
+		"file": "[install]\ncli_only = true\n\n[meta.migrated]\n\"<home>/config/cli-only\" = \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n\n[pw]\nmode = \"ext\"\n"
 	},
 	{
 		"name": "set-missing-arguments",

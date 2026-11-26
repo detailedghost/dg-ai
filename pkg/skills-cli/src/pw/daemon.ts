@@ -36,6 +36,7 @@ import {
 	WINDOWS_BROWSERS,
 } from "./core/windows";
 import { exitAfterDrain } from "@dg/common/exit";
+import { readDgToml } from "@dg/common/node";
 
 async function serveSession(spec: LaunchSpec): Promise<void> {
 	const handle = await start(spec);
@@ -119,6 +120,7 @@ async function serveSession(spec: LaunchSpec): Promise<void> {
 				state,
 				sessionDepth: spec.snapshotDepth,
 				envDepth: request.params.snapshotDepth,
+				phiSites: readDgToml(process.env).pw.phi_sites,
 			});
 			return { id: request.id, result };
 		} catch (error) {
