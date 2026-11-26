@@ -63,7 +63,7 @@ internal sealed class PluginStore(DgPaths paths, DgPathSeams seams)
     }
 
     public bool IsApproved(PluginRecord record) =>
-        record.HasApproval && string.Equals(TreeHash(record.Name), record.TreeSha256, StringComparison.Ordinal);
+        record.HasApproval ? throw new NotNativeException() : false;
 
     public IReadOnlyDictionary<string, PluginEntry> ConfiguredPlugins()
     {
