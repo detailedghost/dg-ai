@@ -1,4 +1,5 @@
 import {
+	type ApprovalPurpose,
 	type CredentialExecSpec,
 	type CredentialGrantSummary,
 	type CredentialIntake,
@@ -49,6 +50,9 @@ export type CredentialClient = {
 	/** Has dg daemon run a command with stored values; only scrubbed output reaches onOutput, and it resolves to the exit code. */
 	exec(spec: CredentialExecSpec, onOutput: (stream: "stdout" | "stderr", data: string) => void): Promise<number>;
 	list(): Promise<CredentialSummary[]>;
+	/** Has dg daemon sign the fields with its sealed approval key and return the MAC hex; the key never leaves the daemon. */
+	approvalSign(purpose: ApprovalPurpose, fields: string[]): Promise<string>;
+	approvalVerify(purpose: ApprovalPurpose, fields: string[], mac: string): Promise<boolean>;
 	/** Has dg daemon mint a one-time page where a human types the value for `name`; the value never passes through this client. */
 	intake(name: string, meta: CredentialMeta): Promise<CredentialIntake>;
 	delete(name: string): Promise<boolean>;
@@ -184,6 +188,10 @@ export function createCredentialClient(
 			((await request({ operation: "exec", exec: spec }, onOutput)) as { exitCode: number }).exitCode,
 		list: async () =>
 			(await request({ operation: "list" })) as CredentialSummary[],
+		approvalSign: async (purpose, fields) =>
+			(await request({ operation: "approval-sign", purpose, fields })) as string,
+		approvalVerify: async (purpose, fields, mac) =>
+			(await request({ operation: "approval-verify", purpose, fields, mac })) as boolean,
 		intake: async (name, meta) =>
 			(await request({ operation: "intake", name, meta })) as CredentialIntake,
 		delete: async (name) =>

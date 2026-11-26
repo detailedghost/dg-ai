@@ -308,3 +308,86 @@ describe("daemon credential grants", () => {
 		).rejects.toThrow();
 	});
 });
+
+describe("daemon plugin approval operations", () => {
+	const KEY = "dg/plugin-approval-key";
+	const fields = ["demo", "skill", "https://example.org/demo.git", "commit", "0123", "aa", "aa"];
+	const SEALED = /never|sealed|not allowed/i;
+
+	it("signs and verifies for a session, creates the key on first sign, and never returns the key", async () => {
+		const { cli, results } = await boot();
+		const missing = await result(results, request(cli, { operation: "approval-verify", purpose: "approval", fields, mac: "a".repeat(64) }));
+		expect(missing).toMatchObject({ ok: true, value: false });
+		expect((await result(results, request(cli, { operation: "list" }))).value).toEqual([]);
+
+		const signed = await result(results, request(cli, { operation: "approval-sign", purpose: "approval", fields }));
+		expect(signed.ok).toBe(true);
+		const mac = signed.value as string;
+		expect(mac).toMatch(/^[0-9a-f]{64}$/);
+		const again = await result(results, request(cli, { operation: "approval-sign", purpose: "approval", fields }));
+		expect(again.value).toBe(mac);
+		expect((await result(results, request(cli, { operation: "approval-verify", purpose: "approval", fields, mac }))).value).toBe(true);
+		expect((await result(results, request(cli, { operation: "approval-verify", purpose: "approval", fields: fields.with(0, "x"), mac }))).value).toBe(false);
+
+		const listed = await result(results, request(cli, { operation: "list" }));
+		expect(listed.value).toEqual([expect.objectContaining({ name: KEY })]);
+		expect(Object.keys((listed.value as object[])[0]).sort()).toEqual(["meta", "name", "updatedAt"]);
+	});
+
+	it("refuses get, set, intake and exec of the key for a session", async () => {
+		const { cli, results } = await boot();
+		await result(results, request(cli, { operation: "approval-sign", purpose: "approval", fields }));
+		for (const body of [
+			{ operation: "get", name: KEY },
+			{ operation: "get", name: KEY.toUpperCase() },
+			{ operation: "set", name: KEY, value: "f".repeat(64), meta: {} },
+			{ operation: "intake", name: KEY, meta: {} },
+			{ operation: "exec", exec: { bindings: [{ name: KEY, env: "K" }], argv: ["/bin/true"], cwd: "/tmp", env: {} } },
+		]) {
+			const answer = await result(results, request(cli, body));
+			expect([body.operation, answer.ok, answer.error]).toEqual([body.operation, false, expect.stringMatching(SEALED)]);
+		}
+		const verify = await result(results, request(cli, { operation: "approval-verify", purpose: "approval", fields, mac: "0".repeat(64) }));
+		expect(verify.value).toBe(false);
+	});
+
+	it("signs and verifies the statcache purpose for a session", async () => {
+		const { cli, results } = await boot();
+		const three = ["tree", "1700000000000", "digest"];
+		const signed = await result(results, request(cli, { operation: "approval-sign", purpose: "statcache", fields: three }));
+		expect(signed.ok).toBe(true);
+		const ok = await result(results, request(cli, { operation: "approval-verify", purpose: "statcache", fields: three, mac: signed.value }));
+		expect(ok.value).toBe(true);
+	});
+
+	it("refuses a prefix grant and the extension for both operations", async () => {
+		const { cli, results, port, bootstrap } = await boot();
+		await result(results, request(cli, { operation: "approval-sign", purpose: "approval", fields }));
+		await result(results, request(cli, { operation: "grant", prefix: "dg" }));
+		const paths = resolveDgPaths({ env: { DG_HOME: dgHome! } });
+		const token = readFileSync(join(paths.grantsDir, "dg.token"), "utf8");
+		const service = await grantSocket(port, "dg", token);
+		const frames = collectFrames(service);
+		const grant = { prefix: "dg", token };
+		for (const body of [
+			{ operation: "approval-sign", purpose: "approval", fields },
+			{ operation: "approval-verify", purpose: "approval", fields, mac: "0".repeat(64) },
+			{ operation: "get", name: KEY },
+		])
+			expect(await result(frames, request(service, { ...body, grant }))).toMatchObject({ ok: false });
+		const page = wsExtensionSocket(port);
+		sockets.push(page);
+		const pageFrames = collectFrames(page);
+		await waitForOpen(page);
+		send(page, { type: "connect", ...bootstrap, extensionVersion: "1.11.0" });
+		await waitForValue(() => pageFrames.find((frame) => frameType(frame) === "session-list"), 2000, "extension handshake");
+		expect(await result(pageFrames, request(page, { operation: "approval-sign", purpose: "approval", fields }))).toMatchObject({ ok: false, error: NOT_ALLOWED });
+	});
+
+	it("answers a field with a NUL byte as an error", async () => {
+		const { cli, results } = await boot();
+		const answer = await result(results, request(cli, { operation: "approval-sign", purpose: "approval", fields: fields.with(2, "a\u0000b") }));
+		expect(answer.ok).toBe(false);
+		expect(answer.error).toMatch(/NUL/);
+	});
+});

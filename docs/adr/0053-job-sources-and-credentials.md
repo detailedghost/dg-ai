@@ -32,7 +32,7 @@ below the state folder of the job. The `credentials` of a job list names; the de
 launch, and a block with `env` on a credential with `required: false` is refused.
 
 dg makes the credential prefix from the source name, and the name of a file job is its own prefix. The names `pw`,
-`extension`, `phone-friend`, `phone-vault` and `db` are reserved, and the prefix `pw` is also sealed. A prefix that already
+`extension`, `phone-friend`, `phone-vault`, `db` and `dg` are reserved, and the prefix `pw` is also sealed. A prefix that already
 holds credentials needs one adoption question at a terminal: `This job can read these credentials. Continue? [y/N]`. Only an
 answer at a terminal passes it, also for an agent, and `setup --rotate-token` and `setup --refresh` follow the same rule.
 
