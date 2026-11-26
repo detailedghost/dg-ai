@@ -138,6 +138,9 @@ function listedOrigin(ctx: Ctx, spec: CommandSpec, options: DispatchOptions): st
 	return undefined;
 }
 
+const WITHHELD_MODAL = '- [A dialog or file chooser is open; its text is withheld on a site listed in [pw] phi_sites]: handle it with "dialog-accept", "dialog-dismiss" or "upload"';
+const WITHHELD_NOTICE = "- [Download details are withheld on a site listed in [pw] phi_sites]";
+
 function refusal(origin: string, spec: CommandSpec, options: DispatchOptions): Dispatched {
 	return {
 		text: render(
@@ -178,8 +181,12 @@ export async function dispatch(
 
 	const page = currentPage(ctx);
 	if (page) {
+		const modalOf = (listed: string | undefined) => {
+			const lines = ctx.events.modal(page);
+			return listed && lines.length ? [WITHHELD_MODAL] : lines;
+		};
 		if (ctx.events.hasDialog(page)) {
-			parts.modal = ctx.events.modal(page);
+			parts.modal = modalOf(onPhiSite(ctx, options));
 			return { text: render(parts, options), exitCode: parts.error ? 1 : 0 };
 		}
 		if (!outcome.error && spec.changesPage) {
@@ -203,8 +210,9 @@ export async function dispatch(
 		options.state.lastHeader = key;
 		const events = ctx.events.drain(page);
 		parts.events = phiOrigin ? undefined : events;
-		parts.notices = ctx.events.drainNotices(page);
-		parts.modal = ctx.events.modal(page);
+		const notices = ctx.events.drainNotices(page);
+		parts.notices = phiOrigin && notices.length ? [WITHHELD_NOTICE] : notices;
+		parts.modal = modalOf(phiOrigin);
 	}
 
 	return { text: render(parts, options), exitCode: parts.error ? 1 : 0 };
