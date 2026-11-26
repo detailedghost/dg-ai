@@ -13,7 +13,9 @@ public static class PluginApproval
         Convert.ToHexStringLower(MacBytes(key, record));
 
     public static bool MacMatches(ReadOnlySpan<byte> key, PluginApprovalRecord record) =>
-        TryDecode32(record.Mac, out var claimed) && CryptographicOperations.FixedTimeEquals(MacBytes(key, record), claimed);
+        !ContainsNul(record)
+        && TryDecode32(record.Mac, out var claimed)
+        && CryptographicOperations.FixedTimeEquals(MacBytes(key, record), claimed);
 
     public static bool TryDecode32(string? hex, out byte[] bytes)
     {
@@ -26,15 +28,17 @@ public static class PluginApproval
 
     private static byte[] MacBytes(ReadOnlySpan<byte> key, PluginApprovalRecord record)
     {
+        if (ContainsNul(record))
+            throw new ArgumentException("a signed field contains a NUL byte", nameof(record));
         using var hmac = IncrementalHash.CreateHMAC(HashAlgorithmName.SHA256, key);
-        Append(hmac, MacDomain, first: true);
-        Append(hmac, record.Name);
-        Append(hmac, record.Kind);
-        Append(hmac, record.Source);
-        Append(hmac, record.PinKind);
-        Append(hmac, record.PinValue);
-        Append(hmac, record.TreeSha256);
-        Append(hmac, record.ApprovedSha256 ?? "");
+        HmacFields.Append(hmac, MacDomain, first: true);
+        HmacFields.Append(hmac, record.Name);
+        HmacFields.Append(hmac, record.Kind);
+        HmacFields.Append(hmac, record.Source);
+        HmacFields.Append(hmac, record.PinKind);
+        HmacFields.Append(hmac, record.PinValue);
+        HmacFields.Append(hmac, record.TreeSha256);
+        HmacFields.Append(hmac, record.ApprovedSha256 ?? "");
         return hmac.GetHashAndReset();
     }
 
@@ -58,21 +62,21 @@ public static class PluginApproval
         return files;
     }
 
+    private static bool ContainsNul(PluginApprovalRecord record) =>
+        record.Name.Contains('\0')
+        || record.Kind.Contains('\0')
+        || record.Source.Contains('\0')
+        || record.PinKind.Contains('\0')
+        || record.PinValue.Contains('\0')
+        || record.TreeSha256.Contains('\0')
+        || record.ApprovedSha256?.Contains('\0') == true;
+
     private static bool IsLowerHex(string text)
     {
         foreach (var c in text)
             if (c is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
                 return false;
         return true;
-    }
-
-    private static void Append(IncrementalHash hash, string field, bool first = false)
-    {
-        if (!first)
-            hash.AppendData([0]);
-        var max = Encoding.UTF8.GetMaxByteCount(field.Length);
-        Span<byte> buffer = max <= 512 ? stackalloc byte[max] : new byte[max];
-        hash.AppendData(buffer[..Encoding.UTF8.GetBytes(field, buffer)]);
     }
 
     private static void Walk(string dir, string prefix, List<string> files)

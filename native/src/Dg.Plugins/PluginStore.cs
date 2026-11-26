@@ -62,8 +62,11 @@ internal sealed class PluginStore(DgPaths paths, DgPathSeams seams)
         return PluginApproval.HashTree(src);
     }
 
-    public bool IsApproved(PluginRecord record) =>
-        record.HasApproval ? throw new NotNativeException() : false;
+    public static void AssertUnapproved(PluginRecord record)
+    {
+        if (record.HasApproval)
+            throw new NotNativeException();
+    }
 
     public IReadOnlyDictionary<string, PluginEntry> ConfiguredPlugins()
     {

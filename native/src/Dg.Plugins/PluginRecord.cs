@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Dg.Core.Plugins.Runtime;
 
 namespace Dg.Plugins;
 
@@ -44,7 +45,9 @@ internal sealed record PluginRecord(
                 approved.ValueKind == JsonValueKind.Null ? null : Text(root, "approvedSha256"),
                 ReadMac(root)
             );
-            return string.Equals(record.Name, expectedName, StringComparison.Ordinal) ? record : throw new NotNativeException();
+            return string.Equals(record.Name, expectedName, StringComparison.Ordinal)
+                ? record
+                : throw new NotNativeException();
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
@@ -84,17 +87,7 @@ internal sealed record PluginRecord(
         if (!root.TryGetProperty("mac", out var mac) || mac.ValueKind == JsonValueKind.Null)
             return null;
         var text = mac.ValueKind == JsonValueKind.String ? mac.GetString()! : throw new NotNativeException();
-        return IsLowerHex64(text) ? text : throw new NotNativeException();
-    }
-
-    private static bool IsLowerHex64(string text)
-    {
-        if (text.Length != 64)
-            return false;
-        foreach (var c in text)
-            if (c is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
-                return false;
-        return true;
+        return PluginApproval.TryDecode32(text, out _) ? text : throw new NotNativeException();
     }
 
     private static string Text(JsonElement element, string key)

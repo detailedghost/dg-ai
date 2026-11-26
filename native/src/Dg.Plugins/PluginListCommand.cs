@@ -29,9 +29,9 @@ internal sealed class PluginListCommand(
         {
             var record = store.TryRead(names[i]) ?? throw new NotNativeException();
             var enabled = configured.TryGetValue(names[i], out var entry) && entry.Enabled;
-            var approved = store.IsApproved(record);
+            PluginStore.AssertUnapproved(record);
             if (json)
-                AppendJson(stdout, names[i], record, enabled, approved, last: i == names.Count - 1);
+                AppendJson(stdout, names[i], record, enabled, last: i == names.Count - 1);
             else
                 stdout
                     .Append(names[i])
@@ -40,7 +40,7 @@ internal sealed class PluginListCommand(
                     .Append('\t')
                     .Append(enabled ? "on" : "off")
                     .Append('\t')
-                    .Append(approved ? "approved" : "unapproved")
+                    .Append("unapproved")
                     .Append('\t')
                     .Append(record.Pin)
                     .Append('\n');
@@ -55,7 +55,6 @@ internal sealed class PluginListCommand(
         string name,
         PluginRecord record,
         bool enabled,
-        bool approved,
         bool last
     )
     {
@@ -68,7 +67,7 @@ internal sealed class PluginListCommand(
         sink.Append(",\n      \"value\": ");
         JsonText.Quote(sink, record.PinValue);
         sink.Append("\n    },\n    \"enabled\": ").Append(enabled ? "true" : "false");
-        sink.Append(",\n    \"approved\": ").Append(approved ? "true" : "false");
+        sink.Append(",\n    \"approved\": false");
         sink.Append(",\n    \"source\": ");
         JsonText.Quote(sink, record.Source);
         sink.Append(last ? "\n  }\n" : "\n  },\n");

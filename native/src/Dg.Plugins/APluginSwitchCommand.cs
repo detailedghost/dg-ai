@@ -24,31 +24,16 @@ internal abstract class APluginSwitchCommand(
         config.Check(name, enable);
         if (enable)
         {
-            if (!store.IsApproved(record))
-                return Fail(
-                    stderr,
-                    $"dg plugin: {name} is not approved, so its text and helper stay untrusted. Next: review it, then run dg plugin verify {name} --approve."
-                );
-            Load(store, name);
+            PluginStore.AssertUnapproved(record);
+            return Fail(
+                stderr,
+                $"dg plugin: {name} is not approved, so its text and helper stay untrusted. "
+                    + $"Next: review it, then run dg plugin verify {name} --approve."
+            );
         }
-        else
-            store.Hosts().Unregister(name);
+        store.Hosts().Unregister(name);
         config.SetEnabled(name, enable);
         stdout.Append(name).Append(enable ? " enabled\n" : " disabled\n");
         return 0;
-    }
-
-    private static void Load(PluginStore store, string name)
-    {
-        var src = store.Src(name);
-        var files = PluginTree.List(src);
-        var skills = SkillLayout.Find(files, name);
-        var hosts = store.Hosts();
-        hosts.EnsureRegistrable(name, skills.Select(static s => s.Name));
-        var loaded = store.Loaded(name);
-        PluginTree.Remove(loaded);
-        foreach (var skill in skills)
-            PluginTree.Copy(src, Path.Combine(loaded, skill.Name), files, skill.Prefix);
-        hosts.Register(name, loaded);
     }
 }

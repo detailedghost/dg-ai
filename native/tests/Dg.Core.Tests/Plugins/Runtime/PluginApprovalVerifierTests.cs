@@ -133,7 +133,7 @@ public sealed class PluginApprovalVerifierTests : IDisposable
         var text = await File.ReadAllTextAsync(CachePath, TestContext.Current.CancellationToken);
         var tampered = how switch
         {
-            "flip-byte" => text.Replace("\"s\":", "\"s\":9", StringComparison.Ordinal),
+            "flip-byte" => FlipDigitAfterMiddle(text),
             "truncate" => text[..(text.Length / 2)],
             _ => "not json",
         };
@@ -141,6 +141,14 @@ public sealed class PluginApprovalVerifierTests : IDisposable
 
         Assert.Null(await Problem());
         Assert.Equal(2, _hashes);
+    }
+
+    private static string FlipDigitAfterMiddle(string text)
+    {
+        var index = text.AsSpan(text.Length / 2).IndexOfAnyInRange('0', '9') + text.Length / 2;
+        var chars = text.ToCharArray();
+        chars[index] = chars[index] == '0' ? '1' : '0';
+        return new string(chars);
     }
 
     [Fact]
@@ -268,13 +276,16 @@ public sealed class PluginApprovalVerifierTests : IDisposable
     }
 
     [Fact]
-    public async Task ProblemAsync_CanceledToken_Throws()
+    public async Task ProblemAsync_CanceledToken_ReachesTheStoreAndThrows()
     {
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
-        _store.Failure = new OperationCanceledException(cts.Token);
 
-        await Assert.ThrowsAsync<OperationCanceledException>(async () => await _verifier.ProblemAsync(Name, Folder, cts.Token));
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await _verifier.ProblemAsync(Name, Folder, cts.Token)
+        );
+
+        Assert.Equal(cts.Token, _store.LastToken);
     }
 
     [Fact]
@@ -288,7 +299,6 @@ public sealed class PluginApprovalVerifierTests : IDisposable
     [Fact]
     public async Task ProblemAsync_CachePathNotWritable_StillApproves()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "directory modes do not apply");
         Directory.CreateDirectory(CachePath);
 
         Assert.Null(await Problem());

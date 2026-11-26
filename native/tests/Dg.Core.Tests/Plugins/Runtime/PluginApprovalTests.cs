@@ -5,22 +5,23 @@ namespace Dg.Core.Tests.Plugins.Runtime;
 
 public sealed class PluginApprovalTests
 {
-    private static string MaterializeFolder(JsonElement root)
+    private static TempFolder Materialize(JsonElement root)
     {
-        var folder = Directory.CreateTempSubdirectory("dgapproval").FullName;
+        var folder = new TempFolder();
         foreach (var file in root.GetProperty("tree").EnumerateObject())
         {
-            var full = Path.Combine(folder, "src", file.Name);
+            var full = Path.Combine(folder.Path, "src", file.Name);
             Directory.CreateDirectory(Path.GetDirectoryName(full)!);
             File.WriteAllText(full, file.Value.GetString());
         }
         return folder;
     }
 
-    private static PluginApprovalRecord Load(JsonElement root, string name, string folder)
+    private static PluginApprovalRecord Load(JsonElement root, string name, TempFolder folder)
     {
-        File.WriteAllText(Path.Combine(folder, "dg-plugin.json"), root.GetProperty("records").GetProperty(name).GetRawText());
-        return PluginApprovalRecord.Read(folder)!;
+        var json = root.GetProperty("records").GetProperty(name).GetRawText();
+        File.WriteAllText(Path.Combine(folder.Path, "dg-plugin.json"), json);
+        return PluginApprovalRecord.Read(folder.Path)!;
     }
 
     [Fact]
@@ -28,20 +29,13 @@ public sealed class PluginApprovalTests
     {
         using var shared = ApprovalFixture.Shared();
         var root = shared.RootElement;
-        var folder = MaterializeFolder(root);
-        try
-        {
-            var record = Load(root, "signed", folder);
+        using var folder = Materialize(root);
+        var record = Load(root, "signed", folder);
 
-            var mac = PluginApproval.ComputeMac(Convert.FromHexString(root.GetProperty("key").GetString()!), record);
+        var mac = PluginApproval.ComputeMac(Convert.FromHexString(root.GetProperty("key").GetString()!), record);
 
-            Assert.Equal(root.GetProperty("expectedMac").GetString(), mac);
-            Assert.Equal(mac, record.Mac);
-        }
-        finally
-        {
-            Directory.Delete(folder, true);
-        }
+        Assert.Equal(root.GetProperty("expectedMac").GetString(), mac);
+        Assert.Equal(mac, record.Mac);
     }
 
     [Fact]
@@ -50,19 +44,37 @@ public sealed class PluginApprovalTests
         using var shared = ApprovalFixture.Shared();
         var root = shared.RootElement;
         var key = Convert.FromHexString(root.GetProperty("key").GetString()!);
-        var folder = MaterializeFolder(root);
-        try
-        {
-            Assert.True(PluginApproval.MacMatches(key, Load(root, "signed", folder)));
-            Assert.False(PluginApproval.MacMatches(key, Load(root, "badMac", folder)));
-            Assert.False(PluginApproval.MacMatches(key, Load(root, "unsigned", folder)));
-            Assert.False(PluginApproval.MacMatches(key, Load(root, "unsignedNull", folder)));
-            Assert.False(PluginApproval.MacMatches(new byte[32], Load(root, "signed", folder)));
-        }
-        finally
-        {
-            Directory.Delete(folder, true);
-        }
+        using var folder = Materialize(root);
+        Assert.True(PluginApproval.MacMatches(key, Load(root, "signed", folder)));
+        Assert.False(PluginApproval.MacMatches(key, Load(root, "badMac", folder)));
+        Assert.False(PluginApproval.MacMatches(key, Load(root, "unsigned", folder)));
+        Assert.False(PluginApproval.MacMatches(key, Load(root, "unsignedNull", folder)));
+        Assert.False(PluginApproval.MacMatches(new byte[32], Load(root, "signed", folder)));
+    }
+
+    [Fact]
+    public void MacMatches_NulInASignedField_IsNotApprovedEvenWithAMacOverTheJoinedBytes()
+    {
+        using var shared = ApprovalFixture.Shared();
+        var root = shared.RootElement;
+        using var folder = Materialize(root);
+        var record = Load(root, "nul-in-source", folder);
+
+        Assert.Contains('\0', record.Source);
+        Assert.False(PluginApproval.MacMatches(Convert.FromHexString(root.GetProperty("key").GetString()!), record));
+    }
+
+    [Fact]
+    public void ComputeMac_NulInASignedField_RefusesToSign()
+    {
+        using var shared = ApprovalFixture.Shared();
+        var root = shared.RootElement;
+        using var folder = Materialize(root);
+        var record = Load(root, "nul-in-source", folder);
+
+        Assert.Throws<ArgumentException>(() =>
+            PluginApproval.ComputeMac(Convert.FromHexString(root.GetProperty("key").GetString()!), record)
+        );
     }
 
     [Fact]
@@ -70,40 +82,26 @@ public sealed class PluginApprovalTests
     {
         using var shared = ApprovalFixture.Shared();
         var root = shared.RootElement;
-        var folder = MaterializeFolder(root);
-        try
-        {
-            var tree = PluginApproval.HashTree(Path.Combine(folder, "src"));
+        using var folder = Materialize(root);
+        var tree = PluginApproval.HashTree(Path.Combine(folder.Path, "src"));
 
-            Assert.Equal(root.GetProperty("records").GetProperty("signed").GetProperty("treeSha256").GetString(), tree);
-        }
-        finally
-        {
-            Directory.Delete(folder, true);
-        }
+        Assert.Equal(root.GetProperty("records").GetProperty("signed").GetProperty("treeSha256").GetString(), tree);
     }
 
     [Fact]
     public void Read_RecordWithSixKeys_ParsesAsUnsigned()
     {
-        var folder = Directory.CreateTempSubdirectory("dgapproval").FullName;
-        try
-        {
-            File.WriteAllText(
-                Path.Combine(folder, "dg-plugin.json"),
-                """{"name":"a","kind":"skill","source":"s","pin":{"kind":"sha256","value":"v"},"treeSha256":"t","approvedSha256":"t"}"""
-            );
+        using var folder = new TempFolder();
+        File.WriteAllText(
+            Path.Combine(folder.Path, "dg-plugin.json"),
+            """{"name":"a","kind":"skill","source":"s","pin":{"kind":"sha256","value":"v"},"treeSha256":"t","approvedSha256":"t"}"""
+        );
 
-            var record = PluginApprovalRecord.Read(folder);
+        var record = PluginApprovalRecord.Read(folder.Path);
 
-            Assert.NotNull(record);
-            Assert.Null(record.Mac);
-            Assert.True(record.HasApproval);
-        }
-        finally
-        {
-            Directory.Delete(folder, true);
-        }
+        Assert.NotNull(record);
+        Assert.Null(record.Mac);
+        Assert.True(record.HasApproval);
     }
 
     [Theory]
@@ -111,17 +109,10 @@ public sealed class PluginApprovalTests
     [InlineData("not json")]
     public void Read_UnparseableOrShortRecord_IsNull(string json)
     {
-        var folder = Directory.CreateTempSubdirectory("dgapproval").FullName;
-        try
-        {
-            File.WriteAllText(Path.Combine(folder, "dg-plugin.json"), json);
+        using var folder = new TempFolder();
+        File.WriteAllText(Path.Combine(folder.Path, "dg-plugin.json"), json);
 
-            Assert.Null(PluginApprovalRecord.Read(folder));
-        }
-        finally
-        {
-            Directory.Delete(folder, true);
-        }
+        Assert.Null(PluginApprovalRecord.Read(folder.Path));
     }
 
     [Theory]

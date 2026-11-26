@@ -1,4 +1,8 @@
 using System.Diagnostics;
+using System.IO.Pipes;
+using System.Security.AccessControl;
+using System.Security.Principal;
+using System.Runtime.Versioning;
 using System.Text;
 using Dg.Core.Errors;
 using Dg.Core.Plugins.Contract;
@@ -199,32 +203,37 @@ public sealed class IpcTransportTests
     }
 
     [Fact]
+    [SupportedOSPlatform("windows")]
     public async Task IpcPipeServer_OnWindows_AppliesTheServerRulesAndAcceptsTheCurrentUser()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            Assert.Skip("named pipes with ACLs");
-            return;
-        }
+        Assert.SkipWhen(!OperatingSystem.IsWindows(), "named pipes with ACLs");
         var plugin = $"acl-{Guid.NewGuid():N}";
         await using var server = IpcPipeServer.Create(plugin);
         var accept = server.WaitForConnectionAsync(TestContext.Current.CancellationToken);
 
-        await using var client = await new IpcConnector(new FixedResolver("unused")).ConnectAsync(plugin, TestContext.Current.CancellationToken);
+        await using var client = await new IpcConnector(new FixedResolver("unused")).ConnectAsync(
+            plugin,
+            TestContext.Current.CancellationToken
+        );
         await accept;
 
         Assert.Equal(PipeAclPolicy.ServerRules(CurrentUserSid()), ReadRules(server));
     }
 
-    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    private static string CurrentUserSid() => System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
+    [SupportedOSPlatform("windows")]
+    private static string CurrentUserSid()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return identity.User!.Value;
+    }
 
-    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    private static PipeAclRule[] ReadRules(System.IO.Pipes.NamedPipeServerStream pipe)
+    [SupportedOSPlatform("windows")]
+    private static PipeAclRule[] ReadRules(NamedPipeServerStream pipe)
     {
         var rules = new List<PipeAclRule>();
-        foreach (System.IO.Pipes.PipeAccessRule rule in System.IO.Pipes.PipesAclExtensions.GetAccessControl(pipe).GetAccessRules(true, false, typeof(System.Security.Principal.SecurityIdentifier)))
-            rules.Add(new(rule.IdentityReference.Value, rule.AccessControlType == System.Security.AccessControl.AccessControlType.Allow));
+        var collection = pipe.GetAccessControl().GetAccessRules(true, false, typeof(SecurityIdentifier));
+        foreach (PipeAccessRule rule in collection)
+            rules.Add(new(rule.IdentityReference.Value, rule.AccessControlType == AccessControlType.Allow));
         rules.Sort(static (a, b) => b.Allow.CompareTo(a.Allow));
         return [.. rules];
     }

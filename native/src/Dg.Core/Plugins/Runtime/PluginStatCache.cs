@@ -1,11 +1,10 @@
 using System.Globalization;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 
 namespace Dg.Core.Plugins.Runtime;
 
-internal readonly record struct FileStamp(string Path, long Size, long MtimeNs, ulong Inode);
+internal readonly record struct FileStamp(string RelativePath, long Size, long MtimeNs, ulong Inode);
 
 internal static class PluginStatCache
 {
@@ -20,18 +19,25 @@ internal static class PluginStatCache
         var stamps = new FileStamp[files.Count];
         for (var i = 0; i < stamps.Length; i++)
         {
-            var path = System.IO.Path.Combine(src, files[i]);
+            var path = Path.Combine(src, files[i]);
             var info = new FileInfo(path);
-            stamps[i] = new FileStamp(files[i], info.Length, info.LastWriteTimeUtc.Ticks * TickNs, FileIdentity.Of(path));
+            var mtimeNs = info.LastWriteTimeUtc.Ticks * TickNs;
+            stamps[i] = new FileStamp(files[i], info.Length, mtimeNs, FileIdentity.Of(path));
         }
         return stamps;
     }
 
-    public static bool Attests(string folder, ReadOnlySpan<byte> key, string treeSha256, FileStamp[] current, DateTimeOffset now)
+    public static bool Attests(
+        string folder,
+        ReadOnlySpan<byte> key,
+        string treeSha256,
+        FileStamp[] current,
+        DateTimeOffset now
+    )
     {
         try
         {
-            using var document = JsonDocument.Parse(File.ReadAllBytes(System.IO.Path.Combine(folder, FileName)));
+            using var document = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(folder, FileName)));
             var root = document.RootElement;
             var tree = root.GetProperty("treeSha256").GetString();
             var fullHashAt = root.GetProperty("fullHashAtMs").GetInt64();
@@ -55,17 +61,31 @@ internal static class PluginStatCache
                 && age < MaxAge
                 && current.AsSpan().SequenceEqual(stamps);
         }
-        catch (Exception ex) when (ex is JsonException or IOException or InvalidOperationException or UnauthorizedAccessException or KeyNotFoundException or FormatException or ArgumentException)
+        catch (Exception ex)
+            when (ex is JsonException
+                    or IOException
+                    or InvalidOperationException
+                    or UnauthorizedAccessException
+                    or KeyNotFoundException
+                    or FormatException
+                    or ArgumentException
+            )
         {
             return false;
         }
     }
 
-    public static void Save(string folder, ReadOnlySpan<byte> key, string treeSha256, FileStamp[] stamps, DateTimeOffset now)
+    public static void Save(
+        string folder,
+        ReadOnlySpan<byte> key,
+        string treeSha256,
+        FileStamp[] stamps,
+        DateTimeOffset now
+    )
     {
         var fullHashAt = now.ToUnixTimeMilliseconds();
         var mac = Convert.ToHexStringLower(Sign(key, treeSha256, fullHashAt, stamps));
-        var target = System.IO.Path.Combine(folder, FileName);
+        var target = Path.Combine(folder, FileName);
         var temp = $"{target}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
         try
         {
@@ -79,7 +99,7 @@ internal static class PluginStatCache
                 foreach (var stamp in stamps)
                 {
                     writer.WriteStartObject();
-                    writer.WriteString("p", stamp.Path);
+                    writer.WriteString("p", stamp.RelativePath);
                     writer.WriteNumber("s", stamp.Size);
                     writer.WriteNumber("m", stamp.MtimeNs);
                     writer.WriteNumber("i", stamp.Inode);
@@ -106,26 +126,17 @@ internal static class PluginStatCache
     private static byte[] Sign(ReadOnlySpan<byte> key, string treeSha256, long fullHashAt, FileStamp[] stamps)
     {
         using var hmac = IncrementalHash.CreateHMAC(HashAlgorithmName.SHA256, key);
-        Append(hmac, MacDomain, first: true);
-        Append(hmac, treeSha256);
-        Append(hmac, fullHashAt.ToString(CultureInfo.InvariantCulture));
-        Append(hmac, stamps.Length.ToString(CultureInfo.InvariantCulture));
+        HmacFields.Append(hmac, MacDomain, first: true);
+        HmacFields.Append(hmac, treeSha256);
+        HmacFields.Append(hmac, fullHashAt.ToString(CultureInfo.InvariantCulture));
+        HmacFields.Append(hmac, stamps.Length.ToString(CultureInfo.InvariantCulture));
         foreach (var stamp in stamps)
         {
-            Append(hmac, stamp.Path);
-            Append(hmac, stamp.Size.ToString(CultureInfo.InvariantCulture));
-            Append(hmac, stamp.MtimeNs.ToString(CultureInfo.InvariantCulture));
-            Append(hmac, stamp.Inode.ToString(CultureInfo.InvariantCulture));
+            HmacFields.Append(hmac, stamp.RelativePath);
+            HmacFields.Append(hmac, stamp.Size.ToString(CultureInfo.InvariantCulture));
+            HmacFields.Append(hmac, stamp.MtimeNs.ToString(CultureInfo.InvariantCulture));
+            HmacFields.Append(hmac, stamp.Inode.ToString(CultureInfo.InvariantCulture));
         }
         return hmac.GetHashAndReset();
-    }
-
-    private static void Append(IncrementalHash hash, string field, bool first = false)
-    {
-        if (!first)
-            hash.AppendData([0]);
-        var max = Encoding.UTF8.GetMaxByteCount(field.Length);
-        Span<byte> buffer = max <= 512 ? stackalloc byte[max] : new byte[max];
-        hash.AppendData(buffer[..Encoding.UTF8.GetBytes(field, buffer)]);
     }
 }

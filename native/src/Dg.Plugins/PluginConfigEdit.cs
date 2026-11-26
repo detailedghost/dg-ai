@@ -5,25 +5,11 @@ namespace Dg.Plugins;
 
 internal sealed class PluginConfigEdit(string file)
 {
-    private const int Tries = 3;
-
     public void Check(string plugin, bool enabled) => Render(plugin, enabled);
 
-    public void SetEnabled(string plugin, bool enabled)
-    {
-        for (var attempt = 1; attempt <= Tries; attempt++)
-        {
-            var (text, next) = Render(plugin, enabled);
-            if (File.ReadAllText(file) == text)
-            {
-                ConfigFileWriter.Write(file, next);
-                return;
-            }
-        }
-        throw new NotNativeException();
-    }
+    public void SetEnabled(string plugin, bool enabled) => ConfigFileWriter.Write(file, Render(plugin, enabled));
 
-    private (string Text, string Next) Render(string plugin, bool enabled)
+    private string Render(string plugin, bool enabled)
     {
         if (!File.Exists(file))
             throw new NotNativeException();
@@ -33,7 +19,7 @@ internal sealed class PluginConfigEdit(string file)
         var raw = RawToml.Parse(text);
         Child(Child(raw, "plugins"), plugin)["enabled"] = enabled;
         var next = TomlWriter.Stringify(raw);
-        return DgConfig.Parse(next, file).IsOk ? (text, next) : throw new NotNativeException();
+        return DgConfig.Parse(next, file).IsOk ? next : throw new NotNativeException();
     }
 
     private static TomlTable Child(TomlTable parent, string key)

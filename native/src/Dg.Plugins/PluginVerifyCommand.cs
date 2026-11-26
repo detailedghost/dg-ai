@@ -35,18 +35,17 @@ internal sealed class PluginVerifyCommand(
         var manifest = ReadManifest(store.Src(name));
         if (approve)
             throw new NotNativeException();
-        var approved = store.IsApproved(record);
-        stdout.Append(name).Append(approved ? ": approved\n" : ": unapproved\n");
+        PluginStore.AssertUnapproved(record);
+        stdout.Append(name).Append(": unapproved\n");
         var report = manifest is null ? new PermissionReport([], []) : PermissionReport.For(manifest);
         Section(stdout, "dg enforces:", report.Enforced);
         Section(stdout, "dg cannot enforce (declared only):", report.Unenforced);
-        if (!approved)
-            stdout
-                .Append("Imported text stays untrusted until approved. Next: review ")
-                .Append(store.Src(name))
-                .Append(", then run dg plugin verify ")
-                .Append(name)
-                .Append(" --approve.\n");
+        stdout
+            .Append("Imported text stays untrusted until approved. Next: review ")
+            .Append(store.Src(name))
+            .Append(", then run dg plugin verify ")
+            .Append(name)
+            .Append(" --approve.\n");
         return 0;
     }
 
