@@ -224,7 +224,10 @@ function harness(options: Options = {}) {
 		handler,
 		control,
 		pageStarted: async () => {
-			while (pageRuns === 0) await new Promise((resolve) => setTimeout(resolve, 1));
+			for (let attempt = 0; pageRuns === 0; attempt++) {
+				if (attempt >= 2000) throw new Error("page script never started");
+				await new Promise((resolve) => setTimeout(resolve, 1));
+			}
 		},
 		storedCredentials,
 		remembered,
@@ -3095,7 +3098,7 @@ describe("pw --ext Stop", () => {
 		});
 	});
 
-	it("still cancels verbs in flight and records the Stop when onStop throws", async () => {
+	it("resolves the Stop, cancels verbs in flight and records the Stop when onStop throws", async () => {
 		const h = harness({
 			sites: "ask",
 			approval: "allow",
@@ -3106,7 +3109,7 @@ describe("pw --ext Stop", () => {
 		});
 		const running = h.run({ verb: "snapshot" });
 		await h.pageStarted();
-		await expect(h.handler.stop(SESSION)).rejects.toThrow("report failed");
+		await h.handler.stop(SESSION);
 		expect(await running).toEqual({ ok: false, error: STOPPED });
 		expect(h.fake.session.get(`pwExtStopped:${SESSION}`)).toBeNumber();
 	});

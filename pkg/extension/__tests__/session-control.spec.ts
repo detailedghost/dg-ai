@@ -88,7 +88,7 @@ describe("session control stop expiry", () => {
 
 	afterEach(() => setSystemTime());
 
-	it("records the stop time and refuses the session until 24 hours pass", async () => {
+	it("records the stop time and still refuses the session at 24 hours", async () => {
 		setSystemTime(new Date(START));
 		const storage = memoryStorage();
 		const control = createSessionControl({ storage });
