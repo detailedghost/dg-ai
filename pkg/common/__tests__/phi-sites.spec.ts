@@ -6,7 +6,7 @@ describe("isSiteKey", () => {
 		expect(isSiteKey(key)).toBe(true);
 	});
 
-	it.each(["example.org", "https://Example.org", "https://example.org/path", "ftp://example.org", "", "https://", "https://:", "http://[", "https://example.org:443", "https://a b"])("rejects %p", (key) => {
+	it.each(["example.org", "https://Example.org", "https://example.org/path", "ftp://example.org", "", "https://", "https://:", "http://[", "https://example.org:443", "https://a b", "https://ehr.example.org."])("rejects %p", (key) => {
 		expect(isSiteKey(key)).toBe(false);
 	});
 });
@@ -30,6 +30,16 @@ describe("isPhiSite", () => {
 		expect(isPhiSite("http://localhost:8080/x", sites)).toBe(true);
 		expect(isPhiSite("http://localhost:9090/x", sites)).toBe(false);
 		expect(isPhiSite("http://localhost/x", sites)).toBe(false);
+	});
+
+	it("matches a fully qualified host written with a trailing dot", () => {
+		expect(isPhiSite("https://ehr.example.org./chart/1", sites)).toBe(true);
+		expect(isPhiSite("https://app.ehr.example.org./", sites)).toBe(true);
+		expect(isPhiSite("https://example.org./", sites)).toBe(false);
+	});
+
+	it("never matches through a listed key that ends with a dot", () => {
+		expect(isPhiSite("https://ehr.example.org./", ["https://ehr.example.org."])).toBe(false);
 	});
 
 	it("is false for an empty list and for a url that does not parse", () => {

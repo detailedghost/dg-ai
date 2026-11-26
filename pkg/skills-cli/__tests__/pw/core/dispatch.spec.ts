@@ -13,6 +13,7 @@ import type { DaemonHandler, HandlerResult } from "../../../src/pw/core/spec";
 import {
 	argsFor,
 	fakeCtx,
+	FakePage,
 	fakeEvents,
 	useTempScratch,
 } from "../../../src/pw/test-support";
@@ -373,6 +374,53 @@ describe("dispatch phi_sites", () => {
 		expect(out.exitCode).toBe(1);
 		expect(out.text).toContain("https://example.test is listed in [pw] phi_sites");
 		expect(out.text).not.toContain("chart row 42");
+	});
+
+	test("refuses a data verb on a listed site reached through a trailing-dot host", async () => {
+		const { ctx, page } = fakeCtx(scratch.dir);
+		page.url = () => "https://example.test./patients/jane-doe";
+		let ran = false;
+		const handler: DaemonHandler = async () => {
+			ran = true;
+			return { result: "chart row 42" };
+		};
+		const out = await dispatch(handler, evalSpec, argsFor(evalSpec, "x"), ctx, options({ phiSites }));
+		expect(ran).toBe(false);
+		expect(out.exitCode).toBe(1);
+		expect(out.text).not.toContain("chart row 42");
+	});
+
+	test.each(["tab-list", "cookie-list"])("refuses %s while another open tab is on a listed site", async (verb) => {
+		const { ctx, context } = fakeCtx(scratch.dir);
+		const listed = new FakePage();
+		listed.url = () => "https://example.test/patients/jane-doe";
+		const other = new FakePage();
+		other.url = () => "https://other.org/";
+		context.pages().splice(0, 1, other as never, listed as never);
+		ctx.selectTab(0);
+		let ran = false;
+		const handler: DaemonHandler = async () => {
+			ran = true;
+			return { result: "https://example.test/patients/jane-doe" };
+		};
+		const out = await dispatch(handler, { ...evalSpec, name: verb, readsPage: true }, argsFor(evalSpec, "x"), ctx, options({ phiSites }));
+		expect(ran).toBe(false);
+		expect(out.exitCode).toBe(1);
+		expect(out.text).not.toContain("jane-doe");
+	});
+
+	test("replaces the result when a read handler navigates onto a listed site", async () => {
+		const { ctx, page } = fakeCtx(scratch.dir);
+		page.url = () => "https://other.org/";
+		const handler: DaemonHandler = async () => {
+			page.url = () => "https://example.test/patients/jane-doe";
+			return { result: "chart row 42" };
+		};
+		const out = await dispatch(handler, evalSpec, argsFor(evalSpec, "x"), ctx, options({ phiSites }));
+		expect(out.exitCode).toBe(1);
+		expect(out.text).toContain("https://example.test is listed in [pw] phi_sites");
+		expect(out.text).not.toContain("chart row 42");
+		expect(out.text).not.toContain("jane-doe");
 	});
 
 	test("reduces the page header to the origin on a listed site", async () => {

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { parse as parseStrict, stringify } from "smol-toml";
 import { CREDENTIAL_NAME_PATTERN } from "../credentials-format";
 import { DgCliError } from "../errors";
-import { isSiteKey } from "../phi-sites";
+import { isSiteKey, PHI_SITES_MAX } from "../phi-sites";
 import { type DgPaths, resolveDgPaths } from "./dg-paths";
 import { withinRoot, writeFilePreserving } from "./fs";
 
@@ -208,6 +208,7 @@ const SITE_KEY_LIST = `a list of site keys such as "https://example.org"`;
 function siteKeys(where: Where, key: string, value: unknown): string[] {
 	if (value === undefined) return [];
 	if (!Array.isArray(value)) mustBe(where, key, SITE_KEY_LIST, value);
+	if (value.length > PHI_SITES_MAX) fail(where, key, `${key} holds more than ${PHI_SITES_MAX} site keys. ${NEXT_EDIT} ${key} <value>.`);
 	value.forEach((item, index) => {
 		if (typeof item !== "string" || !isSiteKey(item)) mustBe(where, `${key}.${index}`, SITE_KEY_EXAMPLE, item);
 	});

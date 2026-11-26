@@ -1,6 +1,6 @@
 ---
 name: stat
-description: 'Report in-flight work as a priority checklist: "/dg:stat", "what''s in flight", "where are we at", "show the checklist".'
+description: 'Report in-flight work as a priority checklist. Read-only, but stops finished jobs and stuck loops: "/dg:stat", "what''s in flight", "where are we at", "show the checklist".'
 ---
 
 # /dg:stat: What's In Flight

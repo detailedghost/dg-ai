@@ -323,6 +323,21 @@ describe("pw and front keys", () => {
 		);
 	});
 
+	test("rejects more than 256 pw.phi_sites entries and accepts exactly 256", () => {
+		const list = (count: number) => `phi_sites = [${Array.from({ length: count }, (_, i) => `"https://h${i}.example.org"`).join(", ")}]`;
+		writeFileSync(file, ["[pw]", list(256), ""].join("\n"));
+		expect(readDgToml(env).pw.phi_sites).toHaveLength(256);
+		writeFileSync(file, ["[pw]", list(257), ""].join("\n"));
+		expect(caught(() => readDgToml(env)).message).toBe(
+			`dg config: ${file}:2: pw.phi_sites holds more than 256 site keys. Next: run dg config edit, or dg config set pw.phi_sites <value>.`,
+		);
+	});
+
+	test("rejects a pw.phi_sites key whose host ends with a dot", () => {
+		writeFileSync(file, ["[pw]", 'phi_sites = ["https://ehr.example.org."]', ""].join("\n"));
+		expect(caught(() => readDgToml(env)).message).toContain("pw.phi_sites.0 must be a site key");
+	});
+
 	test("rejects an unknown pw key", () => {
 		writeFileSync(file, ["[pw]", "speed = 1", ""].join("\n"));
 
