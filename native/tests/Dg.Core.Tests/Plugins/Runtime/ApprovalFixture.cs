@@ -13,7 +13,7 @@ internal static class ApprovalFixture
     public static PluginApprovalRecord Signed(string name, string tree, byte[]? key = null)
     {
         var record = new PluginApprovalRecord(name, "skill", "folder", "sha256", tree, tree, tree, null);
-        return record with { Mac = PluginApproval.ComputeMac(key ?? Key, record) };
+        return record with { Mac = FakeApprovalSigner.Mac(key ?? Key, "dg-plugin-approval-v1", record.SignedFields()) };
     }
 
     public static void WriteRecord(string folder, PluginApprovalRecord record)
