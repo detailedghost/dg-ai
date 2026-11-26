@@ -140,7 +140,7 @@ public sealed class PluginHostLeakTests
 
         const int batches = 4;
         const int perBatch = 400;
-        const int warmup = 50;
+        const int warmup = 500;
         var successes = 0;
 
         var report = await LeakMeter.MeasureAsync(
