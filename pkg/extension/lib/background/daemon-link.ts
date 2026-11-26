@@ -505,6 +505,14 @@ export function registerDaemonLink(
 		);
 	}
 
+	function logStopReportError(error: unknown): void {
+		emitRedacted(
+			(line) => console.warn(line),
+			`[dg-chat] could not report a Stop to the daemon: ${describeError(error)}`,
+			knownTokens(),
+		);
+	}
+
 	async function answerWebMcpGrants(payload: Record<string, unknown>): Promise<unknown> {
 		if (payload.type === MSG.webmcpRevokeAll) {
 			await Promise.all([webmcpGrants.forgetAll(), rememberedWebMcpGrants.forgetAll()]);
@@ -542,10 +550,12 @@ export function registerDaemonLink(
 				}),
 			);
 			stopReportedOn.set(sessionId, socket);
-		} catch {}
+		} catch (error) {
+			logStopReportError(error);
+		}
 	}
 
-	async function reportStopsOnNewSocket(): Promise<void> {
+	async function reportPendingStops(): Promise<void> {
 		const stopped = await sessionControl.stoppedIds();
 		for (const sessionId of stopReportedOn.keys()) if (!stopped.includes(sessionId)) stopReportedOn.delete(sessionId);
 		for (const sessionId of stopped) if (stopReportedOn.get(sessionId) !== currentSocket) sendPwExtStop(sessionId);
@@ -818,7 +828,7 @@ export function registerDaemonLink(
 			return;
 		}
 		if (frame.type !== "session-list") return;
-		void reportStopsOnNewSocket().catch(() => undefined);
+		void reportPendingStops().catch(logStopReportError);
 		const presenceChanged = frame.sessions.some(
 			({ sessionId, presence }) =>
 				bootstrapsBySession.has(sessionId) &&

@@ -404,7 +404,7 @@ describe("the default run of a job", () => {
 	it("fails a run whose output cannot be read and names the read error", async () => {
 		await withStore(async (store) => {
 			const job = addJob(store, { argv: ["printf", ""] });
-			const start = spyOn(launcher, "startJobRun").mockReturnValue({
+			const start = spyOn(launcher, "startJobRun").mockResolvedValue({
 				pid: 0,
 				done: Promise.resolve({
 					exitCode: 0,
@@ -587,14 +587,31 @@ describe("createJobRunner", () => {
 			const runner = createJobRunner(deps(store, undefined));
 
 			expect(runner.runNow("long").ok).toBe(true);
-			const pid = runner.status().find((row) => row.label === "long")?.pid;
-			expect(pid).toBeNumber();
+			const pid = await until(
+				() => runner.status().find((row) => row.label === "long")?.pid,
+				(value) => typeof value === "number",
+				"the run started",
+			);
 			await runner.stopAll();
 
 			expect(store.getJobByLabel("long")?.lastError).toBe(
 				"stopped by the owner",
 			);
 			expect(() => process.kill(pid as number, 0)).toThrow();
+		});
+	});
+
+	it("ends a run that a stop reached before its process started", async () => {
+		await withStore(async (store) => {
+			table.long = entry({
+				argv: [process.execPath, "-e", "setTimeout(() => {}, 60000)"],
+			});
+			const runner = createJobRunner(deps(store, undefined));
+
+			runner.runNow("long");
+			await runner.stopAll();
+
+			expect(store.getJobByLabel("long")?.lastError).toBe("stopped by the owner");
 		});
 	});
 
@@ -614,7 +631,11 @@ describe("createJobRunner", () => {
 			);
 
 			runner.runNow("long");
-			const pid = runner.status().find((row) => row.label === "long")?.pid;
+			const pid = await until(
+				() => runner.status().find((row) => row.label === "long")?.pid,
+				(value) => typeof value === "number",
+				"the run started",
+			);
 			delete table.long;
 			const result = await runner.stop("long");
 

@@ -56,6 +56,11 @@ const stopFrame = (credentials: { sessionId: string; token: string }) => ({
 	token: credentials.token,
 });
 
+const refusalOf = (cliFrames: unknown[], id: string) =>
+	cliFrames.find((f) => (f as Frame).type === "cli-pw-ext-result" && (f as Frame).requestId === id && (f as Frame).ok === false) as Frame | undefined;
+
+const errorFrames = (frames: unknown[]) => frames.filter((f) => frameType(f) === "error");
+
 describe("pw --ext Stop revoke", () => {
 	it("relays a request before the extension reports a Stop", async () => {
 		const { cli, extensionFrames } = await boot();
@@ -66,32 +71,43 @@ describe("pw --ext Stop revoke", () => {
 	it("refuses every later request of a stopped session", async () => {
 		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
 		send(socket, stopFrame(bootstrap));
-		await new Promise((resolve) => setTimeout(resolve, 100));
-		const id = request(cli);
-		const result = (await waitForValue(
-			() => cliFrames.find((f) => (f as Frame).type === "cli-pw-ext-result" && (f as Frame).requestId === id) as Frame | undefined,
-			1500,
+		request(cli);
+		const result = await waitForValue(
+			() => {
+				const refusal = cliFrames.find((f) => (f as Frame).type === "cli-pw-ext-result" && (f as Frame).ok === false) as Frame | undefined;
+				if (!refusal) request(cli);
+				return refusal;
+			},
+			3000,
 			"refusal",
-		)) as Frame;
-		expect(result.ok).toBe(false);
+		);
 		expect(String(result.error)).toContain("Stop");
-		expect(extensionFrames.some((f) => (f as Frame).requestId === id)).toBe(false);
+		expect(extensionFrames.some((f) => (f as Frame).requestId === result.requestId)).toBe(false);
 	});
 
 	it("ignores a Stop that comes from a socket that is not the extension", async () => {
 		const { cli, cliFrames, extensionFrames, bootstrap } = await boot();
 		send(cli, stopFrame(bootstrap));
-		await new Promise((resolve) => setTimeout(resolve, 100));
 		const id = request(cli);
 		await waitForValue(() => extensionFrames.find((f) => (f as Frame).requestId === id), 1500, "relayed");
-		expect(cliFrames.some((f) => (f as Frame).type === "cli-pw-ext-result" && (f as Frame).ok === false)).toBe(false);
+		expect(refusalOf(cliFrames, id)).toBeUndefined();
 	});
 
 	it("ignores a Stop with a wrong session token", async () => {
-		const { cli, socket, extensionFrames, bootstrap } = await boot();
+		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
 		send(socket, { ...stopFrame(bootstrap), token: "wrong" });
-		await new Promise((resolve) => setTimeout(resolve, 100));
+		await waitForValue(() => errorFrames(extensionFrames)[0], 1500, "rejection of the Stop");
 		const id = request(cli);
 		await waitForValue(() => extensionFrames.find((f) => (f as Frame).requestId === id), 1500, "relayed");
+		expect(refusalOf(cliFrames, id)).toBeUndefined();
+	});
+
+	it("ignores a Stop that pairs the session token with another session id", async () => {
+		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
+		send(socket, stopFrame({ sessionId: randomUUID(), token: bootstrap.token }));
+		await waitForValue(() => errorFrames(extensionFrames)[0], 1500, "rejection of the Stop");
+		const id = request(cli);
+		await waitForValue(() => extensionFrames.find((f) => (f as Frame).requestId === id), 1500, "relayed");
+		expect(refusalOf(cliFrames, id)).toBeUndefined();
 	});
 });

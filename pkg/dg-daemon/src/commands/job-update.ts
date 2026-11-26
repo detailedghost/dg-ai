@@ -20,7 +20,7 @@ import {
 	declarationHash,
 	describeCredentials,
 } from "../jobs/declaration";
-import { findRecordByJob, type GitSourceRecord, writeSource } from "../jobs/sources";
+import { findRecordByJob, type GitSourceRecord, isTreeId, writeSource } from "../jobs/sources";
 import { writeJobEntry } from "../server/config-store";
 import {
 	credentialLines,
@@ -387,6 +387,7 @@ export async function updateSource(
 		}
 
 		const tree = (await run(["rev-parse", "HEAD^{tree}"], cloneDir)).stdout.trim();
+		if (!isTreeId(tree)) stop("git did not give a tree id");
 		await withConfigLock(paths, async () => {
 			const state = readState(paths);
 			requireMigrated(state.config);

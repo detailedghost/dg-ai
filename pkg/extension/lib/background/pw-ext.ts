@@ -70,7 +70,7 @@ import {
 import { defaultIsChromium } from "@/lib/browser-call";
 import { type ApprovalAnswer, type Approvals, browserApprovals } from "./approval";
 import { forgetAgentTabsAndShims, forgetDialogShim, syncDialogShim } from "./dialog-shim";
-import { createSessionControl, STOP_TTL_MS, type SessionControl } from "./session-control";
+import { createSessionControl, stopExpired, type SessionControl } from "./session-control";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
 import { createInputHandler } from "./pw-verbs/input";
@@ -742,9 +742,8 @@ export function createPwExtHandler({
 	const live = new Map<string, Set<Running>>();
 	const halted = new Map<string, number>();
 	const isHalted = (sessionId: string): boolean => {
-		const now = Date.now();
-		for (const [id, stoppedAt] of halted) if (now - stoppedAt > STOP_TTL_MS) halted.delete(id);
-		return halted.has(sessionId);
+		const stoppedAt = halted.get(sessionId);
+		return stoppedAt !== undefined && !stopExpired(stoppedAt);
 	};
 	const isStopped = async (sessionId: string) => isHalted(sessionId) || (await control.stopped(sessionId));
 	const asking = new Map<string, Promise<ApprovalAnswer>>();
@@ -854,17 +853,21 @@ export function createPwExtHandler({
 	/** Ends a session's control at once: verbs in flight end, unmask and value grants and sites go, and its tabs return to the person; Web MCP grants stay. */
 	async function stop(sessionId: string): Promise<void> {
 		halted.set(sessionId, Date.now());
-		onStop?.(sessionId);
+		for (const [id, stoppedAt] of halted) if (stopExpired(stoppedAt)) halted.delete(id);
 		for (const run of live.get(sessionId) ?? []) {
 			run.controller.abort();
 			run.stopped();
 		}
-		await control.stop(sessionId);
-		forget(sessionId);
-		await Promise.allSettled([
-			grants.forget(sessionId),
-			forgetAgentTabsAndShims({ browserApi: api, storage: api.storage, agentTabs, sessionId, ...(lock ? { lock } : {}) }),
-		]);
+		try {
+			onStop?.(sessionId);
+		} finally {
+			await control.stop(sessionId);
+			forget(sessionId);
+			await Promise.allSettled([
+				grants.forget(sessionId),
+				forgetAgentTabsAndShims({ browserApi: api, storage: api.storage, agentTabs, sessionId, ...(lock ? { lock } : {}) }),
+			]);
+		}
 	}
 
 	/** Stops the session whose agent group holds this tab; a tab of no agent group stops nothing. */

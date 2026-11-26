@@ -23,7 +23,7 @@ import {
 import type { Logger } from "../server/log";
 import { loadEnvFile } from "../services/env-file";
 import type { JobDecl } from "./config";
-import { assertJobPinned } from "./pin-check";
+import { assertJobPinned, assertJobPinnedSync } from "./pin-check";
 
 export type LauncherDeps = {
 	paths: Pick<DgPaths, "logDir" | "grantsDir" | "jobStateRoot" | "jobsDir" | "jobSourcesPath">;
@@ -134,7 +134,7 @@ export function buildJobEnv(
 }
 
 export function launchJob(decl: JobDecl, deps: LauncherDeps): Subprocess {
-	assertJobPinned(decl.name, deps.paths);
+	assertJobPinnedSync(decl.name, deps.paths);
 	const env = buildJobEnv(decl, deps);
 	const logFile = jobLogFile(deps.paths.logDir, decl.name);
 	ensurePrivateDir(deps.paths.logDir);
@@ -170,9 +170,9 @@ export type JobRun = {
 const STDOUT_DRAIN_GRACE_MS = 500;
 
 /** A feed run keeps the 30 s and 256 KB limits of the dispatch path; a run with no feed has none unless `timeoutMs` is set. */
-export function startJobRun(decl: JobDecl, deps: LauncherDeps): JobRun {
-	assertJobPinned(decl.name, deps.paths);
+export async function startJobRun(decl: JobDecl, deps: LauncherDeps): Promise<JobRun> {
 	const env = buildJobEnv(decl, deps);
+	await assertJobPinned(decl.name, deps.paths);
 	const logFile = jobLogFile(deps.paths.logDir, decl.name);
 	ensurePrivateDir(deps.paths.logDir);
 	rotateLogIfLarge(logFile, deps.maxLogBytes);

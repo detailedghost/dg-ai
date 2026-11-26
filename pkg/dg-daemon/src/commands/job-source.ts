@@ -54,6 +54,7 @@ import {
 	findRecordByJob,
 	type GitSourceRecord,
 	type PathSourceRecord,
+	isTreeId,
 	readSourceRecords,
 	readNamedSources,
 	type NamedRegistry,
@@ -442,7 +443,7 @@ export const git = (deps: JobSourceDeps, args: string[], cwd?: string): Promise<
 
 export async function treeOf(deps: JobSourceDeps, cloneDir: string): Promise<string> {
 	const tree = (await git(deps, ["rev-parse", "HEAD^{tree}"], cloneDir)).stdout.trim();
-	if (!/^[0-9a-f]{40}$/.test(tree)) stop("git did not give a tree id");
+	if (!isTreeId(tree)) stop("git did not give a tree id");
 	return tree;
 }
 

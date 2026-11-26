@@ -138,4 +138,26 @@ describe("session control stop expiry", () => {
 		expect(await control.stopped("s1")).toBe(true);
 		expect(storage.data["pwExtStopped:s1"]).toBe(START);
 	});
+
+	it("keeps a Stop that lands while an expired tombstone is being read", async () => {
+		setSystemTime(new Date(START));
+		const storage = memoryStorage();
+		const control = createSessionControl({ storage });
+		await control.stop("s1");
+		setSystemTime(new Date(START + STOP_TTL_MS + 1));
+		const slow = {
+			...storage,
+			session: {
+				...storage.session,
+				get: async (key: string | null) => {
+					const snapshot = await storage.session.get(key);
+					await new Promise((resolve) => setTimeout(resolve, 5));
+					return snapshot;
+				},
+			},
+		};
+		const racing = createSessionControl({ storage: slow });
+		await Promise.all([racing.stopped("s1"), racing.stop("s1")]);
+		expect(await control.stopped("s1")).toBe(true);
+	});
 });
