@@ -13,21 +13,21 @@ beforeEach(() => {
 afterEach(() => world.cleanup());
 
 describe("savePlan and loadScript", () => {
-	test("saves under <demosDir>/<slug>/<slug>.demo.md and loads back the same steps", () => {
+	test("saves under <demosDir>/<slug>/<slug>.demo.md and loads back the same steps", async () => {
 		const path = savePlan(TWO_STEP_PLAN as never);
 		expect(path).toBe(join(demosDir(), "local-player-tour", "local-player-tour.demo.md"));
-		const loaded = loadScript(path);
+		const loaded = await loadScript(path);
 		expect(loaded.steps.map((s) => s.title)).toEqual(["First stop", "Second stop"]);
 	});
 
-	test("loads raw script JSON from a non-.md path", () => {
-		expect(loadScript(world.planPath).title).toBe(TWO_STEP_PLAN.title);
+	test("loads raw script JSON from a non-.md path", async () => {
+		expect((await loadScript(world.planPath)).title).toBe(TWO_STEP_PLAN.title);
 	});
 
-	test("rejects an invalid script", () => {
+	test("rejects an invalid script", async () => {
 		const bad = join(world.home, "bad.json");
 		writeFileSync(bad, JSON.stringify({ title: "x" }));
-		expect(() => loadScript(bad)).toThrow();
+		await expect(loadScript(bad)).rejects.toThrow();
 	});
 });
 

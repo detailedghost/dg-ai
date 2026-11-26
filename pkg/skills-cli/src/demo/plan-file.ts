@@ -2,12 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { slugify } from "@dg/common";
 import { ensurePrivateDir, writeFileAtomic } from "@dg/common/node";
-import {
-	parsePlanMarkdown,
-	type TourScript,
-	toPlanMarkdown,
-	validate,
-} from "../utils/plan-format";
+import { type TourScript, toPlanMarkdown, validate } from "../utils/plan-format";
 import { demosDir, demosWriteDir, legacyDemosDir, planFileName } from "./paths";
 
 export function savePlan(
@@ -21,10 +16,10 @@ export function savePlan(
 }
 
 /** `.md` is the human-authored plan form; anything else is raw script JSON. */
-export function loadScript(path: string): TourScript {
+export async function loadScript(path: string): Promise<TourScript> {
 	const raw = readFileSync(path, "utf8");
 	const parsed = path.endsWith(".md")
-		? parsePlanMarkdown(raw)
+		? (await import("../utils/plan-parse")).parsePlanMarkdown(raw)
 		: JSON.parse(raw);
 	return validate(parsed);
 }
