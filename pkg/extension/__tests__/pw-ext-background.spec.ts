@@ -3087,6 +3087,22 @@ describe("pw --ext Stop", () => {
 		});
 	});
 
+	it("still cancels verbs in flight and records the Stop when onStop throws", async () => {
+		const h = harness({
+			sites: "ask",
+			approval: "allow",
+			pageResult: new Promise(() => {}),
+			onStop: () => {
+				throw new Error("report failed");
+			},
+		});
+		const running = h.run({ verb: "snapshot" });
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		await expect(h.handler.stop(SESSION)).rejects.toThrow("report failed");
+		expect(await running).toEqual({ ok: false, error: STOPPED });
+		expect(h.fake.session.get(`pwExtStopped:${SESSION}`)).toBeNumber();
+	});
+
 	it("cancels a verb in flight at once with the Stop error", async () => {
 		const h = harness({ sites: "ask", approval: "allow", pageResult: new Promise(() => {}) });
 		const running = h.run({ verb: "snapshot" });
