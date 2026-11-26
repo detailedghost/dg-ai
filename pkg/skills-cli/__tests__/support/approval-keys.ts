@@ -17,11 +17,11 @@ export function fakeKeys(initial: string | null = TEST_KEY_HEX): FakeKeys {
 	return keys;
 }
 
-export function downKeys(error: Error = new DaemonNotRunningError()): ApprovalKeys {
+export function downKeys(error: Error = new DaemonNotRunningError()): FakeKeys {
 	const fail = async (): Promise<never> => {
 		throw error;
 	};
-	return { read: fail, ensure: fail };
+	return { stored: undefined, read: fail, ensure: fail };
 }
 
 const realCreateCredentialClient = common.createCredentialClient;
