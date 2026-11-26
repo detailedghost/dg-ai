@@ -8,4 +8,5 @@ export default defineCommand({
 	flags: [],
 	help: "Get a sessionStorage item by key",
 	changesPage: false,
+	readsPage: true,
 });

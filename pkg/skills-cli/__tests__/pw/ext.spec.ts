@@ -101,6 +101,17 @@ describe("pw --ext phi_sites", () => {
 		expect(env.stderr.join("")).toContain("dg config: broken");
 		expect(d.sent).toEqual([]);
 	});
+
+	test("prints the thrown text when the config read throws a non-Error", async () => {
+		const d = deps(ok, {
+			phiSites: () => {
+				throw "disk gone";
+			},
+		});
+		const env = clientEnv();
+		expect(await runExt(["snapshot"], env, d.value)).toBe(1);
+		expect(env.stderr.join("")).toContain("disk gone");
+	});
 });
 
 describe("pw --ext", () => {

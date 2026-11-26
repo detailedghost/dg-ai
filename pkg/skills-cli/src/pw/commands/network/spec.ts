@@ -30,4 +30,5 @@ export default defineCommand({
 	],
 	help: "List network requests since the page loaded\nSuccessful fetch and XHR calls and failed requests are listed. Add --static for the rest.",
 	changesPage: false,
+	readsPage: true,
 });

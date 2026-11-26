@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { CODE_COMMAND } from "../../../src/pw/code/index";
+import { COMMANDS } from "../../../src/pw/commands/index";
 import evalSpec from "../../../src/pw/commands/eval/spec";
 import goto from "../../../src/pw/commands/goto/spec";
 import { UsageError } from "../../../src/pw/core/args";
@@ -366,11 +368,51 @@ describe("dispatch phi_sites", () => {
 			ran = true;
 			return { result: "chart row 42" };
 		};
-		const out = await dispatch(handler, { ...evalSpec, name: verb }, argsFor(evalSpec, "x"), ctx, options({ phiSites }));
+		const out = await dispatch(handler, { ...evalSpec, name: verb, readsPage: true }, argsFor(evalSpec, "x"), ctx, options({ phiSites }));
 		expect(ran).toBe(false);
 		expect(out.exitCode).toBe(1);
 		expect(out.text).toContain("https://example.test is listed in [pw] phi_sites");
 		expect(out.text).not.toContain("chart row 42");
+	});
+
+	test("reduces the page header to the origin on a listed site", async () => {
+		const { ctx, page } = fakeCtx(scratch.dir);
+		page.url = () => "https://example.test/patients/jane-doe";
+		page.title = async () => "Jane Doe chart";
+		const out = await dispatch(returning({}), goto, argsFor(goto, "a.test"), ctx, options({ phiSites }));
+		expect(out.text).toContain("https://example.test");
+		expect(out.text).not.toContain("jane-doe");
+		expect(out.text).not.toContain("Jane Doe");
+	});
+
+	test("keeps the full header on a site that is not listed", async () => {
+		const { ctx, page } = fakeCtx(scratch.dir);
+		page.url = () => "https://example.test/patients/jane-doe";
+		const out = await dispatch(returning({}), goto, argsFor(goto, "a.test"), ctx, options({ phiSites: ["https://other.org"] }));
+		expect(out.text).toContain("https://example.test/patients/jane-doe");
+	});
+
+	test("refuses tab-list on a listed site", async () => {
+		const { ctx } = fakeCtx(scratch.dir);
+		const out = await dispatch(returning({ result: "Jane Doe chart" }), { ...evalSpec, name: "tab-list", readsPage: true }, argsFor(evalSpec, "x"), ctx, options({ phiSites }));
+		expect(out.exitCode).toBe(1);
+	});
+
+	test("flags every daemon verb that returns page content, and each other verb is named as checked", () => {
+		const CHECKED_NOT_READING = new Set([
+			"attach", "check", "click", "close", "close-all", "cookie-clear", "cookie-delete", "cookie-set", "dblclick",
+			"delete-data", "dialog-accept", "dialog-dismiss", "drag", "fill", "go-back", "go-forward", "goto", "hover",
+			"install-browser", "keydown", "keyup", "kill-all", "list", "localstorage-clear", "localstorage-delete",
+			"localstorage-set", "mousedown", "mousemove", "mouseup", "mousewheel", "network-state-set", "open", "press",
+			"reload", "resize", "route", "route-list", "select", "sessionstorage-clear", "sessionstorage-delete",
+			"sessionstorage-set", "state-load", "state-save", "tab-close", "tab-new", "tab-select", "tracing-start",
+			"tracing-stop", "type", "uncheck", "unroute", "upload", "video-start", "video-stop", "video-chapter",
+		]);
+		const daemon = [...COMMANDS, CODE_COMMAND].filter((entry) => entry.spec.side === "daemon").map((entry) => entry.spec);
+		const reading = daemon.filter((spec) => spec.readsPage).map((spec) => spec.name).sort();
+		expect(reading).toEqual([...DATA_VERBS, "tab-list"].sort());
+		const unclassified = daemon.filter((spec) => !spec.readsPage && !CHECKED_NOT_READING.has(spec.name)).map((spec) => spec.name);
+		expect(unclassified).toEqual([]);
 	});
 
 	test("runs a data verb on a site that is not listed", async () => {

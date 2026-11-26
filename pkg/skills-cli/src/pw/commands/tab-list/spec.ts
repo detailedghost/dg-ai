@@ -8,4 +8,5 @@ export default defineCommand({
 	flags: [],
 	help: "List all tabs",
 	changesPage: false,
+	readsPage: true,
 });

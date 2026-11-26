@@ -8,4 +8,5 @@ export default defineCommand({
 	flags: [],
 	help: "List all sessionStorage key-value pairs",
 	changesPage: false,
+	readsPage: true,
 });

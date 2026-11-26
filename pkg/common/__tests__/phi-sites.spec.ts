@@ -6,7 +6,7 @@ describe("isSiteKey", () => {
 		expect(isSiteKey(key)).toBe(true);
 	});
 
-	it.each(["example.org", "https://Example.org", "https://example.org/path", "ftp://example.org", "", "https://"])("rejects %p", (key) => {
+	it.each(["example.org", "https://Example.org", "https://example.org/path", "ftp://example.org", "", "https://", "https://:", "http://[", "https://example.org:443", "https://a b"])("rejects %p", (key) => {
 		expect(isSiteKey(key)).toBe(false);
 	});
 });
@@ -35,5 +35,9 @@ describe("isPhiSite", () => {
 	it("is false for an empty list and for a url that does not parse", () => {
 		expect(isPhiSite("https://ehr.example.org/", [])).toBe(false);
 		expect(isPhiSite("not a url", sites)).toBe(false);
+	});
+
+	it("answers instead of throwing when a listed key does not parse", () => {
+		expect(isPhiSite("https://ehr.example.org/", ["https://:"])).toBe(false);
 	});
 });
