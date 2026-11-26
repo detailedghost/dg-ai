@@ -8,4 +8,5 @@ export default defineCommand({
 	flags: [],
 	help: "Get a specific cookie by name",
 	changesPage: false,
+	readsPage: true,
 });

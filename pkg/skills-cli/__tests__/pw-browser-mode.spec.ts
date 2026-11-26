@@ -63,11 +63,10 @@ describe("resolveBrowserMode", () => {
 		expect(resolve({ verb }).mode).toBe("local");
 	});
 
-	test("a mode word in DG_BROWSER points at DG_PW_MODE, in any case", () => {
-		for (const word of ["auto", "ext", "local", "EXT", "Local"])
-			expect(() => resolve({ env: { DG_BROWSER: word } })).toThrow(
-				`DG_BROWSER is the browser executable path; set DG_PW_MODE=${word.toLowerCase()} for the pw mode.`,
-			);
+	test.each(["auto", "ext", "local", "EXT", "Local"])("a mode word %s in DG_BROWSER points at DG_PW_MODE", (word) => {
+		expect(() => resolve({ env: { DG_BROWSER: word } })).toThrow(
+			`DG_BROWSER is the browser executable path; set DG_PW_MODE=${word.toLowerCase()} for the pw mode.`,
+		);
 	});
 
 	test("a browser path in DG_BROWSER does not touch the mode", () => {

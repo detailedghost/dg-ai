@@ -35,7 +35,7 @@ export const DG_TOML_SECTIONS = ["pw", "front", "hooks", "install", "refs", "inb
 
 export const DG_TOML_DEFAULTS: Readonly<Record<string, unknown>> = {
 	"pw.mode": "auto",
-	"pw.phi_sites": [],
+	"pw.phi_sites": Object.freeze([]),
 	"front.enabled": true,
 	"install.cli_only": false,
 	"ssms.allow_send": false,
@@ -203,10 +203,11 @@ function pwMode(where: Where, key: string, value: unknown): PwMode {
 }
 
 const SITE_KEY_EXAMPLE = 'a site key such as "https://example.org"';
+const SITE_KEY_LIST = `a list of site keys such as "https://example.org"`;
 
 function siteKeys(where: Where, key: string, value: unknown): string[] {
 	if (value === undefined) return [];
-	if (!Array.isArray(value)) mustBe(where, key, `a list of site keys such as "https://example.org"`, value);
+	if (!Array.isArray(value)) mustBe(where, key, SITE_KEY_LIST, value);
 	value.forEach((item, index) => {
 		if (typeof item !== "string" || !isSiteKey(item)) mustBe(where, `${key}.${index}`, SITE_KEY_EXAMPLE, item);
 	});

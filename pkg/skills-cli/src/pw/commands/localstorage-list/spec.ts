@@ -8,4 +8,5 @@ export default defineCommand({
 	flags: [],
 	help: "List all localStorage key-value pairs",
 	changesPage: false,
+	readsPage: true,
 });

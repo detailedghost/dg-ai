@@ -1,6 +1,6 @@
 ---
 name: chat
-description: 'Talk to a human through a live local chat page. Commands: start, recv, send, progress, spawn, stage, manifest, close. --ext requires the extension.'
+description: 'Talk to a human through a live local chat page. Commands: start, recv, send, progress, spawn, stage, manifest, memory, close. --ext requires the extension.'
 ---
 
 # Chat

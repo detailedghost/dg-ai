@@ -8,4 +8,5 @@ export default defineCommand({
 	flags: [],
 	help: "Get a localStorage item by key",
 	changesPage: false,
+	readsPage: true,
 });

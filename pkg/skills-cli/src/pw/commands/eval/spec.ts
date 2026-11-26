@@ -17,4 +17,5 @@ export default defineCommand({
 	],
 	help: "Evaluate a JavaScript expression or function on the page or an element",
 	changesPage: false,
+	readsPage: true,
 });

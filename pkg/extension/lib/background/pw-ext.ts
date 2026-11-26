@@ -368,6 +368,8 @@ function jwtExpiry(value: string): string | undefined {
 const DIALOG_ANSWERS = ["accept", "dismiss"];
 
 /** Per-request seams that need the session capability. */
+type PhiScoped<T> = T & { phiSites: readonly string[] };
+
 export type PwExtContext = {
 	sessionId: string;
 	agentIdentity: string;
@@ -1869,7 +1871,7 @@ export function createPwExtHandler({
 		};
 	}
 
-	async function assertPageDataAllowed(sessionId: string, url: string, phiSites: readonly string[] = []): Promise<void> {
+	async function assertPageDataAllowed(sessionId: string, url: string, phiSites: readonly string[]): Promise<void> {
 		if (isPhiSite(url, phiSites)) throw new Refusal(new PhiCaptureRefusedError(siteOf(url).key, "config").message);
 		await siteAllow?.assertCaptureAllowed(sessionId, url).catch((error: unknown) => {
 			throw error instanceof PhiCaptureRefusedError ? new Refusal(error.message) : error;
@@ -1892,10 +1894,9 @@ export function createPwExtHandler({
 	/** Navigation, pointer and input ask the site question first; eval and storage writes need a site already allowed. */
 	async function moduleVerb(
 		request: ModuleRequest,
-		context: PwExtContext,
+		context: PhiScoped<PwExtContext>,
 		signal: AbortSignal,
 		verb: number,
-		phiSites: readonly string[],
 	): Promise<PwExtResult> {
 		if (MODULE_SITE_ASK.has(request.verb)) {
 			const tab = await resolveTab(request, context.sessionId);
@@ -1912,7 +1913,7 @@ export function createPwExtHandler({
 		}
 		if (PAGE_DATA_VERBS.has(request.verb)) {
 			const tab = await resolveTab(request, context.sessionId);
-			if (tab?.url) await assertPageDataAllowed(context.sessionId, tab.url, phiSites);
+			if (tab?.url) await assertPageDataAllowed(context.sessionId, tab.url, context.phiSites);
 		}
 		if (signal.aborted) return CANCELED;
 		const result = await runModule(request, context.sessionId);
@@ -1924,14 +1925,13 @@ export function createPwExtHandler({
 
 	async function execute(
 		request: PwExtRequest,
-		context: PwExtContext,
+		context: PhiScoped<PwExtContext>,
 		signal: AbortSignal,
 		verb: number,
-		phiSites: readonly string[],
 	): Promise<PwExtResult> {
 		if (signal.aborted) return CANCELED;
 		if (isWebMcpVerb(request)) return webMcp(request, context, signal);
-		if (isModuleRequest(request)) return moduleVerb(request, context, signal, verb, phiSites);
+		if (isModuleRequest(request)) return moduleVerb(request, context, signal, verb);
 		if (request.verb === "new") {
 			await allowSite(request.url, context, signal, verb);
 			if (signal.aborted) return CANCELED;
@@ -1964,7 +1964,7 @@ export function createPwExtHandler({
 			if (live.url !== tab.url)
 				throw new Refusal("The page changed while the site question was open; nothing ran. Retry.");
 		}
-		if (PAGE_DATA_VERBS.has(request.verb)) await assertPageDataAllowed(context.sessionId, tab.url as string, phiSites);
+		if (PAGE_DATA_VERBS.has(request.verb)) await assertPageDataAllowed(context.sessionId, tab.url as string, context.phiSites);
 		tab.signal = signal;
 		if (signal.aborted) return CANCELED;
 		return run(request, tab, context, signal);
@@ -2010,7 +2010,7 @@ export function createPwExtHandler({
 		const outcome = await (async (): Promise<PwExtResult> => {
 			try {
 				if (await isStopped(sessionId)) return STOPPED;
-				const result = await Promise.race([execute(request, context, controller.signal, verb, phiSites), stopped]);
+				const result = await Promise.race([execute(request, { ...context, phiSites }, controller.signal, verb), stopped]);
 				if (result === "stopped" || (await isStopped(sessionId))) return STOPPED;
 				return scrub(result, await held());
 			} catch (error) {

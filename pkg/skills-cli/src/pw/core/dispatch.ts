@@ -32,22 +32,6 @@ export type DispatchOptions = {
 	phiSites?: readonly string[];
 };
 
-const PHI_VERBS: ReadonlySet<string> = new Set([
-	"snapshot",
-	"screenshot",
-	"eval",
-	"run-code",
-	"console",
-	"network",
-	"localstorage-get",
-	"localstorage-list",
-	"sessionstorage-get",
-	"sessionstorage-list",
-	"cookie-get",
-	"cookie-list",
-	"pdf",
-]);
-
 export type Dispatched = { text: string; exitCode: number };
 
 const ERROR_LINES = 12;
@@ -77,8 +61,13 @@ function currentPage(ctx: Ctx): Page | undefined {
 	}
 }
 
-async function headerOf(ctx: Ctx, page: Page): Promise<PageHeader> {
-	return pageHeader(page, ctx.events.totals(page));
+async function headerOf(
+	ctx: Ctx,
+	page: Page,
+	phiOrigin: string | undefined,
+): Promise<PageHeader> {
+	const header = await pageHeader(page, ctx.events.totals(page));
+	return phiOrigin ? { ...header, url: phiOrigin, title: "" } : header;
 }
 
 async function attachSnapshot(
@@ -143,7 +132,7 @@ export async function dispatch(
 	ctx: Ctx,
 	options: DispatchOptions,
 ): Promise<Dispatched> {
-	const refusedSite = PHI_VERBS.has(spec.name) ? onPhiSite(ctx, options) : undefined;
+	const refusedSite = spec.readsPage ? onPhiSite(ctx, options) : undefined;
 	if (refusedSite)
 		return {
 			text: render(
@@ -182,20 +171,21 @@ export async function dispatch(
 				.waitForLoadState("domcontentloaded", { timeout: 3_000 })
 				.catch(() => undefined);
 		}
+		const phiOrigin = onPhiSite(ctx, options);
 		try {
-			if (!outcome.error && !ctx.restricted && !onPhiSite(ctx, options))
+			if (!outcome.error && !ctx.restricted && !phiOrigin)
 				await attachSnapshot(ctx, page, outcome, parts, options);
 		} catch (error) {
 			parts.error = describeError(error);
 			parts.snapshot = undefined;
 		}
-		const header = await headerOf(ctx, page);
+		const header = await headerOf(ctx, page, phiOrigin);
 		const key = `${header.url}\n${header.title}`;
 		if (parts.snapshot || parts.error || key !== options.state.lastHeader)
 			parts.page = header;
 		options.state.lastHeader = key;
 		const events = ctx.events.drain(page);
-		parts.events = onPhiSite(ctx, options) ? undefined : events;
+		parts.events = phiOrigin ? undefined : events;
 		parts.notices = ctx.events.drainNotices(page);
 		parts.modal = ctx.events.modal(page);
 	}

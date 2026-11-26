@@ -19,4 +19,5 @@ export default defineCommand({
 	],
 	help: "Take a screenshot of the page or an element",
 	changesPage: false,
+	readsPage: true,
 });

@@ -20,4 +20,5 @@ export default defineCommand({
 	],
 	help: "Capture a page snapshot to obtain element refs\nPass a ref or selector to snapshot one subtree.",
 	changesPage: false,
+	readsPage: true,
 });

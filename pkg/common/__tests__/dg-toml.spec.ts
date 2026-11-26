@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "../src/errors";
-import { readDgToml, setting, writeDgToml } from "../src/node/dg-toml";
+import { DG_TOML_DEFAULTS, readDgToml, setting, writeDgToml } from "../src/node/dg-toml";
 
 const FAKE_TOKEN = `ghp_${"Fake0".repeat(7)}x`;
 
@@ -274,6 +274,10 @@ describe("writeDgToml", () => {
 });
 
 describe("pw and front keys", () => {
+	test("hands out a frozen default for pw.phi_sites", () => {
+		expect(Object.isFrozen(DG_TOML_DEFAULTS["pw.phi_sites"])).toBe(true);
+	});
+
 	test("default pw.mode to auto, pw.phi_sites to empty and front.enabled to true", () => {
 		expect(setting<string>("pw.mode", { env })).toBe("auto");
 		expect(setting<string[]>("pw.phi_sites", { env })).toEqual([]);

@@ -674,7 +674,7 @@ export async function runExt(
 	try {
 		phiSites = deps.phiSites?.() ?? [];
 	} catch (error) {
-		env.err((error as Error).message);
+		env.err(error instanceof Error ? error.message : String(error));
 		return 1;
 	}
 	let client: ExtClient;
