@@ -753,7 +753,8 @@
 				"plugin",
 				"enable",
 				"alpha"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "enable-nested-skills",
@@ -778,7 +779,8 @@
 				"plugin",
 				"enable",
 				"beta"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "enable-already-enabled",
@@ -810,7 +812,8 @@
 				"plugin",
 				"enable",
 				"gamma"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "enable-claude-config-dir",
@@ -839,7 +842,8 @@
 				"plugin",
 				"enable",
 				"gamma"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "enable-keeps-other-config-keys",
@@ -869,7 +873,8 @@
 				"plugin",
 				"enable",
 				"gamma"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "enable-unapproved",
@@ -916,7 +921,8 @@
 				"plugin",
 				"enable",
 				"gamma"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "enable-not-installed",
