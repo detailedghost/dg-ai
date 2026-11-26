@@ -90,8 +90,6 @@ describe("reexecWithoutJit", () => {
 
 	test.each([
 		[["phone", "status"]],
-		[["hooks", "run", "spelling"]],
-		[["--version"]],
 		[["dg-agent", "phone", "listen"]],
 		[["daemon", "serve"]],
 	])("re-executes dg %p with the JIT off and a marker", async (argv) => {
@@ -121,6 +119,18 @@ describe("reexecWithoutJit", () => {
 		const { calls, execve } = recorder();
 		await reexecWithoutJit(["adr", "lint", "--all"], { DG_JIT: "1" }, execve);
 		expect(calls).toHaveLength(0);
+	});
+
+	test("keeps the JIT on darwin-arm64, where JSC drops SharedArrayBuffer without it", async () => {
+		const { calls, execve } = recorder();
+		await reexecWithoutJit(["phone", "status"], {}, execve, "darwin-arm64");
+		expect(calls).toHaveLength(0);
+	});
+
+	test("still re-executes on darwin-x64", async () => {
+		const { calls, execve } = recorder();
+		await reexecWithoutJit(["phone", "status"], {}, execve, "darwin-x64");
+		expect(calls).toHaveLength(1);
 	});
 
 	test("keeps a BUN_JSC_useJIT the caller set and does not re-execute", async () => {

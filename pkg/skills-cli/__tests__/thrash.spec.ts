@@ -1596,7 +1596,9 @@ describe("compiled thrash workflow", () => {
 		expect(workflow).toContain(
 			"<reviewDir>/.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md",
 		);
-		expect(skill).toContain("report `ADDRESS_FILE=` and offer `/dg:address -l`");
+		expect(
+			readFileSync(join(skills, "thrash", "references", "flow.md"), "utf8"),
+		).toContain("report `ADDRESS_FILE=` and offer `/dg:address -l`");
 		const installed = readdirSync(skills, { recursive: true }).map((entry) =>
 			basename(String(entry)),
 		);
@@ -1958,6 +1960,9 @@ describe("thrash review checkout", () => {
     ;;
   *"pr diff"*)
     cat "$FAKE_DIFF"
+    ;;
+  *"pr view 13"*)
+    printf '{"number":13,"title":"t","body":"","headRefName":"b","baseRefName":"a","headRefOid":"${remote.sha13}"}'
     ;;
   *"pr view"*)
     printf '{"number":12,"title":"t","body":"","headRefName":"a","baseRefName":"main","headRefOid":"%s"}' "$(cat "${headFile}")"

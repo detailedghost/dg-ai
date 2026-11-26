@@ -1,0 +1,18 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <IsAotCompatible>false</IsAotCompatible>
+    <PublishAot>false</PublishAot>
+    <OutputType>Exe</OutputType>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <UseSystemResourceKeys>false</UseSystemResourceKeys>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <Using Include="Xunit" />
+    <Using Include="Dg.Tests.Shared" />
+    <Compile Include="$(MSBuildThisFileDirectory)Shared/AllocationProbe.cs" Link="Shared/AllocationProbe.cs" />
+  </ItemGroup>
+</Project>

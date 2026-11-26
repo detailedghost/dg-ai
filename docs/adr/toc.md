@@ -94,6 +94,8 @@ belong with their owning private tooling repository.
 - [0055 — One dg program with flat commands](0055-one-dg-program-with-flat-commands.md)
 - [0056 — Long-running dg processes run without the JIT](0056-long-running-dg-processes-run-without-the-jit.md)
 - [0057 — Every dg command runs without the JIT](0057-every-dg-command-runs-without-the-jit.md)
+- [0058 — dg moves to C# NativeAOT in stages](0058-dg-moves-to-c-nativeaot-in-stages.md)
+- [0059 — dg plugins are built in or external with one transport contract](0059-dg-plugins-are-built-in-or-external-with-one-transport-contract.md)
 
 ### Security
 
@@ -129,3 +131,4 @@ belong with their owning private tooling repository.
 - [0048 — Outlook mail Web MCP tools over OWA service calls](0048-outlook-mail-webmcp-tools.md)
 - [0050 — Fold browser skill into pw](0050-fold-browser-skill-into-pw.md)
 - [0051 — pw --ext: read the network calls of an agent tab, shape first](0051-pw-ext-network.md)
+- [0060 — dg pw picks its browser per call, and the extension gains 24 verbs behind new safety rules](0060-pw-auto-mode-and-ext-verbs-for-the-real-browser.md)

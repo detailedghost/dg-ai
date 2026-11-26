@@ -1,0 +1,6 @@
+{
+	"exit": 2,
+	"stdout": "",
+	"stderr": "pr-prose: Vale is not installed, so style checks are off. Install it from https://vale.sh to add them. The built-in checks still ran.\nPR body does not read as plain English (11 issue(s)):\n  body line 1: marketing filler: 'comprehensive' - say what it actually does\n  body line 1: marketing filler: 'seamless' - say what it actually does\n  body line 1: marketing filler: 'cutting-edge' - say what it actually does\n  body line 1: marketing filler: 'best-in-class' - say what it actually does\n  body line 1: marketing filler: 'state-of-the-art' - say what it actually does\n  body line 1: marketing filler: 'delve' - say what it actually does\n  body line 1: marketing filler: 'game-chang' - say what it actually does\n  body line 1: marketing filler: 'revolutioniz' - say what it actually does\n  body line 1: marketing filler: 'synerg' - say what it actually does\n  body line 1: marketing filler: 'holistic' - say what it actually does\n  body line 1: marketing filler: 'effortless' - say what it actually does\nfix: rewrite the body as plain English - short active sentences that say what changed and why - then retry.\n",
+	"after": {}
+}

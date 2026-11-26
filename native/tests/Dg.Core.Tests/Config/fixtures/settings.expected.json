@@ -1,0 +1,102 @@
+[
+	{
+		"name": "default-bool",
+		"value": true
+	},
+	{
+		"name": "default-string",
+		"value": "auto"
+	},
+	{
+		"name": "toml-bool",
+		"value": false
+	},
+	{
+		"name": "toml-string",
+		"value": "local"
+	},
+	{
+		"name": "env-beats-toml",
+		"value": false
+	},
+	{
+		"name": "env-yes",
+		"value": true
+	},
+	{
+		"name": "env-off",
+		"value": false
+	},
+	{
+		"name": "env-bad-bool",
+		"error": "dg config: DG_FRONT must be true or false (or 1, 0, yes, no, on, off). Next: fix or unset DG_FRONT."
+	},
+	{
+		"name": "env-empty-bool",
+		"error": "dg config: DG_FRONT must be true or false (or 1, 0, yes, no, on, off). Next: fix or unset DG_FRONT."
+	},
+	{
+		"name": "env-string",
+		"value": "ext"
+	},
+	{
+		"name": "env-unset-falls-to-toml",
+		"value": "ext"
+	},
+	{
+		"name": "flag-beats-env",
+		"value": true
+	},
+	{
+		"name": "flag-false-beats-toml",
+		"value": false
+	},
+	{
+		"name": "flag-string",
+		"value": "local"
+	},
+	{
+		"name": "ssms-default",
+		"value": false
+	},
+	{
+		"name": "ssms-toml",
+		"value": true
+	},
+	{
+		"name": "plugin-allow-remote-default",
+		"value": false
+	},
+	{
+		"name": "plugin-allow-remote-toml",
+		"value": true
+	},
+	{
+		"name": "plugin-enabled-toml",
+		"value": false
+	},
+	{
+		"name": "plugin-setting",
+		"value": "us-east-1"
+	},
+	{
+		"name": "plugin-missing",
+		"value": null
+	},
+	{
+		"name": "refs-default-repo",
+		"value": "a/b"
+	},
+	{
+		"name": "bad-key-empty-part",
+		"error": "dg config: browser..mode is not a valid key. Next: use dotted names such as install.cli_only."
+	},
+	{
+		"name": "bad-key-unsafe",
+		"error": "dg config: inbox.__proto__.x is not a valid key. Next: use dotted names such as install.cli_only."
+	},
+	{
+		"name": "bad-key-beats-env",
+		"error": "dg config: front..enabled is not a valid key. Next: use dotted names such as install.cli_only."
+	}
+]

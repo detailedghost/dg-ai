@@ -1,0 +1,10 @@
+== log 644
+csharpier format <ROOT>/work/src/A.cs | cwd=-
+
+== work/.config/dotnet-tools.json 644
+{"tools":{"other":{}}}
+== work/.git/HEAD 644
+
+== work/src/A.cs 644
+x
+

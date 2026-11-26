@@ -1,0 +1,2810 @@
+[
+	{
+		"name": "spelling-non-edit-tool",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Bash",
+			"tool_input": {
+				"command": "colour"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-no-tool-input",
+		"hook": "spelling",
+		"event": {
+			"tool_name": "Write"
+		}
+	},
+	{
+		"name": "spelling-empty-content",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": ""
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-clean-text",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "const color = 1;\nanalyze(neighbor);\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-us-findings",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "analyse the colour\nColour colour COLOUR\nbehaviour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-camel-case-split",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "const colourPicker = behaviourOf(analyseThis);\nsnake_colour_value\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-acronym-prefix-not-split",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "XMLColour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-non-ascii-separator",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "cafécolour übercolour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-crlf-lines",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "one\r\ncolour\r\nanalyse\r\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-dedupe-same-line",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour colour colour behaviour behaviour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-edit-tool",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Edit",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"old_string": "x",
+				"new_string": "my colour\nour neighbour"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-edit-ignores-content",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Edit",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour",
+				"new_string": "fine"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-write-ignores-new-string",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"new_string": "colour",
+				"content": "fine"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-multiedit-join",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "MultiEdit",
+			"tool_input": {
+				"file_path": "src/m.ts",
+				"edits": [
+					{
+						"old_string": "a",
+						"new_string": "first colour"
+					},
+					{
+						"old_string": "b",
+						"new_string": "second\nthird behaviour"
+					}
+				]
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-multiedit-no-edits",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "MultiEdit",
+			"tool_input": {
+				"file_path": "src/m.ts"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-multiedit-edits-not-array",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "MultiEdit",
+			"tool_input": {
+				"file_path": "src/m.ts",
+				"edits": "colour"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-multiedit-edit-without-new-string",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "MultiEdit",
+			"tool_input": {
+				"file_path": "src/m.ts",
+				"edits": [
+					{
+						"old_string": "a"
+					},
+					{
+						"old_string": "b",
+						"new_string": "colour"
+					}
+				]
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-missing-file-path",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"content": "colour"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-max-zero",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour behaviour analyse neighbour favour honour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"HOOK_SPELLING_MAX_FINDINGS": "0"
+		}
+	},
+	{
+		"name": "spelling-max-two",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour behaviour analyse neighbour favour honour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"HOOK_SPELLING_MAX_FINDINGS": "2"
+		}
+	},
+	{
+		"name": "spelling-max-fractional",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour behaviour analyse neighbour favour honour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"HOOK_SPELLING_MAX_FINDINGS": "1.5"
+		}
+	},
+	{
+		"name": "spelling-max-negative",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour behaviour analyse neighbour favour honour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"HOOK_SPELLING_MAX_FINDINGS": "-1"
+		}
+	},
+	{
+		"name": "spelling-max-garbage",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour behaviour analyse neighbour favour honour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"HOOK_SPELLING_MAX_FINDINGS": "abc"
+		}
+	},
+	{
+		"name": "spelling-max-empty",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour behaviour analyse neighbour favour honour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"HOOK_SPELLING_MAX_FINDINGS": ""
+		}
+	},
+	{
+		"name": "spelling-max-padded",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour behaviour analyse neighbour favour honour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"HOOK_SPELLING_MAX_FINDINGS": " 3 "
+		}
+	},
+	{
+		"name": "spelling-max-hex",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour behaviour analyse neighbour favour honour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"HOOK_SPELLING_MAX_FINDINGS": "0x2"
+		}
+	},
+	{
+		"name": "spelling-default-max-eight",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour behaviour analyse neighbour favour honour labour centre defence catalogue licence\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-max-no-fix-tokens-count",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "plain words colour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"HOOK_SPELLING_MAX_FINDINGS": "1"
+		}
+	},
+	{
+		"name": "spelling-locale-gb",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "color analyze among amongst\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"dg/config/config.toml": "[hooks.spelling]\nlocale = \"en-GB\"\n"
+		}
+	},
+	{
+		"name": "spelling-locale-gb-case-insensitive",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "color\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"dg/config/config.toml": "[hooks.spelling]\nlocale = \"EN-gb\"\n"
+		}
+	},
+	{
+		"name": "spelling-locale-us-explicit",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"dg/config/config.toml": "[hooks.spelling]\nlocale = \"en-us\"\n"
+		}
+	},
+	{
+		"name": "spelling-locale-invalid",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"dg/config/config.toml": "[hooks.spelling]\nlocale = \"fr\"\n"
+		}
+	},
+	{
+		"name": "spelling-locale-invalid-clean-text",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "color\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"dg/config/config.toml": "[hooks.spelling]\nlocale = \"fr\"\n"
+		}
+	},
+	{
+		"name": "spelling-config-wrong-type",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"dg/config/config.toml": "[hooks.spelling]\nlocale = 5\n"
+		}
+	},
+	{
+		"name": "spelling-config-other-hook-only",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"dg/config/config.toml": "[hooks.format]\nx = \"y\"\n"
+		}
+	},
+	{
+		"name": "spelling-bypass-session-marker",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"scratch/hooks/comment-disabled.fixsess": ""
+		}
+	},
+	{
+		"name": "spelling-bypass-input-session-marker",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"CLAUDE_CODE_SESSION_ID": null,
+			"CODEX_THREAD_ID": null
+		},
+		"files": {
+			"scratch/hooks/comment-disabled.evsess": ""
+		}
+	},
+	{
+		"name": "spelling-bypass-claude-marker-with-codex-session",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"CLAUDE_CODE_SESSION_ID": "claude1",
+			"CODEX_THREAD_ID": "thr1"
+		},
+		"files": {
+			"scratch/hooks/comment-disabled.claude1": ""
+		}
+	},
+	{
+		"name": "spelling-bypass-nosession-marker",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"CLAUDE_CODE_SESSION_ID": null,
+			"CODEX_THREAD_ID": "thr1"
+		},
+		"files": {
+			"scratch/hooks/comment-disabled.NOSESSION": ""
+		}
+	},
+	{
+		"name": "spelling-bypass-other-session-marker-ignored",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"scratch/hooks/comment-disabled.other": ""
+		}
+	},
+	{
+		"name": "spelling-session-id-is-sanitized",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts",
+				"content": "colour\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"CLAUDE_CODE_SESSION_ID": "a/b c"
+		},
+		"files": {
+			"scratch/hooks/comment-disabled.a_b_c": ""
+		}
+	},
+	{
+		"name": "spelling-apply-patch-single",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "apply_patch",
+			"tool_input": {
+				"command": "*** Begin Patch\n*** Add File: src/new.ts\n+const colour = 1;\n+const behaviour = 2;\n*** End Patch\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-apply-patch-two-files",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "apply_patch",
+			"tool_input": {
+				"command": "*** Begin Patch\n*** Update File: a.ts\n@@\n-x\n+colour\n*** Update File: b.ts\n+analyse\n*** End Patch\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-apply-patch-delete-only",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "apply_patch",
+			"tool_input": {
+				"command": "*** Begin Patch\n*** Delete File: a.ts\n*** End Patch\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "spelling-invalid-json-stdin",
+		"hook": "spelling",
+		"event": "not json"
+	},
+	{
+		"name": "spelling-unsafe-scratch-root-writable",
+		"hook": "spelling",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.ts",
+				"content": "colour"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"scratch/.keep": ""
+		},
+		"chmod": {
+			"scratch": "777"
+		}
+	},
+	{
+		"name": "format-non-edit-tool",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Bash",
+			"tool_input": {
+				"command": "ls"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "format-empty-file-path",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": ""
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "format-missing-file-path",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		}
+	},
+	{
+		"name": "format-nonexistent-file",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "gone.py"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"ruff": "@log"
+		}
+	},
+	{
+		"name": "format-unknown-extension",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.xyz"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.xyz": "x\n"
+		}
+	},
+	{
+		"name": "format-no-extension",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "Makefile"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/Makefile": "x\n"
+		}
+	},
+	{
+		"name": "format-dotfile-no-extension",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": ".py"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"ruff": "@log"
+		},
+		"files": {
+			"work/.py": "x\n"
+		}
+	},
+	{
+		"name": "format-py-runs-ruff",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Edit",
+			"tool_input": {
+				"file_path": "a.py"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"ruff": "@log"
+		},
+		"files": {
+			"work/a.py": "x\n"
+		}
+	},
+	{
+		"name": "format-py-missing-ruff-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.py"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.py": "x\n"
+		}
+	},
+	{
+		"name": "format-go-runs-gofmt",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Edit",
+			"tool_input": {
+				"file_path": "a.go"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"gofmt": "@log"
+		},
+		"files": {
+			"work/a.go": "x\n"
+		}
+	},
+	{
+		"name": "format-go-missing-gofmt-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.go"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.go": "x\n"
+		}
+	},
+	{
+		"name": "format-tf-runs-terraform",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Edit",
+			"tool_input": {
+				"file_path": "a.tf"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"terraform": "@log"
+		},
+		"files": {
+			"work/a.tf": "x\n"
+		}
+	},
+	{
+		"name": "format-tf-missing-terraform-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.tf"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.tf": "x\n"
+		}
+	},
+	{
+		"name": "format-lua-runs-stylua",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Edit",
+			"tool_input": {
+				"file_path": "a.lua"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"stylua": "@log"
+		},
+		"files": {
+			"work/a.lua": "x\n"
+		}
+	},
+	{
+		"name": "format-lua-missing-stylua-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.lua"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.lua": "x\n"
+		}
+	},
+	{
+		"name": "format-dart-runs-dart",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Edit",
+			"tool_input": {
+				"file_path": "a.dart"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"dart": "@log"
+		},
+		"files": {
+			"work/a.dart": "x\n"
+		}
+	},
+	{
+		"name": "format-dart-missing-dart-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.dart"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.dart": "x\n"
+		}
+	},
+	{
+		"name": "format-bzl-runs-black",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Edit",
+			"tool_input": {
+				"file_path": "a.bzl"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"black": "@log"
+		},
+		"files": {
+			"work/a.bzl": "x\n"
+		}
+	},
+	{
+		"name": "format-bzl-missing-black-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.bzl"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.bzl": "x\n"
+		}
+	},
+	{
+		"name": "format-missing-already-warned",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.py"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.py": "x\n",
+			"scratch/hooks/fmt-warned.fixsess.ruff": ""
+		}
+	},
+	{
+		"name": "format-missing-warned-other-session",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.py"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.py": "x\n",
+			"scratch/hooks/fmt-warned.other.ruff": ""
+		}
+	},
+	{
+		"name": "format-uppercase-extension-ignored",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "A.PY"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"ruff": "@log"
+		},
+		"files": {
+			"work/A.PY": "x\n"
+		}
+	},
+	{
+		"name": "format-relative-path-resolved-against-cwd",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "sub/../a.py"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"ruff": "@log"
+		},
+		"files": {
+			"work/a.py": "x\n",
+			"work/sub/.keep": ""
+		}
+	},
+	{
+		"name": "format-exec-failure-reports-first-stderr-line",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.py"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"ruff": "@log\nprintf 'boom\\nsecond\\n' >&2\nexit 3"
+		},
+		"files": {
+			"work/a.py": "x\n"
+		}
+	},
+	{
+		"name": "format-exec-failure-without-stderr",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.go"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"gofmt": "@log\nexit 1"
+		},
+		"files": {
+			"work/a.go": "x\n"
+		}
+	},
+	{
+		"name": "format-bazel-missing-black-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "BUILD"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/BUILD": "x\n"
+		}
+	},
+	{
+		"name": "format-bazel-build",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "BUILD"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"black": "@log"
+		},
+		"files": {
+			"work/BUILD": "x\n"
+		}
+	},
+	{
+		"name": "format-bazel-build-bazel",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "BUILD.bazel"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"black": "@log"
+		},
+		"files": {
+			"work/BUILD.bazel": "x\n"
+		}
+	},
+	{
+		"name": "format-bazel-workspace",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "WORKSPACE"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"black": "@log"
+		},
+		"files": {
+			"work/WORKSPACE": "x\n"
+		}
+	},
+	{
+		"name": "format-bazel-workspace-bazel",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "WORKSPACE.bazel"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"black": "@log"
+		},
+		"files": {
+			"work/WORKSPACE.bazel": "x\n"
+		}
+	},
+	{
+		"name": "format-bzl-extension-runs-black-once",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "BUILD.bzl"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"black": "@log"
+		},
+		"files": {
+			"work/BUILD.bzl": "x\n"
+		}
+	},
+	{
+		"name": "format-sh-runs-shfmt",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "run.sh"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"shfmt": "@log"
+		},
+		"files": {
+			"work/run.sh": "#!/bin/bash\necho hi\n"
+		}
+	},
+	{
+		"name": "format-bash-ext-runs-shfmt",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "run.bash"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"shfmt": "@log"
+		},
+		"files": {
+			"work/run.bash": "echo hi\n"
+		}
+	},
+	{
+		"name": "format-sh-zsh-shebang-skipped",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "run.sh"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"shfmt": "@log"
+		},
+		"files": {
+			"work/run.sh": "#!/usr/bin/env zsh\necho hi\n"
+		}
+	},
+	{
+		"name": "format-sh-zsh-only-first-line",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "run.sh"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"shfmt": "@log"
+		},
+		"files": {
+			"work/run.sh": "#!/bin/sh\n# zsh later\n"
+		}
+	},
+	{
+		"name": "format-sh-empty-file",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "run.sh"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"shfmt": "@log"
+		},
+		"files": {
+			"work/run.sh": ""
+		}
+	},
+	{
+		"name": "format-sh-missing-shfmt-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "run.sh"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/run.sh": "echo\n"
+		}
+	},
+	{
+		"name": "format-cs-csharpier-on-path",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "A.cs"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"csharpier": "@log"
+		},
+		"files": {
+			"work/A.cs": "x\n"
+		}
+	},
+	{
+		"name": "format-cs-tool-manifest",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/A.cs"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"dotnet": "@log",
+			"csharpier": "@log"
+		},
+		"files": {
+			"work/src/A.cs": "x\n",
+			"work/.config/dotnet-tools.json": "{\"tools\":{\"csharpier\":{\"version\":\"1\"}}}"
+		}
+	},
+	{
+		"name": "format-cs-tool-manifest-without-csharpier",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/A.cs"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"dotnet": "@log",
+			"csharpier": "@log"
+		},
+		"files": {
+			"work/src/A.cs": "x\n",
+			"work/.config/dotnet-tools.json": "{\"tools\":{\"other\":{}}}"
+		}
+	},
+	{
+		"name": "format-cs-tool-manifest-dotnet-missing",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/A.cs"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/src/A.cs": "x\n",
+			"work/.config/dotnet-tools.json": "{\"tools\":{\"csharpier\":{}}}"
+		}
+	},
+	{
+		"name": "format-cs-manifest-stops-at-git",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "repo/src/A.cs"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"dotnet": "@log"
+		},
+		"files": {
+			"work/repo/src/A.cs": "x\n",
+			"work/repo/.git/HEAD": "",
+			"work/.config/dotnet-tools.json": "{\"csharpier\":1}"
+		}
+	},
+	{
+		"name": "format-cs-missing-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "A.cs"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/A.cs": "x\n"
+		}
+	},
+	{
+		"name": "format-ts-biome-local-with-organize",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/src/a.ts": "x\n",
+			"work/node_modules/.bin/biome": {
+				"content": "@log\ncase \"$1\" in\n--version) echo \"Version: 1.9\";;\ncheck) if [ \"$2\" = \"--help\" ]; then echo \"--organize-imports-enabled\"; fi;;\nesac",
+				"mode": "755"
+			},
+			"work/biome.json": "{}"
+		}
+	},
+	{
+		"name": "format-ts-biome-local-without-organize",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "src/a.ts"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/src/a.ts": "x\n",
+			"work/node_modules/.bin/biome": {
+				"content": "@log\ncase \"$1\" in\n--version) echo \"Version: 2\";;\ncheck) :;;\nesac",
+				"mode": "755"
+			}
+		}
+	},
+	{
+		"name": "format-ts-biome-config-dir-is-cwd",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "pkg/src/a.tsx"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/pkg/src/a.tsx": "x\n",
+			"work/node_modules/.bin/biome": {
+				"content": "@log\ncase \"$1\" in\n--version) echo \"Version: 1.9\";;\ncheck) if [ \"$2\" = \"--help\" ]; then echo \"--organize-imports-enabled\"; fi;;\nesac",
+				"mode": "755"
+			},
+			"work/pkg/biome.jsonc": "{}"
+		}
+	},
+	{
+		"name": "format-ts-biome-nearest-config-wins",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "pkg/src/a.js"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/pkg/src/a.js": "x\n",
+			"work/node_modules/.bin/biome": {
+				"content": "@log\ncase \"$1\" in\n--version) echo \"Version: 1.9\";;\ncheck) if [ \"$2\" = \"--help\" ]; then echo \"--organize-imports-enabled\"; fi;;\nesac",
+				"mode": "755"
+			},
+			"work/pkg/biome.json": "{}",
+			"work/biome.json": "{}"
+		}
+	},
+	{
+		"name": "format-jsx-biome-global-real",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.jsx"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"biome": "@log\ncase \"$1\" in\n--version) echo \"Biome 1.9.4\";;\ncheck) if [ \"$2\" = \"--help\" ]; then echo \"--organize-imports-enabled\"; fi;;\nesac"
+		},
+		"files": {
+			"work/a.jsx": "x\n"
+		}
+	},
+	{
+		"name": "format-ts-biome-global-not-real-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.ts"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"biome": "@log\ncase \"$1\" in\n--version) echo \"something else\";;\ncheck) if [ \"$2\" = \"--help\" ]; then echo \"--organize-imports-enabled\"; fi;;\nesac"
+		},
+		"files": {
+			"work/a.ts": "x\n"
+		}
+	},
+	{
+		"name": "format-ts-biome-global-real-marker-cached",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.ts"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"biome": "@log\ncase \"$1\" in\n--version) echo \"not real\";;\ncheck) if [ \"$2\" = \"--help\" ]; then echo \"--organize-imports-enabled\"; fi;;\nesac"
+		},
+		"files": {
+			"work/a.ts": "x\n",
+			"scratch/hooks/biome-real.0d58af0d392598197fc2feb14f77444b86e7b12d": "1"
+		}
+	},
+	{
+		"name": "format-ts-no-biome-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.ts"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.ts": "x\n"
+		}
+	},
+	{
+		"name": "format-ts-biome-format-fails-skips-check",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.ts"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.ts": "x\n",
+			"work/node_modules/.bin/biome": {
+				"content": "@log\ncase \"$1\" in format) echo broken >&2; exit 2;; esac",
+				"mode": "755"
+			}
+		}
+	},
+	{
+		"name": "format-ts-local-biome-beyond-git-root-ignored",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "repo/a.ts"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/repo/a.ts": "x\n",
+			"work/repo/.git/HEAD": "",
+			"work/node_modules/.bin/biome": {
+				"content": "@log\ncase \"$1\" in\n--version) echo \"Version: 1.9\";;\ncheck) if [ \"$2\" = \"--help\" ]; then echo \"--organize-imports-enabled\"; fi;;\nesac",
+				"mode": "755"
+			}
+		}
+	},
+	{
+		"name": "format-json-biome-local",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.json"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.json": "{}",
+			"work/node_modules/.bin/biome": {
+				"content": "@log\ncase \"$1\" in\n--version) echo \"Version: 1.9\";;\ncheck) if [ \"$2\" = \"--help\" ]; then echo \"--organize-imports-enabled\"; fi;;\nesac",
+				"mode": "755"
+			}
+		}
+	},
+	{
+		"name": "format-json-jq-rewrites-file",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.json"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"jq": "@log\nprintf '{\\n  \"a\": 1\\n}\\n'"
+		},
+		"files": {
+			"work/a.json": {
+				"content": "{\"a\":1}",
+				"mode": "755"
+			}
+		}
+	},
+	{
+		"name": "format-json-jq-failure",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.json"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"jq": "@log\necho 'parse error' >&2\nexit 2"
+		},
+		"files": {
+			"work/a.json": "{"
+		}
+	},
+	{
+		"name": "format-json-jq-empty-output-leaves-file",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.json"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"jq": "@log"
+		},
+		"files": {
+			"work/a.json": "{}"
+		}
+	},
+	{
+		"name": "format-json-no-formatter-silent",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.json"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.json": "{}"
+		}
+	},
+	{
+		"name": "format-json-jq-through-symlink",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "link.json"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"jq": "@log\nprintf '[]\\n'"
+		},
+		"files": {
+			"work/real.json": "[ ]",
+			"work/link.json": {
+				"symlink": "real.json"
+			}
+		}
+	},
+	{
+		"name": "format-json-real-jq",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.json"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"requires": [
+			"jq"
+		],
+		"files": {
+			"work/a.json": "{\"b\":[1,2],\"a\":{\"c\":null}}"
+		}
+	},
+	{
+		"name": "format-go-real-gofmt",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.go"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"requires": [
+			"gofmt"
+		],
+		"files": {
+			"work/a.go": "package   main\nfunc  main( ){\n}\n"
+		}
+	},
+	{
+		"name": "format-md-global-mdformat",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/a.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-home-local-bin-preferred",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/a.md": "# t\n",
+			"home/.local/bin/mdformat": {
+				"content": "@log",
+				"mode": "755"
+			}
+		},
+		"bin": {
+			"mdformat": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-markdownlint-after-mdformat",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/a.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log",
+			"markdownlint": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-markdownlint-only-when-mdformat-missing",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/a.md": "# t\n"
+		},
+		"bin": {
+			"markdownlint": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-missing-mdformat-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/a.md": "# t\n"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-skip-claude-a-md",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": ".claude/a.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/.claude/a.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log",
+			"markdownlint": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-skip-x-agents-notes-md",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "x/.agents/notes.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/x/.agents/notes.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log",
+			"markdownlint": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-skip-claude-md",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "CLAUDE.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/CLAUDE.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log",
+			"markdownlint": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-skip-sub-agents-md",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "sub/AGENTS.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/sub/AGENTS.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log",
+			"markdownlint": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-skip-memory-md",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "MEMORY.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/MEMORY.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log",
+			"markdownlint": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-skip-pkg-skill-md",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "pkg/SKILL.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/pkg/SKILL.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log",
+			"markdownlint": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-skip-opencode-agents-x-md",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": ".opencode/agents/x.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/.opencode/agents/x.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log",
+			"markdownlint": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-skip-feat-spec-md",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "feat-spec.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/feat-spec.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log",
+			"markdownlint": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-skip-feat-plan-md",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "feat-plan.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/feat-plan.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log",
+			"markdownlint": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-skip-feat-refactor-md",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "feat-refactor.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/feat-refactor.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log",
+			"markdownlint": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-skip-refactor-notes-md",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "refactor-notes.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/refactor-notes.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log",
+			"markdownlint": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-skip-docs-refactor-x-md",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "docs/refactor-x.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/docs/refactor-x.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log",
+			"markdownlint": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-not-skipped-similar-names",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "docs/myrefactor-x.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/docs/myrefactor-x.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-not-skipped-spec-in-middle",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "docs/spec-notes.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"files": {
+			"work/docs/spec-notes.md": "# t\n"
+		},
+		"bin": {
+			"mdformat": "@log"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		}
+	},
+	{
+		"name": "format-md-skip-scratch-path",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "<ROOT>/scratch/note.md"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"mdformat": "@log"
+		},
+		"files": {
+			"scratch/note.md": "# t\n"
+		}
+	},
+	{
+		"name": "format-xml-xmlformat-rewrites",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.xml"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"xmlformat": "@log\nprintf '<a>\\n</a>\\n'"
+		},
+		"files": {
+			"work/a.xml": "<a></a>"
+		}
+	},
+	{
+		"name": "format-xml-xmlformatter-overwrite",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.xml"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"xmlformatter": "@log"
+		},
+		"files": {
+			"work/a.xml": "<a/>"
+		}
+	},
+	{
+		"name": "format-xml-none-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.xml"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.xml": "<a/>"
+		}
+	},
+	{
+		"name": "format-html-superhtml",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.html"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"superhtml": "@log"
+		},
+		"files": {
+			"work/a.html": "x\n"
+		}
+	},
+	{
+		"name": "format-htm-biome-fallback",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.htm"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.htm": "x\n",
+			"work/node_modules/.bin/biome": {
+				"content": "@log\ncase \"$1\" in\n--version) echo \"Version: 1.9\";;\ncheck) if [ \"$2\" = \"--help\" ]; then echo \"--organize-imports-enabled\"; fi;;\nesac",
+				"mode": "755"
+			}
+		}
+	},
+	{
+		"name": "format-html-none-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.html"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.html": "x\n"
+		}
+	},
+	{
+		"name": "format-nginx-conf-beautifier",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "nginx.conf"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"nginx_beautifier": "@log"
+		},
+		"files": {
+			"work/nginx.conf": "x\n"
+		}
+	},
+	{
+		"name": "format-nginx-name-in-middle",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "my-nginx-site.conf"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"nginx_beautifier": "@log"
+		},
+		"files": {
+			"work/my-nginx-site.conf": "x\n"
+		}
+	},
+	{
+		"name": "format-other-conf-ignored",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "app.conf"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"nginx_beautifier": "@log"
+		},
+		"files": {
+			"work/app.conf": "x\n"
+		}
+	},
+	{
+		"name": "format-nginx-missing-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "nginx.conf"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/nginx.conf": "x\n"
+		}
+	},
+	{
+		"name": "format-multiedit-tool",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "MultiEdit",
+			"tool_input": {
+				"file_path": "a.py",
+				"edits": []
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"ruff": "@log"
+		},
+		"files": {
+			"work/a.py": "x\n"
+		}
+	},
+	{
+		"name": "format-apply-patch-single",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "apply_patch",
+			"tool_input": {
+				"command": "*** Begin Patch\n*** Add File: a.py\n+x = 1\n*** End Patch\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"ruff": "@log"
+		},
+		"files": {
+			"work/a.py": "x\n"
+		}
+	},
+	{
+		"name": "format-apply-patch-two-files-missing-warns",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "apply_patch",
+			"tool_input": {
+				"command": "*** Begin Patch\n*** Update File: a.py\n+x\n*** Update File: b.go\n+y\n*** End Patch\n"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.py": "x\n",
+			"work/b.go": "x\n"
+		}
+	},
+	{
+		"name": "format-uses-absolute-file-path",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "<ROOT>/work/a.py"
+			},
+			"cwd": "/nonexistent",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"ruff": "@log"
+		},
+		"files": {
+			"work/a.py": "x\n"
+		}
+	},
+	{
+		"name": "format-warning-message-escapes-json",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.go"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"files": {
+			"work/a.go": "x\n"
+		}
+	},
+	{
+		"name": "format-failure-reason-json-escaping",
+		"hook": "format",
+		"event": {
+			"hook_event_name": "PostToolUse",
+			"tool_name": "Write",
+			"tool_input": {
+				"file_path": "a.py"
+			},
+			"cwd": "<ROOT>/work",
+			"session_id": "evsess"
+		},
+		"env": {
+			"PATH": "<ROOT>/bin"
+		},
+		"bin": {
+			"ruff": "@log\nprintf '  bad \"quote\" \\\\ back\\ttab \\303\\251 \\360\\237\\230\\200 </x> & \\001 \\177\\n' >&2\nexit 4"
+		},
+		"files": {
+			"work/a.py": "x\n"
+		}
+	}
+]

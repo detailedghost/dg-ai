@@ -1,0 +1,6 @@
+spelling: write en-US in <ROOT>/work/a.ts
+1: colour -> color
+fix: use the en-US spelling in code, identifiers, tests, comments and docs.
+spelling: write en-US in <ROOT>/work/b.ts
+1: analyse -> analyze
+fix: use the en-US spelling in code, identifiers, tests, comments and docs.

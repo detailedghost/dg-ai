@@ -1,0 +1,54 @@
+--- exit
+0
+--- stdout
+--- stderr
+--- calls
+call: worktree prune (cwd=<ROOT>/code/alpha)
+--- stamp
+absent
+--- log
+daily-prune <NOW>
+removed <ROOT>/code/alpha/.agents/cache/old.bin (ignored .agents file past TTL)
+worktree prune failed in <ROOT>/code/alpha: last line
+--- logfile
+daily-prune <NOW>
+removed <ROOT>/code/alpha/.agents/cache/old.bin (ignored .agents file past TTL)
+worktree prune failed in <ROOT>/code/alpha: last line
+--- tree
+code/
+code/alpha/
+code/alpha/.agents/
+code/alpha/.agents/cache/
+code/alpha/.agents/cache/new.bin
+code/alpha/.agents/school/
+code/alpha/.agents/school/rules.md
+code/alpha/.gitignore
+code/alpha/README.md
+code/worktrees/
+code/worktrees/alpha-dirty/
+code/worktrees/alpha-dirty/.agents/
+code/worktrees/alpha-dirty/.agents/school/
+code/worktrees/alpha-dirty/.agents/school/rules.md
+code/worktrees/alpha-dirty/.gitignore
+code/worktrees/alpha-dirty/README.md
+code/worktrees/alpha-merged/
+code/worktrees/alpha-merged/.agents/
+code/worktrees/alpha-merged/.agents/school/
+code/worktrees/alpha-merged/.agents/school/rules.md
+code/worktrees/alpha-merged/.gitignore
+code/worktrees/alpha-merged/README.md
+code/worktrees/alpha-other/
+code/worktrees/alpha-other/.agents/
+code/worktrees/alpha-other/.agents/school/
+code/worktrees/alpha-other/.agents/school/rules.md
+code/worktrees/alpha-other/.gitignore
+code/worktrees/alpha-other/README.md
+home/
+outside/
+scratch/
+scratch/hooks/
+scratch/hooks/daily-prune.log
+state/
+xdg/
+--- pruned
+code/alpha/.agents/cache/old.bin

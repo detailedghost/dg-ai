@@ -1,0 +1,121 @@
+{
+	"version": 1,
+	"cases": {
+		"version": {
+			"peakMB": 25.8,
+			"msBudget": 14
+		},
+		"help": {
+			"peakMB": 24.9
+		},
+		"completion zsh": {
+			"peakMB": 23.9,
+			"msBudget": 21
+		},
+		"config path": {
+			"peakMB": 31
+		},
+		"stat checklist": {
+			"peakMB": 45.8,
+			"msBudget": 34
+		},
+		"job --help": {
+			"peakMB": 31
+		},
+		"pw --help": {
+			"peakMB": 33.2
+		},
+		"db --help": {
+			"peakMB": 31.2
+		},
+		"thrash --help": {
+			"peakMB": 34.2
+		},
+		"prototype --help": {
+			"peakMB": 33
+		},
+		"phone status": {
+			"peakMB": 35.1
+		},
+		"phone contacts": {
+			"peakMB": 35.2
+		},
+		"phone messages": {
+			"peakMB": 35.2
+		},
+		"phone unread": {
+			"peakMB": 37
+		},
+		"hooks list": {
+			"peakMB": 32
+		},
+		"hooks run spelling": {
+			"peakMB": 35.4,
+			"msBudget": 22
+		},
+		"hooks run format": {
+			"peakMB": 34.6,
+			"msBudget": 21
+		},
+		"hooks run pr-prose": {
+			"peakMB": 34.6,
+			"msBudget": 21
+		},
+		"hooks run pr-confirm": {
+			"peakMB": 34.1,
+			"msBudget": 20
+		},
+		"hooks run spec-plan-lint": {
+			"peakMB": 34.1,
+			"msBudget": 21
+		},
+		"hooks run daily-prune": {
+			"peakMB": 34.5,
+			"msBudget": 21
+		},
+		"hooks run strip-ai-coauthors": {
+			"peakMB": 31.8,
+			"msBudget": 18
+		},
+		"adr lint --all (repo)": {
+			"peakMB": 49.9
+		},
+		"spec validate": {
+			"peakMB": 37.8
+		},
+		"update --check": {
+			"peakMB": 80
+		},
+		"doctor": {
+			"peakMB": 50
+		},
+		"daemon idle": {
+			"peakMB": 40.4,
+			"growthMB": 4.31
+		},
+		"daemon with 15 jobs": {
+			"peakMB": 42,
+			"growthMB": 1
+		},
+		"prototype serve": {
+			"peakMB": 39,
+			"growthMB": 1
+		},
+		"phone listener idle": {
+			"peakMB": 58,
+			"growthMB": 1
+		},
+		"phone listener burst": {
+			"peakMB": 58.2,
+			"growthMB": 1
+		},
+		"phone listener catch-up": {
+			"peakMB": 59.4,
+			"growthMB": 1
+		},
+		"agent phone status": {
+			"peakMB": 34.8,
+			"msBudget": 35
+		}
+	}
+}

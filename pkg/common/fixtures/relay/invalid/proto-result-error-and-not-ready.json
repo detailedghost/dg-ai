@@ -1,0 +1,18 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "proto-browser-result",
+		"token": "t-1",
+		"requestId": "req-1",
+		"ok": false,
+		"error": "Extension failed.",
+		"notReady": {
+			"code": "login-page",
+			"message": "Sign in first.",
+			"landedUrl": "https://example.com/login"
+		}
+	},
+	"error": "failed proto result must contain exactly one of error or notReady"
+}

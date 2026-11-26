@@ -1,0 +1,12 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "inbox-browser-request",
+		"requestId": "req-1",
+		"request": {
+			"operation": "session-status"
+		}
+	}
+}

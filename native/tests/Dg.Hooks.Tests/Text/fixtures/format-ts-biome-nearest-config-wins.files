@@ -1,0 +1,23 @@
+== log 644
+biome format --write <ROOT>/work/pkg/src/a.js | cwd=/work/pkg
+biome check --help | cwd=/work/pkg
+biome check --fix --organize-imports-enabled=true <ROOT>/work/pkg/src/a.js | cwd=/work/pkg
+
+== work/.git/HEAD 644
+
+== work/biome.json 644
+{}
+== work/node_modules/.bin/biome 755
+#!/bin/sh
+case "$PWD" in "$FIXTURE_ROOT"*) c=${PWD#"$FIXTURE_ROOT"};; *) c=-;; esac
+printf '%s %s | cwd=%s\n' "${0##*/}" "$*" "$c" >> "$FIXTURE_ROOT/log"
+case "$1" in
+--version) echo "Version: 1.9";;
+check) if [ "$2" = "--help" ]; then echo "--organize-imports-enabled"; fi;;
+esac
+
+== work/pkg/biome.json 644
+{}
+== work/pkg/src/a.js 644
+x
+

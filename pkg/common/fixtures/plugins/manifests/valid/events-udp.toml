@@ -1,0 +1,8 @@
+name = "audit-events"
+version = "1.0.0"
+kind = "job"
+transport = "udp"
+endpoint = "127.0.0.1:7432"
+
+[entry]
+command = "audit-events"

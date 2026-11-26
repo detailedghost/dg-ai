@@ -104,6 +104,7 @@ export function programRun(stdout: string): ProgramRun | undefined {
 
 const ENV_OWNED_BY_BOOTSTRAP = [
 	"DG_HOME",
+	"DG_FRONT",
 	"DG_VERSION",
 	"DG_CLI_ONLY",
 	"DG_AGENT_ONLY",
@@ -115,6 +116,7 @@ const ENV_OWNED_BY_BOOTSTRAP = [
 	"CODEX_HOME",
 	"DG_CURL",
 	"DG_UNAME",
+	"DG_GZIP",
 	"XDG_DATA_HOME",
 ];
 
@@ -166,6 +168,8 @@ export type BootstrapOptions = {
 	assetVersion?: string;
 	assetBroken?: boolean;
 	newerEmptyRelease?: boolean;
+	gz?: "none" | "valid" | "corrupt" | "wrong-content";
+	withoutGzip?: boolean;
 	piped?: boolean;
 	script?: string;
 	cwd?: string;
@@ -242,6 +246,16 @@ export async function runBootstrap(
 		lines.push(
 			`${options.sums === "wrong-asset" && mine ? "0".repeat(64) : sha256(body)}  ${file}`,
 		);
+		const gzMode = options.gz ?? "none";
+		if (gzMode !== "none") {
+			const packed =
+				gzMode === "corrupt"
+					? Buffer.from("not gzip data")
+					: Buffer.from(Bun.gzipSync(gzMode === "wrong-content" ? `${body}tampered\n` : body));
+			writeFileSync(join(serve, `${file}.gz`), packed);
+			assetFiles.push(`${file}.gz`);
+			lines.push(`${sha256(packed)}  ${file}.gz`);
+		}
 	}
 	for (const [name, source] of Object.entries(options.serve ?? {})) {
 		symlinkSync(source, join(serve, name));
@@ -305,6 +319,7 @@ export async function runBootstrap(
 			STUB_OS: os,
 			STUB_ARCH: arch,
 			DG_CPUINFO_FILE: cpuinfo,
+			...(options.withoutGzip ? { DG_GZIP: join(dir, "no-such-gzip") } : {}),
 			...(options.env ?? {}),
 		},
 		stdout: "pipe",

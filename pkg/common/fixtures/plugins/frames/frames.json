@@ -1,0 +1,104 @@
+{
+	"valid": [
+		{
+			"name": "empty-object-request",
+			"version": 1,
+			"encoding": 0,
+			"flags": 0,
+			"requestId": 2,
+			"payloadText": "{}",
+			"hex": "0100000000000002000000027b7d"
+		},
+		{
+			"name": "hello-request",
+			"version": 1,
+			"encoding": 0,
+			"flags": 0,
+			"requestId": 1,
+			"payloadText": "{\"route\":\"/v1/hello\",\"body\":{\"protocol\":1,\"encodings\":[\"json\",\"msgpack\"],\"capabilities\":[\"hook\"]}}",
+			"hex": "0100000000000001000000627b22726f757465223a222f76312f68656c6c6f222c22626f6479223a7b2270726f746f636f6c223a312c22656e636f64696e6773223a5b226a736f6e222c226d73677061636b225d2c226361706162696c6974696573223a5b22686f6f6b225d7d7d"
+		},
+		{
+			"name": "hook-decide-response",
+			"version": 1,
+			"encoding": 0,
+			"flags": 1,
+			"requestId": 7,
+			"payloadText": "{\"decision\":\"allow\"}",
+			"hex": "0100000100000007000000147b226465636973696f6e223a22616c6c6f77227d"
+		},
+		{
+			"name": "error-response",
+			"version": 1,
+			"encoding": 0,
+			"flags": 3,
+			"requestId": 7,
+			"payloadText": "{\"code\":\"bad-request\",\"message\":\"body is not an object\"}",
+			"hex": "0100000300000007000000387b22636f6465223a226261642d72657175657374222c226d657373616765223a22626f6479206973206e6f7420616e206f626a656374227d"
+		},
+		{
+			"name": "udp-event",
+			"version": 1,
+			"encoding": 0,
+			"flags": 4,
+			"requestId": 0,
+			"payloadText": "{\"route\":\"/v1/health\",\"body\":{}}",
+			"hex": "0100000400000000000000207b22726f757465223a222f76312f6865616c7468222c22626f6479223a7b7d7d"
+		},
+		{
+			"name": "max-request-id",
+			"version": 1,
+			"encoding": 0,
+			"flags": 0,
+			"requestId": 4294967295,
+			"payloadText": "{}",
+			"hex": "01000000ffffffff000000027b7d"
+		},
+		{
+			"name": "msgpack-health-request",
+			"version": 1,
+			"encoding": 1,
+			"flags": 0,
+			"requestId": 9,
+			"payloadHex": "82a5726f757465aa2f76312f6865616c7468a4626f647980",
+			"hex": "01010000000000090000001882a5726f757465aa2f76312f6865616c7468a4626f647980"
+		}
+	],
+	"invalid": [
+		{
+			"name": "short-header",
+			"error": "short-header",
+			"hex": "0100000000"
+		},
+		{
+			"name": "bad-version",
+			"error": "bad-version",
+			"hex": "0200000000000001000000027b7d"
+		},
+		{
+			"name": "bad-encoding",
+			"error": "bad-encoding",
+			"hex": "0102000000000001000000027b7d"
+		},
+		{
+			"name": "reserved-flags",
+			"error": "reserved-flags",
+			"hex": "0100000800000001000000027b7d"
+		},
+		{
+			"name": "oversize",
+			"error": "oversize",
+			"hex": "010000000000000100100001"
+		},
+		{
+			"name": "truncated-payload",
+			"error": "truncated-payload",
+			"hex": "0100000000000001000000057b7d"
+		},
+		{
+			"name": "trailing-bytes",
+			"error": "trailing-bytes",
+			"hex": "0100000000000001000000027b7d000000"
+		}
+	]
+}

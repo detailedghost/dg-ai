@@ -1,0 +1,4 @@
+{
+  "hook": "daily-prune",
+  "spawnThrows": true
+}

@@ -1,0 +1,10 @@
+spelling: write en-US in src/a.ts
+1: colour -> color
+1: behaviour -> behavior
+1: analyse -> analyze
+1: neighbour -> neighbor
+1: favour -> favor
+1: honour -> honor
+1: labour -> labor
+1: centre -> center
+fix: use the en-US spelling in code, identifiers, tests, comments and docs.

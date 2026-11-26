@@ -1,0 +1,8 @@
+{
+	"exit": 0,
+	"stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"pr-prose: the Vale run failed, so style checks were skipped. The built-in checks still ran.\"}}",
+	"stderr": "",
+	"after": {
+		"scratch/hooks/pr-prose-hint.NOSESSION": ""
+	}
+}

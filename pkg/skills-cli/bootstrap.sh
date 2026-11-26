@@ -18,9 +18,13 @@
 #
 # Layout: bin/<release>/dg and a bin/current link in the data dir (~/.local/share/dg on Linux,
 # ~/Library/Application Support/dg on macOS, $DG_HOME/data), and a dg link to bin/current/dg in
-# ~/.local/bin (or $DG_HOME/bin). The dg-linux-x64 style asset is verified against SHA256SUMS and must
+# ~/.local/bin (or $DG_HOME/bin). The release's dg-linux-x64.gz is unpacked with gzip (the raw dg-linux-x64
+# is the fallback), and the unpacked dg-linux-x64 is verified against SHA256SUMS. It must
 # report the release version before any link changes. Old dg-skills, dg-agent and dg-daemon launchers are
 # removed. A 6.3 runtime/ and lib/ are left in place. Re-running upgrades in place.
+# The native front door is on by default: bin/<release>/dg is the verified dg-front-<rid> and the program
+# above sits beside it as dg-core. DG_FRONT=0 or front.enabled = false in config.toml keeps the program
+# at dg alone. A front door that is missing, fails its checksum or does not run keeps the program at dg.
 # Windows: use bootstrap.ps1 instead.
 set -eu
 
@@ -458,14 +462,29 @@ ASSET="dg-${platform}"
 VERSION_DIR="${ROOT}/bin/${VERSION}"
 mkdir -p "${ROOT}/bin" "${BIN}"
 
+select_asset() {
+  FETCH="${ASSET}"
+  GZIP_BIN="${DG_GZIP:-gzip}"
+  if command -v "$GZIP_BIN" >/dev/null 2>&1 && [ -n "$(asset_url "${ASSET}.gz")" ]; then
+    FETCH="${ASSET}.gz"
+  fi
+}
+
+fetch_program() {
+  echo "Downloading ${FETCH}..."
+  download_asset "${FETCH}" "${WORK}/${FETCH}"
+  [ "${FETCH}" = "${ASSET}" ] && return
+  "$GZIP_BIN" -dc "${WORK}/${FETCH}" >"${WORK}/${ASSET}" || die "could not unpack ${FETCH}"
+}
+
 install_program() {
   WORK=$(mktemp -d)
   track_tmp "${WORK}"
   download_asset SHA256SUMS "${WORK}/SHA256SUMS"
   expected=$(sums_entry "${ASSET}")
   [ -n "${expected}" ] || die "SHA256SUMS in ${tag} has no entry for ${ASSET}"
-  echo "Downloading ${ASSET}..."
-  download_asset "${ASSET}" "${WORK}/${ASSET}"
+  select_asset
+  fetch_program
   verify_sha256 "${WORK}/${ASSET}" "${ASSET}" "${expected}"
   stage=$(mktemp -d "${ROOT}/bin/.stage.XXXXXX")
   track_tmp "${stage}"
@@ -474,8 +493,99 @@ install_program() {
   reported=$("${stage}/dg" --version 2>/dev/null) || die "the downloaded ${ASSET} did not run"
   first=$(printf '%s\n' "${reported}" | awk 'NR == 1 { print $1 }')
   [ "${first}" = "${VERSION}" ] || die "${ASSET} reports '${first}', expected ${VERSION}"
+  if front_wanted; then install_front_door; fi
   rm -rf "${VERSION_DIR}"
   mv "${stage}" "${VERSION_DIR}"
+}
+
+front_wanted() {
+  env_front=$(printf '%s' "${DG_FRONT:-}" | tr 'A-Z' 'a-z')
+  case "$env_front" in
+    0 | false | no | off) return 1 ;;
+    1 | true | yes | on) return 0 ;;
+  esac
+  ! config_front_off
+}
+
+config_file() {
+  if [ -n "${DG_HOME:-}" ]; then
+    printf '%s' "${DG_HOME}/config/config.toml"
+  elif [ "$("$UNAME" -s)" = "Darwin" ]; then
+    printf '%s' "${ROOT}/config.toml"
+  else
+    case "${XDG_CONFIG_HOME:-}" in
+      /*) printf '%s' "${XDG_CONFIG_HOME}/dg/config.toml" ;;
+      *) printf '%s' "${HOME}/.config/dg/config.toml" ;;
+    esac
+  fi
+}
+
+config_front_off() {
+  file=$(config_file)
+  [ -r "$file" ] || return 1
+  awk '
+    { line = $0; sub(/[[:space:]]*#.*$/, "", line); gsub(/[[:space:]]/, "", line) }
+    line ~ /^\[/ { in_table = 1; in_front = (line == "[front]"); next }
+    in_front && line == "enabled=false" { found = 1 }
+    !in_table && line == "front.enabled=false" { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' "$file"
+}
+
+front_asset_name() {
+  case "${platform}" in
+    darwin-*) rid="osx-${platform#darwin-}" ;;
+    *) rid="${platform}" ;;
+  esac
+  printf 'dg-front-%s' "${rid%-baseline}"
+}
+
+front_note() {
+  echo "dg: the front door was not installed ($1); dg runs the Bun program only" >&2
+}
+
+probe_front() {
+  out="${WORK}/front-version"
+  "$1" --version >"$out" 2>/dev/null &
+  probe=$!
+  (
+    sleep "${DG_FRONT_TIMEOUT:-10}"
+    kill "$probe" 2>/dev/null
+  ) >/dev/null 2>&1 &
+  watchdog=$!
+  status=0
+  wait "$probe" || status=$?
+  kill "$watchdog" 2>/dev/null || true
+  [ "$status" = 0 ] || return 1
+  [ "$(awk 'NR == 1 { print $1 }' "$out")" = "${VERSION}" ]
+}
+
+install_front_door() {
+  front_asset=$(front_asset_name)
+  front_expected=$(sums_entry "${front_asset}")
+  [ -n "${front_expected}" ] || { front_note "v${VERSION} has no ${front_asset}"; return 0; }
+  front_fetch="${front_asset}"
+  if command -v "$GZIP_BIN" >/dev/null 2>&1 && [ -n "$(asset_url "${front_asset}.gz")" ]; then
+    front_fetch="${front_asset}.gz"
+  fi
+  front_url=$(asset_url "${front_fetch}")
+  [ -n "${front_url}" ] || { front_note "no ${front_fetch} asset in ${tag}"; return 0; }
+  echo "Downloading ${front_fetch}..."
+  "$CURL" -fsSL -H "User-Agent: dg-ai" -o "${WORK}/${front_fetch}" "${front_url}" ||
+    { front_note "could not download ${front_fetch}"; return 0; }
+  if [ "${front_fetch}" != "${front_asset}" ]; then
+    "$GZIP_BIN" -dc "${WORK}/${front_fetch}" >"${WORK}/${front_asset}" ||
+      { front_note "could not unpack ${front_fetch}"; return 0; }
+  fi
+  [ "$(sha256_of "${WORK}/${front_asset}")" = "${front_expected}" ] ||
+    { front_note "checksum mismatch for ${front_asset}"; return 0; }
+  mv "${stage}/dg" "${stage}/dg-core"
+  if cp "${WORK}/${front_asset}" "${stage}/dg" && chmod 755 "${stage}/dg" && probe_front "${stage}/dg"; then
+    return 0
+  fi
+  mv -f "${stage}/dg-core" "${stage}/dg"
+  front_note "${front_asset} did not run and report ${VERSION}"
+  return 0
 }
 
 is_dg_launcher() {

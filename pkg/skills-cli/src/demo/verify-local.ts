@@ -2,6 +2,7 @@ import { envReference, MissingEnvError, type TourScript } from "@dg/common";
 import { wslChromiumArgs } from "@dg/common/node";
 import type { Page } from "playwright-core";
 import { pickLaunch } from "../pw/core/browser";
+import { loadCompanion } from "../install/companion";
 import type { VerifyResult } from "../utils/demo-verify";
 import { playbackSteps, recordTour, SelectorError, StepError, VIEWPORT } from "./recorder/drive";
 
@@ -13,7 +14,7 @@ export type VerifyLocalDeps = {
 };
 
 export async function openLocalSession(): Promise<VerifySession> {
-	const { chromium } = await import("playwright-core");
+	const { chromium } = await loadCompanion("pw");
 	const pick = pickLaunch();
 	const browser = await chromium.launch({
 		headless: true,

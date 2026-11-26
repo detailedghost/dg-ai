@@ -177,6 +177,7 @@ export function installEnv(home: string): Record<string, string> {
 	delete env.DG_SKILLS_ONLY;
 	env.HOME = home;
 	env.DG_HOME = home;
+	env.DG_FRONT = "0";
 	env.LC_ALL = "C";
 	return env;
 }

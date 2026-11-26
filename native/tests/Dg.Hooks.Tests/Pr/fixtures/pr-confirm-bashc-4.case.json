@@ -1,0 +1,11 @@
+{
+	"hook": "pr-confirm",
+	"event": {
+		"hook_event_name": "PreToolUse",
+		"tool_name": "Bash",
+		"tool_input": {
+			"command": "bash -c 'sh -c \"bash -c \\\"sh -c \\\\\\\"gh pr create\\\\\\\" \\\" \"'"
+		},
+		"cwd": "$CWD/work"
+	}
+}

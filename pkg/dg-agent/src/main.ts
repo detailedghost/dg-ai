@@ -86,7 +86,8 @@ export async function buildProgram(): Promise<Command> {
 
 export async function main(argv: readonly string[]): Promise<number> {
 	if (argv.length === 1 && argv[0] === "--version") {
-		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
+		const { buildVersion } = await import("@dg/common/build-version");
+		process.stdout.write(`${buildVersion()}\n`);
 		return 0;
 	}
 	if (argv[0] === "__complete") {

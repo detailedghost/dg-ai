@@ -1,0 +1,13 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "proto-browser-request",
+		"requestId": "req-1",
+		"phase": "scrape",
+		"slug": "demo",
+		"markedUrl": "https://example.com/app#_proto=demo",
+		"timeoutMs": 45000
+	}
+}

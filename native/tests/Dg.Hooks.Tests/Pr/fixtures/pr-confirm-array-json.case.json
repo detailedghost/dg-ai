@@ -1,0 +1,4 @@
+{
+	"hook": "pr-confirm",
+	"stdin": "[1,2]"
+}

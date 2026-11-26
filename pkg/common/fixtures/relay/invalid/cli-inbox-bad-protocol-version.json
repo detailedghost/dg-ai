@@ -1,0 +1,10 @@
+{
+	"validator": "cli-request:inbox",
+	"frame": {
+		"type": "cli-inbox-request",
+		"requestId": "req-1",
+		"operation": "profile-list",
+		"protocolVersion": 2
+	},
+	"error": "inbox CLI request.protocolVersion must be an integer between 1 and 1"
+}

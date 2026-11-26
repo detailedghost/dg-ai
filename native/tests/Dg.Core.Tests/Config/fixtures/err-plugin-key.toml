@@ -1,0 +1,3 @@
+[plugins.acme]
+enabled = true
+color = "red"

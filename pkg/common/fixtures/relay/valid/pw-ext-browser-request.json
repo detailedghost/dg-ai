@@ -1,0 +1,13 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "pw-ext-browser-request",
+		"requestId": "req-1",
+		"request": {
+			"verb": "snapshot"
+		},
+		"timeoutMs": 120000
+	}
+}

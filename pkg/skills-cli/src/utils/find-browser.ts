@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { BROWSER_MODES } from "@dg/common/node";
 
 export type FinderSeams = {
 	env: Record<string, string | undefined>;
@@ -62,7 +63,9 @@ export function windowsPrefixes(
 export function browserOverride(
 	env: Record<string, string | undefined> = process.env,
 ): string | null {
-	return env["DG_BROWSER"] || env["DG_VERIFY_BROWSER"] || null;
+	const browser = env["DG_BROWSER"];
+	const binary = browser && !(BROWSER_MODES as readonly string[]).includes(browser) ? browser : null;
+	return binary || env["DG_VERIFY_BROWSER"] || null;
 }
 
 function appPaths(seams: FinderSeams): string[] {

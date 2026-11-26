@@ -1,0 +1,7 @@
+name = "builtin-endpoint"
+version = "1.0.0"
+kind = "hook"
+endpoint = "x.sock"
+
+[entry]
+builtin = "x"

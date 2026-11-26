@@ -1,0 +1,103 @@
+using System.Buffers;
+using System.Collections.Frozen;
+using Dg.Hooks.Shared;
+
+namespace Dg.Hooks.Engine;
+
+public sealed class HookEngine
+{
+    private const int InitialInputBytes = 16 * 1024;
+
+    private readonly FrozenDictionary<string, IHook> _hooks;
+    private readonly TextWriter _error;
+    private readonly TextWriter? _output;
+    private readonly HookDirectories? _directories;
+    private readonly Func<bool> _stdinIsTerminal;
+
+    public HookEngine(
+        IEnumerable<IHook> hooks,
+        TextWriter error,
+        TextWriter? output = null,
+        HookDirectories? directories = null,
+        Func<bool>? stdinIsTerminal = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(hooks);
+        ArgumentNullException.ThrowIfNull(error);
+        _hooks = hooks.ToFrozenDictionary(hook => hook.Id, StringComparer.Ordinal);
+        _error = error;
+        _output = output;
+        _directories = directories;
+        _stdinIsTerminal = stdinIsTerminal ?? (() => false);
+    }
+
+    public async ValueTask<int> RunAsync(
+        string id,
+        string[] args,
+        Stream? stdin,
+        CancellationToken ct
+    )
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        ArgumentNullException.ThrowIfNull(args);
+        if (!_hooks.TryGetValue(id, out var hook))
+            return 0;
+
+        var usesStdin = hook.UsesStdin(args);
+        var sink = new ContextSink();
+        var ev =
+            (await ReadEventAsync(usesStdin && !_stdinIsTerminal() ? stdin : null, ct))
+            with
+            {
+                Args = args,
+                Sink = sink,
+            };
+        var worst = 0;
+        try
+        {
+            if (usesStdin)
+                _directories?.Verify();
+            foreach (var input in ApplyPatch.Expand(ev))
+            {
+                var code = await hook.RunAsync(input, ct);
+                if (worst != 2 && code > worst)
+                    worst = code;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await _error.WriteAsync($"hooks run {id}: {ex.Message}\n");
+            return 1;
+        }
+        if (!sink.IsEmpty)
+            await (_output ?? Console.Out).WriteAsync(HookJson.AdditionalContext(sink.EventName!, sink.Joined));
+        return worst;
+    }
+
+    private static async ValueTask<HookEvent> ReadEventAsync(Stream? stdin, CancellationToken ct)
+    {
+        if (stdin is null)
+            return new HookEvent();
+        var buffer = ArrayPool<byte>.Shared.Rent(InitialInputBytes);
+        try
+        {
+            var length = 0;
+            int read;
+            while ((read = await stdin.ReadAsync(buffer.AsMemory(length), ct)) > 0)
+            {
+                length += read;
+                if (length < buffer.Length)
+                    continue;
+                var larger = ArrayPool<byte>.Shared.Rent(buffer.Length * 2);
+                buffer.AsSpan(0, length).CopyTo(larger);
+                ArrayPool<byte>.Shared.Return(buffer);
+                buffer = larger;
+            }
+            return HookEvent.Parse(buffer.AsSpan(0, length));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+}

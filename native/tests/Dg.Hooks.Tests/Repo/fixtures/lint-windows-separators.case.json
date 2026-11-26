@@ -1,0 +1,21 @@
+{
+  "hook": "spec-plan-lint",
+  "stdin": {
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Write",
+    "cwd": "/proj",
+    "tool_input": {
+      "file_path": "C:\\proj\\.agents\\spec\\027_x\\plan.md"
+    }
+  },
+  "runner": [
+    {
+      "match": [
+        "spec",
+        "lint-waves"
+      ],
+      "status": 1,
+      "stderr": "x"
+    }
+  ]
+}

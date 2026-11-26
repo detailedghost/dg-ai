@@ -1,0 +1,9 @@
+{
+	"hook": "pr-confirm",
+	"event": {
+		"tool_name": "Bash",
+		"tool_input": {
+			"cmd": "gh pr create"
+		}
+	}
+}

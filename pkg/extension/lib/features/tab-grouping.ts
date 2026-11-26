@@ -30,17 +30,29 @@ export function tabGroupingSupported(): boolean {
 
 const TAB_GROUP_ID_NONE = browser.tabGroups?.TAB_GROUP_ID_NONE ?? -1;
 
-const queues = new Map<string, ReturnType<typeof createSerialQueue>>();
+type TitleQueue = {
+	enqueue: ReturnType<typeof createSerialQueue>;
+	waiting: number;
+};
 
-function queueFor(title: string) {
-	let enqueue = queues.get(title);
-	if (!enqueue) {
-		enqueue = createSerialQueue((err) =>
-			console.error("[dg-ai-extension]", err),
-		);
-		queues.set(title, enqueue);
+const queues = new Map<string, TitleQueue>();
+
+function runInTitleQueue(title: string, task: () => Promise<void>): Promise<void> {
+	let queue = queues.get(title);
+	if (!queue) {
+		queue = {
+			enqueue: createSerialQueue((err) =>
+				console.error("[dg-ai-extension]", err),
+			),
+			waiting: 0,
+		};
+		queues.set(title, queue);
 	}
-	return enqueue;
+	const held = queue;
+	held.waiting++;
+	return held.enqueue(task).finally(() => {
+		if (--held.waiting === 0 && queues.get(title) === held) queues.delete(title);
+	});
 }
 
 type BatchSlot = { batch: string; pos: number };
@@ -147,7 +159,7 @@ export async function onTabComplete(tabId: number): Promise<void> {
 	const name = readGroupMarker(tab.url);
 	if (!name) return;
 
-	return queueFor(name)(async () => {
+	return runInTitleQueue(name, async () => {
 		const current = await browser.tabs.get(tabId).catch(() => undefined);
 		if (!current?.url || current.windowId === undefined) return;
 		const { url, windowId } = current;
@@ -168,6 +180,8 @@ export async function onTabComplete(tabId: number): Promise<void> {
 				const slot = { batch: readGroupBatch(url) ?? name, pos };
 				batchSlots.set(tabId, slot);
 				await positionInBatch(tabId, groupId, slot);
+				if (!(await browser.tabs.get(tabId).catch(() => undefined)))
+					forgetTab(tabId);
 			}
 		}
 

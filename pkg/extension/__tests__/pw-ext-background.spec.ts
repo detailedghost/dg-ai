@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, mock } from "bun:test";
 import { PW_EXT_MAX_TEXT_CHARS, PW_EXT_MAX_TOOLS, type PwExtRequest } from "@dg/common";
 import { PW_EXT_MAILBOX_ERROR } from "@/lib/background/tab-guards";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
@@ -9,6 +9,7 @@ import { createRememberedWebMcpGrants } from "@/lib/background/webmcp-approval";
 import { createWebMcpSigner } from "@/lib/background/webmcp-signing";
 import { createIdbGrantNonces } from "@/lib/background/webmcp-grant-nonces";
 import { IDBFactory } from "fake-indexeddb";
+import { heapAfterGc } from "./utils/heap";
 import { forgetAgentTabsAndShims } from "@/lib/background/dialog-shim";
 import { createSessionControl, type SessionControl } from "@/lib/background/session-control";
 
@@ -4023,5 +4024,30 @@ describe("Web MCP on the person's own tabs", () => {
 	it("needs a paired session", async () => {
 		const h = anyTabHarness();
 		expect(await h.runWithoutContext({ verb: "webmcp-tools" })).toEqual({ ok: false, error: NO_SESSION });
+	});
+});
+
+describe("pw --ext denied-site memory", () => {
+	it("keeps no denied-site entry once the session ends", async () => {
+		const h = harness({ sites: "ask", approval: "deny", pageResult: { text: "x" } });
+		const pad = "s".repeat(1_024);
+		const cycle = async (i: number) => {
+			const sessionId = `${pad}${i}`;
+			h.fake.seedRecord(recordOf({ sessionId, agentIdentity: IDENTITY, groupId: GROUP, selectedTabId: 7 }));
+			expect((await h.runAs(sessionId, { verb: "selection" })).ok).toBe(false);
+			h.handler.forget(sessionId);
+			for (const key of [...h.fake.session.keys()]) if (key.includes(sessionId)) h.fake.session.delete(key);
+			h.approvalRequests.length = 0;
+			if (i % 100 === 0) mock.clearAllMocks();
+		};
+		const sessions = 3_000;
+		for (let i = 0; i < 200; i++) await cycle(i);
+		mock.clearAllMocks();
+		const base = heapAfterGc();
+		for (let i = 200; i < sessions; i++) await cycle(i);
+		mock.clearAllMocks();
+		const grown = heapAfterGc() - base;
+		console.log(`denied sites: ${sessions - 200} ended sessions, heap grew ${(grown / 1024).toFixed(0)} KiB`);
+		expect(grown).toBeLessThan(512 * 1024);
 	});
 });

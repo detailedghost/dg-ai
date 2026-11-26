@@ -1,0 +1,22 @@
+{
+	"unknown-kind.toml": { "line": 3, "key": "kind", "includes": "hook, job, skill" },
+	"missing-name.toml": { "line": 1, "key": "name", "includes": "name is required" },
+	"bad-name.toml": { "line": 1, "key": "name", "includes": "lowercase" },
+	"bad-version.toml": { "line": 2, "key": "version", "includes": "semantic version" },
+	"missing-entry.toml": { "line": 1, "key": "entry", "includes": "entry is required" },
+	"entry-both.toml": { "line": 5, "key": "entry", "includes": "exactly one of builtin or command" },
+	"udp-hook.toml": { "line": 4, "key": "transport", "includes": "events only" },
+	"unknown-transport.toml": { "line": 4, "key": "transport", "includes": "ipc, http, tcp, udp" },
+	"http-no-endpoint.toml": { "line": 4, "key": "endpoint", "includes": "endpoint is required" },
+	"unknown-key.toml": { "line": 4, "key": "colour", "includes": "not a plugin.toml key" },
+	"remote-not-declared.toml": { "line": 5, "key": "endpoint", "includes": "remote = true" },
+	"remote-over-ipc.toml": { "line": 6, "key": "remote", "includes": "https" },
+	"remote-plain-http.toml": { "line": 5, "key": "endpoint", "includes": "https" },
+	"url-secret.toml": { "line": 5, "key": "endpoint", "includes": "credentials in the endpoint" },
+	"skill-unpinned.toml": { "line": 1, "key": "sha256", "includes": "pinned" },
+	"two-pins.toml": { "line": 6, "key": "commit", "includes": "only one of sha256 or commit" },
+	"bad-pin.toml": { "line": 5, "key": "sha256", "includes": "64 hex" },
+	"builtin-endpoint.toml": { "line": 4, "key": "endpoint", "includes": "built-in" },
+	"bad-capability.toml": { "line": 9, "key": "capabilities.exec", "includes": "list of strings" },
+	"syntax-error.toml": { "line": 2, "key": "", "includes": "plugin.toml" }
+}

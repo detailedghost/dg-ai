@@ -4,7 +4,7 @@ import { join } from "node:path";
 import {
 	frontmatter,
 	GATE_COMMAND,
-	LOCAL_DEFAULT,
+	EXT_OFF,
 	REPO_ROOT,
 } from "./test-support";
 
@@ -55,10 +55,10 @@ export function describeLocalPageSkill(skill: string, followUp: string): void {
 			expect(local).toBeLessThan(ext);
 		});
 
-		test("the Flags table has an --ext row whose Default says local is the default", () => {
+		test("the Flags table has an --ext row whose Default starts with off", () => {
 			const row = flagsRows(text).find((cells) => cells[0]?.includes("--ext"));
 			expect(row).toBeDefined();
-			expect(row?.[3] ?? "").toMatch(LOCAL_DEFAULT);
+			expect(row?.[3] ?? "").toMatch(EXT_OFF);
 		});
 
 		test("every require-extension gate line carries --ext and at least one exists", () => {

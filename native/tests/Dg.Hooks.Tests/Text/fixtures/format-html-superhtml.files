@@ -1,0 +1,8 @@
+== log 644
+superhtml fmt <ROOT>/work/a.html | cwd=-
+
+== work/.git/HEAD 644
+
+== work/a.html 644
+x
+

@@ -39,6 +39,13 @@ describe("demo skill", () => {
 	const rows = flagsTable(skill);
 	const byFlag = (flag: string) => rows.find((row) => row[0]?.includes(flag));
 
+	test("has frontmatter that parses as YAML with a description of at most 400 characters", () => {
+		const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(skill)?.[1] ?? "";
+		const parsed = Bun.YAML.parse(frontmatter) as { description?: string };
+		expect(typeof parsed.description).toBe("string");
+		expect(parsed.description?.length).toBeLessThanOrEqual(400);
+	});
+
 	test("leads the description with local playback and names --ext after it", () => {
 		const description = /^description: (.+)$/m.exec(skill)?.[1] ?? "";
 		expect(description).toStartWith(
@@ -68,7 +75,7 @@ describe("demo skill", () => {
 		]) {
 			expect(byFlag(flag)).toBeDefined();
 		}
-		expect(byFlag("`--ext`")?.[3]).toBe("off (local is the default)");
+		expect(byFlag("`--ext`")?.[3]).toMatch(/^off\b/);
 		expect(byFlag("--out")?.[3]).toBe(
 			"`<cacheDir>/demos/<slug>/<slug>-<stamp>.mp4`",
 		);

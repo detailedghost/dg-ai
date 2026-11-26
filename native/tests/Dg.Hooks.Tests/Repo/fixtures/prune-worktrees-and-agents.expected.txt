@@ -1,0 +1,121 @@
+--- exit
+0
+--- stdout
+--- stderr
+--- calls
+call: worktree prune (cwd=<ROOT>/code/alpha)
+call: worktree remove dirty-one (cwd=<ROOT>/code/alpha)
+call: worktree remove merged-clean (cwd=<ROOT>/code/alpha)
+call: worktree remove zz-last (cwd=<ROOT>/code/alpha)
+--- stamp
+absent
+--- log
+daily-prune <NOW>
+kept worktree <ROOT>/code/alpha dirty-one: second line
+kept worktree <ROOT>/code/alpha zz-last: not merged into master
+removed <ROOT>/code/alpha/.agents/cache/old.bin (ignored .agents file past TTL)
+removed <ROOT>/code/alpha/.agents/scratch.txt (ignored .agents file past TTL)
+removed <ROOT>/code/alpha/.agents/tmp/jot/keepme.md (ignored .agents file past TTL)
+removed <ROOT>/code/alpha/.agents/tmp/nested/deeper/old.txt (ignored .agents file past TTL)
+removed <ROOT>/code/beta/.agents/cache/old.bin (ignored .agents file past TTL)
+removed <ROOT>/code/beta/.agents/tmp/x/old.bin (ignored .agents file past TTL)
+removed <ROOT>/code/worktrees/alpha-dirty/.agents/tmp/old.txt (ignored .agents file past TTL)
+removed <ROOT>/code/worktrees/alpha-merged/.agents/cache/old.bin (ignored .agents file past TTL)
+removed <ROOT>/code/worktrees/alpha-merged/.agents/cache/sub/old2.bin (ignored .agents file past TTL)
+removed <ROOT>/scratch/claude/aaaaaaaa (bucket past TTL)
+removed <ROOT>/scratch/claude/cccccccc (bucket past TTL)
+removed worktree <ROOT>/code/alpha merged-clean
+--- logfile
+daily-prune <NOW>
+kept worktree <ROOT>/code/alpha dirty-one: second line
+kept worktree <ROOT>/code/alpha zz-last: not merged into master
+removed <ROOT>/code/alpha/.agents/cache/old.bin (ignored .agents file past TTL)
+removed <ROOT>/code/alpha/.agents/scratch.txt (ignored .agents file past TTL)
+removed <ROOT>/code/alpha/.agents/tmp/jot/keepme.md (ignored .agents file past TTL)
+removed <ROOT>/code/alpha/.agents/tmp/nested/deeper/old.txt (ignored .agents file past TTL)
+removed <ROOT>/code/beta/.agents/cache/old.bin (ignored .agents file past TTL)
+removed <ROOT>/code/beta/.agents/tmp/x/old.bin (ignored .agents file past TTL)
+removed <ROOT>/code/worktrees/alpha-dirty/.agents/tmp/old.txt (ignored .agents file past TTL)
+removed <ROOT>/code/worktrees/alpha-merged/.agents/cache/old.bin (ignored .agents file past TTL)
+removed <ROOT>/code/worktrees/alpha-merged/.agents/cache/sub/old2.bin (ignored .agents file past TTL)
+removed <ROOT>/scratch/claude/aaaaaaaa (bucket past TTL)
+removed <ROOT>/scratch/claude/cccccccc (bucket past TTL)
+removed worktree <ROOT>/code/alpha merged-clean
+--- tree
+code/
+code/alpha/
+code/alpha/.agents/
+code/alpha/.agents/cache/
+code/alpha/.agents/cache/new.bin
+code/alpha/.agents/notes/
+code/alpha/.agents/notes/HANDOFF.md
+code/alpha/.agents/school/
+code/alpha/.agents/school/ignored-but-kept.md
+code/alpha/.agents/school/rules.md
+code/alpha/.agents/spec/
+code/alpha/.agents/spec/x/
+code/alpha/.agents/spec/x/ignored.md
+code/alpha/.gitignore
+code/alpha/README.md
+code/beta/
+code/beta/.agents/
+code/beta/.agents/school/
+code/beta/.agents/school/rules.md
+code/beta/.gitignore
+code/beta/README.md
+code/worktrees/
+code/worktrees/alpha-dirty/
+code/worktrees/alpha-dirty/.agents/
+code/worktrees/alpha-dirty/.agents/school/
+code/worktrees/alpha-dirty/.agents/school/rules.md
+code/worktrees/alpha-dirty/.agents/tmp/
+code/worktrees/alpha-dirty/.agents/tmp/new.txt
+code/worktrees/alpha-dirty/.gitignore
+code/worktrees/alpha-dirty/README.md
+code/worktrees/alpha-merged/
+code/worktrees/alpha-merged/.agents/
+code/worktrees/alpha-merged/.agents/school/
+code/worktrees/alpha-merged/.agents/school/rules.md
+code/worktrees/alpha-merged/.gitignore
+code/worktrees/alpha-merged/README.md
+code/worktrees/alpha-other/
+code/worktrees/alpha-other/.agents/
+code/worktrees/alpha-other/.agents/school/
+code/worktrees/alpha-other/.agents/school/rules.md
+code/worktrees/alpha-other/.gitignore
+code/worktrees/alpha-other/README.md
+home/
+outside/
+scratch/
+scratch/claude/
+scratch/claude/bbbbbbbb/
+scratch/claude/bbbbbbbb/new.txt
+scratch/hooks/
+scratch/hooks/daily-prune.log
+state/
+xdg/
+--- pruned
+code/alpha/.agents/cache/old.bin
+code/alpha/.agents/scratch.txt
+code/alpha/.agents/tmp/
+code/alpha/.agents/tmp/jot/
+code/alpha/.agents/tmp/jot/keepme.md
+code/alpha/.agents/tmp/nested/
+code/alpha/.agents/tmp/nested/deeper/
+code/alpha/.agents/tmp/nested/deeper/old.txt
+code/beta/.agents/cache/
+code/beta/.agents/cache/old.bin
+code/beta/.agents/tmp/
+code/beta/.agents/tmp/x/
+code/beta/.agents/tmp/x/old.bin
+code/worktrees/alpha-dirty/.agents/tmp/old.txt
+code/worktrees/alpha-merged/.agents/cache/
+code/worktrees/alpha-merged/.agents/cache/old.bin
+code/worktrees/alpha-merged/.agents/cache/sub/
+code/worktrees/alpha-merged/.agents/cache/sub/old2.bin
+scratch/claude/aaaaaaaa/
+scratch/claude/aaaaaaaa/old.txt
+scratch/claude/cccccccc/
+scratch/claude/cccccccc/deep/
+scratch/claude/cccccccc/deep/er/
+scratch/claude/cccccccc/deep/er/old.txt

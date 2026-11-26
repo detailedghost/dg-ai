@@ -1,0 +1,102 @@
+--- exit
+0
+--- stdout
+--- stderr
+--- calls
+--- stamp
+90 days
+--- log
+daily-prune <NOW>
+removed <ROOT>/scratch/bg/2.log (global entry past TTL)
+removed <ROOT>/scratch/claude/aaaaaaaa (bucket past TTL)
+removed <ROOT>/scratch/claude/global-old.json (global entry past TTL)
+removed <ROOT>/scratch/codex (empty tool dir)
+removed <ROOT>/scratch/codex/dddddddd (bucket past TTL)
+removed <ROOT>/scratch/flat-old.txt (flat file past TTL)
+removed <ROOT>/scratch/hooks/session.marker (global entry past TTL)
+removed <ROOT>/scratch/pw/other (global entry past TTL)
+removed <ROOT>/state/claude/handoff (global entry past TTL)
+removed <ROOT>/state/codex (empty tool dir)
+removed <ROOT>/state/codex/old.md (global entry past TTL)
+removed <ROOT>/state/empty-tool (empty tool dir)
+removed <ROOT>/state/empty-tool/aaaaaaaa (bucket past TTL)
+removed <ROOT>/state/pw/keep (global entry past TTL)
+--- logfile
+daily-prune <NOW>
+removed <ROOT>/scratch/bg/2.log (global entry past TTL)
+removed <ROOT>/scratch/claude/aaaaaaaa (bucket past TTL)
+removed <ROOT>/scratch/claude/global-old.json (global entry past TTL)
+removed <ROOT>/scratch/codex (empty tool dir)
+removed <ROOT>/scratch/codex/dddddddd (bucket past TTL)
+removed <ROOT>/scratch/flat-old.txt (flat file past TTL)
+removed <ROOT>/scratch/hooks/session.marker (global entry past TTL)
+removed <ROOT>/scratch/pw/other (global entry past TTL)
+removed <ROOT>/state/claude/handoff (global entry past TTL)
+removed <ROOT>/state/codex (empty tool dir)
+removed <ROOT>/state/codex/old.md (global entry past TTL)
+removed <ROOT>/state/empty-tool (empty tool dir)
+removed <ROOT>/state/empty-tool/aaaaaaaa (bucket past TTL)
+removed <ROOT>/state/pw/keep (global entry past TTL)
+--- tree
+code/
+home/
+outside/
+scratch/
+scratch/adhoc/
+scratch/adhoc/x/
+scratch/adhoc/x/old.txt
+scratch/bg/
+scratch/bg/1.pid
+scratch/claude/
+scratch/claude/bbbbbbbb/
+scratch/claude/bbbbbbbb/new.txt
+scratch/claude/cccccccc/
+scratch/claude/cccccccc/deep/
+scratch/claude/cccccccc/deep/er/
+scratch/claude/cccccccc/deep/er/new.txt
+scratch/claude/cccccccc/deep/er/old.txt
+scratch/claude/global-new.json
+scratch/flat-new.txt
+scratch/hooks/
+scratch/hooks/daily-prune.log
+scratch/hooks/daily-prune.stamp
+scratch/pw/
+scratch/pw/sessions/
+scratch/pw/sessions/s.json
+scratch/pw/states/
+scratch/pw/states/s.json
+state/
+state/adhoc/
+state/adhoc/job/
+state/adhoc/job/old.txt
+state/claude/
+state/claude/handoff2/
+state/claude/handoff2/new.md
+state/flat-old.txt
+state/hooks/
+state/hooks/daily-prune.stamp
+state/pw/
+state/pw/log/
+state/pw/log/l.txt
+xdg/
+--- pruned
+scratch/bg/2.log
+scratch/claude/aaaaaaaa/
+scratch/claude/aaaaaaaa/old.txt
+scratch/claude/global-old.json
+scratch/codex/
+scratch/codex/dddddddd/
+scratch/codex/dddddddd/old.txt
+scratch/flat-old.txt
+scratch/hooks/session.marker
+scratch/pw/other/
+scratch/pw/other/o.json
+state/claude/handoff/
+state/claude/handoff/old.md
+state/codex/
+state/codex/old.md
+state/empty-tool/
+state/empty-tool/aaaaaaaa/
+state/empty-tool/aaaaaaaa/old.txt
+state/pw/keep/
+state/pw/keep/old.txt

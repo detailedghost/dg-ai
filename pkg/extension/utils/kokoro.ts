@@ -39,7 +39,7 @@ export function loadKokoro(
 ): Promise<KokoroInstance> {
 	// Every caller subscribes, not just the load's starter: otherwise a warm-up already
 	// in flight leaves the recorder's preparation bar frozen at 0% for the whole load.
-	if (onProgress) listeners.add(onProgress);
+	if (onProgress && !loaded) listeners.add(onProgress);
 	if (ttsPromise) return ttsPromise;
 	ttsPromise = (async () => {
 		/**

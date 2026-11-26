@@ -279,3 +279,16 @@ dg pw close
 Each command is one folder under `pkg/skills-cli/src/pw/commands/<name>/` in the dg repo with `spec.ts` (flags and help, no Playwright import), `run.ts` (the handler), and a test. Add one line for it in `pkg/skills-cli/src/pw/commands/index.ts`. Nothing else changes. The one exception is `dg pw-code`: its spec and handler live in `pkg/skills-cli/src/pw/code/`, and `pkg/skills-cli/src/pw/code-cli.ts` is its client.
 
 The dropped debugger commands (`pause-at`, `resume`, `step-over`, `show`, `tray`, `attach <name>`) return the same way. Legacy `playwright-cli attach` covers them meanwhile.
+
+## Open flags
+
+| Flag | Effect |
+|---|---|
+| `-s=<name>` | Session name. Persistent sessions are global by name. |
+| `--scratch` | In-memory profile, bound to the current directory. |
+| `--headless` | No window. |
+| `--browser=<b>` | `chrome`, `chromium`, `msedge`, `firefox`, `webkit`. `firefox` and `webkit` need the Playwright build (`bunx playwright-core install firefox`). A system Firefox does not work. |
+| `--profile=<dir>` | Profile directory. Use only when asked. |
+| `--from=<state>` | Seed from a saved state. See `references/session-management.md`. |
+| `--out=<dir>` | Output directory, for example a project folder. |
+| `--depth=<n>` | Snapshot depth for this session. |

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dg.Completion.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="bin/completion/tree.json" LogicalName="completion-tree.json" Condition="Exists('bin/completion/tree.json')" />
+  </ItemGroup>
+  <Target
+    Name="RequireCompletionTree"
+    BeforeTargets="BeforeBuild"
+    Condition="'$(Configuration)' == 'Release' And !Exists('$(MSBuildProjectDirectory)/bin/completion/tree.json')"
+  >
+    <Error Text="bin/completion/tree.json is missing. Run bun scripts/native-completion.ts from the repo root." />
+  </Target>
+  <ItemGroup>
+    <ProjectReference Include="../Dg.Core/Dg.Core.csproj" />
+  </ItemGroup>
+</Project>

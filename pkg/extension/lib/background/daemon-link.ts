@@ -65,7 +65,10 @@ import {
 import { createWebMcpSigner } from "./webmcp-signing";
 import { createIdbGrantNonces } from "./webmcp-grant-nonces";
 import { forgetAgentTabsAndShims } from "./dialog-shim";
+import { type AgentWindowApi, createAgentWindows } from "./agent-window";
+import { type PopupWindowApi, popupWindows } from "./approval";
 import { createSessionControl } from "./session-control";
+import { createSiteAllow, type SiteAllow } from "./site-allow-prompt";
 import { PW_EXT_STOP_MESSAGE } from "@/lib/features/pw-ext-banner";
 import {
 	createRelayDispatcher,
@@ -166,6 +169,8 @@ function stagedAsset(
 	);
 }
 
+const SITE_ALLOW_POPUP = { width: 480, height: 440 };
+
 function pwExtContext({
 	bootstrap,
 }: {
@@ -196,6 +201,7 @@ export function registerDaemonLink(
 	adopt(bootstrap: SessionBootstrap): Promise<void>;
 	daemonPort(): Promise<number | undefined>;
 	pending(sessionId?: string): RelayRun[];
+	siteAllow: SiteAllow;
 } {
 	const api = options.browserApi ?? (browser as unknown as ChatBrowserApi);
 	const openSocket = options.openSocket ?? defaultOpenSocket;
@@ -224,6 +230,17 @@ export function registerDaemonLink(
 		});
 	const pwExtApi = api as unknown as PwExtBrowserApi;
 	const sessionControl = createSessionControl({ storage: api.storage as unknown as AgentTabsStorage });
+	const agentWindows = createAgentWindows({
+		browserApi: api as unknown as AgentWindowApi,
+		storage: api.storage as unknown as AgentTabsStorage,
+	});
+	const siteAllow = createSiteAllow({
+		control: sessionControl,
+		storage: api.storage as unknown as AgentTabsStorage,
+		windows: popupWindows(api as unknown as PopupWindowApi, SITE_ALLOW_POPUP),
+		pageUrl: (path) => api.runtime.getURL(path),
+		navigate: agentWindows.navigate,
+	});
 	const pwExtRelay = createPwExtHandler({
 		browserApi: pwExtApi,
 		agentTabs,
@@ -231,6 +248,8 @@ export function registerDaemonLink(
 		webmcpGrants,
 		rememberedWebMcpGrants,
 		control: sessionControl,
+		siteAllow,
+		agentWindows,
 	});
 	const relayHandlers: {
 		[N in RelayFeatureName]: RelayHandler<FeatureNamed<N>>;
@@ -522,6 +541,9 @@ export function registerDaemonLink(
 			() => unmaskGrants.forget(sessionId),
 			() => webmcpGrants.forget(sessionId),
 			() => sessionControl.forget(sessionId),
+			() => agentWindows.forget(sessionId),
+			() => siteAllow.forget(sessionId),
+			() => pwExtRelay.forget(sessionId),
 		])
 			void Promise.resolve()
 				.then(cleanup)
@@ -989,5 +1011,5 @@ export function registerDaemonLink(
 		return undefined;
 	});
 
-	return { client, adopt, daemonPort, pending: dispatcher.pending };
+	return { client, adopt, daemonPort, pending: dispatcher.pending, siteAllow };
 }

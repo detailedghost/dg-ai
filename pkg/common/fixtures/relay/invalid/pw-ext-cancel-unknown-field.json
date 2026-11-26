@@ -1,0 +1,11 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "pw-ext-browser-cancel",
+		"requestId": "req-1",
+		"extra": 1
+	},
+	"error": "chat frame has unknown field \"extra\""
+}

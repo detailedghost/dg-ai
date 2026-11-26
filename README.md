@@ -19,8 +19,10 @@ Windows (x64 or arm64), in PowerShell:
 irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
-These install one program, `dg`, and the extension. `dg` is a compiled
-executable, so you need no Bun of your own. The program, the extension, and both
+These install `dg` and the extension. `dg` is a small native front door that runs
+the fast commands itself and hands the rest to `dg-core`, a compiled Bun program,
+so you need no Bun of your own. Downloads are compressed, and updates fetch a
+delta. Set `DG_FRONT=0` to run the Bun program alone. The program, the extension, and both
 plugin manifests share one release version.
 Follow the printed **Load unpacked** steps to load the extension.
 See [install and update](docs/install.md) for Claude Code and Codex plugins,
@@ -185,7 +187,9 @@ Maintainers follow the [post-merge cutover](docs/DEVELOPER.md#manual-post-merge-
 
 - [Architecture decisions](docs/adr/toc.md)
 
-- [Developer guide](docs/DEVELOPER.md)
+- [Developer guide](docs/DEVELOPER.md), including the `native/` build
+
+- [Lean baseline and gates](docs/lean-baseline.md)
 
 - [Contributing](docs/contributing.md)
 

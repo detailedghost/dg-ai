@@ -1,0 +1,1 @@
+dg config: config.toml:2: plugins.acme.settings must be a table, got "x". Next: run dg config edit, or dg config set plugins.acme.settings <value>.

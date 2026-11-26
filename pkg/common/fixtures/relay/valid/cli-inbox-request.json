@@ -1,0 +1,9 @@
+{
+	"validator": "cli-request:inbox",
+	"frame": {
+		"type": "cli-inbox-request",
+		"requestId": "req-1",
+		"operation": "profile-list",
+		"protocolVersion": 1
+	}
+}

@@ -1,0 +1,6 @@
+{
+	"exit": 0,
+	"stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"Always confirm with the user before opening a PR\"}}",
+	"stderr": "",
+	"after": {}
+}

@@ -1,3 +1,12 @@
 /scripts/blt-gate.ts @detailedghost
+/scripts/budget-ratchet.ts @detailedghost
+/scripts/size-diff.ts @detailedghost
+/scripts/lean-size.ts @detailedghost
+/scripts/ram-budget.ts @detailedghost
+/scripts/ram-budget/ @detailedghost
+/scripts/native-*.ts @detailedghost
 /.github/workflows/ @detailedghost
 /.github/CODEOWNERS @detailedghost
+/scripts/*budgets.json @detailedghost
+/native/budgets/ @detailedghost
+/native/bench/Dg.Bench/budgets/ @detailedghost

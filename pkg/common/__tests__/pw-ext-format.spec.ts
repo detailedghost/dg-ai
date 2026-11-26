@@ -3,6 +3,9 @@ import { CHAT_PROTOCOL_VERSION, validateChatFrame, validatePageChatFrame } from 
 import {
 	isPwExtCliResult,
 	isPwExtSecretTooShort,
+	requireTabId,
+	PW_EXT_READ_VERBS,
+	PW_EXT_WRITE_VERBS,
 	PW_EXT_MAX_IMAGE_CHARS,
 	PW_EXT_MAX_TEXT_CHARS,
 	PW_EXT_MAX_TOOLS,
@@ -16,6 +19,11 @@ import {
 	validatePwExtCliCancel,
 } from "../src/pw-ext-format";
 import { PW_EXT_RELAY } from "../src/relay-features";
+import * as input from "../src/pw-ext-verbs/input";
+import * as navigation from "../src/pw-ext-verbs/navigation";
+import * as page from "../src/pw-ext-verbs/page";
+import * as pointer from "../src/pw-ext-verbs/pointer";
+import * as storage from "../src/pw-ext-verbs/storage";
 
 describe("validatePwExtRequest", () => {
 	it.each([
@@ -698,4 +706,65 @@ describe("isPwExtCliResult", () => {
 			expect(isPwExtCliResult("r")(value)).toBe(false);
 		},
 	);
+});
+
+describe("pw-ext verb lists", () => {
+	const LEGACY_READ = ["current", "snapshot", "screenshot", "selection", "console", "tools", "tabs", "count", "network", "storage"];
+	const LEGACY_WRITE = ["open", "click", "fill", "press", "upload", "call", "new", "select", "close", "unmask", "dialog", "fetch", "credential"];
+	const MODULE_VERBS = [
+		...navigation.VERBS,
+		...pointer.VERBS,
+		...input.VERBS,
+		...page.VERBS,
+		...storage.VERBS,
+	];
+
+	it("keeps the read verbs as they were", () => {
+		expect<string[]>([...PW_EXT_READ_VERBS]).toEqual(LEGACY_READ);
+	});
+
+	it("grows the write verbs only by the verbs of the registered modules", () => {
+		expect<string[]>([...PW_EXT_WRITE_VERBS]).toEqual([...LEGACY_WRITE, ...MODULE_VERBS]);
+	});
+
+	it.each([
+		{ verb: "go-back" },
+		{ verb: "reload", tabId: 3 },
+		{ verb: "hover", target: "e1" },
+		{ verb: "drag", target: "e1", to: "e2" },
+		{ verb: "mousemove", x: 1, y: 2 },
+		{ verb: "mousedown", button: "right" },
+		{ verb: "mousewheel", dx: 0, dy: -100 },
+		{ verb: "check", target: "e4" },
+		{ verb: "type", text: "hello", submit: true },
+		{ verb: "keydown", key: "Shift" },
+		{ verb: "eval", expression: "1 + 1" },
+		{ verb: "tab-select", tabId: 3 },
+		{ verb: "resize", width: 800, height: 600 },
+		{ verb: "localstorage-set", key: "a", value: "b" },
+		{ verb: "sessionstorage-clear" },
+	])("accepts the module request %j", (request) => {
+		expect(validatePwExtRequest(request)).toEqual(request as PwExtRequest);
+	});
+
+	it.each([
+		{ verb: "go-back", url: "https://example.com/" },
+		{ verb: "hover" },
+		{ verb: "type", text: "x", submit: false },
+		{ verb: "eval", expression: "" },
+		{ verb: "resize", width: 10, height: 600 },
+		{ verb: "localstorage-clear", key: "a" },
+	])("rejects the module request %j", (request) => {
+		expect(() => validatePwExtRequest(request)).toThrow();
+	});
+});
+
+describe("requireTabId", () => {
+	it.each([0, 7, 2_147_483_647])("accepts %p", (tabId) => {
+		expect(() => requireTabId(tabId, "request")).not.toThrow();
+	});
+
+	it.each([-1, 1.5, 2_147_483_648, "7", null, Number.NaN])("rejects %p with the field name", (tabId) => {
+		expect(() => requireTabId(tabId, "request")).toThrow("request.tabId must be a non-negative integer");
+	});
 });

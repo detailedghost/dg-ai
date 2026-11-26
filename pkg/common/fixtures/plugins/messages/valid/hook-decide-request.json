@@ -1,0 +1,1 @@
+{ "route": "/v1/hook/decide", "direction": "request", "body": { "event": "PreToolUse", "tool": "Bash", "input": { "command": "git status" } } }

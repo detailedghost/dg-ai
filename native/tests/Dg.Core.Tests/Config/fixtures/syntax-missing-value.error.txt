@@ -1,0 +1,1 @@
+dg config: config.toml:1: Missing value after '='; values must be on the same line. Next: run dg config edit, or dg config set <key> <value>.

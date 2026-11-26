@@ -1,0 +1,19 @@
+--- exit
+0
+--- stdout
+--- stderr
+--- calls
+spawn: hooks run daily-prune --now
+--- stamp
+0 days
+--- tree
+code/
+home/
+outside/
+scratch/
+scratch/hooks/
+state/
+state/hooks/
+state/hooks/daily-prune.stamp
+xdg/
+--- pruned

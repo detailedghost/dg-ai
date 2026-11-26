@@ -1,0 +1,11 @@
+{
+  "hook": "spec-plan-lint",
+  "stdin": {
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Write",
+    "cwd": "/proj",
+    "tool_input": {
+      "file_path": "/proj/.agents/spec/027_x/notes.md"
+    }
+  }
+}

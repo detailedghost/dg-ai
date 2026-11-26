@@ -1,0 +1,96 @@
+name: Release patches
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build patches for, for example v7.0.6.
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-patches-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  patches:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Find the previous release
+        id: previous
+        run: |
+          set -euo pipefail
+          prev="$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq '.[] | select((.draft | not) and (.prerelease | not)) | .tag_name' \
+            | { grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; } | sort -V \
+            | awk -v tag="$TAG" '$0 == tag { print last; exit } { last = $0 }')"
+          if [ -z "$prev" ]; then
+            echo "No release before ${TAG}; no patches to build."
+          fi
+          echo "tag=${prev}" >> "$GITHUB_OUTPUT"
+
+      - name: Build one patch per target and the PATCHSUMS file
+        if: steps.previous.outputs.tag != ''
+        env:
+          PREV: ${{ steps.previous.outputs.tag }}
+        run: |
+          set -euo pipefail
+          keys="linux-x64 linux-x64-baseline linux-arm64 darwin-x64 darwin-arm64 windows-x64 windows-x64-baseline windows-arm64"
+          front_rids="linux-x64 linux-arm64 win-x64 win-arm64 osx-x64 osx-arm64"
+          mkdir -p old new patches
+          from="${PREV#v}"
+          prev_assets="$(gh release view "$PREV" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          patch_asset() {
+            asset="$1"
+            name="${asset%.exe}-from-${from}.zpatch"
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "${asset}.zst" --dir new
+            zstd -d -q --force "old/${asset}.zst" -o "old/${asset}"
+            zstd -d -q --force "new/${asset}.zst" -o "new/${asset}"
+            zstd -q -19 --long=27 --force --patch-from="old/${asset}" "new/${asset}" -o "patches/${name}"
+            zstd -d -q --force --long=27 --patch-from="old/${asset}" "patches/${name}" -o "patches/check"
+            cmp "patches/check" "new/${asset}"
+            rm -f "patches/check" "old/${asset}" "new/${asset}" "old/${asset}.zst" "new/${asset}.zst"
+          }
+          for key in $keys; do
+            asset="dg-${key}"
+            case "$key" in windows-*) asset="${asset}.exe" ;; esac
+            if ! grep -qxF "${asset}.zst" <<< "$prev_assets"; then
+              echo "${PREV} has no ${asset}.zst, so there is no patch for ${key}."
+              continue
+            fi
+            gh release download "$PREV" --repo "$GITHUB_REPOSITORY" --pattern "${asset}.zst" --dir old
+            patch_asset "$asset"
+          done
+          for rid in $front_rids; do
+            asset="dg-front-${rid}"
+            case "$rid" in win-*) asset="${asset}.exe" ;; esac
+            if ! grep -qxF "${asset}.zst" <<< "$prev_assets"; then
+              echo "${PREV} has no ${asset}.zst, so there is no front door patch for ${rid}."
+              continue
+            fi
+            gh release download "$PREV" --repo "$GITHUB_REPOSITORY" --pattern "${asset}.zst" --dir old
+            patch_asset "$asset"
+          done
+          if ! ls patches/*.zpatch > /dev/null 2>&1; then
+            echo "${PREV} has no compressed assets, so there are no patches to upload."
+            exit 0
+          fi
+          (cd patches && sha256sum -- *.zpatch > PATCHSUMS)
+
+      - name: Upload the patches to the release
+        if: steps.previous.outputs.tag != ''
+        run: |
+          if [ ! -f patches/PATCHSUMS ]; then
+            echo "No patches were built; nothing to upload."
+            exit 0
+          fi
+          gh release upload "$TAG" patches/*.zpatch patches/PATCHSUMS --repo "$GITHUB_REPOSITORY" --clobber

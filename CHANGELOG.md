@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- feat(dg): run a native front door at `dg` by default; it answers `--version`, built-in hooks, completion, `config get|set|list|doctor` and `plugin list|verify` itself and runs the Bun program, now `dg-core`, for every other command; opt out with `DG_FRONT=0` or `front.enabled = false`, and go back to Bun-only with `DG_FRONT=0 dg install`; see [docs/install.md](docs/install.md#install-layout)
+- feat(release): ship each program as `.zst` and `.gz` next to the raw file, update with a zstd patch from the previous release, and download the `pw` and `db` companions on first use with a sha256 check
+- feat(plugin): add `dg plugin` to list, add, remove, enable, disable, update and verify plugins; a plugin stays untrusted until you approve it; see [docs/plugin-protocol.md](docs/plugin-protocol.md)
+- feat(pw): pick the browser per call with `browser.mode = auto` as the new default: a call goes to the real browser through the extension when it is paired and the verb has an ext verb, else to local Playwright; see [docs/pw.md](docs/pw.md)
+- feat(extension): add 24 `dg pw --ext` verbs, including `eval`, typing, checkboxes, `resize` and storage writes, behind new safety rules; see [ADR 0060](docs/adr/0060-pw-auto-mode-and-ext-verbs-for-the-real-browser.md)
+- docs(dev): add the `native/` build for Linux, macOS and Windows to [docs/DEVELOPER.md](docs/DEVELOPER.md#native-the-c-front-door) and the lean gates to [docs/lean-baseline.md](docs/lean-baseline.md)
+
+### Breaking
+
+- feat(pw)!: a browser binary path in `DG_BROWSER` now makes `dg pw` stop with `DG_BROWSER must be ext, local or auto`. Set the path in `DG_VERIFY_BROWSER` instead; `demo` and `verify` read it from there
+
 ## v7.0.5 (2026-11-24)
 
 ### Fixes

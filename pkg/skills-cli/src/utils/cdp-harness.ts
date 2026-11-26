@@ -70,7 +70,7 @@ export function resolveBrowserBinary(): string {
 	if (found) return found;
 	throw new Error(
 		`demo --verify needs a CDP-capable Chromium-family browser (Brave, Chromium, Vivaldi, or Chrome-for-Testing); ` +
-			`none of [${PATH_CANDIDATES.join(", ")}] or their usual app folders were found. Set DG_BROWSER (or DG_VERIFY_BROWSER) to an explicit binary path.`,
+			`none of [${PATH_CANDIDATES.join(", ")}] or their usual app folders were found. Set DG_VERIFY_BROWSER to an explicit binary path.`,
 	);
 }
 

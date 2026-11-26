@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/Dg.Cli/Dg.Cli.csproj" />
+    <ProjectReference Include="../../src/Dg.Core/Dg.Core.csproj" />
+    <ProjectReference Include="../../src/Dg.Hooks/Dg.Hooks.csproj" />
+    <ProjectReference Include="../../src/Dg.Config/Dg.Config.csproj" />
+    <ProjectReference Include="../../src/Dg.Completion/Dg.Completion.csproj" />
+    <ProjectReference Include="../../src/Dg.Routing/Dg.Routing.csproj" />
+    <ProjectReference Include="../../src/Dg.Plugins/Dg.Plugins.csproj" />
+  </ItemGroup>
+</Project>

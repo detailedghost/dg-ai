@@ -1,0 +1,11 @@
+{
+	"hook": "pr-prose",
+	"event": {
+		"hook_event_name": "PreToolUse",
+		"tool_name": "Bash",
+		"tool_input": {
+			"command": "gh pr create --title t --body 'This sentence keeps going and going without any stop so that the count of words rises above the limit of forty words that the hook allows for one sentence in a plain English pull request body and then it ends.'"
+		},
+		"cwd": "$CWD/work"
+	}
+}

@@ -1,0 +1,14 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "proto-browser-request",
+		"requestId": "req-1",
+		"phase": "bogus",
+		"slug": "demo",
+		"markedUrl": "https://example.com/app#_proto=demo",
+		"timeoutMs": 45000
+	},
+	"error": "chat frame.phase must be \"scrape\" or \"plant\""
+}

@@ -118,7 +118,7 @@ posix("bootstrap.sh compiled install", () => {
 	});
 
 	test("a 6.3 layout upgrades to bin/current and bin/dg and keeps runtime/ and lib/", async () => {
-		const result = await runBootstrap({ seed: seedOldInstall });
+		const result = await runBootstrap({ seed: seedOldInstall, env: { DG_FRONT: "0" } });
 		const data = join(result.root, "data");
 
 		expect(result.code, result.stderr).toBe(0);
@@ -135,6 +135,7 @@ posix("bootstrap.sh compiled install", () => {
 
 	test("a foreign file named like an old launcher stays and is named in one warning", async () => {
 		const result = await runBootstrap({
+			env: { DG_FRONT: "0" },
 			seed: (root) => {
 				mkdirSync(join(root, "bin"), { recursive: true });
 				writeFileSync(join(root, "bin", "dg-agent"), "MZ other tool");

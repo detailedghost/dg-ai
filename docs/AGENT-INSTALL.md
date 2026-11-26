@@ -260,8 +260,9 @@ the `/dg:*` skills are available.
 
 ## Step 2 — Install the CLI + extension (agent-runnable + one manual step)
 
-The skills run `dg`, one compiled program. Bootstrap once — this installs the
-program and the `dg` launcher in
+The skills run `dg`, a native front door that runs `dg-core`, the compiled Bun
+program, for most commands ([what runs where](install.md#what-the-front-door-runs)).
+Bootstrap once — this installs both programs and the `dg` launcher in
 the per-OS folders ([install layout](install.md#where-dg-keeps-its-files)), **then runs `dg install`**,
 which stages the extension and prints the exact **Load unpacked** path:
 
@@ -289,6 +290,14 @@ bundled script, the snippet downloads `bootstrap.sh` from the repository.
 
 - No Bun of your own is needed — `dg` is a compiled program. Bun is only
   required for the `--local` source build.
+- Downloads are `.gz` (bootstrap) or `.zst` (`dg install`), and an update from an
+  installed version downloads a delta. The `pw` and `db` companions download on
+  first use, each checked against `SHA256SUMS`. An agent needs network access to
+  GitHub releases the first time it runs `dg pw` or a `dg db` command.
+- To run the Bun program alone, run `DG_FRONT=0 dg install`, or set
+  `front.enabled = false` in `config.toml`. `DG_FRONT=0` on one command runs
+  it through `dg-core` only. When install cannot place the front door, it prints
+  one line and keeps the Bun program at `dg`.
 - Re-run `dg install` anytime to update the extension and the program
   together; each part is skipped when already current. For Firefox:
   `dg install firefox`. Default target is **chrome** (also serves

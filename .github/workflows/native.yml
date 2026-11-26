@@ -1,0 +1,219 @@
+---
+name: Native dg - AOT Build and Test
+
+on:
+  pull_request:
+    paths:
+      - native/**
+      - scripts/native-*.ts
+      - pkg/skills-cli/src/completion/**
+      - .github/workflows/native.yml
+  workflow_dispatch:
+
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: native-${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+          - os: windows-latest
+            rid: win-x64
+          - os: windows-11-arm
+            rid: win-arm64
+          - os: macos-15-intel
+            rid: osx-x64
+          - os: macos-15
+            rid: osx-arm64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Mask secrets in later log output
+        uses: ./.github/actions/mask-secrets
+
+      - name: Set up the .NET SDK from native/global.json
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: native/global.json
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.1
+
+      - name: Install the Bun dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Generate the route table
+        run: bun scripts/native-routes.ts
+
+      - name: Generate the completion copy
+        run: bun scripts/native-completion.ts
+
+      - name: Run the native tests
+        working-directory: native
+        run: dotnet test --solution Dg.slnx -c Release
+
+      - name: Check that every NativeAOT size lever is on
+        env:
+          RID: ${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+          failed=0
+          for expected in InvariantGlobalization=true UseSystemResourceKeys=true OptimizationPreference=Size StackTraceSupport=false EventSourceSupport=false DebuggerSupport=false StripSymbols=true; do
+            lever="${expected%%=*}"
+            want="${expected#*=}"
+            got="$(dotnet msbuild native/src/Dg.Cli/Dg.Cli.csproj -p:Configuration=Release -p:RuntimeIdentifier="$RID" "-getProperty:${lever}" | tr -d '[:space:]')"
+            if [ "$got" != "$want" ]; then
+              echo "::error::${lever} is '${got}' but the release build needs '${want}'. Restore it in native/Directory.Build.props."
+              failed=1
+            fi
+          done
+          exit "$failed"
+
+      - name: Publish the NativeAOT binary with AOT and trim warnings as errors
+        run: >
+          dotnet publish native/src/Dg.Cli
+          -r ${{ matrix.rid }}
+          -c Release
+          -o native/publish/${{ matrix.rid }}
+          -p:IlcGenerateMstatFile=true
+          -p:TreatWarningsAsErrors=true
+          -p:EnableTrimAnalyzer=true
+          -p:EnableAotAnalyzer=true
+          -p:EnableSingleFileAnalyzer=true
+
+      - name: Report the binary size and check that it runs
+        env:
+          RID: ${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+          binary="native/publish/${RID}/dg"
+          if [ "${RUNNER_OS}" = Windows ]; then
+            binary="${binary}.exe"
+          fi
+          size="$(wc -c < "$binary" | tr -d ' ')"
+          echo "dg-${RID}: ${size} bytes"
+          echo "dg-${RID}: ${size} bytes" >> "$GITHUB_STEP_SUMMARY"
+          "$binary" --version
+
+      - name: Measure the binary size and attribute it per assembly
+        env:
+          RID: ${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+          mkdir -p native-measurements
+          binary="native/publish/${RID}/dg"
+          if [ "${RUNNER_OS}" = Windows ]; then
+            binary="${binary}.exe"
+          fi
+          raw="$(wc -c < "$binary" | tr -d ' ')"
+          if command -v zstd > /dev/null; then
+            zstd_bytes="$(zstd -19 -c "$binary" | wc -c | tr -d ' ')"
+            printf '{\n\t"rawBytes": %s,\n\t"zstdBytes": %s\n}\n' "$raw" "$zstd_bytes" > "native-measurements/native-${RID}.json"
+          else
+            printf '{\n\t"rawBytes": %s\n}\n' "$raw" > "native-measurements/native-${RID}.json"
+          fi
+          mstat="$(find native/src/Dg.Cli/obj -name dg.mstat | head -n 1)"
+          dotnet run --project native/tools/Dg.SizeReport -c Release -- --mstat "$mstat" --json > "native-measurements/native-size-report-${RID}.json"
+          cat "native-measurements/native-${RID}.json"
+
+      - name: Measure peak memory and latency of the front door cases
+        run: >
+          bun scripts/native-ram-budget.ts
+          --dg native/publish/${{ matrix.rid }}/dg${{ runner.os == 'Windows' && '.exe' || '' }}
+          --rid ${{ matrix.rid }}
+          --runs 200
+          ${{ matrix.rid == 'linux-x64' && '--gate' || '' }}
+          --json native-measurements/native-ram-${{ matrix.rid }}.json
+
+      - name: Check the native budgets with the ratchet
+        if: matrix.rid == 'linux-x64'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: bun scripts/budget-ratchet.ts --measured native-measurements
+
+      - name: Upload the budget measurements
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-budget-measurements-${{ matrix.rid }}
+          path: native-measurements/*.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload the stripped symbols
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-dg-symbols-${{ matrix.rid }}
+          path: |
+            native/publish/${{ matrix.rid }}/dg.dbg
+            native/publish/${{ matrix.rid }}/dg.pdb
+            native/publish/${{ matrix.rid }}/dg.dSYM
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload the binary
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-dg-${{ matrix.rid }}
+          path: |
+            native/publish/${{ matrix.rid }}/dg
+            native/publish/${{ matrix.rid }}/dg.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  size-comment:
+    name: native-size-comment
+    needs: native
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Download the linux-x64 size report
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-budget-measurements-linux-x64
+          path: native-measurements
+
+      - name: Post or update the native size comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          {
+            echo "<!-- native-size -->"
+            echo "### Native dg size by assembly (linux-x64)"
+            echo
+            jq -r '"Total attributed: \(.totalBytes) bytes", ""' native-measurements/native-size-report-linux-x64.json
+            echo "| Assembly | Bytes |"
+            echo "| --- | ---: |"
+            jq -r '.assemblies | to_entries | .[:10][] | "| \(.key) | \(.value) |"' native-measurements/native-size-report-linux-x64.json
+          } > comment.md
+          id=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
+            --jq '[.[] | select(.body | contains("<!-- native-size -->"))][0].id // empty')
+          if [ -n "$id" ]; then
+            gh api --method PATCH "repos/$REPO/issues/comments/$id" -F body=@comment.md
+          else
+            gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" -F body=@comment.md
+          fi

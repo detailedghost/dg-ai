@@ -1,0 +1,12 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "pw-ext-browser-result",
+		"token": "t-1",
+		"requestId": "req-1",
+		"ok": true
+	},
+	"error": "pw-ext response must be an object"
+}

@@ -1,0 +1,8 @@
+{
+	"exit": 0,
+	"stdout": "",
+	"stderr": "",
+	"after": {
+		"repo/COMMIT_EDITMSG": "subject\n\n#a\n;b\n@c\n!d\n$e\n%f\n^g\n&h\n|i\n:j\n"
+	}
+}

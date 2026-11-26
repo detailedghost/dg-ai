@@ -1,0 +1,8 @@
+name = "nightly-report"
+version = "2.0.0"
+kind = "job"
+transport = "tcp"
+endpoint = "127.0.0.1:7431"
+
+[entry]
+command = "nightly-report"

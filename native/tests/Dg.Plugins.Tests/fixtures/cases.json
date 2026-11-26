@@ -1,0 +1,723 @@
+{
+	"bundles": {
+		"alpha": {
+			"SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
+			"refs/a.md": "reference a\n",
+			"plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n"
+		},
+		"beta": {
+			"skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
+			"skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
+			"skills/two/notes.txt": "café \"quoted\" notes\n"
+		},
+		"gamma": {
+			"SKILL.md": "---\nname: gamma\n---\nGamma.\n"
+		},
+		"q\"x\\y é": {
+			"SKILL.md": "---\nname: q\n---\nQ.\n"
+		}
+	},
+	"cases": [
+		{
+			"name": "list-empty",
+			"argv": [
+				"plugin",
+				"list"
+			]
+		},
+		{
+			"name": "list-json-empty",
+			"argv": [
+				"plugin",
+				"list",
+				"--json"
+			]
+		},
+		{
+			"name": "list-unapproved",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/alpha"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"list"
+			]
+		},
+		{
+			"name": "list-json-unapproved",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/alpha"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"list",
+				"--json"
+			]
+		},
+		{
+			"name": "list-approved-enabled",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/alpha"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"alpha",
+						"--approve"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"enable",
+						"alpha"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"list"
+			]
+		},
+		{
+			"name": "list-json-mixed",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/alpha"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/beta"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"beta",
+						"--approve"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"enable",
+						"beta"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"gamma",
+						"--approve"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"list",
+				"--json"
+			]
+		},
+		{
+			"name": "list-mixed-text",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/alpha"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/beta"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"beta",
+						"--approve"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"enable",
+						"beta"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"gamma",
+						"--approve"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"list"
+			]
+		},
+		{
+			"name": "list-tampered-shows-unapproved",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"gamma",
+						"--approve"
+					]
+				},
+				{
+					"write": {
+						"data/plugins/gamma/src/SKILL.md": "edited\n"
+					}
+				}
+			],
+			"argv": [
+				"plugin",
+				"list"
+			]
+		},
+		{
+			"name": "list-json-escapes-source",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/q\"x\\y é",
+						"--name",
+						"qx"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"list",
+				"--json"
+			]
+		},
+		{
+			"name": "list-extra-argument",
+			"native": false,
+			"argv": [
+				"plugin",
+				"list",
+				"extra"
+			]
+		},
+		{
+			"name": "list-unknown-option",
+			"native": false,
+			"argv": [
+				"plugin",
+				"list",
+				"--yaml"
+			]
+		},
+		{
+			"name": "list-config-missing-with-plugins",
+			"native": false,
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"rm": "config/config.toml"
+				}
+			],
+			"argv": [
+				"plugin",
+				"list"
+			]
+		},
+		{
+			"name": "list-config-syntax-error",
+			"native": false,
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"write": {
+						"config/config.toml": "[plugins.gamma\n"
+					}
+				}
+			],
+			"argv": [
+				"plugin",
+				"list"
+			]
+		},
+		{
+			"name": "verify-unapproved",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/alpha"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"verify",
+				"alpha"
+			]
+		},
+		{
+			"name": "verify-unapproved-no-manifest",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/beta"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"verify",
+				"beta"
+			]
+		},
+		{
+			"name": "verify-approved",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/alpha"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"alpha",
+						"--approve"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"verify",
+				"alpha"
+			]
+		},
+		{
+			"name": "verify-approve-refused-without-terminal",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/alpha"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"verify",
+				"alpha",
+				"--approve"
+			]
+		},
+		{
+			"name": "verify-approve-from-unapproved",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/alpha"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"verify",
+				"alpha",
+				"--approve"
+			],
+			"person": true
+		},
+		{
+			"name": "verify-approve-nested-skills",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/beta"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"verify",
+				"beta",
+				"--approve"
+			],
+			"person": true
+		},
+		{
+			"name": "verify-approve-enabled-registers-hosts",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/beta"
+					]
+				},
+				{
+					"write": {
+						"config/config.toml": "[plugins.beta]\nenabled = true\n"
+					}
+				}
+			],
+			"argv": [
+				"plugin",
+				"verify",
+				"beta",
+				"--approve"
+			],
+			"person": true
+		},
+		{
+			"name": "verify-approve-again-enabled",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/beta"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"beta",
+						"--approve"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"enable",
+						"beta"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"verify",
+				"beta",
+				"--approve"
+			],
+			"person": true
+		},
+		{
+			"name": "verify-approve-disabled-removes-owned-host-skills",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/beta"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"beta",
+						"--approve"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"enable",
+						"beta"
+					]
+				},
+				{
+					"write": {
+						"config/config.toml": "[plugins.beta]\nenabled = false\n"
+					}
+				}
+			],
+			"argv": [
+				"plugin",
+				"verify",
+				"beta",
+				"--approve"
+			],
+			"person": true
+		},
+		{
+			"name": "verify-approve-foreign-host-skill",
+			"native": false,
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/beta"
+					]
+				},
+				{
+					"write": {
+						"config/config.toml": "[plugins.beta]\nenabled = true\n",
+						".claude/skills/two/SKILL.md": "foreign\n"
+					}
+				}
+			],
+			"argv": [
+				"plugin",
+				"verify",
+				"beta",
+				"--approve"
+			],
+			"person": true
+		},
+		{
+			"name": "verify-approve-claude-config-dir",
+			"env": {
+				"CLAUDE_CONFIG_DIR": "<home>/cc",
+				"CODEX_HOME": "<home>/cx"
+			},
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"write": {
+						"config/config.toml": "[plugins.gamma]\nenabled = true\n"
+					}
+				}
+			],
+			"argv": [
+				"plugin",
+				"verify",
+				"gamma",
+				"--approve"
+			],
+			"person": true
+		},
+		{
+			"name": "verify-tampered",
+			"native": false,
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"gamma",
+						"--approve"
+					]
+				},
+				{
+					"write": {
+						"data/plugins/gamma/src/SKILL.md": "edited\n"
+					}
+				}
+			],
+			"argv": [
+				"plugin",
+				"verify",
+				"gamma"
+			]
+		},
+		{
+			"name": "verify-tampered-approve",
+			"native": false,
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"gamma",
+						"--approve"
+					]
+				},
+				{
+					"write": {
+						"data/plugins/gamma/src/SKILL.md": "edited\n"
+					}
+				}
+			],
+			"argv": [
+				"plugin",
+				"verify",
+				"gamma",
+				"--approve"
+			],
+			"person": true
+		},
+		{
+			"name": "verify-not-installed",
+			"argv": [
+				"plugin",
+				"verify",
+				"nope"
+			]
+		},
+		{
+			"name": "verify-bad-name",
+			"native": false,
+			"argv": [
+				"plugin",
+				"verify",
+				"Bad_Name"
+			]
+		},
+		{
+			"name": "verify-path-name",
+			"native": false,
+			"argv": [
+				"plugin",
+				"verify",
+				"../x"
+			]
+		},
+		{
+			"name": "verify-missing-name",
+			"native": false,
+			"argv": [
+				"plugin",
+				"verify"
+			]
+		},
+		{
+			"name": "verify-extra-argument",
+			"native": false,
+			"argv": [
+				"plugin",
+				"verify",
+				"a",
+				"b"
+			]
+		},
+		{
+			"name": "verify-unknown-option",
+			"native": false,
+			"argv": [
+				"plugin",
+				"verify",
+				"a",
+				"--force"
+			]
+		},
+		{
+			"name": "verify-symlink-in-source",
+			"native": false,
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"symlink": {
+						"data/plugins/gamma/src/link": "SKILL.md"
+					}
+				}
+			],
+			"argv": [
+				"plugin",
+				"verify",
+				"gamma"
+			]
+		}
+	]
+}

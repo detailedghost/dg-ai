@@ -89,6 +89,7 @@ function childEnv(home: string, extra: Record<string, string> = {}): Record<stri
 	delete env.DG_PLUGIN_ROOT;
 	env.HOME = home;
 	env.DG_HOME = home;
+	env.DG_FRONT = "0";
 	env.LC_ALL = "C";
 	return { ...env, ...extra };
 }
@@ -444,7 +445,7 @@ describe.skipIf(process.env.DG_BOOTSTRAP_E2E !== "1")("bootstrap.sh --skills-onl
 	test("copies the repository skills, then installs only the compiled dg program", async () => {
 		const dest = join(mkdtempSync(join(tmpdir(), "dg-skills-boot-")), "skills");
 		try {
-			const result = await runBootstrap({ args: ["--skills-only"], env: { DG_SKILLS_DEST: dest } });
+			const result = await runBootstrap({ args: ["--skills-only"], env: { DG_SKILLS_DEST: dest, DG_FRONT: "0" } });
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
 			const lines = result.stdout.trim().split("\n");
 			const summaryAt = lines.indexOf(BOOTSTRAP_SUMMARY);

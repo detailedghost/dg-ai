@@ -9,3 +9,9 @@
 - [2026-11-23] Import nostr-tools by subpath; the index pulls nip04 and the noble AES tables.
 - [2026-11-23] `require()` of a package keeps it in the importer's chunk; use `await import()` for heavy drivers.
 - [2026-11-23] `Bun.YAML.parse` is native; the `yaml` package plus the JIT cost adr lint about 12 MB.
+- [2026-11-25] C# front door: measure allocations with GC.GetAllocatedBytesForCurrentThread over N calls after a warmup; pin the result as a ceiling in a test through native/tests/Shared/AllocationProbe.cs. Use TotalBytesPerOp in a non-parallel collection when the path awaits, because continuations run on pool threads.
+- [2026-11-25] C# hot paths: PathFlavor and config key checks work on spans with stackalloc (ArrayPool above 512 chars); JsonProperty.NameEquals(u8) avoids a string per JSON property; cache SpellingTable per locale.
+- [2026-11-25] ProcessEnvironment.Capture cannot go below the runtime's Hashtable snapshot (about 30 KB); keep callers from capturing twice.
+- [2026-11-25] Heap leak tests: `bun:jsc` heapStats after two `Bun.gc(true)`, median slope of the last 3 batches over 1500 B/iteration fails (`@dg/dg-daemon/heap-slope`). Single batches swing by 2 MB, so never gate on one.
+- [2026-11-25] The fake phone pool keeps every filter and relay list; use a recording-free pool in heap tests or the fixture looks like a listener leak. Listener id sets plateau at STRANGER_ID_LIMIT (10000), about 3.7 MB.
+- [2026-11-25] SessionRegistry keeps closed records for 10 minutes by design; a session churn probe grows until `reapExpired` runs.

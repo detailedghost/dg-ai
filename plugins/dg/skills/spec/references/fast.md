@@ -5,6 +5,8 @@ fan-out, uses **built-in Claude plan mode** as its one approval gate, and then b
 **sequentially in the main loop** — compacting between them instead of spending a subagent wave per
 slice. The bundle is still durable, so a fast run is resumable with `/dg:spec -s` if it is interrupted.
 
+Reach for full plan mode when the feature spans more than three or four slices or touches unfamiliar architecture.
+
 `FAST_MODE = HAS(--fast | -f)`. Mutually exclusive with `-s` and with `--proxy` — if a pair is present, stop with an
 error that names both flags. `NO_WORKTREE = HAS(-T | --no-worktree)`, valid **only** alongside `--fast`.
 

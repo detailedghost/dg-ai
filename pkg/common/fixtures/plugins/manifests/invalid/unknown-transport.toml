@@ -1,0 +1,8 @@
+name = "bad-transport"
+version = "1.0.0"
+kind = "hook"
+transport = "smoke"
+endpoint = "x"
+
+[entry]
+command = "x"

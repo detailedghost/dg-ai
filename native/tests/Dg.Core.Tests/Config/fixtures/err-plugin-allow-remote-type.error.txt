@@ -1,0 +1,1 @@
+dg config: config.toml:2: plugins.acme.allow_remote must be a boolean, got 1. Next: run dg config edit, or dg config set plugins.acme.allow_remote <value>.

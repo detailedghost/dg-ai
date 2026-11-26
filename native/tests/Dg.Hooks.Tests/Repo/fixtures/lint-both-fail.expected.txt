@@ -1,0 +1,13 @@
+--- exit
+2
+--- stdout
+--- stderr
+/proj/.agents/spec/027_x/plan.md
+spec validate failed (exit 3):
+bad
+
+spec lint-waves failed (exit 2):
+wave 2 overlaps wave 1
+--- calls
+call: spec lint-waves /proj/.agents/spec/027_x/plan.md (cwd=/proj)
+call: spec validate /proj/.agents/spec/027_x/plan.md (cwd=/proj)

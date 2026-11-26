@@ -1,0 +1,8 @@
+== log 644
+mdformat <ROOT>/work/docs/spec-notes.md | cwd=-
+
+== work/.git/HEAD 644
+
+== work/docs/spec-notes.md 644
+# t
+

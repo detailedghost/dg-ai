@@ -15,6 +15,7 @@ pkg/
   skills-cli/  CLI framework — compiled into `dg`
   launcher/    @dg/launcher — compiled program build, bundle tarball for the 6.3 bridge
   skills-test/ smoke tests — skills reference the right packages, install logic
+native/        C# NativeAOT front door (dg); Dg.slnx, src/, tests/, budgets/
 plugins/dg/
   skills/      AI instruction layer — SKILL.md + references for each skill
                (the canonical tree; both .claude-plugin/plugin.json and
@@ -33,6 +34,9 @@ git clone https://github.com/detailedghost/dg-ai
 cd dg-ai
 bun install        # wires the @dg/* workspace symlinks across every package
 ```
+
+Bun builds and tests every TypeScript package. Building `native/` also needs the
+.NET SDK; see [native/ (the C# front door)](#native-the-c-front-door).
 
 ## Per-Package Commands
 
@@ -83,6 +87,11 @@ A key is one of `linux-x64`, `linux-x64-baseline`, `linux-arm64`, `darwin-x64`,
 `darwin-arm64`, `windows-x64`, `windows-x64-baseline` and `windows-arm64`. The
 asset is `dg-<key>`, with `.exe` on Windows. A compiled program runs with
 `./dg-linux-x64 --version`.
+
+The release also ships the C# front door as `dg-front-<rid>`, with `.exe` on
+Windows, for `linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64`, `win-x64` and
+`win-arm64`. The two x64 baseline keys share the x64 front door. Install puts the
+front door at `dg` and the Bun program beside it as `dg-core`.
 
 Without `--compiled`, the build writes `dist/lib/dg.js`, `dist/lib/chunks/` and
 `dist/dg-lib-<v>.tar.gz`. The release ships that tarball and `runtime.json` for
@@ -310,6 +319,90 @@ repositories with local bare remotes and isolated durable state.
 Tests that start a program set `DG_PATH_FENCE` to the temp folder, so a program
 refuses a dg folder outside it.
 
+### native/ (the C# front door)
+
+`native/` holds the front door, a NativeAOT program that runs at `dg`. It runs
+the hot commands itself and runs `dg-core` (the Bun program) for the rest. See
+[ADR 0058](adr/0058-dg-moves-to-c-nativeaot-in-stages.md) and
+[Install layout](install.md#install-layout) for what it runs and how a user turns
+it off (`DG_FRONT=0` or `front.enabled = false`).
+
+Bun stays the dev toolchain. The extension (`pkg/extension`), the sidecar daemons
+and every TypeScript package still build, test and ship with Bun. The .NET SDK
+only builds `native/`.
+
+#### Prerequisites
+
+- The .NET SDK 11.0.100. `native/global.json` pins it, rolls forward to the
+  latest feature band, and selects the Microsoft.Testing.Platform test runner.
+- Bun, to generate two files from the TypeScript sources (below).
+- A native toolchain for `dotnet publish`, which compiles ahead of time.
+  `dotnet build` and `dotnet test` need none.
+  - Linux: `clang` and the zlib development package (`zlib1g-dev` on Debian and
+    Ubuntu).
+  - macOS: Xcode command line tools (`xcode-select --install`).
+  - Windows: Visual Studio Build Tools with the "Desktop development with C++"
+    workload.
+
+#### Build and test
+
+Two generated files feed the build: the route table and the completion tree. Git
+ignores both. Generate them from the repository root, then build and test from
+`native/`:
+
+```bash
+bun install --frozen-lockfile
+bun scripts/native-routes.ts && bun scripts/native-completion.ts
+cd native
+dotnet build
+dotnet test --project tests/Dg.Routing.Tests
+```
+
+`dotnet build` builds `Dg.slnx`. Run it again after you change a command or the
+completion tree, and run both generators first. `dotnet test --project <dir>`
+runs one test project. With no `--project`, `dotnet test` runs the whole
+solution. The test projects are `Dg.Completion.Tests`, `Dg.Config.Tests`,
+`Dg.Core.Tests`, `Dg.Hooks.Tests`, `Dg.Parity.Tests`, `Dg.Plugins.Tests` and
+`Dg.Routing.Tests`, all under `native/tests/`. The parity tests run the same
+fixtures against the Bun program, so they need Bun on `PATH`.
+
+The commands are the same on Linux, macOS and Windows. On Windows, run them in
+Git Bash or PowerShell 7; `bun` and `dotnet` take the same arguments.
+
+#### Publish
+
+```bash
+cd native
+dotnet publish src/Dg.Cli -r <rid> -c Release -p:Version=<version>
+```
+
+`<rid>` is `linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64`, `win-x64` or
+`win-arm64`. NativeAOT does not cross-compile across operating systems, so
+publish on the platform you target. The binary lands in
+`src/Dg.Cli/bin/Release/net11.0/<rid>/publish/dg` (`dg.exe` on Windows).
+`-p:Version` sets what `dg --version` prints. A release build is about 4.7 MB.
+Run it with `./dg --version`.
+
+The build treats warnings as errors, so a trim or AOT warning (`IL2xxx` or
+`IL3xxx`) fails it. `native/bin/`, `native/obj/` and `native/**/publish/` are
+git-ignored. Delete them when you finish. Run a published `dg` with `DG_FRONT=0`
+to skip the native commands, or place `dg-core` next to it to test the exec path.
+
+#### CI
+
+`native.yml` runs the generators, `dotnet test native/Dg.slnx -c Release` and an
+AOT publish on six runners, one for each RID, when a PR changes `native/`. It
+uploads the binary as `native-dg-<rid>` for 7 days.
+
+### Lean gates
+
+The lean gates keep the program small and fast: size, RAM, latency and skill
+tokens. Each has a budget in `scripts/*.json`, `native/budgets/*.json` or
+`native/bench/Dg.Bench/budgets/*.json`. [lean-baseline.md](lean-baseline.md) lists the numbers
+and the exact command to re-run each gate on your machine. A pull request that
+raises a budget needs a `Budget-Increase:` line in its body. One that removes a budget
+entry needs a `Budget-Removal: <key> because <reason>` line.
+
 ### pkg/dg (the dg command)
 
 `dg` routes every command of the three command trees as `dg <command>`.
@@ -438,7 +531,9 @@ bun test       # install logic + skill manifests + CLI smoke
 | `skills-blt` | PR: skills-cli, dg, inbox, ssms, channel-review, dg-agent, dg-daemon, extension, common, skills, skills-test, bun.lock | required |
 | `dg-daemon-blt` | PR: dg-daemon, common | required |
 | `dg-agent-blt` | PR: dg-agent, dg-daemon, common | required |
-| `release` | push master, no path filter; manual dispatch | one `vX.Y.Z` release: eight compiled `dg` programs, `dg-lib-<v>.tar.gz` and `runtime.json` (for the 6.3 bridge), the demo narration zip, 2 extension zips, both bootstraps, `SHA256SUMS` |
+| `native` | PR: native, scripts/native-*, completion | AOT build and tests on six runners |
+| `compiled-dg` | every PR | lean gates: size, RAM, latency, skill tokens; see [lean-baseline.md](lean-baseline.md) |
+| `release` | push master, no path filter; manual dispatch | one `vX.Y.Z` release: eight compiled `dg` programs and six `dg-front-<rid>` front doors, each with a `.zst` and `.gz` copy, the `dg-pw-<v>.tar.zst` and `dg-db-<v>.tar.zst` companions, `dg-lib-<v>.tar.gz` and `runtime.json` (for the 6.3 bridge), the demo narration zip, 2 extension zips, both bootstraps, `SHA256SUMS` |
 
 The skills-cli tests inside `skills-blt` (the workflow that also lints and tests channel-review) run as four shards, `skills-cli (1)` through `skills-cli (4)`.
 Each shard and the job that follows it has a 30 minute backstop.

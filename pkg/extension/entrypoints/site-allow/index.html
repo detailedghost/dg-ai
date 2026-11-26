@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeeGee — Allow site</title>
+  </head>
+  <body>
+    <main>
+      <div class="panel">
+        <h2 class="sec-h" id="title">Allow the agent on this site?</h2>
+        <p class="note" id="site"></p>
+        <p class="note">The agent can load and use pages on this site, in its own window, until this dg session ends.</p>
+        <p class="note" id="gone" hidden>This request was answered or has expired. You can close this window.</p>
+        <label class="note" id="phi-row" hidden><input id="phi" type="checkbox" /> <span>This site shows patient data (PHI). Refuse snapshots, screenshots and every verb that reads page data there.</span></label>
+        <div class="flex flex-wrap items-center gap-3" id="actions" hidden>
+          <button class="btn" id="allow" type="button">Allow</button>
+          <button class="btn" id="deny" type="button">Deny</button>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

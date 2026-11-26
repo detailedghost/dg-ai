@@ -21,6 +21,31 @@ export type ApprovalWindows = {
 	onRemoved(listener: (windowId: number) => void): void;
 };
 
+export type PopupWindowApi = {
+	windows?: {
+		create(props: { url: string; type: "popup"; width: number; height: number; focused: true }): Promise<{ id?: number }>;
+		remove(windowId: number): Promise<unknown>;
+		onRemoved?: { addListener(listener: (windowId: number) => void): void };
+	};
+};
+
+export type PopupSize = { width: number; height: number };
+
+const APPROVAL_POPUP: PopupSize = { width: 460, height: 380 };
+
+/** Opens the extension's own prompt pages as focused popup windows. */
+export function popupWindows(api: PopupWindowApi, { width, height }: PopupSize = APPROVAL_POPUP): ApprovalWindows {
+	return {
+		async open(url) {
+			return (await api.windows?.create({ url, type: "popup", width, height, focused: true }))?.id;
+		},
+		async close(windowId) {
+			await api.windows?.remove(windowId);
+		},
+		onRemoved: (listener) => api.windows?.onRemoved?.addListener(listener),
+	};
+}
+
 type Pending = {
 	request: ApprovalRequest;
 	resolve(choice: ApprovalChoice): void;
@@ -104,12 +129,7 @@ let shared: Approvals | undefined;
 export function browserApprovals(): Approvals {
 	shared ??= createApprovals({
 		pageUrl: (path) => browser.runtime.getURL(path as never),
-		windows: {
-			open: async (url) =>
-				(await browser.windows.create({ url, type: "popup", width: 460, height: 380, focused: true }))?.id,
-			close: (windowId) => browser.windows.remove(windowId),
-			onRemoved: (listener) => browser.windows.onRemoved.addListener(listener),
-		},
+		windows: popupWindows(browser as unknown as PopupWindowApi),
 	});
 	return shared;
 }

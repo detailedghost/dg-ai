@@ -1,0 +1,11 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"sessionId": "s-1",
+		"protocolVersion": 1,
+		"type": "proto-browser-progress",
+		"token": "t-1",
+		"requestId": "req-1",
+		"status": "loading page"
+	}
+}

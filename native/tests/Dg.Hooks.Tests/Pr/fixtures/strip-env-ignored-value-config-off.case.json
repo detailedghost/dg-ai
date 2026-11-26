@@ -1,0 +1,22 @@
+{
+	"hook": "strip-ai-coauthors",
+	"posixOnly": true,
+	"args": [
+		"$CWD/repo/COMMIT_EDITMSG"
+	],
+	"cwd": "repo",
+	"env": {
+		"PATH": "$CWD/bin:/usr/bin:/bin",
+		"GIT_CONFIG_GLOBAL": "/dev/null",
+		"GIT_CONFIG_NOSYSTEM": "1",
+		"DG_STRIP_AI_COAUTHORS": "yes"
+	},
+	"config": "",
+	"files": {
+		"repo/.git/HEAD": "ref: refs/heads/main\n",
+		"repo/.git/objects/": "",
+		"repo/.git/refs/": "",
+		"repo/.git/config": "[core]\n\trepositoryformatversion = 0\n",
+		"repo/COMMIT_EDITMSG": "subject\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
+	}
+}

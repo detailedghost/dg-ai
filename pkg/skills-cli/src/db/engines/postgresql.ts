@@ -1,6 +1,7 @@
 import type { ConnectionConfig } from "../credentials";
 import type { QueryResult } from "../output";
 import type { DbSchemaResult, DbSchemaTable } from "../types";
+import { loadCompanion } from "../../install/companion";
 
 export interface PgField {
 	name: string;
@@ -26,8 +27,7 @@ let pgModule: PgModule | undefined;
 
 async function getPg(): Promise<PgModule> {
 	if (!pgModule) {
-		const mod = (await import("pg")) as unknown as { default?: PgModule } & PgModule;
-		pgModule = mod.default ?? mod;
+		pgModule = (await loadCompanion("db")).pg as unknown as PgModule;
 	}
 	return pgModule;
 }

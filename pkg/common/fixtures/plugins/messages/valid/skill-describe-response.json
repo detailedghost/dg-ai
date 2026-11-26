@@ -1,0 +1,1 @@
+{ "route": "/v1/skill/describe", "direction": "response", "body": { "name": "release-notes", "description": "Draft release notes.", "files": ["SKILL.md"] } }

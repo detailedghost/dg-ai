@@ -27,10 +27,21 @@ type Execve = (file: string, args: string[], env: Record<string, string | undefi
 const FFI_COMMANDS: ReadonlySet<string> = new Set(["jot", "stat", "install", "update", "upgrade", "extension"]);
 const GROUP_WORDS: ReadonlySet<string> = new Set(["dg", "skills", "dg-skills"]);
 
+function commandWords(argv: readonly string[]): string[] {
+	return argv.filter((word) => !GROUP_WORDS.has(word));
+}
+
 /** True for a command that reaches bun:ffi, which needs the JIT. */
 function needsFfi(argv: readonly string[]): boolean {
-	const command = argv.find((word) => !GROUP_WORDS.has(word));
+	const command = commandWords(argv)[0];
 	return command !== undefined && FFI_COMMANDS.has(command);
+}
+
+/** True for a command whose RSS stays in budget with the JIT on, so the re-exec would only add time. */
+function staysInBudgetWithJit(argv: readonly string[]): boolean {
+	const bridged = isOldName(argv[0]) || argv[0] === "dg";
+	const [first, second] = bridged ? argv.slice(1) : argv;
+	return first === "--version" || (first === "hooks" && second === "run");
 }
 
 /** Re-executes dg once with the JSC JIT off; the pid stays the same, and DG_JIT=1 skips it. */
@@ -38,13 +49,15 @@ export async function reexecWithoutJit(
 	argv: readonly string[],
 	env: Record<string, string | undefined> = process.env,
 	execve: Execve | undefined = process.platform === "win32" ? undefined : process.execve?.bind(process),
+	target = `${process.platform}-${process.arch}`,
 ): Promise<void> {
 	if (env[REEXEC_MARK] !== undefined && env[JIT_ENV] === "0") {
 		delete env[JIT_ENV];
 		delete env[REEXEC_MARK];
 		return;
 	}
-	if (typeof execve !== "function" || env[JIT_ENV] !== undefined || env[KEEP_JIT] === "1" || needsFfi(argv)) return;
+	const keepsJit = target === "darwin-arm64" || typeof execve !== "function";
+	if (keepsJit || env[JIT_ENV] !== undefined || env[KEEP_JIT] === "1" || needsFfi(argv) || staysInBudgetWithJit(argv)) return;
 	try {
 		const { isCompiled } = await import("@dg/common/node/program");
 		const execArgv = [process.argv0, ...(isCompiled() ? [] : [Bun.main]), ...argv];
@@ -62,6 +75,42 @@ function invokedName(argv0: string | undefined): string | undefined {
 		?.replace(/\.exe$/i, "");
 }
 
+export function isVersionOnly(argv: readonly string[]): boolean {
+	return argv.length === 1 && argv[0] === "--version";
+}
+
+/** Inlined, not imported: a shared module would become a static chunk import of the entry. Matches buildVersion in @dg/common/build-version. */
+function printVersion(): Promise<number> {
+	return new Promise((resolve) => {
+		process.stdout.write(`${process.env.DG_BUILD_VERSION || "dev"}\n`, () => resolve(0));
+	});
+}
+
+/** Answers --version, hooks and completion without the flat route tree; undefined means the full program must run. */
+async function runFast(args: readonly string[]): Promise<number | undefined> {
+	if (isVersionOnly(args)) return printVersion();
+	if (args[0] !== "hooks" && args[0] !== "__complete") return undefined;
+	const { fastRoute, runFastRoute } = await import("@dg/dg/fast-route");
+	switch (fastRoute(args)) {
+		case "hooks": {
+			const { normalizeDgHome } = await import("@dg/common/node/dg-paths");
+			normalizeDgHome();
+			return runFastRoute("hooks", args);
+		}
+		case "completion": {
+			const words = args.slice(1);
+			if (words.length < 2) return undefined;
+			const { completeFast } = await import("@dg/skills-cli/completion/fast");
+			const lines = completeFast(words);
+			if (lines.length === 0) return undefined;
+			process.stdout.write(`${lines.join("\n")}\n`);
+			return 0;
+		}
+		default:
+			return undefined;
+	}
+}
+
 /** Runs dg with `argv`; an old program name as first word is the 6.3 bridge, as invoked name it exits 1. */
 export async function dispatch(argv: readonly string[], argv0?: string): Promise<number> {
 	const invoked = invokedName(argv0);
@@ -74,12 +123,13 @@ export async function dispatch(argv: readonly string[], argv0?: string): Promise
 	const name: ProgramName = bridge ? (first as ProgramName) : "dg";
 	const args = bridge ? rest : [...argv];
 	if (isOldName(name)) process.stderr.write(removed(name, args));
+	if (!isOldName(first)) {
+		const code = await runFast(args);
+		if (code !== undefined) return code;
+	}
 	const { normalizeDgHome } = await import("@dg/common/node/dg-paths");
 	normalizeDgHome();
-	if (args.length === 1 && args[0] === "--version") {
-		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
-		return 0;
-	}
+	if (isVersionOnly(args)) return printVersion();
 	const { setProgramName } = await import("@dg/common/node/program");
 	setProgramName(name);
 	if (bridge) {

@@ -1,0 +1,1 @@
+dg config: config.toml:2: refs.default_repo must be a string, got true. Next: run dg config edit, or dg config set refs.default_repo <value>.

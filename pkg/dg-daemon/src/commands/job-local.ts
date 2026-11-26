@@ -12,6 +12,7 @@ import {
 	resolveDgPaths,
 } from "@dg/common/node";
 import { JOB_NAME_RULE, parseJobEntry } from "../jobs/config";
+import { withManifestPin } from "../jobs/plugin-manifest";
 import { declarationHash, describeCredentials, type DeclaredJob } from "../jobs/declaration";
 import { sanitize } from "../jobs/sanitize";
 import { findRecordByJob, type PathSourceRecord, writeSource } from "../jobs/sources";
@@ -166,7 +167,7 @@ async function addFolder(
 	const { config, registry } = readState(paths);
 	if (registry[source]) alreadyAdded(source, registry[source]);
 	assertPrefixFree(source, config, registry, "job add:");
-	const { pkg, declaration } = readFolderDeclared(paths, source, real, "job add:");
+	const { pkg, manifest, declaration } = readFolderDeclared(paths, source, real, "job add:");
 	for (const { name } of declaration.jobs) {
 		if (isInTable(config, name)) stop(`a job named "${name}" already exists`);
 	}
@@ -207,13 +208,16 @@ async function addFolder(
 	}
 
 	await ensureMigrated(paths);
-	const record: PathSourceRecord = {
-		kind: "path",
-		path: real,
-		jobs: resolved.jobs.map(({ name }) => name),
-		declarationHash: declarationHash(pkg.dg),
-		credentials: declaration.credentials,
-	};
+	const record: PathSourceRecord = withManifestPin(
+		{
+			kind: "path",
+			path: real,
+			jobs: resolved.jobs.map(({ name }) => name),
+			declarationHash: declarationHash(pkg.dg),
+			credentials: declaration.credentials,
+		},
+		manifest,
+	);
 	await withConfigLock(paths, () => commitToDisk(paths, source, record, resolved.jobs));
 
 	if (real !== given) say(`stored real path ${real}`);
@@ -266,7 +270,7 @@ export async function updateLocal(name: string, deps: JobSourceDeps): Promise<vo
 	}
 	const { source, record } = found as { source: string; record: PathSourceRecord };
 	if (!existsSync(record.path)) stop(`no folder at ${record.path}`, UPDATE_PREFIX);
-	const { pkg, declaration } = readFolderDeclared(paths, source, record.path, UPDATE_PREFIX);
+	const { pkg, manifest, declaration } = readFolderDeclared(paths, source, record.path, UPDATE_PREFIX);
 	const known = new Set(record.jobs);
 	const names = declaration.jobs.map((job) => job.name);
 	const clash = (config: Record<string, unknown>) => {
@@ -292,13 +296,16 @@ export async function updateLocal(name: string, deps: JobSourceDeps): Promise<vo
 	const before = describeCredentials(declaredJobsOf(first.config, record.jobs), record.credentials);
 	const removed = record.jobs.filter((job) => !names.includes(job));
 	const marks = resetSetupOnSourceChange(record, declaration.credentials, declaration.jobs);
-	const next: PathSourceRecord = {
-		...record,
-		declarationHash: declarationHash(pkg.dg),
-		jobs: names,
-		credentials: declaration.credentials,
-		...(marks.setupDone === undefined ? {} : { setupDone: marks.setupDone }),
-	};
+	const next: PathSourceRecord = withManifestPin(
+		{
+			...record,
+			declarationHash: declarationHash(pkg.dg),
+			jobs: names,
+			credentials: declaration.credentials,
+			...(marks.setupDone === undefined ? {} : { setupDone: marks.setupDone }),
+		},
+		manifest,
+	);
 	let outcome = { replaced: [] as string[], created: [] as string[] };
 
 	await withConfigLock(paths, async () => {

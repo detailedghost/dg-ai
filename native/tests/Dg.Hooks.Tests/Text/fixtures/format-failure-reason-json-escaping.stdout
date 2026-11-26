@@ -1,0 +1,1 @@
+{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"format: ruff failed (status 4): bad \"quote\" \\ back\ttab é 😀 </x> & \u0001 "}}

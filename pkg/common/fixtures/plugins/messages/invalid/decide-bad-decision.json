@@ -1,0 +1,1 @@
+{ "route": "/v1/hook/decide", "direction": "response", "body": { "decision": "maybe" }, "expect": { "key": "body.decision", "includes": "allow, deny, ask" } }

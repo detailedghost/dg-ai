@@ -1,5 +1,10 @@
 # Browser tabs and extension
 
+`dg pw` picks its browser per call: `auto` (the
+default) drives your real browser through the extension when it is paired and
+connected, and a Playwright browser otherwise. `--ext`, `--local`, `DG_BROWSER`
+and `browser.mode` force one. See [browser mode](pw.md#browser-mode-auto-ext-and-local).
+
 Tab batches are pw verbs. Ask `/dg:pw` in Claude Code or `$dg:pw` in Codex, or
 run the commands below in a terminal.
 
@@ -50,6 +55,12 @@ Grouping is **opt-in per batch** with `--ext`: `pw batch-open --ext` and `pw lau
 Group color is set in the extension's Options (default random per group); the name comes from
 `--group` (default `PRs`). `demo` uses a `#_demo=` marker, while `proto` uses a
 compressed `#_proto=` marker for its local CLI/extension handoff.
+
+Each dg session that drives your browser gets its own agent window, a
+separate unfocused window, so agent tabs never mix with the tabs you work in.
+The first visit to each new site opens a popup that asks you to allow it. A PHI
+checkbox on that popup makes every verb that reads page data refuse the site. See
+the [pw guide](pw.md#real-browser---ext).
 
 Tab groups that `dg pw --ext` makes for an agent take their title from the
 agent identity and the first four characters of the session id. They take their

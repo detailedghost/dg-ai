@@ -1,0 +1,7 @@
+--- exit
+0
+--- stdout
+--- stderr
+--- calls
+call: spec lint-waves /proj/.agents/spec/027_x/plan.md (cwd=/proj)
+call: spec validate /proj/.agents/spec/027_x/plan.md (cwd=/proj)

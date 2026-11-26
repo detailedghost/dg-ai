@@ -1,0 +1,11 @@
+{
+	"hook": "pr-prose",
+	"event": {
+		"hook_event_name": "PreToolUse",
+		"tool_name": "Bash",
+		"tool_input": {
+			"command": "gh pr create --title t --body 'This\tchange\tadds\ta\tretry.\tTODO\ttab'"
+		},
+		"cwd": "$CWD/work"
+	}
+}

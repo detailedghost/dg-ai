@@ -50,6 +50,18 @@ group, until the human hands you a tab from the extension popup.
 | `dialog` | write | Shows the page's last `alert`, `confirm` or `prompt`, how it was answered, and the answer set for the next one |
 | `dialog accept [--text <answer>]` | write | Accepts the next dialog on the page; `--text` answers a `prompt` |
 | `dialog dismiss` | write | Dismisses the next dialog on the page |
+| `go-back`, `go-forward`, `reload` | write | Moves the selected tab one history entry back or forward, or reloads it |
+| `hover <target>`, `dblclick <target>` | write | Moves the pointer over one element, or double-clicks it |
+| `drag <from> <to>` | write | Drags one element onto another |
+| `mousemove <x> <y>`, `mousewheel <dx> <dy>` | write | Moves the pointer to viewport coordinates, or scrolls the wheel at the pointer |
+| `mousedown [button]`, `mouseup [button]` | write | Presses or releases `left`, `middle` or `right` at the pointer |
+| `check <target>`, `uncheck <target>` | write | Sets one checkbox or radio button |
+| `type <text> [--submit]` | write | Types text key by key into the focused element; `--submit` presses Enter after it |
+| `keydown <key>`, `keyup <key>` | write | One key down or up event |
+| `tab-select <tabId>` | write | Makes a tab of the group the selected tab |
+| `resize <width> <height>` | write | Resizes the agent window, 200 to 10000 per side |
+| `eval <expression>` | write | Runs one JavaScript expression in the page. Refuses a site that is not allowed, with no popup |
+| `localstorage-set\|delete\|clear`, `sessionstorage-set\|delete\|clear` | write | Writes the page's storage: `set <key> <value>`, `delete <key>`, `clear`. Refuses a site that is not allowed, with no popup |
 
 ## Rules
 
@@ -61,6 +73,12 @@ group, until the human hands you a tab from the extension popup.
   `localhost` and single-label hosts ask per origin, port included. Ask for sites only as the task needs them; a denied
   site touches no page. Do not retry a denied site in a loop. Act only on what
   the human asked for.
+- Each dg session has its own agent window, separate and unfocused, with its own
+  tab group in it. The first visit to each new site opens the allow popup. The
+  popup has a PHI checkbox: a flagged site refuses `snapshot` and `screenshot`
+  for the rest of the session. `eval` and the storage writes never open the
+  popup; on a site that is not allowed yet they refuse, so run a navigation or
+  read verb first.
 - Each agent tab shows an "Agent is driving this tab" banner with a Stop button.
   The toolbar popup has the same Stop for each session that drives tabs.
   If the human clicks Stop, every verb fails with an error that names Stop.

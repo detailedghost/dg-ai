@@ -1,0 +1,10 @@
+== log 644
+dotnet tool run csharpier -- format <ROOT>/work/src/A.cs | cwd=/work
+
+== work/.config/dotnet-tools.json 644
+{"tools":{"csharpier":{"version":"1"}}}
+== work/.git/HEAD 644
+
+== work/src/A.cs 644
+x
+

@@ -1,0 +1,1 @@
+dg config: config.toml:5: browser.mode must be ext, local or auto, got "nope". Next: run dg config edit, or dg config set browser.mode <value>.

@@ -1,0 +1,10 @@
+{
+	"hook": "pr-confirm",
+	"event": {
+		"tool_name": "apply_patch",
+		"tool_input": {
+			"command": "*** Begin Patch\n*** Add File: a.txt\n+gh pr create\n*** End Patch"
+		},
+		"cwd": "$CWD/work"
+	}
+}

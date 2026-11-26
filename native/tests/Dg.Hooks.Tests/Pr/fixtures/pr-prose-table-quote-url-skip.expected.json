@@ -1,0 +1,6 @@
+{
+	"exit": 2,
+	"stdout": "",
+	"stderr": "pr-prose: Vale is not installed, so style checks are off. Install it from https://vale.sh to add them. The built-in checks still ran.\nPR body does not read as plain English (5 issue(s)):\n  body line 2: placeholder marker left in the body\n  body line 3: placeholder marker left in the body\n  body line 4: placeholder marker left in the body\n  body line 5: placeholder marker left in the body\n  body line 6: placeholder marker left in the body\nfix: rewrite the body as plain English - short active sentences that say what changed and why - then retry.\n",
+	"after": {}
+}

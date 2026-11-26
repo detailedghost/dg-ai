@@ -260,3 +260,34 @@ The decision bar is unchanged. Capture the backdrop in both modes, one capture e
 - **Sharing too much code between variants.** A shared `<Header>` is fine. A shared `<Layout>` defeats the point.
 - **Wiring variants to real mutations.** Read-only prototypes are fine. If a variant must mutate, point it at a stub.
 - **Promoting the prototype to production.** The variant code was written under prototype constraints. Rewrite it properly when you fold it in.
+
+## Refine chain: summary and example
+
+`approve C` with no note ends the prototype. `tweak C: <note>` edits C in place in the current
+round, builds no new variants, and shows C again for a pick. `approve C: <note>` makes C the base
+of a new round: `-n` new variants that change only what the note asks. Every round shows in the
+same browser tab: reuse one chain key. The chain ends on an approval with no note, or on "done"
+or "stop" (`dg prototype stop <chain>`). Resume a later session with `/dg:proto -c`.
+`dg prototype status <name>` is the one command for checking a pick, in every
+shape: local, a chain, a series, in-app, and an unclaimed `--ext` verdict.
+
+**Series exception.** When prototypes run one after another (a planned set, such as one screen per
+prototype), keep the same tab for the whole set: run each with `--series` and one shared
+`--chain`. An approval with no note then reloads the same tab with the next prototype instead of
+closing it. Run `prototype stop <chain>` after the last one.
+
+Example, a form and then its buttons:
+
+1. `/dg:proto signup form` builds round 1, variants A to E.
+2. `approve C: organize the buttons` builds round 2: five variants of C with only the buttons changed.
+3. `approve B: tighten the spacing` builds round 3 from round 2 B.
+4. `approve D` ends the chain. `--publish` publishes round 3 D only.
+
+## Choosing a branch
+
+The three branches produce very different artifacts. A single state machine or data model is
+logic. One page or component whose look is in question is UI. A multi-workflow feature or plan
+whose question is whether the workflows cohere end to end is plan. A prompt that points at a
+plan or spec file, or says "prototype this plan", is the plan branch. When it is ambiguous and
+the user is not reachable, choose the branch that matches the input (a backend module is logic,
+a page is UI, a plan or spec is plan) and state the assumption at the top of the prototype.

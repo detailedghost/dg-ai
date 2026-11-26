@@ -1,0 +1,8 @@
+{
+	"validator": "cli-cancel:pw-ext",
+	"frame": {
+		"type": "cli-pw-ext-cancel",
+		"requestId": "req-1",
+		"protocolVersion": 1
+	}
+}

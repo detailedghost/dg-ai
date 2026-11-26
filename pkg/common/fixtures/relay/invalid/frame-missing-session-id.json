@@ -1,0 +1,9 @@
+{
+	"validator": "chat-frame",
+	"frame": {
+		"protocolVersion": 1,
+		"type": "pw-ext-browser-cancel",
+		"requestId": "req-1"
+	},
+	"error": "chat frame.sessionId must be a non-empty string"
+}

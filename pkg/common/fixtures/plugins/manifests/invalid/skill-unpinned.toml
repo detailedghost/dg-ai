@@ -1,0 +1,7 @@
+name = "loose-skill"
+version = "1.0.0"
+kind = "skill"
+source = "https://github.com/example/loose"
+
+[entry]
+command = "x"

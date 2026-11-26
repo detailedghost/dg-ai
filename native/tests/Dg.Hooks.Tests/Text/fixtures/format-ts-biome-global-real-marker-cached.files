@@ -1,0 +1,10 @@
+== log 644
+biome format --write <ROOT>/work/a.ts | cwd=-
+biome check --help | cwd=-
+biome check --fix --organize-imports-enabled=true <ROOT>/work/a.ts | cwd=-
+
+== work/.git/HEAD 644
+
+== work/a.ts 644
+x
+
