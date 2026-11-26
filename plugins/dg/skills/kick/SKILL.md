@@ -1,6 +1,6 @@
 ---
 name: kick
-description: Defer a feature build — run /dg:spec's full plan-mode pipeline (grill-me, roundtable, spec-write, plan approval gate, context pack), flip the resulting bundle's status to deferred, and exit without executing. Use when you want to do the thinking now and the engineering later. Resume with /dg:pickup.
+description: 'Defer a feature build: run /dg:spec''s planning pipeline, mark the bundle deferred, stop. Resume with /dg:pickup.'
 ---
 
 # /dg:kick — Plan Now, Build Later

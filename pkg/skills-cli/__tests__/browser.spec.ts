@@ -14,10 +14,10 @@ import { versionGte } from "../src/utils/lib";
 import { addGroupMarker } from "../src/utils/marker";
 import {
 	extractScriptFromMarkdown,
-	parsePlanMarkdown,
 	toPlanMarkdown,
 	validate,
 } from "../src/utils/plan-format";
+import { parsePlanMarkdown } from "../src/utils/plan-parse";
 import { resolveRef } from "../src/utils/refs";
 
 // --- ref resolution ---

@@ -60,3 +60,22 @@ export function withManifestPin<T extends object>(record: T, manifest: PluginMan
 	const { pin: _stale, ...rest } = record as T & { pin?: unknown };
 	return (manifest.pin ? { ...rest, pin: manifest.pin } : rest) as T;
 }
+
+export function assertManifestPin(manifest: PluginManifest | undefined, sha: string): void {
+	const declared = manifest?.pin;
+	if (declared && (declared.kind !== "commit" || declared.value !== sha)) {
+		throw new DgCliError(
+			`dg job: ${MANIFEST_FILE} pins ${declared.kind} ${declared.value}, which is not the checked-out commit ${sha}. Next: remove the pin from ${MANIFEST_FILE}, or set commit to ${sha}.`,
+		);
+	}
+}
+
+/** Pins a git record to the commit that is checked out and records its tree id. */
+export function pinGitRecord<T extends object>(
+	record: T,
+	manifest: PluginManifest | undefined,
+	checkout: { sha: string; tree: string },
+): T & { pin: { kind: "commit"; value: string }; tree: string } {
+	assertManifestPin(manifest, checkout.sha);
+	return { ...record, pin: { kind: "commit", value: checkout.sha }, tree: checkout.tree };
+}

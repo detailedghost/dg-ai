@@ -346,17 +346,21 @@ start-up:
 - `dg hooks run <id>` for the built-in hook ids
 - `dg completion` words, when there are two or more words
 - `dg config get`, `set`, `list` and `doctor`
-- `dg plugin list` and `dg plugin verify`
+- `dg plugin list`, `verify`, `enable` and `disable`, until a record claims approval
+  (the front door cannot check the approval MAC, so it hands those records to `dg-core`)
 
 Every other command runs `dg-core` with the same arguments. This includes a
-single-word completion, an unknown hook id, `dg plugin enable` and `disable`,
-and every command not in the list above. `dg-core` prints its own output.
+single-word completion, an unknown hook id, `dg plugin add`, `remove` and
+`update`, and every command not in the list above. `dg-core` prints its own output.
 
 ### Turn the front door off
 
 Set `DG_FRONT=0` for one shell, or set `front.enabled = false` in `config.toml`
 for good. With either setting, the front door hands every command to `dg-core`.
 The [config table](config.md) lists the key.
+
+With the front door off, `dg config list` and `dg config doctor` print an
+error and exit 1. Only the front door runs them.
 
 To go back to a Bun-only install, run `DG_FRONT=0 dg install`. It moves
 `dg-core` back to `dg` and leaves no front door. To turn the front door on again
@@ -903,10 +907,30 @@ dg plugin remove <name>
 ```
 
 `add` copies the source and marks it `unapproved`. `verify` checks the copy
-against its recorded hash. With `--approve`, it records that hash as approved.
-`update` fetches the new source. When the source changed, the plugin turns off
-until you run `verify --approve` again. The front door runs `list` and `verify`
-itself. `add`, `remove`, `enable`, `disable` and `update` run in `dg-core`.
+against its recorded hash. With `--approve`, it records that hash as approved
+and has the dg daemon sign the record. The signing key is the credential
+`dg/plugin-approval-key` in the dg daemon credential store. It never leaves the
+daemon: dg sends the record fields to the daemon and gets the signature back.
+`--approve` makes the daemon create the key on first use, so the daemon must run
+(`dg agent start`).
+
+A plugin counts as approved only when the signature verifies and the files still
+match. A record with no signature, or a bad one, is unapproved. This includes
+records that older dg wrote. If the daemon is not running, no plugin is approved,
+because only the daemon can check a signature. Start the daemon, or run
+`verify <name> --approve` again.
+
+`update` fetches the new source. When the source or its pin changed, the plugin
+turns off until you run `verify --approve` again. The front door runs `list` and
+`verify` itself while no record claims approval. It hands any approval check and
+every `--approve` to `dg-core`, because the front door has no daemon client.
+`add`, `remove` and `update` always run in `dg-core`. `enable` and `disable`
+run in the front door until a record claims approval, then `dg-core` takes them.
+
+The plugin host caches file sizes, times and inodes in `stat-cache.json` inside
+the plugin folder. The daemon signs the cache with the same key, for a separate
+purpose, so a cache signature never passes as an approval. It hashes the files
+again when any entry changes, when the signature fails, and once a day.
 
 ## CLI-only install
 

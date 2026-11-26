@@ -78,7 +78,7 @@
 			"msBudget": 18
 		},
 		"adr lint --all (repo)": {
-			"peakMB": 49.9
+			"peakMB": 49.5
 		},
 		"spec validate": {
 			"peakMB": 37.8
@@ -110,7 +110,7 @@
 			"growthMB": 1
 		},
 		"phone listener catch-up": {
-			"peakMB": 59.4,
+			"peakMB": 59.3,
 			"growthMB": 1
 		},
 		"agent phone status": {

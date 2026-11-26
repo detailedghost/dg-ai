@@ -5,8 +5,8 @@ const workflow = parseWorkflow("compiled-dg.yml");
 const pullRequest = workflow.on.pull_request as { paths?: string[] } | undefined;
 
 describe("compiled-dg.yml smokes the compiled dg on pull requests without a release", () => {
-	test("only a pull request starts it", () => {
-		expect(Object.keys(workflow.on)).toEqual(["pull_request"]);
+	test("only a pull request or the weekly budget job's dispatch starts it", () => {
+		expect(Object.keys(workflow.on)).toEqual(["pull_request", "workflow_dispatch"]);
 	});
 
 	test("it runs on every pull request without a path filter", () => {

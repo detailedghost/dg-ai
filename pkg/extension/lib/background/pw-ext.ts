@@ -6,6 +6,7 @@ import {
 	formatStorage,
 	isDgToolName,
 	PW_EXT_CREDENTIAL_SITE,
+	isPhiSite,
 	isPwExtModuleVerb,
 	isPwExtWebUrl,
 	mailboxToolAllowed,
@@ -69,7 +70,7 @@ import {
 import { defaultIsChromium } from "@/lib/browser-call";
 import { type ApprovalAnswer, type Approvals, browserApprovals } from "./approval";
 import { forgetAgentTabsAndShims, forgetDialogShim, syncDialogShim } from "./dialog-shim";
-import { createSessionControl, type SessionControl } from "./session-control";
+import { createSessionControl, stopExpired, type SessionControl } from "./session-control";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
 import { createInputHandler } from "./pw-verbs/input";
@@ -365,6 +366,8 @@ function jwtExpiry(value: string): string | undefined {
 	}
 }
 const DIALOG_ANSWERS = ["accept", "dismiss"];
+
+type PhiScoped<T> = T & { phiSites: readonly string[] };
 
 /** Per-request seams that need the session capability. */
 export type PwExtContext = {
@@ -707,6 +710,7 @@ export function createPwExtHandler({
 	captureDeadlineMs = CAPTURE_DEADLINE_MS,
 	lock,
 	control = createSessionControl({ storage: api.storage }),
+	onStop,
 	siteAllow,
 	agentWindows,
 }: {
@@ -725,6 +729,7 @@ export function createPwExtHandler({
 	captureDeadlineMs?: number;
 	lock?: AgentTabsLock;
 	control?: SessionControl;
+	onStop?: (sessionId: string) => void;
 	siteAllow?: Pick<SiteAllow, "requestSiteAllow" | "assertCaptureAllowed"> & Partial<Pick<SiteAllow, "openSite">>;
 	agentWindows?: Pick<AgentWindows, "openAgentWindow">;
 }) {
@@ -735,8 +740,12 @@ export function createPwExtHandler({
 	const storageVerbs = createStorageVerbHandler({ browserApi: api as never, agentTabs, control });
 	type Running = { controller: AbortController; stopped(): void };
 	const live = new Map<string, Set<Running>>();
-	const halted = new Set<string>();
-	const isStopped = async (sessionId: string) => halted.has(sessionId) || (await control.stopped(sessionId));
+	const halted = new Map<string, number>();
+	const isHalted = (sessionId: string): boolean => {
+		const stoppedAt = halted.get(sessionId);
+		return stoppedAt !== undefined && !stopExpired(stoppedAt);
+	};
+	const isStopped = async (sessionId: string) => isHalted(sessionId) || (await control.stopped(sessionId));
 	const asking = new Map<string, Promise<ApprovalAnswer>>();
 	const deniedThrough = new Map<string, number>();
 	let verbs = 0;
@@ -843,11 +852,15 @@ export function createPwExtHandler({
 
 	/** Ends a session's control at once: verbs in flight end, unmask and value grants and sites go, and its tabs return to the person; Web MCP grants stay. */
 	async function stop(sessionId: string): Promise<void> {
-		halted.add(sessionId);
+		halted.set(sessionId, Date.now());
+		for (const [id, stoppedAt] of halted) if (stopExpired(stoppedAt)) halted.delete(id);
 		for (const run of live.get(sessionId) ?? []) {
 			run.controller.abort();
 			run.stopped();
 		}
+		try {
+			onStop?.(sessionId);
+		} catch {}
 		await control.stop(sessionId);
 		forget(sessionId);
 		await Promise.allSettled([
@@ -1860,7 +1873,8 @@ export function createPwExtHandler({
 		};
 	}
 
-	async function assertPageDataAllowed(sessionId: string, url: string): Promise<void> {
+	async function assertPageDataAllowed(sessionId: string, url: string, phiSites: readonly string[]): Promise<void> {
+		if (isPhiSite(url, phiSites)) throw new Refusal(new PhiCaptureRefusedError(siteOf(url).key, "config").message);
 		await siteAllow?.assertCaptureAllowed(sessionId, url).catch((error: unknown) => {
 			throw error instanceof PhiCaptureRefusedError ? new Refusal(error.message) : error;
 		});
@@ -1882,7 +1896,7 @@ export function createPwExtHandler({
 	/** Navigation, pointer and input ask the site question first; eval and storage writes need a site already allowed. */
 	async function moduleVerb(
 		request: ModuleRequest,
-		context: PwExtContext,
+		context: PhiScoped<PwExtContext>,
 		signal: AbortSignal,
 		verb: number,
 	): Promise<PwExtResult> {
@@ -1901,7 +1915,7 @@ export function createPwExtHandler({
 		}
 		if (PAGE_DATA_VERBS.has(request.verb)) {
 			const tab = await resolveTab(request, context.sessionId);
-			if (tab?.url) await assertPageDataAllowed(context.sessionId, tab.url);
+			if (tab?.url) await assertPageDataAllowed(context.sessionId, tab.url, context.phiSites);
 		}
 		if (signal.aborted) return CANCELED;
 		const result = await runModule(request, context.sessionId);
@@ -1913,7 +1927,7 @@ export function createPwExtHandler({
 
 	async function execute(
 		request: PwExtRequest,
-		context: PwExtContext,
+		context: PhiScoped<PwExtContext>,
 		signal: AbortSignal,
 		verb: number,
 	): Promise<PwExtResult> {
@@ -1952,7 +1966,7 @@ export function createPwExtHandler({
 			if (live.url !== tab.url)
 				throw new Refusal("The page changed while the site question was open; nothing ran. Retry.");
 		}
-		if (PAGE_DATA_VERBS.has(request.verb)) await assertPageDataAllowed(context.sessionId, tab.url as string);
+		if (PAGE_DATA_VERBS.has(request.verb)) await assertPageDataAllowed(context.sessionId, tab.url as string, context.phiSites);
 		tab.signal = signal;
 		if (signal.aborted) return CANCELED;
 		return run(request, tab, context, signal);
@@ -1964,8 +1978,9 @@ export function createPwExtHandler({
 		context,
 	}: Parameters<RelayHandler<typeof PW_EXT_RELAY>>[0]): Promise<PwExtResult> => {
 		let request: PwExtRequest;
+		let phiSites: readonly string[] = [];
 		try {
-			request = validatePwExtRequest(raw);
+			({ phiSites = [], ...request } = validatePwExtRequest(raw));
 		} catch {
 			return { ok: false, error: "Unsupported pw --ext request." };
 		}
@@ -1978,7 +1993,7 @@ export function createPwExtHandler({
 		if (request.verb === "fill" && request.secret && isPwExtSecretTooShort(request.value as string))
 			return { ok: false, error: SECRET_TOO_SHORT };
 		const { sessionId } = context;
-		if (halted.has(sessionId)) return STOPPED;
+		if (isHalted(sessionId)) return STOPPED;
 		const typed = request.verb === "fill" && request.secret ? [request.value as string] : [];
 		const held = async () => [...typed, ...(await grants.secrets(sessionId).catch(() => []))];
 		const verb = ++verbs;
@@ -1997,7 +2012,7 @@ export function createPwExtHandler({
 		const outcome = await (async (): Promise<PwExtResult> => {
 			try {
 				if (await isStopped(sessionId)) return STOPPED;
-				const result = await Promise.race([execute(request, context, controller.signal, verb), stopped]);
+				const result = await Promise.race([execute(request, { ...context, phiSites }, controller.signal, verb), stopped]);
 				if (result === "stopped" || (await isStopped(sessionId))) return STOPPED;
 				return scrub(result, await held());
 			} catch (error) {
@@ -2016,7 +2031,7 @@ export function createPwExtHandler({
 		signal?.removeEventListener("abort", relay);
 		running.delete(run);
 		if (running.size === 0) live.delete(sessionId);
-		return halted.has(sessionId) ? STOPPED : outcome;
+		return isHalted(sessionId) ? STOPPED : outcome;
 	};
 	return Object.assign(handler, { stop, stopTab, forget });
 }

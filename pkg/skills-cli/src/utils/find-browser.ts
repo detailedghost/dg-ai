@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { BROWSER_MODES } from "@dg/common/node";
+import { DgCliError } from "@dg/common";
+import { PW_MODES } from "@dg/common/node";
 
 export type FinderSeams = {
 	env: Record<string, string | undefined>;
@@ -60,12 +61,19 @@ export function windowsPrefixes(
 	].filter((prefix): prefix is string => Boolean(prefix));
 }
 
+export function assertBrowserPath(env: Record<string, string | undefined>): void {
+	const word = env["DG_BROWSER"]?.toLowerCase();
+	if (word && (PW_MODES as readonly string[]).includes(word))
+		throw new DgCliError(
+			`dg: DG_BROWSER is the browser executable path, not a pw mode. Next: set DG_PW_MODE=${word}.`,
+		);
+}
+
 export function browserOverride(
 	env: Record<string, string | undefined> = process.env,
 ): string | null {
-	const browser = env["DG_BROWSER"];
-	const binary = browser && !(BROWSER_MODES as readonly string[]).includes(browser) ? browser : null;
-	return binary || env["DG_VERIFY_BROWSER"] || null;
+	assertBrowserPath(env);
+	return env["DG_BROWSER"] || env["DG_VERIFY_BROWSER"] || null;
 }
 
 function appPaths(seams: FinderSeams): string[] {

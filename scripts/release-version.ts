@@ -181,7 +181,7 @@ export function stamp(root: string, version: string): void {
 	}
 }
 
-function git(root: string, args: string[]): string {
+export function git(root: string, args: string[]): string {
 	const result = Bun.spawnSync(["git", ...args], { cwd: root });
 	if (result.exitCode !== 0) {
 		throw new Error(`git ${args.join(" ")}: ${result.stderr.toString()}`);
@@ -189,7 +189,7 @@ function git(root: string, args: string[]): string {
 	return result.stdout.toString();
 }
 
-function readCommits(root: string, range: string): Commit[] {
+export function readCommits(root: string, range: string): Commit[] {
 	const raw = git(root, ["log", "--format=%s%x1f%b%x1e", range]);
 	return raw
 		.split("\x1e")
@@ -206,7 +206,7 @@ function readBase(root: string): string {
 	return String(pkg.version);
 }
 
-function listTags(root: string): string[] {
+export function listTags(root: string): string[] {
 	return git(root, ["tag", "--list"]).split("\n").filter(Boolean);
 }
 

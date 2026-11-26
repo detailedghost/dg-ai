@@ -1,6 +1,6 @@
 ---
 name: pw
-description: Drive a browser with pw to open a site, click, fill forms, take snapshots or screenshots, scrape page data, mock requests, record video, and save logins as named states.
+description: 'Drive a browser with pw: open sites, click, fill forms, snapshot, screenshot, scrape, mock requests, record video, save logins as named states.'
 ---
 
 # Browser automation with pw
@@ -47,7 +47,7 @@ If a step fails, run dg doctor pw pw-code batch-open launch install stash creden
 
 ## Browser
 
-`pw open` finds a browser: `DG_VERIFY_BROWSER` (a binary path), then Chrome, Edge, other Chromium-family browsers, then a downloaded Chromium. Ask the human before you run `dg pw install-browser`: it downloads about 150 MB, and `install-browser --remove` deletes it. Search order and fallbacks: `references/browser-finder.md`.
+`pw open` finds a browser: `DG_BROWSER` (a binary path), then Chrome, Edge, other Chromium-family browsers, then a downloaded Chromium. Ask the human before you run `dg pw install-browser`: it downloads about 150 MB, and `install-browser --remove` deletes it. Search order and fallbacks: `references/browser-finder.md`.
 
 ## WSL
 
@@ -75,7 +75,7 @@ Snapshots, screenshots, downloads, traces, and videos land in `dg stash pw`. Not
 
 ## Browser mode
 
-The default is `auto`. A call goes to the human's real browser through the extension only when the extension is paired and connected, the verb has an ext verb, and the call has no options and no session. Every other call runs in a local Playwright browser. `--ext` and `--local` force one. `DG_BROWSER=ext|local` and `browser.mode` in `config.toml` (`ext`, `local`, `auto`) force it for a shell or for good.
+The default is `auto`. A call goes to the human's real browser through the extension only when the extension is paired and connected, the verb has an ext verb, and the call has no options and no session. Every other call runs in a local Playwright browser. `--ext` and `--local` force one. `DG_PW_MODE=ext|local` and `pw.mode` in `config.toml` (`ext`, `local`, `auto`) force it for a shell or for good. `DG_BROWSER` is the browser executable path only.
 Some verbs run local in every mode: `route`, `unroute`, `route-list`, `network-state-set`, `state-save`, `state-load`, `delete-data`, `cookie-set`, `cookie-delete`, `cookie-clear`, `video-*`, `tracing-*`, `pdf`, `install-browser`, `kill-all`, `attach`. `--ext` with one of them exits 2. The reason for each verb, and the auto routing rules: `references/browser-mode.md`.
 `pw select`, `close`, `tab-select`, `upload` and `tab-close <index>` also stay local in auto mode. Their ext verbs take different arguments.
 
@@ -83,7 +83,7 @@ Some verbs run local in every mode: `route`, `unroute`, `route-list`, `network-s
 
 Use ext only when the human asks you to look at or act on a page in their real browser. In `auto` mode a paired extension receives a plain `dg pw` call, so pass `--local` on every call unless the human asked for the real browser.
 Each session gets its own agent window and tab group. You act only on tabs in that group, until the human hands you one from the extension popup.
-The browser asks the human once per site in a session. A PHI checkbox on that popup makes `snapshot`, `screenshot`, `selection`, `console`, `network`, `storage`, `fetch`, `call` and `eval` refuse the site. `eval` and the storage write verbs never ask: they refuse a site that is not allowed yet, so navigate or read first. A Stop click on the page ends your control, so act only on what the human asked for.
+The browser asks the human once per site in a session. A PHI checkbox on that popup, or a site in `pw.phi_sites` in `config.toml`, makes `snapshot`, `screenshot`, `selection`, `console`, `network`, `storage`, `fetch`, `call` and `eval` refuse the site. In local mode the refused verbs are `snapshot`, `screenshot`, `eval`, `run-code`, `console`, `network`, `pdf`, `tab-list` and the storage and cookie get and list verbs. `eval` and the storage write verbs never ask: they refuse a site that is not allowed yet, so navigate or read first. A Stop click on the page ends your control, so act only on what the human asked for.
 `tools` and `call` are the Web MCP bridge and use Web MCP approvals, not the site question. The PHI flag still makes `call` refuse a flagged site. To save tokens, run `pw --ext tools` first and prefer a WebMCP tool; else use refs from one snapshot. Verbs, tabs, refs, uploads and blocked pages: `references/real-browser.md`.
 
 ## Tab batches

@@ -260,6 +260,6 @@ export async function playLocal(
 export async function servePlayer(json: string): Promise<number> {
 	const { runPlayer } = await import("./player-process");
 	const argv = JSON.parse(json) as PlayerArgv;
-	const job: PlayerJob = { ...argv, script: loadScript(argv.planPath) };
+	const job: PlayerJob = { ...argv, script: await loadScript(argv.planPath) };
 	return runPlayer(job);
 }

@@ -114,13 +114,7 @@ internal sealed class EchoServer : IAsyncDisposable
     {
         while (!_stop.IsCancellationRequested)
         {
-            var pipe = new NamedPipeServerStream(
-                IpcConnector.WindowsPipeName(Fixtures.PluginName),
-                PipeDirection.InOut,
-                NamedPipeServerStream.MaxAllowedServerInstances,
-                PipeTransmissionMode.Byte,
-                System.IO.Pipes.PipeOptions.Asynchronous | System.IO.Pipes.PipeOptions.CurrentUserOnly
-            );
+            var pipe = IpcPipeServer.Create(Fixtures.PluginName);
             try
             {
                 await pipe.WaitForConnectionAsync(_stop.Token).ConfigureAwait(false);

@@ -95,7 +95,8 @@
 			"argv": [
 				"plugin",
 				"list"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "list-json-mixed",
@@ -149,7 +150,8 @@
 				"plugin",
 				"list",
 				"--json"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "list-mixed-text",
@@ -202,7 +204,8 @@
 			"argv": [
 				"plugin",
 				"list"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "list-tampered-shows-unapproved",
@@ -231,7 +234,8 @@
 			"argv": [
 				"plugin",
 				"list"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "list-json-escapes-source",
@@ -254,25 +258,24 @@
 		},
 		{
 			"name": "list-extra-argument",
-			"native": false,
 			"argv": [
 				"plugin",
 				"list",
 				"extra"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "list-unknown-option",
-			"native": false,
 			"argv": [
 				"plugin",
 				"list",
 				"--yaml"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "list-config-missing-with-plugins",
-			"native": false,
 			"steps": [
 				{
 					"bun": [
@@ -288,11 +291,11 @@
 			"argv": [
 				"plugin",
 				"list"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "list-config-syntax-error",
-			"native": false,
 			"steps": [
 				{
 					"bun": [
@@ -310,7 +313,8 @@
 			"argv": [
 				"plugin",
 				"list"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-unapproved",
@@ -369,7 +373,8 @@
 				"plugin",
 				"verify",
 				"alpha"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-approve-refused-without-terminal",
@@ -406,7 +411,8 @@
 				"alpha",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-approve-nested-skills",
@@ -425,7 +431,8 @@
 				"beta",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-approve-enabled-registers-hosts",
@@ -449,7 +456,8 @@
 				"beta",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-approve-again-enabled",
@@ -483,7 +491,8 @@
 				"beta",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-approve-disabled-removes-owned-host-skills",
@@ -522,11 +531,11 @@
 				"beta",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-approve-foreign-host-skill",
-			"native": false,
 			"steps": [
 				{
 					"bun": [
@@ -548,14 +557,11 @@
 				"beta",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-approve-claude-config-dir",
-			"env": {
-				"CLAUDE_CONFIG_DIR": "<home>/cc",
-				"CODEX_HOME": "<home>/cx"
-			},
 			"steps": [
 				{
 					"bun": [
@@ -570,17 +576,21 @@
 					}
 				}
 			],
+			"env": {
+				"CLAUDE_CONFIG_DIR": "<home>/cc",
+				"CODEX_HOME": "<home>/cx"
+			},
 			"argv": [
 				"plugin",
 				"verify",
 				"gamma",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-tampered",
-			"native": false,
 			"steps": [
 				{
 					"bun": [
@@ -607,11 +617,11 @@
 				"plugin",
 				"verify",
 				"gamma"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-tampered-approve",
-			"native": false,
 			"steps": [
 				{
 					"bun": [
@@ -640,7 +650,8 @@
 				"gamma",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-not-installed",
@@ -652,53 +663,52 @@
 		},
 		{
 			"name": "verify-bad-name",
-			"native": false,
 			"argv": [
 				"plugin",
 				"verify",
 				"Bad_Name"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-path-name",
-			"native": false,
 			"argv": [
 				"plugin",
 				"verify",
 				"../x"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-missing-name",
-			"native": false,
 			"argv": [
 				"plugin",
 				"verify"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-extra-argument",
-			"native": false,
 			"argv": [
 				"plugin",
 				"verify",
 				"a",
 				"b"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-unknown-option",
-			"native": false,
 			"argv": [
 				"plugin",
 				"verify",
 				"a",
 				"--force"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-symlink-in-source",
-			"native": false,
 			"steps": [
 				{
 					"bun": [
@@ -717,7 +727,618 @@
 				"plugin",
 				"verify",
 				"gamma"
+			],
+			"native": false
+		},
+		{
+			"name": "enable-approved",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/alpha"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"alpha",
+						"--approve"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"enable",
+				"alpha"
+			],
+			"native": false
+		},
+		{
+			"name": "enable-nested-skills",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/beta"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"beta",
+						"--approve"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"enable",
+				"beta"
+			],
+			"native": false
+		},
+		{
+			"name": "enable-already-enabled",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"gamma",
+						"--approve"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"enable",
+						"gamma"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"enable",
+				"gamma"
+			],
+			"native": false
+		},
+		{
+			"name": "enable-claude-config-dir",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"gamma",
+						"--approve"
+					]
+				}
+			],
+			"env": {
+				"CLAUDE_CONFIG_DIR": "<home>/cc",
+				"CODEX_HOME": "<home>/cx"
+			},
+			"argv": [
+				"plugin",
+				"enable",
+				"gamma"
+			],
+			"native": false
+		},
+		{
+			"name": "enable-keeps-other-config-keys",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"gamma",
+						"--approve"
+					]
+				},
+				{
+					"write": {
+						"config/config.toml": "[front]\nenabled = false\n\n[plugins.gamma]\nenabled = false\nsource = \"<home>/sources/gamma\"\n"
+					}
+				}
+			],
+			"argv": [
+				"plugin",
+				"enable",
+				"gamma"
+			],
+			"native": false
+		},
+		{
+			"name": "enable-unapproved",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/alpha"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"enable",
+				"alpha"
 			]
+		},
+		{
+			"name": "enable-tampered",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"gamma",
+						"--approve"
+					]
+				},
+				{
+					"write": {
+						"data/plugins/gamma/src/SKILL.md": "edited\n"
+					}
+				}
+			],
+			"argv": [
+				"plugin",
+				"enable",
+				"gamma"
+			],
+			"native": false
+		},
+		{
+			"name": "enable-not-installed",
+			"argv": [
+				"plugin",
+				"enable",
+				"nope"
+			]
+		},
+		{
+			"name": "enable-foreign-host-skill",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/beta"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"beta",
+						"--approve"
+					]
+				},
+				{
+					"write": {
+						".claude/skills/two/SKILL.md": "foreign\n"
+					}
+				}
+			],
+			"argv": [
+				"plugin",
+				"enable",
+				"beta"
+			],
+			"native": false
+		},
+		{
+			"name": "enable-config-missing",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"gamma",
+						"--approve"
+					]
+				},
+				{
+					"rm": "config/config.toml"
+				}
+			],
+			"argv": [
+				"plugin",
+				"enable",
+				"gamma"
+			],
+			"native": false
+		},
+		{
+			"name": "enable-config-syntax-error",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"gamma",
+						"--approve"
+					]
+				},
+				{
+					"write": {
+						"config/config.toml": "[plugins\n"
+					}
+				}
+			],
+			"argv": [
+				"plugin",
+				"enable",
+				"gamma"
+			],
+			"native": false
+		},
+		{
+			"name": "enable-bad-name",
+			"argv": [
+				"plugin",
+				"enable",
+				"Bad_Name"
+			],
+			"native": false
+		},
+		{
+			"name": "enable-missing-name",
+			"argv": [
+				"plugin",
+				"enable"
+			],
+			"native": false
+		},
+		{
+			"name": "enable-extra-argument",
+			"argv": [
+				"plugin",
+				"enable",
+				"a",
+				"b"
+			],
+			"native": false
+		},
+		{
+			"name": "enable-unknown-option",
+			"argv": [
+				"plugin",
+				"enable",
+				"a",
+				"--force"
+			],
+			"native": false
+		},
+		{
+			"name": "disable-enabled",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/alpha"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"alpha",
+						"--approve"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"enable",
+						"alpha"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"disable",
+				"alpha"
+			]
+		},
+		{
+			"name": "disable-nested-skills",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/beta"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"beta",
+						"--approve"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"enable",
+						"beta"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"disable",
+				"beta"
+			]
+		},
+		{
+			"name": "disable-never-enabled",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"disable",
+				"gamma"
+			]
+		},
+		{
+			"name": "disable-approved-not-enabled",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"gamma",
+						"--approve"
+					]
+				}
+			],
+			"argv": [
+				"plugin",
+				"disable",
+				"gamma"
+			]
+		},
+		{
+			"name": "disable-tampered",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"gamma",
+						"--approve"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"enable",
+						"gamma"
+					]
+				},
+				{
+					"write": {
+						"data/plugins/gamma/src/SKILL.md": "edited\n"
+					}
+				}
+			],
+			"argv": [
+				"plugin",
+				"disable",
+				"gamma"
+			]
+		},
+		{
+			"name": "disable-claude-config-dir",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"gamma",
+						"--approve"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"enable",
+						"gamma"
+					]
+				}
+			],
+			"env": {
+				"CLAUDE_CONFIG_DIR": "<home>/cc",
+				"CODEX_HOME": "<home>/cx"
+			},
+			"argv": [
+				"plugin",
+				"disable",
+				"gamma"
+			]
+		},
+		{
+			"name": "disable-keeps-foreign-host-skill",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/beta"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"beta",
+						"--approve"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"enable",
+						"beta"
+					]
+				},
+				{
+					"write": {
+						".claude/skills/other/SKILL.md": "foreign\n"
+					}
+				}
+			],
+			"argv": [
+				"plugin",
+				"disable",
+				"beta"
+			]
+		},
+		{
+			"name": "disable-not-installed",
+			"argv": [
+				"plugin",
+				"disable",
+				"nope"
+			]
+		},
+		{
+			"name": "disable-config-missing",
+			"steps": [
+				{
+					"bun": [
+						"plugin",
+						"add",
+						"<home>/sources/gamma"
+					]
+				},
+				{
+					"bun": [
+						"plugin",
+						"verify",
+						"gamma",
+						"--approve"
+					]
+				},
+				{
+					"rm": "config/config.toml"
+				}
+			],
+			"argv": [
+				"plugin",
+				"disable",
+				"gamma"
+			],
+			"native": false
+		},
+		{
+			"name": "disable-bad-name",
+			"argv": [
+				"plugin",
+				"disable",
+				"Bad_Name"
+			],
+			"native": false
+		},
+		{
+			"name": "disable-missing-name",
+			"argv": [
+				"plugin",
+				"disable"
+			],
+			"native": false
+		},
+		{
+			"name": "disable-extra-argument",
+			"argv": [
+				"plugin",
+				"disable",
+				"a",
+				"b"
+			],
+			"native": false
 		}
 	]
 }

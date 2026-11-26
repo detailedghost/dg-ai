@@ -142,12 +142,12 @@ describe("resolvePluginConfig", () => {
 	});
 
 	test("accepts a remote manifest when config.toml sets allow_remote", () => {
-		const config = { ...parseDgToml("", "config.toml"), plugins: { "team-policy": { enabled: true, settings: {}, allow_remote: true } } };
+		const config = { ...parseDgToml("", "config.toml"), plugins: { "team-policy": { enabled: true, settings: {}, allow_remote: true, fail_closed: false } } };
 		expect(resolvePluginConfig(config, remote, "config.toml")).toMatchObject({ enabled: true, allowRemote: true });
 	});
 
 	test("does not let allow_remote in config.toml enable a manifest that is not remote", () => {
-		const config = { ...parseDgToml("", "config.toml"), plugins: { "secret-scan": { enabled: true, settings: {}, allow_remote: true } } };
+		const config = { ...parseDgToml("", "config.toml"), plugins: { "secret-scan": { enabled: true, settings: {}, allow_remote: true, fail_closed: false } } };
 		expect(resolvePluginConfig(config, local, "config.toml")).toMatchObject({ allowRemote: false });
 	});
 });

@@ -23,6 +23,8 @@ internal sealed class RuntimeFixture : IAsyncDisposable
 
     public DgPaths Paths { get; }
 
+    public FakeApprovalSigner Signer { get; } = new();
+
     public string Folder(string name) => Path.Combine(Paths.DataDir, "plugins", name);
 
     public void Install(string name, string manifest, bool approved)
@@ -33,16 +35,19 @@ internal sealed class RuntimeFixture : IAsyncDisposable
         File.WriteAllText(Path.Combine(src, "plugin.toml"), manifest);
         File.WriteAllText(Path.Combine(src, "main.txt"), "plugin body");
         var tree = PluginApproval.HashTree(src);
-        var approvedSha = approved ? $"\"{tree}\"" : "null";
-        File.WriteAllText(
-            Path.Combine(folder, "dg-plugin.json"),
-            $$"""{"name":"{{name}}","treeSha256":"{{tree}}","approvedSha256":{{approvedSha}}}"""
-        );
+        var record = ApprovalFixture.Signed(name, tree);
+        ApprovalFixture.WriteRecord(folder, approved ? record : record with { ApprovedSha256 = null, Mac = null });
     }
 
     public void Tamper(string name) => File.AppendAllText(Path.Combine(Folder(name), "src", "main.txt"), "!");
 
     public void SetCredential(string name, string value) => _credentials[name] = value;
+
+    public void Unsign(string name)
+    {
+        var record = PluginApprovalRecord.Read(Folder(name))!;
+        ApprovalFixture.WriteRecord(Folder(name), record with { Mac = null });
+    }
 
     public IPluginHost Host(string configToml, params IBuiltinPlugin[] builtins)
     {
@@ -51,6 +56,7 @@ internal sealed class RuntimeFixture : IAsyncDisposable
         services.AddSingleton(Paths);
         services.AddSingleton(toml);
         services.AddSingleton<ICredentialStore>(new MapCredentials(_credentials));
+        services.AddSingleton<IApprovalSigner>(Signer);
         foreach (var builtin in builtins)
             services.AddSingleton<IBuiltinPlugin>(builtin);
         services.AddPluginsRuntime();

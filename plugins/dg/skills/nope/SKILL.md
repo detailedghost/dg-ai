@@ -1,6 +1,6 @@
 ---
 name: nope
-description: Stop. Wrong tool. Reminder of correct file-search defaults (LSP → fff MCP → ripgrep → builtin) AND records a feedback memory entry so the agent stops reaching for the wrong tool unprompted. Use when an agent reaches for find/grep/cat or built-in Grep/Glob before trying preferred tools.
+description: Stop. Wrong tool. Restore file-search defaults (LSP, fff, ripgrep) and record a feedback memory.
 ---
 
 # Skill: Nope

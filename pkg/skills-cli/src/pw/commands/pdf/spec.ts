@@ -14,4 +14,5 @@ export default defineCommand({
 	],
 	help: "Save the page as PDF (Chromium only)",
 	changesPage: false,
+	readsPage: true,
 });

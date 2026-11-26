@@ -1,15 +1,35 @@
-using System.Runtime.Versioning;
+using System.Text;
 using Dg.Core.Abstractions;
+using Dg.Core.Plugins.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dg.Plugins.Tests;
 
 public sealed class PluginCommandTests
 {
+    private const string Tree = "ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b";
+    private static readonly string Mac = new('b', 64);
+
     private sealed class FakeServices : List<ServiceDescriptor>, IServiceCollection;
 
+    private static string Json(string approvedJson, string? macJson, string tree = Tree)
+    {
+        var macLine = macJson is null ? "" : $",\n\t\"mac\": {macJson}";
+        return $"{{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"s\",\n"
+            + $"\t\"pin\": {{\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"{tree}\"\n\t}},\n"
+            + $"\t\"treeSha256\": \"{tree}\",\n\t\"approvedSha256\": {approvedJson}{macLine}\n}}\n";
+    }
+
+    private static void Install(TempHome home, bool approved, string? macJson)
+    {
+        home.Write("data/plugins/gamma/src/SKILL.md", "---\nname: gamma\n---\nGamma.\n");
+        var tree = PluginApproval.HashTree(Path.Combine(home.Root, "data", "plugins", "gamma", "src"));
+        home.Write("data/plugins/gamma/dg-plugin.json", Json(approved ? $"\"{tree}\"" : "null", macJson, tree));
+        home.Write("config/config.toml", "[plugins.gamma]\nenabled = false\n");
+    }
+
     [Fact]
-    public void AddPlugins_Registers_OnlyListAndVerify()
+    public void AddPlugins_Registers_ListVerifyEnableAndDisable()
     {
         var services = new FakeServices();
 
@@ -20,53 +40,32 @@ public sealed class PluginCommandTests
             .Select(static d => ((ICommand)d.ImplementationFactory!(null!)).Name)
             .Order()
             .ToArray();
-        Assert.Equal(["plugin list", "plugin verify"], names);
+        Assert.Equal(["plugin disable", "plugin enable", "plugin list", "plugin verify"], names);
     }
 
     [Fact]
-    [UnsupportedOSPlatform("windows")]
-    public void Verify_Approve_WritesPrivateRecordAndKeepsExecuteBit()
+    public void Verify_ApproveAtATerminal_HandsOffToDgCoreAndWritesNothing()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "Unix file modes");
-        const string tree = "ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b";
         using var home = new TempHome(hasTerminal: true);
         home.Write("data/plugins/gamma/src/SKILL.md", "---\nname: gamma\n---\nGamma.\n");
-        home.Write(
-            "data/plugins/gamma/dg-plugin.json",
-            $"{{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"s\",\n\t\"pin\": {{\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"{tree}\"\n\t}},\n\t\"treeSha256\": \"{tree}\",\n\t\"approvedSha256\": null\n}}\n"
-        );
+        home.Write("data/plugins/gamma/dg-plugin.json", Json("null", null));
         home.Write("config/config.toml", "");
-        var skill = Path.Combine(home.Root, "data/plugins/gamma/src/SKILL.md");
-        File.SetUnixFileMode(skill, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var before = home.Run("plugin", "verify", "gamma").Files;
 
         var run = home.Run("plugin", "verify", "gamma", "--approve");
 
-        Assert.Equal(0, run.Exit);
-        var record = Path.Combine(home.Root, "data/plugins/gamma/dg-plugin.json");
-        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(record));
-        var loaded = Path.Combine(home.Root, "data/plugins/gamma/skills/gamma/SKILL.md");
-        Assert.Equal(
-            UnixFileMode.UserRead
-                | UnixFileMode.UserWrite
-                | UnixFileMode.UserExecute
-                | UnixFileMode.GroupRead
-                | UnixFileMode.GroupExecute
-                | UnixFileMode.OtherRead
-                | UnixFileMode.OtherExecute,
-            File.GetUnixFileMode(loaded)
-        );
+        Assert.Equal(ExitCodes.NotNative, run.Exit);
+        Assert.Equal("", run.Stdout);
+        Assert.Equal("", run.Stderr);
+        Assert.Equal(before, run.Files);
     }
 
     [Fact]
     public void Verify_ApproveWithoutTerminal_RefusesAndWritesNothing()
     {
-        const string tree = "ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b";
         using var home = new TempHome();
         home.Write("data/plugins/gamma/src/SKILL.md", "---\nname: gamma\n---\nGamma.\n");
-        home.Write(
-            "data/plugins/gamma/dg-plugin.json",
-            $"{{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"s\",\n\t\"pin\": {{\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"{tree}\"\n\t}},\n\t\"treeSha256\": \"{tree}\",\n\t\"approvedSha256\": null\n}}\n"
-        );
+        home.Write("data/plugins/gamma/dg-plugin.json", Json("null", null));
         var before = home.Run("plugin", "verify", "gamma").Files;
 
         var run = home.Run("plugin", "verify", "gamma", "--approve");
@@ -75,5 +74,95 @@ public sealed class PluginCommandTests
         Assert.Equal("", run.Stdout);
         Assert.Equal("dg plugin verify --approve needs a person at a terminal; run it yourself.\n", run.Stderr);
         Assert.Equal(before, run.Files);
+    }
+
+    [Fact]
+    public void Parse_RecordWithoutMacKey_HasNullMac()
+    {
+        var record = PluginRecordFile.Parse(Encoding.UTF8.GetBytes(Json("null", null)), "gamma");
+
+        Assert.Null(record.Mac);
+    }
+
+    [Fact]
+    public void ToJson_RecordWithMac_RoundTripsTheMacKey()
+    {
+        var text = Json($"\"{Tree}\"", $"\"{Mac}\"");
+
+        var record = PluginRecordFile.Parse(Encoding.UTF8.GetBytes(text), "gamma");
+
+        Assert.Equal(Mac, record.Mac);
+        Assert.Equal(text, record.ToJson());
+    }
+
+    [Fact]
+    public void ToJson_RecordWithNullMac_WritesNull()
+    {
+        var record = PluginRecordFile.Parse(Encoding.UTF8.GetBytes(Json("null", "null")), "gamma");
+
+        Assert.Null(record.Mac);
+        Assert.Equal(Json("null", "null"), record.ToJson());
+    }
+
+    [Theory]
+    [InlineData("\"short\"")]
+    [InlineData("1")]
+    public void Parse_MalformedMac_IsNotNative(string mac) =>
+        Assert.Throws<NotNativeException>(() =>
+            PluginRecordFile.Parse(Encoding.UTF8.GetBytes(Json("null", mac)), "gamma")
+        );
+
+    [Fact]
+    public void DeferIfApproved_RecordThatClaimsApproval_NeedsDgCore()
+    {
+        var claims = PluginRecordFile.Parse(Encoding.UTF8.GetBytes(Json($"\"{Tree}\"", $"\"{Mac}\"")), "gamma");
+
+        Assert.Throws<NotNativeException>(() => PluginStore.DeferIfApproved(claims));
+    }
+
+    [Fact]
+    public void DeferIfApproved_RecordThatNeverClaimedApproval_StaysNative()
+    {
+        var record = PluginRecordFile.Parse(Encoding.UTF8.GetBytes(Json("null", null)), "gamma");
+
+        PluginStore.DeferIfApproved(record);
+    }
+
+    [Theory]
+    [InlineData("plugin list", null)]
+    [InlineData("plugin list --json", null)]
+    [InlineData("plugin verify gamma", null)]
+    [InlineData("plugin enable gamma", null)]
+    [InlineData("plugin list", "null")]
+    [InlineData("plugin verify gamma", "null")]
+    [InlineData("plugin enable gamma", "null")]
+    [InlineData("plugin list", "forged")]
+    [InlineData("plugin list --json", "forged")]
+    [InlineData("plugin verify gamma", "forged")]
+    [InlineData("plugin enable gamma", "forged")]
+    public void Run_RecordThatClaimsApprovalWithoutAValidMac_HandsOffAndNeverReportsApproved(string command, string? mac)
+    {
+        using var home = new TempHome();
+        Install(home, approved: true, mac is "forged" ? $"\"{Mac}\"" : mac);
+        var before = home.Run("plugin", "list", "--json").Files;
+
+        var run = home.Run(command.Split(' '));
+
+        Assert.Equal(ExitCodes.NotNative, run.Exit);
+        Assert.Equal("", run.Stdout);
+        Assert.Equal("", run.Stderr);
+        Assert.Equal(before, run.Files);
+    }
+
+    [Fact]
+    public void Run_RecordThatNeverClaimedApproval_ListsAsUnapprovedNatively()
+    {
+        using var home = new TempHome();
+        Install(home, approved: false, macJson: null);
+
+        var run = home.Run("plugin", "list");
+
+        Assert.Equal(0, run.Exit);
+        Assert.Contains("unapproved", run.Stdout);
     }
 }

@@ -17,12 +17,14 @@ public sealed class CompositionRootTests
             { "--version", "--version" },
             { "__complete st ch", "__complete" },
             { "hooks run pr-confirm", "hooks run" },
-            { "config get browser.mode", "config get" },
-            { "config set browser.mode ext", "config set" },
+            { "config get pw.mode", "config get" },
+            { "config set pw.mode ext", "config set" },
             { "config list", "config list" },
             { "config doctor", "config doctor" },
             { "plugin list", "plugin list" },
             { "plugin verify x", "plugin verify" },
+            { "plugin enable x", "plugin enable" },
+            { "plugin disable x", "plugin disable" },
         };
 
     [Theory]

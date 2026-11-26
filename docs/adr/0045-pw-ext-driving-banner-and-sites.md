@@ -244,3 +244,10 @@ A page cannot give up space at the top for an injected strip in a reliable way:
 
 - `pkg/extension/lib/features/pw-ext-banner.ts`
 - `pkg/extension/__tests__/pw-ext-banner-e2e.spec.ts`
+
+## Update 2026-11-26
+
+Stop no longer holds until the browser ends. Stop now sends `pw-ext-stop` to the daemon, and the daemon refuses every
+later `pw --ext` request of that session. The extension keeps its Stop record until it is older than 24 hours and the
+daemon no longer lists the session. See [ADR 0061](0061-dg-plugin-admission-is-signed-and-transport-bound.md) and
+`docs/relay-protocol.md`.

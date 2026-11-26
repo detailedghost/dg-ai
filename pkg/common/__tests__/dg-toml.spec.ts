@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "../src/errors";
-import { readDgToml, setting, writeDgToml } from "../src/node/dg-toml";
+import { DG_TOML_DEFAULTS, readDgToml, setting, writeDgToml } from "../src/node/dg-toml";
 
 const FAKE_TOKEN = `ghp_${"Fake0".repeat(7)}x`;
 
@@ -65,7 +65,7 @@ describe("readDgToml", () => {
 		expect(doc.hooks).toEqual({ spelling: { locale: "en-GB" } });
 		expect(doc.install.cli_only).toBe(true);
 		expect(doc.refs).toEqual({ default_repo: "acme/app", aliases: { app: "acme/app" } });
-		expect(doc.plugins.foo).toEqual({ enabled: false, allow_remote: false, source: "github:acme/foo", settings: { depth: 3 } });
+		expect(doc.plugins.foo).toEqual({ enabled: false, allow_remote: false, fail_closed: false, source: "github:acme/foo", settings: { depth: 3 } });
 	});
 
 	test("throws a DgCliError with file, line, key and a next step for a wrong type", () => {
@@ -273,27 +273,75 @@ describe("writeDgToml", () => {
 	});
 });
 
-describe("browser and front keys", () => {
-	test("default browser.mode to auto and front.enabled to true", () => {
-		expect(setting<string>("browser.mode", { env })).toBe("auto");
+describe("pw and front keys", () => {
+	test("hands out a frozen default for pw.phi_sites", () => {
+		expect(Object.isFrozen(DG_TOML_DEFAULTS["pw.phi_sites"])).toBe(true);
+	});
+
+	test("default pw.mode to auto, pw.phi_sites to empty and front.enabled to true", () => {
+		expect(setting<string>("pw.mode", { env })).toBe("auto");
+		expect(setting<string[]>("pw.phi_sites", { env })).toEqual([]);
 		expect(setting<boolean>("front.enabled", { env })).toBe(true);
-		expect(readDgToml(env).browser.mode).toBe("auto");
+		expect(readDgToml(env).pw).toEqual({ mode: "auto", phi_sites: [] });
 		expect(readDgToml(env).front.enabled).toBe(true);
 	});
 
-	test("reads both keys from config.toml", () => {
-		writeFileSync(file, ["[browser]", 'mode = "local"', "[front]", "enabled = false", ""].join("\n"));
+	test("reads the pw and front keys from config.toml", () => {
+		writeFileSync(
+			file,
+			["[pw]", 'mode = "local"', 'phi_sites = ["https://ehr.example.org", "http://localhost:8080"]', "[front]", "enabled = false", ""].join("\n"),
+		);
 
-		expect(readDgToml(env).browser.mode).toBe("local");
+		expect(readDgToml(env).pw).toEqual({ mode: "local", phi_sites: ["https://ehr.example.org", "http://localhost:8080"] });
 		expect(readDgToml(env).front.enabled).toBe(false);
 	});
 
-	test("rejects a browser.mode outside ext, local and auto", () => {
-		writeFileSync(file, ["[browser]", 'mode = "both"', ""].join("\n"));
+	test("rejects a pw.mode outside ext, local and auto", () => {
+		writeFileSync(file, ["[pw]", 'mode = "both"', ""].join("\n"));
 
 		expect(caught(() => readDgToml(env)).message).toBe(
-			`dg config: ${file}:2: browser.mode must be ext, local or auto, got "both". Next: run dg config edit, or dg config set browser.mode <value>.`,
+			`dg config: ${file}:2: pw.mode must be ext, local or auto, got "both". Next: run dg config edit, or dg config set pw.mode <value>.`,
 		);
+	});
+
+	test("rejects a config that still sets browser.mode and names pw.mode", () => {
+		writeFileSync(file, ["[browser]", 'mode = "ext"', ""].join("\n"));
+
+		expect(caught(() => readDgToml(env)).message).toBe(
+			`dg config: ${file}:2: browser.mode moved to pw.mode. Next: run dg config edit, or dg config set pw.mode <value>.`,
+		);
+	});
+
+	test("rejects pw.phi_sites that is not a list of site keys", () => {
+		writeFileSync(file, ["[pw]", 'phi_sites = "https://a.org"', ""].join("\n"));
+		expect(caught(() => readDgToml(env)).message).toBe(
+			`dg config: ${file}:2: pw.phi_sites must be a list of site keys such as "https://example.org", got "https://a.org". Next: run dg config edit, or dg config set pw.phi_sites <value>.`,
+		);
+		writeFileSync(file, ["[pw]", 'phi_sites = ["example.org"]', ""].join("\n"));
+		expect(caught(() => readDgToml(env)).message).toBe(
+			`dg config: ${file}:2: pw.phi_sites.0 must be a site key such as "https://example.org", got "example.org". Next: run dg config edit, or dg config set pw.phi_sites.0 <value>.`,
+		);
+	});
+
+	test("rejects more than 256 pw.phi_sites entries and accepts exactly 256", () => {
+		const list = (count: number) => `phi_sites = [${Array.from({ length: count }, (_, i) => `"https://h${i}.example.org"`).join(", ")}]`;
+		writeFileSync(file, ["[pw]", list(256), ""].join("\n"));
+		expect(readDgToml(env).pw.phi_sites).toHaveLength(256);
+		writeFileSync(file, ["[pw]", list(257), ""].join("\n"));
+		expect(caught(() => readDgToml(env)).message).toBe(
+			`dg config: ${file}:2: pw.phi_sites holds more than 256 site keys. Next: run dg config edit, or dg config set pw.phi_sites <value>.`,
+		);
+	});
+
+	test("rejects a pw.phi_sites key whose host ends with a dot", () => {
+		writeFileSync(file, ["[pw]", 'phi_sites = ["https://ehr.example.org."]', ""].join("\n"));
+		expect(caught(() => readDgToml(env)).message).toContain("pw.phi_sites.0 must be a site key");
+	});
+
+	test("rejects an unknown pw key", () => {
+		writeFileSync(file, ["[pw]", "speed = 1", ""].join("\n"));
+
+		expect(caught(() => readDgToml(env)).message).toContain("pw.speed is not a dg config key");
 	});
 
 	test("rejects a front.enabled that is not a boolean", () => {
@@ -308,6 +356,25 @@ describe("browser and front keys", () => {
 		writeFileSync(file, ["[front]", "speed = 1", ""].join("\n"));
 
 		expect(caught(() => readDgToml(env)).message).toContain("front.speed is not a dg config key");
+	});
+});
+
+describe("plugins fail_closed", () => {
+	test("defaults to false and reads true from config.toml", () => {
+		writeFileSync(file, ["[plugins.foo]", "enabled = true", "[plugins.bar]", "fail_closed = true", ""].join("\n"));
+
+		const { plugins } = readDgToml(env);
+
+		expect(plugins.foo?.fail_closed).toBe(false);
+		expect(plugins.bar?.fail_closed).toBe(true);
+	});
+
+	test("rejects a value that is not a boolean", () => {
+		writeFileSync(file, ["[plugins.foo]", 'fail_closed = "yes"', ""].join("\n"));
+
+		expect(caught(() => readDgToml(env)).message).toBe(
+			`dg config: ${file}:2: plugins.foo.fail_closed must be a boolean, got "yes". Next: run dg config edit, or dg config set plugins.foo.fail_closed <value>.`,
+		);
 	});
 });
 

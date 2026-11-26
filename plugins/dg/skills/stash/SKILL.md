@@ -1,6 +1,6 @@
 ---
 name: stash
-description: "Print an absolute path for a scratch, state, or worktree-local file. Use when a skill or task needs somewhere to write drafts, run state, handoffs, or per-repo agent artifacts."
+description: Print an absolute path for a scratch, state, or worktree-local file for drafts, run state, or handoffs.
 ---
 
 First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:

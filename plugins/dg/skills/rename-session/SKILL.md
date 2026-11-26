@@ -1,6 +1,6 @@
 ---
 name: rename-session
-description: Intelligently rename the current session — generates 3 candidate names from conversation context + git state, with PR # prefix if a branch PR exists. Picks up fast on what the session has been about.
+description: 'Rename the current session: 3 candidate names from the conversation and git state, with a PR # prefix.'
 ---
 
 # Skill: rename-session

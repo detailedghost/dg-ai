@@ -14,4 +14,5 @@ export default defineCommand({
 	],
 	help: "List console messages\nmin-level is error, warning, info, or debug. Each level includes the more severe ones. The default is info.",
 	changesPage: false,
+	readsPage: true,
 });

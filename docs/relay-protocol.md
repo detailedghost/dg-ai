@@ -117,7 +117,7 @@ Requires extension 1.11.0 or newer.
 
 ### Browser automation (pw-ext)
 
-Requires dg-ai-extension 1.44.0 or newer. The daemon checks the verb against the `pwExtVerbs` list from the `connect` frame:
+Requires dg-ai-extension 8.0.0 or newer, the first release that understands `phiSites` and reports Stop to the daemon. The daemon checks the verb against the `pwExtVerbs` list from the `connect` frame:
 
 - An extension that sent `pwExtVerbs` receives only the verbs in that list. This covers every verb, including the verbs from [ADR 0060](adr/0060-pw-auto-mode-and-ext-verbs-for-the-real-browser.md) such as `eval` and the storage writes.
 - An extension that omitted `pwExtVerbs` is refused `count`, `unmask`, `dialog`, `network`, `storage`, `fetch`, `credential`, `press`, `webmcp-tools` and `webmcp-call`. The daemon forwards any other verb, and the extension rejects a verb it does not know.
@@ -126,13 +126,15 @@ Requires dg-ai-extension 1.44.0 or newer. The daemon checks the verb against the
 
 `cli-pw-ext-cancel`: `requestId`, optional `protocolVersion`. No other field is allowed.
 
-`pw-ext-browser-request`: `requestId`, `request`, `timeoutMs`. The `request` has a `verb` and only the fields that verb allows. An unknown verb or field is rejected.
+`pw-ext-browser-request`: `requestId`, `request`, `timeoutMs`. The `request` has a `verb` and only the fields that verb allows. An unknown verb or field is rejected. Every verb also accepts an optional `phiSites`: at most 256 site keys such as `https://example.org`, copied from `[pw] phi_sites` in `config.toml`. The CLI sends it only when the list is not empty. The extension refuses the page data verbs on those sites. An extension that does not know `phiSites` rejects the request.
 
 `pw-ext-browser-cancel`: outbound. `requestId` only. The daemon sends it when a request times out or the CLI cancels.
 
 `pw-ext-browser-result`: `requestId`, `ok`, and `data` or `error`. `data` has `text` (at most 100,000 characters) and may have `image` (a base64 JPEG or PNG data URL) and `tools`.
 
 `cli-pw-ext-result`: `sessionId`, `requestId`, and `ok: true` with `data`, or `ok: false` with `error`.
+
+`pw-ext-stop`: inbound, from the extension only. It has the envelope fields (`sessionId`, `token`, `protocolVersion`) and no others. The extension sends it when the person clicks Stop for a session, and again on each new socket for every Stop younger than 24 hours. The daemon then refuses each later `cli-pw-ext-request` for that session with `ok: false` and an error that starts `The person clicked Stop in the browser`. A frame from a socket that is not the extension, or with a wrong token, changes nothing. The daemon holds the revoked ids in memory and drops one when its session closes. Session ids come from `randomUUID`, so a dropped id never returns. The extension keeps its own record of a Stop for 24 hours, so expiry there only frees memory. A hand-written frame has no fixture, like `connect`.
 
 ## Fixtures
 

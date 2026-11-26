@@ -1,50 +1,32 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 
 namespace Dg.Core.Plugins.Runtime;
 
 public static class PluginApproval
 {
-    private const string RecordFile = "dg-plugin.json";
+    private const int MacByteLength = 32;
 
-    public static bool IsApproved(string folder)
+    public static bool HasNul(PluginApprovalRecord record)
     {
-        var file = Path.Combine(folder, RecordFile);
-        if (!File.Exists(file))
+        foreach (var field in record.SignedFields())
+            if (field.Contains('\0'))
+                return true;
+        return false;
+    }
+
+    public static bool TryDecode32(string? hex, out byte[] bytes)
+    {
+        bytes = [];
+        if (hex is not { Length: MacByteLength * 2 } || !IsLowerHex(hex))
             return false;
-        string? tree;
-        string? approved;
-        try
-        {
-            using var record = JsonDocument.Parse(File.ReadAllBytes(file));
-            tree = Read(record.RootElement, "treeSha256");
-            approved = Read(record.RootElement, "approvedSha256");
-        }
-        catch (Exception ex) when (ex is JsonException or IOException or InvalidOperationException)
-        {
-            return false;
-        }
-        if (approved is null || tree is null || !string.Equals(approved, tree, StringComparison.Ordinal))
-            return false;
-        var src = Path.Combine(folder, "src");
-        if (!Directory.Exists(src))
-            return false;
-        try
-        {
-            return string.Equals(HashTree(src), tree, StringComparison.Ordinal);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
-        {
-            return false;
-        }
+        bytes = Convert.FromHexString(hex);
+        return true;
     }
 
     public static string HashTree(string root)
     {
-        var files = new List<string>();
-        Walk(root, "", files);
-        files.Sort(StringComparer.Ordinal);
+        var files = ListFiles(root);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         foreach (var rel in files)
         {
@@ -54,8 +36,21 @@ public static class PluginApproval
         return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
-    private static string? Read(JsonElement root, string key) =>
-        root.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+    public static List<string> ListFiles(string root)
+    {
+        var files = new List<string>();
+        Walk(root, "", files);
+        files.Sort(StringComparer.Ordinal);
+        return files;
+    }
+
+    private static bool IsLowerHex(string text)
+    {
+        foreach (var c in text)
+            if (c is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
+                return false;
+        return true;
+    }
 
     private static void Walk(string dir, string prefix, List<string> files)
     {

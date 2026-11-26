@@ -37,15 +37,15 @@ public sealed class TcpTransportTests
             new([], [])
         );
 
-    private static TcpConnector ConnectorFor(PluginManifest manifest, string? token = Secret) =>
+    private static TcpConnector ConnectorFor(PluginManifest manifest, string? token = null) =>
         new(new FixedManifests(manifest), new FixedTokens(token));
 
     private static PluginManifest ManifestFor(TcpPluginServer server) => Manifest($"127.0.0.1:{server.Port}");
 
     [Fact]
-    public async Task ConnectAsync_ValidToken_CompletesHelloAndEchoesFrames()
+    public async Task ConnectAsync_NoTokenStored_CompletesUnauthenticatedHelloAndEchoesFrames()
     {
-        await using var server = new TcpPluginServer(Secret);
+        await using var server = new TcpPluginServer();
         await using var pool = new PluginConnectionPool(ConnectorFor(ManifestFor(server)).ConnectAsync);
 
         var connection = await pool.GetAsync("scanner", CancellationToken.None);
@@ -56,28 +56,36 @@ public sealed class TcpTransportTests
     }
 
     [Fact]
-    public async Task ConnectAsync_WrongToken_PluginClosesConnectionAndCallerGetsAuthError()
+    public async Task ConnectAsync_TokenStored_IsRefusedAndNeverSent()
     {
-        await using var server = new TcpPluginServer(Secret);
-        var connector = ConnectorFor(ManifestFor(server), token: "wrong");
+        await using var server = new TcpPluginServer();
+        var connector = ConnectorFor(ManifestFor(server), token: Secret);
 
         var ex = await Assert.ThrowsAsync<PluginTransportException>(async () => await connector.ConnectAsync("scanner", CancellationToken.None));
 
-        Assert.Equal(PluginTransportCodes.Auth, ex.Code);
-        Assert.Equal(1, server.Rejected);
-        Assert.DoesNotContain("wrong", ex.Message);
+        Assert.Equal(PluginTransportCodes.Refused, ex.Code);
+        Assert.Equal(
+            "dg plugin: scanner: tcp would send the plugin token to any local listener, so dg did not connect. "
+                + "Next: to remove a stale token, run `dg credentials delete plugin-scanner-token`. "
+                + "Otherwise move the plugin to transport = \"ipc\" or to the http transport with an https endpoint.",
+            ex.Message
+        );
+        Assert.DoesNotContain(Secret, ex.Message);
+        Assert.Equal(0, server.Accepted);
     }
 
     [Fact]
-    public async Task ConnectAsync_NoStoredToken_FailsBeforeConnecting()
+    public async Task ConnectAsync_ManifestDeclaresToken_IsRefusedWithoutReadingOrSendingIt()
     {
-        await using var server = new TcpPluginServer(Secret);
-        var connector = ConnectorFor(ManifestFor(server), token: null);
+        await using var server = new TcpPluginServer();
+        var tokens = new FixedTokens(Secret);
+        var manifest = ManifestFor(server) with { Permissions = new(["plugin-scanner-token"], []) };
+        var connector = new TcpConnector(new FixedManifests(manifest), tokens);
 
         var ex = await Assert.ThrowsAsync<PluginTransportException>(async () => await connector.ConnectAsync("scanner", CancellationToken.None));
 
-        Assert.Equal(PluginTransportCodes.Auth, ex.Code);
-        Assert.Contains("plugin-scanner-token", ex.Message);
+        Assert.Equal(PluginTransportCodes.Refused, ex.Code);
+        Assert.Equal(0, tokens.Reads);
         Assert.Equal(0, server.Accepted);
     }
 
@@ -97,14 +105,16 @@ public sealed class TcpTransportTests
     }
 
     [Fact]
-    public async Task ConnectAsync_PoolReconnectsAfterRejectedHello()
+    public async Task ConnectAsync_PoolConnectsAfterTokenIsRemoved()
     {
-        await using var server = new TcpPluginServer(Secret);
-        var tokens = new FixedTokens("wrong");
+        await using var server = new TcpPluginServer();
+        var tokens = new FixedTokens(Secret);
         await using var pool = new PluginConnectionPool(new TcpConnector(new FixedManifests(ManifestFor(server)), tokens).ConnectAsync);
 
-        await Assert.ThrowsAsync<PluginTransportException>(async () => await pool.GetAsync("scanner", CancellationToken.None));
-        tokens.Token = Secret;
+        var ex = await Assert.ThrowsAsync<PluginTransportException>(async () => await pool.GetAsync("scanner", CancellationToken.None));
+        Assert.Equal(PluginTransportCodes.Refused, ex.Code);
+        Assert.Equal(0, server.Accepted);
+        tokens.Token = null;
         var connection = await pool.GetAsync("scanner", CancellationToken.None);
 
         await Call(connection);
@@ -168,7 +178,13 @@ public sealed class TcpTransportTests
     {
         public string? Token { get; set; } = token;
 
-        public ValueTask<string?> GetTokenAsync(string credentialName, CancellationToken ct) => ValueTask.FromResult(Token);
+        public int Reads { get; private set; }
+
+        public ValueTask<string?> GetTokenAsync(string credentialName, CancellationToken ct)
+        {
+            Reads++;
+            return ValueTask.FromResult(Token);
+        }
     }
 
     private sealed class FakeServices : List<ServiceDescriptor>, IServiceCollection;

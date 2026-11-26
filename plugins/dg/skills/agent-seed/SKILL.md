@@ -1,6 +1,6 @@
 ---
 name: agent-seed
-description: Bootstrap and normalize a project's .agents/ structure and human docs. CLAUDE.md becomes @AGENTS.md, AGENTS.md stays token-lean (traps and routing), style rules move to docs/code_standards.md, review rules to docs/code_review.md, and feature detail to .agents/references/ for on-demand reads.
+description: 'Bootstrap and normalize a project''s .agents/ structure: CLAUDE.md as @AGENTS.md, lean AGENTS.md, docs/ rules.'
 ---
 
 # Skill: agent-seed

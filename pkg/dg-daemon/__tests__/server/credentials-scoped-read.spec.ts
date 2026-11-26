@@ -110,3 +110,19 @@ describe("sealed pw/ names", () => {
 		expect(JSON.stringify(scopedRead({ operation: "list" }, "pw", store))).not.toContain("fake-marker-value-for-tests");
 	});
 });
+
+describe("scopedRead and the plugin approval key", () => {
+	const keyed = storeOf({ "dg/plugin-approval-key": "f".repeat(64), "dg/other": "value-dg-other" });
+
+	it("never returns the approval key to a grant, in any letter case, but lists its name", () => {
+		for (const name of ["dg/plugin-approval-key", "DG/Plugin-Approval-Key"])
+			expect(scopedRead({ operation: "get", name }, "dg", keyed)).toMatchObject({ ok: false });
+		expect(scopedRead({ operation: "get", name: "dg/other" }, "dg", keyed)).toMatchObject({ ok: true });
+		const listed = scopedRead({ operation: "list" }, "dg", keyed);
+		expect(listed).toMatchObject({ ok: true });
+		const entries = (listed as { value: Record<string, unknown>[] }).value;
+		expect(entries.map((entry) => entry.name)).toContain("dg/plugin-approval-key");
+		expect(entries.every((entry) => !("value" in entry))).toBe(true);
+		expect(JSON.stringify(listed)).not.toContain("ffff");
+	});
+});

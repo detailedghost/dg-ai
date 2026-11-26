@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Dg.Plugins;
 
-/// <summary>Registers plugin list and verify. The root runs the other plugin commands in dg-core.</summary>
+/// <summary>Registers plugin list, verify, enable and disable. The root runs the other plugin commands in dg-core.</summary>
 public static class PluginsServiceCollectionExtensions
 {
     public static IServiceCollection AddPlugins(this IServiceCollection services)
@@ -17,6 +17,16 @@ public static class PluginsServiceCollectionExtensions
             OutputWriter.Err
         ));
         services.AddSingleton<ICommand>(static _ => new PluginVerifyCommand(
+            ProcessEnvironment.Capture(),
+            OutputWriter.Out,
+            OutputWriter.Err
+        ));
+        services.AddSingleton<ICommand>(static _ => new PluginEnableCommand(
+            ProcessEnvironment.Capture(),
+            OutputWriter.Out,
+            OutputWriter.Err
+        ));
+        services.AddSingleton<ICommand>(static _ => new PluginDisableCommand(
             ProcessEnvironment.Capture(),
             OutputWriter.Out,
             OutputWriter.Err

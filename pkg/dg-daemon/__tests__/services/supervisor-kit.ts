@@ -87,6 +87,8 @@ export function rig(
 			daemonDir: join(root, "daemon"),
 			logDir: join(root, "logs"),
 			grantsDir: join(root, "grants"),
+			jobsDir: join(root, "jobs"),
+			jobSourcesPath: join(root, "jobs", "sources.json"),
 			jobStateRoot,
 		},
 		daemonUrl: () => "http://127.0.0.1:1",

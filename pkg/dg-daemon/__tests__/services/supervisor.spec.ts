@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import {
 	chmodSync,
 	existsSync,
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
@@ -19,6 +20,7 @@ import {
 	type Supervisor,
 	type SupervisorDeps,
 } from "../../src/services/supervisor";
+import { writeSource } from "../../src/jobs/sources";
 import { asContinuous } from "../utils/job-table";
 
 const roots: string[] = [];
@@ -69,6 +71,8 @@ function fixture(
 			daemonDir: join(root, "daemon"),
 			logDir: join(root, "logs"),
 			grantsDir: join(root, "grants"),
+			jobsDir: join(root, "jobs"),
+			jobSourcesPath: join(root, "jobs", "sources.json"),
 			jobStateRoot: join(root, "state", "jobs"),
 		},
 		loadConfig: () => ({ jobs: asContinuous(services) }),
@@ -273,6 +277,31 @@ describe("createSupervisor", () => {
 		await until(() => f.status().state === "backoff");
 		await f.supervisor.stop("bot");
 		expect(f.status()).toMatchObject({ restarts: 0, state: "stopped" });
+	});
+
+	it("backs off with a clear status when the pin check refuses the job", async () => {
+		const f = botRunning(SLEEPER, {}, { backoffMs: () => 60_000 });
+		const jobsDir = join(f.root, "jobs");
+		mkdirSync(join(jobsDir, "tools"), { recursive: true });
+		writeSource(
+			{ jobsDir, jobSourcesPath: join(jobsDir, "sources.json") },
+			"tools",
+			{
+				kind: "git",
+				url: "file:///x",
+				ref: null,
+				sha: "a".repeat(40),
+				jobs: ["bot"],
+				declarationHash: "h",
+				credentials: {},
+				pin: { kind: "commit", value: "a".repeat(40) },
+				tree: "b".repeat(40),
+			},
+		);
+		f.supervisor.start("bot");
+		await until(() => f.status().state === "backoff");
+		expect(f.status().lastExit).toMatch(/failed to start: .*cannot read the git clone/);
+		expect(f.status().pid).toBeNull();
 	});
 
 	it("does not restart a script that exits cleanly", async () => {

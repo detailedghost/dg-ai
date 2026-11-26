@@ -2,20 +2,20 @@ using Tomlyn.Model;
 
 namespace Dg.Core.Config;
 
-public enum BrowserMode
+public enum PwMode
 {
     Auto,
     Ext,
     Local,
 }
 
-public static class BrowserModes
+public static class PwModes
 {
-    public static string Wire(this BrowserMode mode) =>
+    public static string Wire(this PwMode mode) =>
         mode switch
         {
-            BrowserMode.Ext => "ext",
-            BrowserMode.Local => "local",
+            PwMode.Ext => "ext",
+            PwMode.Local => "local",
             _ => "auto",
         };
 }
@@ -23,12 +23,14 @@ public static class BrowserModes
 public sealed record PluginEntry(
     bool Enabled,
     bool AllowRemote,
+    bool FailClosed,
     string? Source,
     TomlTable Settings
 );
 
 public sealed record DgToml(
-    BrowserMode BrowserMode,
+    PwMode PwMode,
+    IReadOnlyList<string> PwPhiSites,
     bool FrontEnabled,
     IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Hooks,
     bool InstallCliOnly,

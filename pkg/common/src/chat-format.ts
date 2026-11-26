@@ -311,6 +311,10 @@ export type ChatFrame =
 			meta: Record<string, unknown>;
 	  })
 	| (Envelope & {
+			type: "pw-ext-stop";
+			token: string;
+	  })
+	| (Envelope & {
 			type: "pw-ext-credential-stored";
 			requestId: string;
 			ok: boolean;
@@ -352,6 +356,7 @@ const HAND_FRAME_TYPES = [
 	"overwatch-open-result",
 	"pw-ext-credential-store",
 	"pw-ext-credential-stored",
+	"pw-ext-stop",
 ] as const;
 
 const HAND_INBOUND_TYPES = [
@@ -366,6 +371,7 @@ const HAND_INBOUND_TYPES = [
 	"config-set",
 	"overwatch-open-result",
 	"pw-ext-credential-store",
+	"pw-ext-stop",
 ] as const;
 
 /** Relay tables whose frames reach the chat and board pages. */
@@ -781,6 +787,9 @@ function validateFrameBody(
 			return;
 		case "pw-ext-credential-stored":
 			validatePwExtCredentialStored(value, path);
+			return;
+		case "pw-ext-stop":
+			requireString(value.token, `${path}.token`, { nonEmpty: true });
 			return;
 		case "overwatch-state":
 			requireOverwatchSessionId(value.sessionId, `${path}.sessionId`);

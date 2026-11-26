@@ -1,0 +1,12 @@
+{
+	"validator": "cli-request:pw-ext",
+	"frame": {
+		"type": "cli-pw-ext-request",
+		"requestId": "req-1",
+		"request": {
+			"verb": "snapshot",
+			"phiSites": ["https://ehr.example.org", "http://localhost:8080"]
+		},
+		"protocolVersion": 1
+	}
+}

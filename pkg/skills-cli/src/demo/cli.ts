@@ -95,7 +95,7 @@ export async function runVerify(
 ): Promise<void> {
 	let script: TourScript;
 	try {
-		script = loadScript(planPath);
+		script = await loadScript(planPath);
 	} catch (err) {
 		console.log(
 			JSON.stringify({
@@ -172,7 +172,7 @@ export async function runDemo(
 		process.exitCode = 1;
 		return;
 	}
-	return dispatchPlay("demo", loadScript(scriptPath), opts, deps);
+	return dispatchPlay("demo", await loadScript(scriptPath), opts, deps);
 }
 
 export async function runRerun(
@@ -180,5 +180,5 @@ export async function runRerun(
 	opts: CommandOpts,
 	deps: Partial<DemoDeps>,
 ): Promise<void> {
-	return dispatchPlay("rerun", loadScript(findPlan(plan)), opts, deps);
+	return dispatchPlay("rerun", await loadScript(findPlan(plan)), opts, deps);
 }

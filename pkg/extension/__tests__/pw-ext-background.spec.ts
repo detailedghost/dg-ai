@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it, mock, setSystemTime } from "bun:test";
 import { PW_EXT_MAX_TEXT_CHARS, PW_EXT_MAX_TOOLS, type PwExtRequest } from "@dg/common";
 import { PW_EXT_MAILBOX_ERROR } from "@/lib/background/tab-guards";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
@@ -11,7 +11,7 @@ import { createIdbGrantNonces } from "@/lib/background/webmcp-grant-nonces";
 import { IDBFactory } from "fake-indexeddb";
 import { heapAfterGc } from "./utils/heap";
 import { forgetAgentTabsAndShims } from "@/lib/background/dialog-shim";
-import { createSessionControl, type SessionControl } from "@/lib/background/session-control";
+import { createSessionControl, STOP_TTL_MS, type SessionControl } from "@/lib/background/session-control";
 
 const allowAllSites: SessionControl = {
 	allowed: async () => true,
@@ -19,6 +19,8 @@ const allowAllSites: SessionControl = {
 	valuesAllowed: async () => false,
 	allowValues: async () => undefined,
 	stopped: async () => false,
+	stoppedIds: async () => [],
+	releaseGone: async () => undefined,
 	stop: async () => undefined,
 	forget: async () => undefined,
 };
@@ -84,6 +86,7 @@ type Options = {
 	pageDeadlineMs?: number;
 	captureDeadlineMs?: number;
 	sites?: "ask";
+	onStop?: (sessionId: string) => void;
 	cookies?: Record<string, { value: string; expirationDate?: number }>;
 	store?: (entry: { site: string; name: string; value: string; meta: Record<string, unknown> }) => Promise<string>;
 };
@@ -129,10 +132,12 @@ function harness(options: Options = {}) {
 	fake.seedRecord(
 		recordOf({ sessionId: OTHER_SESSION, groupId: OTHER_GROUP, selectedTabId: 20 }),
 	);
+	let pageRuns = 0;
 	fake.state.script = (details) => {
 		const call = details as { args: unknown[]; world?: string; func?: { name?: string } };
 		if (call.func?.name === "pwExtDocumentStart") return options.documentStart;
 		if (call.world === "MAIN") return options.mainResult?.(call.args[0], call.func?.name);
+		pageRuns += 1;
 		return options.pageResult;
 	};
 	if (options.cookies) {
@@ -168,6 +173,7 @@ function harness(options: Options = {}) {
 		nonces: createIdbGrantNonces(new IDBFactory()),
 		now: () => clock.now,
 	});
+	const control = options.sites === "ask" ? createSessionControl({ storage: fake.api.storage }) : allowAllSites;
 	const handler = createPwExtHandler({
 		browserApi: fake.api,
 		agentTabs,
@@ -188,7 +194,8 @@ function harness(options: Options = {}) {
 		...(options.pageDeadlineMs ? { pageDeadlineMs: options.pageDeadlineMs } : {}),
 		...(options.captureDeadlineMs ? { captureDeadlineMs: options.captureDeadlineMs } : {}),
 		lock: agentTabsLock,
-		control: options.sites === "ask" ? createSessionControl({ storage: fake.api.storage }) : allowAllSites,
+		control,
+		...(options.onStop ? { onStop: options.onStop } : {}),
 	});
 	const call = (
 		request: PwExtRequest,
@@ -215,6 +222,13 @@ function harness(options: Options = {}) {
 		} as never);
 	return {
 		handler,
+		control,
+		pageStarted: async () => {
+			for (let attempt = 0; pageRuns === 0; attempt++) {
+				if (attempt >= 2000) throw new Error("page script never started");
+				await new Promise((resolve) => setTimeout(resolve, 1));
+			}
+		},
 		storedCredentials,
 		remembered,
 		approvalRequests,
@@ -3059,10 +3073,51 @@ describe("pw --ext Stop", () => {
 		expect((await h.runAs(OTHER_SESSION, { verb: "tabs" })).ok).toBe(true);
 	});
 
+	describe("expiry", () => {
+		const START = Date.UTC(2026, 0, 1);
+		const stoppedKeys = (h: ReturnType<typeof harness>) => [...h.fake.session.keys()].filter((key) => key.startsWith("pwExtStopped:"));
+		afterEach(() => setSystemTime());
+
+		it("keeps refusing the session after 24 hours until the record is released", async () => {
+			setSystemTime(new Date(START));
+			const h = harness({ sites: "ask", approval: "allow", pageResult: { tree: "t", text: "x" } });
+			await h.handler.stop(SESSION);
+			setSystemTime(new Date(START + STOP_TTL_MS + 1));
+			expect(await h.run({ verb: "tabs" })).toEqual({ ok: false, error: STOPPED });
+			expect(stoppedKeys(h)).toEqual([`pwExtStopped:${SESSION}`]);
+			await h.control.releaseGone(new Set());
+			expect(stoppedKeys(h)).toEqual([]);
+			expect(await h.run({ verb: "tabs" })).not.toEqual({ ok: false, error: STOPPED });
+		});
+
+		it("tells onStop which session stopped", async () => {
+			const stops: string[] = [];
+			const h = harness({ sites: "ask", approval: "allow", onStop: (id) => void stops.push(id) });
+			await h.handler.stop(SESSION);
+			expect(stops).toEqual([SESSION]);
+		});
+	});
+
+	it("resolves the Stop, cancels verbs in flight and records the Stop when onStop throws", async () => {
+		const h = harness({
+			sites: "ask",
+			approval: "allow",
+			pageResult: new Promise(() => {}),
+			onStop: () => {
+				throw new Error("report failed");
+			},
+		});
+		const running = h.run({ verb: "snapshot" });
+		await h.pageStarted();
+		await h.handler.stop(SESSION);
+		expect(await running).toEqual({ ok: false, error: STOPPED });
+		expect(h.fake.session.get(`pwExtStopped:${SESSION}`)).toBeNumber();
+	});
+
 	it("cancels a verb in flight at once with the Stop error", async () => {
 		const h = harness({ sites: "ask", approval: "allow", pageResult: new Promise(() => {}) });
 		const running = h.run({ verb: "snapshot" });
-		await new Promise((resolve) => setTimeout(resolve, 5));
+		await h.pageStarted();
 		await h.handler.stop(SESSION);
 		expect(await running).toEqual({ ok: false, error: STOPPED });
 	});

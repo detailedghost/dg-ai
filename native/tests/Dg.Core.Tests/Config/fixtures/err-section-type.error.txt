@@ -1,1 +1,1 @@
-dg config: config.toml:1: browser must be a table, got 3. Next: run dg config edit, or dg config set browser <value>.
+dg config: config.toml:1: front must be a table, got 3. Next: run dg config edit, or dg config set front <value>.

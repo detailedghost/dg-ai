@@ -180,7 +180,12 @@ internal sealed partial class TempHome : IDisposable
     }
 
     private ICommand[] Commands(OutputWriter output, OutputWriter error) =>
-        [new PluginListCommand(_env, output, error), new PluginVerifyCommand(_env, output, error, () => _hasTerminal)];
+        [
+            new PluginListCommand(_env, output, error),
+            new PluginVerifyCommand(_env, output, error, () => _hasTerminal),
+            new PluginEnableCommand(_env, output, error),
+            new PluginDisableCommand(_env, output, error),
+        ];
 
     public void Dispose() => Directory.Delete(Root, recursive: true);
 

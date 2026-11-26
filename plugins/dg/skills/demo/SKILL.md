@@ -1,6 +1,6 @@
 ---
 name: demo
-description: Produce a guided demo that plays in a local browser (the default, no extension). Records an MP4 of a feature or PR with chapter cards, captions and a highlight on each target, after optional login or seed setup. Write a plan, verify it, run it. Pass --ext to play it through the dg-ai-extension. Use when asked to demo, show off, walk through or record a feature in the browser.
+description: Produce a guided demo that plays in a local browser (the default, no extension). Pass --ext to use the extension. Use to demo, show off, walk through, or record.
 ---
 
 # Guided-tour demo
@@ -115,12 +115,11 @@ Local-only flags with `--ext` exit 1.
 ## Browser mode
 
 Local mode records with its own Playwright recorder and stays local in every
-`browser.mode`, so video never drives the human's real profile. `auto` never switches
+`pw.mode`, so video never drives the human's real profile. `auto` never switches
 `demo`. `--ext` plays in the agent window, and the first visit to each new site opens
 the allow popup.
 
-One finder picks the browser: `DG_VERIFY_BROWSER` as a binary path (a path in `DG_BROWSER` breaks
-`dg pw`), then Chrome, Edge, Brave, Chromium, Vivaldi, Chrome for Testing, the usual app folders,
+One finder picks the browser: `DG_BROWSER` as a binary path (`DG_VERIFY_BROWSER` is an alias; `DG_BROWSER` is never a mode word), then Chrome, Edge, Brave, Chromium, Vivaldi, Chrome for Testing, the usual app folders,
 then the downloaded Chromium. Last, it suggests `dg pw install-browser`.
 
 On WSL, `demo` drives the Windows browser by default, else headless Chromium inside WSL.

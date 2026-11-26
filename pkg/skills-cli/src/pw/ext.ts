@@ -32,6 +32,7 @@ import {
 } from "@dg/common";
 import {
 	CliClient,
+	readDgToml,
 	postAsset,
 	readAssetSourceFile,
 	resolveCliSession,
@@ -68,6 +69,8 @@ export type ExtDeps = {
 	/** Where `fill --value-env` and `--value-stdin` read a secret. */
 	env?: Readonly<Record<string, string | undefined>>;
 	readStdin?: () => string;
+	/** The `[pw] phi_sites` list from config.toml. */
+	phiSites?: () => readonly string[];
 };
 
 const DEFAULT_DEPS: ExtDeps = {
@@ -83,6 +86,7 @@ const DEFAULT_DEPS: ExtDeps = {
 		};
 	},
 	cliOnly: isCliOnly,
+	phiSites: () => readDgToml(process.env).pw.phi_sites,
 	onInterrupt(handler) {
 		process.once("SIGINT", handler);
 		process.once("SIGTERM", handler);
@@ -666,6 +670,13 @@ export async function runExt(
 		env.err(extensionRequiredMessage("dg pw --ext"));
 		return 1;
 	}
+	let phiSites: readonly string[];
+	try {
+		phiSites = deps.phiSites?.() ?? [];
+	} catch (error) {
+		env.err(error instanceof Error ? error.message : String(error));
+		return 1;
+	}
 	let client: ExtClient;
 	try {
 		client = await deps.connect(parsed.session);
@@ -688,6 +699,7 @@ export async function runExt(
 	});
 	try {
 		let request = parsed.request;
+		if (phiSites.length) request = validatePwExtRequest({ ...request, phiSites });
 		if (parsed.staged) {
 			const assetId = await client.postAsset(
 				parsed.staged.fileName,

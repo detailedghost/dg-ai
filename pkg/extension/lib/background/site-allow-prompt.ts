@@ -15,9 +15,15 @@ export const SITE_ALLOW_MSG = {
 	answer: "dg-site-allow:answer",
 } as const;
 
+const PHI_VERBS = "page data verbs (snapshot, screenshot, selection, console, network, storage, fetch, call, eval)";
+
 export class PhiCaptureRefusedError extends Error {
-	constructor(site: string) {
-		super(`${site} is flagged as PHI for this session; page data verbs (snapshot, screenshot, selection, console, network, storage, fetch, call, eval) are refused there.`);
+	constructor(site: string, source: "session" | "config" = "session") {
+		super(
+			source === "config"
+				? `${site} is listed in [pw] phi_sites in config.toml; ${PHI_VERBS} are refused there.`
+				: `${site} is flagged as PHI for this session; ${PHI_VERBS} are refused there.`,
+		);
 	}
 }
 

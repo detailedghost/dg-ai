@@ -38,6 +38,8 @@ internal static class ConfigKeys
             return Known(false, null, out known);
         if (section == "plugins" && parts.Length == 3 && field == "enabled")
             return Known(false, true, out known);
+        if (section == "plugins" && parts.Length == 3 && field == "fail_closed")
+            return Known(false, false, out known);
         if (section == "plugins" && parts.Length == 3 && field == "source")
             return Known(true, null, out known);
         if (section == "plugins" && field == "settings" && hasRest)

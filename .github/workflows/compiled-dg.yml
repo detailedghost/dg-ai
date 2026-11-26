@@ -3,6 +3,7 @@ name: Compiled dg - Build and Smoke
 
 on:
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: compiled-dg-${{ github.ref }}
@@ -88,7 +89,7 @@ jobs:
         run: bun pkg/launcher/build.ts --report budget-measurements/size-report.json
 
       - name: Check out the base commit
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.base.sha }}
@@ -96,7 +97,7 @@ jobs:
           persist-credentials: false
 
       - name: Write the per-package size report for the base commit
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         continue-on-error: true
         working-directory: base
         run: |

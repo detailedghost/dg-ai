@@ -14,4 +14,5 @@ export default defineCommand({
 	],
 	help: "Run a Playwright code snippet (needs approval each time)\nPass a function such as: async (page) => { await page.goto('https://example.com'); return page.title(); }",
 	changesPage: true,
+	readsPage: true,
 });

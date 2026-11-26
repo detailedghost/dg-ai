@@ -58,9 +58,9 @@ async function chooseBrowser(
 	const verb = commandName(argv);
 	const flags = { local, ext: optionArgs(argv).includes("--ext") };
 	const needsConfig =
-		!flags.local && !flags.ext && !["ext", "local"].includes(process.env["DG_BROWSER"] ?? "");
+		!flags.local && !flags.ext && !["ext", "local"].includes(process.env["DG_PW_MODE"] ?? "");
 	try {
-		const config = needsConfig ? readDgToml(process.env).browser.mode : undefined;
+		const config = needsConfig ? readDgToml(process.env).pw.mode : undefined;
 		const input = { flags, env: process.env, config, extConnected: false, verb };
 		const forced = forcedBrowserMode(input) !== undefined;
 		const mapped = autoExtArgv(argv);

@@ -19,7 +19,7 @@ Type a password with `@type="$DG_DEMO_VELORA_PW"` in the plan. Only `$DG_DEMO_*`
 variables resolve, and only into password fields. The plan never holds the value.
 
 Local recording uses its own Playwright recorder and stays local in every
-`browser.mode`, so video never drives your real profile. `--ext` plays through
+`pw.mode`, so video never drives your real profile. `--ext` plays through
 the extension in the agent window, and the first visit to each new site opens
 the allow popup. `demo` and `proto` read `--ext` as an explicit flag; `auto`
 mode does not switch them. See [browser mode](pw.md#browser-mode-auto-ext-and-local).

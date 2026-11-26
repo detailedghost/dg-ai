@@ -17,15 +17,13 @@ internal sealed class PluginStore(DgPaths paths, DgPathSeams seams)
 
     public string Src(string name) => Path.Combine(Folder(name), "src");
 
-    public string Loaded(string name) => Path.Combine(Folder(name), "skills");
-
-    public PluginRecord? TryRead(string name)
+    public PluginApprovalRecord? TryRead(string name)
     {
         var file = Path.Combine(Folder(name), RecordFile);
-        return File.Exists(file) ? PluginRecord.Parse(File.ReadAllBytes(file), name) : null;
+        return File.Exists(file) ? PluginRecordFile.Parse(File.ReadAllBytes(file), name) : null;
     }
 
-    public void Write(PluginRecord record)
+    public void Write(PluginApprovalRecord record)
     {
         var file = Path.Combine(Folder(record.Name), RecordFile);
         var temp = $"{file}.{Environment.ProcessId}.{Guid.NewGuid()}.tmp";
@@ -62,8 +60,11 @@ internal sealed class PluginStore(DgPaths paths, DgPathSeams seams)
         return PluginApproval.HashTree(src);
     }
 
-    public bool IsApproved(PluginRecord record) =>
-        record.HasApproval && string.Equals(TreeHash(record.Name), record.TreeSha256, StringComparison.Ordinal);
+    public static void DeferIfApproved(PluginApprovalRecord record)
+    {
+        if (record.HasApproval)
+            throw new NotNativeException();
+    }
 
     public IReadOnlyDictionary<string, PluginEntry> ConfiguredPlugins()
     {
@@ -72,6 +73,8 @@ internal sealed class PluginStore(DgPaths paths, DgPathSeams seams)
         var config = DgConfig.Load(seams);
         return config.IsOk ? config.Value!.Plugins : throw new NotNativeException();
     }
+
+    public PluginConfigEdit Config() => new(paths.ConfigTomlPath);
 
     public HostSkills Hosts() => new(seams.Env, seams.HomeDir);
 }

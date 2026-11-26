@@ -22,6 +22,8 @@ type Spec = { bundles: Record<string, Record<string, string>>; cases: Case[] };
 
 const spec: Spec = JSON.parse(readFileSync(join(dir, "cases.json"), "utf8"));
 const SKIPPED = new Set(["sources", ".bun", ".cache"]);
+const MAC_VALUE = /"mac": "[0-9a-f]{64}"/g;
+const SIGNED = "a".repeat(64);
 
 const AT_A_TERMINAL = [
 	"python3",
@@ -37,7 +39,7 @@ if (!Bun.which("python3") && spec.cases.some((entry) => entry.person === true ||
 
 function dg(home: string, argv: string[], extra: Record<string, string> = {}, terminal = false) {
 	const env = { PATH: process.env.PATH ?? "", HOME: home, DG_HOME: home, DG_PATH_FENCE: home, ...extra };
-	const command = ["bun", join(root, "pkg", "dg", "src", "index.ts"), ...argv];
+	const command = ["bun", join(dir, "dg-with-key.ts"), ...argv];
 	const result = Bun.spawnSync([...(terminal ? AT_A_TERMINAL : []), ...command], { cwd: home, env });
 	return { stdout: result.stdout.toString(), stderr: result.stderr.toString(), exit: result.exitCode };
 }
@@ -49,8 +51,10 @@ function snapshot(home: string): Record<string, string> {
 			const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
 			if (prefix === "" && SKIPPED.has(entry.name)) continue;
 			if (entry.isDirectory()) walk(join(path, entry.name), rel);
-			else if (entry.isFile()) files[rel] = readFileSync(join(path, entry.name), "utf8").replaceAll(home, "<home>");
-			else if (lstatSync(join(path, entry.name)).isSymbolicLink()) files[rel] = "<symlink>";
+			else if (entry.isFile()) {
+				const text = readFileSync(join(path, entry.name), "utf8");
+				files[rel] = text.replaceAll(home, "<home>").replaceAll(MAC_VALUE, `"mac": "${SIGNED}"`);
+			} else if (lstatSync(join(path, entry.name)).isSymbolicLink()) files[rel] = "<symlink>";
 		}
 	};
 	walk(home, "");

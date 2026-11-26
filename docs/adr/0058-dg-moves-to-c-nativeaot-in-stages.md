@@ -42,6 +42,8 @@ JIT workaround for every command it moves.
   unless a PR carries a reviewed `Budget-Increase:` line. Latency and memory-growth budgets are ceilings that fail
   only on an overrun (owner decision R18, 2026-11-25; see "Agent Notes" in
   `.agents/spec/027_dg_cli_lean/plan.md` and the "Ratchet" section of `docs/lean-baseline.md`).
+  Slack under a RAM, size or token budget only warns; a weekly job opens a PR that lowers those budgets to
+  the measured values (owner decision, 2026-11-26).
 
 ## Consequences
 

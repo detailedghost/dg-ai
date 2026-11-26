@@ -26,7 +26,7 @@ public sealed class ConfigListCommand(
             return Fail(result.Error!);
         var toml = result.Value!;
         foreach (var key in ConfigRules.DefaultKeys)
-            Line(key, ConfigValues.Lookup(toml, key) ?? ConfigKeys.DefaultOf(key));
+            Line(key, DgSettings.Lookup(toml, key) ?? ConfigKeys.DefaultOf(key));
         if (toml.RefsDefaultRepo is { } repo)
             Line("refs.default_repo", repo);
         foreach (var (alias, target) in toml.RefsAliases)
@@ -34,6 +34,7 @@ public sealed class ConfigListCommand(
         foreach (var (name, plugin) in toml.Plugins)
         {
             Line($"plugins.{name}.enabled", plugin.Enabled);
+            Line($"plugins.{name}.fail_closed", plugin.FailClosed);
             if (plugin.Source is { } source)
                 Line($"plugins.{name}.source", source);
         }

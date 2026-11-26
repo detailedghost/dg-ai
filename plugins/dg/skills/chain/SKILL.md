@@ -1,6 +1,6 @@
 ---
 name: chain
-description: Render and wire a batch of sequentially dependent PRs/MRs as a clean unicode-arrow stack. Retargets base branches so the provider (GitHub or GitLab) blocks merge until upstream lands, and renders a "## Stack (merge order)" block. PRs/MRs with no real dependency go in a flat "Related PRs" list. Callable standalone or from a batch-PR skill.
+description: 'Render and wire sequentially dependent PRs/MRs as a stack with a "## Stack (merge order)" block.'
 ---
 
 # Skill: chain

@@ -63,6 +63,8 @@ function kit(values: Record<string, string | undefined> = { "poll/api-key": VALU
 			daemonDir: join(root, "daemon"),
 			logDir: join(root, "logs"),
 			grantsDir: join(root, "grants"),
+			jobsDir: join(root, "jobs"),
+			jobSourcesPath: join(root, "jobs", "sources.json"),
 			jobStateRoot: join(root, "state", "jobs"),
 		},
 		daemonUrl: () => "http://127.0.0.1:4242",
@@ -250,7 +252,7 @@ describe("launchJob and startJobRun with a bound credential", () => {
 			every: "15m",
 			argv: [process.execPath, "-e", dumpEnv(out)],
 		});
-		const run = startJobRun(decl, deps);
+		const run = await startJobRun(decl, deps);
 		await run.done;
 		expect(readFileSync(out, "utf8")).toBe(VALUE);
 		expect(readFileSync(join(deps.paths.logDir, "service-bot.log"), "utf8")).not.toContain(
@@ -258,12 +260,12 @@ describe("launchJob and startJobRun with a bound credential", () => {
 		);
 	});
 
-	it("throws before it starts a process for a credential that went away", () => {
+	it("throws before it starts a process for a credential that went away", async () => {
 		const { root, deps } = kit({});
 		const out = join(root, "out.txt");
 		const decl = declOf(root, { argv: [process.execPath, "-e", dumpEnv(out)] });
 		expect(() => launchJob(decl, deps)).toThrow(MISSING);
-		expect(() => startJobRun(decl, deps)).toThrow(MISSING);
+		await expect(startJobRun(decl, deps)).rejects.toThrow(MISSING);
 		expect(existsSync(deps.paths.logDir)).toBe(false);
 	});
 });

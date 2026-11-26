@@ -1,6 +1,6 @@
 ---
 name: test-live
-description: Temporarily deploy the current feature branch to dev, stage, or prod, wait for it to go live, then cleanly drop the temp commits.
+description: Temporarily deploy the feature branch to dev, stage, or prod, wait for it, then drop the temp commits.
 ---
 
 # test-live — Live Branch Testing

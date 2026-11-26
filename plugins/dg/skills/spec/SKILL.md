@@ -1,6 +1,6 @@
 ---
 name: spec
-description: Plan or execute a durable feature spec bundle. Plan mode (`/dg:spec "<request>"`) runs interview, roundtable, synthesis, a bundle under .agents/spec/, an approval gate and a context pack. Fast mode (`--fast`) plans and builds in one chat. Execute mode (`-s <NNN>_<slug>`) reads the pack and plan.md and drives /dg:sdlc.
+description: 'Plan or execute a durable spec bundle: /dg:spec "<request>", --fast to plan and build, -s <NNN>_<slug> to execute.'
 ---
 
 # /dg:spec — Plan or Execute a Durable Feature Bundle

@@ -1,6 +1,6 @@
 ---
 name: catchup
-description: Fetch the latest origin default branch, rebase the current branch, verify build and tests, and push with force-with-lease. Investigate conflicts and verification failures.
+description: Fetch the origin default branch, rebase the current branch, verify, and push with force-with-lease.
 ---
 
 # catchup — Rebase on Latest Main

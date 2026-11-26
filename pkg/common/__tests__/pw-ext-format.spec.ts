@@ -25,6 +25,35 @@ import * as page from "../src/pw-ext-verbs/page";
 import * as pointer from "../src/pw-ext-verbs/pointer";
 import * as storage from "../src/pw-ext-verbs/storage";
 
+describe("validatePwExtRequest phiSites", () => {
+	const phiSites = ["https://ehr.example.org", "http://localhost:8080"];
+
+	it.each<PwExtRequest>([
+		{ verb: "snapshot" },
+		{ verb: "click", target: "e1" },
+		{ verb: "eval", expression: "1" },
+		{ verb: "hover", target: "e1" },
+		{ verb: "go-back" },
+		{ verb: "localstorage-clear" },
+		{ verb: "storage", area: "local" },
+	])("carries phiSites on $verb", (request) => {
+		expect(validatePwExtRequest({ ...request, phiSites })).toEqual({ ...request, phiSites });
+	});
+
+	it.each([
+		["a string", "https://ehr.example.org"],
+		["a bare host", ["ehr.example.org"]],
+		["a number", [3]],
+		["too many entries", Array.from({ length: 257 }, (_, i) => `https://a${i}.example.org`)],
+	])("rejects phiSites that is %s", (_name, value) => {
+		expect(() => validatePwExtRequest({ verb: "snapshot", phiSites: value })).toThrow(/phiSites/);
+	});
+
+	it("still rejects an unknown field next to phiSites", () => {
+		expect(() => validatePwExtRequest({ verb: "snapshot", phiSites, approved: true })).toThrow(/unknown field/);
+	});
+});
+
 describe("validatePwExtRequest", () => {
 	it.each([
 		{ verb: "current" },
@@ -409,9 +438,14 @@ describe("PW_EXT_RELAY table", () => {
 
 	it.each([
 		[minVersion, true],
-		["1.99.0", true],
+		["8.0.0", true],
+		["8.4.2", true],
+		["9.0.0", true],
 		[`${minVersion}+build.1`, true],
-		["1.41.99", false],
+		["7.1.0", false],
+		["7.99.0", false],
+		["7.0.5", false],
+		["1.44.0", false],
 		[undefined, false],
 		["1.42", false],
 	])("accepts extension version %p: %p", (version, expected) => {
@@ -554,15 +588,6 @@ describe("validatePwExtRequest tab verbs and tabId", () => {
 		};
 
 		expect(validatePwExtCliRequest(frame)).toEqual(frame);
-	});
-});
-
-describe("PW_EXT_MIN_EXTENSION_VERSION", () => {
-	it("is at least the first release with per-agent tab groups", () => {
-		const [major, minor, patch] = PW_EXT_MIN_EXTENSION_VERSION;
-		const floor = major * 1_000_000 + minor * 1_000 + patch;
-
-		expect(floor).toBeGreaterThanOrEqual(1_044_000);
 	});
 });
 

@@ -1,11 +1,6 @@
 ---
 name: land
-description: >-
-  Take a ready GitHub PR to "ready for your review" in one command. Run local
-  review rounds through /dg:review-loop proxy mode (Codex by default), get CI
-  green with /dg:address fixes, check the merge state, open the PR, then ask
-  before a merge at the tested head SHA. "Not yet" is the default answer.
-  --auto merges after green CI with no review stop. Triggers: "land this".
+description: 'Take a ready GitHub PR to "ready for your review": local review rounds, green CI, then ask before merge. "land this". --auto.'
 ---
 
 <!-- markdownlint-disable MD013 MD041 MD060 -->

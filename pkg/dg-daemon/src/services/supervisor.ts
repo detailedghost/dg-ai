@@ -70,7 +70,7 @@ export type Supervisor = {
 };
 
 export type SupervisorDeps = {
-	paths: Pick<DgPaths, "daemonDir" | "logDir" | "grantsDir" | "jobStateRoot">;
+	paths: Pick<DgPaths, "daemonDir" | "logDir" | "grantsDir" | "jobStateRoot" | "jobsDir" | "jobSourcesPath">;
 	daemonUrl: () => string;
 	loadConfig: () => Record<string, unknown>;
 	logger: Pick<Logger, "info" | "warn">;

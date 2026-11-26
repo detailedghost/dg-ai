@@ -1,0 +1,11 @@
+name = "tcp-token"
+version = "1.0.0"
+kind = "job"
+transport = "tcp"
+endpoint = "127.0.0.1:7431"
+
+[entry]
+command = "x"
+
+[permissions]
+credentials = ["plugin-tcp-token-token"]

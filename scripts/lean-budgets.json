@@ -3,7 +3,7 @@
 		"linux-x64": {
 			"rawBytes": 101400000,
 			"zstdBytes": 36400000,
-			"patchBytes": 6027812
+			"patchBytes": 1467152
 		}
 	}
 }

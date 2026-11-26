@@ -1,0 +1,1 @@
+dg config: config.toml:2: pw.mode must be ext, local or auto, got "chrome". Next: run dg config edit, or dg config set pw.mode <value>.

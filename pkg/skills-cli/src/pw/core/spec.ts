@@ -28,6 +28,7 @@ export type CommandSpec = {
 	flags: FlagSpec[];
 	help: string;
 	changesPage: boolean;
+	readsPage?: true;
 };
 
 export type ParsedArgs = {

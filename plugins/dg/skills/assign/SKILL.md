@@ -1,6 +1,6 @@
 ---
 name: assign
-description: Pick the best-fit primary engineering agent (plus any QA agents) for a piece of work. Given a prose description — or nothing at all — recommend and print, writing nothing. Given a `/dg:spec` spec path, write the picks into `slices[].agents` frontmatter instead, one per slice. Reads the live agent roster so picks always reflect current capability.
+description: Pick the best-fit engineering and QA agents for work, or write picks into a /dg:spec spec's slices[].agents.
 ---
 
 # Skill: assign

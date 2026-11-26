@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { CODE_COMMAND } from "../../../src/pw/code/index";
+import { COMMANDS } from "../../../src/pw/commands/index";
 import evalSpec from "../../../src/pw/commands/eval/spec";
 import goto from "../../../src/pw/commands/goto/spec";
 import { UsageError } from "../../../src/pw/core/args";
@@ -11,6 +13,7 @@ import type { DaemonHandler, HandlerResult } from "../../../src/pw/core/spec";
 import {
 	argsFor,
 	fakeCtx,
+	FakePage,
 	fakeEvents,
 	useTempScratch,
 } from "../../../src/pw/test-support";
@@ -338,5 +341,178 @@ describe("describeError", () => {
 
 	test("accepts a non-error value", () => {
 		expect(describeError("oops")).toBe("oops");
+	});
+});
+
+describe("dispatch phi_sites", () => {
+	const phiSites = ["https://example.test"];
+	const DATA_VERBS = [
+		"snapshot",
+		"screenshot",
+		"eval",
+		"run-code",
+		"console",
+		"network",
+		"localstorage-get",
+		"localstorage-list",
+		"sessionstorage-get",
+		"sessionstorage-list",
+		"cookie-get",
+		"cookie-list",
+		"pdf",
+	];
+
+	test.each(DATA_VERBS)("refuses %s on a listed site before the handler runs", async (verb) => {
+		const { ctx } = fakeCtx(scratch.dir);
+		let ran = false;
+		const handler: DaemonHandler = async () => {
+			ran = true;
+			return { result: "chart row 42" };
+		};
+		const out = await dispatch(handler, { ...evalSpec, name: verb, readsPage: true }, argsFor(evalSpec, "x"), ctx, options({ phiSites }));
+		expect(ran).toBe(false);
+		expect(out.exitCode).toBe(1);
+		expect(out.text).toContain("https://example.test is listed in [pw] phi_sites");
+		expect(out.text).not.toContain("chart row 42");
+	});
+
+	test("refuses a data verb on a listed site reached through a trailing-dot host", async () => {
+		const { ctx, page } = fakeCtx(scratch.dir);
+		page.url = () => "https://example.test./patients/jane-doe";
+		let ran = false;
+		const handler: DaemonHandler = async () => {
+			ran = true;
+			return { result: "chart row 42" };
+		};
+		const out = await dispatch(handler, evalSpec, argsFor(evalSpec, "x"), ctx, options({ phiSites }));
+		expect(ran).toBe(false);
+		expect(out.exitCode).toBe(1);
+		expect(out.text).not.toContain("chart row 42");
+	});
+
+	test.each(["tab-list", "cookie-list"])("refuses %s while another open tab is on a listed site", async (verb) => {
+		const { ctx, context } = fakeCtx(scratch.dir);
+		const listed = new FakePage();
+		listed.url = () => "https://example.test/patients/jane-doe";
+		const other = new FakePage();
+		other.url = () => "https://other.org/";
+		context.pages().splice(0, 1, other as never, listed as never);
+		ctx.selectTab(0);
+		let ran = false;
+		const handler: DaemonHandler = async () => {
+			ran = true;
+			return { result: "https://example.test/patients/jane-doe" };
+		};
+		const out = await dispatch(handler, { ...evalSpec, name: verb, readsPage: true }, argsFor(evalSpec, "x"), ctx, options({ phiSites }));
+		expect(ran).toBe(false);
+		expect(out.exitCode).toBe(1);
+		expect(out.text).not.toContain("jane-doe");
+	});
+
+	test("replaces the result when a read handler navigates onto a listed site", async () => {
+		const { ctx, page } = fakeCtx(scratch.dir);
+		page.url = () => "https://other.org/";
+		const handler: DaemonHandler = async () => {
+			page.url = () => "https://example.test/patients/jane-doe";
+			return { result: "chart row 42" };
+		};
+		const out = await dispatch(handler, evalSpec, argsFor(evalSpec, "x"), ctx, options({ phiSites }));
+		expect(out.exitCode).toBe(1);
+		expect(out.text).toContain("https://example.test is listed in [pw] phi_sites");
+		expect(out.text).not.toContain("chart row 42");
+		expect(out.text).not.toContain("jane-doe");
+	});
+
+	test("reduces the page header to the origin on a listed site", async () => {
+		const { ctx, page } = fakeCtx(scratch.dir);
+		page.url = () => "https://example.test/patients/jane-doe";
+		page.title = async () => "Jane Doe chart";
+		const out = await dispatch(returning({}), goto, argsFor(goto, "a.test"), ctx, options({ phiSites }));
+		expect(out.text).toContain("https://example.test");
+		expect(out.text).not.toContain("jane-doe");
+		expect(out.text).not.toContain("Jane Doe");
+	});
+
+	test("keeps the full header on a site that is not listed", async () => {
+		const { ctx, page } = fakeCtx(scratch.dir);
+		page.url = () => "https://example.test/patients/jane-doe";
+		const out = await dispatch(returning({}), goto, argsFor(goto, "a.test"), ctx, options({ phiSites: ["https://other.org"] }));
+		expect(out.text).toContain("https://example.test/patients/jane-doe");
+	});
+
+	test("refuses tab-list on a listed site", async () => {
+		const { ctx } = fakeCtx(scratch.dir);
+		const out = await dispatch(returning({ result: "Jane Doe chart" }), { ...evalSpec, name: "tab-list", readsPage: true }, argsFor(evalSpec, "x"), ctx, options({ phiSites }));
+		expect(out.exitCode).toBe(1);
+	});
+
+	test("flags every daemon verb that returns page content, and each other verb is named as checked", () => {
+		const CHECKED_NOT_READING = new Set([
+			"attach", "check", "click", "close", "close-all", "cookie-clear", "cookie-delete", "cookie-set", "dblclick",
+			"delete-data", "dialog-accept", "dialog-dismiss", "drag", "fill", "go-back", "go-forward", "goto", "hover",
+			"install-browser", "keydown", "keyup", "kill-all", "list", "localstorage-clear", "localstorage-delete",
+			"localstorage-set", "mousedown", "mousemove", "mouseup", "mousewheel", "network-state-set", "open", "press",
+			"reload", "resize", "route", "route-list", "select", "sessionstorage-clear", "sessionstorage-delete",
+			"sessionstorage-set", "state-load", "state-save", "tab-close", "tab-new", "tab-select", "tracing-start",
+			"tracing-stop", "type", "uncheck", "unroute", "upload", "video-start", "video-stop", "video-chapter",
+		]);
+		const daemon = [...COMMANDS, CODE_COMMAND].filter((entry) => entry.spec.side === "daemon").map((entry) => entry.spec);
+		const reading = daemon.filter((spec) => spec.readsPage).map((spec) => spec.name).sort();
+		expect(reading).toEqual([...DATA_VERBS, "tab-list"].sort());
+		const unclassified = daemon.filter((spec) => !spec.readsPage && !CHECKED_NOT_READING.has(spec.name)).map((spec) => spec.name);
+		expect(unclassified).toEqual([]);
+	});
+
+	test("runs a data verb on a site that is not listed", async () => {
+		const { ctx } = fakeCtx(scratch.dir);
+		const out = await dispatch(returning({ result: "fine" }), evalSpec, argsFor(evalSpec, "x"), ctx, options({ phiSites: ["https://other.org"] }));
+		expect(out.exitCode).toBe(0);
+		expect(out.text).toContain("fine");
+	});
+
+	test("runs a data verb when the list is empty", async () => {
+		const { ctx } = fakeCtx(scratch.dir);
+		const out = await dispatch(returning({ result: "fine" }), evalSpec, argsFor(evalSpec, "x"), ctx, options({ phiSites: [] }));
+		expect(out.exitCode).toBe(0);
+	});
+
+	test("writes no automatic snapshot and no console lines on a listed site", async () => {
+		const { ctx, page } = fakeCtx(scratch.dir, undefined, {
+			drain: () => [{ type: "log", text: "patient 42", timestamp: 0 }] as never,
+		});
+		const out = await dispatch(returning({ snapshot: true }), goto, argsFor(goto, "a.test"), ctx, options({ phiSites }));
+		expect(out.exitCode).toBe(0);
+		expect(out.text).not.toContain("### Snapshot");
+		expect(out.text).not.toContain("patient 42");
+		expect(page.snapshotCalls).toEqual([]);
+	});
+
+	test("withholds dialog text and download notices on a listed site", async () => {
+		const { ctx } = fakeCtx(scratch.dir, undefined, {
+			drainNotices: () => ["- Downloaded jane-doe-chart.pdf to /tmp/jane-doe-chart.pdf"],
+			modal: () => ['- ["alert" dialog with message "Jane Doe is overdue"]: can be handled by the "dialog-accept" command'],
+		});
+		const out = await dispatch(returning({}), goto, argsFor(goto, "a.test"), ctx, options({ phiSites }));
+		expect(out.text).not.toContain("jane-doe");
+		expect(out.text).not.toContain("Jane Doe");
+		expect(out.text).toContain("withheld");
+	});
+
+	test("withholds dialog text when a dialog opens during the action on a listed site", async () => {
+		const { ctx } = fakeCtx(scratch.dir, undefined, {
+			hasDialog: () => true,
+			modal: () => ['- ["alert" dialog with message "Jane Doe is overdue"]: can be handled by the "dialog-accept" command'],
+		});
+		const out = await dispatch(returning({}), goto, argsFor(goto, "a.test"), ctx, options({ phiSites }));
+		expect(out.text).not.toContain("Jane Doe");
+		expect(out.text).toContain("withheld");
+	});
+
+	test("keeps dialog text and notices on a site that is not listed", async () => {
+		const { ctx } = fakeCtx(scratch.dir, undefined, {
+			modal: () => ['- ["alert" dialog with message "Hi"]: x'],
+		});
+		const out = await dispatch(returning({}), goto, argsFor(goto, "a.test"), ctx, options({ phiSites: ["https://other.org"] }));
+		expect(out.text).toContain('dialog with message "Hi"');
 	});
 });

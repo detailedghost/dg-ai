@@ -8,7 +8,8 @@ internal static class DgTomlJson
     public static string Write(DgToml toml)
     {
         var builder = new StringBuilder("{");
-        builder.Append("\"browser\":{\"mode\":").Append(TomlJson.Stringify(toml.BrowserMode.Wire())).Append("},");
+        builder.Append("\"pw\":{\"mode\":").Append(TomlJson.Stringify(toml.PwMode.Wire()));
+        builder.Append(",\"phi_sites\":").Append(TomlJson.Stringify(toml.PwPhiSites)).Append("},");
         builder.Append("\"front\":{\"enabled\":").Append(TomlJson.Stringify(toml.FrontEnabled)).Append("},");
         builder.Append("\"hooks\":{");
         Join(builder, toml.Hooks, (b, hook) => Strings(b, hook));
@@ -39,6 +40,7 @@ internal static class DgTomlJson
     {
         builder.Append("{\"enabled\":").Append(TomlJson.Stringify(plugin.Enabled));
         builder.Append(",\"allow_remote\":").Append(TomlJson.Stringify(plugin.AllowRemote));
+        builder.Append(",\"fail_closed\":").Append(TomlJson.Stringify(plugin.FailClosed));
         if (plugin.Source is { } source)
             builder.Append(",\"source\":").Append(TomlJson.Stringify(source));
         builder.Append(",\"settings\":").Append(TomlJson.Stringify(plugin.Settings)).Append('}');

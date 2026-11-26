@@ -22,6 +22,8 @@ public sealed class ConfigCommandParityTests
 
     public static TheoryData<string> HandoffNames => Names(native: false);
 
+    public static TheoryData<string> FrontOnlyNames => FrontOnly();
+
     [Theory]
     [MemberData(nameof(NativeNames))]
     public void Run_Fixture_MatchesBunStdoutStderrExitAndFile(string name)
@@ -57,6 +59,25 @@ public sealed class ConfigCommandParityTests
         Assert.Equal(before?.Replace(home.Path, "<home>", StringComparison.Ordinal), run.File);
     }
 
+    [Theory]
+    [MemberData(nameof(FrontOnlyNames))]
+    public void Run_FrontOnlyCase_BunRefusesAndFrontDoorKeepsItsOutput(string name)
+    {
+        var entry = Cases.Single(c => c.Name == name);
+        var expected = Bun[name];
+        using var home = Prepare(entry);
+
+        var run = home.Run(entry.Argv);
+
+        Assert.NotEqual(0, expected.Exit);
+        Assert.Equal("", expected.Stdout);
+        Assert.Contains($"dg {string.Join(' ', entry.Argv)} needs the C# front door", expected.Stderr);
+        Assert.Equal(0, run.Exit);
+        Assert.Equal("", run.Stderr);
+        Assert.NotNull(entry.ExpectedLine);
+        Assert.Contains(entry.ExpectedLine, run.Stdout);
+    }
+
     [Fact]
     public void Fixtures_EveryCase_HasBunOutput()
     {
@@ -84,10 +105,18 @@ public sealed class ConfigCommandParityTests
         return home;
     }
 
+    private static TheoryData<string> FrontOnly()
+    {
+        var data = new TheoryData<string>();
+        foreach (var entry in Cases.Where(static c => c.FrontOnly))
+            data.Add(entry.Name);
+        return data;
+    }
+
     private static TheoryData<string> Names(bool native)
     {
         var data = new TheoryData<string>();
-        foreach (var entry in Cases.Where(c => c.Native == native))
+        foreach (var entry in Cases.Where(c => c.Native == native && !c.FrontOnly))
             data.Add(entry.Name);
         return data;
     }
@@ -104,7 +133,9 @@ internal sealed record Case(
     string? Toml = null,
     Dictionary<string, string>? Files = null,
     bool Native = true,
-    bool SyntaxOnly = false
+    bool SyntaxOnly = false,
+    bool FrontOnly = false,
+    string? ExpectedLine = null
 );
 
 internal sealed record Expected(string Name, string Stdout, string Stderr, int Exit, string? File);

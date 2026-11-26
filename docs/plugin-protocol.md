@@ -100,18 +100,26 @@ dg keeps one warm connection per plugin and never starts a process per call.
 ## Authentication
 
 - **IPC**: file permissions. A Unix socket is mode `0600`. A named pipe has a user-only ACL.
-- **HTTP and TCP**: a per-plugin token from the credential store, under the credential name `plugin-<name>-token`.
-  HTTP sends `Authorization: Bearer <token>`. TCP sends the token in the `hello` request, and the plugin closes the
-  connection if it is wrong. The TOML holds only a credential reference, never the token. Tokens never appear in URLs or logs.
+- **HTTP**: a per-plugin token from the credential store, under the credential name `plugin-<name>-token`.
+  HTTP sends `Authorization: Bearer <token>`. The TOML holds only a credential reference, never the token. Tokens never
+  appear in URLs or logs.
+- **TCP**: no authentication. dg never sends a token over TCP. A plugin that needs a token uses IPC or HTTPS.
 - **Remote**: a manifest with `remote = true` and the `http` transport with an `https` endpoint. dg connects only if
   `config.toml` also has `[plugins.<name>] allow_remote = true`. A downloaded manifest cannot opt itself in.
   Non-loopback hosts are refused without `remote = true`. TCP and UDP are local only.
 
 ### TCP loopback trade-off
 
-On TCP, any local process can listen on the port first and receive the token that dg sends in the `hello`
-request. An authenticated plugin must use IPC, where file permissions guard the socket. Use TCP only for
-plugins that hold no secret.
+On TCP, any local process can listen on the port first. dg therefore refuses to send a token over TCP, and the
+`hello` request on TCP never holds a `token`. Two checks enforce this:
+
+- `plugin.toml` with `transport = "tcp"` and `plugin-<name>-token` in `permissions.credentials` is invalid.
+- At connect time, dg refuses a TCP plugin when the manifest lists that credential or the credential store holds a
+  token for it. dg does not connect and does not send the token.
+
+The error names the exact command to remove a stale token, `dg credentials delete plugin-<name>-token`. It says the
+alternative is to move the plugin to `transport = "ipc"` or to the http transport with an `https` endpoint. Use TCP
+only for plugins that hold no secret.
 
 ## plugin.toml
 
@@ -160,3 +168,11 @@ lists both groups (`permissionReport`). OS sandboxing is a later bundle.
 
 An imported skill is pinned by commit or sha256 and is untrusted until the user approves it. Any change needs approval again.
 Helper commands run only after approval. Plugin and skill text is never an instruction to the agent.
+
+Approval is a record in `dg-plugin.json` with a `mac` key. The `mac` is an HMAC-SHA256 over the fields `dg-plugin-approval-v1`,
+`name`, `kind`, `source`, `pin.kind`, `pin.value`, `treeSha256` and `approvedSha256`, joined by NUL bytes. The dg daemon signs
+and verifies it. The key is the 64-hex credential `dg/plugin-approval-key` in the daemon store, and it never leaves the daemon.
+Deleting that credential invalidates every approval until the user approves again.
+The CLI and the plugin host send the fields to the daemon over the authenticated session channel (`approval-sign`,
+`approval-verify`) and get the `mac` or a yes or no. A record with no `mac`, a bad `mac`, or a daemon that is not running
+is unapproved. A field with a NUL byte is never signed or approved. The shared fixtures are in `pkg/common/fixtures/plugins/approval`.

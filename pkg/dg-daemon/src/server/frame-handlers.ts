@@ -82,7 +82,7 @@ import type { Logger } from "./log";
 import { pinOriginIfUnset } from "./origin";
 import type { PageCodes } from "./page-codes";
 import { protoRelayHooks } from "./proto";
-import { pwExtRelayHooks } from "./pw-ext";
+import { pwExtRelayHooks, revokePwExt } from "./pw-ext";
 import type { SecretIntent } from "./secret-intake";
 
 export type FrameHandlerDeps = {
@@ -1196,6 +1196,9 @@ async function dispatchFrame(
 			return handleConfigFrame(ws, frame, deps);
 		case "pw-ext-credential-store":
 			return handlePwExtCredentialStore(ws, frame, deps);
+		case "pw-ext-stop":
+			if (isExtensionPeer(ws)) revokePwExt(deps, frame.sessionId);
+			return;
 		case "command-invocation":
 			return handleCommandInvocation(ws, frame, deps);
 		case "overwatch-open-result": {

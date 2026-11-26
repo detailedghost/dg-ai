@@ -1,4 +1,8 @@
 using System.Diagnostics;
+using System.IO.Pipes;
+using System.Security.AccessControl;
+using System.Runtime.Versioning;
+using System.Security.Principal;
 using System.Text;
 using Dg.Core.Errors;
 using Dg.Core.Plugins.Contract;
@@ -180,6 +184,58 @@ public sealed class IpcTransportTests
     public void IsUserOnly_DenyRuleForOtherUser_IsIgnored()
     {
         Assert.True(PipeAclPolicy.IsUserOnly("S-1-5-21-1", "S-1-5-21-1", [("S-1-5-21-1", true), ("S-1-1-0", false)]));
+    }
+
+    [Fact]
+    public void ServerRules_UserSid_AllowsOnlyTheUserAndDeniesNetworkLogons()
+    {
+        PipeAclRule[] rules = PipeAclPolicy.ServerRules("S-1-5-21-1");
+
+        Assert.Equal([new PipeAclRule("S-1-5-21-1", true), new PipeAclRule("S-1-5-2", false)], rules);
+    }
+
+    [Fact]
+    public void ServerRules_UserSid_PassTheClientUserOnlyCheck()
+    {
+        var rules = PipeAclPolicy.ServerRules("S-1-5-21-1").Select(rule => (rule.Sid, rule.Allow));
+
+        Assert.True(PipeAclPolicy.IsUserOnly("S-1-5-21-1", "S-1-5-21-1", rules));
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public async Task IpcPipeServer_OnWindows_AppliesTheServerRulesAndAcceptsTheCurrentUser()
+    {
+        Assert.SkipWhen(!OperatingSystem.IsWindows(), "named pipes with ACLs");
+        var plugin = $"acl-{Guid.NewGuid():N}";
+        await using var server = IpcPipeServer.Create(plugin);
+        var accept = server.WaitForConnectionAsync(TestContext.Current.CancellationToken);
+
+        await using var client = await new IpcConnector(new FixedResolver("unused")).ConnectAsync(
+            plugin,
+            TestContext.Current.CancellationToken
+        );
+        await accept;
+
+        Assert.Equal(PipeAclPolicy.ServerRules(CurrentUserSid()), ReadRules(server));
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static string CurrentUserSid()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return identity.User!.Value;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static PipeAclRule[] ReadRules(NamedPipeServerStream pipe)
+    {
+        var rules = new List<PipeAclRule>();
+        var collection = pipe.GetAccessControl().GetAccessRules(true, false, typeof(SecurityIdentifier));
+        foreach (PipeAccessRule rule in collection)
+            rules.Add(new(rule.IdentityReference.Value, rule.AccessControlType == AccessControlType.Allow));
+        rules.Sort(static (a, b) => b.Allow.CompareTo(a.Allow));
+        return [.. rules];
     }
 
     [Fact]

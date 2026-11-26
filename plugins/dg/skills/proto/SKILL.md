@@ -1,6 +1,6 @@
 ---
 name: proto
-description: 'Build a throwaway prototype before committing to a design. The local mode, the default, builds a terminal app for state or logic questions, five UI variations on one route (-n, -o), or a clickable plan walkthrough, with a refine chain and -c resume. Add --ext to prototype inside a live page with the dg-ai-extension. Use for "prototype this" and mock-ups.'
+description: 'Build a throwaway prototype. The local mode (default): terminal app, UI variations (-n, -o), or plan walkthrough. --ext prototypes in a live page. "prototype this".'
 ---
 
 First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
@@ -50,7 +50,7 @@ mode. Add `--ext` to keep the extension flow. `dg proto scrape|plant|cleanup` no
 
 ## Browser mode
 
-Local mode uses its own server and Playwright fingerprint capture, so it stays local in every `browser.mode`. `auto` never switches `proto`; only `--ext` does.
+Local mode uses its own server and Playwright fingerprint capture, so it stays local in every `pw.mode`. `auto` never switches `proto`; only `--ext` does.
 
 ## Local mode: pick a branch
 

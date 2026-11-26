@@ -6,6 +6,7 @@ import {
 	findMarkRecord,
 	findRecordByJob,
 	type GitSourceRecord,
+	isTreeId,
 	readNamedSources,
 	readSourceRecords,
 	updateMarks,
@@ -306,5 +307,18 @@ describe("path records", () => {
 		updateMarks(paths, "a", { prefixAccepted: true });
 
 		expect(readSourceRecords(paths).tools).toEqual(folder({ prefixAccepted: true }));
+	});
+});
+
+describe("isTreeId", () => {
+	it("accepts a sha1 and a sha256 tree id", () => {
+		expect(isTreeId("a".repeat(40))).toBe(true);
+		expect(isTreeId("b".repeat(64))).toBe(true);
+	});
+
+	it("rejects other lengths, uppercase and non-hex text", () => {
+		for (const text of ["", "a".repeat(39), "a".repeat(41), "A".repeat(40), "g".repeat(40), `${"a".repeat(40)}\n`]) {
+			expect(isTreeId(text)).toBe(false);
+		}
 	});
 });

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { parse as parseStrict, stringify } from "smol-toml";
 import { CREDENTIAL_NAME_PATTERN } from "../credentials-format";
 import { DgCliError } from "../errors";
+import { isSiteKey, PHI_SITES_MAX } from "../phi-sites";
 import { type DgPaths, resolveDgPaths } from "./dg-paths";
 import { withinRoot, writeFilePreserving } from "./fs";
 
@@ -12,14 +13,14 @@ type Table = Record<string, unknown>;
 
 export type SecretRef = { credential: string };
 
-export type PluginEntry = { enabled: boolean; allow_remote: boolean; source?: string; settings: Table };
+export type PluginEntry = { enabled: boolean; allow_remote: boolean; fail_closed: boolean; source?: string; settings: Table };
 
-export const BROWSER_MODES = ["ext", "local", "auto"] as const;
+export const PW_MODES = ["ext", "local", "auto"] as const;
 
-export type BrowserMode = (typeof BROWSER_MODES)[number];
+export type PwMode = (typeof PW_MODES)[number];
 
 export type DgToml = {
-	browser: { mode: BrowserMode };
+	pw: { mode: PwMode; phi_sites: string[] };
 	front: { enabled: boolean };
 	hooks: Record<string, Record<string, string>>;
 	install: { cli_only: boolean };
@@ -30,10 +31,11 @@ export type DgToml = {
 	meta: { migrated: Record<string, string> };
 };
 
-export const DG_TOML_SECTIONS = ["browser", "front", "hooks", "install", "refs", "inbox", "ssms", "plugins", "meta"] as const;
+export const DG_TOML_SECTIONS = ["pw", "front", "hooks", "install", "refs", "inbox", "ssms", "plugins", "meta"] as const;
 
 export const DG_TOML_DEFAULTS: Readonly<Record<string, unknown>> = {
-	"browser.mode": "auto",
+	"pw.mode": "auto",
+	"pw.phi_sites": Object.freeze([]),
 	"front.enabled": true,
 	"install.cli_only": false,
 	"ssms.allow_send": false,
@@ -194,10 +196,29 @@ function optionalString(where: Where, key: string, value: unknown): string | und
 	return value;
 }
 
-function browserMode(where: Where, key: string, value: unknown): BrowserMode {
+function pwMode(where: Where, key: string, value: unknown): PwMode {
 	if (value === undefined) return "auto";
-	if (!(BROWSER_MODES as readonly unknown[]).includes(value)) mustBe(where, key, "ext, local or auto", value);
-	return value as BrowserMode;
+	if (!(PW_MODES as readonly unknown[]).includes(value)) mustBe(where, key, "ext, local or auto", value);
+	return value as PwMode;
+}
+
+const SITE_KEY_EXAMPLE = 'a site key such as "https://example.org"';
+const SITE_KEY_LIST = `a list of site keys such as "https://example.org"`;
+
+function siteKeys(where: Where, key: string, value: unknown): string[] {
+	if (value === undefined) return [];
+	if (!Array.isArray(value)) mustBe(where, key, SITE_KEY_LIST, value);
+	if (value.length > PHI_SITES_MAX) fail(where, key, `${key} holds more than ${PHI_SITES_MAX} site keys. ${NEXT_EDIT} ${key} <value>.`);
+	value.forEach((item, index) => {
+		if (typeof item !== "string" || !isSiteKey(item)) mustBe(where, `${key}.${index}`, SITE_KEY_EXAMPLE, item);
+	});
+	return value as string[];
+}
+
+function rejectRetiredBrowser(where: Where, value: unknown): void {
+	if (value === undefined) return;
+	const key = isRecord(value) && "mode" in value ? "browser.mode" : "browser";
+	fail(where, key, `${key} moved to pw.mode. ${NEXT_EDIT} pw.mode <value>.`);
 }
 
 function onlyKeys(where: Where, key: string, value: Table, allowed: readonly string[]): void {
@@ -209,11 +230,12 @@ function plugin(where: Where, key: string, value: unknown): PluginEntry {
 	if (key.split(".").length !== 2)
 		fail(where, key, `${key} is not a valid plugin name; a plugin name has no dot. ${NEXT_EDIT} plugins.<name>.enabled <value>.`);
 	const entry = table(where, key, value);
-	onlyKeys(where, key, entry, ["enabled", "allow_remote", "source", "settings"]);
+	onlyKeys(where, key, entry, ["enabled", "allow_remote", "fail_closed", "source", "settings"]);
 	const source = optionalString(where, `${key}.source`, entry.source);
 	return {
 		enabled: optionalBoolean(where, `${key}.enabled`, entry.enabled, true),
 		allow_remote: optionalBoolean(where, `${key}.allow_remote`, entry.allow_remote, false),
+		fail_closed: optionalBoolean(where, `${key}.fail_closed`, entry.fail_closed, false),
 		...(source === undefined ? {} : { source }),
 		settings: table(where, `${key}.settings`, entry.settings),
 	};
@@ -222,6 +244,7 @@ function plugin(where: Where, key: string, value: unknown): PluginEntry {
 /** Checks a parsed config.toml and fills every section with its default. */
 export function validateDgToml(raw: unknown, where: Where): DgToml {
 	const root = isRecord(raw) ? raw : {};
+	rejectRetiredBrowser(where, root.browser);
 	for (const name of Object.keys(root))
 		if (!(DG_TOML_SECTIONS as readonly string[]).includes(name))
 			fail(where, name, `${name} is not a dg config section. ${NEXT_EDIT} <section>.<key> <value>.`);
@@ -229,8 +252,8 @@ export function validateDgToml(raw: unknown, where: Where): DgToml {
 		checkStrings(where, name, value);
 		checkSecrets(where, name, value);
 	}
-	const browser = table(where, "browser", root.browser);
-	onlyKeys(where, "browser", browser, ["mode"]);
+	const pw = table(where, "pw", root.pw);
+	onlyKeys(where, "pw", pw, ["mode", "phi_sites"]);
 	const front = table(where, "front", root.front);
 	onlyKeys(where, "front", front, ["enabled"]);
 	const hooksTable = table(where, "hooks", root.hooks);
@@ -250,7 +273,7 @@ export function validateDgToml(raw: unknown, where: Where): DgToml {
 	const meta = table(where, "meta", root.meta);
 	onlyKeys(where, "meta", meta, ["migrated"]);
 	return {
-		browser: { mode: browserMode(where, "browser.mode", browser.mode) },
+		pw: { mode: pwMode(where, "pw.mode", pw.mode), phi_sites: siteKeys(where, "pw.phi_sites", pw.phi_sites) },
 		front: { enabled: optionalBoolean(where, "front.enabled", front.enabled, true) },
 		hooks,
 		install: { cli_only: optionalBoolean(where, "install.cli_only", install.cli_only, false) },

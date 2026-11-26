@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { parseManifest, permissionReport, type PluginManifest } from "@dg/common/plugins/manifest";
 import { SKILL_NAME } from "../install/recommended-skills-only";
+import { type ApprovalSigner, approvalProblem, isApproved, signApproval, withApprovalSigner } from "./approval";
 import { registerOnHosts, unregisterFromHosts } from "./hosts";
 import { type Pin, stageSource } from "./source";
 import {
@@ -10,7 +11,6 @@ import {
 	type Env,
 	ensureRoot,
 	installedNames,
-	isApproved,
 	isEnabled,
 	pluginFolder,
 	pluginSrcDir,
@@ -86,13 +86,13 @@ function load(record: PluginRecord, env: Env): void {
 	for (const skill of skillDirs(files, record.name)) copyTree(src, join(target, skill.name), files, skill.prefix);
 }
 
-function syncHosts(record: PluginRecord, env: Env): void {
-	if (isEnabled(record.name, env) && isApproved(record, env)) registerOnHosts(record.name, join(pluginFolder(record.name, env), "skills"), env);
+async function syncHosts(record: PluginRecord, env: Env, signer: ApprovalSigner): Promise<void> {
+	if (isEnabled(record.name, env) && (await isApproved(record, env, signer))) registerOnHosts(record.name, join(pluginFolder(record.name, env), "skills"), env);
 	else unregisterFromHosts(record.name, env);
 }
 
-function notApproved(name: string): DgCliError {
-	return new DgCliError(`dg plugin: ${name} is not approved, so its text and helper stay untrusted. Next: review it, then run dg plugin verify ${name} --approve.`);
+function notApproved(name: string, problem: string): DgCliError {
+	return new DgCliError(`dg plugin: ${name} is not approved, so its text and helper stay untrusted. ${problem}`);
 }
 
 /** Installs a skill bundle from a git url or path, pinned and untrusted until `verifyPlugin` approves it. */
@@ -112,7 +112,7 @@ export function addPlugin(input: { source: string; pin?: Pin; name?: string }, e
 		renameSync(staged.dir, join(staging, "src"));
 		renameSync(staging, folder);
 		created = name;
-		writeRecord({ name, kind: "skill", source: input.source, pin: staged.pin, treeSha256: staged.treeSha256, approvedSha256: null }, env);
+		writeRecord({ name, kind: "skill", source: input.source, pin: staged.pin, treeSha256: staged.treeSha256, approvedSha256: null, mac: null }, env);
 		writeSource(name, input.source, env);
 		writeEnabled(name, false, env);
 		return { name, kind: "skill", pin: staged.pin, approved: false };
@@ -134,18 +134,24 @@ export function removePlugin(name: string, env: Env = process.env): void {
 	removeSection(name, env);
 }
 
-export function setPluginEnabled(name: string, enabled: boolean, env: Env = process.env): void {
+export async function setPluginEnabled(name: string, enabled: boolean, env: Env = process.env): Promise<void> {
 	const record = readRecord(name, env);
-	if (enabled && !isApproved(record, env)) throw notApproved(name);
+	const problem = enabled ? await approvalProblem(record, env) : undefined;
+	if (problem !== undefined) throw notApproved(name, problem);
 	if (enabled) {
 		load(record, env);
 		registerOnHosts(name, join(pluginFolder(name, env), "skills"), env);
 	} else unregisterFromHosts(name, env);
-	writeEnabled(name, enabled, env);
+	try {
+		writeEnabled(name, enabled, env);
+	} catch (error) {
+		if (enabled) unregisterFromHosts(name, env);
+		throw error;
+	}
 }
 
 /** Re-fetches the source. A change in the files drops the approval and disables the plugin. */
-export function updatePlugin(name: string, input: { pin?: Pin } = {}, env: Env = process.env): UpdateResult {
+export async function updatePlugin(name: string, input: { pin?: Pin } = {}, env: Env = process.env): Promise<UpdateResult> {
 	const record = readRecord(name, env);
 	const root = ensureRoot(env);
 	const staging = mkdtempSync(join(root, ".staging-"));
@@ -158,52 +164,75 @@ export function updatePlugin(name: string, input: { pin?: Pin } = {}, env: Env =
 		const src = pluginSrcDir(name, env);
 		removeFolder(src);
 		renameSync(staged.dir, src);
-		const next: PluginRecord = { ...record, pin: staged.pin, treeSha256: staged.treeSha256, approvedSha256: changed ? null : record.approvedSha256 };
+		const dropsApproval = changed || staged.pin.kind !== record.pin.kind || staged.pin.value !== record.pin.value;
+		const next: PluginRecord = {
+			...record,
+			pin: staged.pin,
+			treeSha256: staged.treeSha256,
+			approvedSha256: dropsApproval ? null : record.approvedSha256,
+			mac: dropsApproval ? null : record.mac,
+		};
 		writeRecord(next, env);
-		if (changed) disableAndUnload(name, env);
-		else if (isApproved(next, env)) {
-			load(next, env);
-			syncHosts(next, env);
-		}
-		return { name, changed, approved: isApproved(next, env), pin: staged.pin };
+		const approved = await withApprovalSigner(env, undefined, async (signer) => {
+			const verdict = await isApproved(next, env, signer);
+			if (dropsApproval || !verdict) disableAndUnload(name, env);
+			else {
+				load(next, env);
+				await syncHosts(next, env, signer);
+			}
+			return verdict;
+		});
+		return { name, changed, approved, pin: staged.pin };
 	} finally {
 		removeFolder(staging);
 	}
 }
 
 /** Checks the installed files against the record and reports what dg cannot enforce; `approve` records the approval. */
-export function verifyPlugin(name: string, input: { approve: boolean }, env: Env = process.env): VerifyReport {
+export async function verifyPlugin(name: string, input: { approve: boolean }, env: Env = process.env): Promise<VerifyReport> {
+	return withApprovalSigner(env, undefined, (signer) => verifyWith(name, input, env, signer));
+}
+
+async function verifyWith(name: string, input: { approve: boolean }, env: Env, signer: ApprovalSigner): Promise<VerifyReport> {
 	let record = readRecord(name, env);
 	const src = pluginSrcDir(name, env);
 	const intact = hashTree(src) === record.treeSha256;
 	const problems: string[] = [];
 	if (!intact) {
-		record = { ...record, approvedSha256: null };
+		record = { ...record, approvedSha256: null, mac: null };
 		writeRecord(record, env);
 		disableAndUnload(name, env);
 		problems.push(`${name} changed since it was installed, so it is unapproved and disabled. Next: run dg plugin update ${name} to restore it, then review and approve it.`);
 	} else if (input.approve) {
 		record = { ...record, approvedSha256: record.treeSha256 };
+		record = { ...record, mac: await signApproval(record, signer) };
 		writeRecord(record, env);
 		load(record, env);
-		syncHosts(record, env);
+		await syncHosts(record, env, signer);
 	}
 	const manifest = readManifest(src);
 	const permissions = manifest === undefined ? { enforced: [], unenforced: [] } : permissionReport(manifest);
-	return { name, approved: intact && isApproved(record, env), intact, problems, ...permissions };
+	const problem = intact ? await approvalProblem(record, env, signer) : undefined;
+	if (problem !== undefined && record.approvedSha256 !== null) problems.push(`${name} claims approval but is not approved. ${problem}`);
+	return { name, approved: intact && problem === undefined, intact, problems, ...permissions };
 }
 
-export function listPlugins(env: Env = process.env): ListRow[] {
-	return installedNames(env).map((name) => {
-		const record = readRecord(name, env);
-		return { name, kind: record.kind, pin: record.pin, enabled: isEnabled(name, env), approved: isApproved(record, env), source: record.source };
+export async function listPlugins(env: Env = process.env): Promise<ListRow[]> {
+	return withApprovalSigner(env, undefined, async (signer) => {
+		const rows: ListRow[] = [];
+		for (const name of installedNames(env)) {
+			const record = readRecord(name, env);
+			rows.push({ name, kind: record.kind, pin: record.pin, enabled: isEnabled(name, env), approved: await isApproved(record, env, signer), source: record.source });
+		}
+		return rows;
 	});
 }
 
 /** The helper command of an approved plugin; an unapproved or edited plugin throws. */
-export function approvedHelper(name: string, env: Env = process.env): { command: string; args: string[] } {
+export async function approvedHelper(name: string, env: Env = process.env): Promise<{ command: string; args: string[] }> {
 	const record = readRecord(name, env);
-	if (!isApproved(record, env)) throw notApproved(name);
+	const problem = await approvalProblem(record, env);
+	if (problem !== undefined) throw notApproved(name, problem);
 	const entry = readManifest(pluginSrcDir(name, env))?.entry;
 	if (entry === undefined || !("command" in entry)) throw new DgCliError(`dg plugin: ${name} ships no helper command. Next: nothing to run.`);
 	return { command: entry.command, args: entry.args };

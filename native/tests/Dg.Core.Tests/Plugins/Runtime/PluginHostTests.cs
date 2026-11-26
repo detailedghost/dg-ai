@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text.Json;
 using Dg.Core.Plugins.Contract;
 using Dg.Core.Plugins.Runtime;
+using Dg.Core.Transport.Http;
 using Dg.Core.Tests.Transport.Ipc;
 using Dg.Core.Tests.Transport.Tcp;
 
@@ -62,18 +63,34 @@ public sealed class PluginHostTests
     }
 
     [Fact]
-    public async Task InvokeAsync_EnabledApprovedTcpPlugin_UsesStoredToken()
+    public async Task InvokeAsync_EnabledApprovedTcpPlugin_ConnectsWithoutToken()
     {
-        await using var server = new TcpPluginServer("tok");
+        await using var server = new TcpPluginServer();
         await using var fixture = new RuntimeFixture();
         fixture.Install("scanner", TcpManifest(server.Port), approved: true);
-        fixture.SetCredential("plugin-scanner-token", "tok");
         var host = fixture.Host(Enabled);
 
         await host.InvokeAsync("scanner", RuntimeFixture.HookMessage(), CancellationToken.None);
 
         Assert.Equal(1, server.Accepted);
         Assert.Equal(0, server.Rejected);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_TcpPluginWithStoredToken_IsRefusedAndNothingConnects()
+    {
+        await using var server = new TcpPluginServer();
+        await using var fixture = new RuntimeFixture();
+        fixture.Install("scanner", TcpManifest(server.Port), approved: true);
+        fixture.SetCredential("plugin-scanner-token", "tok");
+        var host = fixture.Host(Enabled);
+
+        var ex = await Assert.ThrowsAsync<PluginTransportException>(async () =>
+            await host.InvokeAsync("scanner", RuntimeFixture.HookMessage(), CancellationToken.None)
+        );
+
+        Assert.Equal(PluginTransportCodes.Refused, ex.Code);
+        Assert.Equal(0, server.Accepted);
     }
 
     [Theory]
@@ -87,7 +104,7 @@ public sealed class PluginHostTests
     {
         await using var fixture = new RuntimeFixture();
         await using var ipc = new EchoPluginServer(directory: fixture.Folder("scanner"));
-        await using var tcp = new TcpPluginServer("tok");
+        await using var tcp = new TcpPluginServer();
         using var http = new CountingListener();
         var manifest = transport switch
         {
@@ -140,6 +157,37 @@ public sealed class PluginHostTests
         );
 
         Assert.Equal(PluginRuntimeCodes.Unapproved, ex.Code);
+        Assert.Equal(0, server.Accepted);
+    }
+
+    [Fact]
+    public Task InvokeAsync_DaemonHoldsNoApprovalKey_IsUnapprovedAndConnectsNothing() =>
+        AssertUnapprovedAsync(static fixture => fixture.Signer.Key = null);
+
+    [Fact]
+    public Task InvokeAsync_ApprovalSignedByAnotherKey_IsUnapprovedAndConnectsNothing() =>
+        AssertUnapprovedAsync(static fixture =>
+            fixture.Signer.Key = Convert.FromHexString(new string('a', 64))
+        );
+
+    [Fact]
+    public Task InvokeAsync_UnsignedApproval_IsUnapprovedAndConnectsNothing() =>
+        AssertUnapprovedAsync(static fixture => fixture.Unsign("scanner"));
+
+    private static async Task AssertUnapprovedAsync(Action<RuntimeFixture> breakApproval)
+    {
+        await using var fixture = new RuntimeFixture();
+        await using var server = new EchoPluginServer(directory: fixture.Folder("scanner"));
+        fixture.Install("scanner", IpcManifest(EchoPluginServer.SocketFile), approved: true);
+        breakApproval(fixture);
+        var host = fixture.Host(Enabled);
+
+        var ex = await Assert.ThrowsAsync<PluginContractException>(async () =>
+            await host.InvokeAsync("scanner", RuntimeFixture.HookMessage(), CancellationToken.None)
+        );
+
+        Assert.Equal(PluginRuntimeCodes.Unapproved, ex.Code);
+        Assert.Contains("dg plugin verify scanner --approve", ex.Message);
         Assert.Equal(0, server.Accepted);
     }
 

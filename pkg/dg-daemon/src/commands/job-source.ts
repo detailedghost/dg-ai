@@ -46,7 +46,7 @@ import {
 	MAX_MANIFEST_BYTES,
 	parseFolderManifest,
 	readFolderManifest,
-	withManifestPin,
+	pinGitRecord,
 } from "../jobs/plugin-manifest";
 import { sanitize } from "../jobs/sanitize";
 import {
@@ -54,6 +54,7 @@ import {
 	findRecordByJob,
 	type GitSourceRecord,
 	type PathSourceRecord,
+	isTreeId,
 	readSourceRecords,
 	readNamedSources,
 	type NamedRegistry,
@@ -439,6 +440,12 @@ export const git = (deps: JobSourceDeps, args: string[], cwd?: string): Promise<
 		env: gitEnv(deps),
 		stdin: deps.isTerminal() ? "inherit" : "ignore",
 	});
+
+export async function treeOf(run: (args: string[], cwd: string) => Promise<GitResult>, cloneDir: string): Promise<string> {
+	const tree = (await run(["rev-parse", "HEAD^{tree}"], cloneDir)).stdout.trim();
+	if (!isTreeId(tree)) stop("git did not give a tree id");
+	return tree;
+}
 
 export const firstLine = (text: string): string =>
 	text.split("\n").find((line) => line.trim() !== "")?.trim() ?? "no output";
@@ -845,7 +852,7 @@ async function addGit(
 
 		await ensureMigrated(paths);
 		release();
-		const record: GitSourceRecord = withManifestPin(
+		const record: GitSourceRecord = pinGitRecord(
 			{
 				kind: "git",
 				url,
@@ -856,6 +863,7 @@ async function addGit(
 				credentials: declaration.credentials,
 			},
 			manifest,
+			{ sha: head, tree: await treeOf((args, cwd) => git(deps, args, cwd), cloneDir) },
 		);
 		try {
 			await withConfigLock(paths, () => commitToDisk(paths, source, record, resolved.jobs));

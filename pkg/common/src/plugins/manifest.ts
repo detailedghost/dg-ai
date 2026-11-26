@@ -29,6 +29,8 @@ export type PluginManifest = {
 type Table = Record<string, unknown>;
 type Where = { file: string; text: string };
 
+const TCP_TOKEN_PROBLEM = 'tcp would send the plugin token to any local listener; use transport = "ipc", or the http transport with an https endpoint';
+
 const ROOT_KEYS = ["name", "version", "kind", "transport", "endpoint", "remote", "source", "sha256", "commit", "entry", "capabilities", "permissions"];
 const NAME = /^[a-z][a-z0-9-]{0,63}$/;
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
@@ -156,6 +158,7 @@ function pinOf(where: Where, root: Table, kind: PluginKind, source: string | und
 	const commit = optionalString(where, "commit", root.commit);
 	if (sha256 !== undefined && commit !== undefined) fail(where, "commit", "set only one of sha256 or commit");
 	if (sha256 !== undefined) {
+		if (kind === "job") fail(where, "sha256", "a job plugin must be pinned by a full commit SHA (commit = 40 or 64 lowercase hex), not by sha256");
 		if (!SHA256.test(sha256)) fail(where, "sha256", "sha256 must be 64 hex characters");
 		return { kind: "sha256", value: sha256 };
 	}
@@ -163,6 +166,7 @@ function pinOf(where: Where, root: Table, kind: PluginKind, source: string | und
 		if (!COMMIT.test(commit)) fail(where, "commit", "commit must be 40 or 64 hex characters");
 		return { kind: "commit", value: commit };
 	}
+	if (kind === "job" && source !== undefined) fail(where, "commit", "a job plugin with a source must be pinned by a full commit SHA (commit = 40 or 64 lowercase hex)");
 	if (kind === "skill" || source !== undefined) fail(where, "sha256", "a skill or a plugin with a source must be pinned by sha256 or commit");
 	return undefined;
 }
@@ -209,6 +213,8 @@ export function parseManifest(text: string, file: string): PluginManifest {
 	const credentials = stringList(where, "permissions.credentials", permissions.credentials);
 	for (const credential of credentials)
 		if (!CREDENTIAL_NAME_PATTERN.test(credential)) fail(where, "permissions.credentials", `${credential} is not a valid credential name`);
+	if (transport === "tcp" && credentials.includes(pluginTokenCredential(name)))
+		fail(where, "permissions.credentials", TCP_TOKEN_PROBLEM);
 	return {
 		name,
 		version,

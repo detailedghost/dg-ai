@@ -1,6 +1,6 @@
 ---
 name: inbox-cleanup
-description: Review and clean Proton Mail, Gmail, or Outlook through dg, with redacted message batches, existing-folder routing, and reviewed mailbox changes.
+description: Review and clean Proton Mail, Gmail, or Outlook through dg with redacted batches and reviewed changes.
 ---
 
 # Inbox cleanup

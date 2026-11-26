@@ -1,4 +1,5 @@
 import { fail, requireRecord, requireString } from "./assert";
+import { isSiteKey, PHI_SITES_MAX } from "./phi-sites";
 import { parseKeyChord } from "./keyboard-keys";
 import { PROTO_PREVIEW_MAX_CHARS } from "./proto-format";
 import { PW_EXT_NETWORK_MAX_FILTER_CHARS, PW_EXT_NETWORK_MAX_LIMIT } from "./pw-ext-network";
@@ -99,8 +100,8 @@ export const PW_EXT_MIN_SECRET_CHARS = 4;
 export function isPwExtSecretTooShort(value: string): boolean {
 	return value.replace(/\s+/g, " ").length < PW_EXT_MIN_SECRET_CHARS;
 }
-/** First extension release with per-agent tab groups. */
-export const PW_EXT_MIN_EXTENSION_VERSION = [1, 44, 0] as const;
+/** First extension release that understands phiSites and reports Stop to the daemon. */
+export const PW_EXT_MIN_EXTENSION_VERSION = [8, 0, 0] as const;
 
 /** One fixed browser action; the wire carries no code. */
 export type PwExtRequest = {
@@ -160,6 +161,8 @@ export type PwExtRequest = {
 	expression?: string;
 	width?: number;
 	height?: number;
+	/** Site keys from `[pw] phi_sites` in config.toml; the extension refuses page data verbs on them. */
+	phiSites?: string[];
 };
 
 export const PW_EXT_FETCH_MAX_BODY_BYTES = 16_384;
@@ -276,9 +279,23 @@ function moduleValidator(verb: unknown): ((value: unknown) => PwExtRequest) | un
 	return undefined;
 }
 
+function validatePhiSites(value: unknown, path: string): string[] {
+	if (!Array.isArray(value) || value.length > PHI_SITES_MAX)
+		fail(`${path}.phiSites must be a list of at most ${PHI_SITES_MAX} site keys`);
+	for (const [index, site] of (value as unknown[]).entries())
+		if (typeof site !== "string" || !isSiteKey(site)) fail(`${path}.phiSites[${index}] must be a site key such as "https://example.org"`);
+	return value as string[];
+}
+
 export function validatePwExtRequest(value: unknown): PwExtRequest {
+	requireRecord(value, "pw-ext request");
+	if (value.phiSites === undefined) return validateVerbRequest(value);
+	const { phiSites, ...rest } = value;
+	return { ...validateVerbRequest(rest), phiSites: validatePhiSites(phiSites, "pw-ext request") };
+}
+
+function validateVerbRequest(value: Record<string, unknown>): PwExtRequest {
 	const path = "pw-ext request";
-	requireRecord(value, path);
 	const validateModule = moduleValidator(value.verb);
 	if (validateModule) return validateModule(value);
 	if (!Object.hasOwn(FIELDS, value.verb as string))

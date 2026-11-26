@@ -34,19 +34,18 @@ internal sealed class PluginVerifyCommand(
             throw new NotNativeException();
         var manifest = ReadManifest(store.Src(name));
         if (approve)
-            record = Approve(store, record);
-        var approved = record.HasApproval;
-        stdout.Append(name).Append(approved ? ": approved\n" : ": unapproved\n");
+            throw new NotNativeException();
+        PluginStore.DeferIfApproved(record);
+        stdout.Append(name).Append(": unapproved\n");
         var report = manifest is null ? new PermissionReport([], []) : PermissionReport.For(manifest);
         Section(stdout, "dg enforces:", report.Enforced);
         Section(stdout, "dg cannot enforce (declared only):", report.Unenforced);
-        if (!approved)
-            stdout
-                .Append("Imported text stays untrusted until approved. Next: review ")
-                .Append(store.Src(name))
-                .Append(", then run dg plugin verify ")
-                .Append(name)
-                .Append(" --approve.\n");
+        stdout
+            .Append("Imported text stays untrusted until approved. Next: review ")
+            .Append(store.Src(name))
+            .Append(", then run dg plugin verify ")
+            .Append(name)
+            .Append(" --approve.\n");
         return 0;
     }
 
@@ -73,30 +72,6 @@ internal sealed class PluginVerifyCommand(
             return null;
         var manifest = ManifestParser.Parse(File.ReadAllText(file), file);
         return manifest.Kind == PluginKind.Skill ? manifest : throw new NotNativeException();
-    }
-
-    private static PluginRecord Approve(PluginStore store, PluginRecord record)
-    {
-        var src = store.Src(record.Name);
-        var files = PluginTree.List(src);
-        var skills = SkillLayout.Find(files, record.Name);
-        var enabled = store.ConfiguredPlugins().TryGetValue(record.Name, out var entry) && entry.Enabled;
-        var hosts = store.Hosts();
-        if (enabled)
-            hosts.EnsureRegistrable(record.Name, skills.Select(static s => s.Name));
-
-        var loaded = store.Loaded(record.Name);
-        PluginTree.Remove(loaded);
-        foreach (var skill in skills)
-            PluginTree.Copy(src, Path.Combine(loaded, skill.Name), files, skill.Prefix);
-        if (enabled)
-            hosts.Register(record.Name, loaded);
-        else
-            hosts.Unregister(record.Name);
-
-        var approved = record with { ApprovedSha256 = record.TreeSha256 };
-        store.Write(approved);
-        return approved;
     }
 
     private static void Section(StringBuilder sink, string title, IReadOnlyList<string> lines)

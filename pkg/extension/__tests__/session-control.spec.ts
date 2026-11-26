@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { createSessionControl, MAX_SESSION_SITES } from "@/lib/background/session-control";
+import { afterEach, describe, expect, it, setSystemTime } from "bun:test";
+import { createSessionControl, MAX_SESSION_SITES, STOP_TTL_MS } from "@/lib/background/session-control";
 
 function memoryStorage() {
 	const data: Record<string, unknown> = {};
@@ -79,5 +79,94 @@ describe("session control", () => {
 		const storage = memoryStorage();
 		storage.data["pwExtSites:s1"] = "bad";
 		expect(await createSessionControl({ storage }).allowed("s1", "https://a.test")).toBe(false);
+	});
+});
+
+describe("session control stop expiry", () => {
+	const START = Date.UTC(2026, 0, 1);
+	const stoppedKeys = (data: Record<string, unknown>) => Object.keys(data).filter((key) => key.startsWith("pwExtStopped:"));
+
+	afterEach(() => setSystemTime());
+
+	it("records the stop time and still refuses the session at 24 hours", async () => {
+		setSystemTime(new Date(START));
+		const storage = memoryStorage();
+		const control = createSessionControl({ storage });
+		await control.stop("s1");
+		expect(storage.data["pwExtStopped:s1"]).toBe(START);
+		setSystemTime(new Date(START + STOP_TTL_MS));
+		expect(await control.stopped("s1")).toBe(true);
+	});
+
+	it("keeps a tombstone past 24 hours while the daemon still lists the session", async () => {
+		setSystemTime(new Date(START));
+		const storage = memoryStorage();
+		const control = createSessionControl({ storage });
+		await control.stop("s1");
+		setSystemTime(new Date(START + STOP_TTL_MS + 1));
+		await control.releaseGone(new Set(["s1"]));
+		expect(await control.stopped("s1")).toBe(true);
+		expect(await control.stoppedIds()).toEqual(["s1"]);
+	});
+
+	it("keeps a tombstone past 24 hours when nothing reports the session gone", async () => {
+		setSystemTime(new Date(START));
+		const control = createSessionControl({ storage: memoryStorage() });
+		await control.stop("s1");
+		setSystemTime(new Date(START + STOP_TTL_MS + 1));
+		expect(await control.stopped("s1")).toBe(true);
+	});
+
+	it("frees a tombstone once it is older than 24 hours and the daemon no longer lists the session", async () => {
+		setSystemTime(new Date(START));
+		const storage = memoryStorage();
+		const control = createSessionControl({ storage });
+		await control.stop("old");
+		setSystemTime(new Date(START + STOP_TTL_MS));
+		await control.stop("fresh");
+		await control.releaseGone(new Set());
+		expect(await control.stoppedIds()).toEqual(["old", "fresh"]);
+		setSystemTime(new Date(START + STOP_TTL_MS + 1));
+		await control.releaseGone(new Set());
+		expect(stoppedKeys(storage.data)).toEqual(["pwExtStopped:fresh"]);
+		expect(await control.stopped("old")).toBe(false);
+	});
+
+	it("reads a tombstone from before timestamps as a stop that starts now", async () => {
+		setSystemTime(new Date(START));
+		const storage = memoryStorage();
+		storage.data["pwExtStopped:s1"] = true;
+		const control = createSessionControl({ storage });
+		expect(await control.stopped("s1")).toBe(true);
+		expect(storage.data["pwExtStopped:s1"]).toBe(START);
+	});
+
+	it("keeps a Stop that lands while an expired tombstone is being released", async () => {
+		setSystemTime(new Date(START));
+		const storage = memoryStorage();
+		const control = createSessionControl({ storage });
+		await control.stop("s1");
+		setSystemTime(new Date(START + STOP_TTL_MS + 1));
+		let open: () => void = () => undefined;
+		const gate = new Promise<void>((resolve) => {
+			open = resolve;
+		});
+		const slow = {
+			...storage,
+			session: {
+				...storage.session,
+				get: async (key: string | null) => {
+					const snapshot = await storage.session.get(key);
+					await gate;
+					return snapshot;
+				},
+			},
+		};
+		const racing = createSessionControl({ storage: slow });
+		const releasing = racing.releaseGone(new Set());
+		const stopping = racing.stop("s1");
+		open();
+		await Promise.all([releasing, stopping]);
+		expect(await control.stopped("s1")).toBe(true);
 	});
 });

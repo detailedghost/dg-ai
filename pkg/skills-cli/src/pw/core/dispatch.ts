@@ -1,4 +1,5 @@
 import { stripVTControlCharacters } from "node:util";
+import { isPhiSite } from "@dg/common";
 import type { Page } from "playwright-core";
 import { UsageError } from "./args";
 import { installHint } from "./install-hint";
@@ -28,6 +29,7 @@ export type DispatchOptions = {
 	state: DispatchState;
 	sessionDepth?: number;
 	envDepth?: number;
+	phiSites?: readonly string[];
 };
 
 export type Dispatched = { text: string; exitCode: number };
@@ -59,8 +61,13 @@ function currentPage(ctx: Ctx): Page | undefined {
 	}
 }
 
-async function headerOf(ctx: Ctx, page: Page): Promise<PageHeader> {
-	return pageHeader(page, ctx.events.totals(page));
+async function headerOf(
+	ctx: Ctx,
+	page: Page,
+	phiOrigin: string | undefined,
+): Promise<PageHeader> {
+	const header = await pageHeader(page, ctx.events.totals(page));
+	return phiOrigin ? { ...header, url: phiOrigin, title: "" } : header;
 }
 
 async function attachSnapshot(
@@ -112,6 +119,40 @@ async function runHandler(
 	}
 }
 
+function onPhiSite(ctx: Ctx, options: DispatchOptions): string | undefined {
+	if (!options.phiSites?.length) return undefined;
+	const url = currentPage(ctx)?.url();
+	return url && isPhiSite(url, options.phiSites) ? new URL(url).origin : undefined;
+}
+
+const ACROSS_TABS = new Set(["tab-list", "cookie-list"]);
+
+function listedOrigin(ctx: Ctx, spec: CommandSpec, options: DispatchOptions): string | undefined {
+	const sites = options.phiSites;
+	if (!sites?.length) return undefined;
+	if (!ACROSS_TABS.has(spec.name)) return onPhiSite(ctx, options);
+	for (const page of ctx.context.pages()) {
+		const url = page.url();
+		if (isPhiSite(url, sites)) return new URL(url).origin;
+	}
+	return undefined;
+}
+
+const WITHHELD_MODAL = '- [A dialog or file chooser is open; its text is withheld on a site listed in [pw] phi_sites]: handle it with "dialog-accept", "dialog-dismiss" or "upload"';
+const WITHHELD_NOTICE = "- [Download details are withheld on a site listed in [pw] phi_sites]";
+
+function refusal(origin: string, spec: CommandSpec, options: DispatchOptions): Dispatched {
+	return {
+		text: render(
+			{
+				error: `${origin} is listed in [pw] phi_sites in config.toml; pw ${spec.name} is refused there. Next: remove the site from phi_sites if the page holds no patient data.`,
+			},
+			options,
+		),
+		exitCode: 1,
+	};
+}
+
 export async function dispatch(
 	handler: DaemonHandler,
 	spec: CommandSpec,
@@ -119,6 +160,8 @@ export async function dispatch(
 	ctx: Ctx,
 	options: DispatchOptions,
 ): Promise<Dispatched> {
+	const refusedSite = spec.readsPage ? listedOrigin(ctx, spec, options) : undefined;
+	if (refusedSite) return refusal(refusedSite, spec, options);
 	let outcome: HandlerResult;
 	try {
 		outcome = await runHandler(handler, ctx, args);
@@ -138,8 +181,12 @@ export async function dispatch(
 
 	const page = currentPage(ctx);
 	if (page) {
+		const modalOf = (listed: string | undefined) => {
+			const lines = ctx.events.modal(page);
+			return listed && lines.length ? [WITHHELD_MODAL] : lines;
+		};
 		if (ctx.events.hasDialog(page)) {
-			parts.modal = ctx.events.modal(page);
+			parts.modal = modalOf(onPhiSite(ctx, options));
 			return { text: render(parts, options), exitCode: parts.error ? 1 : 0 };
 		}
 		if (!outcome.error && spec.changesPage) {
@@ -147,21 +194,25 @@ export async function dispatch(
 				.waitForLoadState("domcontentloaded", { timeout: 3_000 })
 				.catch(() => undefined);
 		}
+		const phiOrigin = onPhiSite(ctx, options);
+		if (phiOrigin && spec.readsPage) return refusal(phiOrigin, spec, options);
 		try {
-			if (!outcome.error && !ctx.restricted)
+			if (!outcome.error && !ctx.restricted && !phiOrigin)
 				await attachSnapshot(ctx, page, outcome, parts, options);
 		} catch (error) {
 			parts.error = describeError(error);
 			parts.snapshot = undefined;
 		}
-		const header = await headerOf(ctx, page);
+		const header = await headerOf(ctx, page, phiOrigin);
 		const key = `${header.url}\n${header.title}`;
 		if (parts.snapshot || parts.error || key !== options.state.lastHeader)
 			parts.page = header;
 		options.state.lastHeader = key;
-		parts.events = ctx.events.drain(page);
-		parts.notices = ctx.events.drainNotices(page);
-		parts.modal = ctx.events.modal(page);
+		const events = ctx.events.drain(page);
+		parts.events = phiOrigin ? undefined : events;
+		const notices = ctx.events.drainNotices(page);
+		parts.notices = phiOrigin && notices.length ? [WITHHELD_NOTICE] : notices;
+		parts.modal = modalOf(phiOrigin);
 	}
 
 	return { text: render(parts, options), exitCode: parts.error ? 1 : 0 };

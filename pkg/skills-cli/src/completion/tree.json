@@ -2375,6 +2375,14 @@
 					]
 				},
 				{
+					"name": "list",
+					"description": "print every setting (needs the C# front door)"
+				},
+				{
+					"name": "doctor",
+					"description": "check config.toml (needs the C# front door)"
+				},
+				{
 					"name": "edit",
 					"description": "open config.toml in $EDITOR; an edit that does not validate is not saved"
 				}

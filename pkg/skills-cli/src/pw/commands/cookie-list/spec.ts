@@ -11,4 +11,5 @@ export default defineCommand({
 	],
 	help: "List all cookies, optionally filtered by domain or path",
 	changesPage: false,
+	readsPage: true,
 });

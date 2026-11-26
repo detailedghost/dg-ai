@@ -248,6 +248,7 @@ export function registerDaemonLink(
 		webmcpGrants,
 		rememberedWebMcpGrants,
 		control: sessionControl,
+		onStop: (sessionId) => sendPwExtStop(sessionId),
 		siteAllow,
 		agentWindows,
 	});
@@ -504,6 +505,14 @@ export function registerDaemonLink(
 		);
 	}
 
+	function logStopReportError(error: unknown): void {
+		emitRedacted(
+			(line) => console.warn(line),
+			`[dg-chat] could not report a Stop to the daemon: ${describeError(error)}`,
+			knownTokens(),
+		);
+	}
+
 	async function answerWebMcpGrants(payload: Record<string, unknown>): Promise<unknown> {
 		if (payload.type === MSG.webmcpRevokeAll) {
 			await Promise.all([webmcpGrants.forgetAll(), rememberedWebMcpGrants.forgetAll()]);
@@ -523,6 +532,34 @@ export function registerDaemonLink(
 			...remembered.map(({ site, tool, expiresAt }) => ({ kind: "remembered" as const, site, tool, expiresAt })),
 		];
 		return { grants } satisfies WebMcpGrantsReply;
+	}
+
+	const stopReportedOn = new Map<string, ChatClientSocket>();
+
+	function sendPwExtStop(sessionId: string): void {
+		const socket = currentSocket;
+		const bootstrap = bootstrapsBySession.get(sessionId);
+		if (!socket || !bootstrap || !keepaliveEligible.has(sessionId)) return;
+		try {
+			socket.send(
+				JSON.stringify({
+					type: "pw-ext-stop",
+					sessionId,
+					token: bootstrap.token,
+					protocolVersion: CHAT_PROTOCOL_VERSION,
+				}),
+			);
+			stopReportedOn.set(sessionId, socket);
+		} catch (error) {
+			logStopReportError(error);
+		}
+	}
+
+	async function reportPendingStops(listed: ReadonlySet<string>): Promise<void> {
+		await sessionControl.releaseGone(listed);
+		const stopped = await sessionControl.stoppedIds();
+		for (const sessionId of stopReportedOn.keys()) if (!stopped.includes(sessionId)) stopReportedOn.delete(sessionId);
+		for (const sessionId of stopped) if (stopReportedOn.get(sessionId) !== currentSocket) sendPwExtStop(sessionId);
 	}
 
 	function forgetStoredPairing(sessionId: string): void {
@@ -792,6 +829,7 @@ export function registerDaemonLink(
 			return;
 		}
 		if (frame.type !== "session-list") return;
+		void reportPendingStops(new Set(frame.sessions.map(({ sessionId }) => sessionId))).catch(logStopReportError);
 		const presenceChanged = frame.sessions.some(
 			({ sessionId, presence }) =>
 				bootstrapsBySession.has(sessionId) &&

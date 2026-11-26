@@ -547,7 +547,7 @@ Pairings persist. After a session starts, the extension reconnects on its own un
 
 ### Mixed versions
 
-- **Old extension, new daemon.** An extension older than the floor posts to routes that now return 404, so it cannot pair. The daemon refuses `dg pw --ext` with the update text. The refusal text reads: "pw --ext requires dg-ai-extension 1.44.0 or newer; update the extension, reload it, and reconnect this session."
+- **Old extension, new daemon.** An extension older than the floor posts to routes that now return 404, so it cannot pair. The daemon refuses `dg pw --ext` with the update text. The refusal text reads: "pw --ext requires dg-ai-extension 8.0.0 or newer; update the extension, reload it, and reconnect this session."
 - **New extension, old daemon.** An old daemon does not push sessions, so the extension adopts none. Update the daemon first.
 - **Mixed binaries.** Update `dg` and the extension together. An old `dg agent start` fails on `GET /sessions?waiting=1`. A new extension rejects a `session-list` that carries `waiting` until the old daemon reaps it.
 

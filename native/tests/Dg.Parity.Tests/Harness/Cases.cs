@@ -12,6 +12,8 @@ internal static class Cases
     [
         "get-syntax-error",
         "get-bad-value",
+        "get-retired-browser-mode",
+        "get-pw-phi-sites-bad-item",
         "get-unknown-section-in-file",
         "set-on-invalid-file",
         "set-on-syntax-error-file",
@@ -23,6 +25,7 @@ internal static class Cases
     public static ParityCase[] Config() =>
         Read(Path.Combine(Tests, "Dg.Config.Tests", "fixtures", "cases.json"))
             .EnumerateArray()
+            .Where(static e => !e.TryGetProperty("frontOnly", out var only) || !only.GetBoolean())
             .Select(static e => new ParityCase(
                 e.GetProperty("name").GetString()!,
                 Strings(e.GetProperty("argv")),

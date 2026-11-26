@@ -33,6 +33,7 @@ function knownKey(key: string): Known | undefined {
 	if (key === "refs.default_repo" || (section === "refs" && name === "aliases" && parts.length === 3)) return { text: true };
 	if ((section === "inbox" || section === "ssms") && parts.length >= 2) return { text: false };
 	if (section === "plugins" && parts.length === 3 && field === "enabled") return { fallback: true, text: false };
+	if (section === "plugins" && parts.length === 3 && field === "fail_closed") return { fallback: false, text: false };
 	if (section === "plugins" && parts.length === 3 && field === "source") return { text: true };
 	if (section === "plugins" && field === "settings" && rest !== undefined) return { text: false };
 	return undefined;
@@ -114,6 +115,15 @@ function edit(): void {
 	}
 }
 
+const FRONT_DOOR_HINT =
+	"Next: unset DG_FRONT, set front.enabled = true in config.toml, or run dg install to restore the front door.";
+
+function needsFrontDoor(sub: string): () => never {
+	return () => {
+		throw new DgCliError(`dg config ${sub} needs the C# front door, and the Bun program does not run it. ${FRONT_DOOR_HINT}`);
+	};
+}
+
 export function registerConfig(program: Command): void {
 	const config = program.command("config").description("Read and change dg settings in config.toml");
 	config
@@ -134,6 +144,8 @@ export function registerConfig(program: Command): void {
 		.argument("[value]", "the new value")
 		.option("--credential <name>", "point a secret field at a dg credentials entry")
 		.action((key: string, value: string | undefined, options: { credential?: string }) => set(key, value, options.credential));
+	config.command("list").description("print every setting (needs the C# front door)").action(needsFrontDoor("list"));
+	config.command("doctor").description("check config.toml (needs the C# front door)").action(needsFrontDoor("doctor"));
 	config
 		.command("edit")
 		.description("open config.toml in $EDITOR; an edit that does not validate is not saved")

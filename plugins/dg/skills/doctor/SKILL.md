@@ -1,6 +1,6 @@
 ---
 name: doctor
-description: Check that the dg skills have what they need and walk through the fixes. Runs the read-only doctor report for every item or for the items you name, explains each failure in plain words, and runs a Fix command only after you agree. Use when a dg skill fails, after an update, or when you ask to check the setup.
+description: Check that the dg skills have what they need and walk through fixes. Fixes run only after you agree. Use when a dg skill fails or after an update.
 ---
 
 # Skill: doctor

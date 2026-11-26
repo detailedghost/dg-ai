@@ -33,15 +33,11 @@ describe("findInstalledChromium", () => {
 		).toBe("/opt/x/browser");
 	});
 
-	test.each(["ext", "local", "auto"])("ignores DG_BROWSER=%s because it is a pw browser mode", (mode) => {
-		expect(
-			findInstalledChromium(
-				seams({ env: { DG_BROWSER: mode, DG_VERIFY_BROWSER: "/opt/y" }, which: onPath("brave-browser") }),
-			),
-		).toBe("/opt/y");
-		expect(
-			findInstalledChromium(seams({ env: { DG_BROWSER: mode }, which: onPath("brave-browser") })),
-		).toBe("/usr/bin/brave-browser");
+	test.each(["ext", "local", "auto", "LOCAL"])("refuses DG_BROWSER=%s because it is a pw mode word", (word) => {
+		const message = `dg: DG_BROWSER is the browser executable path, not a pw mode. Next: set DG_PW_MODE=${word.toLowerCase()}.`;
+		expect(() =>
+			findInstalledChromium(seams({ env: { DG_BROWSER: word, DG_VERIFY_BROWSER: "/opt/y" }, which: onPath("brave-browser") })),
+		).toThrow(message);
 	});
 
 	test("accepts DG_VERIFY_BROWSER as an alias", () => {

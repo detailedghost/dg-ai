@@ -1,3 +1,4 @@
+import { STOP_TTL_MS } from "@/lib/background/session-control";
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -36,6 +37,8 @@ import {
 } from "./utils/relay-harness";
 
 mock.module("wxt/browser", () => ({ browser: {} }));
+
+const KEEPALIVE_INTERVAL_MS = 60_000;
 
 const realWebSocket = globalThis.WebSocket;
 
@@ -756,7 +759,7 @@ test("registerDaemonLink drops a pw-ext result whose admission socket was replac
 	const scheduled: Array<() => void> = [];
 	const realSetTimeout = globalThis.setTimeout;
 	globalThis.setTimeout = ((fn: () => void, ms?: number) => {
-		if (ms !== 60_000) scheduled.push(fn);
+		if (ms !== KEEPALIVE_INTERVAL_MS) scheduled.push(fn);
 		return 0 as unknown as ReturnType<typeof setTimeout>;
 	}) as typeof setTimeout;
 	try {
@@ -2578,4 +2581,163 @@ test("the options page may list and revoke Web MCP grants through the popup mess
 	});
 	expect(await send({ type: MSG.webmcpRevoke, grant: { kind: "remembered", site: "https://live.com", tool: "dg_outlook_move" } })).toEqual({ ok: true });
 	expect(await remembered.list()).toEqual([]);
+});
+
+describe("pw --ext Stop report to the daemon", () => {
+	const reports = (socket: FakeSocket) =>
+		socket.send.mock.calls
+			.map(([raw]) => JSON.parse(raw as string) as Record<string, unknown>)
+			.filter((frame) => frame.type === "pw-ext-stop");
+
+	const storedSession = (stored: Record<string, unknown>) =>
+		mock(async (key: string | null) => (key === null ? { ...stored } : { [key]: stored[key] }));
+
+	async function confirmed(stored: Record<string, unknown>) {
+		const { api } = makeBrowserApi();
+		Object.assign(api.storage.session, { get: storedSession(stored) });
+		const socket = makeFakeSocket();
+		registerDaemonLink({ browserApi: api, openSocket: mock((_url: string) => socket) });
+		const bootstrap = makeBootstrap();
+		await adoptBootstrap(bootstrap);
+		socket.dispatch("open");
+		await settle();
+		socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+		await settle();
+		return { socket, bootstrap };
+	}
+
+	test("sends the Stop of a live tombstone with the session token once the daemon confirms the session", async () => {
+		const { socket, bootstrap } = await confirmed({ [`pwExtStopped:${makeBootstrap().sessionId}`]: Date.now() });
+		expect(reports(socket)).toEqual([
+			{ type: "pw-ext-stop", sessionId: bootstrap.sessionId, token: bootstrap.token, protocolVersion: expect.any(Number) },
+		]);
+	});
+
+	test("still sends the Stop of a tombstone older than 24 hours while the daemon lists the session", async () => {
+		const key = `pwExtStopped:${makeBootstrap().sessionId}`;
+		const { socket, bootstrap } = await confirmed({ [key]: Date.now() - STOP_TTL_MS - 1 });
+		expect(reports(socket)).toEqual([expect.objectContaining({ type: "pw-ext-stop", sessionId: bootstrap.sessionId })]);
+	});
+
+	test("frees a tombstone older than 24 hours once the daemon no longer lists the session", async () => {
+		const key = `pwExtStopped:${makeBootstrap().sessionId}`;
+		const stored: Record<string, unknown> = { [key]: Date.now() - STOP_TTL_MS - 1 };
+		const { api } = makeBrowserApi();
+		const remove = mock(async (gone: string) => void delete stored[gone]);
+		Object.assign(api.storage.session, { get: storedSession(stored), remove });
+		const socket = makeFakeSocket();
+		registerDaemonLink({ browserApi: api, openSocket: mock((_url: string) => socket) });
+		await adoptBootstrap(makeBootstrap());
+		socket.dispatch("open");
+		await settle();
+		socket.dispatch("message", message(buildSessionListFrame("another-session")));
+		await settle();
+		expect(remove).toHaveBeenCalledWith(key);
+		expect(reports(socket)).toEqual([]);
+	});
+
+	test("reports a Stop once per socket, not on every session list", async () => {
+		const stored = { [`pwExtStopped:${makeBootstrap().sessionId}`]: Date.now() };
+		const { socket, bootstrap } = await confirmed(stored);
+		socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+		await settle();
+		expect(reports(socket)).toHaveLength(1);
+	});
+
+	async function reconnecting(stored: Record<string, unknown>, options: { adopt: boolean }) {
+		const { api } = makeBrowserApi();
+		Object.assign(api.storage.session, { get: storedSession(stored) });
+		const sockets: FakeSocket[] = [];
+		const openSocket = mock((_url: string) => {
+			const socket = makeFakeSocket();
+			sockets.push(socket);
+			return socket;
+		});
+		const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+			(async (input: RequestInfo | URL) =>
+				String(input).endsWith("/chat/code") ? Response.json({ code: TEST_PAGE_CODE }) : daemonIdentity()) as unknown as typeof fetch,
+		);
+		registerDaemonLink({ browserApi: api, openSocket });
+		const bootstrap = makeBootstrap();
+		if (options.adopt) await adoptBootstrap(bootstrap);
+		sockets[0]?.dispatch("open");
+		await settle();
+		return { sockets, bootstrap, fetchSpy };
+	}
+
+	async function reconnect(sockets: FakeSocket[]) {
+		const scheduled: Array<() => void> = [];
+		const realSetTimeout = globalThis.setTimeout;
+		globalThis.setTimeout = ((fn: () => void, ms?: number) => {
+			if (ms !== KEEPALIVE_INTERVAL_MS) scheduled.push(fn);
+			return 0 as unknown as ReturnType<typeof setTimeout>;
+		}) as typeof setTimeout;
+		try {
+			sockets[0]?.dispatch("close");
+			scheduled.shift()?.();
+			await flushMicrotasks();
+			sockets[1]?.dispatch("open");
+			await flushMicrotasks();
+		} finally {
+			globalThis.setTimeout = realSetTimeout;
+		}
+	}
+
+	test("reports the Stop again on the socket that replaces a closed one", async () => {
+		const stored = { [`pwExtStopped:${makeBootstrap().sessionId}`]: Date.now() };
+		const { sockets, bootstrap, fetchSpy } = await reconnecting(stored, { adopt: true });
+		try {
+			sockets[0]?.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+			await settle();
+			await reconnect(sockets);
+			sockets[1]?.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+			await settle();
+			expect(sockets).toHaveLength(2);
+			expect(reports(sockets[0] as FakeSocket)).toHaveLength(1);
+			expect(reports(sockets[1] as FakeSocket)).toHaveLength(1);
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
+	test("reports no Stop for a session this extension holds no pairing for", async () => {
+		const stored = { [`pwExtStopped:${makeBootstrap().sessionId}`]: Date.now() };
+		const { sockets, bootstrap, fetchSpy } = await reconnecting(stored, { adopt: false });
+		try {
+			sockets[0]?.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+			await settle();
+			expect(reports(sockets[0] as FakeSocket)).toEqual([]);
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
+	test("retries a Stop whose send failed and logs the failure", async () => {
+		const stored = { [`pwExtStopped:${makeBootstrap().sessionId}`]: Date.now() };
+		const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+		const { sockets, bootstrap, fetchSpy } = await reconnecting(stored, { adopt: true });
+		try {
+			const socket = sockets[0] as FakeSocket;
+			let failures = 1;
+			const realSend = socket.send;
+			socket.send = mock((raw: string) => {
+				if (failures > 0 && JSON.parse(raw).type === "pw-ext-stop") {
+					failures -= 1;
+					throw new Error("socket is closing");
+				}
+				return realSend(raw);
+			});
+			socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+			await settle();
+			expect(warn.mock.calls.some(([line]) => String(line).includes("socket is closing"))).toBe(true);
+			socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+			await settle();
+			const { calls, results } = socket.send.mock as unknown as { calls: [string][]; results: Array<{ type: string }> };
+			const outcomes = calls.flatMap(([raw], index) => (JSON.parse(raw) as { type: string }).type === "pw-ext-stop" ? [results[index]?.type] : []);
+			expect(outcomes).toEqual(["throw", "return"]);
+		} finally {
+			warn.mockRestore();
+			fetchSpy.mockRestore();
+		}
+	});
 });

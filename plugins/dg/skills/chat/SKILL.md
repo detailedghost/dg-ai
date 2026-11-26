@@ -1,6 +1,6 @@
 ---
 name: chat
-description: "Talk to a human through a live local chat page that the dg daemon serves on loopback and opens in the default browser, no extension needed. Commands: start, recv, send (or send --to another agent identity), progress, spawn, stage, manifest, memory, close. The extension pairs by itself; pass --ext to require it. Every session is loopback-only and capability-gated."
+description: 'Talk to a human through a live local chat page. Commands: start, recv, send, progress, spawn, stage, manifest, memory, close. --ext requires the extension.'
 ---
 
 # Chat

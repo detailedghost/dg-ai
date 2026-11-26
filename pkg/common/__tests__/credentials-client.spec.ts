@@ -82,6 +82,8 @@ function fixtureDaemon(store: Map<string, string>) {
 				if (frame.operation === "grant")
 					value = { prefix: frame.prefix, path: "/fixture/path" };
 				if (frame.operation === "grant-list") value = [];
+				if (frame.operation === "approval-sign") value = "c".repeat(64);
+				if (frame.operation === "approval-verify") value = frame.mac === "c".repeat(64);
 				if (frame.operation === "intake")
 					value = {
 						url: "http://127.0.0.1:1/secret#code=fixture-code",
@@ -155,6 +157,51 @@ describe("createCredentialClient", () => {
 			client.close();
 			daemon.stop();
 		}
+	});
+
+	describe("approval operations", () => {
+		const fields = ["demo", "skill", "src", "commit", "v", "t", "t"];
+
+		it("signs and verifies over the session socket with no key name in the frame", async () => {
+			const daemon = fixtureDaemon(new Map());
+			const client = createCredentialClient({ paths, session: sessionId });
+			try {
+				const mac = await client.approvalSign("approval", fields);
+				expect(mac).toBe("c".repeat(64));
+				expect(await client.approvalVerify("approval", fields, mac)).toBe(true);
+				expect(await client.approvalVerify("approval", fields, "d".repeat(64))).toBe(false);
+				expect(daemon.requests[0]).toMatchObject({ operation: "approval-sign", purpose: "approval", fields });
+				expect(daemon.requests[1]).toMatchObject({ operation: "approval-verify", mac });
+				expect(daemon.requests[0]).not.toHaveProperty("name");
+			} finally {
+				client.close();
+				daemon.stop();
+			}
+		});
+
+		it("rejects a field with a NUL byte before anything reaches the daemon", async () => {
+			const daemon = fixtureDaemon(new Map());
+			const client = createCredentialClient({ paths, session: sessionId });
+			try {
+				await expect(client.approvalSign("approval", [...fields.slice(1), "a\u0000b"])).rejects.toThrow(/NUL/);
+				expect(daemon.requests).toEqual([]);
+			} finally {
+				client.close();
+				daemon.stop();
+			}
+		});
+
+		it("rejects a wrong field count for the purpose before anything reaches the daemon", async () => {
+			const daemon = fixtureDaemon(new Map());
+			const client = createCredentialClient({ paths, session: sessionId });
+			try {
+				await expect(client.approvalSign("statcache", fields)).rejects.toThrow(/exactly 3/);
+				expect(daemon.requests).toEqual([]);
+			} finally {
+				client.close();
+				daemon.stop();
+			}
+		});
 	});
 
 	describe("intake", () => {

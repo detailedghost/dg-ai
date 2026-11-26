@@ -8,6 +8,8 @@ import {
 	writeFilePreserving,
 } from "@dg/common/node";
 
+export const isTreeId = (value: string): boolean => /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value);
+
 export type SourcePin = { kind: "sha256" | "commit"; value: string };
 
 export type SourceMarks = { prefixAccepted?: boolean; setupDone?: string[] };
@@ -21,6 +23,7 @@ export type GitSourceRecord = {
 	declarationHash: string;
 	credentials: Record<string, unknown>;
 	pin?: SourcePin;
+	tree?: string;
 } & SourceMarks;
 
 export type PathSourceRecord = {
@@ -44,7 +47,7 @@ const SHA = /^[0-9a-f]{40}$/;
 const HASH = /^[0-9a-f]{64}$/;
 const MARK_KEYS = ["prefixAccepted", "setupDone"];
 const KEYS = {
-	git: ["kind", "url", "ref", "sha", "jobs", "declarationHash", "credentials", "pin", ...MARK_KEYS],
+	git: ["kind", "url", "ref", "sha", "jobs", "declarationHash", "credentials", "pin", "tree", ...MARK_KEYS],
 	path: ["kind", "path", "jobs", "declarationHash", "credentials", "pin", ...MARK_KEYS],
 	command: ["kind", ...MARK_KEYS],
 };
@@ -128,6 +131,9 @@ function checkRecord(file: string, source: string, raw: unknown): SourceRecord {
 	}
 	if (!isRecord(raw.credentials)) bad('has "credentials" that is not an object');
 	checkPin(raw, bad);
+	if (raw.tree !== undefined && !(typeof raw.tree === "string" && isTreeId(raw.tree))) {
+		bad('has a "tree" that is not a git tree id');
+	}
 	return raw as GitSourceRecord;
 }
 
