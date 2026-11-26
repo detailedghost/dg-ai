@@ -551,5 +551,19 @@
 		"stderr": "error: missing required argument 'key'\n\nUsage: dg config set [options] <key> [value]\n\nchange one setting; a secret field takes --credential <name>\n\nArguments:\n  key                  dotted key, such as refs.aliases.app\n  value                the new value\n\nOptions:\n  --credential <name>  point a secret field at a dg credentials entry\n  -h, --help           display help for command\n",
 		"exit": 1,
 		"file": null
+	},
+	{
+		"name": "list-front-door-only",
+		"stdout": "",
+		"stderr": "dg: dg config list needs the C# front door, and the Bun program does not run it. Next: unset DG_FRONT, set front.enabled = true in config.toml, or run dg install to restore the front door.\n",
+		"exit": 1,
+		"file": null
+	},
+	{
+		"name": "doctor-front-door-only",
+		"stdout": "",
+		"stderr": "dg: dg config doctor needs the C# front door, and the Bun program does not run it. Next: unset DG_FRONT, set front.enabled = true in config.toml, or run dg install to restore the front door.\n",
+		"exit": 1,
+		"file": null
 	}
 ]

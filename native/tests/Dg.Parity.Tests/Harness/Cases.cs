@@ -23,6 +23,7 @@ internal static class Cases
     public static ParityCase[] Config() =>
         Read(Path.Combine(Tests, "Dg.Config.Tests", "fixtures", "cases.json"))
             .EnumerateArray()
+            .Where(static e => !e.TryGetProperty("frontOnly", out var only) || !only.GetBoolean())
             .Select(static e => new ParityCase(
                 e.GetProperty("name").GetString()!,
                 Strings(e.GetProperty("argv")),
