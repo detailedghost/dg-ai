@@ -183,6 +183,53 @@ public sealed class IpcTransportTests
     }
 
     [Fact]
+    public void ServerRules_UserSid_AllowsOnlyTheUserAndDeniesNetworkLogons()
+    {
+        PipeAclRule[] rules = PipeAclPolicy.ServerRules("S-1-5-21-1");
+
+        Assert.Equal([new PipeAclRule("S-1-5-21-1", true), new PipeAclRule("S-1-5-2", false)], rules);
+    }
+
+    [Fact]
+    public void ServerRules_UserSid_PassTheClientUserOnlyCheck()
+    {
+        var rules = PipeAclPolicy.ServerRules("S-1-5-21-1").Select(rule => (rule.Sid, rule.Allow));
+
+        Assert.True(PipeAclPolicy.IsUserOnly("S-1-5-21-1", "S-1-5-21-1", rules));
+    }
+
+    [Fact]
+    public async Task IpcPipeServer_OnWindows_AppliesTheServerRulesAndAcceptsTheCurrentUser()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Skip("named pipes with ACLs");
+            return;
+        }
+        var plugin = $"acl-{Guid.NewGuid():N}";
+        await using var server = IpcPipeServer.Create(plugin);
+        var accept = server.WaitForConnectionAsync(TestContext.Current.CancellationToken);
+
+        await using var client = await new IpcConnector(new FixedResolver("unused")).ConnectAsync(plugin, TestContext.Current.CancellationToken);
+        await accept;
+
+        Assert.Equal(PipeAclPolicy.ServerRules(CurrentUserSid()), ReadRules(server));
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static string CurrentUserSid() => System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static PipeAclRule[] ReadRules(System.IO.Pipes.NamedPipeServerStream pipe)
+    {
+        var rules = new List<PipeAclRule>();
+        foreach (System.IO.Pipes.PipeAccessRule rule in System.IO.Pipes.PipesAclExtensions.GetAccessControl(pipe).GetAccessRules(true, false, typeof(System.Security.Principal.SecurityIdentifier)))
+            rules.Add(new(rule.IdentityReference.Value, rule.AccessControlType == System.Security.AccessControl.AccessControlType.Allow));
+        rules.Sort(static (a, b) => b.Allow.CompareTo(a.Allow));
+        return [.. rules];
+    }
+
+    [Fact]
     public void AddIpcTransport_RegistersConnectorAndPool()
     {
         var services = new FakeServices();
