@@ -40,18 +40,23 @@ Order of choice, first match wins:
 1. A local-only verb runs local. `--ext` with one is an error and exits 2. See
    the table below.
 2. `--local` runs local. `--ext` runs ext.
-3. `DG_BROWSER=ext` or `DG_BROWSER=local`. `DG_BROWSER=auto` forces nothing and falls through.
-4. `browser.mode` in `config.toml`: `ext`, `local` or `auto` (default).
+3. `DG_PW_MODE=ext` or `DG_PW_MODE=local`. `DG_PW_MODE=auto` forces nothing and falls through.
+4. `pw.mode` in `config.toml`: `ext`, `local` or `auto` (default).
 5. `auto`: ext when a paired extension is connected to a running daemon and
    the call fits the extension, else local.
 
-`DG_BROWSER=auto` and `browser.mode = "auto"` force nothing. Any other
-`DG_BROWSER` value makes `dg pw` stop with `DG_BROWSER must be ext, local or
-auto`. The browser finders of `demo` and `verify` ignore `DG_BROWSER` when it
-is `ext`, `local` or `auto`. To name a browser binary, set `DG_VERIFY_BROWSER`.
+`DG_PW_MODE=auto` and `pw.mode = "auto"` force nothing. Any other
+`DG_PW_MODE` value makes `dg pw` stop with `DG_PW_MODE must be ext, local or
+auto`.
 
-Set the mode for every shell with `dg config set browser.mode local`, or for
-one command with `DG_BROWSER=local dg pw ...`. See [config](config.md).
+`DG_BROWSER` is the path of the browser executable, for `pw`, `demo` and
+`verify`. `DG_VERIFY_BROWSER` is an alias. If `DG_BROWSER` holds `auto`, `ext`
+or `local` in any case, dg stops with `DG_BROWSER is the browser executable
+path; set DG_PW_MODE=<word> for the pw mode.` The old `browser.mode` key in
+`config.toml` is an error that names `pw.mode`.
+
+Set the mode for every shell with `dg config set pw.mode local`, or for
+one command with `DG_PW_MODE=local dg pw ...`. See [config](config.md).
 
 `--ext` with a local-only verb exits 2 with `pw <verb> runs only in local
 mode`. CI, recorded fixtures and the extension's own tests use `--local`.
@@ -186,6 +191,17 @@ Rules:
   data refuses that site, and the refusal says so. These are `snapshot`,
   `screenshot`, `selection`, `console`, `network`, `storage`, `fetch`, `call`
   and `eval`. Other verbs still follow the Allow.
+- `pw.phi_sites` in `config.toml` flags sites for good, so no one has to tick
+  the checkbox each session. It holds site keys such as `https://ehr.example.org`:
+  a scheme, a registrable domain and any non-default port. A listed site and its
+  subdomains refuse the same verbs, in `--ext` mode and in local mode. Set it
+  with `dg config set pw.phi_sites '["https://ehr.example.org"]'`. In `--ext`
+  mode the CLI reads the list and sends it with each request, because the
+  extension cannot read `config.toml`. In local mode the refusal checks the
+  current page URL before the verb runs, and a listed page gets no automatic
+  snapshot and no console lines. Local mode refuses `snapshot`, `screenshot`,
+  `eval`, `run-code`, `console`, `network`, `pdf`, and the `localstorage-`,
+  `sessionstorage-` and `cookie-` get and list verbs.
 - `eval` and the storage write verbs (`localstorage-*`, `sessionstorage-*`)
   never open the popup. On a site that is not allowed yet, they refuse. Run a
   navigation or read verb first so the popup asks, then repeat the write.

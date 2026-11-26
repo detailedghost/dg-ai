@@ -85,3 +85,11 @@ flowchart TD
 - Allow cookie and state verbs in the real profile: they copy sign-ins outside the credential store.
 - Prompt for `eval` and storage writes: a write that pops a prompt in the middle of a script is easy to approve by
   habit, so the person decides on the navigation that comes first.
+
+## Update 2026-11-25
+
+`DG_BROWSER` now means the browser executable path only. The pw mode moved to `DG_PW_MODE` and to `[pw] mode` in
+`config.toml`, which replaces `[browser] mode`. The order of choice is a flag, then `DG_PW_MODE`, then `[pw] mode`,
+then `auto`. A mode word in `DG_BROWSER` stops the command with an error that names `DG_PW_MODE`, and a config that
+still sets `browser.mode` fails validation with an error that names `pw.mode`. `[pw] phi_sites` adds a persistent
+PHI site list beside the per-session checkbox. The decision above is otherwise unchanged.

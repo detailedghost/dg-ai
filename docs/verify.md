@@ -37,7 +37,7 @@ The board then closes its own tab after a short countdown, and the agent runs `v
 The open tab finds the new round by itself.
 
 Capture runs a Playwright browser, so it stays in `--local` mode even when
-`browser.mode` is `auto`. It never touches the extension or your real profile.
+`pw.mode` is `auto`. It never touches the extension or your real profile.
 See [browser mode](pw.md#browser-mode-auto-ext-and-local).
 
 Screenshots stay in `.agents/verify/<name>/` and are not committed. The board loads no CDN. Its scripts are static files.

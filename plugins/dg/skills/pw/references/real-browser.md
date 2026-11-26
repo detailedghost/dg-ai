@@ -75,8 +75,9 @@ group, until the human hands you a tab from the extension popup.
   the human asked for.
 - Each dg session has its own agent window, separate and unfocused, with its own
   tab group in it. The first visit to each new site opens the allow popup. The
-  popup has a PHI checkbox: a flagged site refuses `snapshot` and `screenshot`
-  for the rest of the session. `eval` and the storage writes never open the
+  popup has a PHI checkbox: a flagged site refuses `snapshot`, `screenshot` and the
+  other page data verbs for the rest of the session. A site in `pw.phi_sites` does
+  the same for good. `eval` and the storage writes never open the
   popup; on a site that is not allowed yet they refuse, so run a navigation or
   read verb first.
 - Each agent tab shows an "Agent is driving this tab" banner with a Stop button.

@@ -8,8 +8,8 @@ First match wins:
 
 1. A local-only verb runs local.
 2. `--local` runs local. `--ext` runs ext. `--ext` with a local-only verb exits 2 with `pw <verb> runs only in local mode`.
-3. `DG_BROWSER=ext` or `DG_BROWSER=local`. `DG_BROWSER=auto` forces nothing. Any other value stops the call with `DG_BROWSER must be ext, local or auto`. To name a browser binary, set `DG_VERIFY_BROWSER`.
-4. `browser.mode` in `config.toml`: `ext`, `local` or `auto` (default).
+3. `DG_PW_MODE=ext` or `DG_PW_MODE=local`. `DG_PW_MODE=auto` forces nothing. Any other value stops the call with `DG_PW_MODE must be ext, local or auto`. `DG_BROWSER` is the browser executable path; a mode word in it stops the call.
+4. `pw.mode` in `config.toml`: `ext`, `local` or `auto` (default).
 5. `auto`: ext when the extension is paired and connected and the call fits it, else local with no error.
 
 A call fits the extension when its verb has an ext verb, it has no options and no session, and the positional count matches. `type --submit` is the one option that fits. The pw name maps to the ext name: `goto` to `open`, `tab-list` to `tabs`, `tab-new` to `new`, `tab-close` to `close`.

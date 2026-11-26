@@ -115,12 +115,11 @@ Local-only flags with `--ext` exit 1.
 ## Browser mode
 
 Local mode records with its own Playwright recorder and stays local in every
-`browser.mode`, so video never drives the human's real profile. `auto` never switches
+`pw.mode`, so video never drives the human's real profile. `auto` never switches
 `demo`. `--ext` plays in the agent window, and the first visit to each new site opens
 the allow popup.
 
-One finder picks the browser: `DG_VERIFY_BROWSER` as a binary path (a path in `DG_BROWSER` breaks
-`dg pw`), then Chrome, Edge, Brave, Chromium, Vivaldi, Chrome for Testing, the usual app folders,
+One finder picks the browser: `DG_VERIFY_BROWSER` as a binary path (`DG_BROWSER` is a path too, never a mode word), then Chrome, Edge, Brave, Chromium, Vivaldi, Chrome for Testing, the usual app folders,
 then the downloaded Chromium. Last, it suggests `dg pw install-browser`.
 
 On WSL, `demo` drives the Windows browser by default, else headless Chromium inside WSL.

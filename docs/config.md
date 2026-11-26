@@ -30,7 +30,8 @@ default.
 
 | Key | Type | Default | What it does |
 | --- | --- | --- | --- |
-| `browser.mode` | string | `auto` | Which browser `dg pw` drives: `ext`, `local` or `auto`. `ext` drives your real browser through the paired extension. `local` drives a Playwright browser that dg starts. `auto` uses the extension when it is paired and connected and the call fits it, else a local browser. `--ext`, `--local` and `DG_BROWSER` (`ext` or `local`) win over this key. Verbs such as `route`, `state-save` and `video-start` run local in every mode. See [pw browser mode](pw.md#browser-mode-auto-ext-and-local). |
+| `pw.mode` | string | `auto` | Which browser `dg pw` drives: `ext`, `local` or `auto`. `ext` drives your real browser through the paired extension. `local` drives a Playwright browser that dg starts. `auto` uses the extension when it is paired and connected and the call fits it, else a local browser. `--ext`, `--local` and `DG_PW_MODE` (`ext` or `local`) win over this key. This key replaced `browser.mode`, which is now an error. `DG_BROWSER` is the browser executable path, not a mode. Verbs such as `route`, `state-save` and `video-start` run local in every mode. See [pw browser mode](pw.md#browser-mode-auto-ext-and-local). |
+| `pw.phi_sites` | list of strings | empty | Site keys that hold patient data, such as `["https://ehr.example.org"]`. A site key is a scheme, a registrable domain and any non-default port. On a listed site and its subdomains `dg pw` refuses `snapshot`, `screenshot`, page text and `eval`, in `--ext` and local mode. See [pw](pw.md#real-browser---ext). |
 | `front.enabled` | boolean | `true` | Runs the native front door as `dg`. Set `false` to run the Bun dg for every command. `DG_FRONT=0` does the same for one shell. |
 | `hooks.<id>.<setting>` | string | the hook's default | A hook setting, for example `hooks.spelling.locale = "en-GB"`. See [hooks](hooks.md). |
 | `install.cli_only` | boolean | `false` | `true` on an install made with `--cli-only`, which has no extension. |
@@ -41,6 +42,7 @@ default.
 | `ssms.google.send_enabled` | boolean | `false` | Turns on Google Messages sends. |
 | `plugins.<name>.enabled` | boolean | `true` | Turns a plugin on or off. |
 | `plugins.<name>.source` | string | none | Where the plugin comes from. |
+| `plugins.<name>.fail_closed` | boolean | `false` | Makes a crash or a timeout of an external hook plugin block the tool call. The block message names the plugin and this key. `false` lets the tool call go on, as before. |
 | `plugins.<name>.allow_remote` | boolean | `false` | Lets a plugin whose manifest says `remote = true` connect to a remote URL. Both must be set. |
 | `plugins.<name>.settings` | table | empty | The plugin's own settings. |
 | `meta.migrated` | table | empty | Written by dg: each old config file that moved into this file, with its sha256. Do not edit it. |
