@@ -86,8 +86,8 @@ function load(record: PluginRecord, env: Env): void {
 	for (const skill of skillDirs(files, record.name)) copyTree(src, join(target, skill.name), files, skill.prefix);
 }
 
-async function syncHosts(record: PluginRecord, env: Env): Promise<void> {
-	if (isEnabled(record.name, env) && (await isApproved(record, env))) registerOnHosts(record.name, join(pluginFolder(record.name, env), "skills"), env);
+async function syncHosts(record: PluginRecord, env: Env, keys?: ApprovalKeys): Promise<void> {
+	if (isEnabled(record.name, env) && (await isApproved(record, env, keys))) registerOnHosts(record.name, join(pluginFolder(record.name, env), "skills"), env);
 	else unregisterFromHosts(record.name, env);
 }
 
@@ -173,7 +173,7 @@ export async function updatePlugin(name: string, input: { pin?: Pin } = {}, env:
 		if (!dropsApproval && approved) {
 			load(next, env);
 			await syncHosts(next, env);
-		}
+		} else if (!approved) disableAndUnload(name, env);
 		return { name, changed, approved, pin: staged.pin };
 	} finally {
 		removeFolder(staging);
@@ -183,6 +183,7 @@ export async function updatePlugin(name: string, input: { pin?: Pin } = {}, env:
 /** Checks the installed files against the record and reports what dg cannot enforce; `approve` records the approval. */
 export async function verifyPlugin(name: string, input: { approve: boolean }, env: Env = process.env): Promise<VerifyReport> {
 	let record = readRecord(name, env);
+	const keys = defaultApprovalKeys(env);
 	const src = pluginSrcDir(name, env);
 	const intact = hashTree(src) === record.treeSha256;
 	const problems: string[] = [];
@@ -192,25 +193,26 @@ export async function verifyPlugin(name: string, input: { approve: boolean }, en
 		disableAndUnload(name, env);
 		problems.push(`${name} changed since it was installed, so it is unapproved and disabled. Next: run dg plugin update ${name} to restore it, then review and approve it.`);
 	} else if (input.approve) {
-		const key = await defaultApprovalKeys(env).ensure();
+		const key = await keys.ensure();
 		record = { ...record, approvedSha256: record.treeSha256 };
 		record = { ...record, mac: macOf(record, key) };
 		writeRecord(record, env);
 		load(record, env);
-		await syncHosts(record, env);
+		await syncHosts(record, env, keys);
 	}
 	const manifest = readManifest(src);
 	const permissions = manifest === undefined ? { enforced: [], unenforced: [] } : permissionReport(manifest);
-	const problem = intact ? await approvalProblem(record, env) : undefined;
+	const problem = intact ? await approvalProblem(record, env, keys) : undefined;
 	if (problem !== undefined && record.approvedSha256 !== null) problems.push(`${name} claims approval but is not approved. ${problem}`);
 	return { name, approved: intact && problem === undefined, intact, problems, ...permissions };
 }
 
 export async function listPlugins(env: Env = process.env): Promise<ListRow[]> {
 	const rows: ListRow[] = [];
+	const keys = defaultApprovalKeys(env);
 	for (const name of installedNames(env)) {
 		const record = readRecord(name, env);
-		rows.push({ name, kind: record.kind, pin: record.pin, enabled: isEnabled(name, env), approved: await isApproved(record, env), source: record.source });
+		rows.push({ name, kind: record.kind, pin: record.pin, enabled: isEnabled(name, env), approved: await isApproved(record, env, keys), source: record.source });
 	}
 	return rows;
 }
