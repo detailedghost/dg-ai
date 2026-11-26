@@ -154,7 +154,7 @@ internal static class PluginStatCache
         }
     }
 
-    private static string[] Fields(string treeSha256, long fullHashAt, FileStamp[] stamps)
+    internal static string[] Fields(string treeSha256, long fullHashAt, FileStamp[] stamps)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         HmacFields.Append(hash, stamps.Length.ToString(CultureInfo.InvariantCulture), first: true);

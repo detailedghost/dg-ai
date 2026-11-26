@@ -181,7 +181,7 @@ export function stamp(root: string, version: string): void {
 	}
 }
 
-function git(root: string, args: string[]): string {
+export function git(root: string, args: string[]): string {
 	const result = Bun.spawnSync(["git", ...args], { cwd: root });
 	if (result.exitCode !== 0) {
 		throw new Error(`git ${args.join(" ")}: ${result.stderr.toString()}`);

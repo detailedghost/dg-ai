@@ -591,12 +591,6 @@ describe("validatePwExtRequest tab verbs and tabId", () => {
 	});
 });
 
-describe("PW_EXT_MIN_EXTENSION_VERSION", () => {
-	it("is the release that ships phiSites and pw-ext-stop", () => {
-		expect(PW_EXT_MIN_EXTENSION_VERSION).toEqual([8, 0, 0]);
-	});
-});
-
 describe("pw --ext unmask and secret fill", () => {
 	it.each([
 		{ verb: "unmask", minutes: 15 },

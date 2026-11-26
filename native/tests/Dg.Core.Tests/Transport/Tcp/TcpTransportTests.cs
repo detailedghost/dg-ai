@@ -64,9 +64,12 @@ public sealed class TcpTransportTests
         var ex = await Assert.ThrowsAsync<PluginTransportException>(async () => await connector.ConnectAsync("scanner", CancellationToken.None));
 
         Assert.Equal(PluginTransportCodes.Refused, ex.Code);
-        Assert.Contains("transport = \"ipc\"", ex.Message);
-        Assert.Contains("Next:", ex.Message);
-        Assert.Contains("dg credentials delete plugin-scanner-token", ex.Message);
+        Assert.Equal(
+            "dg plugin: scanner: tcp would send the plugin token to any local listener, so dg did not connect. "
+                + "Next: to remove a stale token, run `dg credentials delete plugin-scanner-token`. "
+                + "Otherwise move the plugin to transport = \"ipc\" or to the http transport with an https endpoint.",
+            ex.Message
+        );
         Assert.DoesNotContain(Secret, ex.Message);
         Assert.Equal(0, server.Accepted);
     }

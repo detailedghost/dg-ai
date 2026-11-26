@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.Json.Nodes;
 using Dg.Core.Plugins.Runtime;
 
 namespace Dg.Core.Tests.Plugins.Runtime;
@@ -275,7 +277,7 @@ public sealed class PluginApprovalVerifierTests : IDisposable
         await Problem();
 
         Assert.Equal(
-            ["scanner", "skill", "folder", "sha256", "pinned-value", Tree, Tree],
+            ["scanner", "skill", "folder", "sha256", ApprovalFixture.Pinned, Tree, Tree],
             _signer.LastApprovalFields!
         );
     }
@@ -329,12 +331,19 @@ public sealed class PluginApprovalVerifierTests : IDisposable
     public async Task ProblemAsync_StatCacheTimestampOutOfRange_HashesTheTreeAgain(long fullHashAtMs)
     {
         await Problem();
-        var cache = File.ReadAllText(CachePath);
-        var at = System.Text.RegularExpressions.Regex.Match(cache, "\"fullHashAtMs\":(-?\\d+)").Groups[1].Value;
-        File.WriteAllText(CachePath, cache.Replace(at, fullHashAtMs.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        var cache = JsonNode.Parse(File.ReadAllText(CachePath))!.AsObject();
+        cache["fullHashAtMs"] = fullHashAtMs;
+        var stamps = PluginStatCache.Snapshot(Path.Combine(Folder, "src"));
+        cache["mac"] = await _signer.SignStatCacheAsync(
+            PluginStatCache.Fields(Tree, fullHashAtMs, stamps),
+            TestContext.Current.CancellationToken
+        );
+        File.WriteAllText(CachePath, cache.ToJsonString());
+        var verifies = _signer.StatCacheVerifies;
 
         Assert.Null(await Problem());
         Assert.Equal(2, _hashes);
+        Assert.Equal(verifies, _signer.StatCacheVerifies);
     }
 
     [Fact]
