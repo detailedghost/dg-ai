@@ -25,8 +25,8 @@ public sealed class TcpConnector(ITcpManifestResolver manifests, IPluginTokenPro
             throw Fail(
                 PluginTransportCodes.Refused,
                 $"{manifest.Name}: tcp would send the plugin token to any local listener, so dg did not connect. "
-                    + "Next: use transport = \"ipc\", or the http transport with an https endpoint. "
-                    + $"If the token is stale, run dg credentials delete {credential}."
+                    + $"Next: to remove a stale token, run `dg credentials delete {credential}`. "
+                    + "Otherwise move the plugin to transport = \"ipc\" or to the http transport with an https endpoint."
             );
 
         var socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
