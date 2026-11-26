@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	flatten,
+	lowerBudgets,
+	lowerTree,
 	parseIncreases,
 	parseRemovals,
 	ratchet,
@@ -91,11 +93,12 @@ describe("ratchet", () => {
 		expect(r.failures[0]).toContain("100");
 	});
 
-	test("fails slack above 5 percent and names the budget to set", () => {
+	test("warns on slack above 5 percent, names the budget to set, and does not fail", () => {
 		const r = ratchet({ budgets, measured: { "lean:a": 90 }, prBody: "" });
-		expect(r.failures).toHaveLength(1);
-		expect(r.failures[0]).toContain("lean:a");
-		expect(r.failures[0]).toContain("94");
+		expect(r.failures).toEqual([]);
+		expect(r.warnings).toHaveLength(1);
+		expect(r.warnings[0]).toContain("lean:a");
+		expect(r.warnings[0]).toContain("94");
 	});
 
 	test("passes slack of exactly 5 percent", () => {
@@ -115,7 +118,9 @@ describe("ratchet", () => {
 			prBody: "",
 		});
 		expect(latency.failures).toEqual([]);
-		expect(size.failures).toHaveLength(1);
+		expect(latency.warnings).toEqual([]);
+		expect(size.failures).toEqual([]);
+		expect(size.warnings).toHaveLength(1);
 	});
 
 	test("still fails a latency overrun", () => {
@@ -130,14 +135,15 @@ describe("ratchet", () => {
 
 	test("names a nonzero budget to set for a key under 1", () => {
 		const r = ratchet({ budgets: { "ram:idle/anonMB": 1.14 }, measured: { "ram:idle/anonMB": 0.91 }, prBody: "" });
-		expect(r.failures).toHaveLength(1);
-		expect(r.failures[0]).toContain("lower the budget to 0.955");
+		expect(r.warnings).toHaveLength(1);
+		expect(r.warnings[0]).toContain("lower the budget to 0.955");
 	});
 
 	test("gates growth budgets on overruns only", () => {
 		const slack = ratchet({ budgets: { "ram:daemon/growthMB": 4 }, measured: { "ram:daemon/growthMB": 0.91 }, prBody: "" });
 		const over = ratchet({ budgets: { "ram:daemon/growthMB": 4 }, measured: { "ram:daemon/growthMB": 4.2 }, prBody: "" });
 		expect(slack.failures).toEqual([]);
+		expect(slack.warnings).toEqual([]);
 		expect(over.failures).toHaveLength(1);
 	});
 
@@ -148,7 +154,8 @@ describe("ratchet", () => {
 			prBody: "",
 			slackPct: 1,
 		});
-		expect(r.failures).toHaveLength(1);
+		expect(r.failures).toEqual([]);
+		expect(r.warnings).toHaveLength(1);
 	});
 
 	test("a raise with a matching Budget-Increase line passes", () => {
@@ -193,7 +200,7 @@ describe("ratchet", () => {
 		expect(r.lowered).toEqual([{ budget: "lean:a", old: 100, next: 80 }]);
 	});
 
-	test("a PR that saves 3 MB fails until the budget drops", () => {
+	test("a PR that saves 3 MB passes and warns until the budget drops", () => {
 		const MB = 1024 * 1024;
 		const before = ratchet({
 			budgets: { "lean:size/linux-x64/rawBytes": 50 * MB },
@@ -213,9 +220,12 @@ describe("ratchet", () => {
 			measured: { "lean:size/linux-x64/rawBytes": 47 * MB },
 			prBody: "",
 		});
-		expect(before.failures).toHaveLength(1);
-		expect(after.failures).toHaveLength(1);
+		expect(before.failures).toEqual([]);
+		expect(before.warnings).toHaveLength(1);
+		expect(after.failures).toEqual([]);
+		expect(after.warnings).toHaveLength(1);
 		expect(lowered.failures).toEqual([]);
+		expect(lowered.warnings).toEqual([]);
 	});
 
 	test("warns for a budget with no measurement and for a stray line", () => {
@@ -334,5 +344,51 @@ describe("budgets.yml", () => {
 	test("downloads the bench measurements from the native-bench run on the head SHA", () => {
 		expect(yml).toContain("--workflow native-bench.yml");
 		expect(yml).toContain("--pattern 'bench-measurements-*'");
+	});
+});
+
+describe("lowerTree", () => {
+	const tree = { version: 1, cases: { hook: { rssMb: 110, msBudget: 40, growthMB: 4 }, tight: { rssMb: 104 } } };
+	const measured = {
+		"ram:cases/hook/rssMb": 100,
+		"ram:cases/hook/msBudget": 10,
+		"ram:cases/hook/growthMB": 1,
+		"ram:cases/tight/rssMb": 100,
+	};
+
+	test("lowers a level budget with slack over 5 percent to the measured value plus 5 percent", () => {
+		const r = lowerTree({ prefix: "ram", tree, measured });
+		expect(r.lowered).toEqual([{ budget: "ram:cases/hook/rssMb", old: 110, next: 105 }]);
+		expect((r.tree as typeof tree).cases.hook.rssMb).toBe(105);
+	});
+
+	test("leaves latency and growth ceilings, budgets inside the slack, and unmeasured keys", () => {
+		const r = lowerTree({ prefix: "ram", tree, measured });
+		const out = r.tree as typeof tree;
+		expect(out.cases.hook.msBudget).toBe(40);
+		expect(out.cases.hook.growthMB).toBe(4);
+		expect(out.cases.tight.rssMb).toBe(104);
+		expect(out.version).toBe(1);
+	});
+
+	test("never raises a budget", () => {
+		const r = lowerTree({ prefix: "ram", tree: { a: 100 }, measured: { "ram:a": 120 } });
+		expect(r.lowered).toEqual([]);
+		expect(r.tree).toEqual({ a: 100 });
+	});
+});
+
+describe("lowerBudgets", () => {
+	test("rewrites only the budget files that have slack, with tab indent", () => {
+		const root = makeTempDir("ratchet-lower-");
+		mkdirSync(join(root, "scripts"));
+		mkdirSync(join(root, "m"));
+		writeFileSync(join(root, "scripts/ram-budgets.json"), JSON.stringify({ a: { rssMb: 200 } }, null, "\t"));
+		writeFileSync(join(root, "scripts/lean-budgets.json"), JSON.stringify({ b: 10 }, null, "\t"));
+		writeFileSync(join(root, "m/ram-budgets.json"), JSON.stringify({ a: { rssMb: 100 } }));
+		writeFileSync(join(root, "m/lean-budgets.json"), JSON.stringify({ b: 10 }));
+		const lowered = lowerBudgets({ root, measuredDir: join(root, "m") });
+		expect(lowered).toEqual([{ budget: "ram-budgets:a/rssMb", old: 200, next: 105 }]);
+		expect(readFileSync(join(root, "scripts/ram-budgets.json"), "utf8")).toBe('{\n\t"a": {\n\t\t"rssMb": 105\n\t}\n}\n');
 	});
 });

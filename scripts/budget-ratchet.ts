@@ -63,6 +63,10 @@ function floorSignificant(value: number): number {
 	return Math.floor(value * scale) / scale;
 }
 
+function loweredBudget(value: number, slackPct: number): number {
+	return floorSignificant(value * (1 + slackPct / 100));
+}
+
 /** True for a latency or memory-growth budget, which gates overruns only. */
 function isCeiling(name: string): boolean {
 	const last = name.slice(name.lastIndexOf("/") + 1);
@@ -109,8 +113,8 @@ export function ratchet(input: {
 		}
 		if (isCeiling(budget)) continue;
 		if (value > 0 && (limit - value) * 100 > slackPct * value)
-			failures.push(
-				`${budget}: measured ${value} leaves more than ${slackPct}% slack under the budget ${limit}; lower the budget to ${floorSignificant(value * (1 + slackPct / 100))}`,
+			warnings.push(
+				`${budget}: measured ${value} leaves more than ${slackPct}% slack under the budget ${limit}; lower the budget to ${loweredBudget(value, slackPct)}`,
 			);
 	}
 
@@ -125,6 +129,67 @@ export function ratchet(input: {
 			warnings.push(`${i.budget}: Budget-Increase line names an unknown budget`);
 
 	return { failures, warnings, lowered };
+}
+
+export function lowerTree(input: {
+	prefix: string;
+	tree: unknown;
+	measured: Flat;
+	slackPct?: number;
+}): { tree: unknown; lowered: Lowered[] } {
+	const slackPct = input.slackPct ?? DEFAULT_SLACK_PCT;
+	const lowered: Lowered[] = [];
+	const walk = (node: unknown, path: string): unknown => {
+		if (typeof node === "number") {
+			const budget = `${input.prefix}:${path}`;
+			const value = input.measured[budget];
+			if (value === undefined || value <= 0 || isCeiling(budget)) return node;
+			if ((node - value) * 100 <= slackPct * value) return node;
+			const next = loweredBudget(value, slackPct);
+			if (next >= node) return node;
+			lowered.push({ budget, old: node, next });
+			return next;
+		}
+		if (node === null || typeof node !== "object") return node;
+		if (Array.isArray(node)) return node;
+		const out: Record<string, unknown> = {};
+		for (const [key, child] of Object.entries(node))
+			out[key] = walk(child, path ? `${path}/${key}` : key);
+		return out;
+	};
+	return { tree: walk(input.tree, ""), lowered };
+}
+
+export function lowerBudgets(input: {
+	root: string;
+	measuredDir: string;
+	slackPct?: number;
+}): Lowered[] {
+	const all: Lowered[] = [];
+	const paths = new Set([...BUDGET_FILES, ...discoverBudgetFiles(input.root)]);
+	for (const path of paths) {
+		const abs = join(input.root, path);
+		const measuredPath = join(input.measuredDir, basename(path));
+		if (!existsSync(abs) || !existsSync(measuredPath)) continue;
+		const prefix = prefixOf(path);
+		const measured = flatten(prefix, JSON.parse(readFileSync(measuredPath, "utf8")));
+		const { tree, lowered } = lowerTree({
+			prefix,
+			tree: JSON.parse(readFileSync(abs, "utf8")),
+			measured,
+			slackPct: input.slackPct,
+		});
+		if (lowered.length === 0) continue;
+		writeFileSync(abs, `${JSON.stringify(tree, null, "\t")}\n`);
+		all.push(...lowered);
+	}
+	return all;
+}
+
+export function renderLowered(lowered: Lowered[]): string {
+	const lines = ["| Budget | Old | New |", "| --- | ---: | ---: |"];
+	for (const l of lowered) lines.push(`| ${l.budget} | ${l.old} | ${l.next} |`);
+	return `${lines.join("\n")}\n`;
 }
 
 export function discoverBudgetFiles(root: string): string[] {
@@ -204,6 +269,17 @@ function readBaseFrom(root: string, ref: string): (path: string) => string | nul
 function flag(name: string): string | undefined {
 	const i = process.argv.indexOf(name);
 	return i === -1 ? undefined : process.argv[i + 1];
+}
+
+if (import.meta.main && process.argv.includes("--lower")) {
+	const lowered = lowerBudgets({
+		root: process.cwd(),
+		measuredDir: flag("--measured") ?? "budget-measurements",
+	});
+	const out = flag("--lowered");
+	if (out) writeFileSync(out, lowered.length === 0 ? "" : renderLowered(lowered));
+	console.log(lowered.length === 0 ? "No budget has more than the slack; nothing to lower." : renderLowered(lowered));
+	process.exit(0);
 }
 
 if (import.meta.main) {
