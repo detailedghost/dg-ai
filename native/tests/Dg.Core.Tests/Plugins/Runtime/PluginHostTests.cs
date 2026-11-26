@@ -160,27 +160,26 @@ public sealed class PluginHostTests
         Assert.Equal(0, server.Accepted);
     }
 
-    [Theory]
-    [InlineData("missing-key")]
-    [InlineData("other-key")]
-    [InlineData("unsigned")]
-    public async Task InvokeAsync_ApprovalNotSignedByTheStoreKey_IsUnapprovedAndConnectsNothing(string how)
+    [Fact]
+    public Task InvokeAsync_ApprovalKeyMissingFromTheStore_IsUnapprovedAndConnectsNothing() =>
+        AssertUnapprovedAsync(static fixture => fixture.RemoveCredential(PluginApproval.KeyCredential));
+
+    [Fact]
+    public Task InvokeAsync_ApprovalSignedByAnotherKey_IsUnapprovedAndConnectsNothing() =>
+        AssertUnapprovedAsync(static fixture =>
+            fixture.SetCredential(PluginApproval.KeyCredential, new string('a', 64))
+        );
+
+    [Fact]
+    public Task InvokeAsync_UnsignedApproval_IsUnapprovedAndConnectsNothing() =>
+        AssertUnapprovedAsync(static fixture => fixture.Unsign("scanner"));
+
+    private static async Task AssertUnapprovedAsync(Action<RuntimeFixture> breakApproval)
     {
         await using var fixture = new RuntimeFixture();
         await using var server = new EchoPluginServer(directory: fixture.Folder("scanner"));
         fixture.Install("scanner", IpcManifest(EchoPluginServer.SocketFile), approved: true);
-        switch (how)
-        {
-            case "missing-key":
-                fixture.RemoveCredential(PluginApproval.KeyCredential);
-                break;
-            case "other-key":
-                fixture.SetCredential(PluginApproval.KeyCredential, new string('a', 64));
-                break;
-            default:
-                fixture.Unsign("scanner");
-                break;
-        }
+        breakApproval(fixture);
         var host = fixture.Host(Enabled);
 
         var ex = await Assert.ThrowsAsync<PluginContractException>(async () =>

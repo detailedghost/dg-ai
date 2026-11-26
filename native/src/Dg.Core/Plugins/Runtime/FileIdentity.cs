@@ -23,7 +23,13 @@ internal static partial class FileIdentity
                 return WindowsIndex(path);
             return OperatingSystem.IsLinux() ? LinuxInode(path) : MacInode(path);
         }
-        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or IOException or UnauthorizedAccessException)
+        catch (Exception ex)
+            when (ex is DllNotFoundException
+                    or EntryPointNotFoundException
+                    or BadImageFormatException
+                    or IOException
+                    or UnauthorizedAccessException
+            )
         {
             return 0;
         }
@@ -35,7 +41,9 @@ internal static partial class FileIdentity
         Span<byte> name = max <= NameStackLimit ? stackalloc byte[max] : new byte[max];
         name[Encoding.UTF8.GetBytes(path, name)] = 0;
         Span<byte> buffer = stackalloc byte[BufferSize];
-        if (Statx(LinuxAtFdCwd, ref MemoryMarshal.GetReference(name), LinuxAtSymlinkNofollow, LinuxStatxIno, ref MemoryMarshal.GetReference(buffer)) != 0)
+        ref var nameRef = ref MemoryMarshal.GetReference(name);
+        ref var bufferRef = ref MemoryMarshal.GetReference(buffer);
+        if (Statx(LinuxAtFdCwd, ref nameRef, LinuxAtSymlinkNofollow, LinuxStatxIno, ref bufferRef) != 0)
             return 0;
         return (BinaryPrimitives.ReadUInt32LittleEndian(buffer) & LinuxStatxIno) == 0
             ? 0
@@ -50,14 +58,24 @@ internal static partial class FileIdentity
         Span<byte> buffer = stackalloc byte[BufferSize];
         ref var nameRef = ref MemoryMarshal.GetReference(name);
         ref var bufferRef = ref MemoryMarshal.GetReference(buffer);
-        var status = RuntimeInformation.ProcessArchitecture == Architecture.X64 ? MacLstatX64(ref nameRef, ref bufferRef) : MacLstat(ref nameRef, ref bufferRef);
+        var status =
+            RuntimeInformation.ProcessArchitecture == Architecture.X64
+                ? MacLstatX64(ref nameRef, ref bufferRef)
+                : MacLstat(ref nameRef, ref bufferRef);
         return status == 0 ? BinaryPrimitives.ReadUInt64LittleEndian(buffer[MacInoOffset..]) : 0;
     }
 
     private static ulong WindowsIndex(string path)
     {
-        using var handle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        return GetFileInformationByHandle(handle, out var info) ? ((ulong)info.FileIndexHigh << 32) | info.FileIndexLow : 0;
+        using var handle = File.OpenHandle(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete
+        );
+        return GetFileInformationByHandle(handle, out var info)
+            ? ((ulong)info.FileIndexHigh << 32) | info.FileIndexLow
+            : 0;
     }
 
     [LibraryImport("libc", EntryPoint = "statx")]

@@ -66,6 +66,7 @@ public sealed class TcpTransportTests
         Assert.Equal(PluginTransportCodes.Refused, ex.Code);
         Assert.Contains("transport = \"ipc\"", ex.Message);
         Assert.Contains("Next:", ex.Message);
+        Assert.Contains("dg credentials delete plugin-scanner-token", ex.Message);
         Assert.DoesNotContain(Secret, ex.Message);
         Assert.Equal(0, server.Accepted);
     }

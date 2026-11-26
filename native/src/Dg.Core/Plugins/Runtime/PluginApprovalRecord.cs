@@ -35,10 +35,24 @@ public sealed record PluginApprovalRecord(
                 && Text(pin, "kind") is { } pinKind
                 && Text(pin, "value") is { } pinValue
                 && Text(root, "treeSha256") is { } tree
-                ? new PluginApprovalRecord(name, kind, source, pinKind, pinValue, tree, Text(root, "approvedSha256"), Text(root, "mac"))
+                ? new PluginApprovalRecord(
+                    name,
+                    kind,
+                    source,
+                    pinKind,
+                    pinValue,
+                    tree,
+                    Text(root, "approvedSha256"),
+                    Text(root, "mac")
+                )
                 : null;
         }
-        catch (Exception ex) when (ex is JsonException or IOException or InvalidOperationException or UnauthorizedAccessException)
+        catch (Exception ex)
+            when (ex is JsonException
+                    or IOException
+                    or InvalidOperationException
+                    or UnauthorizedAccessException
+            )
         {
             return null;
         }

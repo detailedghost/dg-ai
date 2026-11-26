@@ -18,10 +18,15 @@ public sealed class TcpConnector(ITcpManifestResolver manifests, IPluginTokenPro
         var manifest = manifests.Manifest(plugin);
         var endpoint = TcpEndpointGuard.Resolve(manifest);
         var credential = PluginRoutes.TokenCredential(manifest.Name);
-        if (Array.IndexOf(manifest.Permissions.Credentials, credential) >= 0 || await HasTokenAsync(credential, ct).ConfigureAwait(false))
+        if (
+            Array.IndexOf(manifest.Permissions.Credentials, credential) >= 0
+            || await HasTokenAsync(credential, ct).ConfigureAwait(false)
+        )
             throw Fail(
                 PluginTransportCodes.Refused,
-                $"{manifest.Name}: tcp would send the plugin token to any local listener, so dg did not connect. Next: use transport = \"ipc\", or the http transport with an https endpoint."
+                $"{manifest.Name}: tcp would send the plugin token to any local listener, so dg did not connect. "
+                    + "Next: use transport = \"ipc\", or the http transport with an https endpoint. "
+                    + $"If the token is stale, run dg credentials delete {credential}."
             );
 
         var socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
@@ -44,7 +49,13 @@ public sealed class TcpConnector(ITcpManifestResolver manifests, IPluginTokenPro
     private async ValueTask<bool> HasTokenAsync(string credential, CancellationToken ct) =>
         !string.IsNullOrEmpty(await tokens.GetTokenAsync(credential, ct).ConfigureAwait(false));
 
-    private static async Task ConnectSocketAsync(Socket socket, IPEndPoint endpoint, string name, CancellationToken linked, CancellationToken ct)
+    private static async Task ConnectSocketAsync(
+        Socket socket,
+        IPEndPoint endpoint,
+        string name,
+        CancellationToken linked,
+        CancellationToken ct
+    )
     {
         try
         {
@@ -52,11 +63,17 @@ public sealed class TcpConnector(ITcpManifestResolver manifests, IPluginTokenPro
         }
         catch (SocketException ex)
         {
-            throw Fail(PluginTransportCodes.Unreachable, $"{name}: cannot reach {endpoint} ({ex.SocketErrorCode}). Next: start the plugin.");
+            throw Fail(
+                PluginTransportCodes.Unreachable,
+                $"{name}: cannot reach {endpoint} ({ex.SocketErrorCode}). Next: start the plugin."
+            );
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            throw Fail(PluginTransportCodes.Timeout, $"{name}: connect to {endpoint} timed out. Next: check that the plugin is running.");
+            throw Fail(
+                PluginTransportCodes.Timeout,
+                $"{name}: connect to {endpoint} timed out. Next: check that the plugin is running."
+            );
         }
     }
 
@@ -69,7 +86,10 @@ public sealed class TcpConnector(ITcpManifestResolver manifests, IPluginTokenPro
     {
         var hello = new HelloRequest(PluginProtocol.Version, ["json"], []);
         var body = JsonSerializer.SerializeToElement(hello, PluginJsonContext.Default.HelloRequest);
-        var payload = JsonSerializer.SerializeToUtf8Bytes(new PluginEnvelope(PluginRoutes.Hello, body), PluginJsonContext.Default.PluginEnvelope);
+        var payload = JsonSerializer.SerializeToUtf8Bytes(
+            new PluginEnvelope(PluginRoutes.Hello, body),
+            PluginJsonContext.Default.PluginEnvelope
+        );
         timeout.CancelAfter(PluginRoutes.TimeoutFor(PluginRoutes.Hello));
         try
         {

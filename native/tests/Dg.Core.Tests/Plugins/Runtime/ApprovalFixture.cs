@@ -25,9 +25,13 @@ internal sealed class MapCredentialStore : ICredentialStore
 
     public int Reads { get; private set; }
 
+    public CancellationToken LastToken { get; private set; }
+
     public ValueTask<string?> GetAsync(string name, CancellationToken cancellationToken)
     {
         Reads++;
+        LastToken = cancellationToken;
+        cancellationToken.ThrowIfCancellationRequested();
         return Failure is null ? ValueTask.FromResult(Values.GetValueOrDefault(name)) : throw Failure;
     }
 }

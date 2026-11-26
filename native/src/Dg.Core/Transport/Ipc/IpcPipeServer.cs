@@ -11,7 +11,8 @@ public static class IpcPipeServer
     public static NamedPipeServerStream Create(string plugin)
     {
         ArgumentException.ThrowIfNullOrEmpty(plugin);
-        var user = WindowsIdentity.GetCurrent().User!;
+        using var identity = WindowsIdentity.GetCurrent();
+        var user = identity.User!;
         var security = new PipeSecurity();
         foreach (var rule in PipeAclPolicy.ServerRules(user.Value))
             security.AddAccessRule(

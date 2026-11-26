@@ -82,9 +82,9 @@
     "type": "string",
     "key": "pw.mode",
     "toml": "",
-    "envVar": "DG_BROWSER_MODE",
+    "envVar": "DG_PW_MODE",
     "env": {
-      "DG_BROWSER_MODE": "ext"
+      "DG_PW_MODE": "ext"
     }
   },
   {
@@ -92,7 +92,7 @@
     "type": "string",
     "key": "pw.mode",
     "toml": "[pw]\nmode = \"ext\"\n",
-    "envVar": "DG_BROWSER_MODE",
+    "envVar": "DG_PW_MODE",
     "env": {}
   },
   {
@@ -119,10 +119,10 @@
     "type": "string",
     "key": "pw.mode",
     "toml": "[pw]\nmode = \"ext\"\n",
-    "envVar": "DG_BROWSER_MODE",
+    "envVar": "DG_PW_MODE",
     "flag": "local",
     "env": {
-      "DG_BROWSER_MODE": "auto"
+      "DG_PW_MODE": "auto"
     }
   },
   {

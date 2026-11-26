@@ -24,6 +24,12 @@ public sealed class ConfigCommandParityTests
 
     public static TheoryData<string> FrontOnlyNames => FrontOnly();
 
+    private static readonly Dictionary<string, string> FrontOnlyLine = new()
+    {
+        ["list-front-door-only"] = "pw.mode = auto",
+        ["doctor-front-door-only"] = "config.toml does not exist; defaults",
+    };
+
     [Theory]
     [MemberData(nameof(NativeNames))]
     public void Run_Fixture_MatchesBunStdoutStderrExitAndFile(string name)
@@ -73,7 +79,8 @@ public sealed class ConfigCommandParityTests
         Assert.Equal("", expected.Stdout);
         Assert.Contains($"dg {string.Join(' ', entry.Argv)} needs the C# front door", expected.Stderr);
         Assert.Equal(0, run.Exit);
-        Assert.NotEqual("", run.Stdout);
+        Assert.Equal("", run.Stderr);
+        Assert.Contains(FrontOnlyLine[name], run.Stdout);
     }
 
     [Fact]

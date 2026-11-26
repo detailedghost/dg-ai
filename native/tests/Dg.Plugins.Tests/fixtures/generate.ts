@@ -22,7 +22,7 @@ type Spec = { bundles: Record<string, Record<string, string>>; cases: Case[] };
 
 const spec: Spec = JSON.parse(readFileSync(join(dir, "cases.json"), "utf8"));
 const SKIPPED = new Set(["sources", ".bun", ".cache"]);
-const MAC_VALUE = /"mac": "[0-9a-f]{64}"/;
+const MAC_VALUE = /"mac": "[0-9a-f]{64}"/g;
 const SIGNED = "a".repeat(64);
 
 const AT_A_TERMINAL = [
@@ -51,8 +51,10 @@ function snapshot(home: string): Record<string, string> {
 			const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
 			if (prefix === "" && SKIPPED.has(entry.name)) continue;
 			if (entry.isDirectory()) walk(join(path, entry.name), rel);
-			else if (entry.isFile()) files[rel] = readFileSync(join(path, entry.name), "utf8").replaceAll(home, "<home>").replace(MAC_VALUE, `"mac": "${SIGNED}"`);
-			else if (lstatSync(join(path, entry.name)).isSymbolicLink()) files[rel] = "<symlink>";
+			else if (entry.isFile()) {
+				const text = readFileSync(join(path, entry.name), "utf8");
+				files[rel] = text.replaceAll(home, "<home>").replace(MAC_VALUE, `"mac": "${SIGNED}"`);
+			} else if (lstatSync(join(path, entry.name)).isSymbolicLink()) files[rel] = "<symlink>";
 		}
 	};
 	walk(home, "");

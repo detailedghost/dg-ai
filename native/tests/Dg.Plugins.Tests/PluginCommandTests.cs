@@ -1,12 +1,14 @@
 using System.Text;
 using Dg.Core.Abstractions;
-using Dg.Core.Paths;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dg.Plugins.Tests;
 
 public sealed class PluginCommandTests
 {
+    private const string Tree = "ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b";
+    private static readonly string Mac = new('b', 64);
+
     private sealed class FakeServices : List<ServiceDescriptor>, IServiceCollection;
 
     [Fact]
@@ -27,13 +29,9 @@ public sealed class PluginCommandTests
     [Fact]
     public void Verify_ApproveAtATerminal_HandsOffToDgCoreAndWritesNothing()
     {
-        const string tree = "ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b";
         using var home = new TempHome(hasTerminal: true);
         home.Write("data/plugins/gamma/src/SKILL.md", "---\nname: gamma\n---\nGamma.\n");
-        home.Write(
-            "data/plugins/gamma/dg-plugin.json",
-            $"{{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"s\",\n\t\"pin\": {{\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"{tree}\"\n\t}},\n\t\"treeSha256\": \"{tree}\",\n\t\"approvedSha256\": null\n}}\n"
-        );
+        home.Write("data/plugins/gamma/dg-plugin.json", Json("null", null));
         home.Write("config/config.toml", "");
         var before = home.Run("plugin", "verify", "gamma").Files;
 
@@ -48,13 +46,9 @@ public sealed class PluginCommandTests
     [Fact]
     public void Verify_ApproveWithoutTerminal_RefusesAndWritesNothing()
     {
-        const string tree = "ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b";
         using var home = new TempHome();
         home.Write("data/plugins/gamma/src/SKILL.md", "---\nname: gamma\n---\nGamma.\n");
-        home.Write(
-            "data/plugins/gamma/dg-plugin.json",
-            $"{{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"s\",\n\t\"pin\": {{\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"{tree}\"\n\t}},\n\t\"treeSha256\": \"{tree}\",\n\t\"approvedSha256\": null\n}}\n"
-        );
+        home.Write("data/plugins/gamma/dg-plugin.json", Json("null", null));
         var before = home.Run("plugin", "verify", "gamma").Files;
 
         var run = home.Run("plugin", "verify", "gamma", "--approve");
@@ -65,11 +59,13 @@ public sealed class PluginCommandTests
         Assert.Equal(before, run.Files);
     }
 
-    private const string Tree = "ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b";
-    private static readonly string Mac = new('b', 64);
-
-    private static string Json(string approved, string? mac) =>
-        $"{{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"s\",\n\t\"pin\": {{\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"{Tree}\"\n\t}},\n\t\"treeSha256\": \"{Tree}\",\n\t\"approvedSha256\": {approved}{(mac is null ? "" : $",\n\t\"mac\": {mac}")}\n}}\n";
+    private static string Json(string approved, string? mac)
+    {
+        var macLine = mac is null ? "" : $",\n\t\"mac\": {mac}";
+        return $"{{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"s\",\n"
+            + $"\t\"pin\": {{\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"{Tree}\"\n\t}},\n"
+            + $"\t\"treeSha256\": \"{Tree}\",\n\t\"approvedSha256\": {approved}{macLine}\n}}\n";
+    }
 
     [Fact]
     public void Parse_RecordWithoutMacKey_HasNullMac()
@@ -103,27 +99,23 @@ public sealed class PluginCommandTests
     [InlineData("\"short\"")]
     [InlineData("1")]
     public void Parse_MalformedMac_IsNotNative(string mac) =>
-        Assert.Throws<NotNativeException>(() => PluginRecord.Parse(Encoding.UTF8.GetBytes(Json("null", mac)), "gamma"));
+        Assert.Throws<NotNativeException>(() =>
+            PluginRecord.Parse(Encoding.UTF8.GetBytes(Json("null", mac)), "gamma")
+        );
 
     [Fact]
-    public void IsApproved_RecordThatClaimsApproval_NeedsDgCore()
+    public void AssertUnapproved_RecordThatClaimsApproval_NeedsDgCore()
     {
-        using var home = new TempHome();
-        var seams = DgPathSeams.Current(new Dictionary<string, string?> { ["DG_HOME"] = home.Root, ["DG_PATH_FENCE"] = home.Root, ["HOME"] = home.Root });
-        var store = new PluginStore(DgPaths.Resolve(seams).Value!, seams);
         var claims = PluginRecord.Parse(Encoding.UTF8.GetBytes(Json($"\"{Tree}\"", $"\"{Mac}\"")), "gamma");
 
-        Assert.Throws<NotNativeException>(() => store.IsApproved(claims));
+        Assert.Throws<NotNativeException>(() => PluginStore.AssertUnapproved(claims));
     }
 
     [Fact]
-    public void IsApproved_RecordThatNeverClaimedApproval_StaysNative()
+    public void AssertUnapproved_RecordThatNeverClaimedApproval_StaysNative()
     {
-        using var home = new TempHome();
-        var seams = DgPathSeams.Current(new Dictionary<string, string?> { ["DG_HOME"] = home.Root, ["DG_PATH_FENCE"] = home.Root, ["HOME"] = home.Root });
-        var store = new PluginStore(DgPaths.Resolve(seams).Value!, seams);
         var record = PluginRecord.Parse(Encoding.UTF8.GetBytes(Json("null", null)), "gamma");
 
-        Assert.False(store.IsApproved(record));
+        PluginStore.AssertUnapproved(record);
     }
 }

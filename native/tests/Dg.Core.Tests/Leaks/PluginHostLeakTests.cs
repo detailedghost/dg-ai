@@ -76,7 +76,11 @@ public sealed class PluginHostLeakTests
         );
 
         AssertFlat(report);
-        Assert.True(File.Exists(Path.Combine(fixture.Folder("scanner"), "stat-cache.json")));
+        var cache = await File.ReadAllTextAsync(
+            Path.Combine(fixture.Folder("scanner"), "stat-cache.json"),
+            TestContext.Current.CancellationToken
+        );
+        Assert.Contains($"\"m\":{File.GetLastWriteTimeUtc(body).Ticks * 100}", cache);
     }
 
     [Fact]
