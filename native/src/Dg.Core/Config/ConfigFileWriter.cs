@@ -1,8 +1,8 @@
 using System.Text;
 
-namespace Dg.Config;
+namespace Dg.Core.Config;
 
-internal static class ConfigFileWriter
+public static class ConfigFileWriter
 {
     private const UnixFileMode OwnerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite;
 
