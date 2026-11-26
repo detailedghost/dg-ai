@@ -268,6 +268,11 @@ public static partial class ManifestParser
             var commit = OptionalString("commit", Get(root, "commit"));
             if (sha256 is not null && commit is not null)
                 throw Fail("commit", "set only one of sha256 or commit");
+            if (sha256 is not null && kind == PluginKind.Job)
+                throw Fail(
+                    "sha256",
+                    "a job plugin must be pinned by a full commit SHA (commit = 40 or 64 lowercase hex), not by sha256"
+                );
             if (sha256 is not null)
                 return Sha256Pattern().IsMatch(sha256)
                     ? new(PluginPinKind.Sha256, sha256)
@@ -276,6 +281,11 @@ public static partial class ManifestParser
                 return CommitPattern().IsMatch(commit)
                     ? new(PluginPinKind.Commit, commit)
                     : throw Fail("commit", "commit must be 40 or 64 hex characters");
+            if (kind == PluginKind.Job && source is not null)
+                throw Fail(
+                    "commit",
+                    "a job plugin with a source must be pinned by a full commit SHA (commit = 40 or 64 lowercase hex)"
+                );
             if (kind == PluginKind.Skill || source is not null)
                 throw Fail("sha256", "a skill or a plugin with a source must be pinned by sha256 or commit");
             return null;

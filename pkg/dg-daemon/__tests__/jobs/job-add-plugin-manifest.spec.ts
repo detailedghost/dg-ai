@@ -21,7 +21,6 @@ const box = sandbox(["tool", "sh"]);
 let sb: Sandbox;
 afterEach(() => box.cleanup());
 
-const SHA256 = "a".repeat(64);
 const COMMIT = "b".repeat(40);
 
 const manifest = (extra = "", args = '["--fast"]') =>
@@ -38,10 +37,10 @@ const manifest = (extra = "", args = '["--fast"]') =>
 const argvOf = () => readConfig(sb).jobs.bot.argv as string[];
 
 describe("job add of a folder with a plugin.toml", () => {
-	it("stores the manifest argv and the sha256 pin", async () => {
+	it("stores the manifest argv and the commit pin", async () => {
 		sb = box.create();
 		const dir = makeFolder({
-			files: { "plugin.toml": manifest(`sha256 = "${SHA256}"`), "bin/run": BIN_RUN },
+			files: { "plugin.toml": manifest(`commit = "${COMMIT}"`), "bin/run": BIN_RUN },
 		});
 
 		const result = await runJob(["add", dir], withBun(sb));
@@ -49,7 +48,7 @@ describe("job add of a folder with a plugin.toml", () => {
 		expect(result.code).toBe(0);
 		expect(argvOf()).toEqual([expect.stringMatching(/\/bin\/run$/), "--fast"]);
 		const record = readRegistry(sb).toolkit;
-		expect(record.pin).toEqual({ kind: "sha256", value: SHA256 });
+		expect(record.pin).toEqual({ kind: "commit", value: COMMIT });
 		expect(record.jobs).toEqual(["bot"]);
 		expect(typeof record.declarationHash).toBe("string");
 	});
@@ -68,7 +67,7 @@ describe("job add of a folder with a plugin.toml", () => {
 		sb = box.create();
 		const dir = makeFolder({
 			files: {
-				"plugin.toml": manifest(`sha256 = "${SHA256}"`).replace('kind = "job"', 'kind = "skill"'),
+				"plugin.toml": manifest(`commit = "${COMMIT}"`).replace('kind = "job"', 'kind = "skill"'),
 				"bin/run": BIN_RUN,
 			},
 		});
@@ -97,18 +96,33 @@ describe("job add of a folder with a plugin.toml", () => {
 });
 
 describe("job add of a repository with a plugin.toml", () => {
-	it("stores the manifest argv and the commit pin without checking it against the clone", async () => {
+	it("pins the record to the checked-out commit and records its tree id", async () => {
 		sb = box.create();
-		const repo = makeRepo({
-			files: { "plugin.toml": manifest(`commit = "${COMMIT}"`), "bin/run": BIN_RUN },
-		});
+		const repo = makeRepo({ files: { "plugin.toml": manifest(), "bin/run": BIN_RUN } });
 
 		await addFixture(sb, repo, "tools");
 
 		expect(argvOf()).toEqual([expect.stringMatching(/\/bin\/run$/), "--fast"]);
 		const record = readRegistry(sb).tools;
-		expect(record.pin).toEqual({ kind: "commit", value: COMMIT });
-		expect(record.sha).toBe(repo.sha);
+		expect(record.pin).toEqual({ kind: "commit", value: repo.sha });
+		expect(record.tree).toBe(gitIn(repo.dir, ["rev-parse", "HEAD^{tree}"]).trim());
+	});
+
+	it("refuses a manifest pin that is not the checked-out commit", async () => {
+		sb = box.create();
+		const repo = makeRepo({
+			files: { "plugin.toml": manifest(`commit = "${COMMIT}"`), "bin/run": BIN_RUN },
+		});
+
+		const result = await runJob(
+			["add", `file://${repo.dir}`, "--name", "tools", "--yes"],
+			withBun(sb),
+		);
+
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("is not the checked-out commit");
+		expect(result.stderr).toContain("Next:");
+		expect(readRegistry(sb)).not.toHaveProperty("tools");
 	});
 
 	it("refuses a plugin.toml that is not a regular file", async () => {
@@ -128,12 +142,12 @@ describe("job add of a repository with a plugin.toml", () => {
 		expect(result.stderr).toContain("plugin.toml is not a regular file");
 	});
 
-	it("takes the new argv and pin on update", async () => {
+	it("takes the new argv, pin and tree id on update", async () => {
 		sb = box.create();
 		const repo = makeRepo({ files: { "plugin.toml": manifest(), "bin/run": BIN_RUN } });
 		await addFixture(sb, repo, "tools");
 		const next = changeBlock(repo, undefined, {
-			"plugin.toml": manifest(`sha256 = "${SHA256}"`, '["--slow"]'),
+			"plugin.toml": manifest("", '["--slow"]'),
 		});
 
 		const result = await runJob(["update", "bot"], withBun(sb));
@@ -142,6 +156,7 @@ describe("job add of a repository with a plugin.toml", () => {
 		expect(argvOf()).toEqual([expect.stringMatching(/\/bin\/run$/), "--slow"]);
 		const record = readRegistry(sb).tools;
 		expect(record.sha).toBe(next);
-		expect(record.pin).toEqual({ kind: "sha256", value: SHA256 });
+		expect(record.pin).toEqual({ kind: "commit", value: next });
+		expect(record.tree).toBe(gitIn(repo.dir, ["rev-parse", "HEAD^{tree}"]).trim());
 	});
 });
