@@ -30,7 +30,7 @@ internal sealed class PluginListCommand(
         {
             var record = store.TryRead(names[i]) ?? throw new NotNativeException();
             var enabled = configured.TryGetValue(names[i], out var entry) && entry.Enabled;
-            PluginStore.AssertUnapproved(record);
+            PluginStore.DeferIfApproved(record);
             if (json)
                 AppendJson(stdout, names[i], record, enabled, last: i == names.Count - 1);
             else

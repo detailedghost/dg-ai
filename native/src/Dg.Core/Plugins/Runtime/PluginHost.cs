@@ -35,7 +35,7 @@ public sealed class PluginHost(
                 return await builtin.HandleAsync(message, ct).ConfigureAwait(false);
             }
 
-        var (manifest, allowRemote) = await Admit(name, ct).ConfigureAwait(false);
+        var (manifest, allowRemote) = await AdmitAsync(name, ct).ConfigureAwait(false);
         var key = PluginTransportKeys.For(manifest);
         var provider = services.GetRequiredKeyedService<IPluginTransportProvider>(key);
         await using var lease = await provider.OpenAsync(manifest, allowRemote, ct).ConfigureAwait(false);
@@ -78,7 +78,7 @@ public sealed class PluginHost(
         }
     }
 
-    private async ValueTask<(PluginManifest Manifest, bool AllowRemote)> Admit(string name, CancellationToken ct)
+    private async ValueTask<(PluginManifest Manifest, bool AllowRemote)> AdmitAsync(string name, CancellationToken ct)
     {
         var folder = store.Folder(name);
         config.Plugins.TryGetValue(name, out var entry);

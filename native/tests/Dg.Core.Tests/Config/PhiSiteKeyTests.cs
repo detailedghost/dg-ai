@@ -10,12 +10,9 @@ public sealed class PhiSiteKeyTests
     [Theory]
     [InlineData("https://example.org")]
     [InlineData("http://example.org:8080")]
-    [InlineData("https://example.org:0")]
     [InlineData("http://[::1]")]
     [InlineData("http://[::1]:3000")]
     [InlineData("http://127.0.0.1")]
-    [InlineData("https://a..b")]
-    [InlineData("https://-a.org")]
     [InlineData("https://xn--bcher-kva.example")]
     public void Parse_KeyThatTheTsRuleAccepts_IsAccepted(string key) => Assert.True(Accepts(key));
 
@@ -38,6 +35,14 @@ public sealed class PhiSiteKeyTests
     [InlineData("https://a_b.org")]
     [InlineData("https://example.org.")]
     [InlineData("https://.")]
+    [InlineData("https://example.org:0")]
+    [InlineData("http://[::1]:0")]
+    [InlineData("https://a..b")]
+    [InlineData("https://-a.org")]
+    [InlineData("https://a-.org")]
+    [InlineData("https://a.-b.org")]
+    [InlineData("https://a.b-.org")]
+    [InlineData("https://.a.org")]
     public void Parse_KeyThatTheTsRuleRefuses_IsRefused(string key) => Assert.False(Accepts(key));
 
     [Fact]

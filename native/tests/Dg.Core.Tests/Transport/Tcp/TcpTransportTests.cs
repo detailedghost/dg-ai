@@ -108,7 +108,9 @@ public sealed class TcpTransportTests
         var tokens = new FixedTokens(Secret);
         await using var pool = new PluginConnectionPool(new TcpConnector(new FixedManifests(ManifestFor(server)), tokens).ConnectAsync);
 
-        await Assert.ThrowsAsync<PluginTransportException>(async () => await pool.GetAsync("scanner", CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<PluginTransportException>(async () => await pool.GetAsync("scanner", CancellationToken.None));
+        Assert.Equal(PluginTransportCodes.Refused, ex.Code);
+        Assert.Equal(0, server.Accepted);
         tokens.Token = null;
         var connection = await pool.GetAsync("scanner", CancellationToken.None);
 

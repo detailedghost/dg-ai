@@ -20,13 +20,12 @@ public sealed class PluginCommandTests
             + $"\t\"treeSha256\": \"{tree}\",\n\t\"approvedSha256\": {approvedJson}{macLine}\n}}\n";
     }
 
-    private static string Install(TempHome home, bool approved, string? macJson)
+    private static void Install(TempHome home, bool approved, string? macJson)
     {
         home.Write("data/plugins/gamma/src/SKILL.md", "---\nname: gamma\n---\nGamma.\n");
         var tree = PluginApproval.HashTree(Path.Combine(home.Root, "data", "plugins", "gamma", "src"));
         home.Write("data/plugins/gamma/dg-plugin.json", Json(approved ? $"\"{tree}\"" : "null", macJson, tree));
         home.Write("config/config.toml", "[plugins.gamma]\nenabled = false\n");
-        return tree;
     }
 
     [Fact]
@@ -114,19 +113,19 @@ public sealed class PluginCommandTests
         );
 
     [Fact]
-    public void AssertUnapproved_RecordThatClaimsApproval_NeedsDgCore()
+    public void DeferIfApproved_RecordThatClaimsApproval_NeedsDgCore()
     {
         var claims = PluginRecordFile.Parse(Encoding.UTF8.GetBytes(Json($"\"{Tree}\"", $"\"{Mac}\"")), "gamma");
 
-        Assert.Throws<NotNativeException>(() => PluginStore.AssertUnapproved(claims));
+        Assert.Throws<NotNativeException>(() => PluginStore.DeferIfApproved(claims));
     }
 
     [Fact]
-    public void AssertUnapproved_RecordThatNeverClaimedApproval_StaysNative()
+    public void DeferIfApproved_RecordThatNeverClaimedApproval_StaysNative()
     {
         var record = PluginRecordFile.Parse(Encoding.UTF8.GetBytes(Json("null", null)), "gamma");
 
-        PluginStore.AssertUnapproved(record);
+        PluginStore.DeferIfApproved(record);
     }
 
     [Theory]

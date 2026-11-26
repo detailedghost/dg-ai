@@ -26,13 +26,21 @@ internal static class SiteKey
             return false;
         if (rest.IsEmpty || !HasOnlyKeyCharacters(rest))
             return false;
-        var hostEnd = rest[0] == '[' ? rest.IndexOf(']') + 1 : rest.IndexOf(':') is var colon and >= 0 ? colon : rest.Length;
+        var hostEnd = HostEnd(rest);
         if (hostEnd <= 0)
             return false;
         var host = rest[..hostEnd];
         var tail = rest[hostEnd..];
         var hostOk = host[0] == '[' ? IsCanonicalIpv6(host[1..^1]) : IsDomainOrIpv4(host);
         return hostOk && (tail.IsEmpty || (tail[0] == ':' && IsPort(tail[1..], defaultPort)));
+    }
+
+    private static int HostEnd(ReadOnlySpan<char> rest)
+    {
+        if (rest[0] == '[')
+            return rest.IndexOf(']') + 1;
+        var colon = rest.IndexOf(':');
+        return colon >= 0 ? colon : rest.Length;
     }
 
     private static bool HasOnlyKeyCharacters(ReadOnlySpan<char> text)
@@ -46,7 +54,7 @@ internal static class SiteKey
     private static bool IsPort(ReadOnlySpan<char> text, string defaultPort) =>
         text.Length is >= 1 and <= 5
         && !text.ContainsAnyExceptInRange('0', '9')
-        && (text[0] != '0' || text.Length == 1)
+        && text[0] != '0'
         && int.Parse(text, CultureInfo.InvariantCulture) <= MaxPort
         && !text.SequenceEqual(defaultPort);
 
@@ -58,11 +66,22 @@ internal static class SiteKey
 
     private static bool IsDomainOrIpv4(ReadOnlySpan<char> host)
     {
-        if (host[^1] == '.' || host.Contains(']') || host.Contains('['))
+        if (host.Contains(']') || host.Contains('[') || !AllLabelsValid(host))
             return false;
         var last = host[(host.LastIndexOf('.') + 1)..];
         return last.IsEmpty || !(IsNumber(last) || last.StartsWith("0x", StringComparison.Ordinal))
             || IsCanonicalIpv4(host);
+    }
+
+    private static bool AllLabelsValid(ReadOnlySpan<char> host)
+    {
+        foreach (var range in host.Split('.'))
+        {
+            var label = host[range];
+            if (label.IsEmpty || label[0] == '-' || label[^1] == '-')
+                return false;
+        }
+        return true;
     }
 
     private static bool IsNumber(ReadOnlySpan<char> text) => !text.ContainsAnyExceptInRange('0', '9');
@@ -73,9 +92,15 @@ internal static class SiteKey
         foreach (var range in host.Split('.'))
         {
             var part = host[range];
-            if (++parts > 4 || part.IsEmpty || !IsNumber(part) || (part.Length > 1 && part[0] == '0') || part.Length > 3 || int.Parse(part, CultureInfo.InvariantCulture) > 255)
+            if (++parts > 4 || !IsOctet(part))
                 return false;
         }
         return parts == 4;
     }
+
+    private static bool IsOctet(ReadOnlySpan<char> part) =>
+        part.Length is >= 1 and <= 3
+        && IsNumber(part)
+        && (part.Length == 1 || part[0] != '0')
+        && int.Parse(part, CultureInfo.InvariantCulture) <= 255;
 }
