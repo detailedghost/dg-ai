@@ -1,4 +1,5 @@
 import {
+	APPROVAL_KEY_CREDENTIAL,
 	CLI_GRANT_PREFIX_HEADER,
 	CLI_GRANT_TOKEN_HEADER,
 	CLI_SESSION_ID_HEADER,
@@ -22,6 +23,7 @@ import {
 import type { ServerWebSocket } from "bun";
 import type { CredentialStore } from "../store/credentials-store";
 import { isExtensionPeer, type SocketState, sendViaQueue } from "./connection";
+import { createApprovalSigner } from "./approval-signer";
 import { checkExecAllowlist } from "./exec-allowlist";
 import type { FrameHandlerDeps } from "./frame-handlers";
 import { SECRET_INTENT_TTL_MS } from "./page-codes";
@@ -35,6 +37,8 @@ type Access = { scope: "session" } | { scope: "prefix"; prefix: string };
 export const EXTENSION_CREDENTIAL_PREFIX = "extension";
 export const NOT_ALLOWED = "Credential request not allowed for this caller.";
 const SEALED_GET = `Credentials under ${CREDENTIAL_SEALED_PREFIX}/ are never returned; use dg credentials exec to run a command with them.`;
+const APPROVAL_KEY_REFUSED = "The plugin approval key never leaves the daemon; ask the daemon to sign or verify instead.";
+const isApprovalKey = (name: string | undefined) => name?.toLowerCase() === APPROVAL_KEY_CREDENTIAL;
 const sealed = (name: string | undefined) => name !== undefined && credentialNameInPrefix(name, CREDENTIAL_SEALED_PREFIX);
 const TRANSPORT_ERROR_SESSION_ID = "transport-error";
 
@@ -99,6 +103,7 @@ export function scopedRead(
 				.filter((entry) => credentialNameInPrefix(entry.name, prefix)),
 		};
 	if (sealed(input.name)) return { ok: false, error: SEALED_GET };
+	if (isApprovalKey(input.name)) return { ok: false, error: APPROVAL_KEY_REFUSED };
 	if (credentialNameInPrefix(input.name, prefix))
 		return { ok: true, value: store.getCredential(input.name) ?? null };
 	return { ok: false, error: NOT_ALLOWED };
@@ -137,10 +142,12 @@ function sessionOperation(
 	const store = deps.credentials;
 	switch (frame.operation) {
 		case "set":
+			if (isApprovalKey(frame.name)) throw new SealedError(APPROVAL_KEY_REFUSED);
 			store.setCredential(frame.name!, frame.value!, frame.meta);
 			return null;
 		case "get":
-			if (sealed(frame.name)) throw new SealedError();
+			if (sealed(frame.name)) throw new SealedError(SEALED_GET);
+			if (isApprovalKey(frame.name)) throw new SealedError(APPROVAL_KEY_REFUSED);
 			return store.getCredential(frame.name!) ?? null;
 		case "list":
 			return store.listCredentials();
@@ -162,7 +169,12 @@ function sessionOperation(
 		case "grant-list":
 			return store.listCredentialGrants();
 		case "intake":
+			if (isApprovalKey(frame.name)) throw new SealedError(APPROVAL_KEY_REFUSED);
 			return mintIntake(frame, deps);
+		case "approval-sign":
+			return createApprovalSigner(store).sign(frame.purpose!, frame.fields!);
+		case "approval-verify":
+			return createApprovalSigner(store).verify(frame.purpose!, frame.fields!, frame.mac!);
 		case "exec":
 			throw new Error("exec runs through runExec");
 	}
@@ -227,6 +239,7 @@ function privateCopy(path: string, bytes: Uint8Array): { dir: string; copy: stri
 async function runExec(requester: Socket, frame: CredentialsCliRequest, deps: FrameHandlerDeps): Promise<Result> {
 	const spec = frame.exec!;
 	const injected: Record<string, string> = {};
+	if (spec.bindings.some((binding) => isApprovalKey(binding.name))) return { ok: false, error: APPROVAL_KEY_REFUSED };
 	for (const binding of spec.bindings) {
 		const record = deps.credentials.getCredential(binding.name);
 		if (!record) return { ok: false, error: `No credential named ${binding.name}.` };
@@ -343,7 +356,7 @@ export async function handleCredentialsRequest(
 		else answer = { ok: true, value: sessionOperation(frame, deps) };
 	} catch (error) {
 		if (error instanceof SealedError) {
-			await sendCredentialsResult(requester, frame.requestId, { ok: false, error: SEALED_GET });
+			await sendCredentialsResult(requester, frame.requestId, { ok: false, error: error.message });
 			return;
 		}
 		answer = {

@@ -33,7 +33,7 @@ public static class PluginsRuntimeServiceCollectionExtensions
             static (sp, _) => new HttpTransportProvider(sp.GetRequiredService<IHttpTransportFactory>())
         );
         services.AddSingleton(static sp => new PluginApprovalVerifier(
-            sp.GetRequiredService<ICredentialStore>(),
+            sp.GetRequiredService<IApprovalSigner>(),
             sp.GetService<TimeProvider>()
         ));
         services.AddSingleton<IPluginHost>(static sp => new PluginHost(

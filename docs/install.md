@@ -908,24 +908,28 @@ dg plugin remove <name>
 
 `add` copies the source and marks it `unapproved`. `verify` checks the copy
 against its recorded hash. With `--approve`, it records that hash as approved
-and signs the record. The signing key is the credential `dg/plugin-approval-key`
-in the dg daemon credential store. `--approve` creates it on first use, so the
-daemon must run (`dg agent start`).
+and has the dg daemon sign the record. The signing key is the credential
+`dg/plugin-approval-key` in the dg daemon credential store. It never leaves the
+daemon: dg sends the record fields to the daemon and gets the signature back.
+`--approve` makes the daemon create the key on first use, so the daemon must run
+(`dg agent start`).
 
 A plugin counts as approved only when the signature verifies and the files still
 match. A record with no signature, or a bad one, is unapproved. This includes
-records that older dg wrote. If the daemon is not running or the key is missing,
-no plugin is approved. Start the daemon, or run `verify <name> --approve` again.
+records that older dg wrote. If the daemon is not running, no plugin is approved,
+because only the daemon can check a signature. Start the daemon, or run
+`verify <name> --approve` again.
 
 `update` fetches the new source. When the source or its pin changed, the plugin
 turns off until you run `verify --approve` again. The front door runs `list` and
 `verify` itself while no record claims approval. It hands any approval check and
-every `--approve` to `dg-core`, because the front door has no credential store
-client. `add`, `remove` and `update` always run in `dg-core`. `enable` and `disable`
+every `--approve` to `dg-core`, because the front door has no daemon client.
+`add`, `remove` and `update` always run in `dg-core`. `enable` and `disable`
 run in the front door until a record claims approval, then `dg-core` takes them.
 
 The plugin host caches file sizes, times and inodes in `stat-cache.json` inside
-the plugin folder. It signs the cache with the same key. It hashes the files
+the plugin folder. The daemon signs the cache with the same key, for a separate
+purpose, so a cache signature never passes as an approval. It hashes the files
 again when any entry changes, when the signature fails, and once a day.
 
 ## CLI-only install

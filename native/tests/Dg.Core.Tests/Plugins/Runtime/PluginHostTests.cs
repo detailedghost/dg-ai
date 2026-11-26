@@ -161,13 +161,13 @@ public sealed class PluginHostTests
     }
 
     [Fact]
-    public Task InvokeAsync_ApprovalKeyMissingFromTheStore_IsUnapprovedAndConnectsNothing() =>
-        AssertUnapprovedAsync(static fixture => fixture.RemoveCredential(PluginApproval.KeyCredential));
+    public Task InvokeAsync_DaemonHoldsNoApprovalKey_IsUnapprovedAndConnectsNothing() =>
+        AssertUnapprovedAsync(static fixture => fixture.Signer.Key = null);
 
     [Fact]
     public Task InvokeAsync_ApprovalSignedByAnotherKey_IsUnapprovedAndConnectsNothing() =>
         AssertUnapprovedAsync(static fixture =>
-            fixture.SetCredential(PluginApproval.KeyCredential, new string('a', 64))
+            fixture.Signer.Key = Convert.FromHexString(new string('a', 64))
         );
 
     [Fact]

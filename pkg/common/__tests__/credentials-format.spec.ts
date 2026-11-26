@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+	APPROVAL_KEY_CREDENTIAL,
 	CREDENTIAL_MAX_VALUE_BYTES,
 	credentialNameInPrefix,
 	isInjectionEnvName,
@@ -150,7 +151,7 @@ describe("validateCredentialsCliRequest", () => {
 });
 
 describe("RESERVED_CREDENTIAL_PREFIXES", () => {
-	it.each(["pw", "extension", "phone-friend", "phone-vault", "db"])("reserves the tool prefix %s", (prefix) => {
+	it.each(["pw", "extension", "phone-friend", "phone-vault", "db", "dg"])("reserves the tool prefix %s", (prefix) => {
 		expect(RESERVED_CREDENTIAL_PREFIXES).toContain(prefix);
 	});
 
@@ -193,5 +194,43 @@ describe("isInjectionEnvName", () => {
 
 	it.each(["API_KEY", "TOKEN", "DATADOG_API_KEY", "PATHS", "MY_HOME"])("does not match %p", (name) => {
 		expect(isInjectionEnvName(name)).toBe(false);
+	});
+});
+
+describe("approval operations", () => {
+	const base = { type: "cli-credentials-request", requestId: "r-1" };
+	const seven = ["demo", "skill", "https://example.org/demo.git", "commit", "0123", "aa", "aa"];
+	const three = ["tree", "1700000000000", "bb"];
+
+	it("names the sealed approval key under dg/", () => {
+		expect(APPROVAL_KEY_CREDENTIAL).toBe("dg/plugin-approval-key");
+	});
+
+	it.each([
+		{ operation: "approval-sign", purpose: "approval", fields: seven },
+		{ operation: "approval-sign", purpose: "statcache", fields: three },
+		{ operation: "approval-verify", purpose: "approval", fields: seven, mac: "a".repeat(64) },
+		{ operation: "approval-verify", purpose: "statcache", fields: three, mac: "b".repeat(64) },
+	])("accepts %p", (fields) => {
+		expect(validateCredentialsCliRequest({ ...base, ...fields })).toMatchObject(fields);
+	});
+
+	it.each([
+		{ operation: "approval-sign", fields: seven },
+		{ operation: "approval-sign", purpose: "other", fields: seven },
+		{ operation: "approval-sign", purpose: "approval" },
+		{ operation: "approval-sign", purpose: "approval", fields: seven.slice(1) },
+		{ operation: "approval-sign", purpose: "statcache", fields: seven },
+		{ operation: "approval-sign", purpose: "approval", fields: [...seven.slice(1), 1] },
+		{ operation: "approval-sign", purpose: "approval", fields: [...seven.slice(1), "x\u0000y"] },
+		{ operation: "approval-sign", purpose: "approval", fields: [...seven.slice(1), "x".repeat(8193)] },
+		{ operation: "approval-sign", purpose: "approval", fields: seven, mac: "a".repeat(64) },
+		{ operation: "approval-sign", purpose: "approval", fields: seven, name: "dg/plugin-approval-key" },
+		{ operation: "approval-verify", purpose: "approval", fields: seven },
+		{ operation: "approval-verify", purpose: "approval", fields: seven, mac: "A".repeat(64) },
+		{ operation: "approval-verify", purpose: "approval", fields: seven, mac: "a".repeat(63) },
+		{ operation: "get", name: "x/y", purpose: "approval" },
+	])("rejects %p", (fields) => {
+		expect(() => validateCredentialsCliRequest({ ...base, ...fields })).toThrow();
 	});
 });

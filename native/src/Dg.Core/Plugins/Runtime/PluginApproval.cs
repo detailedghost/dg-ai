@@ -5,17 +5,15 @@ namespace Dg.Core.Plugins.Runtime;
 
 public static class PluginApproval
 {
-    public const string KeyCredential = "dg/plugin-approval-key";
-    private const string MacDomain = "dg-plugin-approval-v1";
     private const int MacByteLength = 32;
 
-    public static string ComputeMac(ReadOnlySpan<byte> key, PluginApprovalRecord record) =>
-        Convert.ToHexStringLower(MacBytes(key, record));
-
-    public static bool MacMatches(ReadOnlySpan<byte> key, PluginApprovalRecord record) =>
-        !ContainsNul(record)
-        && TryDecode32(record.Mac, out var claimed)
-        && CryptographicOperations.FixedTimeEquals(MacBytes(key, record), claimed);
+    public static bool HasNul(PluginApprovalRecord record)
+    {
+        foreach (var field in record.SignedFields())
+            if (field.Contains('\0'))
+                return true;
+        return false;
+    }
 
     public static bool TryDecode32(string? hex, out byte[] bytes)
     {
@@ -24,17 +22,6 @@ public static class PluginApproval
             return false;
         bytes = Convert.FromHexString(hex);
         return true;
-    }
-
-    private static byte[] MacBytes(ReadOnlySpan<byte> key, PluginApprovalRecord record)
-    {
-        if (ContainsNul(record))
-            throw new ArgumentException("a signed field contains a NUL byte", nameof(record));
-        using var hmac = IncrementalHash.CreateHMAC(HashAlgorithmName.SHA256, key);
-        HmacFields.Append(hmac, MacDomain, first: true);
-        foreach (var field in record.SignedFields())
-            HmacFields.Append(hmac, field);
-        return hmac.GetHashAndReset();
     }
 
     public static string HashTree(string root)
@@ -55,14 +42,6 @@ public static class PluginApproval
         Walk(root, "", files);
         files.Sort(StringComparer.Ordinal);
         return files;
-    }
-
-    private static bool ContainsNul(PluginApprovalRecord record)
-    {
-        foreach (var field in record.SignedFields())
-            if (field.Contains('\0'))
-                return true;
-        return false;
     }
 
     private static bool IsLowerHex(string text)

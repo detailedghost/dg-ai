@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { main } from "../src/main";
 import skillsTree from "../src/completion/tree.json";
-import { fakeKeys, useApprovalKeys } from "./support/approval-keys";
+import { fakeDaemon, useApprovalDaemon } from "./support/approval-daemon";
 
 const realOut = process.stdout.write;
 const realHome = process.env.DG_HOME;
@@ -16,7 +16,7 @@ let err: string[];
 const realConsoleError = console.error;
 
 beforeEach(() => {
-	useApprovalKeys(fakeKeys());
+	useApprovalDaemon(fakeDaemon());
 	root = mkdtempSync(join(tmpdir(), "dg-plugin-command-"));
 	process.env.DG_HOME = join(root, "dg");
 	process.env.DG_PATH_FENCE = root;
@@ -28,7 +28,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	useApprovalKeys(undefined);
+	useApprovalDaemon(undefined);
 	process.stdout.write = realOut;
 	console.error = realConsoleError;
 	process.exitCode = realExitCode ?? 0;

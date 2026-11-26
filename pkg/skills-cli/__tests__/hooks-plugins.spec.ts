@@ -6,10 +6,9 @@ import { parseManifest } from "@dg/common/plugins/manifest";
 import { encodeFrame, FRAME_FLAG_RESPONSE, type Frame } from "@dg/common/plugins/contract";
 import { closeIpcConnections } from "@dg/common/plugins/transport/ipc";
 import { FrameReader } from "@dg/common/plugins/transport/framing";
-import { macOf } from "../src/plugin/approval";
 import type { PluginRecord } from "../src/plugin/store";
 import { hashTree } from "../src/plugin/tree";
-import { downKeys, fakeKeys, TEST_KEY_HEX, useApprovalKeys } from "./support/approval-keys";
+import { downDaemon, fakeDaemon, signRecord, useApprovalDaemon } from "./support/approval-daemon";
 import { runExternalHook } from "../src/hooks/external";
 import { hasConfiguredPlugins, resolveExternalHook } from "../src/hooks/plugins";
 import { bashInput, hookWorld } from "./hooks/hook-fixtures";
@@ -45,10 +44,10 @@ async function startPlugin(path: string, decide: Decide): Promise<{ connections:
 	return { connections: () => connections, decides };
 }
 
-beforeEach(() => useApprovalKeys(fakeKeys()));
+beforeEach(() => useApprovalDaemon(fakeDaemon()));
 
 afterEach(async () => {
-	useApprovalKeys(undefined);
+	useApprovalDaemon(undefined);
 	closeIpcConnections();
 	for (const server of servers.splice(0)) await new Promise((resolve) => server.close(resolve));
 });
@@ -58,7 +57,7 @@ const MANIFEST = (name: string, extra = "") => `name = "${name}"\nversion = "1.0
 function approve(dir: string, approved = true): void {
 	const tree = hashTree(join(dir, "src"));
 	const record: PluginRecord = { name: basename(dir), kind: "skill", source: "folder", pin: { kind: "sha256", value: tree }, treeSha256: tree, approvedSha256: approved ? tree : null, mac: null };
-	if (approved) record.mac = macOf(record, Buffer.from(TEST_KEY_HEX, "hex"));
+	if (approved) record.mac = signRecord(record);
 	writeFileSync(join(dir, "dg-plugin.json"), JSON.stringify(record));
 }
 
@@ -274,8 +273,8 @@ describe("hooks run with an external hook plugin", () => {
 		const dir = installPlugin(world, "scan", ENABLED);
 		await startPlugin(join(dir, "p.sock"), () => ({ decision: "allow" }));
 		const cli = join(import.meta.dir, "..", "src", "hooks", "cli.ts");
-		const support = join(import.meta.dir, "support", "approval-keys.ts");
-		const driver = `const { fakeKeys, useApprovalKeys } = await import(${JSON.stringify(support)}); useApprovalKeys(fakeKeys());
+		const support = join(import.meta.dir, "support", "approval-daemon.ts");
+		const driver = `const { fakeDaemon, useApprovalDaemon } = await import(${JSON.stringify(support)}); useApprovalDaemon(fakeDaemon());
 const { main } = await import(${JSON.stringify(cli)}); process.exitCode = await main(["run", "scan"]);`;
 		const proc = Bun.spawn([process.execPath, "-e", driver], {
 			env: { ...process.env, ...world.env() },
@@ -349,14 +348,14 @@ describe("resolveExternalHook", () => {
 	test("refuses every plugin when the daemon is down and says to start it", async () => {
 		const world = hookWorld();
 		installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");
-		useApprovalKeys(downKeys());
+		useApprovalDaemon(downDaemon());
 		await expect(resolveExternalHook("scan", world.env())).rejects.toThrow(/not approved.*dg agent start/);
 	});
 
 	test("a stopped daemon with fail_closed unset ends the run with a non-blocking exit and says to start the daemon", async () => {
 		const world = hookWorld();
 		installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");
-		useApprovalKeys(downKeys());
+		useApprovalDaemon(downDaemon());
 		const result = await world.run("scan", bashInput("ls"));
 		expect(result.code).toBe(1);
 		expect(result.stderr).toMatch(/not approved.*dg agent start/);
@@ -365,7 +364,7 @@ describe("resolveExternalHook", () => {
 	test("a stopped daemon with fail_closed true still ends the run with a non-blocking exit", async () => {
 		const world = hookWorld();
 		installPlugin(world, "scan", "[plugins.scan]\nenabled = true\nfail_closed = true\n");
-		useApprovalKeys(downKeys());
+		useApprovalDaemon(downDaemon());
 		const result = await world.run("scan", bashInput("ls"));
 		expect(result.code).toBe(1);
 		expect(result.stderr).toMatch(/not approved.*dg agent start/);

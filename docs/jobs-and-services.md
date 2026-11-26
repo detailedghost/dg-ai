@@ -346,7 +346,7 @@ A job can list credentials in its `dg` block, or with `--credential <name>` on `
 Secrets Manager is the one source type of this release. dg stores a credential under the credential prefix of the job, as
 `<prefix>/<name>`, in the dg credential store; for a repository the prefix is the source name, and for a file or a command the
 prefix is the job name. dg refuses a prefix that another job or source uses, and the names `pw`, `extension`, `phone-friend`,
-`phone-vault` and `db`, with `"<name>" is a reserved name`.
+`phone-vault`, `db` and `dg`, with `"<name>" is a reserved name`.
 
 The first `dg job enable <name>` runs these steps in order:
 

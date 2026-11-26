@@ -715,13 +715,23 @@ may read; a background service sends the frame or calls the HTTP route:
 
 | Caller | Authenticates with | May do |
 | --- | --- | --- |
-| A dg session (`dg`, agents) | Session token on `/cli` | `set`, `get`, `list`, `delete`, `grant`, `revoke`, `grant-list` |
+| A dg session (`dg`, agents) | Session token on `/cli` | `set`, `get`, `list`, `delete`, `grant`, `revoke`, `grant-list`, `approval-sign`, `approval-verify` |
 | A background service | Service grant token, in the frame or in the `POST /service-api/v1/credentials` headers | `get` and `list` under `<prefix>/` |
 | The paired extension | Its chat socket handshake | `get` and `list` under `extension/` |
 
 A scoped caller gets the same "not allowed" error for any other operation or
 name, so it cannot learn whether a name exists. Only a `get` reply carries a
 value. The daemon never logs a value or a token.
+
+`approval-sign` and `approval-verify` work for a session only. Each takes a
+`purpose` (`approval` or `statcache`) and the signed `fields` as strings with no
+NUL byte (7 fields for `approval`, 3 for `statcache`). The daemon puts the
+domain string of the purpose in front, computes HMAC-SHA256 with the sealed
+credential `dg/plugin-approval-key`, and answers with the MAC in hex or a
+boolean from a constant-time compare. The first sign creates the key. A verify
+never creates it. No operation returns the key: `get`, `set`, `intake` and
+`exec` refuse that name, a grant cannot read it, and `list` shows only its name.
+The prefix `dg` is reserved for dg tools, so no job can take it.
 
 ```bash
 printf %s "$SECRET" | dg credentials set consumer/provider --meta provider=example --meta expiresAt=2030-01-01T00:00:00Z

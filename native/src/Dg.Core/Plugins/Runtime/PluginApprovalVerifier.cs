@@ -1,20 +1,17 @@
-using Dg.Core.Credentials;
-
 namespace Dg.Core.Plugins.Runtime;
 
 public sealed class PluginApprovalVerifier
 {
-    private readonly ICredentialStore _credentials;
+    private readonly IApprovalSigner _signer;
     private readonly TimeProvider _clock;
     private readonly Func<string, string> _hashTree;
-    private byte[]? _key;
 
-    public PluginApprovalVerifier(ICredentialStore credentials, TimeProvider? clock = null)
-        : this(credentials, clock, null) { }
+    public PluginApprovalVerifier(IApprovalSigner signer, TimeProvider? clock = null)
+        : this(signer, clock, null) { }
 
-    internal PluginApprovalVerifier(ICredentialStore credentials, TimeProvider? clock, Func<string, string>? hashTree)
+    internal PluginApprovalVerifier(IApprovalSigner signer, TimeProvider? clock, Func<string, string>? hashTree)
     {
-        _credentials = credentials;
+        _signer = signer;
         _clock = clock ?? TimeProvider.System;
         _hashTree = hashTree ?? PluginApproval.HashTree;
     }
@@ -24,28 +21,25 @@ public sealed class PluginApprovalVerifier
         var record = PluginApprovalRecord.Read(folder);
         if (record is null || !record.HasApproval)
             return $"Next: review it, then run dg plugin verify {name} --approve.";
+        if (PluginApproval.HasNul(record))
+            return "A signed field holds a NUL byte, so dg never approves it. Next: remove the plugin and add it again.";
         if (record.Mac is null)
             return $"It has no signed approval. Next: {Reapprove(name)}.";
-        byte[]? key;
+        bool verified;
         try
         {
-            var cached = _key is not null;
-            key = await KeyAsync(ct).ConfigureAwait(false);
-            if (cached && key is not null && !PluginApproval.MacMatches(key, record))
-                key = await KeyAsync(ct, refresh: true).ConfigureAwait(false);
+            verified = await _signer.VerifyApprovalAsync(record.SignedFields(), record.Mac, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return $"Cannot read the approval key: {ex.Message}. Next: start the dg daemon with dg agent start, then try again.";
+            return $"Cannot verify the approval with the dg daemon: {ex.Message}. Next: start the dg daemon with dg agent start, then try again.";
         }
-        if (key is null)
-            return $"There is no approval key in the dg credential store. Next: {Reapprove(name)}.";
-        if (!PluginApproval.MacMatches(key, record))
+        if (!verified)
             return $"Its approval signature does not verify. Next: {Reapprove(name)}.";
-        return TreeProblem(name, folder, record, key);
+        return await TreeProblemAsync(name, folder, record, ct).ConfigureAwait(false);
     }
 
-    private string? TreeProblem(string name, string folder, PluginApprovalRecord record, byte[] key)
+    private async ValueTask<string?> TreeProblemAsync(string name, string folder, PluginApprovalRecord record, CancellationToken ct)
     {
         var src = Path.Combine(folder, "src");
         if (!Directory.Exists(src))
@@ -54,25 +48,17 @@ public sealed class PluginApprovalVerifier
         {
             var stamps = PluginStatCache.Snapshot(src);
             var now = _clock.GetUtcNow();
-            if (PluginStatCache.Attests(folder, key, record.TreeSha256, stamps, now))
+            if (await PluginStatCache.AttestsAsync(folder, _signer, record.TreeSha256, stamps, now, ct).ConfigureAwait(false))
                 return null;
             if (!string.Equals(_hashTree(src), record.TreeSha256, StringComparison.Ordinal))
                 return $"Its files changed since approval. Next: {Reapprove(name)}.";
-            PluginStatCache.Save(folder, key, record.TreeSha256, stamps, now);
+            await PluginStatCache.SaveAsync(folder, _signer, record.TreeSha256, stamps, now, ct).ConfigureAwait(false);
             return null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             return $"Its files cannot be read: {ex.Message}. Next: {Reapprove(name)}.";
         }
-    }
-
-    private async ValueTask<byte[]?> KeyAsync(CancellationToken ct, bool refresh = false)
-    {
-        if (_key is not null && !refresh)
-            return _key;
-        var hex = await _credentials.GetAsync(PluginApproval.KeyCredential, ct).ConfigureAwait(false);
-        return _key = PluginApproval.TryDecode32(hex, out var key) ? key : null;
     }
 
     private static string Reapprove(string name) => $"re-approve with dg plugin verify {name} --approve";

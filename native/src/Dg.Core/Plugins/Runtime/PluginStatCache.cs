@@ -10,7 +10,6 @@ internal static class PluginStatCache
 {
     public const string FileName = "stat-cache.json";
     public static readonly TimeSpan MaxAge = TimeSpan.FromHours(24);
-    private const string MacDomain = "dg-plugin-statcache-v1";
     private const long TickNs = 100;
 
     public static FileStamp[] Snapshot(string src)
@@ -27,24 +26,28 @@ internal static class PluginStatCache
         return stamps;
     }
 
-    public static bool Attests(
+    public static async ValueTask<bool> AttestsAsync(
         string folder,
-        ReadOnlySpan<byte> key,
+        IApprovalSigner signer,
         string treeSha256,
         FileStamp[] current,
-        DateTimeOffset now
+        DateTimeOffset now,
+        CancellationToken ct
     )
     {
+        string tree;
+        string mac;
+        long fullHashAt;
+        FileStamp[] stamps;
         try
         {
             using var document = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(folder, FileName)));
             var root = document.RootElement;
-            var tree = root.GetProperty("treeSha256").GetString();
-            var fullHashAt = root.GetProperty("fullHashAtMs").GetInt64();
+            tree = root.GetProperty("treeSha256").GetString() ?? "";
+            fullHashAt = root.GetProperty("fullHashAtMs").GetInt64();
+            mac = root.GetProperty("mac").GetString() ?? "";
             var files = root.GetProperty("files");
-            if (tree is null || !PluginApproval.TryDecode32(root.GetProperty("mac").GetString(), out var claimed))
-                return false;
-            var stamps = new FileStamp[files.GetArrayLength()];
+            stamps = new FileStamp[files.GetArrayLength()];
             var index = 0;
             foreach (var item in files.EnumerateArray())
                 stamps[index++] = new FileStamp(
@@ -53,13 +56,6 @@ internal static class PluginStatCache
                     item.GetProperty("m").GetInt64(),
                     item.GetProperty("i").GetUInt64()
                 );
-            if (!CryptographicOperations.FixedTimeEquals(Sign(key, tree, fullHashAt, stamps), claimed))
-                return false;
-            var age = now - DateTimeOffset.FromUnixTimeMilliseconds(fullHashAt);
-            return string.Equals(tree, treeSha256, StringComparison.Ordinal)
-                && age >= TimeSpan.Zero
-                && age < MaxAge
-                && current.AsSpan().SequenceEqual(stamps);
         }
         catch (Exception ex)
             when (ex is JsonException
@@ -73,18 +69,44 @@ internal static class PluginStatCache
         {
             return false;
         }
+        var age = now - DateTimeOffset.FromUnixTimeMilliseconds(fullHashAt);
+        if (
+            !PluginApproval.TryDecode32(mac, out _)
+            || !string.Equals(tree, treeSha256, StringComparison.Ordinal)
+            || age < TimeSpan.Zero
+            || age >= MaxAge
+            || !current.AsSpan().SequenceEqual(stamps)
+        )
+            return false;
+        try
+        {
+            return await signer.VerifyStatCacheAsync(Fields(tree, fullHashAt, stamps), mac, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false;
+        }
     }
 
-    public static void Save(
+    public static async ValueTask SaveAsync(
         string folder,
-        ReadOnlySpan<byte> key,
+        IApprovalSigner signer,
         string treeSha256,
         FileStamp[] stamps,
-        DateTimeOffset now
+        DateTimeOffset now,
+        CancellationToken ct
     )
     {
         var fullHashAt = now.ToUnixTimeMilliseconds();
-        var mac = Convert.ToHexStringLower(Sign(key, treeSha256, fullHashAt, stamps));
+        string mac;
+        try
+        {
+            mac = await signer.SignStatCacheAsync(Fields(treeSha256, fullHashAt, stamps), ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return;
+        }
         var target = Path.Combine(folder, FileName);
         var temp = $"{target}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
         try
@@ -131,20 +153,17 @@ internal static class PluginStatCache
         }
     }
 
-    private static byte[] Sign(ReadOnlySpan<byte> key, string treeSha256, long fullHashAt, FileStamp[] stamps)
+    private static string[] Fields(string treeSha256, long fullHashAt, FileStamp[] stamps)
     {
-        using var hmac = IncrementalHash.CreateHMAC(HashAlgorithmName.SHA256, key);
-        HmacFields.Append(hmac, MacDomain, first: true);
-        HmacFields.Append(hmac, treeSha256);
-        HmacFields.Append(hmac, fullHashAt.ToString(CultureInfo.InvariantCulture));
-        HmacFields.Append(hmac, stamps.Length.ToString(CultureInfo.InvariantCulture));
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        HmacFields.Append(hash, stamps.Length.ToString(CultureInfo.InvariantCulture), first: true);
         foreach (var stamp in stamps)
         {
-            HmacFields.Append(hmac, stamp.RelativePath);
-            HmacFields.Append(hmac, stamp.Size.ToString(CultureInfo.InvariantCulture));
-            HmacFields.Append(hmac, stamp.MtimeNs.ToString(CultureInfo.InvariantCulture));
-            HmacFields.Append(hmac, stamp.Inode.ToString(CultureInfo.InvariantCulture));
+            HmacFields.Append(hash, stamp.RelativePath);
+            HmacFields.Append(hash, stamp.Size.ToString(CultureInfo.InvariantCulture));
+            HmacFields.Append(hash, stamp.MtimeNs.ToString(CultureInfo.InvariantCulture));
+            HmacFields.Append(hash, stamp.Inode.ToString(CultureInfo.InvariantCulture));
         }
-        return hmac.GetHashAndReset();
+        return [treeSha256, fullHashAt.ToString(CultureInfo.InvariantCulture), Convert.ToHexStringLower(hash.GetHashAndReset())];
     }
 }

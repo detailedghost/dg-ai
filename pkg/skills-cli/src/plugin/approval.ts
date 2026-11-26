@@ -1,105 +1,74 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createCredentialClient, DaemonNotRunningError, resolveDgPaths } from "@dg/common/node";
 import { DgCliError } from "@dg/common";
 import { type Env, HEX64, type PluginRecord, pluginSrcDir } from "./store";
 import { hashTree } from "./tree";
 
-export const APPROVAL_KEY_CREDENTIAL = "dg/plugin-approval-key";
-const MAC_DOMAIN = "dg-plugin-approval-v1";
-
-export type ApprovalKeys = {
-	read(): Promise<Buffer | undefined>;
-	ensure(): Promise<Buffer>;
+export type ApprovalSigner = {
+	sign(fields: string[]): Promise<string>;
+	verify(fields: string[], mac: string): Promise<boolean>;
+	close(): void;
 };
 
-type KeyStore = {
-	get(name: string): Promise<{ value: string } | undefined>;
-	set(name: string, value: string): Promise<void>;
-	close?(): void;
-};
-
-function signedFields(record: PluginRecord): string[] {
-	return [MAC_DOMAIN, record.name, record.kind, record.source, record.pin.kind, record.pin.value, record.treeSha256, record.approvedSha256 ?? ""];
+export function approvalFields(record: PluginRecord): string[] {
+	return [record.name, record.kind, record.source, record.pin.kind, record.pin.value, record.treeSha256, record.approvedSha256 ?? ""];
 }
 
-const hasNul = (record: PluginRecord): boolean => signedFields(record).some((field) => field.includes("\0"));
+const hasNul = (record: PluginRecord): boolean => approvalFields(record).some((field) => field.includes("\0"));
 
-export function macOf(record: PluginRecord, key: Buffer): string {
-	if (hasNul(record)) throw new DgCliError(`dg plugin: ${record.name} has a NUL byte in a signed field, so dg will not sign it.`);
-	return createHmac("sha256", key).update(signedFields(record).join("\0")).digest("hex");
-}
-
-function macMatches(record: PluginRecord, key: Buffer): boolean {
-	if (record.mac === null || !HEX64.test(record.mac) || hasNul(record)) return false;
-	return timingSafeEqual(Buffer.from(record.mac, "hex"), Buffer.from(macOf(record, key), "hex"));
-}
-
-export function credentialApprovalKeys(open: () => KeyStore): ApprovalKeys {
-	let cached: Buffer | undefined;
-	const lookup = async (store: KeyStore): Promise<Buffer | undefined> => {
-		if (cached !== undefined) return cached;
-		const stored = await store.get(APPROVAL_KEY_CREDENTIAL);
-		if (stored === undefined || !HEX64.test(stored.value)) return undefined;
-		return (cached = Buffer.from(stored.value, "hex"));
-	};
+/** Asks the dg daemon over one lazily opened credential client; the approval key never reaches this process. */
+export function daemonApprovalSigner(env: Env): ApprovalSigner {
+	let client: ReturnType<typeof createCredentialClient> | undefined;
+	const open = () => (client ??= createCredentialClient({ paths: resolveDgPaths({ env }), env }));
 	return {
-		read: async () => {
-			if (cached !== undefined) return cached;
-			const store = open();
-			try {
-				return await lookup(store);
-			} finally {
-				store.close?.();
-			}
-		},
-		ensure: async () => {
-			if (cached !== undefined) return cached;
-			const store = open();
-			try {
-				const existing = await lookup(store);
-				if (existing !== undefined) return existing;
-				await store.set(APPROVAL_KEY_CREDENTIAL, randomBytes(32).toString("hex"));
-				const stored = await lookup(store);
-				if (stored === undefined) throw new DgCliError("dg plugin: the dg daemon did not keep the approval key. Next: run dg doctor, then try again.");
-				return stored;
-			} catch (error) {
-				if (error instanceof DgCliError) throw error;
-				const detail = error instanceof Error ? error.message : String(error);
-				throw new DgCliError(`dg plugin: cannot store the approval key: ${detail}. Next: check the dg daemon with dg doctor, then try again.`);
-			} finally {
-				store.close?.();
-			}
-		},
+		sign: (fields) => open().approvalSign("approval", fields),
+		verify: (fields, mac) => open().approvalVerify("approval", fields, mac),
+		close: () => client?.close(),
 	};
 }
 
-export function defaultApprovalKeys(env: Env): ApprovalKeys {
-	return credentialApprovalKeys(() => createCredentialClient({ paths: resolveDgPaths({ env }), env }));
+/** Runs `run` with the given signer, or with one daemon signer that closes when it ends. */
+export async function withApprovalSigner<T>(env: Env, given: ApprovalSigner | undefined, run: (signer: ApprovalSigner) => Promise<T>): Promise<T> {
+	const signer = given ?? daemonApprovalSigner(env);
+	try {
+		return await run(signer);
+	} finally {
+		if (given === undefined) signer.close();
+	}
+}
+
+export async function signApproval(record: PluginRecord, signer: ApprovalSigner): Promise<string> {
+	if (hasNul(record)) throw new DgCliError(`dg plugin: ${record.name} has a NUL byte in a signed field, so dg will not sign it.`);
+	try {
+		return await signer.sign(approvalFields(record));
+	} catch (error) {
+		if (error instanceof DaemonNotRunningError) throw new DgCliError(`dg plugin: cannot approve ${record.name}: ${error.message}. Next: start the dg daemon, then try again.`);
+		const detail = error instanceof Error ? error.message : String(error);
+		throw new DgCliError(`dg plugin: the dg daemon did not sign the approval: ${detail}. Next: check the dg daemon with dg doctor, then try again.`);
+	}
 }
 
 const reapprove = (name: string) => `re-approve with dg plugin verify ${name} --approve`;
 
-/** Why the record is not approved, or undefined when it is. Asks for the key only after the cheap checks pass. */
-export async function approvalProblem(record: PluginRecord, env: Env, keys: ApprovalKeys = defaultApprovalKeys(env)): Promise<string | undefined> {
+/** Why the record is not approved, or undefined when it is. Asks the daemon only after the cheap checks pass. */
+export async function approvalProblem(record: PluginRecord, env: Env, given?: ApprovalSigner): Promise<string | undefined> {
 	const { name, approvedSha256, treeSha256, mac } = record;
 	if (approvedSha256 === null || approvedSha256 !== treeSha256) return `Next: review it, then run dg plugin verify ${name} --approve.`;
 	if (hasNul(record)) return "A signed field holds a NUL byte, so dg never approves it. Next: remove the plugin and add it again.";
 	if (mac === null) return `It has no signed approval. Next: ${reapprove(name)}.`;
-	let key: Buffer | undefined;
+	let verified: boolean;
 	try {
-		key = await keys.read();
+		verified = HEX64.test(mac) && (await withApprovalSigner(env, given, (signer) => signer.verify(approvalFields(record), mac)));
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error);
 		return error instanceof DaemonNotRunningError
 			? `${detail}. Next: start the dg daemon, then try again.`
-			: `Cannot read the approval key: ${detail}. Next: check the dg daemon with dg doctor, then try again.`;
+			: `Cannot verify the approval with the dg daemon: ${detail}. Next: check the dg daemon with dg doctor, then try again.`;
 	}
-	if (key === undefined) return `There is no approval key in the dg credential store. Next: ${reapprove(name)}.`;
-	if (!macMatches(record, key)) return `Its approval signature does not verify. Next: ${reapprove(name)}.`;
+	if (!verified) return `Its approval signature does not verify. Next: ${reapprove(name)}.`;
 	if (hashTree(pluginSrcDir(name, env)) !== treeSha256) return `Its files changed since approval. Next: ${reapprove(name)}.`;
 	return undefined;
 }
 
-export async function isApproved(record: PluginRecord, env: Env, keys: ApprovalKeys = defaultApprovalKeys(env)): Promise<boolean> {
-	return (await approvalProblem(record, env, keys)) === undefined;
+export async function isApproved(record: PluginRecord, env: Env, signer?: ApprovalSigner): Promise<boolean> {
+	return (await approvalProblem(record, env, signer)) === undefined;
 }

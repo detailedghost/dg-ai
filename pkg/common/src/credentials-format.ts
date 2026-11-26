@@ -22,7 +22,15 @@ export const RESERVED_CREDENTIAL_PREFIXES = [
 	"phone-friend",
 	"phone-vault",
 	"db",
+	"dg",
 ] as const;
+/** The daemon-held key that signs plugin approvals; it never leaves the daemon. */
+export const APPROVAL_KEY_CREDENTIAL = "dg/plugin-approval-key";
+export type ApprovalPurpose = "approval" | "statcache";
+/** Field count the daemon expects per purpose; it prepends the purpose's domain string itself. */
+export const APPROVAL_FIELD_COUNTS: Record<ApprovalPurpose, number> = { approval: 7, statcache: 3 };
+export const APPROVAL_FIELD_MAX_BYTES = 8_192;
+const APPROVAL_MAC = /^[0-9a-f]{64}$/;
 const INJECTION_ENV =
 	/^(?:LD_|DYLD_|_RLD|MALLOC_|GCONV_PATH$|NODE_OPTIONS$|NODE_PATH$|NODE_EXTRA_CA_CERTS$|BUN_|PYTHON|PERL5|PERLLIB$|RUBY|LUA_|TCL|R_PROFILE|R_ENVIRON|BASH_ENV$|ENV$|ZDOTDIR$|PS4$|SHELLOPTS$|BASHOPTS$|PROMPT_COMMAND$|JAVA_TOOL_OPTIONS$|_JAVA_OPTIONS$|JDK_JAVA_OPTIONS$|CLASSPATH$|GIT_|SSH_ASKPASS$|EDITOR$|VISUAL$|PAGER$|LESSOPEN$|PATH$|HOME$|XDG_CONFIG_HOME$|CURL_HOME$|CURL_CA_BUNDLE$|HTTPS?_PROXY$|ALL_PROXY$|NO_PROXY$|SSL_CERT_FILE$|SSL_CERT_DIR$|REQUESTS_CA_BUNDLE$|WGETRC$|GLIBC_TUNABLES$|OPENSSL_CONF$|OPENSSL_ENGINES$|SSLKEYLOGFILE$|NODE_TLS_REJECT_UNAUTHORIZED$|IFS$|HOSTALIASES$|LOCPATH$|NLSPATH$|NPM_CONFIG_)/i;
 
@@ -79,8 +87,13 @@ export type CredentialsCliRequest = {
 		| "revoke"
 		| "grant-list"
 		| "exec"
-		| "intake";
+		| "intake"
+		| "approval-sign"
+		| "approval-verify";
 	name?: string;
+	purpose?: ApprovalPurpose;
+	fields?: string[];
+	mac?: string;
 	exec?: CredentialExecSpec;
 	value?: string;
 	meta?: CredentialMeta;
@@ -237,6 +250,8 @@ export function validateCredentialsCliRequest(
 		"grant-list": [],
 		exec: ["exec"],
 		intake: ["name", "meta"],
+		"approval-sign": ["purpose", "fields"],
+		"approval-verify": ["purpose", "fields", "mac"],
 	};
 	requireOneOf(value.operation, "credentials CLI request.operation", [
 		"set",
@@ -248,6 +263,8 @@ export function validateCredentialsCliRequest(
 		"grant-list",
 		"exec",
 		"intake",
+		"approval-sign",
+		"approval-verify",
 	]);
 	const allowed = [
 		"type",
@@ -281,6 +298,7 @@ export function validateCredentialsCliRequest(
 	}
 	if (value.operation === "intake") validateCredentialMeta(value.meta);
 	if (value.operation === "exec") validateExecSpec(value.exec);
+	if (value.operation === "approval-sign" || value.operation === "approval-verify") validateApprovalInput(value);
 	return value as CredentialsCliRequest;
 }
 
@@ -306,4 +324,18 @@ function validateExecSpec(value: unknown): void {
 	for (const [key, entry] of Object.entries(value.env))
 		if (!ENV_NAME.test(key) || typeof entry !== "string") fail(`${path}.env must map names to strings`);
 	if (byteLength(JSON.stringify(value)) > CREDENTIAL_EXEC_MAX_BYTES) fail(`${path} exceeds ${CREDENTIAL_EXEC_MAX_BYTES} bytes`);
+}
+
+function validateApprovalInput(value: Record<string, unknown>): void {
+	const path = "credentials CLI request";
+	requireOneOf(value.purpose, `${path}.purpose`, ["approval", "statcache"]);
+	const count = APPROVAL_FIELD_COUNTS[value.purpose];
+	const fields = value.fields;
+	if (!Array.isArray(fields) || fields.length !== count) fail(`${path}.fields must hold exactly ${count} strings for ${value.purpose}`);
+	for (const field of fields) {
+		if (typeof field !== "string" || field.includes("\0") || byteLength(field) > APPROVAL_FIELD_MAX_BYTES)
+			fail(`${path}.fields must hold strings with no NUL byte and at most ${APPROVAL_FIELD_MAX_BYTES} bytes each`);
+	}
+	if (value.operation === "approval-verify" && (typeof value.mac !== "string" || !APPROVAL_MAC.test(value.mac)))
+		fail(`${path}.mac must be 64 lowercase hex characters`);
 }

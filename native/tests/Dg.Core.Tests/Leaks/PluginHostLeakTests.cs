@@ -81,12 +81,13 @@ public sealed class PluginHostLeakTests(ITestOutputHelper output)
         var src = Path.Combine(folder, "src");
         var record = PluginApprovalRecord.Read(folder)!;
         Assert.True(
-            PluginStatCache.Attests(
+            await PluginStatCache.AttestsAsync(
                 folder,
-                ApprovalFixture.Key,
+                fixture.Signer,
                 record.TreeSha256,
                 PluginStatCache.Snapshot(src),
-                DateTimeOffset.UtcNow
+                DateTimeOffset.UtcNow,
+                CancellationToken.None
             )
         );
     }

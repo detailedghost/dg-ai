@@ -8,15 +8,14 @@ public sealed class PluginApprovalVerifierTests : IDisposable
     private static readonly DateTimeOffset Start = new(2026, 11, 25, 12, 0, 0, TimeSpan.Zero);
     private readonly TempFolder _temp = new();
     private readonly ManualClock _clock = new(Start);
-    private readonly MapCredentialStore _store = new();
+    private readonly FakeApprovalSigner _signer = new();
     private readonly PluginApprovalVerifier _verifier;
     private int _hashes;
 
     public PluginApprovalVerifierTests()
     {
-        _store.Values[PluginApproval.KeyCredential] = ApprovalFixture.KeyHex;
         _verifier = new PluginApprovalVerifier(
-            _store,
+            _signer,
             _clock,
             src =>
             {
@@ -238,47 +237,57 @@ public sealed class PluginApprovalVerifierTests : IDisposable
     }
 
     [Fact]
-    public async Task ProblemAsync_NeverApprovedRecord_DoesNotAskForTheKey()
+    public async Task ProblemAsync_NeverApprovedRecord_DoesNotAskTheDaemon()
     {
         ApprovalFixture.WriteRecord(Folder, ApprovalFixture.Signed(Name, Tree) with { ApprovedSha256 = null, Mac = null });
 
         Assert.Contains("review it", await Problem());
-        Assert.Equal(0, _store.Reads);
+        Assert.Equal(0, _signer.ApprovalVerifies);
     }
 
     [Fact]
-    public async Task ProblemAsync_KeyAbsent_IsNotApprovedAndAsksToReapprove()
+    public async Task ProblemAsync_DaemonHoldsNoKey_IsNotApprovedAndAsksToReapprove()
     {
-        _store.Values.Clear();
+        _signer.Key = null;
 
-        Assert.Contains("no approval key", await Problem());
+        Assert.Contains("signature does not verify", await Problem());
     }
 
     [Fact]
-    public async Task ProblemAsync_MalformedKey_IsTreatedAsAbsent()
+    public async Task ProblemAsync_DaemonHoldsAnotherKey_IsNotApproved()
     {
-        _store.Values[PluginApproval.KeyCredential] = "zz";
+        _signer.Key = Convert.FromHexString(new string('7', 64));
 
-        Assert.Contains("no approval key", await Problem());
+        Assert.Contains("signature does not verify", await Problem());
     }
 
     [Fact]
-    public async Task ProblemAsync_StoreUnavailable_IsNotApprovedAndNamesTheDaemon()
+    public async Task ProblemAsync_DaemonUnavailable_IsNotApprovedAndNamesTheDaemon()
     {
-        _store.Failure = new IOException("dg daemon is not running");
+        _signer.Failure = new IOException("dg daemon is not running");
 
         Assert.Contains("dg agent start", await Problem());
     }
 
     [Fact]
-    public async Task ProblemAsync_KeyRotatedAfterItWasCached_PicksUpTheNewKey()
+    public async Task ProblemAsync_SendsTheSevenSignedFieldsInOrderAndNoKey()
     {
         await Problem();
-        var rotated = Convert.FromHexString(new string('7', 64));
-        ApprovalFixture.WriteRecord(Folder, ApprovalFixture.Signed(Name, Tree, rotated));
-        _store.Values[PluginApproval.KeyCredential] = new string('7', 64);
 
-        Assert.Null(await Problem());
+        Assert.Equal(
+            ["scanner", "skill", "folder", "sha256", Tree, Tree, Tree],
+            _signer.LastApprovalFields!
+        );
+    }
+
+    [Fact]
+    public async Task ProblemAsync_NulInASignedField_IsNotApprovedWithoutAskingTheDaemon()
+    {
+        var file = Path.Combine(Folder, "dg-plugin.json");
+        File.WriteAllText(file, File.ReadAllText(file).Replace("\"source\":\"folder\"", "\"source\":\"fol\\u0000der\""));
+
+        Assert.Contains("NUL", await Problem());
+        Assert.Equal(0, _signer.ApprovalVerifies);
     }
 
     [Fact]
@@ -292,16 +301,30 @@ public sealed class PluginApprovalVerifierTests : IDisposable
     }
 
     [Fact]
-    public async Task ProblemAsync_ManyCalls_ReadTheKeyOnce()
+    public async Task ProblemAsync_ManyCallsWithNothingChanged_VerifyTheStatCacheOnceEach()
     {
         for (var i = 0; i < 5; i++)
             await Problem();
 
-        Assert.Equal(1, _store.Reads);
+        Assert.Equal(5, _signer.ApprovalVerifies);
+        Assert.Equal(1, _signer.StatCacheSigns);
+        Assert.Equal(4, _signer.StatCacheVerifies);
     }
 
     [Fact]
-    public async Task ProblemAsync_CanceledToken_ReachesTheStoreAndThrows()
+    public async Task ProblemAsync_StatCacheSignerDown_StillApprovesAfterAFullHash()
+    {
+        await Problem();
+        _signer.Failure = null;
+        var failing = new FailingStatCacheSigner(_signer);
+        var verifier = new PluginApprovalVerifier(failing, _clock, src => { _hashes++; return PluginApproval.HashTree(src); });
+
+        Assert.Null(await verifier.ProblemAsync(Name, Folder, CancellationToken.None));
+        Assert.Equal(2, _hashes);
+    }
+
+    [Fact]
+    public async Task ProblemAsync_CanceledToken_ReachesTheSignerAndThrows()
     {
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -310,7 +333,7 @@ public sealed class PluginApprovalVerifierTests : IDisposable
             await _verifier.ProblemAsync(Name, Folder, cts.Token)
         );
 
-        Assert.Equal(cts.Token, _store.LastToken);
+        Assert.Equal(cts.Token, _signer.LastToken);
     }
 
     [Fact]
@@ -327,5 +350,17 @@ public sealed class PluginApprovalVerifierTests : IDisposable
         Directory.CreateDirectory(CachePath);
 
         Assert.Null(await Problem());
+    }
+
+    private sealed class FailingStatCacheSigner(FakeApprovalSigner inner) : IApprovalSigner
+    {
+        public ValueTask<bool> VerifyApprovalAsync(string[] fields, string mac, CancellationToken cancellationToken) =>
+            inner.VerifyApprovalAsync(fields, mac, cancellationToken);
+
+        public ValueTask<string> SignStatCacheAsync(string[] fields, CancellationToken cancellationToken) =>
+            throw new IOException("daemon went away");
+
+        public ValueTask<bool> VerifyStatCacheAsync(string[] fields, string mac, CancellationToken cancellationToken) =>
+            throw new IOException("daemon went away");
     }
 }

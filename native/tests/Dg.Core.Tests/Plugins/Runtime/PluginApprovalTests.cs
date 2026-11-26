@@ -25,55 +25,37 @@ public sealed class PluginApprovalTests
     }
 
     [Fact]
-    public void ComputeMac_SharedFixtureRecord_MatchesTheBunMac()
+    public async Task ProblemAsync_SharedFixtureRecords_AreJudgedPerTheContractAndTheDaemonSeesTheSharedFields()
     {
         using var shared = ApprovalFixture.Shared();
         var root = shared.RootElement;
-        using var folder = Materialize(root);
-        var record = Load(root, "signed", folder);
+        var signer = new FakeApprovalSigner { Key = Convert.FromHexString(root.GetProperty("key").GetString()!) };
+        var verifier = new PluginApprovalVerifier(signer);
+        foreach (var (name, approved) in new[] { ("signed", true), ("badMac", false), ("unsigned", false), ("unsignedNull", false), ("nul-in-source", false) })
+        {
+            using var folder = Materialize(root);
+            Load(root, name, folder);
+            Assert.Equal(approved, await verifier.ProblemAsync("demo", folder.Path, CancellationToken.None) is null);
+        }
 
-        var mac = PluginApproval.ComputeMac(Convert.FromHexString(root.GetProperty("key").GetString()!), record);
-
-        Assert.Equal(root.GetProperty("expectedMac").GetString(), mac);
-        Assert.Equal(mac, record.Mac);
-    }
-
-    [Fact]
-    public void MacMatches_SignedBadUnsignedAndNullMacRecords_AreJudgedPerTheContract()
-    {
-        using var shared = ApprovalFixture.Shared();
-        var root = shared.RootElement;
-        var key = Convert.FromHexString(root.GetProperty("key").GetString()!);
-        using var folder = Materialize(root);
-        Assert.True(PluginApproval.MacMatches(key, Load(root, "signed", folder)));
-        Assert.False(PluginApproval.MacMatches(key, Load(root, "badMac", folder)));
-        Assert.False(PluginApproval.MacMatches(key, Load(root, "unsigned", folder)));
-        Assert.False(PluginApproval.MacMatches(key, Load(root, "unsignedNull", folder)));
-        Assert.False(PluginApproval.MacMatches(new byte[32], Load(root, "signed", folder)));
-    }
-
-    [Fact]
-    public void MacMatches_NulInASignedField_IsNotApprovedEvenWithAMacOverTheJoinedBytes()
-    {
-        using var shared = ApprovalFixture.Shared();
-        var root = shared.RootElement;
-        using var folder = Materialize(root);
-        var record = Load(root, "nul-in-source", folder);
-
-        Assert.Contains('\0', record.Source);
-        Assert.False(PluginApproval.MacMatches(Convert.FromHexString(root.GetProperty("key").GetString()!), record));
-    }
-
-    [Fact]
-    public void ComputeMac_NulInASignedField_RefusesToSign()
-    {
-        using var shared = ApprovalFixture.Shared();
-        var root = shared.RootElement;
-        using var folder = Materialize(root);
-        var record = Load(root, "nul-in-source", folder);
-
-        Assert.Throws<ArgumentException>(() =>
-            PluginApproval.ComputeMac(Convert.FromHexString(root.GetProperty("key").GetString()!), record)
+        using var last = Materialize(root);
+        var signed = Load(root, "signed", last);
+        var json = root.GetProperty("records").GetProperty("signed");
+        Assert.Equal(
+            [
+                json.GetProperty("name").GetString(),
+                json.GetProperty("kind").GetString(),
+                json.GetProperty("source").GetString(),
+                json.GetProperty("pin").GetProperty("kind").GetString(),
+                json.GetProperty("pin").GetProperty("value").GetString(),
+                json.GetProperty("treeSha256").GetString(),
+                json.GetProperty("approvedSha256").GetString(),
+            ],
+            signed.SignedFields()
+        );
+        Assert.Equal(
+            root.GetProperty("expectedMac").GetString(),
+            FakeApprovalSigner.Mac(signer.Key!, "dg-plugin-approval-v1", signed.SignedFields())
         );
     }
 

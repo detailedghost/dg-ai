@@ -19,10 +19,11 @@ internal sealed class RuntimeFixture : IAsyncDisposable
     {
         var env = new Dictionary<string, string?> { ["DG_HOME"] = _root };
         Paths = DgPaths.Resolve(DgPathSeams.Current(env)).Value!;
-        _credentials[PluginApproval.KeyCredential] = ApprovalFixture.KeyHex;
     }
 
     public DgPaths Paths { get; }
+
+    public FakeApprovalSigner Signer { get; } = new();
 
     public string Folder(string name) => Path.Combine(Paths.DataDir, "plugins", name);
 
@@ -42,8 +43,6 @@ internal sealed class RuntimeFixture : IAsyncDisposable
 
     public void SetCredential(string name, string value) => _credentials[name] = value;
 
-    public void RemoveCredential(string name) => _credentials.Remove(name);
-
     public void Unsign(string name)
     {
         var record = PluginApprovalRecord.Read(Folder(name))!;
@@ -57,6 +56,7 @@ internal sealed class RuntimeFixture : IAsyncDisposable
         services.AddSingleton(Paths);
         services.AddSingleton(toml);
         services.AddSingleton<ICredentialStore>(new MapCredentials(_credentials));
+        services.AddSingleton<IApprovalSigner>(Signer);
         foreach (var builtin in builtins)
             services.AddSingleton<IBuiltinPlugin>(builtin);
         services.AddPluginsRuntime();

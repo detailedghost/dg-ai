@@ -1,13 +1,19 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { mock } from "bun:test";
 import { exitAfterDrain } from "@dg/common/async";
 import * as common from "@dg/common/node";
 import { normalizeDgHome } from "@dg/common/node/dg-paths";
 import { main } from "../../../../pkg/dg/src/main";
 
-const value = "00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f";
+const key = Buffer.from("00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f", "hex");
+const mac = (fields: string[]) => createHmac("sha256", key).update(["dg-plugin-approval-v1", ...fields].join("\0")).digest();
 mock.module("@dg/common/node", () => ({
 	...common,
-	createCredentialClient: () => ({ get: async () => ({ value }), set: async () => undefined, close: () => undefined }),
+	createCredentialClient: () => ({
+		approvalSign: async (_purpose: string, fields: string[]) => mac(fields).toString("hex"),
+		approvalVerify: async (_purpose: string, fields: string[], claimed: string) => timingSafeEqual(mac(fields), Buffer.from(claimed, "hex")),
+		close: () => undefined,
+	}),
 }));
 normalizeDgHome();
 await exitAfterDrain(
