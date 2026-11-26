@@ -42,7 +42,7 @@ default.
 | `ssms.google.send_enabled` | boolean | `false` | Turns on Google Messages sends. |
 | `plugins.<name>.enabled` | boolean | `true` | Turns a plugin on or off. |
 | `plugins.<name>.source` | string | none | Where the plugin comes from. |
-| `plugins.<name>.fail_closed` | boolean | `false` | Makes a crash or a timeout of an external hook plugin block the tool call. The block message names the plugin and this key. `false` lets the tool call go on, as before. |
+| `plugins.<name>.fail_closed` | boolean | `false` | Makes a crash or a timeout of an external hook plugin block the tool call. The block message names the plugin and this key. `false` lets the tool call go on, as before. A plugin that is not approved, or an approval key that dg cannot read because the daemon is down, never blocks: the run prints the reason and exits 1, whatever this key says. |
 | `plugins.<name>.allow_remote` | boolean | `false` | Lets a plugin whose manifest says `remote = true` connect to a remote URL. Both must be set. |
 | `plugins.<name>.settings` | table | empty | The plugin's own settings. |
 | `meta.migrated` | table | empty | Written by dg: each old config file that moved into this file, with its sha256. Do not edit it. |

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mock } from "bun:test";
 import * as common from "@dg/common/node";
 import { DaemonNotRunningError } from "@dg/common/node";
-import type { ApprovalKeys } from "../../src/plugin/approval";
+import { APPROVAL_KEY_CREDENTIAL, type ApprovalKeys } from "../../src/plugin/approval";
 
 export const TEST_KEY_HEX = "00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f";
 
@@ -17,23 +17,29 @@ export function fakeKeys(initial: string | null = TEST_KEY_HEX): FakeKeys {
 	return keys;
 }
 
-export function downKeys(error: Error = new DaemonNotRunningError()): ApprovalKeys {
+export function downKeys(error: Error = new DaemonNotRunningError()): FakeKeys {
 	const fail = async (): Promise<never> => {
 		throw error;
 	};
-	return { read: fail, ensure: fail };
+	return { stored: undefined, read: fail, ensure: fail };
 }
 
 const realCreateCredentialClient = common.createCredentialClient;
 
-export function useApprovalKeys(keys: ApprovalKeys | undefined): void {
+function expectApprovalKeyName(name: string): void {
+	if (name !== APPROVAL_KEY_CREDENTIAL) throw new Error(`unexpected credential name ${name}`);
+}
+
+export function useApprovalKeys(keys: FakeKeys | undefined): void {
 	const create = keys === undefined ? realCreateCredentialClient : () => ({
-		get: async () => {
+		get: async (name: string) => {
+			expectApprovalKeyName(name);
 			const key = await keys.read();
 			return key === undefined ? undefined : { value: key.toString("hex") };
 		},
-		set: async (_name: string, value: string) => {
-			(keys as FakeKeys).stored = Buffer.from(value, "hex");
+		set: async (name: string, value: string) => {
+			expectApprovalKeyName(name);
+			keys.stored = Buffer.from(value, "hex");
 		},
 		close: () => undefined,
 	});

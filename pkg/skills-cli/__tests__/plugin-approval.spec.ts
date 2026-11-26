@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import * as common from "@dg/common/node";
 import { DaemonNotRunningError } from "@dg/common/node";
 import { approvalProblem, credentialApprovalKeys, defaultApprovalKeys, isApproved, macOf } from "../src/plugin/approval";
 import { type PluginRecord, readRecord } from "../src/plugin/store";
@@ -208,12 +209,18 @@ describe("credentialApprovalKeys", () => {
 describe("defaultApprovalKeys", () => {
 	afterEach(() => useApprovalKeys(undefined));
 
-	test("reads the key for each environment it is given, not the first one it saw", async () => {
-		const first = fakeKeys(TEST_KEY_HEX);
-		useApprovalKeys(first);
-		expect((await defaultApprovalKeys(env).read())?.toString("hex")).toBe(TEST_KEY_HEX);
-		const other = "ff".repeat(32);
-		useApprovalKeys(fakeKeys(other));
-		expect((await defaultApprovalKeys({ ...env, DG_HOME: join(root, "other") }).read())?.toString("hex")).toBe(other);
+	test("opens the credential client with the paths of the environment it is given", async () => {
+		const seen: string[] = [];
+		mock.module("@dg/common/node", () => ({
+			...common,
+			createCredentialClient: (options: { paths: { configTomlPath: string } }) => {
+				seen.push(options.paths.configTomlPath);
+				return { get: async () => undefined, set: async () => undefined, close: () => undefined };
+			},
+		}));
+		await defaultApprovalKeys(env).read();
+		await defaultApprovalKeys({ ...env, DG_HOME: join(root, "other") }).read();
+		expect(seen).toHaveLength(2);
+		expect(seen[0]).not.toBe(seen[1]);
 	});
 });

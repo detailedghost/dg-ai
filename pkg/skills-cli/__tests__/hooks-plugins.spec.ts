@@ -362,6 +362,15 @@ describe("resolveExternalHook", () => {
 		expect(result.stderr).toMatch(/not approved.*dg agent start/);
 	});
 
+	test("a stopped daemon with fail_closed true still ends the run with a non-blocking exit", async () => {
+		const world = hookWorld();
+		installPlugin(world, "scan", "[plugins.scan]\nenabled = true\nfail_closed = true\n");
+		useApprovalKeys(downKeys());
+		const result = await world.run("scan", bashInput("ls"));
+		expect(result.code).toBe(1);
+		expect(result.stderr).toMatch(/not approved.*dg agent start/);
+	});
+
 	test("refuses a plugin whose src changed after approval", async () => {
 		const world = hookWorld();
 		const dir = installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");

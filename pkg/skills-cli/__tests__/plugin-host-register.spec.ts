@@ -118,6 +118,15 @@ describe("host registration", () => {
 		expect(existsSync(codexSkill("release-notes"))).toBe(true);
 	});
 
+	test("an unchanged update drops the registrations when the approval signature no longer verifies", async () => {
+		await approvedAndEnabled();
+		useApprovalKeys(fakeKeys("ff".repeat(32)));
+		const result = await updatePlugin("notes", {}, env);
+		expect(result.approved).toBe(false);
+		expect(existsSync(claudeSkill("release-notes"))).toBe(false);
+		expect(existsSync(codexSkill("release-notes"))).toBe(false);
+	});
+
 	test("verify drops the registrations of a plugin edited on disk", async () => {
 		await approvedAndEnabled();
 		const folder = join(root, "dg");
