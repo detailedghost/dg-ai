@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { parseManifest, permissionReport, type PluginManifest } from "@dg/common/plugins/manifest";
 import { SKILL_NAME } from "../install/recommended-skills-only";
-import { approvalProblem, type ApprovalKeys, defaultApprovalKeys, isApproved, macOf } from "./approval";
+import { type ApprovalSigner, approvalProblem, isApproved, signApproval, withApprovalSigner } from "./approval";
 import { registerOnHosts, unregisterFromHosts } from "./hosts";
 import { type Pin, stageSource } from "./source";
 import {
@@ -86,8 +86,8 @@ function load(record: PluginRecord, env: Env): void {
 	for (const skill of skillDirs(files, record.name)) copyTree(src, join(target, skill.name), files, skill.prefix);
 }
 
-async function syncHosts(record: PluginRecord, env: Env, keys?: ApprovalKeys): Promise<void> {
-	if (isEnabled(record.name, env) && (await isApproved(record, env, keys))) registerOnHosts(record.name, join(pluginFolder(record.name, env), "skills"), env);
+async function syncHosts(record: PluginRecord, env: Env, signer: ApprovalSigner): Promise<void> {
+	if (isEnabled(record.name, env) && (await isApproved(record, env, signer))) registerOnHosts(record.name, join(pluginFolder(record.name, env), "skills"), env);
 	else unregisterFromHosts(record.name, env);
 }
 
@@ -173,12 +173,15 @@ export async function updatePlugin(name: string, input: { pin?: Pin } = {}, env:
 			mac: dropsApproval ? null : record.mac,
 		};
 		writeRecord(next, env);
-		const approved = await isApproved(next, env);
-		if (dropsApproval || !approved) disableAndUnload(name, env);
-		else {
-			load(next, env);
-			await syncHosts(next, env);
-		}
+		const approved = await withApprovalSigner(env, undefined, async (signer) => {
+			const verdict = await isApproved(next, env, signer);
+			if (dropsApproval || !verdict) disableAndUnload(name, env);
+			else {
+				load(next, env);
+				await syncHosts(next, env, signer);
+			}
+			return verdict;
+		});
 		return { name, changed, approved, pin: staged.pin };
 	} finally {
 		removeFolder(staging);
@@ -187,8 +190,11 @@ export async function updatePlugin(name: string, input: { pin?: Pin } = {}, env:
 
 /** Checks the installed files against the record and reports what dg cannot enforce; `approve` records the approval. */
 export async function verifyPlugin(name: string, input: { approve: boolean }, env: Env = process.env): Promise<VerifyReport> {
+	return withApprovalSigner(env, undefined, (signer) => verifyWith(name, input, env, signer));
+}
+
+async function verifyWith(name: string, input: { approve: boolean }, env: Env, signer: ApprovalSigner): Promise<VerifyReport> {
 	let record = readRecord(name, env);
-	const keys = defaultApprovalKeys(env);
 	const src = pluginSrcDir(name, env);
 	const intact = hashTree(src) === record.treeSha256;
 	const problems: string[] = [];
@@ -198,28 +204,28 @@ export async function verifyPlugin(name: string, input: { approve: boolean }, en
 		disableAndUnload(name, env);
 		problems.push(`${name} changed since it was installed, so it is unapproved and disabled. Next: run dg plugin update ${name} to restore it, then review and approve it.`);
 	} else if (input.approve) {
-		const key = await keys.ensure();
 		record = { ...record, approvedSha256: record.treeSha256 };
-		record = { ...record, mac: macOf(record, key) };
+		record = { ...record, mac: await signApproval(record, signer) };
 		writeRecord(record, env);
 		load(record, env);
-		await syncHosts(record, env, keys);
+		await syncHosts(record, env, signer);
 	}
 	const manifest = readManifest(src);
 	const permissions = manifest === undefined ? { enforced: [], unenforced: [] } : permissionReport(manifest);
-	const problem = intact ? await approvalProblem(record, env, keys) : undefined;
+	const problem = intact ? await approvalProblem(record, env, signer) : undefined;
 	if (problem !== undefined && record.approvedSha256 !== null) problems.push(`${name} claims approval but is not approved. ${problem}`);
 	return { name, approved: intact && problem === undefined, intact, problems, ...permissions };
 }
 
 export async function listPlugins(env: Env = process.env): Promise<ListRow[]> {
-	const rows: ListRow[] = [];
-	const keys = defaultApprovalKeys(env);
-	for (const name of installedNames(env)) {
-		const record = readRecord(name, env);
-		rows.push({ name, kind: record.kind, pin: record.pin, enabled: isEnabled(name, env), approved: await isApproved(record, env, keys), source: record.source });
-	}
-	return rows;
+	return withApprovalSigner(env, undefined, async (signer) => {
+		const rows: ListRow[] = [];
+		for (const name of installedNames(env)) {
+			const record = readRecord(name, env);
+			rows.push({ name, kind: record.kind, pin: record.pin, enabled: isEnabled(name, env), approved: await isApproved(record, env, signer), source: record.source });
+		}
+		return rows;
+	});
 }
 
 /** The helper command of an approved plugin; an unapproved or edited plugin throws. */

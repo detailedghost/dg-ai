@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { resolveDgPaths } from "@dg/common/node/dg-paths";
 import { addPlugin, removePlugin, setPluginEnabled, updatePlugin, verifyPlugin } from "../src/plugin/lifecycle";
 
-import { fakeKeys, useApprovalKeys } from "./support/approval-keys";
+import { fakeDaemon, useApprovalDaemon } from "./support/approval-daemon";
 
 let root: string;
 let env: Record<string, string | undefined>;
@@ -14,7 +14,7 @@ const claudeSkill = (name: string) => join(root, "claude", "skills", name);
 const codexSkill = (name: string) => join(root, "codex", "skills", name);
 
 beforeEach(() => {
-	useApprovalKeys(fakeKeys());
+	useApprovalDaemon(fakeDaemon());
 	root = mkdtempSync(join(tmpdir(), "dg-plugin-hosts-"));
 	env = {
 		DG_HOME: join(root, "dg"),
@@ -26,7 +26,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	useApprovalKeys(undefined);
+	useApprovalDaemon(undefined);
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -120,7 +120,7 @@ describe("host registration", () => {
 
 	test("an unchanged update drops the registrations when the approval signature no longer verifies", async () => {
 		await approvedAndEnabled();
-		useApprovalKeys(fakeKeys("ff".repeat(32)));
+		useApprovalDaemon(fakeDaemon("ff".repeat(32)));
 		const result = await updatePlugin("notes", {}, env);
 		expect(result.approved).toBe(false);
 		expect(existsSync(claudeSkill("release-notes"))).toBe(false);

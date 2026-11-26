@@ -1,15 +1,13 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import * as common from "@dg/common/node";
 import { DaemonNotRunningError } from "@dg/common/node";
-import { approvalProblem, credentialApprovalKeys, defaultApprovalKeys, isApproved, macOf } from "../src/plugin/approval";
+import { approvalFields, approvalProblem, daemonApprovalSigner, isApproved, signApproval } from "../src/plugin/approval";
 import { type PluginRecord, readRecord } from "../src/plugin/store";
 import fixture from "../../common/fixtures/plugins/approval/cases.json";
-import { downKeys, fakeKeys, TEST_KEY_HEX, useApprovalKeys } from "./support/approval-keys";
+import { downDaemon, fakeDaemon, signRecord, useApprovalDaemon } from "./support/approval-daemon";
 
-const key = Buffer.from(fixture.key, "hex");
 let root: string;
 let env: Record<string, string | undefined>;
 
@@ -27,20 +25,40 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 const record = (name: keyof typeof fixture.records): PluginRecord => structuredClone(fixture.records[name]) as unknown as PluginRecord;
 
-describe("macOf", () => {
-	test("refuses to sign a record whose signed fields hold a NUL byte", () => {
-		expect(() => macOf(record("nul-in-source"), key)).toThrow(/NUL/);
+describe("approvalFields", () => {
+	test("lists the seven signed fields in the shared order, with no domain string", () => {
+		const signed = record("signed");
+		expect(approvalFields(signed)).toEqual([signed.name, signed.kind, signed.source, signed.pin.kind, signed.pin.value, signed.treeSha256, signed.approvedSha256 as string]);
 	});
 
-	test("signs the NUL-joined record fields with HMAC-SHA256 and matches the shared fixture", () => {
-		expect(macOf(record("signed"), key)).toBe(fixture.expectedMac);
+	test("the shared fixture MAC is what the daemon-style signer makes from them", () => {
+		expect(signRecord(record("signed"), fixture.key)).toBe(fixture.expectedMac);
+	});
+});
+
+describe("signApproval", () => {
+	test("refuses to sign a record whose signed fields hold a NUL byte, without asking the daemon", async () => {
+		const daemon = fakeDaemon();
+		useApprovalDaemon(daemon);
+		await expect(signApproval(record("nul-in-source"), daemonApprovalSigner(env))).rejects.toThrow(/NUL/);
+		expect(daemon.signs).toBe(0);
 	});
 
-	test("changes when any signed field changes", () => {
-		const base = macOf(record("signed"), key);
-		for (const change of [{ name: "demo2" }, { kind: "x" }, { source: "s" }, { pin: { kind: "sha256", value: "a" } }, { treeSha256: "a" }, { approvedSha256: "a" }]) {
-			expect(macOf({ ...record("signed"), ...change } as PluginRecord, key)).not.toBe(base);
-		}
+	test("returns the daemon MAC for the fields", async () => {
+		useApprovalDaemon(fakeDaemon(fixture.key));
+		const signer = daemonApprovalSigner(env);
+		expect(await signApproval(record("signed"), signer)).toBe(fixture.expectedMac);
+		signer.close();
+	});
+
+	test("names the daemon when it is down", async () => {
+		useApprovalDaemon(downDaemon());
+		await expect(signApproval(record("signed"), daemonApprovalSigner(env))).rejects.toThrow(/cannot approve demo.*start the dg daemon/);
+	});
+
+	test("says to check the daemon when it refuses", async () => {
+		useApprovalDaemon(downDaemon(new Error("Credential storage failed")));
+		await expect(signApproval(record("signed"), daemonApprovalSigner(env))).rejects.toThrow(/did not sign.*dg doctor/);
 	});
 });
 
@@ -71,156 +89,102 @@ describe("readRecord", () => {
 });
 
 describe("isApproved", () => {
-	test("approves the signed fixture record when the key matches and the tree is intact", async () => {
-		expect(await isApproved(record("signed"), env, fakeKeys())).toBe(true);
+	beforeEach(() => useApprovalDaemon(fakeDaemon(fixture.key)));
+	afterEach(() => useApprovalDaemon(undefined));
+
+	test("approves the signed fixture record when the daemon verifies it and the tree is intact", async () => {
+		expect(await isApproved(record("signed"), env)).toBe(true);
 	});
 
 	test("refuses a bad MAC and says to re-approve", async () => {
-		const keys = fakeKeys();
-		expect(await isApproved(record("badMac"), env, keys)).toBe(false);
-		expect(await approvalProblem(record("badMac"), env, keys)).toMatch(/dg plugin verify demo --approve/);
+		expect(await isApproved(record("badMac"), env)).toBe(false);
+		expect(await approvalProblem(record("badMac"), env)).toMatch(/dg plugin verify demo --approve/);
 	});
 
-	test("refuses an unsigned record, with or without the mac key", async () => {
+	test("refuses an unsigned record, with or without the mac key, without asking the daemon", async () => {
+		const daemon = fakeDaemon(fixture.key);
+		useApprovalDaemon(daemon);
 		for (const name of ["unsigned", "unsignedNull"] as const) {
-			expect(await approvalProblem(record(name), env, fakeKeys())).toMatch(/re-approve.*dg plugin verify demo --approve/);
+			expect(await approvalProblem(record(name), env)).toMatch(/re-approve.*dg plugin verify demo --approve/);
 		}
+		expect(daemon.opened).toBe(0);
 	});
 
-	test("refuses a record that was never approved without asking for the key", async () => {
-		expect(await approvalProblem(record("unapproved"), env, downKeys())).toMatch(/review it.*dg plugin verify demo --approve/);
+	test("refuses a record that was never approved without opening a daemon client", async () => {
+		const daemon = fakeDaemon();
+		useApprovalDaemon(daemon);
+		expect(await approvalProblem(record("unapproved"), env)).toMatch(/review it.*dg plugin verify demo --approve/);
+		expect(daemon.opened).toBe(0);
 	});
 
-	test("refuses when the key is absent and says to re-approve", async () => {
-		expect(await approvalProblem(record("signed"), env, fakeKeys(null))).toMatch(/no approval key.*dg plugin verify demo --approve/);
+	test("refuses when the daemon holds no key and says to re-approve", async () => {
+		useApprovalDaemon(fakeDaemon(null));
+		expect(await approvalProblem(record("signed"), env)).toMatch(/signature does not verify.*dg plugin verify demo --approve/);
 	});
 
 	test("refuses when the daemon is down and says to start it", async () => {
-		const problem = await approvalProblem(record("signed"), env, downKeys());
+		useApprovalDaemon(downDaemon());
+		const problem = await approvalProblem(record("signed"), env);
+		expect(problem).toMatch(/start the dg daemon/);
 		expect(problem).toMatch(/dg agent start/);
-		expect(await isApproved(record("signed"), env, downKeys())).toBe(false);
+		expect(await isApproved(record("signed"), env)).toBe(false);
 	});
 
 	test("never approves the nul-in-source fixture, whose mac matches the raw NUL join", async () => {
 		const nul = record("nul-in-source");
-		expect(await isApproved(nul, env, fakeKeys())).toBe(false);
-		expect(await approvalProblem(nul, env, fakeKeys())).toMatch(/NUL/);
+		expect(await isApproved(nul, env)).toBe(false);
+		expect(await approvalProblem(nul, env)).toMatch(/NUL/);
 	});
 
 	test("a failure that is not a stopped daemon names dg doctor, not dg agent start", async () => {
-		const problem = await approvalProblem(record("signed"), env, downKeys(new Error("no usable session x is registered on the daemon.")));
+		useApprovalDaemon(downDaemon(new Error("no usable session x is registered on the daemon.")));
+		const problem = await approvalProblem(record("signed"), env);
 		expect(problem).toMatch(/no usable session.*dg doctor/);
 		expect(problem).not.toMatch(/dg agent start/);
 	});
 
-	test("refuses a different key", async () => {
-		expect(await isApproved(record("signed"), env, fakeKeys("ff".repeat(32)))).toBe(false);
+	test("refuses a different daemon key", async () => {
+		useApprovalDaemon(fakeDaemon("ff".repeat(32)));
+		expect(await isApproved(record("signed"), env)).toBe(false);
 	});
 
 	test("refuses a record whose approvedSha256 differs from treeSha256 even with a valid MAC", async () => {
 		const forged = { ...record("signed"), approvedSha256: "0".repeat(64) };
-		forged.mac = macOf(forged, key);
-		expect(await isApproved(forged, env, fakeKeys())).toBe(false);
+		forged.mac = signRecord(forged, fixture.key);
+		expect(await isApproved(forged, env)).toBe(false);
 	});
 
 	test("refuses a signed record whose files changed", async () => {
 		writeFileSync(join(root, "dg", "data", "plugins", "demo", "src", "SKILL.md"), "changed");
-		expect(await isApproved(record("signed"), env, fakeKeys())).toBe(false);
+		expect(await isApproved(record("signed"), env)).toBe(false);
+	});
+
+	test("verifies with one client that it opens and closes itself, and never reads the key credential", async () => {
+		const daemon = fakeDaemon(fixture.key);
+		useApprovalDaemon(daemon);
+		await isApproved(record("signed"), env);
+		expect(daemon).toMatchObject({ opened: 1, closed: 1, verifies: 1, keyReads: 0 });
+	});
+
+	test("leaves a signer it was given open for the caller", async () => {
+		const daemon = fakeDaemon(fixture.key);
+		useApprovalDaemon(daemon);
+		const signer = daemonApprovalSigner(env);
+		await isApproved(record("signed"), env, signer);
+		await isApproved(record("signed"), env, signer);
+		expect(daemon).toMatchObject({ opened: 1, closed: 0, verifies: 2 });
+		signer.close();
+		expect(daemon.closed).toBe(1);
 	});
 });
 
-describe("credentialApprovalKeys", () => {
-	function fakeClient(initial?: string) {
-		const calls = { get: 0, set: [] as [string, string][] };
-		let value = initial;
-		return {
-			calls,
-			client: {
-				get: async (name: string) => {
-					calls.get++;
-					expect(name).toBe("dg/plugin-approval-key");
-					return value === undefined ? undefined : { value, meta: {}, updatedAt: "" };
-				},
-				set: async (name: string, text: string) => {
-					calls.set.push([name, text]);
-					value = text;
-				},
-			},
-		};
-	}
+describe("daemonApprovalSigner", () => {
+	afterEach(() => useApprovalDaemon(undefined));
 
-	test("fetches the key once per process", async () => {
-		const { client, calls } = fakeClient(fixture.key);
-		const keys = credentialApprovalKeys(() => client);
-		expect((await keys.read())?.toString("hex")).toBe(fixture.key);
-		expect((await keys.read())?.toString("hex")).toBe(fixture.key);
-		expect(calls.get).toBe(1);
-	});
-
-	test("reads an absent key as undefined without creating one", async () => {
-		const { client, calls } = fakeClient();
-		expect(await credentialApprovalKeys(() => client).read()).toBeUndefined();
-		expect(calls.set).toEqual([]);
-	});
-
-	test("reads a malformed key as absent", async () => {
-		const { client } = fakeClient("not-hex");
-		expect(await credentialApprovalKeys(() => client).read()).toBeUndefined();
-	});
-
-	test("ensure stores a fresh 32-byte lowercase hex key on first use and reuses it after", async () => {
-		const { client, calls } = fakeClient();
-		const keys = credentialApprovalKeys(() => client);
-		const first = await keys.ensure();
-		expect(first).toHaveLength(32);
-		expect(calls.set).toHaveLength(1);
-		expect(calls.set[0]?.[1]).toMatch(/^[0-9a-f]{64}$/);
-		expect((await keys.ensure()).equals(first)).toBe(true);
-		expect(calls.set).toHaveLength(1);
-	});
-
-	test("lets a daemon error surface and still closes the connection", async () => {
-		let closed = 0;
-		const keys = credentialApprovalKeys(() => ({
-			get: async () => {
-				throw new DaemonNotRunningError();
-			},
-			set: async () => {},
-			close: () => void closed++,
-		}));
-		await expect(keys.read()).rejects.toThrow(/dg agent start/);
-		expect(closed).toBe(1);
-	});
-
-	test("closes the connection once after a read and once after ensure", async () => {
-		let closed = 0;
-		const base = fakeClient();
-		const keys = credentialApprovalKeys(() => ({ ...base.client, close: () => void closed++ }));
-		await keys.read();
-		expect(closed).toBe(1);
-		await keys.ensure();
-		expect(closed).toBe(2);
-		await keys.read();
-		await keys.ensure();
-		expect(closed).toBe(2);
-	});
-});
-
-describe("defaultApprovalKeys", () => {
-	afterEach(() => useApprovalKeys(undefined));
-
-	test("opens the credential client with the paths of the environment it is given", async () => {
-		const seen: string[] = [];
-		mock.module("@dg/common/node", () => ({
-			...common,
-			createCredentialClient: (options: { paths: { configTomlPath: string } }) => {
-				seen.push(options.paths.configTomlPath);
-				return { get: async () => undefined, set: async () => undefined, close: () => undefined };
-			},
-		}));
-		await defaultApprovalKeys(env).read();
-		await defaultApprovalKeys({ ...env, DG_HOME: join(root, "other") }).read();
-		expect(seen).toHaveLength(2);
-		expect(seen[0]).not.toBe(seen[1]);
+	test("opens no client until it is asked, and does not close one it never opened", () => {
+		const daemon = fakeDaemon();
+		useApprovalDaemon(daemon);
+		daemonApprovalSigner(env).close();
+		expect(daemon.opened).toBe(0);
 	});
 });

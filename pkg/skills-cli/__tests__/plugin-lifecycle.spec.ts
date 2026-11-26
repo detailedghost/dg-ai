@@ -13,24 +13,23 @@ import {
 	updatePlugin,
 	verifyPlugin,
 } from "../src/plugin/lifecycle";
-import { macOf } from "../src/plugin/approval";
 import { checkSource } from "../src/plugin/source";
 import type { PluginRecord } from "../src/plugin/store";
-import { downKeys, fakeKeys, type FakeKeys, TEST_KEY_HEX, useApprovalKeys } from "./support/approval-keys";
+import { downDaemon, fakeDaemon, type FakeDaemon, signRecord, useApprovalDaemon } from "./support/approval-daemon";
 
-let keys: FakeKeys;
+let daemon: FakeDaemon;
 let root: string;
 let env: Record<string, string | undefined>;
 
 beforeEach(() => {
-	keys = fakeKeys();
-	useApprovalKeys(keys);
+	daemon = fakeDaemon();
+	useApprovalDaemon(daemon);
 	root = mkdtempSync(join(tmpdir(), "dg-plugin-lifecycle-"));
 	env = { DG_HOME: join(root, "dg"), HOME: join(root, "home"), DG_PATH_FENCE: root };
 });
 
 afterEach(() => {
-	useApprovalKeys(undefined);
+	useApprovalDaemon(undefined);
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -82,11 +81,20 @@ describe("approval signing", () => {
 		expect(record().mac).toBeNull();
 	});
 
-	test("verify --approve signs the record with the credential-store key", async () => {
+	test("verify --approve has the daemon sign the record and never reads the key credential", async () => {
 		addPlugin({ source: skillRepo("notes") }, env);
 		await verifyPlugin("notes", { approve: true }, env);
 		const written = record();
-		expect(written.mac).toBe(macOf(written as PluginRecord, Buffer.from(TEST_KEY_HEX, "hex")));
+		expect(written.mac).toBe(signRecord(written as PluginRecord));
+		expect(daemon.signs).toBe(1);
+		expect(daemon.keyReads).toBe(0);
+	});
+
+	test("one verify command opens one daemon client and closes it", async () => {
+		addPlugin({ source: skillRepo("notes") }, env);
+		await verifyPlugin("notes", { approve: true }, env);
+		expect(daemon.opened).toBe(1);
+		expect(daemon.closed).toBe(1);
 	});
 
 	test("verify --approve refuses to sign a source that holds a NUL byte", async () => {
@@ -96,21 +104,21 @@ describe("approval signing", () => {
 		expect(record().mac).toBeNull();
 	});
 
-	test("verify --approve creates the key on first use", async () => {
-		keys = fakeKeys(null);
-		useApprovalKeys(keys);
+	test("verify --approve has the daemon create the key on first use", async () => {
+		daemon = fakeDaemon(null);
+		useApprovalDaemon(daemon);
 		addPlugin({ source: skillRepo("notes") }, env);
-		expect(keys.stored).toBeUndefined();
+		expect(daemon.key).toBeUndefined();
 		await verifyPlugin("notes", { approve: true }, env);
-		expect(keys.stored).toHaveLength(32);
+		expect(daemon.key).toHaveLength(32);
 		expect(record().mac).toMatch(/^[0-9a-f]{64}$/);
 	});
 
 	test("verify --approve changes nothing when the daemon is down", async () => {
 		addPlugin({ source: skillRepo("notes") }, env);
 		const before = readFileSync(recordFile(), "utf8");
-		useApprovalKeys(downKeys());
-		await expect(verifyPlugin("notes", { approve: true }, env)).rejects.toThrow(/dg agent start/);
+		useApprovalDaemon(downDaemon());
+		await expect(verifyPlugin("notes", { approve: true }, env)).rejects.toThrow(/not approve.*start the dg daemon/);
 		expect(readFileSync(recordFile(), "utf8")).toBe(before);
 	});
 
@@ -132,12 +140,12 @@ describe("approval signing", () => {
 	test("verify without --approve reports why a claimed approval does not hold", async () => {
 		addPlugin({ source: skillRepo("notes") }, env);
 		await verifyPlugin("notes", { approve: true }, env);
-		useApprovalKeys(downKeys());
+		useApprovalDaemon(downDaemon());
 		const down = await verifyPlugin("notes", { approve: false }, env);
 		expect(down.approved).toBe(false);
 		expect(down.problems.join("\n")).toMatch(/claims approval but is not approved.*dg agent start/);
-		useApprovalKeys(fakeKeys(null));
-		expect((await verifyPlugin("notes", { approve: false }, env)).problems.join("\n")).toMatch(/no approval key.*dg plugin verify notes --approve/);
+		useApprovalDaemon(fakeDaemon(null));
+		expect((await verifyPlugin("notes", { approve: false }, env)).problems.join("\n")).toMatch(/signature does not verify.*dg plugin verify notes --approve/);
 	});
 
 	test("verify without --approve adds no problem for a record that never claimed approval", async () => {
@@ -148,7 +156,7 @@ describe("approval signing", () => {
 	test("list shows unapproved and enable names the daemon when it is down", async () => {
 		addPlugin({ source: skillRepo("notes") }, env);
 		await verifyPlugin("notes", { approve: true }, env);
-		useApprovalKeys(downKeys());
+		useApprovalDaemon(downDaemon());
 		expect((await listPlugins(env))[0]).toMatchObject({ approved: false });
 		await expect(setPluginEnabled("notes", true, env)).rejects.toThrow(/dg agent start/);
 	});
