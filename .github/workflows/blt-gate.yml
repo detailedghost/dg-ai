@@ -31,3 +31,10 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GITHUB_TOKEN: ${{ github.token }}
         run: bun scripts/blt-gate.ts
+
+      - name: Check the pw --ext extension floor
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: ${{ github.base_ref }}
+        run: bun scripts/extension-floor-check.ts
