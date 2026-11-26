@@ -21,7 +21,7 @@ internal static class PluginStatCache
         {
             var path = Path.Combine(src, files[i]);
             var info = new FileInfo(path);
-            var mtimeNs = info.LastWriteTimeUtc.Ticks * TickNs;
+            var mtimeNs = (info.LastWriteTimeUtc.Ticks - DateTime.UnixEpoch.Ticks) * TickNs;
             stamps[i] = new FileStamp(files[i], info.Length, mtimeNs, FileIdentity.Of(path));
         }
         return stamps;
@@ -115,11 +115,19 @@ internal static class PluginStatCache
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            try
-            {
-                File.Delete(temp);
-            }
-            catch (Exception inner) when (inner is IOException or UnauthorizedAccessException) { }
+            TryDelete(temp);
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
         }
     }
 

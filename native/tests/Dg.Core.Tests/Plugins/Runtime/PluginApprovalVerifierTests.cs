@@ -155,7 +155,11 @@ public sealed class PluginApprovalVerifierTests : IDisposable
     public async Task ProblemAsync_CacheAttestsAnotherTreeThanTheRecord_Rehashes()
     {
         await Problem();
-        var newer = ApprovalFixture.WriteTree(Folder, ("lib/main.txt", "body2"));
+        var file = Path.Combine(Folder, "src", "lib", "main.txt");
+        var stamp = File.GetLastWriteTimeUtc(file);
+        var size = new FileInfo(file).Length;
+        var newer = ApprovalFixture.WriteTree(Folder, ("lib/main.txt", new string('z', (int)size)));
+        File.SetLastWriteTimeUtc(file, stamp);
         ApprovalFixture.WriteRecord(Folder, ApprovalFixture.Signed(Name, newer));
 
         Assert.Null(await Problem());
