@@ -1,5 +1,11 @@
 # Changelog
 
+## v8.0.0 (2026-11-26)
+
+### Breaking
+
+- feat(cli)!: spec 027 follow-up for plugin security, pw config and lean budgets ([#258](https://github.com/detailedghost/dg-ai/pull/258))
+
 ## v7.1.0 (2026-11-26)
 
 ### Features
