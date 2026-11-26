@@ -18,11 +18,10 @@ public sealed class TcpConnector(ITcpManifestResolver manifests, IPluginTokenPro
         var manifest = manifests.Manifest(plugin);
         var endpoint = TcpEndpointGuard.Resolve(manifest);
         var credential = PluginRoutes.TokenCredential(manifest.Name);
-        var token = await tokens.GetTokenAsync(credential, ct).ConfigureAwait(false);
-        if (string.IsNullOrEmpty(token))
+        if (Array.IndexOf(manifest.Permissions.Credentials, credential) >= 0 || await HasTokenAsync(credential, ct).ConfigureAwait(false))
             throw Fail(
-                PluginTransportCodes.Auth,
-                $"{manifest.Name}: no token stored. Next: run dg credentials set {credential}."
+                PluginTransportCodes.Refused,
+                $"{manifest.Name}: tcp would send the plugin token to any local listener, so dg did not connect. Next: use transport = \"ipc\", or the http transport with an https endpoint."
             );
 
         var socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
@@ -32,7 +31,7 @@ public sealed class TcpConnector(ITcpManifestResolver manifests, IPluginTokenPro
             timeout.CancelAfter(ConnectTimeout);
             await ConnectSocketAsync(socket, endpoint, manifest.Name, timeout.Token, ct).ConfigureAwait(false);
             var stream = new NetworkStream(socket, ownsSocket: true);
-            await HelloAsync(stream, manifest.Name, credential, token, timeout, ct).ConfigureAwait(false);
+            await HelloAsync(stream, manifest.Name, timeout, ct).ConfigureAwait(false);
             return stream;
         }
         catch
@@ -41,6 +40,9 @@ public sealed class TcpConnector(ITcpManifestResolver manifests, IPluginTokenPro
             throw;
         }
     }
+
+    private async ValueTask<bool> HasTokenAsync(string credential, CancellationToken ct) =>
+        !string.IsNullOrEmpty(await tokens.GetTokenAsync(credential, ct).ConfigureAwait(false));
 
     private static async Task ConnectSocketAsync(Socket socket, IPEndPoint endpoint, string name, CancellationToken linked, CancellationToken ct)
     {
@@ -61,13 +63,11 @@ public sealed class TcpConnector(ITcpManifestResolver manifests, IPluginTokenPro
     private static async Task HelloAsync(
         NetworkStream stream,
         string name,
-        string credential,
-        string token,
         CancellationTokenSource timeout,
         CancellationToken ct
     )
     {
-        var hello = new HelloRequest(PluginProtocol.Version, ["json"], [], token);
+        var hello = new HelloRequest(PluginProtocol.Version, ["json"], []);
         var body = JsonSerializer.SerializeToElement(hello, PluginJsonContext.Default.HelloRequest);
         var payload = JsonSerializer.SerializeToUtf8Bytes(new PluginEnvelope(PluginRoutes.Hello, body), PluginJsonContext.Default.PluginEnvelope);
         timeout.CancelAfter(PluginRoutes.TimeoutFor(PluginRoutes.Hello));
@@ -92,8 +92,8 @@ public sealed class TcpConnector(ITcpManifestResolver manifests, IPluginTokenPro
         catch (Exception ex) when (ex is EndOfStreamException or IOException)
         {
             throw Fail(
-                PluginTransportCodes.Auth,
-                $"{name}: plugin closed the connection during hello. Next: check that {credential} matches the plugin token."
+                PluginTransportCodes.Plugin,
+                $"{name}: plugin closed the connection during hello. Next: check that the plugin accepts unauthenticated tcp clients, or use transport = \"ipc\"."
             );
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
