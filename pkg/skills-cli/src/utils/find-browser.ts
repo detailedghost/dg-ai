@@ -65,7 +65,7 @@ export function assertBrowserPath(env: Record<string, string | undefined>): void
 	const word = env["DG_BROWSER"]?.toLowerCase();
 	if (word && (PW_MODES as readonly string[]).includes(word))
 		throw new DgCliError(
-			`DG_BROWSER is the browser executable path; set DG_PW_MODE=${word} for the pw mode.`,
+			`dg: DG_BROWSER is the browser executable path, not a pw mode. Next: set DG_PW_MODE=${word}.`,
 		);
 }
 

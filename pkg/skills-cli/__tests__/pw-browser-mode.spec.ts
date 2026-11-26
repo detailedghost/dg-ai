@@ -65,7 +65,7 @@ describe("resolveBrowserMode", () => {
 
 	test.each(["auto", "ext", "local", "EXT", "Local"])("a mode word %s in DG_BROWSER points at DG_PW_MODE", (word) => {
 		expect(() => resolve({ env: { DG_BROWSER: word } })).toThrow(
-			`DG_BROWSER is the browser executable path; set DG_PW_MODE=${word.toLowerCase()} for the pw mode.`,
+			`dg: DG_BROWSER is the browser executable path, not a pw mode. Next: set DG_PW_MODE=${word.toLowerCase()}.`,
 		);
 	});
 
@@ -126,7 +126,7 @@ describe("pw main browser mode", () => {
 			const env = clientEnv();
 			expect(await main(["-s=web", "click", "e1"], env)).toBe(1);
 			expect(env.stderr.join("")).toContain(
-				"DG_BROWSER is the browser executable path; set DG_PW_MODE=local for the pw mode.",
+				"dg: DG_BROWSER is the browser executable path, not a pw mode. Next: set DG_PW_MODE=local.",
 			);
 		} finally {
 			if (previous === undefined) delete process.env.DG_BROWSER;
