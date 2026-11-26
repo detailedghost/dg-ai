@@ -15,6 +15,8 @@ public sealed class ManifestParserTests
         "builtin-endpoint.toml\tdg plugin: builtin-endpoint.toml:4: a built-in plugin runs in process and takes no endpoint. Next: fix endpoint in builtin-endpoint.toml, then run dg plugin verify.",
         "entry-both.toml\tdg plugin: entry-both.toml:5: entry must set exactly one of builtin or command. Next: fix entry in entry-both.toml, then run dg plugin verify.",
         "http-no-endpoint.toml\tdg plugin: http-no-endpoint.toml:4: endpoint is required for the http transport. Next: fix transport in http-no-endpoint.toml, then run dg plugin verify.",
+        "job-short-sha.toml\tdg plugin: job-short-sha.toml:5: commit must be 40 or 64 hex characters. Next: fix commit in job-short-sha.toml, then run dg plugin verify.",
+        "job-sha256-pin.toml\tdg plugin: job-sha256-pin.toml:5: a job plugin must be pinned by a full commit SHA (commit = 40 or 64 lowercase hex), not by sha256. Next: fix sha256 in job-sha256-pin.toml, then run dg plugin verify.",
         "missing-entry.toml\tdg plugin: missing-entry.toml:1: entry is required: add an [entry] table with builtin or command. Next: fix entry in missing-entry.toml, then run dg plugin verify.",
         "missing-name.toml\tdg plugin: missing-name.toml:1: name is required. Next: fix name in missing-name.toml, then run dg plugin verify.",
         "remote-not-declared.toml\tdg plugin: remote-not-declared.toml:5: endpoint host policy.example.com is not loopback; set remote = true in plugin.toml and allow_remote = true in config.toml. Next: fix endpoint in remote-not-declared.toml, then run dg plugin verify.",

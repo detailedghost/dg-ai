@@ -200,6 +200,13 @@ give none), and reads the `dg` block of `package.json` at that commit. The sourc
 case, with `.git` removed. Give another name with `--name <source>`. The source name is also the credential prefix of its
 jobs. `add` writes jobs that are not enabled, and prints `next: dg job enable <name>` for each one.
 
+A job plugin pin is a full commit id and nothing else. `add` and `update` record the pin as the full commit id that is checked
+out, and the git tree id of that commit. A `plugin.toml` of a job plugin may carry `commit = "<40 or 64 lowercase hex>"`; dg
+refuses a `sha256` pin, a tag, a branch name or a short commit id, and refuses a `commit` that is not the checked-out commit.
+Each time the daemon starts a git job, it reads `git rev-parse HEAD` and the tree id of the clone. If either one differs from
+the record, the job does not start and the error gives a `Next:` step. A record that holds a `sha256` pin from an older dg
+needs `dg job remove <job>`, then `dg job add` again.
+
 dg keeps three places for a repository job:
 
 | What | Path |

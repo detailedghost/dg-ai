@@ -1,0 +1,8 @@
+name = "short-job"
+version = "1.0.0"
+kind = "job"
+source = "https://github.com/example/short"
+commit = "0123abc"
+
+[entry]
+command = "x"

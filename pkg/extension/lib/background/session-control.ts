@@ -4,12 +4,21 @@ import type { AgentTabsStorage } from "./agent-tabs";
 /** Most sites one session keeps allowed; the oldest drops out first. */
 export const MAX_SESSION_SITES = 100;
 
+export const STOP_TTL_MS = 24 * 60 * 60 * 1000;
+
+const STOPPED_PREFIX = "pwExtStopped:";
 const sitesKey = (sessionId: string) => `pwExtSites:${sessionId}`;
-const stoppedKey = (sessionId: string) => `pwExtStopped:${sessionId}`;
+const stoppedKey = (sessionId: string) => `${STOPPED_PREFIX}${sessionId}`;
 const valuesKey = (sessionId: string) => `pwExtValues:${sessionId}`;
 
-/** Per-session site allowlist, network values grants and Stop state in storage.session; sites and values grants end with the session or on Stop, and Stop holds until the browser ends, so a session id that comes back stays stopped. */
-export function createSessionControl({ storage }: { storage: AgentTabsStorage }) {
+/** Per-session site allowlist, network values grants and Stop state in storage.session; sites and values grants end with the session or on Stop. A Stop holds for 24 hours and for as long as the session stays paired, so a live session id that comes back stays stopped and an ended one frees its record. */
+export function createSessionControl({
+	storage,
+	isPaired = async () => false,
+}: {
+	storage: AgentTabsStorage;
+	isPaired?: (sessionId: string) => Promise<boolean>;
+}) {
 	const enqueue = createSerialQueue();
 
 	async function sites(sessionId: string): Promise<string[]> {
@@ -22,8 +31,28 @@ export function createSessionControl({ storage }: { storage: AgentTabsStorage })
 		return Array.isArray(stored) ? stored.filter((site): site is string => typeof site === "string") : [];
 	}
 
+	async function expired(sessionId: string, stoppedAt: number): Promise<boolean> {
+		return Date.now() - stoppedAt > STOP_TTL_MS && !(await isPaired(sessionId));
+	}
+
 	async function stopped(sessionId: string): Promise<boolean> {
-		return (await storage.session.get(stoppedKey(sessionId)))[stoppedKey(sessionId)] === true;
+		const key = stoppedKey(sessionId);
+		const held = (await storage.session.get(key))[key];
+		if (held === true) {
+			await storage.session.set({ [key]: Date.now() });
+			return true;
+		}
+		if (typeof held !== "number") return false;
+		if (!(await expired(sessionId, held))) return true;
+		await storage.session.remove(key);
+		return false;
+	}
+
+	async function sweep(): Promise<void> {
+		for (const [key, held] of Object.entries(await storage.session.get(null))) {
+			if (!key.startsWith(STOPPED_PREFIX) || typeof held !== "number") continue;
+			if (await expired(key.slice(STOPPED_PREFIX.length), held)) await storage.session.remove(key);
+		}
 	}
 
 	return {
@@ -56,12 +85,13 @@ export function createSessionControl({ storage }: { storage: AgentTabsStorage })
 			});
 		},
 
-		/** Marks the session stopped by the person and drops its allowed sites and values grants. */
+		/** Marks the session stopped by the person, sweeps expired stops, and drops its allowed sites and values grants. */
 		stop(sessionId: string): Promise<void> {
 			return enqueue(async () => {
-				await storage.session.set({ [stoppedKey(sessionId)]: true });
+				await storage.session.set({ [stoppedKey(sessionId)]: Date.now() });
 				await storage.session.remove(sitesKey(sessionId));
 				await storage.session.remove(valuesKey(sessionId));
+				await sweep();
 			});
 		},
 
@@ -70,6 +100,7 @@ export function createSessionControl({ storage }: { storage: AgentTabsStorage })
 			return enqueue(async () => {
 				await storage.session.remove(sitesKey(sessionId));
 				await storage.session.remove(valuesKey(sessionId));
+				await sweep();
 			});
 		},
 	};

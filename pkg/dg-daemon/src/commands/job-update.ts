@@ -13,7 +13,7 @@ import {
 	resolveDgPaths,
 } from "@dg/common/node";
 import { JOBS_CONFIG_KEY } from "../jobs/config";
-import { withManifestPin } from "../jobs/plugin-manifest";
+import { assertManifestPin, pinGitRecord } from "../jobs/plugin-manifest";
 import { sanitize } from "../jobs/sanitize";
 import {
 	type DeclaredJob,
@@ -286,6 +286,7 @@ export async function updateSource(
 
 	const at = { paths, source, cloneDir, url: record.url };
 	const { pkg, manifest, declaration } = await readDeclared(deps, at, newSha as string, PREFIX);
+	assertManifestPin(manifest, newSha as string);
 	const hash = declarationHash(pkg.dg);
 	const same = hash === record.declarationHash;
 	const known = new Set(record.jobs);
@@ -385,6 +386,7 @@ export async function updateSource(
 			insideClone(cloneDir, path, `job "${job}": "argv" must stay inside the repository`, PREFIX);
 		}
 
+		const tree = (await run(["rev-parse", "HEAD^{tree}"], cloneDir)).stdout.trim();
 		await withConfigLock(paths, async () => {
 			const state = readState(paths);
 			requireMigrated(state.config);
@@ -404,7 +406,7 @@ export async function updateSource(
 				? { reset: [] as string[] }
 				: resetSetupOnSourceChange(record, declaration.credentials, declaration.jobs);
 			reset = marks.reset;
-			const next: GitSourceRecord = withManifestPin(
+			const next: GitSourceRecord = pinGitRecord(
 				same
 					? { ...record, sha: newSha as string }
 					: {
@@ -416,6 +418,7 @@ export async function updateSource(
 							...(marks.setupDone === undefined ? {} : { setupDone: marks.setupDone }),
 						},
 				manifest,
+				{ sha: newSha as string, tree },
 			);
 			const restores = [snapshotOf(paths.daemonConfigPath), snapshotOf(paths.jobSourcesPath)];
 			try {
