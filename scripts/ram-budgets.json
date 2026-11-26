@@ -78,7 +78,7 @@
 			"msBudget": 18
 		},
 		"adr lint --all (repo)": {
-			"peakMB": 49.9
+			"peakMB": 49.5
 		},
 		"spec validate": {
 			"peakMB": 37.8
