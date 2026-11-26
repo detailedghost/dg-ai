@@ -5,7 +5,8 @@ Date: 2026-11-24
 Topic: Platform
 
 Related: [ADR 0058](0058-dg-moves-to-c-nativeaot-in-stages.md), [ADR 0054](0054-one-config-toml-for-dg.md),
-[ADR 0049](0049-jobs.md).
+[ADR 0049](0049-jobs.md), [ADR 0061](0061-dg-plugin-admission-is-signed-and-transport-bound.md) (signed approvals, pipe DACL, no tokens over TCP,
+`fail_closed`, full-SHA job pins, the admission stat cache).
 
 ## Context
 
@@ -26,7 +27,7 @@ Related: [ADR 0058](0058-dg-moves-to-c-nativeaot-in-stages.md), [ADR 0054](0054-
 - One contract for every transport: a length-prefixed binary header (version, encoding, flags, request id, length)
   and a UTF-8 JSON payload, MessagePack optional by negotiation. dg keeps one warm connection per plugin.
 - `[plugins.<name>]` in config.toml enables and configures a plugin. Secrets are credential references only. HTTP
-  and TCP use a per-plugin token. A remote endpoint needs an explicit opt-in.
+  uses a per-plugin token; TCP carries no token (ADR 0061). A remote endpoint needs an explicit opt-in.
 - `dg plugin add` pins imported skills and plugins. Their text and output are untrusted until approved, any change
   needs approval again, and they are never instructions.
 

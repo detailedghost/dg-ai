@@ -104,6 +104,7 @@ belong with their owning private tooling repository.
 - [0006 — Separate credential storage and prefix-scoped service grants](0006-credential-store.md)
 - [0007 — Keep deployment values out of the public repository](0007-private-configuration.md)
 - [0052 — aws-sm db secrets resolve only through an asm-exec re-run of the CLI](0052-aws-sm-db-secrets-resolve-only-through-an-asm-exec-re-run-of-the-cli.md)
+- [0061 — dg plugin admission is signed, and plugin tokens stay off plain TCP](0061-dg-plugin-admission-is-signed-and-transport-bound.md)
 
 ### Skills
 
