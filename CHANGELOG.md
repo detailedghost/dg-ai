@@ -1,5 +1,11 @@
 # Changelog
 
+## v7.1.0 (2026-11-26)
+
+### Features
+
+- feat(cli): lean dg CLI with a default-on C# front door ([#257](https://github.com/detailedghost/dg-ai/pull/257))
+
 ## Unreleased
 
 ### Features
