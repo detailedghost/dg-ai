@@ -72,8 +72,8 @@ public sealed class PluginHostLeakTests(ITestOutputHelper output)
                 await host.InvokeAsync("scanner", message, CancellationToken.None);
             },
             batches: 4,
-            perBatch: 400,
-            warmup: 50
+            perBatch: 1_000,
+            warmup: 500
         );
 
         AssertFlat(report);

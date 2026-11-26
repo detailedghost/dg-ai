@@ -8,11 +8,13 @@ internal static class ApprovalFixture
 {
     public const string KeyHex = "00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f";
 
+    public const string Pinned = "pinned-value";
+
     public static byte[] Key => Convert.FromHexString(KeyHex);
 
     public static PluginApprovalRecord Signed(string name, string tree, byte[]? key = null)
     {
-        var record = new PluginApprovalRecord(name, "skill", "folder", "sha256", "pinned-value", tree, tree, null);
+        var record = new PluginApprovalRecord(name, "skill", "folder", "sha256", Pinned, tree, tree, null);
         return record with { Mac = FakeApprovalSigner.Mac(key ?? Key, FakeApprovalSigner.ApprovalDomain, record.SignedFields()) };
     }
 
