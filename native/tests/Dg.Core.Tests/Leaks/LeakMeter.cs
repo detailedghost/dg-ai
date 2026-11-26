@@ -9,15 +9,16 @@ internal readonly record struct LeakReport(
     double BytesPerIteration,
     int OpenFilesGrowth,
     int ThreadGrowth,
-    long FirstBatchBytes,
-    long LastBatchBytes,
     BatchSample[] Batches
 )
 {
     public string Describe()
     {
         var text = new StringBuilder();
-        text.Append(CultureInfo.InvariantCulture, $"slope={BytesPerIteration:F1} B/call, files+{OpenFilesGrowth}, threads+{ThreadGrowth}");
+        text.Append(
+            CultureInfo.InvariantCulture,
+            $"slope={BytesPerIteration:F1} B/call, files+{OpenFilesGrowth}, threads+{ThreadGrowth}"
+        );
         for (var i = 0; i < Batches.Length; i++)
             text.Append('\n').Append(CultureInfo.InvariantCulture, $"batch {i}: {Batches[i]}");
         return text.ToString();
@@ -35,7 +36,8 @@ internal readonly record struct BatchSample(
 )
 {
     public override string ToString() =>
-        $"heap={HeapBytes} gc0={Gen0} gc1={Gen1} gc2={Gen2} heapSize={GcHeapSizeBytes} committed={GcCommittedBytes} alloc/call={AllocatedBytesPerCall}";
+        $"heap={HeapBytes} gc0={Gen0} gc1={Gen1} gc2={Gen2} "
+        + $"heapSize={GcHeapSizeBytes} committed={GcCommittedBytes} alloc/call={AllocatedBytesPerCall}";
 }
 
 internal static class LeakMeter
@@ -69,15 +71,21 @@ internal static class LeakMeter
             Settle();
             var heap = GC.GetTotalMemory(true);
             var info = GC.GetGCMemoryInfo();
-            samples[b] = new BatchSample(heap, batchGen0, batchGen1, batchGen2, info.HeapSizeBytes, info.TotalCommittedBytes, perCall);
+            samples[b] = new BatchSample(
+                heap,
+                batchGen0,
+                batchGen1,
+                batchGen2,
+                info.HeapSizeBytes,
+                info.TotalCommittedBytes,
+                perCall
+            );
         }
         var slope = (double)(samples[^1].HeapBytes - samples[0].HeapBytes) / ((batches - 1) * perBatch);
         return new LeakReport(
             slope,
             OpenFiles() - files,
             ThreadPool.ThreadCount - threads,
-            samples[0].HeapBytes,
-            samples[^1].HeapBytes,
             samples
         );
     }

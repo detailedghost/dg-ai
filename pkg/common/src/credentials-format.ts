@@ -30,7 +30,8 @@ export type ApprovalPurpose = "approval" | "statcache";
 /** Field count the daemon expects per purpose; it prepends the purpose's domain string itself. */
 export const APPROVAL_FIELD_COUNTS: Record<ApprovalPurpose, number> = { approval: 7, statcache: 3 };
 export const APPROVAL_FIELD_MAX_BYTES = 8_192;
-const APPROVAL_MAC = /^[0-9a-f]{64}$/;
+/** Shape of an approval MAC: 64 lowercase hex characters. */
+export const APPROVAL_MAC = /^[0-9a-f]{64}$/;
 const INJECTION_ENV =
 	/^(?:LD_|DYLD_|_RLD|MALLOC_|GCONV_PATH$|NODE_OPTIONS$|NODE_PATH$|NODE_EXTRA_CA_CERTS$|BUN_|PYTHON|PERL5|PERLLIB$|RUBY|LUA_|TCL|R_PROFILE|R_ENVIRON|BASH_ENV$|ENV$|ZDOTDIR$|PS4$|SHELLOPTS$|BASHOPTS$|PROMPT_COMMAND$|JAVA_TOOL_OPTIONS$|_JAVA_OPTIONS$|JDK_JAVA_OPTIONS$|CLASSPATH$|GIT_|SSH_ASKPASS$|EDITOR$|VISUAL$|PAGER$|LESSOPEN$|PATH$|HOME$|XDG_CONFIG_HOME$|CURL_HOME$|CURL_CA_BUNDLE$|HTTPS?_PROXY$|ALL_PROXY$|NO_PROXY$|SSL_CERT_FILE$|SSL_CERT_DIR$|REQUESTS_CA_BUNDLE$|WGETRC$|GLIBC_TUNABLES$|OPENSSL_CONF$|OPENSSL_ENGINES$|SSLKEYLOGFILE$|NODE_TLS_REJECT_UNAUTHORIZED$|IFS$|HOSTALIASES$|LOCPATH$|NLSPATH$|NPM_CONFIG_)/i;
 
@@ -331,7 +332,8 @@ function validateApprovalInput(value: Record<string, unknown>): void {
 	requireOneOf(value.purpose, `${path}.purpose`, ["approval", "statcache"]);
 	const count = APPROVAL_FIELD_COUNTS[value.purpose];
 	const fields = value.fields;
-	if (!Array.isArray(fields) || fields.length !== count) fail(`${path}.fields must hold exactly ${count} strings for ${value.purpose}`);
+	if (!Array.isArray(fields) || fields.length !== count)
+		fail(`${path}.fields must hold exactly ${count} strings for ${value.purpose}`);
 	for (const field of fields) {
 		if (typeof field !== "string" || field.includes("\0") || byteLength(field) > APPROVAL_FIELD_MAX_BYTES)
 			fail(`${path}.fields must hold strings with no NUL byte and at most ${APPROVAL_FIELD_MAX_BYTES} bytes each`);

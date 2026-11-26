@@ -12,8 +12,8 @@ internal static class ApprovalFixture
 
     public static PluginApprovalRecord Signed(string name, string tree, byte[]? key = null)
     {
-        var record = new PluginApprovalRecord(name, "skill", "folder", "sha256", tree, tree, tree, null);
-        return record with { Mac = FakeApprovalSigner.Mac(key ?? Key, "dg-plugin-approval-v1", record.SignedFields()) };
+        var record = new PluginApprovalRecord(name, "skill", "folder", "sha256", "pinned-value", tree, tree, null);
+        return record with { Mac = FakeApprovalSigner.Mac(key ?? Key, FakeApprovalSigner.ApprovalDomain, record.SignedFields()) };
     }
 
     public static void WriteRecord(string folder, PluginApprovalRecord record)

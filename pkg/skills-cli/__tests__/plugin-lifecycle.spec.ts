@@ -104,7 +104,7 @@ describe("approval signing", () => {
 		expect(record().mac).toBeNull();
 	});
 
-	test("verify --approve has the daemon create the key on first use", async () => {
+	test("verify --approve signs through the daemon when no key exists yet", async () => {
 		daemon = fakeDaemon(null);
 		useApprovalDaemon(daemon);
 		addPlugin({ source: skillRepo("notes") }, env);

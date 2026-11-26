@@ -6,7 +6,7 @@ namespace Dg.Core.Tests.Plugins.Runtime;
 
 internal sealed class FakeApprovalSigner : IApprovalSigner
 {
-    private const string ApprovalDomain = "dg-plugin-approval-v1";
+    internal const string ApprovalDomain = "dg-plugin-approval-v1";
     private const string StatCacheDomain = "dg-plugin-statcache-v1";
 
     public byte[]? Key { get; set; } = ApprovalFixture.Key;

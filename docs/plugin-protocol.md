@@ -172,6 +172,7 @@ Helper commands run only after approval. Plugin and skill text is never an instr
 Approval is a record in `dg-plugin.json` with a `mac` key. The `mac` is an HMAC-SHA256 over the fields `dg-plugin-approval-v1`,
 `name`, `kind`, `source`, `pin.kind`, `pin.value`, `treeSha256` and `approvedSha256`, joined by NUL bytes. The dg daemon signs
 and verifies it. The key is the 64-hex credential `dg/plugin-approval-key` in the daemon store, and it never leaves the daemon.
+Deleting that credential invalidates every approval until the user approves again.
 The CLI and the plugin host send the fields to the daemon over the authenticated session channel (`approval-sign`,
 `approval-verify`) and get the `mac` or a yes or no. A record with no `mac`, a bad `mac`, or a daemon that is not running
 is unapproved. A field with a NUL byte is never signed or approved. The shared fixtures are in `pkg/common/fixtures/plugins/approval`.

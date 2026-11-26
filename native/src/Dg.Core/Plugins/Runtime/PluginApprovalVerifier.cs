@@ -39,7 +39,12 @@ public sealed class PluginApprovalVerifier
         return await TreeProblemAsync(name, folder, record, ct).ConfigureAwait(false);
     }
 
-    private async ValueTask<string?> TreeProblemAsync(string name, string folder, PluginApprovalRecord record, CancellationToken ct)
+    private async ValueTask<string?> TreeProblemAsync(
+        string name,
+        string folder,
+        PluginApprovalRecord record,
+        CancellationToken ct
+    )
     {
         var src = Path.Combine(folder, "src");
         if (!Directory.Exists(src))

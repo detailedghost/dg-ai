@@ -37,7 +37,7 @@ type Access = { scope: "session" } | { scope: "prefix"; prefix: string };
 export const EXTENSION_CREDENTIAL_PREFIX = "extension";
 export const NOT_ALLOWED = "Credential request not allowed for this caller.";
 const SEALED_GET = `Credentials under ${CREDENTIAL_SEALED_PREFIX}/ are never returned; use dg credentials exec to run a command with them.`;
-const APPROVAL_KEY_REFUSED = "The plugin approval key never leaves the daemon; ask the daemon to sign or verify instead.";
+export const APPROVAL_KEY_REFUSED = "The plugin approval key never leaves the daemon; ask the daemon to sign or verify instead.";
 const isApprovalKey = (name: string | undefined) => name?.toLowerCase() === APPROVAL_KEY_CREDENTIAL;
 const sealed = (name: string | undefined) => name !== undefined && credentialNameInPrefix(name, CREDENTIAL_SEALED_PREFIX);
 const TRANSPORT_ERROR_SESSION_ID = "transport-error";

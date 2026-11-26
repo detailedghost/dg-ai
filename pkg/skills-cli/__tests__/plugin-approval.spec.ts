@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { DaemonNotRunningError } from "@dg/common/node";
 import { approvalFields, approvalProblem, daemonApprovalSigner, isApproved, signApproval } from "../src/plugin/approval";
 import { type PluginRecord, readRecord } from "../src/plugin/store";
 import fixture from "../../common/fixtures/plugins/approval/cases.json";
@@ -28,7 +27,15 @@ const record = (name: keyof typeof fixture.records): PluginRecord => structuredC
 describe("approvalFields", () => {
 	test("lists the seven signed fields in the shared order, with no domain string", () => {
 		const signed = record("signed");
-		expect(approvalFields(signed)).toEqual([signed.name, signed.kind, signed.source, signed.pin.kind, signed.pin.value, signed.treeSha256, signed.approvedSha256 as string]);
+		expect(approvalFields(signed)).toEqual([
+			signed.name,
+			signed.kind,
+			signed.source,
+			signed.pin.kind,
+			signed.pin.value,
+			signed.treeSha256,
+			signed.approvedSha256 as string,
+		]);
 	});
 
 	test("the shared fixture MAC is what the daemon-style signer makes from them", () => {
@@ -101,7 +108,7 @@ describe("isApproved", () => {
 		expect(await approvalProblem(record("badMac"), env)).toMatch(/dg plugin verify demo --approve/);
 	});
 
-	test("refuses an unsigned record, with or without the mac key, without asking the daemon", async () => {
+	test("refuses an unsigned record without asking the daemon", async () => {
 		const daemon = fakeDaemon(fixture.key);
 		useApprovalDaemon(daemon);
 		for (const name of ["unsigned", "unsignedNull"] as const) {

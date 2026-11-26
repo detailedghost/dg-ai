@@ -15,13 +15,15 @@ export function approvalFields(record: PluginRecord): string[] {
 
 const hasNul = (record: PluginRecord): boolean => approvalFields(record).some((field) => field.includes("\0"));
 
+const APPROVAL_PURPOSE = "approval";
+
 /** Asks the dg daemon over one lazily opened credential client; the approval key never reaches this process. */
 export function daemonApprovalSigner(env: Env): ApprovalSigner {
 	let client: ReturnType<typeof createCredentialClient> | undefined;
 	const open = () => (client ??= createCredentialClient({ paths: resolveDgPaths({ env }), env }));
 	return {
-		sign: (fields) => open().approvalSign("approval", fields),
-		verify: (fields, mac) => open().approvalVerify("approval", fields, mac),
+		sign: (fields) => open().approvalSign(APPROVAL_PURPOSE, fields),
+		verify: (fields, mac) => open().approvalVerify(APPROVAL_PURPOSE, fields, mac),
 		close: () => client?.close(),
 	};
 }

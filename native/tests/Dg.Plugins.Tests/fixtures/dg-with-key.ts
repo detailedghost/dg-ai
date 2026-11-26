@@ -11,7 +11,11 @@ mock.module("@dg/common/node", () => ({
 	...common,
 	createCredentialClient: () => ({
 		approvalSign: async (_purpose: string, fields: string[]) => mac(fields).toString("hex"),
-		approvalVerify: async (_purpose: string, fields: string[], claimed: string) => timingSafeEqual(mac(fields), Buffer.from(claimed, "hex")),
+		approvalVerify: async (_purpose: string, fields: string[], claimed: string) => {
+			const claimedMac = Buffer.from(claimed, "hex");
+			const expected = mac(fields);
+			return claimedMac.length === expected.length && timingSafeEqual(expected, claimedMac);
+		},
 		close: () => undefined,
 	}),
 }));
