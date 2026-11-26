@@ -271,18 +271,20 @@ function flag(name: string): string | undefined {
 	return i === -1 ? undefined : process.argv[i + 1];
 }
 
-if (import.meta.main && process.argv.includes("--lower")) {
-	const lowered = lowerBudgets({
-		root: process.cwd(),
-		measuredDir: flag("--measured") ?? "budget-measurements",
-	});
-	const out = flag("--lowered");
-	if (out) writeFileSync(out, lowered.length === 0 ? "" : renderLowered(lowered));
-	console.log(lowered.length === 0 ? "No budget has more than the slack; nothing to lower." : renderLowered(lowered));
-	process.exit(0);
+export function runLower(input: { root: string; measuredDir: string; loweredPath?: string }): Lowered[] {
+	const lowered = lowerBudgets({ root: input.root, measuredDir: input.measuredDir });
+	if (input.loweredPath) writeFileSync(input.loweredPath, lowered.length === 0 ? "" : renderLowered(lowered));
+	return lowered;
 }
 
-if (import.meta.main) {
+if (import.meta.main && process.argv.includes("--lower")) {
+	const lowered = runLower({
+		root: process.cwd(),
+		measuredDir: flag("--measured") ?? "budget-measurements",
+		loweredPath: flag("--lowered"),
+	});
+	console.log(lowered.length === 0 ? "No budget has more than the slack; nothing to lower." : renderLowered(lowered));
+} else if (import.meta.main) {
 	const root = process.cwd();
 	const baseRef = flag("--base-ref") ?? process.env.BASE_SHA;
 	const growthPath = flag("--growth");

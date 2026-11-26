@@ -10,6 +10,7 @@ import {
 	ratchet,
 	renderComment,
 	run,
+	runLower,
 } from "../../../scripts/budget-ratchet";
 import { makeTempDir, readRepoFile, removeTempDirs } from "./test-support";
 
@@ -390,5 +391,28 @@ describe("lowerBudgets", () => {
 		const lowered = lowerBudgets({ root, measuredDir: join(root, "m") });
 		expect(lowered).toEqual([{ budget: "ram-budgets:a/rssMb", old: 200, next: 105 }]);
 		expect(readFileSync(join(root, "scripts/ram-budgets.json"), "utf8")).toBe('{\n\t"a": {\n\t\t"rssMb": 105\n\t}\n}\n');
+	});
+});
+
+describe("runLower", () => {
+	test("lowers a native budget file, leaves an unmeasured one, and writes the table", () => {
+		const root = makeTempDir("ratchet-runlower-");
+		mkdirSync(join(root, "native/budgets"), { recursive: true });
+		mkdirSync(join(root, "m"));
+		writeFileSync(join(root, "native/budgets/native-ram-linux-x64.json"), JSON.stringify({ version: { rssBytes: 1000 } }, null, "\t"));
+		writeFileSync(join(root, "native/budgets/native-ram-win-x64.json"), JSON.stringify({ version: { rssBytes: 1000 } }, null, "\t"));
+		writeFileSync(join(root, "m/native-ram-linux-x64.json"), JSON.stringify({ version: { rssBytes: 800 } }));
+		const loweredPath = join(root, "lowered.md");
+		const lowered = runLower({ root, measuredDir: join(root, "m"), loweredPath });
+		expect(lowered).toEqual([{ budget: "native-ram-linux-x64:version/rssBytes", old: 1000, next: 840 }]);
+		expect(readFileSync(loweredPath, "utf8")).toContain("| native-ram-linux-x64:version/rssBytes | 1000 | 840 |");
+		expect(JSON.parse(readFileSync(join(root, "native/budgets/native-ram-win-x64.json"), "utf8"))).toEqual({ version: { rssBytes: 1000 } });
+	});
+
+	test("writes an empty table file when nothing is lowered", () => {
+		const root = makeTempDir("ratchet-runlower-empty-");
+		const loweredPath = join(root, "lowered.md");
+		expect(runLower({ root, measuredDir: join(root, "m"), loweredPath })).toEqual([]);
+		expect(readFileSync(loweredPath, "utf8")).toBe("");
 	});
 });
