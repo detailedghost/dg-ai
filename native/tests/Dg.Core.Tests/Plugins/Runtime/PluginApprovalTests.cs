@@ -31,11 +31,19 @@ public sealed class PluginApprovalTests
         var root = shared.RootElement;
         var signer = new FakeApprovalSigner { Key = Convert.FromHexString(root.GetProperty("key").GetString()!) };
         var verifier = new PluginApprovalVerifier(signer);
-        foreach (var (name, approved) in new[] { ("signed", true), ("badMac", false), ("unsigned", false), ("unsignedNull", false), ("nul-in-source", false) })
+        foreach (var (name, approved) in new[]
+        {
+            ("signed", true),
+            ("badMac", false),
+            ("unsigned", false),
+            ("unsignedNull", false),
+            ("nul-in-source", false),
+        })
         {
             using var folder = Materialize(root);
             Load(root, name, folder);
-            Assert.Equal(approved, await verifier.ProblemAsync("demo", folder.Path, CancellationToken.None) is null);
+            var problem = await verifier.ProblemAsync("demo", folder.Path, CancellationToken.None);
+            Assert.True(approved == (problem is null), $"{name}: {problem ?? "approved"}");
         }
 
         using var last = Materialize(root);
@@ -55,7 +63,7 @@ public sealed class PluginApprovalTests
         );
         Assert.Equal(
             root.GetProperty("expectedMac").GetString(),
-            FakeApprovalSigner.Mac(signer.Key!, "dg-plugin-approval-v1", signed.SignedFields())
+            FakeApprovalSigner.Mac(signer.Key!, FakeApprovalSigner.ApprovalDomain, signed.SignedFields())
         );
     }
 

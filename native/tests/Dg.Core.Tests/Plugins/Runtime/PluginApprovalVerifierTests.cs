@@ -270,12 +270,12 @@ public sealed class PluginApprovalVerifierTests : IDisposable
     }
 
     [Fact]
-    public async Task ProblemAsync_SendsTheSevenSignedFieldsInOrderAndNoKey()
+    public async Task ProblemAsync_SendsTheSevenSignedFieldsInOrder()
     {
         await Problem();
 
         Assert.Equal(
-            ["scanner", "skill", "folder", "sha256", Tree, Tree, Tree],
+            ["scanner", "skill", "folder", "sha256", "pinned-value", Tree, Tree],
             _signer.LastApprovalFields!
         );
     }
@@ -315,11 +315,25 @@ public sealed class PluginApprovalVerifierTests : IDisposable
     public async Task ProblemAsync_StatCacheSignerDown_StillApprovesAfterAFullHash()
     {
         await Problem();
-        _signer.Failure = null;
         var failing = new FailingStatCacheSigner(_signer);
         var verifier = new PluginApprovalVerifier(failing, _clock, src => { _hashes++; return PluginApproval.HashTree(src); });
 
         Assert.Null(await verifier.ProblemAsync(Name, Folder, CancellationToken.None));
+        Assert.Equal(2, _hashes);
+    }
+
+    [Theory]
+    [InlineData(long.MaxValue)]
+    [InlineData(long.MinValue)]
+    [InlineData(-62135596801000L)]
+    public async Task ProblemAsync_StatCacheTimestampOutOfRange_HashesTheTreeAgain(long fullHashAtMs)
+    {
+        await Problem();
+        var cache = File.ReadAllText(CachePath);
+        var at = System.Text.RegularExpressions.Regex.Match(cache, "\"fullHashAtMs\":(-?\\d+)").Groups[1].Value;
+        File.WriteAllText(CachePath, cache.Replace(at, fullHashAtMs.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
+        Assert.Null(await Problem());
         Assert.Equal(2, _hashes);
     }
 

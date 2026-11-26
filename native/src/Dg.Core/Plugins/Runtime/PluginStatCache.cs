@@ -38,6 +38,7 @@ internal static class PluginStatCache
         string tree;
         string mac;
         long fullHashAt;
+        TimeSpan age;
         FileStamp[] stamps;
         try
         {
@@ -45,6 +46,7 @@ internal static class PluginStatCache
             var root = document.RootElement;
             tree = root.GetProperty("treeSha256").GetString() ?? "";
             fullHashAt = root.GetProperty("fullHashAtMs").GetInt64();
+            age = now - DateTimeOffset.FromUnixTimeMilliseconds(fullHashAt);
             mac = root.GetProperty("mac").GetString() ?? "";
             var files = root.GetProperty("files");
             stamps = new FileStamp[files.GetArrayLength()];
@@ -69,7 +71,6 @@ internal static class PluginStatCache
         {
             return false;
         }
-        var age = now - DateTimeOffset.FromUnixTimeMilliseconds(fullHashAt);
         if (
             !PluginApproval.TryDecode32(mac, out _)
             || !string.Equals(tree, treeSha256, StringComparison.Ordinal)
@@ -164,6 +165,11 @@ internal static class PluginStatCache
             HmacFields.Append(hash, stamp.MtimeNs.ToString(CultureInfo.InvariantCulture));
             HmacFields.Append(hash, stamp.Inode.ToString(CultureInfo.InvariantCulture));
         }
-        return [treeSha256, fullHashAt.ToString(CultureInfo.InvariantCulture), Convert.ToHexStringLower(hash.GetHashAndReset())];
+        return
+        [
+            treeSha256,
+            fullHashAt.ToString(CultureInfo.InvariantCulture),
+            Convert.ToHexStringLower(hash.GetHashAndReset()),
+        ];
     }
 }
