@@ -245,6 +245,13 @@ describe("registered verb modules", () => {
 			expect(h.scriptRuns()).toBe(0);
 		});
 
+		it("refuses snapshot on a listed site reached through a trailing-dot host", async () => {
+			const h = await harness({ siteAnswer: "allow", url: "https://example.test./patients/1" });
+			const result = await h.run({ verb: "snapshot", phiSites });
+			expect(result).toMatchObject({ ok: false, error: expect.stringContaining("[pw] phi_sites") });
+			expect(h.scriptRuns()).toBe(0);
+		});
+
 		it.each<PwExtRequest>([
 			{ verb: "eval", expression: "1" },
 			{ verb: "go-back" },

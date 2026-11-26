@@ -6,7 +6,7 @@ function parseKey(value: string): URL | undefined {
 	if (!SITE_KEY.test(value)) return undefined;
 	try {
 		const url = new URL(value);
-		return url.hostname !== "" && url.origin === value ? url : undefined;
+		return url.hostname !== "" && !url.hostname.endsWith(".") && url.origin === value ? url : undefined;
 	} catch {
 		return undefined;
 	}
@@ -25,13 +25,14 @@ export function isPhiSite(url: string, sites: readonly string[]): boolean {
 	} catch {
 		return false;
 	}
+	const host = page.hostname.endsWith(".") ? page.hostname.slice(0, -1) : page.hostname;
 	return sites.some((site) => {
 		const key = parseKey(site);
 		return (
 			key !== undefined &&
 			key.protocol === page.protocol &&
 			key.port === page.port &&
-			(page.hostname === key.hostname || page.hostname.endsWith(`.${key.hostname}`))
+			(host === key.hostname || host.endsWith(`.${key.hostname}`))
 		);
 	});
 }

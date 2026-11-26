@@ -1,6 +1,6 @@
 ---
 name: doctor
-description: Check that the dg skills have what they need and walk through fixes. Use when a dg skill fails or after an update.
+description: Check that the dg skills have what they need and walk through fixes. Fixes run only after you agree. Use when a dg skill fails or after an update.
 ---
 
 # Skill: doctor

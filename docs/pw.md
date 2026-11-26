@@ -10,7 +10,8 @@ URL tabs with no pw session. See [Browser tabs and extension](browser.md).
 
 ## Browser
 
-`pw open` picks `DG_BROWSER` (a browser binary path; `DG_VERIFY_BROWSER` is an alias) when set, then a system Chrome, then Edge, then
+`pw open` picks `DG_BROWSER` (a browser binary path; `DG_VERIFY_BROWSER` is
+an alias) when set, then a system Chrome, then Edge, then
 another Chromium-family browser on PATH or in the usual app folders (Brave,
 Chromium, Vivaldi), then a Chromium that `dg pw install-browser`
 downloaded. `--browser=chromium` uses the same list without the Chrome and Edge

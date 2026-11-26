@@ -1,9 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 
 const SRC = join(import.meta.dir, "..", "src");
 const DEMO_CHUNK_BUDGET_KB = 400;
 const DEMO_CHUNK_BUDGET_BYTES = DEMO_CHUNK_BUDGET_KB * 1024;
+const PLAN_PARSER_MARKER = "markedjs";
 const COMPANION_PACKAGES = ["playwright-core", "playwright-core/*", "pg", "snowflake-sdk"];
 
 async function build(entry: string) {
@@ -18,12 +19,7 @@ async function build(entry: string) {
 	return result;
 }
 
-async function bundle(entry: string): Promise<string> {
-	const result = await build(entry);
-	return (await Promise.all(result.outputs.map((out) => out.text()))).join("\n");
-}
-
-async function eagerBytes(entry: string): Promise<{ bytes: number; code: string }> {
+async function measure(entry: string): Promise<{ bytes: number; code: string; all: string }> {
 	const result = await build(entry);
 	const outputs = result.metafile?.outputs ?? {};
 	const entryPath = Object.keys(outputs).find((path) => outputs[path]?.entryPoint !== undefined);
@@ -40,24 +36,28 @@ async function eagerBytes(entry: string): Promise<{ bytes: number; code: string 
 	);
 	const code = texts.join("\n");
 	if (code === "") throw new Error(`no eager code found for ${entry}`);
-	return { bytes: Buffer.byteLength(code), code };
+	const all = (await Promise.all(result.outputs.map((out) => out.text()))).join("\n");
+	return { bytes: Buffer.byteLength(code), code, all };
 }
 
 describe("demo recorder bundle", () => {
+	let demo: Awaited<ReturnType<typeof measure>>;
+	beforeAll(async () => {
+		demo = await measure("demo/local.ts");
+	});
+
 	test(`the demo chunk and every chunk it loads up front stay under ${DEMO_CHUNK_BUDGET_KB} KB`, async () => {
-		const { bytes, code } = await eagerBytes("demo/local.ts");
-		expect(code).toContain("dg-demo-caption");
-		expect(bytes).toBeLessThan(DEMO_CHUNK_BUDGET_BYTES);
+		expect(demo.code).toContain("dg-demo-caption");
+		expect(demo.bytes).toBeLessThan(DEMO_CHUNK_BUDGET_BYTES);
 	});
 
 	test("the markdown plan parser loads on demand, not with the demo chunk", async () => {
-		const { code } = await eagerBytes("demo/local.ts");
-		expect(code).not.toContain("markedjs");
-		expect(await bundle("demo/local.ts")).toContain("markedjs");
+		expect(demo.code).not.toContain(PLAN_PARSER_MARKER);
+		expect(demo.all).toContain(PLAN_PARSER_MARKER);
 	});
 
 	test("the recorder is not part of the stash chunk", async () => {
-		const code = await bundle("commands/stash.ts");
-		expect(code).not.toContain("dg-demo-caption");
+		const { all } = await measure("commands/stash.ts");
+		expect(all).not.toContain("dg-demo-caption");
 	});
 });

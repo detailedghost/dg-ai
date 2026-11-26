@@ -125,6 +125,31 @@ function onPhiSite(ctx: Ctx, options: DispatchOptions): string | undefined {
 	return url && isPhiSite(url, options.phiSites) ? new URL(url).origin : undefined;
 }
 
+const ACROSS_TABS = new Set(["tab-list", "cookie-list"]);
+
+function listedOrigin(ctx: Ctx, spec: CommandSpec, options: DispatchOptions): string | undefined {
+	const sites = options.phiSites;
+	if (!sites?.length) return undefined;
+	if (!ACROSS_TABS.has(spec.name)) return onPhiSite(ctx, options);
+	for (const page of ctx.context.pages()) {
+		const url = page.url();
+		if (isPhiSite(url, sites)) return new URL(url).origin;
+	}
+	return undefined;
+}
+
+function refusal(origin: string, spec: CommandSpec, options: DispatchOptions): Dispatched {
+	return {
+		text: render(
+			{
+				error: `${origin} is listed in [pw] phi_sites in config.toml; pw ${spec.name} is refused there. Next: remove the site from phi_sites if the page holds no patient data.`,
+			},
+			options,
+		),
+		exitCode: 1,
+	};
+}
+
 export async function dispatch(
 	handler: DaemonHandler,
 	spec: CommandSpec,
@@ -132,17 +157,8 @@ export async function dispatch(
 	ctx: Ctx,
 	options: DispatchOptions,
 ): Promise<Dispatched> {
-	const refusedSite = spec.readsPage ? onPhiSite(ctx, options) : undefined;
-	if (refusedSite)
-		return {
-			text: render(
-				{
-					error: `${refusedSite} is listed in [pw] phi_sites in config.toml; pw ${spec.name} is refused there. Next: remove the site from phi_sites if the page holds no patient data.`,
-				},
-				options,
-			),
-			exitCode: 1,
-		};
+	const refusedSite = spec.readsPage ? listedOrigin(ctx, spec, options) : undefined;
+	if (refusedSite) return refusal(refusedSite, spec, options);
 	let outcome: HandlerResult;
 	try {
 		outcome = await runHandler(handler, ctx, args);
@@ -172,6 +188,7 @@ export async function dispatch(
 				.catch(() => undefined);
 		}
 		const phiOrigin = onPhiSite(ctx, options);
+		if (phiOrigin && spec.readsPage) return refusal(phiOrigin, spec, options);
 		try {
 			if (!outcome.error && !ctx.restricted && !phiOrigin)
 				await attachSnapshot(ctx, page, outcome, parts, options);
