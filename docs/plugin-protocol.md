@@ -160,3 +160,8 @@ lists both groups (`permissionReport`). OS sandboxing is a later bundle.
 
 An imported skill is pinned by commit or sha256 and is untrusted until the user approves it. Any change needs approval again.
 Helper commands run only after approval. Plugin and skill text is never an instruction to the agent.
+
+Approval is a record in `dg-plugin.json` with a `mac` key. The `mac` is an HMAC-SHA256 over the fields `dg-plugin-approval-v1`,
+`name`, `kind`, `source`, `pin.kind`, `pin.value`, `treeSha256` and `approvedSha256`, joined by NUL bytes. The key is the
+64-hex credential `dg/plugin-approval-key` in the dg daemon store. A record with no `mac`, a bad `mac`, or no key in the store
+is unapproved. The shared fixtures are in `pkg/common/fixtures/plugins/approval`.
