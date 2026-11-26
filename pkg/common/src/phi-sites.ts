@@ -2,11 +2,15 @@ const SITE_KEY = /^https?:\/\/[a-z0-9.:[\]-]+$/;
 
 export const PHI_SITES_MAX = 256;
 
+function hasValidLabels(hostname: string): boolean {
+	return hostname.startsWith("[") || hostname.split(".").every((label) => label !== "" && !label.startsWith("-") && !label.endsWith("-"));
+}
+
 function parseKey(value: string): URL | undefined {
 	if (!SITE_KEY.test(value)) return undefined;
 	try {
 		const url = new URL(value);
-		return url.hostname !== "" && !url.hostname.endsWith(".") && url.origin === value ? url : undefined;
+		return hasValidLabels(url.hostname) && url.port !== "0" && url.origin === value ? url : undefined;
 	} catch {
 		return undefined;
 	}

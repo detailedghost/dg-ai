@@ -6,7 +6,7 @@ describe("isSiteKey", () => {
 		expect(isSiteKey(key)).toBe(true);
 	});
 
-	it.each(["example.org", "https://Example.org", "https://example.org/path", "ftp://example.org", "", "https://", "https://:", "http://[", "https://example.org:443", "https://a b", "https://ehr.example.org."])("rejects %p", (key) => {
+	it.each(["example.org", "https://Example.org", "https://example.org/path", "ftp://example.org", "", "https://", "https://:", "http://[", "https://example.org:443", "https://a b", "https://ehr.example.org.", "https://a..b", "https://-a.org", "https://a-.org", "https://a.-b.org", "https://a.b-.org", "https://.a.org", "https://example.org:0", "http://[::1]:0"])("rejects %p", (key) => {
 		expect(isSiteKey(key)).toBe(false);
 	});
 });
@@ -39,7 +39,7 @@ describe("isPhiSite", () => {
 	});
 
 	it("never matches through a listed key that ends with a dot", () => {
-		expect(isPhiSite("https://ehr.example.org./", ["https://ehr.example.org."])).toBe(false);
+		expect(isPhiSite("https://ehr.example.org./", ["https://ehr.example.org.", "https://a..b", "https://-a.org", "https://a-.org", "https://a.-b.org", "https://a.b-.org", "https://.a.org", "https://example.org:0", "http://[::1]:0"])).toBe(false);
 	});
 
 	it("is false for an empty list and for a url that does not parse", () => {
