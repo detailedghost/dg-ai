@@ -23,6 +23,8 @@ public sealed class CompositionRootTests
             { "config doctor", "config doctor" },
             { "plugin list", "plugin list" },
             { "plugin verify x", "plugin verify" },
+            { "plugin enable x", "plugin enable" },
+            { "plugin disable x", "plugin disable" },
         };
 
     [Theory]

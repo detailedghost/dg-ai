@@ -12,14 +12,12 @@ internal sealed class TcpPluginServer : IAsyncDisposable
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _accept;
-    private readonly string _token;
     private readonly ServerFault _fault = new();
     private int _accepted;
     private int _rejected;
 
-    public TcpPluginServer(string token)
+    public TcpPluginServer()
     {
-        _token = token;
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _accept = Task.Run(AcceptLoop);
@@ -77,8 +75,8 @@ internal sealed class TcpPluginServer : IAsyncDisposable
             var payload = new byte[hello.Length];
             await stream.ReadExactlyAsync(payload, _stop.Token);
             using var doc = JsonDocument.Parse(payload);
-            var token = doc.RootElement.GetProperty("body").TryGetProperty("token", out var t) ? t.GetString() : null;
-            if (doc.RootElement.GetProperty("route").GetString() != PluginRoutes.Hello || token != _token)
+            var carriesToken = doc.RootElement.GetProperty("body").TryGetProperty("token", out var t) && t.ValueKind != JsonValueKind.Null;
+            if (doc.RootElement.GetProperty("route").GetString() != PluginRoutes.Hello || carriesToken)
             {
                 Interlocked.Increment(ref _rejected);
                 return;

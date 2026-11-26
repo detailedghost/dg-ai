@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text.Json;
 using Dg.Core.Plugins.Contract;
 using Dg.Core.Plugins.Runtime;
+using Dg.Core.Transport.Http;
 using Dg.Core.Tests.Transport.Ipc;
 using Dg.Core.Tests.Transport.Tcp;
 
@@ -62,18 +63,34 @@ public sealed class PluginHostTests
     }
 
     [Fact]
-    public async Task InvokeAsync_EnabledApprovedTcpPlugin_UsesStoredToken()
+    public async Task InvokeAsync_EnabledApprovedTcpPlugin_ConnectsWithoutToken()
     {
-        await using var server = new TcpPluginServer("tok");
+        await using var server = new TcpPluginServer();
         await using var fixture = new RuntimeFixture();
         fixture.Install("scanner", TcpManifest(server.Port), approved: true);
-        fixture.SetCredential("plugin-scanner-token", "tok");
         var host = fixture.Host(Enabled);
 
         await host.InvokeAsync("scanner", RuntimeFixture.HookMessage(), CancellationToken.None);
 
         Assert.Equal(1, server.Accepted);
         Assert.Equal(0, server.Rejected);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_TcpPluginWithStoredToken_IsRefusedAndNothingConnects()
+    {
+        await using var server = new TcpPluginServer();
+        await using var fixture = new RuntimeFixture();
+        fixture.Install("scanner", TcpManifest(server.Port), approved: true);
+        fixture.SetCredential("plugin-scanner-token", "tok");
+        var host = fixture.Host(Enabled);
+
+        var ex = await Assert.ThrowsAsync<PluginTransportException>(async () =>
+            await host.InvokeAsync("scanner", RuntimeFixture.HookMessage(), CancellationToken.None)
+        );
+
+        Assert.Equal(PluginTransportCodes.Refused, ex.Code);
+        Assert.Equal(0, server.Accepted);
     }
 
     [Theory]
@@ -87,7 +104,7 @@ public sealed class PluginHostTests
     {
         await using var fixture = new RuntimeFixture();
         await using var ipc = new EchoPluginServer(directory: fixture.Folder("scanner"));
-        await using var tcp = new TcpPluginServer("tok");
+        await using var tcp = new TcpPluginServer();
         using var http = new CountingListener();
         var manifest = transport switch
         {

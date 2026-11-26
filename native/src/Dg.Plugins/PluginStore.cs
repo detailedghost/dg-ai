@@ -73,5 +73,7 @@ internal sealed class PluginStore(DgPaths paths, DgPathSeams seams)
         return config.IsOk ? config.Value!.Plugins : throw new NotNativeException();
     }
 
+    public PluginConfigEdit Config() => new(paths.ConfigTomlPath);
+
     public HostSkills Hosts() => new(seams.Env, seams.HomeDir);
 }

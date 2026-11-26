@@ -4,9 +4,9 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Tomlyn.Model;
 
-namespace Dg.Config;
+namespace Dg.Core.Config;
 
-internal static partial class TomlWriter
+public static partial class TomlWriter
 {
     private const double MaxSafeInteger = 9007199254740991;
 

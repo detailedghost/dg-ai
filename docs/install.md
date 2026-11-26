@@ -346,11 +346,11 @@ start-up:
 - `dg hooks run <id>` for the built-in hook ids
 - `dg completion` words, when there are two or more words
 - `dg config get`, `set`, `list` and `doctor`
-- `dg plugin list` and `dg plugin verify`
+- `dg plugin list`, `verify`, `enable` and `disable`
 
 Every other command runs `dg-core` with the same arguments. This includes a
-single-word completion, an unknown hook id, `dg plugin enable` and `disable`,
-and every command not in the list above. `dg-core` prints its own output.
+single-word completion, an unknown hook id, `dg plugin add`, `remove` and
+`update`, and every command not in the list above. `dg-core` prints its own output.
 
 ### Turn the front door off
 

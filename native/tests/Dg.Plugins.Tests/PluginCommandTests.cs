@@ -9,7 +9,7 @@ public sealed class PluginCommandTests
     private sealed class FakeServices : List<ServiceDescriptor>, IServiceCollection;
 
     [Fact]
-    public void AddPlugins_Registers_OnlyListAndVerify()
+    public void AddPlugins_Registers_ListVerifyEnableAndDisable()
     {
         var services = new FakeServices();
 
@@ -20,7 +20,7 @@ public sealed class PluginCommandTests
             .Select(static d => ((ICommand)d.ImplementationFactory!(null!)).Name)
             .Order()
             .ToArray();
-        Assert.Equal(["plugin list", "plugin verify"], names);
+        Assert.Equal(["plugin disable", "plugin enable", "plugin list", "plugin verify"], names);
     }
 
     [Fact]

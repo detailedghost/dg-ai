@@ -12,6 +12,7 @@
 	"remote-not-declared.toml": { "line": 5, "key": "endpoint", "includes": "remote = true" },
 	"remote-over-ipc.toml": { "line": 6, "key": "remote", "includes": "https" },
 	"remote-plain-http.toml": { "line": 5, "key": "endpoint", "includes": "https" },
+	"tcp-token.toml": { "line": 11, "key": "permissions.credentials", "includes": "ipc" },
 	"url-secret.toml": { "line": 5, "key": "endpoint", "includes": "credentials in the endpoint" },
 	"skill-unpinned.toml": { "line": 1, "key": "sha256", "includes": "pinned" },
 	"two-pins.toml": { "line": 6, "key": "commit", "includes": "only one of sha256 or commit" },

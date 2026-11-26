@@ -55,10 +55,9 @@ public sealed class PluginHostLeakTests
     [Fact]
     public async Task InvokeAsync_ManyCallsOverTcp_KeepsHeapFilesAndThreadsFlat()
     {
-        await using var server = new TcpPluginServer("tok");
+        await using var server = new TcpPluginServer();
         await using var fixture = new RuntimeFixture();
         fixture.Install("scanner", Manifest("tcp", $"127.0.0.1:{server.Port}"), approved: true);
-        fixture.SetCredential("plugin-scanner-token", "tok");
         var host = fixture.Host(Enabled);
         var message = RuntimeFixture.HookMessage();
 

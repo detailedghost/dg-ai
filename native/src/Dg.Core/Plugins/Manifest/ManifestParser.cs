@@ -9,6 +9,9 @@ namespace Dg.Core.Plugins.Manifest;
 
 public static partial class ManifestParser
 {
+    private const string TcpTokenProblem =
+        "tcp would send the plugin token to any local listener; use transport = \"ipc\", or the http transport with an https endpoint";
+
     private static readonly string[] RootKeys =
     [
         "name",
@@ -108,6 +111,8 @@ public static partial class ManifestParser
             foreach (var credential in credentials)
                 if (!CredentialPattern().IsMatch(credential))
                     throw Fail("permissions.credentials", $"{credential} is not a valid credential name");
+            if (transport == PluginTransportKind.Tcp && Array.IndexOf(credentials, PluginRoutes.TokenCredential(name)) >= 0)
+                throw Fail("permissions.credentials", TcpTokenProblem);
             return new(
                 name,
                 version,

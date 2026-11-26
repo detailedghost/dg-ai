@@ -29,6 +29,8 @@ export type PluginManifest = {
 type Table = Record<string, unknown>;
 type Where = { file: string; text: string };
 
+const TCP_TOKEN_PROBLEM = 'tcp would send the plugin token to any local listener; use transport = "ipc", or the http transport with an https endpoint';
+
 const ROOT_KEYS = ["name", "version", "kind", "transport", "endpoint", "remote", "source", "sha256", "commit", "entry", "capabilities", "permissions"];
 const NAME = /^[a-z][a-z0-9-]{0,63}$/;
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
@@ -209,6 +211,8 @@ export function parseManifest(text: string, file: string): PluginManifest {
 	const credentials = stringList(where, "permissions.credentials", permissions.credentials);
 	for (const credential of credentials)
 		if (!CREDENTIAL_NAME_PATTERN.test(credential)) fail(where, "permissions.credentials", `${credential} is not a valid credential name`);
+	if (transport === "tcp" && credentials.includes(pluginTokenCredential(name)))
+		fail(where, "permissions.credentials", TCP_TOKEN_PROBLEM);
 	return {
 		name,
 		version,

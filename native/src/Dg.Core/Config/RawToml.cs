@@ -2,12 +2,12 @@ using Tomlyn;
 using Tomlyn.Model;
 using Tomlyn.Serialization;
 
-namespace Dg.Config;
+namespace Dg.Core.Config;
 
 [TomlSerializable(typeof(TomlTable))]
 internal sealed partial class RawTomlContext : TomlSerializerContext;
 
-internal static class RawToml
+public static class RawToml
 {
     public static TomlTable Parse(string text) =>
         TomlSerializer.Deserialize(text, RawTomlContext.Default.TomlTable) ?? new TomlTable();
