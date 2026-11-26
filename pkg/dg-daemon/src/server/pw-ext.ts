@@ -5,16 +5,16 @@ import type { FrameHandlerDeps } from "./frame-handlers";
 
 export const PW_EXT_STOPPED = "The person clicked Stop in the browser; pw --ext is off for this dg session. Nothing ran. Next: start a new dg session.";
 
-const revokedByManager = new WeakMap<object, Set<string>>();
+const revokedByRegistry = new WeakMap<object, Set<string>>();
 
 /** Session ids whose Stop the extension reported. A closed session leaves the set, and session ids come from randomUUID, so none returns. */
 function revokedSessions(deps: FrameHandlerDeps): Set<string> {
-	let revoked = revokedByManager.get(deps.connections);
+	let revoked = revokedByRegistry.get(deps.registry);
 	if (!revoked) {
-		const held = new Set<string>();
-		revoked = held;
-		revokedByManager.set(deps.connections, held);
-		deps.registry.on("closed", ({ sessionId }: { sessionId: string }) => held.delete(sessionId));
+		const created = new Set<string>();
+		revoked = created;
+		revokedByRegistry.set(deps.registry, created);
+		deps.registry.on("closed", ({ sessionId }: { sessionId: string }) => created.delete(sessionId));
 	}
 	return revoked;
 }
