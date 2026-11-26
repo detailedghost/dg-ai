@@ -51,9 +51,10 @@ Order of choice, first match wins:
 auto`.
 
 `DG_BROWSER` is the path of the browser executable, for `pw`, `demo` and
-`verify`. `DG_VERIFY_BROWSER` is an alias; `DG_BROWSER` wins when both are set to different paths. If `DG_BROWSER` holds `auto`, `ext`
-or `local` in any case, dg stops with `DG_BROWSER is the browser executable
-path; set DG_PW_MODE=<word> for the pw mode.` The old `browser.mode` key in
+`verify`. `DG_VERIFY_BROWSER` is an alias; `DG_BROWSER` wins when both are
+set to different paths. If `DG_BROWSER` holds `auto`, `ext` or `local` in any
+case, dg stops with `dg: DG_BROWSER is the browser executable path, not a pw
+mode. Next: set DG_PW_MODE=<word>.` The old `browser.mode` key in
 `config.toml` is an error that names `pw.mode`.
 
 Set the mode for every shell with `dg config set pw.mode local`, or for

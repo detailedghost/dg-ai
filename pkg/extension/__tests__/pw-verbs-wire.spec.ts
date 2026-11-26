@@ -238,6 +238,7 @@ describe("registered verb modules", () => {
 			{ verb: "storage" },
 			{ verb: "fetch", url: "https://app.example.test/api" },
 			{ verb: "eval", expression: "document.body.innerText" },
+			{ verb: "call", tool: "search", args: {} },
 		])("refuses $verb on a listed site and names phi_sites", async (request) => {
 			const h = await harness({ approveSite: true });
 			const result = await h.run({ ...request, phiSites });

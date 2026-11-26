@@ -34,7 +34,7 @@ describe("findInstalledChromium", () => {
 	});
 
 	test.each(["ext", "local", "auto", "LOCAL"])("refuses DG_BROWSER=%s because it is a pw mode word", (word) => {
-		const message = `DG_BROWSER is the browser executable path; set DG_PW_MODE=${word.toLowerCase()} for the pw mode.`;
+		const message = `dg: DG_BROWSER is the browser executable path, not a pw mode. Next: set DG_PW_MODE=${word.toLowerCase()}.`;
 		expect(() =>
 			findInstalledChromium(seams({ env: { DG_BROWSER: word, DG_VERIFY_BROWSER: "/opt/y" }, which: onPath("brave-browser") })),
 		).toThrow(message);

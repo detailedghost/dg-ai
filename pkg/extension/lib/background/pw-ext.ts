@@ -367,9 +367,9 @@ function jwtExpiry(value: string): string | undefined {
 }
 const DIALOG_ANSWERS = ["accept", "dismiss"];
 
-/** Per-request seams that need the session capability. */
 type PhiScoped<T> = T & { phiSites: readonly string[] };
 
+/** Per-request seams that need the session capability. */
 export type PwExtContext = {
 	sessionId: string;
 	agentIdentity: string;
@@ -860,14 +860,13 @@ export function createPwExtHandler({
 		}
 		try {
 			onStop?.(sessionId);
-		} finally {
-			await control.stop(sessionId);
-			forget(sessionId);
-			await Promise.allSettled([
-				grants.forget(sessionId),
-				forgetAgentTabsAndShims({ browserApi: api, storage: api.storage, agentTabs, sessionId, ...(lock ? { lock } : {}) }),
-			]);
-		}
+		} catch {}
+		await control.stop(sessionId);
+		forget(sessionId);
+		await Promise.allSettled([
+			grants.forget(sessionId),
+			forgetAgentTabsAndShims({ browserApi: api, storage: api.storage, agentTabs, sessionId, ...(lock ? { lock } : {}) }),
+		]);
 	}
 
 	/** Stops the session whose agent group holds this tab; a tab of no agent group stops nothing. */

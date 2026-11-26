@@ -486,4 +486,33 @@ describe("dispatch phi_sites", () => {
 		expect(out.text).not.toContain("patient 42");
 		expect(page.snapshotCalls).toEqual([]);
 	});
+
+	test("withholds dialog text and download notices on a listed site", async () => {
+		const { ctx } = fakeCtx(scratch.dir, undefined, {
+			drainNotices: () => ["- Downloaded jane-doe-chart.pdf to /tmp/jane-doe-chart.pdf"],
+			modal: () => ['- ["alert" dialog with message "Jane Doe is overdue"]: can be handled by the "dialog-accept" command'],
+		});
+		const out = await dispatch(returning({}), goto, argsFor(goto, "a.test"), ctx, options({ phiSites }));
+		expect(out.text).not.toContain("jane-doe");
+		expect(out.text).not.toContain("Jane Doe");
+		expect(out.text).toContain("withheld");
+	});
+
+	test("withholds dialog text when a dialog opens during the action on a listed site", async () => {
+		const { ctx } = fakeCtx(scratch.dir, undefined, {
+			hasDialog: () => true,
+			modal: () => ['- ["alert" dialog with message "Jane Doe is overdue"]: can be handled by the "dialog-accept" command'],
+		});
+		const out = await dispatch(returning({}), goto, argsFor(goto, "a.test"), ctx, options({ phiSites }));
+		expect(out.text).not.toContain("Jane Doe");
+		expect(out.text).toContain("withheld");
+	});
+
+	test("keeps dialog text and notices on a site that is not listed", async () => {
+		const { ctx } = fakeCtx(scratch.dir, undefined, {
+			modal: () => ['- ["alert" dialog with message "Hi"]: x'],
+		});
+		const out = await dispatch(returning({}), goto, argsFor(goto, "a.test"), ctx, options({ phiSites: ["https://other.org"] }));
+		expect(out.text).toContain('dialog with message "Hi"');
+	});
 });

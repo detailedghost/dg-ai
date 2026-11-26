@@ -78,7 +78,7 @@ export function externalHookResult(
 		const what =
 			outcome.failure === "timeout"
 				? `gave no answer within ${timeoutMs} ms`
-				: `is unavailable. ${detail}`.replace(/\.?$/, "");
+				: `is unavailable${detail ? `: ${detail.replace(/\.$/, "")}` : ""}`;
 		if (failClosed) {
 			const reason = `The tool call is blocked because plugins.${name}.fail_closed is true.`;
 			return { exitCode: 2, stderr: `dg hooks: plugin ${name} ${what}. ${reason}\n` };

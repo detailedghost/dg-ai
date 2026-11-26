@@ -159,6 +159,14 @@ describe("assertJobPinned against a hidden edit", () => {
 		await expect(assertJobPinned("bot", paths)).rejects.toThrow(/info\/exclude/);
 	});
 
+	it("refuses a clone whose info/exclude cannot be read", async () => {
+		const { paths, clone, save } = rig();
+		save();
+		rmSync(join(clone, ".git", "info", "exclude"), { force: true });
+		mkdirSync(join(clone, ".git", "info", "exclude"), { recursive: true });
+		await expect(assertJobPinned("bot", paths)).rejects.toThrow(/cannot read the git clone/);
+	});
+
 	it("accepts the comment-only info/exclude that git clone writes", async () => {
 		const { paths, clone, save } = rig();
 		save();
