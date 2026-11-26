@@ -10,7 +10,7 @@ URL tabs with no pw session. See [Browser tabs and extension](browser.md).
 
 ## Browser
 
-`pw open` picks `DG_VERIFY_BROWSER` (a browser binary path) when set, then a system Chrome, then Edge, then
+`pw open` picks `DG_BROWSER` (a browser binary path; `DG_VERIFY_BROWSER` is an alias) when set, then a system Chrome, then Edge, then
 another Chromium-family browser on PATH or in the usual app folders (Brave,
 Chromium, Vivaldi), then a Chromium that `dg pw install-browser`
 downloaded. `--browser=chromium` uses the same list without the Chrome and Edge
@@ -50,7 +50,7 @@ Order of choice, first match wins:
 auto`.
 
 `DG_BROWSER` is the path of the browser executable, for `pw`, `demo` and
-`verify`. `DG_VERIFY_BROWSER` is an alias. If `DG_BROWSER` holds `auto`, `ext`
+`verify`. `DG_VERIFY_BROWSER` is an alias; `DG_BROWSER` wins when both are set to different paths. If `DG_BROWSER` holds `auto`, `ext`
 or `local` in any case, dg stops with `DG_BROWSER is the browser executable
 path; set DG_PW_MODE=<word> for the pw mode.` The old `browser.mode` key in
 `config.toml` is an error that names `pw.mode`.
@@ -199,9 +199,14 @@ Rules:
   mode the CLI reads the list and sends it with each request, because the
   extension cannot read `config.toml`. In local mode the refusal checks the
   current page URL before the verb runs, and a listed page gets no automatic
-  snapshot and no console lines. Local mode refuses `snapshot`, `screenshot`,
-  `eval`, `run-code`, `console`, `network`, `pdf`, and the `localstorage-`,
-  `sessionstorage-` and `cookie-` get and list verbs.
+  snapshot and no console lines, and the page header shows the origin only,
+  with no path and no title. Local mode refuses `snapshot`, `screenshot`,
+  `eval`, `run-code`, `console`, `network`, `pdf`, `tab-list`, and the
+  `localstorage-`, `sessionstorage-` and `cookie-` get and list verbs. Each
+  verb spec that returns page content carries a `readsPage` flag, and a test
+  names every verb that was checked and left out. An extension that does not
+  know `phi_sites` rejects every `--ext` call while the list is not empty, so
+  update the extension or pass `--local`.
 - `eval` and the storage write verbs (`localstorage-*`, `sessionstorage-*`)
   never open the popup. On a site that is not allowed yet, they refuse. Run a
   navigation or read verb first so the popup asks, then repeat the write.
