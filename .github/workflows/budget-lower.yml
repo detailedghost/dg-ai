@@ -1,0 +1,90 @@
+name: Budgets - Weekly Lowering
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: budget-lower
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  lower:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out master
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          fetch-depth: 1
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.1
+
+      - name: Measure master with the compiled-dg, native and native-bench workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          sha=$(git rev-parse HEAD)
+          mkdir -p budget-measurements
+          for wf in compiled-dg.yml native.yml native-bench.yml; do
+            gh workflow run "$wf" --ref master
+          done
+          for wf in compiled-dg.yml native.yml native-bench.yml; do
+            run_id=""
+            deadline=$((SECONDS + 300))
+            while [ -z "$run_id" ] && [ "$SECONDS" -lt "$deadline" ]; do
+              run_id=$(gh run list --workflow "$wf" --event workflow_dispatch --commit "$sha" --json databaseId --jq '.[0].databaseId // empty')
+              [ -n "$run_id" ] || sleep 15
+            done
+            if [ -z "$run_id" ]; then
+              echo "No $wf run started for $sha; its budgets are not lowered."
+              continue
+            fi
+            gh run watch "$run_id" --interval 30 > /dev/null || echo "$wf run $run_id did not succeed; using what it uploaded."
+            dir="m-${wf%.yml}"
+            mkdir -p "$dir"
+            gh run download "$run_id" --dir "$dir" || echo "$wf run $run_id uploaded nothing."
+          done
+          for f in m-compiled-dg/budget-measurements/*.json m-native/native-budget-measurements-*/*.json m-native-bench/bench-measurements-*/*.json; do
+            [ -f "$f" ] && cp "$f" budget-measurements/
+          done
+          ls budget-measurements
+
+      - name: Lower budgets that have more than 5 percent slack
+        run: bun scripts/budget-ratchet.ts --lower --measured budget-measurements --lowered lowered.md
+
+      - name: Open a pull request with the lowered budgets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          if [ ! -s lowered.md ]; then
+            echo "Nothing to lower."
+            exit 0
+          fi
+          branch="chore/lower-budgets-$(date -u +%Y-%m-%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add scripts/*.json native/budgets native/bench/Dg.Bench/budgets
+          git commit -m "chore(budgets): lower budgets to the measured values"
+          git push origin "$branch"
+          {
+            echo "This weekly job measured master and lowered every RAM, size and token budget with more than 5 percent slack to the measured value plus 5 percent. Latency and growth ceilings are not touched."
+            echo
+            cat lowered.md
+            echo
+            echo "A pull request opened by the workflow token does not start the checks. Close and reopen it, or push an empty commit, to run them before you merge."
+          } > body.md
+          gh pr create --base master --head "$branch" --title "chore(budgets): lower budgets to the measured values" --body-file body.md
