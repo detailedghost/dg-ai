@@ -69,6 +69,8 @@ public sealed class PluginConnection : IPluginTransport
             catch (Exception ex)
             {
                 Fail(ex);
+                if (ex is ObjectDisposedException)
+                    throw _fault!;
                 throw;
             }
             finally
@@ -125,6 +127,8 @@ public sealed class PluginConnection : IPluginTransport
 
     private void Fail(Exception ex)
     {
+        if (ex is ObjectDisposedException)
+            ex = new IOException("dg plugin: connection closed. Next: restart the plugin", ex);
         if (Interlocked.CompareExchange(ref _fault, ex, null) is not null)
             return;
         foreach (var (_, waiter) in _pending)
