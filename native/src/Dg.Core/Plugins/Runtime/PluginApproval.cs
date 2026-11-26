@@ -1,50 +1,46 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 
 namespace Dg.Core.Plugins.Runtime;
 
 public static class PluginApproval
 {
-    private const string RecordFile = "dg-plugin.json";
+    public const string KeyCredential = "dg/plugin-approval-key";
+    private const string MacDomain = "dg-plugin-approval-v1";
+    private const int Size = 32;
 
-    public static bool IsApproved(string folder)
+    public static string ComputeMac(ReadOnlySpan<byte> key, PluginApprovalRecord record) =>
+        Convert.ToHexStringLower(MacBytes(key, record));
+
+    public static bool MacMatches(ReadOnlySpan<byte> key, PluginApprovalRecord record) =>
+        TryDecode32(record.Mac, out var claimed) && CryptographicOperations.FixedTimeEquals(MacBytes(key, record), claimed);
+
+    public static bool TryDecode32(string? hex, out byte[] bytes)
     {
-        var file = Path.Combine(folder, RecordFile);
-        if (!File.Exists(file))
+        bytes = [];
+        if (hex is not { Length: Size * 2 } || !IsLowerHex(hex))
             return false;
-        string? tree;
-        string? approved;
-        try
-        {
-            using var record = JsonDocument.Parse(File.ReadAllBytes(file));
-            tree = Read(record.RootElement, "treeSha256");
-            approved = Read(record.RootElement, "approvedSha256");
-        }
-        catch (Exception ex) when (ex is JsonException or IOException or InvalidOperationException)
-        {
-            return false;
-        }
-        if (approved is null || tree is null || !string.Equals(approved, tree, StringComparison.Ordinal))
-            return false;
-        var src = Path.Combine(folder, "src");
-        if (!Directory.Exists(src))
-            return false;
-        try
-        {
-            return string.Equals(HashTree(src), tree, StringComparison.Ordinal);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
-        {
-            return false;
-        }
+        bytes = Convert.FromHexString(hex);
+        return true;
+    }
+
+    private static byte[] MacBytes(ReadOnlySpan<byte> key, PluginApprovalRecord record)
+    {
+        using var hmac = IncrementalHash.CreateHMAC(HashAlgorithmName.SHA256, key);
+        Append(hmac, MacDomain, first: true);
+        Append(hmac, record.Name);
+        Append(hmac, record.Kind);
+        Append(hmac, record.Source);
+        Append(hmac, record.PinKind);
+        Append(hmac, record.PinValue);
+        Append(hmac, record.TreeSha256);
+        Append(hmac, record.ApprovedSha256 ?? "");
+        return hmac.GetHashAndReset();
     }
 
     public static string HashTree(string root)
     {
-        var files = new List<string>();
-        Walk(root, "", files);
-        files.Sort(StringComparer.Ordinal);
+        var files = ListFiles(root);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         foreach (var rel in files)
         {
@@ -54,8 +50,30 @@ public static class PluginApproval
         return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
-    private static string? Read(JsonElement root, string key) =>
-        root.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+    public static List<string> ListFiles(string root)
+    {
+        var files = new List<string>();
+        Walk(root, "", files);
+        files.Sort(StringComparer.Ordinal);
+        return files;
+    }
+
+    private static bool IsLowerHex(string text)
+    {
+        foreach (var c in text)
+            if (c is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
+                return false;
+        return true;
+    }
+
+    private static void Append(IncrementalHash hash, string field, bool first = false)
+    {
+        if (!first)
+            hash.AppendData([0]);
+        var max = Encoding.UTF8.GetMaxByteCount(field.Length);
+        Span<byte> buffer = max <= 512 ? stackalloc byte[max] : new byte[max];
+        hash.AppendData(buffer[..Encoding.UTF8.GetBytes(field, buffer)]);
+    }
 
     private static void Walk(string dir, string prefix, List<string> files)
     {

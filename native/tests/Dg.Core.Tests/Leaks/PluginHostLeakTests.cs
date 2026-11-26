@@ -53,6 +53,33 @@ public sealed class PluginHostLeakTests
     }
 
     [Fact]
+    public async Task InvokeAsync_TreeTouchedEveryCall_RehashesAndKeepsHeapFilesAndThreadsFlat()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows dials a named pipe, and the echo server listens on a Unix socket");
+        await using var fixture = new RuntimeFixture();
+        await using var server = new EchoPluginServer(directory: fixture.Folder("scanner"));
+        fixture.Install("scanner", Manifest("ipc", EchoPluginServer.SocketFile), approved: true);
+        var host = fixture.Host(Enabled);
+        var message = RuntimeFixture.HookMessage();
+        var body = Path.Combine(fixture.Folder("scanner"), "src", "main.txt");
+        var touched = DateTime.UtcNow;
+
+        var report = await LeakMeter.MeasureAsync(
+            async () =>
+            {
+                File.SetLastWriteTimeUtc(body, touched = touched.AddSeconds(1));
+                await host.InvokeAsync("scanner", message, CancellationToken.None);
+            },
+            batches: 4,
+            perBatch: 400,
+            warmup: 50
+        );
+
+        AssertFlat(report);
+        Assert.True(File.Exists(Path.Combine(fixture.Folder("scanner"), "stat-cache.json")));
+    }
+
+    [Fact]
     public async Task InvokeAsync_ManyCallsOverTcp_KeepsHeapFilesAndThreadsFlat()
     {
         await using var server = new TcpPluginServer("tok");

@@ -19,6 +19,7 @@ internal sealed class RuntimeFixture : IAsyncDisposable
     {
         var env = new Dictionary<string, string?> { ["DG_HOME"] = _root };
         Paths = DgPaths.Resolve(DgPathSeams.Current(env)).Value!;
+        _credentials[PluginApproval.KeyCredential] = ApprovalFixture.KeyHex;
     }
 
     public DgPaths Paths { get; }
@@ -33,16 +34,21 @@ internal sealed class RuntimeFixture : IAsyncDisposable
         File.WriteAllText(Path.Combine(src, "plugin.toml"), manifest);
         File.WriteAllText(Path.Combine(src, "main.txt"), "plugin body");
         var tree = PluginApproval.HashTree(src);
-        var approvedSha = approved ? $"\"{tree}\"" : "null";
-        File.WriteAllText(
-            Path.Combine(folder, "dg-plugin.json"),
-            $$"""{"name":"{{name}}","treeSha256":"{{tree}}","approvedSha256":{{approvedSha}}}"""
-        );
+        var record = ApprovalFixture.Signed(name, tree);
+        ApprovalFixture.WriteRecord(folder, approved ? record : record with { ApprovedSha256 = null, Mac = null });
     }
 
     public void Tamper(string name) => File.AppendAllText(Path.Combine(Folder(name), "src", "main.txt"), "!");
 
     public void SetCredential(string name, string value) => _credentials[name] = value;
+
+    public void RemoveCredential(string name) => _credentials.Remove(name);
+
+    public void Unsign(string name)
+    {
+        var record = PluginApprovalRecord.Read(Folder(name))!;
+        ApprovalFixture.WriteRecord(Folder(name), record with { Mac = null });
+    }
 
     public IPluginHost Host(string configToml, params IBuiltinPlugin[] builtins)
     {
