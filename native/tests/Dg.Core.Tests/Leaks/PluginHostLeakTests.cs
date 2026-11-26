@@ -8,7 +8,7 @@ using Dg.Core.Tests.Transport.Tcp;
 namespace Dg.Core.Tests.Leaks;
 
 [Collection(LeakCollection.Name)]
-public sealed class PluginHostLeakTests
+public sealed class PluginHostLeakTests(ITestOutputHelper output)
 {
     private const string Enabled = "[plugins.scanner]\nenabled = true\n";
     private const int MaxBytesPerCall = 64;
@@ -28,7 +28,7 @@ public sealed class PluginHostLeakTests
     {
         Assert.True(
             report.BytesPerIteration < MaxBytesPerCall,
-            $"heap grows {report.BytesPerIteration:F1} bytes per call ({report.FirstBatchBytes} to {report.LastBatchBytes})"
+            $"heap grows {report.BytesPerIteration:F1} bytes per call ({report.FirstBatchBytes} to {report.LastBatchBytes})\n{report.Describe()}"
         );
         Assert.True(report.OpenFilesGrowth <= 16, $"{report.OpenFilesGrowth} more open files after the run");
         Assert.True(report.ThreadGrowth <= 4, $"{report.ThreadGrowth} more pool threads after the run");
@@ -164,6 +164,7 @@ public sealed class PluginHostLeakTests
             successes >= (batches * perBatch + warmup) / 2,
             $"only {successes} of {batches * perBatch + warmup} calls succeeded"
         );
+        output.WriteLine(report.Describe());
         AssertFlat(report);
     }
 }

@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 
 const SRC = join(import.meta.dir, "..", "src");
-const DEMO_CHUNK_BUDGET_KB = 400;
+const DEMO_CHUNK_BUDGET_KB = 90;
 const DEMO_CHUNK_BUDGET_BYTES = DEMO_CHUNK_BUDGET_KB * 1024;
 const PLAN_PARSER_INPUT = "node_modules/marked/";
 const COMPANION_PACKAGES = ["playwright-core", "playwright-core/*", "pg", "snowflake-sdk"];

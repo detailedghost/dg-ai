@@ -117,8 +117,9 @@ On TCP, any local process can listen on the port first. dg therefore refuses to 
 - At connect time, dg refuses a TCP plugin when the manifest lists that credential or the credential store holds a
   token for it. dg does not connect and does not send the token.
 
-The error says: use `transport = "ipc"`, or the `http` transport with an `https` endpoint. Use TCP only for plugins that
-hold no secret.
+The error names the exact command to remove a stale token, `dg credentials delete plugin-<name>-token`. It says the
+alternative is to move the plugin to `transport = "ipc"` or to the http transport with an `https` endpoint. Use TCP
+only for plugins that hold no secret.
 
 ## plugin.toml
 

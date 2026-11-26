@@ -100,8 +100,8 @@ export const PW_EXT_MIN_SECRET_CHARS = 4;
 export function isPwExtSecretTooShort(value: string): boolean {
 	return value.replace(/\s+/g, " ").length < PW_EXT_MIN_SECRET_CHARS;
 }
-/** First extension release with per-agent tab groups. */
-export const PW_EXT_MIN_EXTENSION_VERSION = [1, 44, 0] as const;
+/** First extension release that understands phiSites and reports Stop to the daemon. */
+export const PW_EXT_MIN_EXTENSION_VERSION = [7, 1, 0] as const;
 
 /** One fixed browser action; the wire carries no code. */
 export type PwExtRequest = {
