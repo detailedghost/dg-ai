@@ -1,8 +1,6 @@
 ---
 name: jobs
-description: List and control the dg daemon (scheduled jobs and long-running services) and the channel-review daemon. Read-only by default; starting, stopping, or restarting any of them needs a named target.
-  Also adds and removes services, runs a job now, and starts, stops or restarts
-  the dg daemon, each only on a request from the human that names the target.
+description: List and control the dg daemon and channel-review daemon. Read-only unless the human names a target.
 ---
 
 # Jobs

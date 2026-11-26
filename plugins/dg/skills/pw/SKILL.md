@@ -1,6 +1,6 @@
 ---
 name: pw
-description: Drive a browser with pw to open a site, click, fill forms, take snapshots or screenshots, scrape page data, mock requests, record video, and save logins as named states.
+description: 'Drive a browser with pw: open sites, click, fill forms, snapshot, screenshot, scrape, mock requests, record video.'
 ---
 
 # Browser automation with pw

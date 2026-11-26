@@ -1,6 +1,6 @@
 ---
 name: ticket
-description: Create a Jira ticket via the Atlassian MCP, using the registered site, project, assignee, sprint field and issue types for this machine. Use when the user says "make a ticket", "file a Jira issue", "create a task/story/bug for X", or /dg:ticket.
+description: 'Create a Jira ticket via the Atlassian MCP: "make a ticket", "file a Jira issue", /dg:ticket.'
 allowed-tools: Bash(dg:*), searchJiraIssuesUsingJql, lookupJiraAccountId, createJiraIssue
 ---
 

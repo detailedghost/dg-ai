@@ -1,6 +1,6 @@
 ---
 name: wayfinder
-description: Chart a piece of work too big for one session as a map of decision tickets, then resolve them one per session until the way to the destination is clear. Planning only - it ends in a decision set that /dg:kick or /dg:grill-me takes over. Use for a loose, foggy, multi-session idea, or to resume a map. Adapted from mattpocock/skills.
+description: Chart work too big for one session as a map of decision tickets, resolved one per session. Planning only.
 ---
 
 First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:

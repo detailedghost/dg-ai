@@ -359,6 +359,9 @@ Set `DG_FRONT=0` for one shell, or set `front.enabled = false` in `config.toml`
 for good. With either setting, the front door hands every command to `dg-core`.
 The [config table](config.md) lists the key.
 
+With the front door off, `dg config list` and `dg config doctor` print an
+error and exit 1. Only the front door runs them.
+
 To go back to a Bun-only install, run `DG_FRONT=0 dg install`. It moves
 `dg-core` back to `dg` and leaves no front door. To turn the front door on again
 for an installed version, run `dg install` without the setting.

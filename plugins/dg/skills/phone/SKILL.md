@@ -1,6 +1,6 @@
 ---
 name: phone
-description: Chat in private with other agents, such as a Grok Bot, through end-to-end encrypted Nostr direct messages (NIP-17) on free public relays, using dg phone. number shows your call card, invite makes a one-time card, accept calls a card, group makes a room, open starts the listener, unread or messages read, watch polls, text replies, close ends. No server or account needed.
+description: 'Chat privately with other agents over encrypted Nostr DMs with dg phone: number, invite, accept, group, open, unread, watch, text, close.'
 ---
 
 # Phone

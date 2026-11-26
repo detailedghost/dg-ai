@@ -1,6 +1,6 @@
 ---
 name: pushup
-description: Push the current branch, open its PR, and open that PR in the browser in one step (with --ext, in a `/dg:pw` tab group). Use when committed work is ready to share — "push this up", "ship it", "open a PR and show me". Re-running on a branch that already has a PR just reopens it in the browser.
+description: 'Push the branch, open its PR, and open it in the browser: "push this up", "ship it", "open a PR and show me".'
 allowed-tools: Bash(git branch:*) Bash(git status:*) Bash(git push:*) Bash(gh pr:*) Bash(dg:*)
 ---
 

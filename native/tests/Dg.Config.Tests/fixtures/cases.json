@@ -77,5 +77,7 @@
 	{ "name": "set-credential-and-value", "argv": ["config", "set", "plugins.x.settings.token", "v", "--credential", "x-token"], "native": false },
 	{ "name": "set-hooks-key", "argv": ["config", "set", "hooks.spelling.locale", "en-US"], "native": false },
 	{ "name": "set-legacy-marker", "files": { "config/cli-only": "" }, "argv": ["config", "set", "browser.mode", "ext"], "native": false },
-	{ "name": "set-missing-arguments", "argv": ["config", "set"], "native": false }
+	{ "name": "set-missing-arguments", "argv": ["config", "set"], "native": false },
+	{ "name": "list-front-door-only", "frontOnly": true, "argv": ["config", "list"] },
+	{ "name": "doctor-front-door-only", "frontOnly": true, "argv": ["config", "doctor"] }
 ]

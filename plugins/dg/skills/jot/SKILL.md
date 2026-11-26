@@ -1,6 +1,6 @@
 ---
 name: jot
-description: Write a short note and read it back later, or save a handoff. `/dg:jot` writes a temporary note to scratch (lost on reboot). `-s`/`--save` writes a durable handoff. `-p`/`--previous` lists and resumes. `-k`/`--kick` writes "where we are" to the shared `~/doc/checkpoint.md`; `-k -p` takes one back and resumes ("pick up where we left off", "kick", "checkpoint"). Files cap at 2 KB.
+description: 'Write a short note or save a handoff. -s/--save, -p/--previous, -k/--kick ("checkpoint", "pick up where we left off").'
 ---
 
 # Skill: jot

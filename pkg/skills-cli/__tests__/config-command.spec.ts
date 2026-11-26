@@ -221,3 +221,15 @@ describe("ref aliases", () => {
 		expect(loadRefs()).toEqual({ defaultRepo: "acme/app", aliases: { web: "acme/web" } });
 	});
 });
+
+describe("dg config list and doctor in the Bun program", () => {
+	test.each(["list", "doctor"])("config %s says it needs the front door and exits non-zero", async (sub) => {
+		expect(await main(["config", sub])).toBe(1);
+
+		expect(out.join("")).toBe("");
+		const text = err.join("");
+		expect(text).toContain(`dg config ${sub} needs the C# front door`);
+		expect(text).toContain("DG_FRONT");
+		expect(text).toContain("front.enabled = true");
+	});
+});

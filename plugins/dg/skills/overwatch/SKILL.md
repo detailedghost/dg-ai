@@ -1,6 +1,6 @@
 ---
 name: overwatch
-description: Open the live DeeGee Overwatch board as a local page that the dg daemon serves on loopback, keep it current across parallel chats, route board actions, and publish its read-only phone snapshot. Pass --ext to open the board in the paired browser through the dg-ai-extension instead.
+description: Open the live DeeGee Overwatch board as a local page served by the dg daemon and keep it current. --ext uses the extension.
 ---
 
 # Overwatch

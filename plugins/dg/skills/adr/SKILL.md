@@ -1,6 +1,6 @@
 ---
 name: adr
-description: 'Write a paired architecture decision record (a plain-English ADR in docs/adr plus a terse agent decision in .agents/decisions), or answer a question about the codebase from those records at a chosen reading level. Use after a decision passes the three gates, or to explain a feature from its ADRs.'
+description: Write a paired architecture decision record (docs/adr plus .agents/decisions), or answer a question from those records.
 ---
 
 # /dg:adr — Decision Records

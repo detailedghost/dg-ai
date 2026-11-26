@@ -1,11 +1,6 @@
 ---
 name: thrash
-description: >-
-  Tiered code review with a verdict. Takes a GitHub PR or GitLab MR URL, posts
-  inline comments (💀 critical, 🔥 high, ⚠️ medium, 🧹 low, 🔬 nit) and a
-  verdict: approve, request-changes, or comment-only. `--spice 1-5` sets depth
-  and verdict limits, not tone. `--stacked` reviews a whole stack. Pass `.` or a
-  path for a local review that feeds `/dg:address -l`.
+description: Tiered PR/MR code review with inline comments and a verdict. --spice 1-5, --stacked, or `.` for local review.
 ---
 
 # /dg:thrash

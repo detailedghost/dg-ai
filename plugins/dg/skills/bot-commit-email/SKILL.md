@@ -1,6 +1,6 @@
 ---
 name: bot-commit-email
-description: Use dante+<botname>@detailedghost.com for GitLab and GitHub commits and reviews. Use when a bot commits, amends, or submits a review.
+description: Use dante+<botname>@detailedghost.com when a bot commits, amends, or submits a review.
 ---
 
 # Skill: bot-commit-email

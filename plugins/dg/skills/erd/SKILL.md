@@ -1,6 +1,6 @@
 ---
 name: erd
-description: Generate architecture maps and arbitrary Mermaid diagrams as Markdown or standalone HTML.
+description: Generate architecture maps and Mermaid diagrams as Markdown or standalone HTML.
 allowed-tools: Bash(dg:*), Read, AskUserQuestion
 ---
 

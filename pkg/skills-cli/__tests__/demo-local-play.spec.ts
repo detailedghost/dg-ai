@@ -56,8 +56,8 @@ describe("demo <plan> local default", () => {
 		const slug = String(playerJob().slug);
 		const planFile = join(world.demosDir, slug, `${slug}.demo.md`);
 		expect(existsSync(planFile)).toBe(true);
-		expect(loadScript(planFile).steps).toHaveLength(
-			loadScript(world.planPath).steps.length,
+		expect((await loadScript(planFile)).steps).toHaveLength(
+			(await loadScript(world.planPath)).steps.length,
 		);
 		const logPath = String(world.spawned[0]?.logPath);
 		expect(dirname(logPath)).toBe(join(world.demosDir, slug));
@@ -190,7 +190,7 @@ describe("demo --print and --edit", () => {
 		const original = console.error;
 		console.error = (...args: unknown[]) => void errors.push(args.join(" "));
 		try {
-			const code = await playLocal(loadScript(world.planPath), { [flag]: true }, world.localDeps());
+			const code = await playLocal(await loadScript(world.planPath), { [flag]: true }, world.localDeps());
 			expect(code).toBe(1);
 		} finally {
 			console.error = original;
@@ -228,8 +228,8 @@ describe("saved plan readability", () => {
 	test("the saved plan file loads back to the same title", async () => {
 		await world.drive(registerDemo, ["demo", world.planPath], demoDeps());
 		const slug = String(playerJob().slug);
-		const saved = loadScript(join(world.demosDir, slug, `${slug}.demo.md`));
-		expect(saved.title).toBe(loadScript(world.planPath).title);
+		const saved = await loadScript(join(world.demosDir, slug, `${slug}.demo.md`));
+		expect(saved.title).toBe((await loadScript(world.planPath)).title);
 	});
 });
 
@@ -239,12 +239,12 @@ describe("demo <plan> player job", () => {
 		const job = playerJob();
 		const slug = String(job.slug);
 		const dir = join(world.demosDir, slug);
-		const script = loadScript(world.planPath);
+		const script = await loadScript(world.planPath);
 		expect(job.dir).toBe(dir);
 		expect(job.planPath).toBe(join(dir, `${slug}.demo.md`));
 		expect(job.startUrl).toBe(script.startUrl);
 		expect(job.script).toBeUndefined();
-		expect(loadScript(String(job.planPath)).steps).toHaveLength(script.steps.length);
+		expect((await loadScript(String(job.planPath))).steps).toHaveLength(script.steps.length);
 		expect(job.timeoutMin).toBe(DEFAULT_TIMEOUT_MIN);
 		expect(job.out).toBeUndefined();
 		expect(job.plan).toEqual({
@@ -295,7 +295,7 @@ describe("demo <plan> player job", () => {
 			.catch((error: Error) => ({ code: 1, out: "", err: error.message }));
 		expect(run.code).not.toBe(0);
 		expect(run.err).toContain("spawn boom");
-		const slug = slugify(loadScript(world.planPath).title ?? "demo");
+		const slug = slugify((await loadScript(world.planPath)).title ?? "demo");
 		expect(existsSync(join(world.demosDir, slug, "player.pid"))).toBe(false);
 	});
 });

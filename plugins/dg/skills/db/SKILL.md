@@ -1,6 +1,6 @@
 ---
 name: db
-description: Query PostgreSQL and Snowflake databases with read-safe defaults and token-efficient output.
+description: Query PostgreSQL and Snowflake databases with read-safe defaults.
 ---
 
 # Database Queries with db

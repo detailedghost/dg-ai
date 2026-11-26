@@ -1,6 +1,6 @@
 ---
 name: stat
-description: Report this session's in-flight work as a priority-ordered checklist, split by status (doing, queued, waiting on the user), plus a critical-path total. Read-only glance, except it removes finished background jobs, reaps leftover agent processes, and stops stuck loops. Triggers on "/dg:stat", "what's in flight", "where are we at", "status of everything", "show the checklist".
+description: 'Report in-flight work as a priority checklist: "/dg:stat", "what''s in flight", "where are we at", "show the checklist".'
 ---
 
 # /dg:stat: What's In Flight

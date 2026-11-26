@@ -1,6 +1,6 @@
 ---
 name: eli5
-description: 'Explain a concept, file, error, or codebase as if the reader is five — one big idea, short bullets, and an ASCII picture.'
+description: Explain a concept, file, error, or codebase as if the reader is five.
 ---
 
 # /dg:eli5 — Explain It Like I Am Five

@@ -1,6 +1,6 @@
 ---
 name: channel-review
-description: Run local thrash reviews for GitHub pull requests and GitLab merge requests posted in Teams through a bot relay. Manage the daemon and custom reactions.
+description: Run local thrash reviews for PRs/MRs posted in Teams through a bot relay; manage the daemon.
 ---
 
 # Channel review

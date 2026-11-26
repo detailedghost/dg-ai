@@ -1,6 +1,6 @@
 ---
 name: proxy
-description: Delegate a coding task to an installed CLI agent (codex, copilot, pi, opencode, or grok), with persona, resume, and background support.
+description: Delegate a coding task to an installed CLI agent (codex, pi, opencode, or grok), with persona, resume, and background.
 ---
 
 # Proxy

@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Review finished work before it lands. Capture before-and-after screenshots at desktop, tablet and mobile, light and dark, per role, then show them round by round on a local board with test results. Dante approves, sends back or skips each item. Use when an agent has finished a branch or page, or the user says "verify this" or "show me before and after".
+description: 'Review finished work with before/after screenshots on a local board: "verify this", "show me before and after".'
 ---
 
 First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:
