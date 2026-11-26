@@ -234,7 +234,7 @@ internal static partial class DgTomlValidator
         foreach (var item in items)
         {
             if (index == PhiSitesMax)
-                throw MustBe(where, key, $"a list of at most {PhiSitesMax} site keys", value);
+                throw Fail(where, key, $"{key} holds more than {PhiSitesMax} site keys.", $"{NextEdit} {key} <value>.");
             if (item is not string text || !SiteKey.IsValid(text))
                 throw MustBe(where, $"{key}.{index}", "a site key such as \"https://example.org\"", item);
             sites.Add(text);

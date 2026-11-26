@@ -49,7 +49,7 @@ public sealed class PhiSiteKeyTests
         var result = Config(257);
 
         Assert.False(result.IsOk);
-        Assert.Contains("pw.phi_sites must be a list of at most 256 site keys", ConfigErrorText.Render(result.Error!));
+        Assert.Contains("pw.phi_sites holds more than 256 site keys", ConfigErrorText.Render(result.Error!));
     }
 
     private static ConfigResult<DgToml> Config(int count)
