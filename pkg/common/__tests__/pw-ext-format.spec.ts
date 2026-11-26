@@ -438,9 +438,12 @@ describe("PW_EXT_RELAY table", () => {
 
 	it.each([
 		[minVersion, true],
-		["7.99.0", true],
 		["8.0.0", true],
+		["8.4.2", true],
+		["9.0.0", true],
 		[`${minVersion}+build.1`, true],
+		["7.1.0", false],
+		["7.99.0", false],
 		["7.0.5", false],
 		["1.44.0", false],
 		[undefined, false],
@@ -589,11 +592,8 @@ describe("validatePwExtRequest tab verbs and tabId", () => {
 });
 
 describe("PW_EXT_MIN_EXTENSION_VERSION", () => {
-	it("is at least the first release that understands phiSites and pw-ext-stop", () => {
-		const [major, minor, patch] = PW_EXT_MIN_EXTENSION_VERSION;
-		const floor = major * 1_000_000 + minor * 1_000 + patch;
-
-		expect(floor).toBeGreaterThanOrEqual(7_001_000);
+	it("is the release that ships phiSites and pw-ext-stop", () => {
+		expect(PW_EXT_MIN_EXTENSION_VERSION).toEqual([8, 0, 0]);
 	});
 });
 

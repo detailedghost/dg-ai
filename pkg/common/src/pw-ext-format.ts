@@ -101,7 +101,7 @@ export function isPwExtSecretTooShort(value: string): boolean {
 	return value.replace(/\s+/g, " ").length < PW_EXT_MIN_SECRET_CHARS;
 }
 /** First extension release that understands phiSites and reports Stop to the daemon. */
-export const PW_EXT_MIN_EXTENSION_VERSION = [7, 1, 0] as const;
+export const PW_EXT_MIN_EXTENSION_VERSION = [8, 0, 0] as const;
 
 /** One fixed browser action; the wire carries no code. */
 export type PwExtRequest = {
