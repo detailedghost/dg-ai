@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { readDgToml, resolveDgPaths, writeDgToml, writeDgTomlDoc, writeFileAtomic } from "@dg/common/node";
 import type { Pin } from "./source";
-import { hashTree } from "./tree";
 
 export type Env = Record<string, string | undefined>;
 
@@ -14,6 +13,7 @@ export type PluginRecord = {
 	pin: Pin;
 	treeSha256: string;
 	approvedSha256: string | null;
+	mac: string | null;
 };
 
 const PLUGIN_NAME = /^[a-z][a-z0-9-]{0,63}$/;
@@ -39,7 +39,8 @@ export function readRecord(name: string, env: Env): PluginRecord {
 	return parseRecord(name, file, readFileSync(file, "utf8"));
 }
 
-const RECORD_KEYS = ["approvedSha256", "kind", "name", "pin", "source", "treeSha256"];
+const REQUIRED_KEYS = ["approvedSha256", "kind", "name", "pin", "source", "treeSha256"];
+const RECORD_KEYS = [...REQUIRED_KEYS, "mac"].sort();
 
 function parseRecord(name: string, file: string, text: string): PluginRecord {
 	const broken = (why: string) =>
@@ -50,22 +51,21 @@ function parseRecord(name: string, file: string, text: string): PluginRecord {
 	} catch {
 		throw broken("is not valid JSON");
 	}
-	if (!isObject(value) || Object.keys(value).sort().join() !== RECORD_KEYS.join()) throw broken(`must hold exactly the keys ${RECORD_KEYS.join(", ")}`);
+	const keys = isObject(value) ? Object.keys(value).sort() : [];
+	const legacy = keys.join() === REQUIRED_KEYS.join();
+	if (!isObject(value) || !(legacy || keys.join() === RECORD_KEYS.join()))
+		throw broken(`must hold exactly the keys ${REQUIRED_KEYS.join(", ")}, and optionally mac`);
 	if (value.name !== name) throw broken(`names ${JSON.stringify(value.name)}, not ${name}`);
 	const { pin } = value;
 	const pinOk = isObject(pin) && Object.keys(pin).sort().join() === "kind,value" && (pin.kind === "sha256" || pin.kind === "commit") && typeof pin.value === "string";
 	const textOk = value.kind === "skill" && typeof value.source === "string" && typeof value.treeSha256 === "string";
-	if (!pinOk || !textOk || !(value.approvedSha256 === null || typeof value.approvedSha256 === "string")) throw broken("has a field of the wrong type");
-	return value as PluginRecord;
+	const macOk = legacy || value.mac === null || (typeof value.mac === "string" && /^[0-9a-f]{64}$/.test(value.mac));
+	if (!pinOk || !textOk || !macOk || !(value.approvedSha256 === null || typeof value.approvedSha256 === "string")) throw broken("has a field of the wrong type");
+	return { ...(value as Omit<PluginRecord, "mac">), mac: legacy ? null : (value.mac as string | null) };
 }
 
 export function pluginSrcDir(name: string, env: Env): string {
 	return join(pluginFolder(name, env), "src");
-}
-
-export function isApproved(record: PluginRecord, env: Env): boolean {
-	const { approvedSha256, treeSha256 } = record;
-	return approvedSha256 !== null && approvedSha256 === treeSha256 && hashTree(pluginSrcDir(record.name, env)) === treeSha256;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
