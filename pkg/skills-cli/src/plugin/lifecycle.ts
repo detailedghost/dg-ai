@@ -173,12 +173,12 @@ export async function updatePlugin(name: string, input: { pin?: Pin } = {}, env:
 			mac: dropsApproval ? null : record.mac,
 		};
 		writeRecord(next, env);
-		if (dropsApproval) disableAndUnload(name, env);
 		const approved = await isApproved(next, env);
-		if (!dropsApproval && approved) {
+		if (dropsApproval || !approved) disableAndUnload(name, env);
+		else {
 			load(next, env);
 			await syncHosts(next, env);
-		} else if (!approved) disableAndUnload(name, env);
+		}
 		return { name, changed, approved, pin: staged.pin };
 	} finally {
 		removeFolder(staging);
