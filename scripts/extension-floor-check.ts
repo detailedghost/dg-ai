@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	bump,
+	git,
 	classify,
 	highestLevel,
 	listTags,
@@ -33,9 +34,18 @@ export function parseFloor(source: string): string | null {
 	return match ? `${match[1]}.${match[2]}.${match[3]}` : null;
 }
 
+function segments(version: string): number[] {
+	return version.split(".").map((segment) => {
+		if (!/^\d+$/.test(segment)) {
+			throw new Error(`version "${version}" has a segment that is not a non-negative integer: "${segment}"`);
+		}
+		return Number(segment);
+	});
+}
+
 export function compareVersions(a: string, b: string): number {
-	const left = a.split(".").map(Number);
-	const right = b.split(".").map(Number);
+	const left = segments(a);
+	const right = segments(b);
 	for (let i = 0; i < 3; i++) {
 		const diff = (left[i] ?? 0) - (right[i] ?? 0);
 		if (diff !== 0) return diff;
@@ -62,7 +72,9 @@ export function checkFloor(input: FloorInput): FloorResult {
 	if (changed && compareVersions(input.floor, input.released) <= 0) {
 		return {
 			ok: false,
-			message: `the floor ${input.floor} is not above the released extension ${input.released}; an old extension would pass`,
+			message:
+				`the floor ${input.floor} is not above the released extension ${input.released}; ` +
+				"an old extension would pass",
 		};
 	}
 	return {
@@ -71,9 +83,12 @@ export function checkFloor(input: FloorInput): FloorResult {
 	};
 }
 
-function git(root: string, args: string[]): string | null {
-	const result = Bun.spawnSync(["git", ...args], { cwd: root });
-	return result.exitCode === 0 ? result.stdout.toString() : null;
+function baseFloorSource(root: string, baseRef: string): string | null {
+	try {
+		return git(root, ["show", `origin/${baseRef}:${FLOOR_PATH}`]);
+	} catch {
+		return null;
+	}
 }
 
 function requireFloor(source: string, where: string): string {
@@ -89,7 +104,7 @@ export function main(env: NodeJS.ProcessEnv, root = process.cwd()): FloorResult 
 		JSON.parse(readFileSync(join(root, EXTENSION_PACKAGE), "utf8")).version,
 	);
 	const tag = previousTag(released, listTags(root));
-	const baseSource = git(root, ["show", `origin/${baseRef}:${FLOOR_PATH}`]);
+	const baseSource = baseFloorSource(root, baseRef);
 	return checkFloor({
 		floor: requireFloor(readFileSync(join(root, FLOOR_PATH), "utf8"), FLOOR_PATH),
 		baseFloor: baseSource === null ? null : parseFloor(baseSource),

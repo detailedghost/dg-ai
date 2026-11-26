@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { APPROVAL_KEY_CREDENTIAL, APPROVAL_MAC, type ApprovalPurpose } from "@dg/common";
+import { APPROVAL_KEY, APPROVAL_KEY_CREDENTIAL, APPROVAL_MAC, type ApprovalPurpose } from "@dg/common";
 import type { CredentialStore } from "../store/credentials-store";
 
 const DOMAINS: Record<ApprovalPurpose, string> = {
@@ -25,12 +25,12 @@ export function createApprovalSigner(store: KeyStore): ApprovalSigner {
 				stored = randomBytes(32).toString("hex");
 				store.setCredential(APPROVAL_KEY_CREDENTIAL, stored);
 			}
-			if (!APPROVAL_MAC.test(stored)) throw new Error("the stored plugin approval key is damaged");
+			if (!APPROVAL_KEY.test(stored)) throw new Error("the stored plugin approval key is damaged");
 			return mac(Buffer.from(stored, "hex"), purpose, fields).toString("hex");
 		},
 		verify(purpose, fields, claimed) {
 			const stored = store.getCredential(APPROVAL_KEY_CREDENTIAL)?.value;
-			if (stored === undefined || !APPROVAL_MAC.test(stored) || !APPROVAL_MAC.test(claimed)) return false;
+			if (stored === undefined || !APPROVAL_KEY.test(stored) || !APPROVAL_MAC.test(claimed)) return false;
 			return timingSafeEqual(mac(Buffer.from(stored, "hex"), purpose, fields), Buffer.from(claimed, "hex"));
 		},
 	};
