@@ -9,6 +9,7 @@ namespace Dg.Core.Config;
 internal static partial class DgTomlValidator
 {
     private const string NextEdit = "run dg config edit, or dg config set";
+    private const int PhiSitesMax = 256;
 
     private static readonly string[] Sections =
     [
@@ -27,9 +28,6 @@ internal static partial class DgTomlValidator
         @"^(?:gh[pousr]_|github_pat_|sk-|xox[abpr]-|glpat-|AKIA|ASIA|AIza|ya29\.)|^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])[A-Za-z0-9_-]{32,}={0,2}\z"
     )]
     private static partial Regex TokenLike();
-
-    [GeneratedRegex(@"^https?://[a-z0-9.:\[\]-]+\z")]
-    private static partial Regex SiteKey();
 
     public static DgToml Validate(TomlTable root, string file, string text)
     {
@@ -235,7 +233,9 @@ internal static partial class DgTomlValidator
         var index = 0;
         foreach (var item in items)
         {
-            if (item is not string text || !SiteKey().IsMatch(text))
+            if (index == PhiSitesMax)
+                throw MustBe(where, key, $"a list of at most {PhiSitesMax} site keys", value);
+            if (item is not string text || !SiteKey.IsValid(text))
                 throw MustBe(where, $"{key}.{index}", "a site key such as \"https://example.org\"", item);
             sites.Add(text);
             index++;

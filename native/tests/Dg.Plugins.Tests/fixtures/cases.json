@@ -258,25 +258,24 @@
 		},
 		{
 			"name": "list-extra-argument",
-			"native": false,
 			"argv": [
 				"plugin",
 				"list",
 				"extra"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "list-unknown-option",
-			"native": false,
 			"argv": [
 				"plugin",
 				"list",
 				"--yaml"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "list-config-missing-with-plugins",
-			"native": false,
 			"steps": [
 				{
 					"bun": [
@@ -292,11 +291,11 @@
 			"argv": [
 				"plugin",
 				"list"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "list-config-syntax-error",
-			"native": false,
 			"steps": [
 				{
 					"bun": [
@@ -314,7 +313,8 @@
 			"argv": [
 				"plugin",
 				"list"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-unapproved",
@@ -536,7 +536,6 @@
 		},
 		{
 			"name": "verify-approve-foreign-host-skill",
-			"native": false,
 			"steps": [
 				{
 					"bun": [
@@ -558,14 +557,11 @@
 				"beta",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-approve-claude-config-dir",
-			"env": {
-				"CLAUDE_CONFIG_DIR": "<home>/cc",
-				"CODEX_HOME": "<home>/cx"
-			},
 			"steps": [
 				{
 					"bun": [
@@ -580,6 +576,10 @@
 					}
 				}
 			],
+			"env": {
+				"CLAUDE_CONFIG_DIR": "<home>/cc",
+				"CODEX_HOME": "<home>/cx"
+			},
 			"argv": [
 				"plugin",
 				"verify",
@@ -591,7 +591,6 @@
 		},
 		{
 			"name": "verify-tampered",
-			"native": false,
 			"steps": [
 				{
 					"bun": [
@@ -618,11 +617,11 @@
 				"plugin",
 				"verify",
 				"gamma"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-tampered-approve",
-			"native": false,
 			"steps": [
 				{
 					"bun": [
@@ -651,7 +650,8 @@
 				"gamma",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-not-installed",
@@ -663,53 +663,52 @@
 		},
 		{
 			"name": "verify-bad-name",
-			"native": false,
 			"argv": [
 				"plugin",
 				"verify",
 				"Bad_Name"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-path-name",
-			"native": false,
 			"argv": [
 				"plugin",
 				"verify",
 				"../x"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-missing-name",
-			"native": false,
 			"argv": [
 				"plugin",
 				"verify"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-extra-argument",
-			"native": false,
 			"argv": [
 				"plugin",
 				"verify",
 				"a",
 				"b"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-unknown-option",
-			"native": false,
 			"argv": [
 				"plugin",
 				"verify",
 				"a",
 				"--force"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-symlink-in-source",
-			"native": false,
 			"steps": [
 				{
 					"bun": [
@@ -728,7 +727,8 @@
 				"plugin",
 				"verify",
 				"gamma"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "enable-approved",
@@ -950,12 +950,12 @@
 					}
 				}
 			],
-			"native": false,
 			"argv": [
 				"plugin",
 				"enable",
 				"beta"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "enable-config-missing",
@@ -979,12 +979,12 @@
 					"rm": "config/config.toml"
 				}
 			],
-			"native": false,
 			"argv": [
 				"plugin",
 				"enable",
 				"gamma"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "enable-config-syntax-error",
@@ -1010,49 +1010,49 @@
 					}
 				}
 			],
-			"native": false,
 			"argv": [
 				"plugin",
 				"enable",
 				"gamma"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "enable-bad-name",
-			"native": false,
 			"argv": [
 				"plugin",
 				"enable",
 				"Bad_Name"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "enable-missing-name",
-			"native": false,
 			"argv": [
 				"plugin",
 				"enable"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "enable-extra-argument",
-			"native": false,
 			"argv": [
 				"plugin",
 				"enable",
 				"a",
 				"b"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "enable-unknown-option",
-			"native": false,
 			"argv": [
 				"plugin",
 				"enable",
 				"a",
 				"--force"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "disable-enabled",
@@ -1300,39 +1300,39 @@
 					"rm": "config/config.toml"
 				}
 			],
-			"native": false,
 			"argv": [
 				"plugin",
 				"disable",
 				"gamma"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "disable-bad-name",
-			"native": false,
 			"argv": [
 				"plugin",
 				"disable",
 				"Bad_Name"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "disable-missing-name",
-			"native": false,
 			"argv": [
 				"plugin",
 				"disable"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "disable-extra-argument",
-			"native": false,
 			"argv": [
 				"plugin",
 				"disable",
 				"a",
 				"b"
-			]
+			],
+			"native": false
 		}
 	]
 }

@@ -69,7 +69,9 @@ public sealed class DgSettings(DgToml toml, IReadOnlyDictionary<string, string?>
             : null;
     }
 
-    private object? Lookup(string key)
+    private object? Lookup(string key) => Lookup(toml, key);
+
+    public static object? Lookup(DgToml toml, string key)
     {
         var parts = key.Split('.');
         return parts switch
@@ -79,6 +81,7 @@ public sealed class DgSettings(DgToml toml, IReadOnlyDictionary<string, string?>
             ["front", "enabled"] => toml.FrontEnabled,
             ["install", "cli_only"] => toml.InstallCliOnly,
             ["refs", "default_repo"] => toml.RefsDefaultRepo,
+            ["refs", "aliases", var alias] => toml.RefsAliases.GetValueOrDefault(alias),
             ["inbox", .. var rest] => Walk(toml.Inbox, rest),
             ["ssms", .. var rest] => Walk(toml.Ssms, rest),
             ["plugins", var name, .. var rest] when toml.Plugins.TryGetValue(name, out var plugin) =>

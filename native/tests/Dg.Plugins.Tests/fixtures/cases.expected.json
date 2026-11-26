@@ -937,10 +937,6 @@
 		"stderr": "dg: dg config: <home>/config/config.toml:1: Expected ']' to close a table header but found (0x0A). Next: run dg config edit, or dg config set <key> <value>.\n",
 		"exit": 1,
 		"after": {
-			".claude/skills/gamma/.dg-plugin": "gamma\n",
-			".claude/skills/gamma/SKILL.md": "---\nname: gamma\n---\nGamma.\n",
-			".codex/skills/gamma/.dg-plugin": "gamma\n",
-			".codex/skills/gamma/SKILL.md": "---\nname: gamma\n---\nGamma.\n",
 			"config/config.toml": "[plugins\n",
 			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n}\n",
 			"data/plugins/gamma/skills/gamma/SKILL.md": "---\nname: gamma\n---\nGamma.\n",

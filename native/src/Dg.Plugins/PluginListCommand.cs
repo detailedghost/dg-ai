@@ -1,5 +1,6 @@
 using System.Text;
 using Dg.Core.Output;
+using Dg.Core.Plugins.Runtime;
 
 namespace Dg.Plugins;
 
@@ -53,7 +54,7 @@ internal sealed class PluginListCommand(
     private static void AppendJson(
         StringBuilder sink,
         string name,
-        PluginRecord record,
+        PluginApprovalRecord record,
         bool enabled,
         bool last
     )

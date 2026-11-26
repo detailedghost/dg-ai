@@ -31,8 +31,8 @@ internal abstract class APluginSwitchCommand(
                     + $"Next: review it, then run dg plugin verify {name} --approve."
             );
         }
-        store.Hosts().Unregister(name);
         config.SetEnabled(name, enable);
+        store.Hosts().Unregister(name);
         stdout.Append(name).Append(enable ? " enabled\n" : " disabled\n");
         return 0;
     }

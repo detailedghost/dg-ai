@@ -2,15 +2,22 @@ using Dg.Core.Credentials;
 
 namespace Dg.Core.Plugins.Runtime;
 
-public sealed class PluginApprovalVerifier(
-    ICredentialStore credentials,
-    TimeProvider? clock = null,
-    Func<string, string>? hashTree = null
-)
+public sealed class PluginApprovalVerifier
 {
-    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
-    private readonly Func<string, string> _hashTree = hashTree ?? PluginApproval.HashTree;
+    private readonly ICredentialStore _credentials;
+    private readonly TimeProvider _clock;
+    private readonly Func<string, string> _hashTree;
     private byte[]? _key;
+
+    public PluginApprovalVerifier(ICredentialStore credentials, TimeProvider? clock = null)
+        : this(credentials, clock, null) { }
+
+    internal PluginApprovalVerifier(ICredentialStore credentials, TimeProvider? clock, Func<string, string>? hashTree)
+    {
+        _credentials = credentials;
+        _clock = clock ?? TimeProvider.System;
+        _hashTree = hashTree ?? PluginApproval.HashTree;
+    }
 
     public async ValueTask<string?> ProblemAsync(string name, string folder, CancellationToken ct)
     {
@@ -22,7 +29,10 @@ public sealed class PluginApprovalVerifier(
         byte[]? key;
         try
         {
+            var cached = _key is not null;
             key = await KeyAsync(ct).ConfigureAwait(false);
+            if (cached && key is not null && !PluginApproval.MacMatches(key, record))
+                key = await KeyAsync(ct, refresh: true).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -57,12 +67,12 @@ public sealed class PluginApprovalVerifier(
         }
     }
 
-    private async ValueTask<byte[]?> KeyAsync(CancellationToken ct)
+    private async ValueTask<byte[]?> KeyAsync(CancellationToken ct, bool refresh = false)
     {
-        if (_key is not null)
+        if (_key is not null && !refresh)
             return _key;
-        var hex = await credentials.GetAsync(PluginApproval.KeyCredential, ct).ConfigureAwait(false);
-        return PluginApproval.TryDecode32(hex, out var key) ? _key = key : null;
+        var hex = await _credentials.GetAsync(PluginApproval.KeyCredential, ct).ConfigureAwait(false);
+        return _key = PluginApproval.TryDecode32(hex, out var key) ? key : null;
     }
 
     private static string Reapprove(string name) => $"re-approve with dg plugin verify {name} --approve";

@@ -1,4 +1,5 @@
 using Dg.Core.Plugins.Contract;
+using Dg.Core.Plugins.Runtime;
 using Dg.Core.Tests.Plugins.Runtime;
 using Dg.Core.Tests.Transport.Http;
 using Dg.Core.Tests.Transport.Ipc;
@@ -76,11 +77,18 @@ public sealed class PluginHostLeakTests
         );
 
         AssertFlat(report);
-        var cache = await File.ReadAllTextAsync(
-            Path.Combine(fixture.Folder("scanner"), "stat-cache.json"),
-            TestContext.Current.CancellationToken
+        var folder = fixture.Folder("scanner");
+        var src = Path.Combine(folder, "src");
+        var record = PluginApprovalRecord.Read(folder)!;
+        Assert.True(
+            PluginStatCache.Attests(
+                folder,
+                ApprovalFixture.Key,
+                record.TreeSha256,
+                PluginStatCache.Snapshot(src),
+                DateTimeOffset.UtcNow
+            )
         );
-        Assert.Contains($"\"m\":{File.GetLastWriteTimeUtc(body).Ticks * 100}", cache);
     }
 
     [Fact]

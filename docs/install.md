@@ -921,7 +921,8 @@ no plugin is approved. Start the daemon, or run `verify <name> --approve` again.
 turns off until you run `verify --approve` again. The front door runs `list` and
 `verify` itself while no record claims approval. It hands any approval check and
 every `--approve` to `dg-core`, because the front door has no credential store
-client. `add`, `remove`, `enable`, `disable` and `update` run in `dg-core`.
+client. `add`, `remove` and `update` always run in `dg-core`. `enable` and `disable`
+run in the front door until a record claims approval, then `dg-core` takes them.
 
 The plugin host caches file sizes, times and inodes in `stat-cache.json` inside
 the plugin folder. It signs the cache with the same key. It hashes the files

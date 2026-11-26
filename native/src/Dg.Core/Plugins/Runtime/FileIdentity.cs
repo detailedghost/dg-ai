@@ -11,7 +11,7 @@ internal static partial class FileIdentity
     private const int LinuxAtSymlinkNofollow = 0x100;
     private const uint LinuxStatxIno = 0x100;
     private const int LinuxStatxInoOffset = 32;
-    private const int MacInoOffset = 8;
+    private const int MacInodeOffset = 8;
     private const int BufferSize = 512;
     private const int NameStackLimit = 1024;
 
@@ -21,7 +21,7 @@ internal static partial class FileIdentity
         {
             if (OperatingSystem.IsWindows())
                 return WindowsIndex(path);
-            return OperatingSystem.IsLinux() ? LinuxInode(path) : MacInode(path);
+            return PosixInode(path);
         }
         catch (Exception ex)
             when (ex is DllNotFoundException
@@ -35,7 +35,7 @@ internal static partial class FileIdentity
         }
     }
 
-    private static ulong LinuxInode(string path)
+    private static ulong PosixInode(string path)
     {
         var max = Encoding.UTF8.GetMaxByteCount(path.Length) + 1;
         Span<byte> name = max <= NameStackLimit ? stackalloc byte[max] : new byte[max];
@@ -43,26 +43,27 @@ internal static partial class FileIdentity
         Span<byte> buffer = stackalloc byte[BufferSize];
         ref var nameRef = ref MemoryMarshal.GetReference(name);
         ref var bufferRef = ref MemoryMarshal.GetReference(buffer);
-        if (Statx(LinuxAtFdCwd, ref nameRef, LinuxAtSymlinkNofollow, LinuxStatxIno, ref bufferRef) != 0)
+        return OperatingSystem.IsLinux()
+            ? LinuxInode(ref nameRef, ref bufferRef, buffer)
+            : MacInode(ref nameRef, ref bufferRef, buffer);
+    }
+
+    private static ulong LinuxInode(ref byte name, ref byte bufferRef, ReadOnlySpan<byte> buffer)
+    {
+        if (Statx(LinuxAtFdCwd, ref name, LinuxAtSymlinkNofollow, LinuxStatxIno, ref bufferRef) != 0)
             return 0;
         return (BinaryPrimitives.ReadUInt32LittleEndian(buffer) & LinuxStatxIno) == 0
             ? 0
             : BinaryPrimitives.ReadUInt64LittleEndian(buffer[LinuxStatxInoOffset..]);
     }
 
-    private static ulong MacInode(string path)
+    private static ulong MacInode(ref byte name, ref byte bufferRef, ReadOnlySpan<byte> buffer)
     {
-        var max = Encoding.UTF8.GetMaxByteCount(path.Length) + 1;
-        Span<byte> name = max <= NameStackLimit ? stackalloc byte[max] : new byte[max];
-        name[Encoding.UTF8.GetBytes(path, name)] = 0;
-        Span<byte> buffer = stackalloc byte[BufferSize];
-        ref var nameRef = ref MemoryMarshal.GetReference(name);
-        ref var bufferRef = ref MemoryMarshal.GetReference(buffer);
         var status =
             RuntimeInformation.ProcessArchitecture == Architecture.X64
-                ? MacLstatX64(ref nameRef, ref bufferRef)
-                : MacLstat(ref nameRef, ref bufferRef);
-        return status == 0 ? BinaryPrimitives.ReadUInt64LittleEndian(buffer[MacInoOffset..]) : 0;
+                ? MacLstatX64(ref name, ref bufferRef)
+                : MacLstat(ref name, ref bufferRef);
+        return status == 0 ? BinaryPrimitives.ReadUInt64LittleEndian(buffer[MacInodeOffset..]) : 0;
     }
 
     private static ulong WindowsIndex(string path)
