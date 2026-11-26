@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { DaemonNotRunningError } from "@dg/common/node";
 import { approvalProblem, credentialApprovalKeys, isApproved, macOf } from "../src/plugin/approval";
 import { type PluginRecord, readRecord } from "../src/plugin/store";
 import fixture from "../../common/fixtures/plugins/approval/cases.json";
@@ -133,7 +134,7 @@ describe("credentialApprovalKeys", () => {
 
 	test("fetches the key once per process", async () => {
 		const { client, calls } = fakeClient(fixture.key);
-		const keys = credentialApprovalKeys(client);
+		const keys = credentialApprovalKeys(() => client);
 		expect((await keys.read())?.toString("hex")).toBe(fixture.key);
 		expect((await keys.read())?.toString("hex")).toBe(fixture.key);
 		expect(calls.get).toBe(1);
@@ -141,18 +142,18 @@ describe("credentialApprovalKeys", () => {
 
 	test("reads an absent key as undefined without creating one", async () => {
 		const { client, calls } = fakeClient();
-		expect(await credentialApprovalKeys(client).read()).toBeUndefined();
+		expect(await credentialApprovalKeys(() => client).read()).toBeUndefined();
 		expect(calls.set).toEqual([]);
 	});
 
 	test("reads a malformed key as absent", async () => {
 		const { client } = fakeClient("not-hex");
-		expect(await credentialApprovalKeys(client).read()).toBeUndefined();
+		expect(await credentialApprovalKeys(() => client).read()).toBeUndefined();
 	});
 
 	test("ensure stores a fresh 32-byte lowercase hex key on first use and reuses it after", async () => {
 		const { client, calls } = fakeClient();
-		const keys = credentialApprovalKeys(client);
+		const keys = credentialApprovalKeys(() => client);
 		const first = await keys.ensure();
 		expect(first).toHaveLength(32);
 		expect(calls.set).toHaveLength(1);
@@ -161,13 +162,35 @@ describe("credentialApprovalKeys", () => {
 		expect(calls.set).toHaveLength(1);
 	});
 
-	test("lets a daemon error surface", async () => {
-		const keys = credentialApprovalKeys({
+	test("lets a daemon error surface and still closes the connection", async () => {
+		let closed = 0;
+		const keys = credentialApprovalKeys(() => ({
 			get: async () => {
-				throw new Error("dg daemon is not running; start it with dg agent start");
+				throw new DaemonNotRunningError();
 			},
 			set: async () => {},
-		});
+			close: () => void closed++,
+		}));
 		await expect(keys.read()).rejects.toThrow(/dg agent start/);
+		expect(closed).toBe(1);
+	});
+
+	test("closes the connection once after a read and once after ensure", async () => {
+		let closed = 0;
+		const base = fakeClient();
+		const keys = credentialApprovalKeys(() => ({ ...base.client, close: () => void closed++ }));
+		await keys.read();
+		expect(closed).toBe(1);
+		await keys.ensure();
+		expect(closed).toBe(2);
+		await keys.read();
+		await keys.ensure();
+		expect(closed).toBe(2);
+	});
+
+	test("a failure that is not a stopped daemon names dg doctor, not dg agent start", async () => {
+		const problem = await approvalProblem(record("signed"), env, downKeys(new Error("no usable session x is registered on the daemon.")));
+		expect(problem).toMatch(/no usable session.*dg doctor/);
+		expect(problem).not.toMatch(/dg agent start/);
 	});
 });

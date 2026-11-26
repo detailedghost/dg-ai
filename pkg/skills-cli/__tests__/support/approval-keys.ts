@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { DaemonNotRunningError } from "@dg/common/node";
 import type { ApprovalKeys } from "../../src/plugin/approval";
 
 export const TEST_KEY_HEX = "00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f";
@@ -14,9 +15,9 @@ export function fakeKeys(initial: string | null = TEST_KEY_HEX): FakeKeys {
 	return keys;
 }
 
-export function downKeys(message = "dg daemon is not running; start it with dg agent start"): ApprovalKeys {
+export function downKeys(error: Error = new DaemonNotRunningError()): ApprovalKeys {
 	const fail = async (): Promise<never> => {
-		throw new Error(message);
+		throw error;
 	};
 	return { read: fail, ensure: fail };
 }

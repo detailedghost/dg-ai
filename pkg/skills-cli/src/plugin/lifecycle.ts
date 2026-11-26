@@ -201,7 +201,9 @@ export async function verifyPlugin(name: string, input: { approve: boolean }, en
 	}
 	const manifest = readManifest(src);
 	const permissions = manifest === undefined ? { enforced: [], unenforced: [] } : permissionReport(manifest);
-	return { name, approved: intact && (await isApproved(record, env)), intact, problems, ...permissions };
+	const problem = intact ? await approvalProblem(record, env) : undefined;
+	if (problem !== undefined && record.approvedSha256 !== null) problems.push(`${name} claims approval but is not approved. ${problem}`);
+	return { name, approved: intact && problem === undefined, intact, problems, ...permissions };
 }
 
 export async function listPlugins(env: Env = process.env): Promise<ListRow[]> {

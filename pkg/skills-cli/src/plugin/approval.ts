@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { createCredentialClient, resolveDgPaths } from "@dg/common/node";
+import { createCredentialClient, DaemonNotRunningError, resolveDgPaths } from "@dg/common/node";
 import { type Env, type PluginRecord, pluginSrcDir } from "./store";
 import { hashTree } from "./tree";
 
@@ -15,6 +15,7 @@ export type ApprovalKeys = {
 type KeyStore = {
 	get(name: string): Promise<{ value: string } | undefined>;
 	set(name: string, value: string): Promise<void>;
+	close?(): void;
 };
 
 export function macOf(record: PluginRecord, key: Buffer): string {
@@ -27,24 +28,37 @@ function macMatches(record: PluginRecord, key: Buffer): boolean {
 	return timingSafeEqual(Buffer.from(record.mac, "hex"), Buffer.from(macOf(record, key), "hex"));
 }
 
-export function credentialApprovalKeys(store: KeyStore): ApprovalKeys {
+export function credentialApprovalKeys(open: () => KeyStore): ApprovalKeys {
 	let cached: Buffer | undefined;
-	const read = async (): Promise<Buffer | undefined> => {
+	const lookup = async (store: KeyStore): Promise<Buffer | undefined> => {
 		if (cached !== undefined) return cached;
 		const stored = await store.get(APPROVAL_KEY_CREDENTIAL);
 		if (stored === undefined || !KEY_HEX.test(stored.value)) return undefined;
 		return (cached = Buffer.from(stored.value, "hex"));
 	};
 	return {
-		read,
+		read: async () => {
+			if (cached !== undefined) return cached;
+			const store = open();
+			try {
+				return await lookup(store);
+			} finally {
+				store.close?.();
+			}
+		},
 		ensure: async () => {
-			const existing = await read();
-			if (existing !== undefined) return existing;
-			await store.set(APPROVAL_KEY_CREDENTIAL, randomBytes(32).toString("hex"));
-			cached = undefined;
-			const stored = await read();
-			if (stored === undefined) throw new Error("dg plugin: the dg daemon did not keep the approval key. Next: run dg doctor, then try again.");
-			return stored;
+			if (cached !== undefined) return cached;
+			const store = open();
+			try {
+				const existing = await lookup(store);
+				if (existing !== undefined) return existing;
+				await store.set(APPROVAL_KEY_CREDENTIAL, randomBytes(32).toString("hex"));
+				const stored = await lookup(store);
+				if (stored === undefined) throw new Error("dg plugin: the dg daemon did not keep the approval key. Next: run dg doctor, then try again.");
+				return stored;
+			} finally {
+				store.close?.();
+			}
 		},
 	};
 }
@@ -58,7 +72,7 @@ export function overrideApprovalKeys(keys: ApprovalKeys | undefined): void {
 }
 
 export function defaultApprovalKeys(env: Env): ApprovalKeys {
-	return override ?? (shared ??= credentialApprovalKeys(createCredentialClient({ paths: resolveDgPaths({ env }), env })));
+	return override ?? (shared ??= credentialApprovalKeys(() => createCredentialClient({ paths: resolveDgPaths({ env }), env })));
 }
 
 const reapprove = (name: string) => `re-approve with dg plugin verify ${name} --approve`;
@@ -72,7 +86,10 @@ export async function approvalProblem(record: PluginRecord, env: Env, keys: Appr
 	try {
 		key = await keys.read();
 	} catch (error) {
-		return `Cannot read the approval key: ${error instanceof Error ? error.message : String(error)}. Next: start the dg daemon with dg agent start, then try again.`;
+		const detail = error instanceof Error ? error.message : String(error);
+		return error instanceof DaemonNotRunningError
+			? `${detail}. Next: start the dg daemon, then try again.`
+			: `Cannot read the approval key: ${detail}. Next: check the dg daemon with dg doctor, then try again.`;
 	}
 	if (key === undefined) return `There is no approval key in the dg credential store. Next: ${reapprove(name)}.`;
 	if (!macMatches(record, key)) return `Its approval signature does not verify. Next: ${reapprove(name)}.`;

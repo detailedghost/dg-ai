@@ -123,6 +123,22 @@ describe("approval signing", () => {
 		await expect(setPluginEnabled("notes", true, env)).rejects.toThrow(/signature does not verify/);
 	});
 
+	test("verify without --approve reports why a claimed approval does not hold", async () => {
+		addPlugin({ source: skillRepo("notes") }, env);
+		await verifyPlugin("notes", { approve: true }, env);
+		overrideApprovalKeys(downKeys());
+		const down = await verifyPlugin("notes", { approve: false }, env);
+		expect(down.approved).toBe(false);
+		expect(down.problems.join("\n")).toMatch(/claims approval but is not approved.*dg agent start/);
+		overrideApprovalKeys(fakeKeys(null));
+		expect((await verifyPlugin("notes", { approve: false }, env)).problems.join("\n")).toMatch(/no approval key.*dg plugin verify notes --approve/);
+	});
+
+	test("verify without --approve adds no problem for a record that never claimed approval", async () => {
+		addPlugin({ source: skillRepo("notes") }, env);
+		expect((await verifyPlugin("notes", { approve: false }, env)).problems).toEqual([]);
+	});
+
 	test("list shows unapproved and enable names the daemon when it is down", async () => {
 		addPlugin({ source: skillRepo("notes") }, env);
 		await verifyPlugin("notes", { approve: true }, env);
