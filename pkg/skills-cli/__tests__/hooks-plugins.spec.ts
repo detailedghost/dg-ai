@@ -6,10 +6,10 @@ import { parseManifest } from "@dg/common/plugins/manifest";
 import { encodeFrame, FRAME_FLAG_RESPONSE, type Frame } from "@dg/common/plugins/contract";
 import { closeIpcConnections } from "@dg/common/plugins/transport/ipc";
 import { FrameReader } from "@dg/common/plugins/transport/framing";
-import { macOf, overrideApprovalKeys } from "../src/plugin/approval";
+import { macOf } from "../src/plugin/approval";
 import type { PluginRecord } from "../src/plugin/store";
 import { hashTree } from "../src/plugin/tree";
-import { downKeys, fakeKeys, TEST_KEY_HEX } from "./support/approval-keys";
+import { downKeys, fakeKeys, TEST_KEY_HEX, useApprovalKeys } from "./support/approval-keys";
 import { runExternalHook } from "../src/hooks/external";
 import { hasConfiguredPlugins, resolveExternalHook } from "../src/hooks/plugins";
 import { bashInput, hookWorld } from "./hooks/hook-fixtures";
@@ -45,10 +45,10 @@ async function startPlugin(path: string, decide: Decide): Promise<{ connections:
 	return { connections: () => connections, decides };
 }
 
-beforeEach(() => overrideApprovalKeys(fakeKeys()));
+beforeEach(() => useApprovalKeys(fakeKeys()));
 
 afterEach(async () => {
-	overrideApprovalKeys(undefined);
+	useApprovalKeys(undefined);
 	closeIpcConnections();
 	for (const server of servers.splice(0)) await new Promise((resolve) => server.close(resolve));
 });
@@ -274,8 +274,8 @@ describe("hooks run with an external hook plugin", () => {
 		const dir = installPlugin(world, "scan", ENABLED);
 		await startPlugin(join(dir, "p.sock"), () => ({ decision: "allow" }));
 		const cli = join(import.meta.dir, "..", "src", "hooks", "cli.ts");
-		const approval = join(import.meta.dir, "..", "src", "plugin", "approval.ts");
-		const driver = `const key = Buffer.from(${JSON.stringify(TEST_KEY_HEX)}, "hex"); (await import(${JSON.stringify(approval)})).overrideApprovalKeys({ read: async () => key, ensure: async () => key });
+		const support = join(import.meta.dir, "support", "approval-keys.ts");
+		const driver = `const { fakeKeys, useApprovalKeys } = await import(${JSON.stringify(support)}); useApprovalKeys(fakeKeys());
 const { main } = await import(${JSON.stringify(cli)}); process.exitCode = await main(["run", "scan"]);`;
 		const proc = Bun.spawn([process.execPath, "-e", driver], {
 			env: { ...process.env, ...world.env() },
@@ -349,8 +349,17 @@ describe("resolveExternalHook", () => {
 	test("refuses every plugin when the daemon is down and says to start it", async () => {
 		const world = hookWorld();
 		installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");
-		overrideApprovalKeys(downKeys());
+		useApprovalKeys(downKeys());
 		await expect(resolveExternalHook("scan", world.env())).rejects.toThrow(/not approved.*dg agent start/);
+	});
+
+	test("a stopped daemon with fail_closed unset ends the run with a non-blocking exit and says to start the daemon", async () => {
+		const world = hookWorld();
+		installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");
+		useApprovalKeys(downKeys());
+		const result = await world.run("scan", bashInput("ls"));
+		expect(result.code).toBe(1);
+		expect(result.stderr).toMatch(/not approved.*dg agent start/);
 	});
 
 	test("refuses a plugin whose src changed after approval", async () => {

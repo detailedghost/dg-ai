@@ -1,11 +1,11 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createCredentialClient, DaemonNotRunningError, resolveDgPaths } from "@dg/common/node";
-import { type Env, type PluginRecord, pluginSrcDir } from "./store";
+import { DgCliError } from "@dg/common";
+import { type Env, HEX64, type PluginRecord, pluginSrcDir } from "./store";
 import { hashTree } from "./tree";
 
 export const APPROVAL_KEY_CREDENTIAL = "dg/plugin-approval-key";
 const MAC_DOMAIN = "dg-plugin-approval-v1";
-const KEY_HEX = /^[0-9a-f]{64}$/;
 
 export type ApprovalKeys = {
 	read(): Promise<Buffer | undefined>;
@@ -18,13 +18,19 @@ type KeyStore = {
 	close?(): void;
 };
 
+function signedFields(record: PluginRecord): string[] {
+	return [MAC_DOMAIN, record.name, record.kind, record.source, record.pin.kind, record.pin.value, record.treeSha256, record.approvedSha256 ?? ""];
+}
+
+const hasNul = (record: PluginRecord): boolean => signedFields(record).some((field) => field.includes("\0"));
+
 export function macOf(record: PluginRecord, key: Buffer): string {
-	const fields = [MAC_DOMAIN, record.name, record.kind, record.source, record.pin.kind, record.pin.value, record.treeSha256, record.approvedSha256 ?? ""];
-	return createHmac("sha256", key).update(fields.join("\0")).digest("hex");
+	if (hasNul(record)) throw new DgCliError(`dg plugin: ${record.name} has a NUL byte in a signed field, so dg will not sign it.`);
+	return createHmac("sha256", key).update(signedFields(record).join("\0")).digest("hex");
 }
 
 function macMatches(record: PluginRecord, key: Buffer): boolean {
-	if (record.mac === null || !KEY_HEX.test(record.mac)) return false;
+	if (record.mac === null || !HEX64.test(record.mac) || hasNul(record)) return false;
 	return timingSafeEqual(Buffer.from(record.mac, "hex"), Buffer.from(macOf(record, key), "hex"));
 }
 
@@ -33,7 +39,7 @@ export function credentialApprovalKeys(open: () => KeyStore): ApprovalKeys {
 	const lookup = async (store: KeyStore): Promise<Buffer | undefined> => {
 		if (cached !== undefined) return cached;
 		const stored = await store.get(APPROVAL_KEY_CREDENTIAL);
-		if (stored === undefined || !KEY_HEX.test(stored.value)) return undefined;
+		if (stored === undefined || !HEX64.test(stored.value)) return undefined;
 		return (cached = Buffer.from(stored.value, "hex"));
 	};
 	return {
@@ -54,8 +60,12 @@ export function credentialApprovalKeys(open: () => KeyStore): ApprovalKeys {
 				if (existing !== undefined) return existing;
 				await store.set(APPROVAL_KEY_CREDENTIAL, randomBytes(32).toString("hex"));
 				const stored = await lookup(store);
-				if (stored === undefined) throw new Error("dg plugin: the dg daemon did not keep the approval key. Next: run dg doctor, then try again.");
+				if (stored === undefined) throw new DgCliError("dg plugin: the dg daemon did not keep the approval key. Next: run dg doctor, then try again.");
 				return stored;
+			} catch (error) {
+				if (error instanceof DgCliError) throw error;
+				const detail = error instanceof Error ? error.message : String(error);
+				throw new DgCliError(`dg plugin: cannot store the approval key: ${detail}. Next: check the dg daemon with dg doctor, then try again.`);
 			} finally {
 				store.close?.();
 			}
@@ -63,16 +73,8 @@ export function credentialApprovalKeys(open: () => KeyStore): ApprovalKeys {
 	};
 }
 
-let override: ApprovalKeys | undefined;
-let shared: ApprovalKeys | undefined;
-
-/** Test seam: replaces the credential-store key for this process; pass undefined to restore it. */
-export function overrideApprovalKeys(keys: ApprovalKeys | undefined): void {
-	override = keys;
-}
-
 export function defaultApprovalKeys(env: Env): ApprovalKeys {
-	return override ?? (shared ??= credentialApprovalKeys(() => createCredentialClient({ paths: resolveDgPaths({ env }), env })));
+	return credentialApprovalKeys(() => createCredentialClient({ paths: resolveDgPaths({ env }), env }));
 }
 
 const reapprove = (name: string) => `re-approve with dg plugin verify ${name} --approve`;
@@ -81,6 +83,7 @@ const reapprove = (name: string) => `re-approve with dg plugin verify ${name} --
 export async function approvalProblem(record: PluginRecord, env: Env, keys: ApprovalKeys = defaultApprovalKeys(env)): Promise<string | undefined> {
 	const { name, approvedSha256, treeSha256, mac } = record;
 	if (approvedSha256 === null || approvedSha256 !== treeSha256) return `Next: review it, then run dg plugin verify ${name} --approve.`;
+	if (hasNul(record)) return "A signed field holds a NUL byte, so dg never approves it. Next: remove the plugin and add it again.";
 	if (mac === null) return `It has no signed approval. Next: ${reapprove(name)}.`;
 	let key: Buffer | undefined;
 	try {

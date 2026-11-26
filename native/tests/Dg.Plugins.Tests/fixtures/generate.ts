@@ -53,7 +53,7 @@ function snapshot(home: string): Record<string, string> {
 			if (entry.isDirectory()) walk(join(path, entry.name), rel);
 			else if (entry.isFile()) {
 				const text = readFileSync(join(path, entry.name), "utf8");
-				files[rel] = text.replaceAll(home, "<home>").replace(MAC_VALUE, `"mac": "${SIGNED}"`);
+				files[rel] = text.replaceAll(home, "<home>").replaceAll(MAC_VALUE, `"mac": "${SIGNED}"`);
 			} else if (lstatSync(join(path, entry.name)).isSymbolicLink()) files[rel] = "<symlink>";
 		}
 	};

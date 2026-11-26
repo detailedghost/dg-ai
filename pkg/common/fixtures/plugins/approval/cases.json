@@ -78,6 +78,18 @@
 			"treeSha256": "758d4cce0f3307bcfa09da9736218afed1980fd49d7ce3e90ff36e52fc923ccb",
 			"approvedSha256": null,
 			"mac": null
+		},
+		"nul-in-source": {
+			"name": "demo",
+			"kind": "skill",
+			"source": "https://example.org/de\u0000mo.git",
+			"pin": {
+				"kind": "commit",
+				"value": "0123456789abcdef0123456789abcdef01234567"
+			},
+			"treeSha256": "758d4cce0f3307bcfa09da9736218afed1980fd49d7ce3e90ff36e52fc923ccb",
+			"approvedSha256": "758d4cce0f3307bcfa09da9736218afed1980fd49d7ce3e90ff36e52fc923ccb",
+			"mac": "597b23a3a2483b28f6b3bba9dbf7eeaf65b12031a1d831deb205c29bd740dfe9"
 		}
 	}
 }
