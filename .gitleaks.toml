@@ -137,3 +137,14 @@ paths = [
   '''(?:^|/)native/tests/Dg\.Core\.Tests/Transport/Http/HttpTransportTests\.cs$''',
 ]
 regexes = ['''^tok-secret-1234567890$''', '''^tok-SECRET-123$''']
+
+[[allowlists]]
+description = "Patterned plugin approval MAC test key in the shared fixture and its test helpers"
+condition = "AND"
+regexTarget = "secret"
+paths = [
+  '''(?:^|/)pkg/common/fixtures/plugins/approval/cases\.json$''',
+  '''(?:^|/)pkg/skills-cli/__tests__/support/approval-keys\.ts$''',
+  '''(?:^|/)native/tests/Dg\.Core\.Tests/Plugins/Runtime/ApprovalFixture\.cs$''',
+]
+regexes = ['''^00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f$''']
