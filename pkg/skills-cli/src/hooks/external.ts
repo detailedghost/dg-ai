@@ -67,8 +67,11 @@ export async function runExternalHook(manifest: PluginManifest, event: ExternalH
 	}
 }
 
-export function externalHookResult(name: string, outcome: ExternalHookOutcome, timeoutMs: number): HookResult {
+export function externalHookResult(name: string, outcome: ExternalHookOutcome, timeoutMs: number, failClosed = false): HookResult {
 	if ("failure" in outcome) {
+		const what = outcome.failure === "timeout" ? `gave no answer within ${timeoutMs} ms` : `is unavailable. ${outcome.message.split("\n")[0]}`.replace(/\.?$/, "");
+		if (failClosed)
+			return { exitCode: 2, stderr: `dg hooks: plugin ${name} ${what}. The tool call is blocked because plugins.${name}.fail_closed is true.\n` };
 		const line =
 			outcome.failure === "timeout"
 				? `dg hooks: plugin ${name} gave no answer within ${timeoutMs} ms; the tool call goes on.`

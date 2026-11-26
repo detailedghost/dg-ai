@@ -202,6 +202,39 @@ describe("hooks run with an external hook plugin", () => {
 		expect(result.stderr).toContain("scan");
 	});
 
+	describe("with fail_closed = true", () => {
+		const CLOSED = "[plugins.scan]\nenabled = true\nfail_closed = true\n";
+
+		test("blocks the tool call and names the plugin and the option when the plugin times out", async () => {
+			const world = hookWorld();
+			const dir = installPlugin(world, "scan", CLOSED);
+			await startPlugin(join(dir, "p.sock"), () => "silent");
+			const result = await world.run("scan", bashInput("ls"), { env: { DG_HOOK_TIMEOUT_MS: "80" } });
+			expect(result.code).toBe(2);
+			expect(result.stdout).toBe("");
+			expect(result.stderr).toContain("plugin scan");
+			expect(result.stderr).toContain("80 ms");
+			expect(result.stderr).toContain("plugins.scan.fail_closed");
+			expect(result.stderr).toContain("blocked");
+		});
+
+		test("blocks the tool call when the plugin is not running", async () => {
+			const world = hookWorld();
+			installPlugin(world, "scan", CLOSED);
+			const result = await world.run("scan", bashInput("ls"));
+			expect(result.code).toBe(2);
+			expect(result.stderr).toContain("plugin scan is unavailable");
+			expect(result.stderr).toContain("plugins.scan.fail_closed");
+		});
+
+		test("still lets the tool call go on when the plugin allows", async () => {
+			const world = hookWorld();
+			const dir = installPlugin(world, "scan", CLOSED);
+			await startPlugin(join(dir, "p.sock"), () => ({ decision: "allow" }));
+			expect(await world.run("scan", bashInput("ls"))).toEqual({ code: 0, stdout: "", stderr: "" });
+		});
+	});
+
 	test("never connects to a disabled plugin", async () => {
 		const world = hookWorld();
 		const dir = installPlugin(world, "scan", "[plugins.scan]\nenabled = false\n");
@@ -262,6 +295,14 @@ describe("resolveExternalHook", () => {
 		const plugin = await resolveExternalHook("scan", world.env());
 		expect(plugin?.manifest.name).toBe("scan");
 		expect(plugin?.pluginDir).toBe(dir);
+	});
+
+	test("carries fail_closed from config.toml, false by default", async () => {
+		const world = hookWorld();
+		installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");
+		expect((await resolveExternalHook("scan", world.env()))?.failClosed).toBe(false);
+		installPlugin(world, "scan", "[plugins.scan]\nenabled = true\nfail_closed = true\n");
+		expect((await resolveExternalHook("scan", world.env()))?.failClosed).toBe(true);
 	});
 
 	test("refuses a plugin with no approval record", async () => {

@@ -5,7 +5,7 @@ import type { PluginManifest } from "@dg/common/plugins/manifest";
 import { isApproved, readRecord } from "../plugin/store";
 import type { HookEnv } from "./types";
 
-export type ExternalHookPlugin = { manifest: PluginManifest; pluginDir: string; allowRemote: boolean };
+export type ExternalHookPlugin = { manifest: PluginManifest; pluginDir: string; allowRemote: boolean; failClosed: boolean };
 
 const PLUGINS_SECTION = /^[ \t]*\[[ \t]*plugins[ \t]*[.\]]/m;
 
@@ -43,5 +43,5 @@ export async function resolveExternalHook(id: string, env: HookEnv): Promise<Ext
 	if (problem !== undefined) throw new DgCliError(`dg hooks: plugin ${id} is not approved. ${problem}`);
 	if (manifest.kind !== "hook" || "builtin" in manifest.entry) return undefined;
 	const { allowRemote } = resolvePluginConfig(config, manifest, file);
-	return { manifest, pluginDir, allowRemote };
+	return { manifest, pluginDir, allowRemote, failClosed: config.plugins[id]?.fail_closed === true };
 }
