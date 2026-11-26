@@ -5,8 +5,9 @@ Date: 2026-11-24
 Topic: Platform
 
 Related: [ADR 0058](0058-dg-moves-to-c-nativeaot-in-stages.md), [ADR 0054](0054-one-config-toml-for-dg.md),
-[ADR 0049](0049-jobs.md), [ADR 0061](0061-dg-plugin-admission-is-signed-and-transport-bound.md) (signed approvals, pipe DACL, no tokens over TCP,
-`fail_closed`, full-SHA job pins, the admission stat cache).
+[ADR 0049](0049-jobs.md),
+[ADR 0061](0061-dg-plugin-admission-is-signed-and-transport-bound.md) (signed approvals, pipe DACL,
+no tokens over TCP, `fail_closed`, full-SHA job pins, the admission stat cache).
 
 ## Context
 

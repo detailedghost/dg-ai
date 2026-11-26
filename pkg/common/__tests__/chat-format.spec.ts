@@ -1185,7 +1185,7 @@ describe("validateChatFrame - pw-ext-stop", () => {
 		expect(() => validateChatFrame(bare)).toThrow(/token/);
 	});
 
-	it("is an inbound frame", () => {
+	it("accepts a frame with a token", () => {
 		expect(() => validateChatFrame(buildPwExtStopFrame())).not.toThrow();
 	});
 });
