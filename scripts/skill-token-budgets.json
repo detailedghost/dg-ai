@@ -1,13 +1,13 @@
 {
 	"perFlow": {
-		"spec-plan": 13400,
-		"spec-exec": 6690,
-		"phone": 2080,
-		"stat": 2080,
-		"thrash": 2090,
-		"verify": 1980,
-		"review-loop": 3430,
-		"jot": 1430
+		"spec-plan": 13000,
+		"spec-exec": 6450,
+		"phone": 2000,
+		"stat": 1990,
+		"thrash": 1990,
+		"verify": 1900,
+		"review-loop": 3290,
+		"jot": 1360
 	},
-	"descriptions": 4890
+	"descriptions": 2276
 }

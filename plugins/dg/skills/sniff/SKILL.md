@@ -1,6 +1,6 @@
 ---
 name: sniff
-description: Inventory everything an app needs before it can run — secrets, config, cloud permissions, backing services, ports, toolchain pins, registries — as a dense evidence-cited table with defects floated to the top. Use for "what does this app need", "what permissions does it want", "what do I have to provision", onboarding a repo, or pre-deploy readiness.
+description: 'Inventory what an app needs to run (secrets, config, permissions, services, ports). "what does this app need".'
 ---
 
 # /dg:sniff — Requirement Inventory

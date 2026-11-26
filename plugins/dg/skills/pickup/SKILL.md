@@ -1,6 +1,6 @@
 ---
 name: pickup
-description: Resume a parked spec bundle under .agents/spec/. Takes an optional NNN prefix or slug substring — otherwise prompts to select among status:deferred and status:in-progress bundles (numbered dirs and .agents/spec/todo/). Renumbers todo/ bundles, flips status to in-progress, then hands off to /dg:spec -s to drive engineering.
+description: Resume a parked spec bundle under .agents/spec/ by NNN prefix or slug, then hand off to /dg:spec -s.
 ---
 
 # /dg:pickup — Resume a Parked Spec Bundle

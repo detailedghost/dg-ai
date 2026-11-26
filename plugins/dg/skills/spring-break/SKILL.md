@@ -1,6 +1,6 @@
 ---
 name: spring-break
-description: Clean up and consolidate .agents/school/ into the standard topic-cluster format, and put the always-loaded agent context on a diet (CLAUDE.md as @AGENTS.md, lean AGENTS.md files, human rules in docs/). Run once per project to migrate, or periodically to prune. Janitor skill — call when school or agent files get messy, overgrown, or after long spec runs.
+description: Consolidate .agents/school/ into topic clusters and slim always-loaded agent context. Janitor for messy agent files.
 ---
 
 # Skill: Spring Break

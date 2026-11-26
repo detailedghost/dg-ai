@@ -1,6 +1,6 @@
 ---
 name: hook-comment-disable
-description: Disable the dg spelling hook for the current session. ALWAYS requires explicit user approval before writing the marker — even in auto/yolo mode.
+description: Disable the dg spelling hook for this session. Always needs explicit user approval, even in auto mode.
 ---
 
 First run: the block installs the CLI when it is missing. It prints an upgrade hint when the CLI is too old. Each Bash call works alone:

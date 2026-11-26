@@ -1,6 +1,6 @@
 ---
 name: prd
-description: Produce a handoff-ready PRD — run /dg:kick to park a fully agent-assigned spec bundle, relocate it to .agents/spec/todo/ (the designated hand-off location), and pre-grant execution permissions, so another agent can /dg:pickup it and run with zero setup.
+description: 'Produce a handoff-ready PRD: /dg:kick a fully assigned spec bundle into .agents/spec/todo/ for /dg:pickup.'
 ---
 
 # /dg:prd — Plan → Handoff-Ready PRD

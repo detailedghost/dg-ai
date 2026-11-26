@@ -1,6 +1,6 @@
 ---
 name: google-sms-cleanup
-description: Sort, archive, and spam-block a Google Messages inbox through Messages for Web. Never delete, never send without per-message approval, and flag ambiguous threads instead of acting.
+description: Sort, archive, and spam-block a Google Messages inbox. Never deletes or sends without per-message approval.
 ---
 
 # Google SMS cleanup

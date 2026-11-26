@@ -1,6 +1,6 @@
 ---
 name: cls
-description: Close out the current git worktree. Remove the worktree and local branch, sweep leftover scratch assets, and return to the main repo on the default branch. Use when finishing or abandoning work in a worktree, or run `/dg:cls <slug>` from the main repo to tear down a specific worktree. With no slug on a non-default branch, switch to the default branch and delete the branch you came from.
+description: 'Close out the current git worktree: remove it and its branch, return to the default branch. /dg:cls <slug>.'
 ---
 
 # /dg:cls: Close out a worktree

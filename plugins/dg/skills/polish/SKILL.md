@@ -1,6 +1,6 @@
 ---
 name: polish
-description: Quality-cleanup verify step — reviews changed code for reuse, simplification, efficiency, altitude, self-inflicted dead code, outdated API usage, comment bloat, and hygiene (lint/imports/style) cleanups, then applies the fixes. Fanned out to the matching language subagent per file group, with a dedicated judgment pass deciding what's actually worth fixing. Quality only, no bug hunting.
+description: 'Quality-cleanup verify step: review changed code for reuse, simplification, dead code, and hygiene, then apply fixes.'
 ---
 
 # Skill: polish

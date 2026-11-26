@@ -1,6 +1,6 @@
 ---
 name: hooks
-description: Turn the opt-in dg hooks on or off for Claude, Codex, and opencode, and report which are on. Hooks are off by default. Always ask the user before enabling any hook.
+description: Turn opt-in dg hooks on or off for Claude, Codex, and opencode. Always ask the user first.
 ---
 
 # /dg:hooks

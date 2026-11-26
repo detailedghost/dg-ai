@@ -1,6 +1,6 @@
 ---
 name: grill-me
-description: Relentless design interview — walk every branch of the design tree, resolve dependencies one-by-one, explore the codebase and docs instead of asking when possible, until shared understanding is reached on every aspect of the plan.
+description: 'Relentless design interview: walk every branch of the design tree until shared understanding is reached.'
 ---
 
 # /dg:grill-me — Relentless Design Interview

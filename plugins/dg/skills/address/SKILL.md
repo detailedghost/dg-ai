@@ -1,6 +1,6 @@
 ---
 name: address
-description: Address PR review comments AND failing CI/CD checks — route fixes to agent(s), QA, document, commit, push, reply+resolve threads. (Use /dg:catchup for merge conflicts and rebasing — not this skill.)
+description: Address PR review comments and failing CI checks, then push and resolve threads. Not for rebasing (/dg:catchup).
 ---
 
 # Skill: Address

@@ -1,6 +1,6 @@
 ---
 name: hunt
-description: Structured codebase bug hunt and root-cause diagnosis. Triages the issue, runs parallel evidence-gathering agents, synthesizes a diagnosis report. Use when something "fails", "broke", "doesn't work", or needs diagnosis.
+description: 'Structured bug hunt and root-cause diagnosis. Use when something "fails", "broke", or "doesn''t work".'
 ---
 
 # /dg:hunt — Codebase Bug Hunt & Diagnosis

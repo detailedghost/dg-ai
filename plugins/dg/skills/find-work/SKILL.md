@@ -1,6 +1,6 @@
 ---
 name: find-work
-description: Discover actionable work items, present for selection, execute each in a parallel worktree — implement, test, commit, push — then human-review and open PRs in batch.
+description: Find actionable work items, pick some, run each in a parallel worktree, then open PRs in batch.
 ---
 
 # /dg:find-work — Discover & Execute Work Items

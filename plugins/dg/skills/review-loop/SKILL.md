@@ -1,11 +1,6 @@
 ---
 name: review-loop
-description: >-
-  Antagonistic review loop for a branch. Default mode drives GitHub Copilot
-  review on an open PR, filters comments through a copilot-antagonist agent,
-  hands accepted items to /dg:address, and repeats. `--proxy <backend>` swaps
-  in a local coding agent (codex/copilot/pi/opencode/grok): no PR or Copilot
-  access needed. Fire-and-forget, a few rounds by default.
+description: 'Antagonistic review loop for a branch: Copilot review on an open PR, or --proxy <backend> with a local agent.'
 ---
 
 <!-- markdownlint-disable MD003 MD013 MD022 MD033 MD041 MD060 -->

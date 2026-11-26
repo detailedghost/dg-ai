@@ -1,6 +1,6 @@
 ---
 name: update
-description: Update every dg part to the newest release with one command. Checks what is behind first, asks, then refreshes the Bun runtime, the dg bundle and the dg launcher, the staged dg-ai-extension, and the dg plugin for Claude and Codex, and runs doctor. Use when doctor says a part is older, a dg skill calls a command that is missing, or you ask to update dg.
+description: Update every dg part to the newest release with one command, then run doctor. Use when a dg part is older.
 ---
 
 # Skill: update

@@ -1,6 +1,6 @@
 ---
 name: worktree
-description: "Manage git worktrees for AI agent workflows — create, list, remove, prune. Reused by the planning and execution skills."
+description: 'Manage git worktrees for agent workflows: create, list, remove, prune.'
 ---
 
 # /dg:worktree — Git Worktree Lifecycle

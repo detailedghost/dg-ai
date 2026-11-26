@@ -1,6 +1,6 @@
 ---
 name: demo
-description: Produce a guided demo that plays in a local browser (the default, no extension). Records an MP4 of a feature or PR with chapter cards, captions and a highlight on each target, after optional login or seed setup. Write a plan, verify it, run it. Pass --ext to play it through the dg-ai-extension. Use when asked to demo, show off, walk through or record a feature in the browser.
+description: Produce a guided demo that plays in a local browser (the default, no extension). Pass --ext to use the extension. Use to demo, show off, walk through, or record.
 ---
 
 # Guided-tour demo

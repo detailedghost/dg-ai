@@ -1,6 +1,6 @@
 ---
 name: sdlc
-description: Standalone execution lifecycle for a bare feature brief — worktree, slice derivation, /dg:assign, TDD slice waves (red→green→QA), final review, docs, then a draft PR/MR the human reviews on the provider. Single source of truth for the execution pipeline; /dg:spec and /dg:pickup delegate their execution phases here. No spec prerequisite.
+description: 'Execution lifecycle for a feature brief: worktree, slices, /dg:assign, TDD waves, review, docs, draft PR/MR.'
 ---
 
 # /dg:sdlc — Execution Lifecycle

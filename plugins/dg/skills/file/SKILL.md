@@ -1,6 +1,6 @@
 ---
 name: file
-description: File, list, and organize an issue on the current repo's git provider (GitHub or GitLab) — bugs, tech debt, follow-ups tied to the codebase itself. Use when the user says "file an issue", "open a GitHub/GitLab issue", "track this as a bug", "what issues are open", or /dg:file. Not for Jira project-planning tickets — that's /dg:ticket.
+description: 'File or list an issue on the repo''s git provider: "file an issue", "track this as a bug", /dg:file. Not Jira (/dg:ticket).'
 ---
 
 # /dg:file — File a Git-Provider Issue

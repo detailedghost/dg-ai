@@ -1,6 +1,6 @@
 ---
 name: walk
-description: 'Walk the user through every open question in the current conversation, one question at a time, each with a recommendation. Use when the user says "walk me through the open questions", "what is still open", "go through the open items", or invokes /dg:walk. Optional topic filter: /dg:walk <word>. /dg:walk stat walks the open user items on the stat checklist.'
+description: 'Walk through every open question one at a time with a recommendation: "what is still open", /dg:walk [word|stat].'
 ---
 
 # /dg:walk — Walk the Open Questions

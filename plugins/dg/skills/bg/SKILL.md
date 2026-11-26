@@ -1,6 +1,6 @@
 ---
 name: bg
-description: Run a task in the background so you can keep working, for any agent. Picks the right background primitive for the runtime. Claude Code uses a background Agent or Bash, or a Workflow for multi-role work. Any other CLI agent detaches a shell job through the dg CLI. Triggers on "do this in the background", "kick this off while I keep going", "background this", `/dg:bg <task>`.
+description: 'Run a task in the background: "do this in the background", "background this", /dg:bg <task>.'
 ---
 
 # /dg:bg: Run This In The Background

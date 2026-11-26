@@ -319,9 +319,9 @@ describe("jobs SKILL.md", () => {
 					.filter((l) => l.includes("channel-review"))
 					.join("\n"),
 			),
-		).toBe("644361f665adaa7674b859627ec4f6989fb1366098314994ff25330842f13c0f");
+		).toBe("28ad660b675d8abf866dc2ca24893a038d4884847c7ce8f86c27b0c95b7e2370");
 		expect(sha256(/^---\n([\s\S]*?)\n---/.exec(skill)?.[1] ?? "")).toBe(
-			"c74ee501fbdd0f35815f0299e1a77edb339b3591f611dfdeae98f25ce6102148",
+			"366529cf4700cacdc46254fdfba5e19f94d2dbbd11e937342e41ccab4d433e7a",
 		);
 	});
 

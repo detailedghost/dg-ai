@@ -1,6 +1,6 @@
 ---
 name: meaningful
-description: Reshape the current branch's commits into meaningful, easy-to-review chunks. Delegates analysis to a subagent that proposes 3+ regrouping options, prompts the user to pick one, then soft-resets and recommits accordingly and force-pushes with lease.
+description: 'Reshape the branch''s commits into easy-to-review chunks: pick one of 3+ regroupings, recommit, force-push with lease.'
 ---
 
 # Skill: meaningful

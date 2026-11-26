@@ -1,6 +1,6 @@
 ---
 name: deps-upgrade
-description: Create a dedicated worktree on a timestamped branch, apply all open dependency updates from Dependabot PRs (GitHub) or Renovate MRs (GitLab), fix security vulnerabilities, fix build/lint/test issues, close the source PRs/MRs, and open a combined PR/MR.
+description: Apply open Dependabot/Renovate updates in a worktree, fix build and security issues, and open a combined PR/MR.
 ---
 
 # Skill: Dependency Upgrade

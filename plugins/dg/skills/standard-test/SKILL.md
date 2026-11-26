@@ -1,6 +1,6 @@
 ---
 name: standard-test
-description: Portable, language-agnostic test-writing standard — apply when writing or reviewing tests in any language, when a test re-implements production logic, or when you see an always-passing assertion.
+description: 'Portable test-writing standard: apply when writing or reviewing tests, or on an always-passing assertion.'
 ---
 
 # Test-Writing Standard
