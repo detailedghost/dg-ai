@@ -63,50 +63,78 @@ function rig() {
 }
 
 describe("assertJobPinned", () => {
-	it("accepts a clone at the pinned commit and tree", () => {
+	it("accepts a clone at the pinned commit and tree", async () => {
 		const { paths, save } = rig();
 		save();
-		expect(() => assertJobPinned("bot", paths)).not.toThrow();
+		await expect(assertJobPinned("bot", paths)).resolves.toBeUndefined();
 	});
 
-	it("ignores a job that has no source record", () => {
+	it("ignores a job that has no source record", async () => {
 		const { paths } = rig();
-		expect(() => assertJobPinned("bot", paths)).not.toThrow();
+		await expect(assertJobPinned("bot", paths)).resolves.toBeUndefined();
 	});
 
-	it("refuses a clone whose HEAD moved off the pinned commit", () => {
+	it("refuses a clone whose HEAD moved off the pinned commit", async () => {
 		const { paths, clone, save } = rig();
 		save();
 		writeFileSync(join(clone, "run.sh"), "echo evil\n");
 		git(clone, "commit", "-am", "tamper");
-		expect(() => assertJobPinned("bot", paths)).toThrow(/not the pinned commit.*Next:/s);
+		await expect(assertJobPinned("bot", paths)).rejects.toThrow(/not the pinned commit.*Next:/s);
 	});
 
-	it("refuses a clone whose tree differs from the recorded tree", () => {
+	it("refuses a clone with an uncommitted edit to a tracked file", async () => {
+		const { paths, clone, save } = rig();
+		save();
+		writeFileSync(join(clone, "run.sh"), "echo evil\n");
+		await expect(assertJobPinned("bot", paths)).rejects.toThrow(/uncommitted.*Next:/s);
+	});
+
+	it("refuses a clone with an untracked file that git does not ignore", async () => {
+		const { paths, clone, save } = rig();
+		save();
+		mkdirSync(join(clone, "lib"));
+		writeFileSync(join(clone, "lib", "extra.sh"), "echo evil\n");
+		await expect(assertJobPinned("bot", paths)).rejects.toThrow(/uncommitted.*lib\/extra\.sh/s);
+	});
+
+	it("accepts a clone that holds only gitignored build output", async () => {
+		const { paths, clone, save } = rig();
+		writeFileSync(join(clone, ".gitignore"), "dist/\n");
+		git(clone, "add", ".");
+		git(clone, "commit", "-m", "ignore dist");
+		const sha = git(clone, "rev-parse", "HEAD");
+		const tree = git(clone, "rev-parse", "HEAD^{tree}");
+		save({ sha, tree, pin: { kind: "commit", value: sha } });
+		mkdirSync(join(clone, "dist"));
+		writeFileSync(join(clone, "dist", "out.js"), "1\n");
+		await expect(assertJobPinned("bot", paths)).resolves.toBeUndefined();
+	});
+
+	it("refuses a clone whose tree differs from the recorded tree", async () => {
 		const { paths, save } = rig();
 		save({ tree: "0".repeat(40) });
-		expect(() => assertJobPinned("bot", paths)).toThrow(/tree.*Next:/s);
+		await expect(assertJobPinned("bot", paths)).rejects.toThrow(/tree.*Next:/s);
 	});
 
-	it("refuses a record that still carries a sha256 pin", () => {
+	it("refuses a record that still carries a sha256 pin", async () => {
 		const { paths, save } = rig();
 		save({ pin: { kind: "sha256", value: "a".repeat(64) } });
-		expect(() => assertJobPinned("bot", paths)).toThrow(/sha256.*dg job remove bot/s);
+		await expect(assertJobPinned("bot", paths)).rejects.toThrow(/sha256.*dg job remove bot/s);
 	});
 
-	it("checks the recorded sha of a record from before pins", () => {
+	it("checks the recorded sha of a record from before pins", async () => {
 		const { paths, clone, sha, save } = rig();
 		save({ pin: undefined, tree: undefined });
-		expect(() => assertJobPinned("bot", paths)).not.toThrow();
+		await expect(assertJobPinned("bot", paths)).resolves.toBeUndefined();
 		writeFileSync(join(clone, "run.sh"), "echo evil\n");
 		git(clone, "commit", "-am", "tamper");
 		expect(git(clone, "rev-parse", "HEAD")).not.toBe(sha);
-		expect(() => assertJobPinned("bot", paths)).toThrow(/not the pinned commit/);
+		await expect(assertJobPinned("bot", paths)).rejects.toThrow(/not the pinned commit/);
 	});
 });
 
 describe("job launch with a pin check", () => {
-	it("starts no process for a tampered clone", () => {
+	it("starts no process for a tampered clone", async () => {
 		const { root, paths, clone, save } = rig();
 		save();
 		writeFileSync(join(clone, "run.sh"), "echo evil\n");
@@ -121,6 +149,23 @@ describe("job launch with a pin check", () => {
 			readCredential: () => undefined,
 		};
 		expect(() => launchJob(parsed, deps)).toThrow(/not the pinned commit/);
-		expect(() => startJobRun(parsed, deps)).toThrow(/not the pinned commit/);
+		await expect(startJobRun(parsed, deps)).rejects.toThrow(/not the pinned commit/);
+	});
+
+	it("starts no process for a clone with an uncommitted edit", async () => {
+		const { root, paths, clone, save } = rig();
+		save();
+		writeFileSync(join(clone, "run.sh"), "echo evil\n");
+		const parsed = parseJobEntry("bot", { argv: [process.execPath, "-e", "0"], cwd: root, continuous: true });
+		if (!parsed.ok) throw new Error(parsed.error);
+		const deps = {
+			paths,
+			daemonUrl: () => "http://127.0.0.1:1",
+			logger: { warn: () => {} },
+			maxLogBytes: 1_000_000,
+			readCredential: () => undefined,
+		};
+		expect(() => launchJob(parsed, deps)).toThrow(/uncommitted/);
+		await expect(startJobRun(parsed, deps)).rejects.toThrow(/uncommitted/);
 	});
 });

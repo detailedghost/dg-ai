@@ -125,9 +125,9 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 	const clock = () => deps.now?.() ?? new Date();
 
 	const execDefault: ScheduledExec = async (decl, progress) => {
-		let run: ReturnType<typeof startJobRun>;
+		let run: Awaited<ReturnType<typeof startJobRun>>;
 		try {
-			run = startJobRun(decl, deps.launcher);
+			run = await startJobRun(decl, deps.launcher);
 		} catch (err) {
 			return {
 				exitOk: false,
@@ -138,6 +138,7 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 			};
 		}
 		progress.pid = run.pid;
+		if (progress.stopped) await killProcessGroup(run.pid);
 		const result = await run.done;
 		const base = { stdout: result.stdout, stderr: "", truncated: false };
 		if (progress.stopped) {

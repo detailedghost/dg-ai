@@ -223,6 +223,7 @@ describe("job add of a repository: env file and build", () => {
 			},
 			{
 				"bin/make": script('require("node:fs").writeFileSync("built.marker", "ok");'),
+				".gitignore": "built.marker\n",
 			},
 		);
 		const paths = pathsOf(dgHome);

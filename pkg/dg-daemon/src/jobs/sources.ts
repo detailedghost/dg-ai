@@ -8,6 +8,8 @@ import {
 	writeFilePreserving,
 } from "@dg/common/node";
 
+export const isTreeId = (value: string): boolean => /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value);
+
 export type SourcePin = { kind: "sha256" | "commit"; value: string };
 
 export type SourceMarks = { prefixAccepted?: boolean; setupDone?: string[] };
@@ -129,7 +131,7 @@ function checkRecord(file: string, source: string, raw: unknown): SourceRecord {
 	}
 	if (!isRecord(raw.credentials)) bad('has "credentials" that is not an object');
 	checkPin(raw, bad);
-	if (raw.tree !== undefined && !(typeof raw.tree === "string" && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(raw.tree))) {
+	if (raw.tree !== undefined && !(typeof raw.tree === "string" && isTreeId(raw.tree))) {
 		bad('has a "tree" that is not a git tree id');
 	}
 	return raw as GitSourceRecord;
