@@ -1,3 +1,4 @@
+import { STOP_TTL_MS } from "@/lib/background/session-control";
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -2578,4 +2579,47 @@ test("the options page may list and revoke Web MCP grants through the popup mess
 	});
 	expect(await send({ type: MSG.webmcpRevoke, grant: { kind: "remembered", site: "https://live.com", tool: "dg_outlook_move" } })).toEqual({ ok: true });
 	expect(await remembered.list()).toEqual([]);
+});
+
+describe("pw --ext Stop report to the daemon", () => {
+	const reports = (socket: FakeSocket) =>
+		socket.send.mock.calls
+			.map(([raw]) => JSON.parse(raw as string) as Record<string, unknown>)
+			.filter((frame) => frame.type === "pw-ext-stop");
+
+	async function confirmed(stored: Record<string, unknown>) {
+		const { api } = makeBrowserApi();
+		Object.assign(api.storage.session, {
+			get: mock(async (key: string | null) => (key === null ? { ...stored } : { [key]: stored[key] })),
+		});
+		const socket = makeFakeSocket();
+		registerDaemonLink({ browserApi: api, openSocket: mock((_url: string) => socket) });
+		const bootstrap = makeBootstrap();
+		await adoptBootstrap(bootstrap);
+		socket.dispatch("open");
+		await settle();
+		socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+		await settle();
+		return { socket, bootstrap };
+	}
+
+	test("sends the Stop of a live tombstone with the session token once the daemon confirms the session", async () => {
+		const { socket, bootstrap } = await confirmed({ [`pwExtStopped:${makeBootstrap().sessionId}`]: Date.now() });
+		expect(reports(socket)).toEqual([
+			{ type: "pw-ext-stop", sessionId: bootstrap.sessionId, token: bootstrap.token, protocolVersion: expect.any(Number) },
+		]);
+	});
+
+	test("sends no Stop for an expired tombstone", async () => {
+		const { socket } = await confirmed({ [`pwExtStopped:${makeBootstrap().sessionId}`]: Date.now() - STOP_TTL_MS - 1 });
+		expect(reports(socket)).toEqual([]);
+	});
+
+	test("reports a Stop once per socket, not on every session list", async () => {
+		const stored = { [`pwExtStopped:${makeBootstrap().sessionId}`]: Date.now() };
+		const { socket, bootstrap } = await confirmed(stored);
+		socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+		await settle();
+		expect(reports(socket)).toHaveLength(1);
+	});
 });

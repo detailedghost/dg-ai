@@ -707,6 +707,7 @@ export function createPwExtHandler({
 	captureDeadlineMs = CAPTURE_DEADLINE_MS,
 	lock,
 	control = createSessionControl({ storage: api.storage }),
+	onStop,
 	siteAllow,
 	agentWindows,
 }: {
@@ -725,6 +726,7 @@ export function createPwExtHandler({
 	captureDeadlineMs?: number;
 	lock?: AgentTabsLock;
 	control?: SessionControl;
+	onStop?: (sessionId: string) => void;
 	siteAllow?: Pick<SiteAllow, "requestSiteAllow" | "assertCaptureAllowed"> & Partial<Pick<SiteAllow, "openSite">>;
 	agentWindows?: Pick<AgentWindows, "openAgentWindow">;
 }) {
@@ -849,6 +851,7 @@ export function createPwExtHandler({
 	/** Ends a session's control at once: verbs in flight end, unmask and value grants and sites go, and its tabs return to the person; Web MCP grants stay. */
 	async function stop(sessionId: string): Promise<void> {
 		halted.set(sessionId, Date.now());
+		onStop?.(sessionId);
 		for (const run of live.get(sessionId) ?? []) {
 			run.controller.abort();
 			run.stopped();
