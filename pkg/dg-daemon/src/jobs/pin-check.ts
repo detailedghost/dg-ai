@@ -40,27 +40,32 @@ async function runGit(clone: string, args: string[]): Promise<GitOut> {
 	return { code, stdout };
 }
 
-function hasLocalExcludes(clone: string): boolean {
+function unreadableClone(clone: string, name: string): DgCliError {
+	return new DgCliError(`dg job: cannot read the git clone of "${name}" at ${clone}. Next: run dg job remove ${name}, then dg job add it again.`);
+}
+
+function hasLocalExcludes(clone: string, name: string): boolean {
 	try {
 		return readFileSync(join(clone, ".git", "info", "exclude"), "utf8")
 			.split("\n")
 			.some((line) => line.trim() !== "" && !line.startsWith("#"));
-	} catch {
-		return false;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+		throw unreadableClone(clone, name);
 	}
 }
 
 function parseHead(head: GitOut, status: GitOut, index: GitOut, clone: string, name: string): Head {
 	const [sha, tree] = head.stdout.trim().split("\n");
 	if (head.code !== 0 || status.code !== 0 || index.code !== 0 || !sha || !tree) {
-		throw new DgCliError(`dg job: cannot read the git clone of "${name}" at ${clone}. Next: run dg job remove ${name}, then dg job add it again.`);
+		throw unreadableClone(clone, name);
 	}
 	return {
 		sha,
 		tree,
 		dirty: status.stdout.split("\n").filter((line) => line !== ""),
 		hidden: index.stdout.split("\n").filter((line) => /^[a-zS] /.test(line)).map((line) => line.slice(2)),
-		excludes: hasLocalExcludes(clone),
+		excludes: hasLocalExcludes(clone, name),
 	};
 }
 
