@@ -38,6 +38,8 @@ import {
 
 mock.module("wxt/browser", () => ({ browser: {} }));
 
+const KEEPALIVE_INTERVAL_MS = 60_000;
+
 const realWebSocket = globalThis.WebSocket;
 
 beforeEach(() => {
@@ -757,7 +759,7 @@ test("registerDaemonLink drops a pw-ext result whose admission socket was replac
 	const scheduled: Array<() => void> = [];
 	const realSetTimeout = globalThis.setTimeout;
 	globalThis.setTimeout = ((fn: () => void, ms?: number) => {
-		if (ms !== 60_000) scheduled.push(fn);
+		if (ms !== KEEPALIVE_INTERVAL_MS) scheduled.push(fn);
 		return 0 as unknown as ReturnType<typeof setTimeout>;
 	}) as typeof setTimeout;
 	try {
@@ -2587,11 +2589,12 @@ describe("pw --ext Stop report to the daemon", () => {
 			.map(([raw]) => JSON.parse(raw as string) as Record<string, unknown>)
 			.filter((frame) => frame.type === "pw-ext-stop");
 
+	const storedSession = (stored: Record<string, unknown>) =>
+		mock(async (key: string | null) => (key === null ? { ...stored } : { [key]: stored[key] }));
+
 	async function confirmed(stored: Record<string, unknown>) {
 		const { api } = makeBrowserApi();
-		Object.assign(api.storage.session, {
-			get: mock(async (key: string | null) => (key === null ? { ...stored } : { [key]: stored[key] })),
-		});
+		Object.assign(api.storage.session, { get: storedSession(stored) });
 		const socket = makeFakeSocket();
 		registerDaemonLink({ browserApi: api, openSocket: mock((_url: string) => socket) });
 		const bootstrap = makeBootstrap();
@@ -2610,8 +2613,26 @@ describe("pw --ext Stop report to the daemon", () => {
 		]);
 	});
 
-	test("sends no Stop for an expired tombstone", async () => {
-		const { socket } = await confirmed({ [`pwExtStopped:${makeBootstrap().sessionId}`]: Date.now() - STOP_TTL_MS - 1 });
+	test("still sends the Stop of a tombstone older than 24 hours while the daemon lists the session", async () => {
+		const key = `pwExtStopped:${makeBootstrap().sessionId}`;
+		const { socket, bootstrap } = await confirmed({ [key]: Date.now() - STOP_TTL_MS - 1 });
+		expect(reports(socket)).toEqual([expect.objectContaining({ type: "pw-ext-stop", sessionId: bootstrap.sessionId })]);
+	});
+
+	test("frees a tombstone older than 24 hours once the daemon no longer lists the session", async () => {
+		const key = `pwExtStopped:${makeBootstrap().sessionId}`;
+		const stored: Record<string, unknown> = { [key]: Date.now() - STOP_TTL_MS - 1 };
+		const { api } = makeBrowserApi();
+		const remove = mock(async (gone: string) => void delete stored[gone]);
+		Object.assign(api.storage.session, { get: storedSession(stored), remove });
+		const socket = makeFakeSocket();
+		registerDaemonLink({ browserApi: api, openSocket: mock((_url: string) => socket) });
+		await adoptBootstrap(makeBootstrap());
+		socket.dispatch("open");
+		await settle();
+		socket.dispatch("message", message(buildSessionListFrame("another-session")));
+		await settle();
+		expect(remove).toHaveBeenCalledWith(key);
 		expect(reports(socket)).toEqual([]);
 	});
 
@@ -2625,9 +2646,7 @@ describe("pw --ext Stop report to the daemon", () => {
 
 	async function reconnecting(stored: Record<string, unknown>, options: { adopt: boolean }) {
 		const { api } = makeBrowserApi();
-		Object.assign(api.storage.session, {
-			get: mock(async (key: string | null) => (key === null ? { ...stored } : { [key]: stored[key] })),
-		});
+		Object.assign(api.storage.session, { get: storedSession(stored) });
 		const sockets: FakeSocket[] = [];
 		const openSocket = mock((_url: string) => {
 			const socket = makeFakeSocket();
@@ -2650,7 +2669,7 @@ describe("pw --ext Stop report to the daemon", () => {
 		const scheduled: Array<() => void> = [];
 		const realSetTimeout = globalThis.setTimeout;
 		globalThis.setTimeout = ((fn: () => void, ms?: number) => {
-			if (ms !== 60_000) scheduled.push(fn);
+			if (ms !== KEEPALIVE_INTERVAL_MS) scheduled.push(fn);
 			return 0 as unknown as ReturnType<typeof setTimeout>;
 		}) as typeof setTimeout;
 		try {
@@ -2713,7 +2732,9 @@ describe("pw --ext Stop report to the daemon", () => {
 			expect(warn.mock.calls.some(([line]) => String(line).includes("socket is closing"))).toBe(true);
 			socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
 			await settle();
-			expect(reports(socket).length).toBeGreaterThanOrEqual(1);
+			const { calls, results } = socket.send.mock as unknown as { calls: [string][]; results: Array<{ type: string }> };
+			const outcomes = calls.flatMap(([raw], index) => (JSON.parse(raw) as { type: string }).type === "pw-ext-stop" ? [results[index]?.type] : []);
+			expect(outcomes).toEqual(["throw", "return"]);
 		} finally {
 			warn.mockRestore();
 			fetchSpy.mockRestore();

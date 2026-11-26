@@ -13,7 +13,7 @@ const sitesKey = (sessionId: string) => `pwExtSites:${sessionId}`;
 const stoppedKey = (sessionId: string) => `${STOPPED_PREFIX}${sessionId}`;
 const valuesKey = (sessionId: string) => `pwExtValues:${sessionId}`;
 
-/** Per-session site allowlist, network values grants and Stop state in storage.session; sites and values grants end with the session or on Stop. A Stop holds for 24 hours; the daemon refuses the session for good, so expiry only frees this record. */
+/** Per-session site allowlist, network values grants and Stop state in storage.session; sites and values grants end with the session or on Stop. */
 export function createSessionControl({ storage }: { storage: AgentTabsStorage }) {
 	const enqueue = createSerialQueue();
 
@@ -48,27 +48,15 @@ export function createSessionControl({ storage }: { storage: AgentTabsStorage })
 			await storage.session.set({ [key]: Date.now() });
 			return true;
 		}
-		if (typeof held !== "number") return false;
-		if (!stopExpired(held)) return true;
-		await storage.session.remove(key);
-		return false;
+		return typeof held === "number";
 	}
 
-	async function scanStopped(): Promise<{ live: string[]; expired: string[] }> {
-		const live: string[] = [];
-		const expired: string[] = [];
-		for (const [key, held] of Object.entries(await storage.session.get(null))) {
-			if (!key.startsWith(STOPPED_PREFIX) || typeof held !== "number") continue;
-			if (stopExpired(held)) expired.push(key);
-			else live.push(key.slice(STOPPED_PREFIX.length));
-		}
-		return { live, expired };
-	}
-
-	async function sweep(): Promise<string[]> {
-		const { live, expired } = await scanStopped();
-		for (const key of expired) await storage.session.remove(key);
-		return live;
+	async function scanStopped(): Promise<Array<{ sessionId: string; stoppedAt: number }>> {
+		return Object.entries(await storage.session.get(null)).flatMap(([key, held]) =>
+			key.startsWith(STOPPED_PREFIX) && typeof held === "number"
+				? [{ sessionId: key.slice(STOPPED_PREFIX.length), stoppedAt: held }]
+				: [],
+		);
 	}
 
 	return {
@@ -77,13 +65,20 @@ export function createSessionControl({ storage }: { storage: AgentTabsStorage })
 			const key = stoppedKey(sessionId);
 			const held = (await storage.session.get(key))[key];
 			if (held === undefined) return false;
-			if (typeof held === "number" && !stopExpired(held)) return true;
+			if (typeof held === "number") return true;
 			return exclusive(() => readStopped(sessionId));
 		},
 
 		async stoppedIds(): Promise<string[]> {
-			const { live, expired } = await scanStopped();
-			return expired.length === 0 ? live : exclusive(sweep);
+			return (await scanStopped()).map(({ sessionId }) => sessionId);
+		},
+
+		/** Frees Stops older than the TTL whose session the daemon no longer lists; a listed session keeps its Stop. */
+		releaseGone(listed: ReadonlySet<string>): Promise<void> {
+			return exclusive(async () => {
+				const gone = (await scanStopped()).filter(({ sessionId, stoppedAt }) => stopExpired(stoppedAt) && !listed.has(sessionId));
+				await Promise.all(gone.map(({ sessionId }) => storage.session.remove(stoppedKey(sessionId))));
+			});
 		},
 
 		async allowed(sessionId: string, site: string): Promise<boolean> {
@@ -113,13 +108,12 @@ export function createSessionControl({ storage }: { storage: AgentTabsStorage })
 			});
 		},
 
-		/** Marks the session stopped by the person, sweeps expired stops, and drops its allowed sites and values grants. */
+		/** Marks the session stopped by the person and drops its allowed sites and values grants. */
 		stop(sessionId: string): Promise<void> {
 			return enqueue(async () => {
 				await storage.session.set({ [stoppedKey(sessionId)]: Date.now() });
 				await storage.session.remove(sitesKey(sessionId));
 				await storage.session.remove(valuesKey(sessionId));
-				await sweep();
 			});
 		},
 
@@ -128,7 +122,6 @@ export function createSessionControl({ storage }: { storage: AgentTabsStorage })
 			return enqueue(async () => {
 				await storage.session.remove(sitesKey(sessionId));
 				await storage.session.remove(valuesKey(sessionId));
-				await sweep();
 			});
 		},
 	};

@@ -608,10 +608,15 @@ describe("createJobRunner", () => {
 			});
 			const runner = createJobRunner(deps(store, undefined));
 
+			const spawn = spyOn(Bun, "spawn");
 			runner.runNow("long");
 			await runner.stopAll();
 
 			expect(store.getJobByLabel("long")?.lastError).toBe("stopped by the owner");
+			const started = spawn.mock.results.map((result) => (result.value as { pid: number }).pid);
+			spawn.mockRestore();
+			expect(started).toHaveLength(1);
+			expect(() => process.kill(started[0] as number, 0)).toThrow();
 		});
 	});
 

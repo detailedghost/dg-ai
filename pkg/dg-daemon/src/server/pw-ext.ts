@@ -7,7 +7,7 @@ export const PW_EXT_STOPPED = "The person clicked Stop in the browser; pw --ext 
 
 const revokedByRegistry = new WeakMap<object, Set<string>>();
 
-/** Session ids whose Stop the extension reported. A closed session leaves the set, and session ids come from randomUUID, so none returns. */
+/** Session ids whose Stop the extension reported. */
 function revokedSessions(deps: FrameHandlerDeps): Set<string> {
 	let revoked = revokedByRegistry.get(deps.registry);
 	if (!revoked) {

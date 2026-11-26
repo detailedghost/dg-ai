@@ -555,7 +555,8 @@ export function registerDaemonLink(
 		}
 	}
 
-	async function reportPendingStops(): Promise<void> {
+	async function reportPendingStops(listed: ReadonlySet<string>): Promise<void> {
+		await sessionControl.releaseGone(listed);
 		const stopped = await sessionControl.stoppedIds();
 		for (const sessionId of stopReportedOn.keys()) if (!stopped.includes(sessionId)) stopReportedOn.delete(sessionId);
 		for (const sessionId of stopped) if (stopReportedOn.get(sessionId) !== currentSocket) sendPwExtStop(sessionId);
@@ -828,7 +829,7 @@ export function registerDaemonLink(
 			return;
 		}
 		if (frame.type !== "session-list") return;
-		void reportPendingStops().catch(logStopReportError);
+		void reportPendingStops(new Set(frame.sessions.map(({ sessionId }) => sessionId))).catch(logStopReportError);
 		const presenceChanged = frame.sessions.some(
 			({ sessionId, presence }) =>
 				bootstrapsBySession.has(sessionId) &&

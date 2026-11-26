@@ -171,8 +171,8 @@ const STDOUT_DRAIN_GRACE_MS = 500;
 
 /** A feed run keeps the 30 s and 256 KB limits of the dispatch path; a run with no feed has none unless `timeoutMs` is set. */
 export async function startJobRun(decl: JobDecl, deps: LauncherDeps): Promise<JobRun> {
-	const env = buildJobEnv(decl, deps);
 	await assertJobPinned(decl.name, deps.paths);
+	const env = buildJobEnv(decl, deps);
 	const logFile = jobLogFile(deps.paths.logDir, decl.name);
 	ensurePrivateDir(deps.paths.logDir);
 	rotateLogIfLarge(logFile, deps.maxLogBytes);

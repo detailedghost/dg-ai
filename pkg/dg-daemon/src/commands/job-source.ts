@@ -441,8 +441,8 @@ export const git = (deps: JobSourceDeps, args: string[], cwd?: string): Promise<
 		stdin: deps.isTerminal() ? "inherit" : "ignore",
 	});
 
-export async function treeOf(deps: JobSourceDeps, cloneDir: string): Promise<string> {
-	const tree = (await git(deps, ["rev-parse", "HEAD^{tree}"], cloneDir)).stdout.trim();
+export async function treeOf(run: (args: string[], cwd: string) => Promise<GitResult>, cloneDir: string): Promise<string> {
+	const tree = (await run(["rev-parse", "HEAD^{tree}"], cloneDir)).stdout.trim();
 	if (!isTreeId(tree)) stop("git did not give a tree id");
 	return tree;
 }
@@ -863,7 +863,7 @@ async function addGit(
 				credentials: declaration.credentials,
 			},
 			manifest,
-			{ sha: head, tree: await treeOf(deps, cloneDir) },
+			{ sha: head, tree: await treeOf((args, cwd) => git(deps, args, cwd), cloneDir) },
 		);
 		try {
 			await withConfigLock(paths, () => commitToDisk(paths, source, record, resolved.jobs));
