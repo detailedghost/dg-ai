@@ -6,7 +6,7 @@ public sealed class PluginApprovalVerifierTests : IDisposable
 {
     private const string Name = "scanner";
     private static readonly DateTimeOffset Start = new(2026, 11, 25, 12, 0, 0, TimeSpan.Zero);
-    private readonly string _root = Directory.CreateTempSubdirectory("dgverifier").FullName;
+    private readonly TempFolder _temp = new();
     private readonly ManualClock _clock = new(Start);
     private readonly MapCredentialStore _store = new();
     private readonly PluginApprovalVerifier _verifier;
@@ -14,7 +14,7 @@ public sealed class PluginApprovalVerifierTests : IDisposable
 
     public PluginApprovalVerifierTests()
     {
-        _store.Values["dg/plugin-approval-key"] = ApprovalFixture.KeyHex;
+        _store.Values[PluginApproval.KeyCredential] = ApprovalFixture.KeyHex;
         _verifier = new PluginApprovalVerifier(
             _store,
             _clock,
@@ -24,7 +24,7 @@ public sealed class PluginApprovalVerifierTests : IDisposable
                 return PluginApproval.HashTree(src);
             }
         );
-        Folder = Path.Combine(_root, Name);
+        Folder = Path.Combine(_temp.Path, Name);
         Tree = ApprovalFixture.WriteTree(Folder, ("plugin.toml", "name = \"scanner\"\n"), ("lib/main.txt", "body"));
         ApprovalFixture.WriteRecord(Folder, ApprovalFixture.Signed(Name, Tree));
     }
@@ -33,11 +33,11 @@ public sealed class PluginApprovalVerifierTests : IDisposable
 
     private string Tree { get; }
 
-    private string CachePath => Path.Combine(Folder, "stat-cache.json");
+    private string CachePath => Path.Combine(Folder, PluginStatCache.FileName);
 
     private ValueTask<string?> Problem() => _verifier.ProblemAsync(Name, Folder, CancellationToken.None);
 
-    public void Dispose() => Directory.Delete(_root, true);
+    public void Dispose() => _temp.Dispose();
 
     [Fact]
     public async Task ProblemAsync_SignedIntactPlugin_IsApproved()
@@ -253,7 +253,7 @@ public sealed class PluginApprovalVerifierTests : IDisposable
     [Fact]
     public async Task ProblemAsync_MalformedKey_IsTreatedAsAbsent()
     {
-        _store.Values["dg/plugin-approval-key"] = "zz";
+        _store.Values[PluginApproval.KeyCredential] = "zz";
 
         Assert.Contains("no approval key", await Problem());
     }
@@ -264,6 +264,27 @@ public sealed class PluginApprovalVerifierTests : IDisposable
         _store.Failure = new IOException("dg daemon is not running");
 
         Assert.Contains("dg agent start", await Problem());
+    }
+
+    [Fact]
+    public async Task ProblemAsync_KeyRotatedAfterItWasCached_PicksUpTheNewKey()
+    {
+        await Problem();
+        var rotated = Convert.FromHexString(new string('7', 64));
+        ApprovalFixture.WriteRecord(Folder, ApprovalFixture.Signed(Name, Tree, rotated));
+        _store.Values[PluginApproval.KeyCredential] = new string('7', 64);
+
+        Assert.Null(await Problem());
+    }
+
+    [Fact]
+    public async Task ProblemAsync_RecordWithAnExtraKey_IsNotApproved()
+    {
+        var file = Path.Combine(Folder, "dg-plugin.json");
+        var text = await File.ReadAllTextAsync(file, TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(file, text.Replace("{\"name\"", "{\"extra\":1,\"name\""), TestContext.Current.CancellationToken);
+
+        Assert.Contains("review it", await Problem());
     }
 
     [Fact]

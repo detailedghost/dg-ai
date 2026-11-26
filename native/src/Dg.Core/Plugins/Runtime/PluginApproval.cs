@@ -7,7 +7,7 @@ public static class PluginApproval
 {
     public const string KeyCredential = "dg/plugin-approval-key";
     private const string MacDomain = "dg-plugin-approval-v1";
-    private const int Size = 32;
+    private const int MacByteLength = 32;
 
     public static string ComputeMac(ReadOnlySpan<byte> key, PluginApprovalRecord record) =>
         Convert.ToHexStringLower(MacBytes(key, record));
@@ -20,7 +20,7 @@ public static class PluginApproval
     public static bool TryDecode32(string? hex, out byte[] bytes)
     {
         bytes = [];
-        if (hex is not { Length: Size * 2 } || !IsLowerHex(hex))
+        if (hex is not { Length: MacByteLength * 2 } || !IsLowerHex(hex))
             return false;
         bytes = Convert.FromHexString(hex);
         return true;
@@ -32,13 +32,8 @@ public static class PluginApproval
             throw new ArgumentException("a signed field contains a NUL byte", nameof(record));
         using var hmac = IncrementalHash.CreateHMAC(HashAlgorithmName.SHA256, key);
         HmacFields.Append(hmac, MacDomain, first: true);
-        HmacFields.Append(hmac, record.Name);
-        HmacFields.Append(hmac, record.Kind);
-        HmacFields.Append(hmac, record.Source);
-        HmacFields.Append(hmac, record.PinKind);
-        HmacFields.Append(hmac, record.PinValue);
-        HmacFields.Append(hmac, record.TreeSha256);
-        HmacFields.Append(hmac, record.ApprovedSha256 ?? "");
+        foreach (var field in record.SignedFields())
+            HmacFields.Append(hmac, field);
         return hmac.GetHashAndReset();
     }
 
@@ -62,14 +57,13 @@ public static class PluginApproval
         return files;
     }
 
-    private static bool ContainsNul(PluginApprovalRecord record) =>
-        record.Name.Contains('\0')
-        || record.Kind.Contains('\0')
-        || record.Source.Contains('\0')
-        || record.PinKind.Contains('\0')
-        || record.PinValue.Contains('\0')
-        || record.TreeSha256.Contains('\0')
-        || record.ApprovedSha256?.Contains('\0') == true;
+    private static bool ContainsNul(PluginApprovalRecord record)
+    {
+        foreach (var field in record.SignedFields())
+            if (field.Contains('\0'))
+                return true;
+        return false;
+    }
 
     private static bool IsLowerHex(string text)
     {

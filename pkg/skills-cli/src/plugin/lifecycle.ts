@@ -142,7 +142,12 @@ export async function setPluginEnabled(name: string, enabled: boolean, env: Env 
 		load(record, env);
 		registerOnHosts(name, join(pluginFolder(name, env), "skills"), env);
 	} else unregisterFromHosts(name, env);
-	writeEnabled(name, enabled, env);
+	try {
+		writeEnabled(name, enabled, env);
+	} catch (error) {
+		if (enabled) unregisterFromHosts(name, env);
+		throw error;
+	}
 }
 
 /** Re-fetches the source. A change in the files drops the approval and disables the plugin. */

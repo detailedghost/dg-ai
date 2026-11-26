@@ -36,7 +36,7 @@ public sealed class ConfigGetCommand(
             return Fail(toml.Error!);
         if (ConfigRules.IsInvalid(key))
             return Fail($"dg config: {key} is not a valid key. Next: use dotted names such as install.cli_only.");
-        Output.WriteLine(ConfigValues.Shown(ConfigValues.Lookup(toml.Value!, key) ?? known.Fallback));
+        Output.WriteLine(ConfigValues.Shown(DgSettings.Lookup(toml.Value!, key) ?? known.Fallback));
         return 0;
     }
 }

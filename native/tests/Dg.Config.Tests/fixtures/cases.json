@@ -91,6 +91,6 @@
 	{ "name": "set-hooks-key", "argv": ["config", "set", "hooks.spelling.locale", "en-US"], "native": false },
 	{ "name": "set-legacy-marker", "files": { "config/cli-only": "" }, "argv": ["config", "set", "pw.mode", "ext"], "native": false },
 	{ "name": "set-missing-arguments", "argv": ["config", "set"], "native": false },
-	{ "name": "list-front-door-only", "frontOnly": true, "argv": ["config", "list"] },
-	{ "name": "doctor-front-door-only", "frontOnly": true, "argv": ["config", "doctor"] }
+	{ "name": "list-front-door-only", "frontOnly": true, "expectedLine": "pw.mode = auto", "argv": ["config", "list"] },
+	{ "name": "doctor-front-door-only", "frontOnly": true, "expectedLine": "config.toml does not exist; defaults", "argv": ["config", "doctor"] }
 ]

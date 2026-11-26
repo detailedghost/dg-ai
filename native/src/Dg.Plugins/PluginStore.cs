@@ -19,13 +19,13 @@ internal sealed class PluginStore(DgPaths paths, DgPathSeams seams)
 
     public string Loaded(string name) => Path.Combine(Folder(name), "skills");
 
-    public PluginRecord? TryRead(string name)
+    public PluginApprovalRecord? TryRead(string name)
     {
         var file = Path.Combine(Folder(name), RecordFile);
-        return File.Exists(file) ? PluginRecord.Parse(File.ReadAllBytes(file), name) : null;
+        return File.Exists(file) ? PluginRecordFile.Parse(File.ReadAllBytes(file), name) : null;
     }
 
-    public void Write(PluginRecord record)
+    public void Write(PluginApprovalRecord record)
     {
         var file = Path.Combine(Folder(record.Name), RecordFile);
         var temp = $"{file}.{Environment.ProcessId}.{Guid.NewGuid()}.tmp";
@@ -62,7 +62,7 @@ internal sealed class PluginStore(DgPaths paths, DgPathSeams seams)
         return PluginApproval.HashTree(src);
     }
 
-    public static void AssertUnapproved(PluginRecord record)
+    public static void AssertUnapproved(PluginApprovalRecord record)
     {
         if (record.HasApproval)
             throw new NotNativeException();

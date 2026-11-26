@@ -113,7 +113,8 @@ public sealed class TcpConnector(ITcpManifestResolver manifests, IPluginTokenPro
         {
             throw Fail(
                 PluginTransportCodes.Plugin,
-                $"{name}: plugin closed the connection during hello. Next: check that the plugin accepts unauthenticated tcp clients, or use transport = \"ipc\"."
+                $"{name}: plugin closed the connection during hello. "
+                    + "Next: check that the plugin accepts unauthenticated tcp clients, or use transport = \"ipc\"."
             );
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
