@@ -95,7 +95,8 @@
 			"argv": [
 				"plugin",
 				"list"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "list-json-mixed",
@@ -149,7 +150,8 @@
 				"plugin",
 				"list",
 				"--json"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "list-mixed-text",
@@ -202,7 +204,8 @@
 			"argv": [
 				"plugin",
 				"list"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "list-tampered-shows-unapproved",
@@ -231,7 +234,8 @@
 			"argv": [
 				"plugin",
 				"list"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "list-json-escapes-source",
@@ -369,7 +373,8 @@
 				"plugin",
 				"verify",
 				"alpha"
-			]
+			],
+			"native": false
 		},
 		{
 			"name": "verify-approve-refused-without-terminal",
@@ -406,7 +411,8 @@
 				"alpha",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-approve-nested-skills",
@@ -425,7 +431,8 @@
 				"beta",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-approve-enabled-registers-hosts",
@@ -449,7 +456,8 @@
 				"beta",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-approve-again-enabled",
@@ -483,7 +491,8 @@
 				"beta",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-approve-disabled-removes-owned-host-skills",
@@ -522,7 +531,8 @@
 				"beta",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-approve-foreign-host-skill",
@@ -576,7 +586,8 @@
 				"gamma",
 				"--approve"
 			],
-			"person": true
+			"person": true,
+			"native": false
 		},
 		{
 			"name": "verify-tampered",

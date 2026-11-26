@@ -10,10 +10,12 @@ internal sealed record PluginRecord(
     string PinKind,
     string PinValue,
     string TreeSha256,
-    string? ApprovedSha256
+    string? ApprovedSha256,
+    string? Mac
 )
 {
     private static readonly string[] Keys = ["name", "kind", "source", "pin", "treeSha256", "approvedSha256"];
+    private static readonly string[] SignedKeys = [.. Keys, "mac"];
 
     public bool HasApproval =>
         ApprovedSha256 is not null && string.Equals(ApprovedSha256, TreeSha256, StringComparison.Ordinal);
@@ -26,7 +28,7 @@ internal sealed record PluginRecord(
         {
             using var document = JsonDocument.Parse(json.ToArray());
             var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object || !HasExactly(root, Keys))
+            if (root.ValueKind != JsonValueKind.Object || !(HasExactly(root, Keys) || HasExactly(root, SignedKeys)))
                 throw new NotNativeException();
             var pin = root.GetProperty("pin");
             if (pin.ValueKind != JsonValueKind.Object || !HasExactly(pin, ["kind", "value"]))
@@ -39,7 +41,8 @@ internal sealed record PluginRecord(
                 Text(pin, "kind"),
                 Text(pin, "value"),
                 Text(root, "treeSha256"),
-                approved.ValueKind == JsonValueKind.Null ? null : Text(root, "approvedSha256")
+                approved.ValueKind == JsonValueKind.Null ? null : Text(root, "approvedSha256"),
+                ReadMac(root)
             );
             return string.Equals(record.Name, expectedName, StringComparison.Ordinal) ? record : throw new NotNativeException();
         }
@@ -68,7 +71,30 @@ internal sealed record PluginRecord(
             sink.Append("null");
         else
             JsonText.Quote(sink, ApprovedSha256);
+        sink.Append(",\n\t\"mac\": ");
+        if (Mac is null)
+            sink.Append("null");
+        else
+            JsonText.Quote(sink, Mac);
         return sink.Append("\n}\n").ToString();
+    }
+
+    private static string? ReadMac(JsonElement root)
+    {
+        if (!root.TryGetProperty("mac", out var mac) || mac.ValueKind == JsonValueKind.Null)
+            return null;
+        var text = mac.ValueKind == JsonValueKind.String ? mac.GetString()! : throw new NotNativeException();
+        return IsLowerHex64(text) ? text : throw new NotNativeException();
+    }
+
+    private static bool IsLowerHex64(string text)
+    {
+        if (text.Length != 64)
+            return false;
+        foreach (var c in text)
+            if (c is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
+                return false;
+        return true;
     }
 
     private static string Text(JsonElement element, string key)

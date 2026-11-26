@@ -346,7 +346,8 @@ start-up:
 - `dg hooks run <id>` for the built-in hook ids
 - `dg completion` words, when there are two or more words
 - `dg config get`, `set`, `list` and `doctor`
-- `dg plugin list`, `verify`, `enable` and `disable`
+- `dg plugin list`, `verify`, `enable` and `disable`, until a record claims approval
+  (the front door cannot check the approval MAC, so it hands those records to `dg-core`)
 
 Every other command runs `dg-core` with the same arguments. This includes a
 single-word completion, an unknown hook id, `dg plugin add`, `remove` and
@@ -903,10 +904,25 @@ dg plugin remove <name>
 ```
 
 `add` copies the source and marks it `unapproved`. `verify` checks the copy
-against its recorded hash. With `--approve`, it records that hash as approved.
-`update` fetches the new source. When the source changed, the plugin turns off
-until you run `verify --approve` again. The front door runs `list` and `verify`
-itself. `add`, `remove`, `enable`, `disable` and `update` run in `dg-core`.
+against its recorded hash. With `--approve`, it records that hash as approved
+and signs the record. The signing key is the credential `dg/plugin-approval-key`
+in the dg daemon credential store. `--approve` creates it on first use, so the
+daemon must run (`dg agent start`).
+
+A plugin counts as approved only when the signature verifies and the files still
+match. A record with no signature, or a bad one, is unapproved. This includes
+records that older dg wrote. If the daemon is not running or the key is missing,
+no plugin is approved. Start the daemon, or run `verify <name> --approve` again.
+
+`update` fetches the new source. When the source or its pin changed, the plugin
+turns off until you run `verify --approve` again. The front door runs `list` and
+`verify` itself while no record claims approval. It hands any approval check and
+every `--approve` to `dg-core`, because the front door has no credential store
+client. `add`, `remove`, `enable`, `disable` and `update` run in `dg-core`.
+
+The plugin host caches file sizes, times and inodes in `stat-cache.json` inside
+the plugin folder. It signs the cache with the same key. It hashes the files
+again when any entry changes, when the signature fails, and once a day.
 
 ## CLI-only install
 

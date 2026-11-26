@@ -14,6 +14,7 @@ public sealed class PluginHost(
     PluginManifestStore store,
     IEnumerable<IBuiltinPlugin> builtins,
     IServiceProvider services,
+    PluginApprovalVerifier approvals,
     IPluginLatencyObserver? observer = null
 ) : IPluginHost
 {
@@ -34,7 +35,7 @@ public sealed class PluginHost(
                 return await builtin.HandleAsync(message, ct).ConfigureAwait(false);
             }
 
-        var manifest = Admit(name, out var allowRemote);
+        var (manifest, allowRemote) = await Admit(name, ct).ConfigureAwait(false);
         var key = PluginTransportKeys.For(manifest);
         var provider = services.GetRequiredKeyedService<IPluginTransportProvider>(key);
         await using var lease = await provider.OpenAsync(manifest, allowRemote, ct).ConfigureAwait(false);
@@ -77,7 +78,7 @@ public sealed class PluginHost(
         }
     }
 
-    private PluginManifest Admit(string name, out bool allowRemote)
+    private async ValueTask<(PluginManifest Manifest, bool AllowRemote)> Admit(string name, CancellationToken ct)
     {
         var folder = store.Folder(name);
         config.Plugins.TryGetValue(name, out var entry);
@@ -89,23 +90,20 @@ public sealed class PluginHost(
                 "manifest",
                 $"dg plugin: {name}: plugin.toml names {manifest.Name}. Next: fix name in plugin.toml."
             );
-        if (!PluginApproval.IsApproved(folder))
-            throw new PluginContractException(
-                PluginRuntimeCodes.Unapproved,
-                $"dg plugin: {name} is not approved. Next: review it, then run dg plugin verify {name} --approve."
-            );
+        if (await approvals.ProblemAsync(name, folder, ct).ConfigureAwait(false) is { } problem)
+            throw new PluginContractException(PluginRuntimeCodes.Unapproved, $"dg plugin: {name} is not approved. {problem}");
         if (manifest.Entry.IsBuiltin)
             throw new PluginContractException(
                 PluginRuntimeCodes.NotInstalled,
                 $"dg plugin: {name}: built-in {manifest.Entry.Builtin} is not part of this build. Next: update dg."
             );
-        allowRemote = manifest.Remote && entry.AllowRemote;
+        var allowRemote = manifest.Remote && entry.AllowRemote;
         if (manifest.Remote && !allowRemote)
             throw new PluginContractException(
                 "remote-refused",
                 $"dg plugin: {name} is remote but plugins.{name}.allow_remote is not true. Next: run dg config set plugins.{name}.allow_remote true if you trust {manifest.Endpoint}."
             );
-        return manifest;
+        return (manifest, allowRemote);
     }
 
     private uint NextId()

@@ -1,12 +1,15 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { basename, join } from "node:path";
 import { parseManifest } from "@dg/common/plugins/manifest";
 import { encodeFrame, FRAME_FLAG_RESPONSE, type Frame } from "@dg/common/plugins/contract";
 import { closeIpcConnections } from "@dg/common/plugins/transport/ipc";
 import { FrameReader } from "@dg/common/plugins/transport/framing";
+import { macOf, overrideApprovalKeys } from "../src/plugin/approval";
+import type { PluginRecord } from "../src/plugin/store";
 import { hashTree } from "../src/plugin/tree";
+import { downKeys, fakeKeys, TEST_KEY_HEX } from "./support/approval-keys";
 import { runExternalHook } from "../src/hooks/external";
 import { hasConfiguredPlugins, resolveExternalHook } from "../src/hooks/plugins";
 import { bashInput, hookWorld } from "./hooks/hook-fixtures";
@@ -42,7 +45,10 @@ async function startPlugin(path: string, decide: Decide): Promise<{ connections:
 	return { connections: () => connections, decides };
 }
 
+beforeEach(() => overrideApprovalKeys(fakeKeys()));
+
 afterEach(async () => {
+	overrideApprovalKeys(undefined);
 	closeIpcConnections();
 	for (const server of servers.splice(0)) await new Promise((resolve) => server.close(resolve));
 });
@@ -51,7 +57,8 @@ const MANIFEST = (name: string, extra = "") => `name = "${name}"\nversion = "1.0
 
 function approve(dir: string, approved = true): void {
 	const tree = hashTree(join(dir, "src"));
-	const record = { name: basename(dir), kind: "skill", source: "folder", pin: { kind: "sha256", value: tree }, treeSha256: tree, approvedSha256: approved ? tree : null };
+	const record: PluginRecord = { name: basename(dir), kind: "skill", source: "folder", pin: { kind: "sha256", value: tree }, treeSha256: tree, approvedSha256: approved ? tree : null, mac: null };
+	if (approved) record.mac = macOf(record, Buffer.from(TEST_KEY_HEX, "hex"));
 	writeFileSync(join(dir, "dg-plugin.json"), JSON.stringify(record));
 }
 
@@ -234,7 +241,9 @@ describe("hooks run with an external hook plugin", () => {
 		const dir = installPlugin(world, "scan", ENABLED);
 		await startPlugin(join(dir, "p.sock"), () => ({ decision: "allow" }));
 		const cli = join(import.meta.dir, "..", "src", "hooks", "cli.ts");
-		const driver = `const { main } = await import(${JSON.stringify(cli)}); process.exitCode = await main(["run", "scan"]);`;
+		const approval = join(import.meta.dir, "..", "src", "plugin", "approval.ts");
+		const driver = `const key = Buffer.from(${JSON.stringify(TEST_KEY_HEX)}, "hex"); (await import(${JSON.stringify(approval)})).overrideApprovalKeys({ read: async () => key, ensure: async () => key });
+const { main } = await import(${JSON.stringify(cli)}); process.exitCode = await main(["run", "scan"]);`;
 		const proc = Bun.spawn([process.execPath, "-e", driver], {
 			env: { ...process.env, ...world.env() },
 			stdin: new Blob([JSON.stringify(bashInput("ls"))]),
@@ -284,6 +293,23 @@ describe("resolveExternalHook", () => {
 		const tree = hashTree(join(dir, "src"));
 		writeFileSync(join(dir, "dg-plugin.json"), JSON.stringify({ treeSha256: tree, approvedSha256: tree }));
 		await expect(resolveExternalHook("scan", world.env())).rejects.toThrow(/not approved.*must hold exactly the keys/);
+	});
+
+	test("refuses an unsigned or badly signed approval and says to re-approve", async () => {
+		const world = hookWorld();
+		const dir = installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");
+		const record = JSON.parse(readFileSync(join(dir, "dg-plugin.json"), "utf8"));
+		writeFileSync(join(dir, "dg-plugin.json"), JSON.stringify({ ...record, mac: null }));
+		await expect(resolveExternalHook("scan", world.env())).rejects.toThrow(/not approved.*re-approve with dg plugin verify scan --approve/);
+		writeFileSync(join(dir, "dg-plugin.json"), JSON.stringify({ ...record, mac: "0".repeat(64) }));
+		await expect(resolveExternalHook("scan", world.env())).rejects.toThrow(/not approved.*re-approve with dg plugin verify scan --approve/);
+	});
+
+	test("refuses every plugin when the daemon is down and says to start it", async () => {
+		const world = hookWorld();
+		installPlugin(world, "scan", "[plugins.scan]\nenabled = true\n");
+		overrideApprovalKeys(downKeys());
+		await expect(resolveExternalHook("scan", world.env())).rejects.toThrow(/not approved.*dg agent start/);
 	});
 
 	test("refuses a plugin whose src changed after approval", async () => {

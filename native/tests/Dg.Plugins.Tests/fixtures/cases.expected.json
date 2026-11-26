@@ -19,7 +19,7 @@
 		"name": "list-unapproved",
 		"setup": {
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/alpha/src/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/src/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/src/refs/a.md": "reference a\n"
@@ -29,7 +29,7 @@
 		"exit": 0,
 		"after": {
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/alpha/src/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/src/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/src/refs/a.md": "reference a\n"
@@ -39,7 +39,7 @@
 		"name": "list-json-unapproved",
 		"setup": {
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/alpha/src/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/src/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/src/refs/a.md": "reference a\n"
@@ -49,7 +49,7 @@
 		"exit": 0,
 		"after": {
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/alpha/src/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/src/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/src/refs/a.md": "reference a\n"
@@ -67,7 +67,7 @@
 			".codex/skills/alpha/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			".codex/skills/alpha/refs/a.md": "reference a\n",
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = true\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/alpha/skills/alpha/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/skills/alpha/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/skills/alpha/refs/a.md": "reference a\n",
@@ -88,7 +88,7 @@
 			".codex/skills/alpha/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			".codex/skills/alpha/refs/a.md": "reference a\n",
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = true\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/alpha/skills/alpha/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/skills/alpha/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/skills/alpha/refs/a.md": "reference a\n",
@@ -111,18 +111,18 @@
 			".codex/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			".codex/skills/two/notes.txt": "café \"quoted\" notes\n",
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n\n[plugins.beta]\nsource = \"<home>/sources/beta\"\nenabled = true\n\n[plugins.gamma]\nsource = \"<home>/sources/gamma\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/alpha/src/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/src/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/src/refs/a.md": "reference a\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/beta/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/skills/two/notes.txt": "café \"quoted\" notes\n",
 			"data/plugins/beta/src/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/src/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/src/skills/two/notes.txt": "café \"quoted\" notes\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/gamma/skills/gamma/SKILL.md": "---\nname: gamma\n---\nGamma.\n",
 			"data/plugins/gamma/src/SKILL.md": "---\nname: gamma\n---\nGamma.\n"
 		},
@@ -141,18 +141,18 @@
 			".codex/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			".codex/skills/two/notes.txt": "café \"quoted\" notes\n",
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n\n[plugins.beta]\nsource = \"<home>/sources/beta\"\nenabled = true\n\n[plugins.gamma]\nsource = \"<home>/sources/gamma\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/alpha/src/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/src/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/src/refs/a.md": "reference a\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/beta/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/skills/two/notes.txt": "café \"quoted\" notes\n",
 			"data/plugins/beta/src/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/src/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/src/skills/two/notes.txt": "café \"quoted\" notes\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/gamma/skills/gamma/SKILL.md": "---\nname: gamma\n---\nGamma.\n",
 			"data/plugins/gamma/src/SKILL.md": "---\nname: gamma\n---\nGamma.\n"
 		}
@@ -171,18 +171,18 @@
 			".codex/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			".codex/skills/two/notes.txt": "café \"quoted\" notes\n",
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n\n[plugins.beta]\nsource = \"<home>/sources/beta\"\nenabled = true\n\n[plugins.gamma]\nsource = \"<home>/sources/gamma\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/alpha/src/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/src/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/src/refs/a.md": "reference a\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/beta/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/skills/two/notes.txt": "café \"quoted\" notes\n",
 			"data/plugins/beta/src/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/src/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/src/skills/two/notes.txt": "café \"quoted\" notes\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/gamma/skills/gamma/SKILL.md": "---\nname: gamma\n---\nGamma.\n",
 			"data/plugins/gamma/src/SKILL.md": "---\nname: gamma\n---\nGamma.\n"
 		},
@@ -201,18 +201,18 @@
 			".codex/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			".codex/skills/two/notes.txt": "café \"quoted\" notes\n",
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n\n[plugins.beta]\nsource = \"<home>/sources/beta\"\nenabled = true\n\n[plugins.gamma]\nsource = \"<home>/sources/gamma\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/alpha/src/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/src/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/src/refs/a.md": "reference a\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/beta/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/skills/two/notes.txt": "café \"quoted\" notes\n",
 			"data/plugins/beta/src/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/src/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/src/skills/two/notes.txt": "café \"quoted\" notes\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/gamma/skills/gamma/SKILL.md": "---\nname: gamma\n---\nGamma.\n",
 			"data/plugins/gamma/src/SKILL.md": "---\nname: gamma\n---\nGamma.\n"
 		}
@@ -221,7 +221,7 @@
 		"name": "list-tampered-shows-unapproved",
 		"setup": {
 			"config/config.toml": "[plugins.gamma]\nsource = \"<home>/sources/gamma\"\nenabled = false\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/gamma/skills/gamma/SKILL.md": "---\nname: gamma\n---\nGamma.\n",
 			"data/plugins/gamma/src/SKILL.md": "edited\n"
 		},
@@ -230,7 +230,7 @@
 		"exit": 0,
 		"after": {
 			"config/config.toml": "[plugins.gamma]\nsource = \"<home>/sources/gamma\"\nenabled = false\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/gamma/skills/gamma/SKILL.md": "---\nname: gamma\n---\nGamma.\n",
 			"data/plugins/gamma/src/SKILL.md": "edited\n"
 		}
@@ -239,7 +239,7 @@
 		"name": "list-json-escapes-source",
 		"setup": {
 			"config/config.toml": "[plugins.qx]\nsource = \"<home>/sources/q\\\"x\\\\y é\"\nenabled = false\n",
-			"data/plugins/qx/dg-plugin.json": "{\n\t\"name\": \"qx\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/q\\\"x\\\\y é\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"50b2311246be7f4cfcab9904d00b5d81546abb866dbe9c6485142ff436109f9c\"\n\t},\n\t\"treeSha256\": \"50b2311246be7f4cfcab9904d00b5d81546abb866dbe9c6485142ff436109f9c\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/qx/dg-plugin.json": "{\n\t\"name\": \"qx\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/q\\\"x\\\\y é\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"50b2311246be7f4cfcab9904d00b5d81546abb866dbe9c6485142ff436109f9c\"\n\t},\n\t\"treeSha256\": \"50b2311246be7f4cfcab9904d00b5d81546abb866dbe9c6485142ff436109f9c\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/qx/src/SKILL.md": "---\nname: q\n---\nQ.\n"
 		},
 		"stdout": "[\n  {\n    \"name\": \"qx\",\n    \"kind\": \"skill\",\n    \"pin\": {\n      \"kind\": \"sha256\",\n      \"value\": \"50b2311246be7f4cfcab9904d00b5d81546abb866dbe9c6485142ff436109f9c\"\n    },\n    \"enabled\": false,\n    \"approved\": false,\n    \"source\": \"<home>/sources/q\\\"x\\\\y é\"\n  }\n]\n",
@@ -247,7 +247,7 @@
 		"exit": 0,
 		"after": {
 			"config/config.toml": "[plugins.qx]\nsource = \"<home>/sources/q\\\"x\\\\y é\"\nenabled = false\n",
-			"data/plugins/qx/dg-plugin.json": "{\n\t\"name\": \"qx\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/q\\\"x\\\\y é\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"50b2311246be7f4cfcab9904d00b5d81546abb866dbe9c6485142ff436109f9c\"\n\t},\n\t\"treeSha256\": \"50b2311246be7f4cfcab9904d00b5d81546abb866dbe9c6485142ff436109f9c\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/qx/dg-plugin.json": "{\n\t\"name\": \"qx\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/q\\\"x\\\\y é\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"50b2311246be7f4cfcab9904d00b5d81546abb866dbe9c6485142ff436109f9c\"\n\t},\n\t\"treeSha256\": \"50b2311246be7f4cfcab9904d00b5d81546abb866dbe9c6485142ff436109f9c\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/qx/src/SKILL.md": "---\nname: q\n---\nQ.\n"
 		}
 	},
@@ -270,14 +270,14 @@
 	{
 		"name": "list-config-missing-with-plugins",
 		"setup": {
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/gamma/src/SKILL.md": "---\nname: gamma\n---\nGamma.\n"
 		},
 		"stdout": "gamma\tskill\toff\tunapproved\tsha256:ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\n",
 		"stderr": "",
 		"exit": 0,
 		"after": {
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/gamma/src/SKILL.md": "---\nname: gamma\n---\nGamma.\n"
 		}
 	},
@@ -285,7 +285,7 @@
 		"name": "list-config-syntax-error",
 		"setup": {
 			"config/config.toml": "[plugins.gamma\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/gamma/src/SKILL.md": "---\nname: gamma\n---\nGamma.\n"
 		},
 		"stdout": "",
@@ -293,7 +293,7 @@
 		"exit": 1,
 		"after": {
 			"config/config.toml": "[plugins.gamma\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/gamma/src/SKILL.md": "---\nname: gamma\n---\nGamma.\n"
 		}
 	},
@@ -301,7 +301,7 @@
 		"name": "verify-unapproved",
 		"setup": {
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/alpha/src/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/src/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/src/refs/a.md": "reference a\n"
@@ -311,7 +311,7 @@
 		"exit": 0,
 		"after": {
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/alpha/src/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/src/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/src/refs/a.md": "reference a\n"
@@ -321,7 +321,7 @@
 		"name": "verify-unapproved-no-manifest",
 		"setup": {
 			"config/config.toml": "[plugins.beta]\nsource = \"<home>/sources/beta\"\nenabled = false\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/beta/src/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/src/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/src/skills/two/notes.txt": "café \"quoted\" notes\n"
@@ -331,7 +331,7 @@
 		"exit": 0,
 		"after": {
 			"config/config.toml": "[plugins.beta]\nsource = \"<home>/sources/beta\"\nenabled = false\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/beta/src/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/src/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/src/skills/two/notes.txt": "café \"quoted\" notes\n"
@@ -341,7 +341,7 @@
 		"name": "verify-approved",
 		"setup": {
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/alpha/skills/alpha/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/skills/alpha/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/skills/alpha/refs/a.md": "reference a\n",
@@ -354,7 +354,7 @@
 		"exit": 0,
 		"after": {
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/alpha/skills/alpha/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/skills/alpha/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/skills/alpha/refs/a.md": "reference a\n",
@@ -367,7 +367,7 @@
 		"name": "verify-approve-refused-without-terminal",
 		"setup": {
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/alpha/src/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/src/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/src/refs/a.md": "reference a\n"
@@ -377,7 +377,7 @@
 		"exit": 1,
 		"after": {
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/alpha/src/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/src/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/src/refs/a.md": "reference a\n"
@@ -387,7 +387,7 @@
 		"name": "verify-approve-from-unapproved",
 		"setup": {
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/alpha/src/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/src/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/src/refs/a.md": "reference a\n"
@@ -397,7 +397,7 @@
 		"exit": 0,
 		"after": {
 			"config/config.toml": "[plugins.alpha]\nsource = \"<home>/sources/alpha\"\nenabled = false\n",
-			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n}\n",
+			"data/plugins/alpha/dg-plugin.json": "{\n\t\"name\": \"alpha\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/alpha\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\"\n\t},\n\t\"treeSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"approvedSha256\": \"bea64baad4b389e65675dcd7624019c162857250f5aeb95fe2167d60c61627f0\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/alpha/skills/alpha/SKILL.md": "---\nname: alpha\n---\nAlpha skill.\n",
 			"data/plugins/alpha/skills/alpha/plugin.toml": "name = \"alpha\"\nversion = \"1.0.0\"\nkind = \"skill\"\nsha256 = \"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"\n\n[entry]\ncommand = \"alpha-helper\"\nargs = [\"describe\"]\n\n[capabilities]\nnetwork = true\nfs_read = [\".\", \"docs\"]\nfs_write = [\"out\"]\nexec = [\"git\", \"rg\"]\n\n[permissions]\nenv = [\"HOME\"]\ncredentials = [\"alpha-token\"]\n",
 			"data/plugins/alpha/skills/alpha/refs/a.md": "reference a\n",
@@ -410,7 +410,7 @@
 		"name": "verify-approve-nested-skills",
 		"setup": {
 			"config/config.toml": "[plugins.beta]\nsource = \"<home>/sources/beta\"\nenabled = false\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/beta/src/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/src/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/src/skills/two/notes.txt": "café \"quoted\" notes\n"
@@ -420,7 +420,7 @@
 		"exit": 0,
 		"after": {
 			"config/config.toml": "[plugins.beta]\nsource = \"<home>/sources/beta\"\nenabled = false\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/beta/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/skills/two/notes.txt": "café \"quoted\" notes\n",
@@ -433,7 +433,7 @@
 		"name": "verify-approve-enabled-registers-hosts",
 		"setup": {
 			"config/config.toml": "[plugins.beta]\nenabled = true\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/beta/src/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/src/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/src/skills/two/notes.txt": "café \"quoted\" notes\n"
@@ -453,7 +453,7 @@
 			".codex/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			".codex/skills/two/notes.txt": "café \"quoted\" notes\n",
 			"config/config.toml": "[plugins.beta]\nenabled = true\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/beta/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/skills/two/notes.txt": "café \"quoted\" notes\n",
@@ -476,7 +476,7 @@
 			".codex/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			".codex/skills/two/notes.txt": "café \"quoted\" notes\n",
 			"config/config.toml": "[plugins.beta]\nsource = \"<home>/sources/beta\"\nenabled = true\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/beta/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/skills/two/notes.txt": "café \"quoted\" notes\n",
@@ -499,7 +499,7 @@
 			".codex/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			".codex/skills/two/notes.txt": "café \"quoted\" notes\n",
 			"config/config.toml": "[plugins.beta]\nsource = \"<home>/sources/beta\"\nenabled = true\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/beta/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/skills/two/notes.txt": "café \"quoted\" notes\n",
@@ -522,7 +522,7 @@
 			".codex/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			".codex/skills/two/notes.txt": "café \"quoted\" notes\n",
 			"config/config.toml": "[plugins.beta]\nenabled = false\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/beta/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/skills/two/notes.txt": "café \"quoted\" notes\n",
@@ -535,7 +535,7 @@
 		"exit": 0,
 		"after": {
 			"config/config.toml": "[plugins.beta]\nenabled = false\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/beta/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/skills/two/notes.txt": "café \"quoted\" notes\n",
@@ -549,7 +549,7 @@
 		"setup": {
 			".claude/skills/two/SKILL.md": "foreign\n",
 			"config/config.toml": "[plugins.beta]\nenabled = true\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/beta/src/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/src/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/src/skills/two/notes.txt": "café \"quoted\" notes\n"
@@ -560,7 +560,7 @@
 		"after": {
 			".claude/skills/two/SKILL.md": "foreign\n",
 			"config/config.toml": "[plugins.beta]\nenabled = true\n",
-			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n}\n",
+			"data/plugins/beta/dg-plugin.json": "{\n\t\"name\": \"beta\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/beta\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\"\n\t},\n\t\"treeSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"approvedSha256\": \"9570e289a62a0e5cd0caf2dc60cca09e2eee19123627a82e9d2042ba4dafad95\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/beta/skills/one/SKILL.md": "---\nname: one\n---\nOne.\n",
 			"data/plugins/beta/skills/two/SKILL.md": "---\nname: two\n---\nTwo.\n",
 			"data/plugins/beta/skills/two/notes.txt": "café \"quoted\" notes\n",
@@ -573,7 +573,7 @@
 		"name": "verify-approve-claude-config-dir",
 		"setup": {
 			"config/config.toml": "[plugins.gamma]\nenabled = true\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/gamma/src/SKILL.md": "---\nname: gamma\n---\nGamma.\n"
 		},
 		"stdout": "gamma: approved\n",
@@ -585,7 +585,7 @@
 			"config/config.toml": "[plugins.gamma]\nenabled = true\n",
 			"cx/skills/gamma/.dg-plugin": "gamma\n",
 			"cx/skills/gamma/SKILL.md": "---\nname: gamma\n---\nGamma.\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/gamma/skills/gamma/SKILL.md": "---\nname: gamma\n---\nGamma.\n",
 			"data/plugins/gamma/src/SKILL.md": "---\nname: gamma\n---\nGamma.\n"
 		}
@@ -594,7 +594,7 @@
 		"name": "verify-tampered",
 		"setup": {
 			"config/config.toml": "[plugins.gamma]\nsource = \"<home>/sources/gamma\"\nenabled = false\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/gamma/skills/gamma/SKILL.md": "---\nname: gamma\n---\nGamma.\n",
 			"data/plugins/gamma/src/SKILL.md": "edited\n"
 		},
@@ -603,7 +603,7 @@
 		"exit": 1,
 		"after": {
 			"config/config.toml": "[plugins.gamma]\nsource = \"<home>/sources/gamma\"\nenabled = false\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/gamma/src/SKILL.md": "edited\n"
 		}
 	},
@@ -611,7 +611,7 @@
 		"name": "verify-tampered-approve",
 		"setup": {
 			"config/config.toml": "[plugins.gamma]\nsource = \"<home>/sources/gamma\"\nenabled = false\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"mac\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n}\n",
 			"data/plugins/gamma/skills/gamma/SKILL.md": "---\nname: gamma\n---\nGamma.\n",
 			"data/plugins/gamma/src/SKILL.md": "edited\n"
 		},
@@ -620,7 +620,7 @@
 		"exit": 1,
 		"after": {
 			"config/config.toml": "[plugins.gamma]\nsource = \"<home>/sources/gamma\"\nenabled = false\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/gamma/src/SKILL.md": "edited\n"
 		}
 	},
@@ -676,7 +676,7 @@
 		"name": "verify-symlink-in-source",
 		"setup": {
 			"config/config.toml": "[plugins.gamma]\nsource = \"<home>/sources/gamma\"\nenabled = false\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/gamma/src/SKILL.md": "---\nname: gamma\n---\nGamma.\n",
 			"data/plugins/gamma/src/link": "<symlink>"
 		},
@@ -685,7 +685,7 @@
 		"exit": 1,
 		"after": {
 			"config/config.toml": "[plugins.gamma]\nsource = \"<home>/sources/gamma\"\nenabled = false\n",
-			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null\n}\n",
+			"data/plugins/gamma/dg-plugin.json": "{\n\t\"name\": \"gamma\",\n\t\"kind\": \"skill\",\n\t\"source\": \"<home>/sources/gamma\",\n\t\"pin\": {\n\t\t\"kind\": \"sha256\",\n\t\t\"value\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\"\n\t},\n\t\"treeSha256\": \"ad7e6af574581b2aa163ec1edd9d2ab960f7ada2d2c532229c811f830522b54b\",\n\t\"approvedSha256\": null,\n\t\"mac\": null\n}\n",
 			"data/plugins/gamma/src/SKILL.md": "---\nname: gamma\n---\nGamma.\n",
 			"data/plugins/gamma/src/link": "<symlink>"
 		}

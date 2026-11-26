@@ -160,6 +160,38 @@ public sealed class PluginHostTests
         Assert.Equal(0, server.Accepted);
     }
 
+    [Theory]
+    [InlineData("missing-key")]
+    [InlineData("other-key")]
+    [InlineData("unsigned")]
+    public async Task InvokeAsync_ApprovalNotSignedByTheStoreKey_IsUnapprovedAndConnectsNothing(string how)
+    {
+        await using var fixture = new RuntimeFixture();
+        await using var server = new EchoPluginServer(directory: fixture.Folder("scanner"));
+        fixture.Install("scanner", IpcManifest(EchoPluginServer.SocketFile), approved: true);
+        switch (how)
+        {
+            case "missing-key":
+                fixture.RemoveCredential(PluginApproval.KeyCredential);
+                break;
+            case "other-key":
+                fixture.SetCredential(PluginApproval.KeyCredential, new string('a', 64));
+                break;
+            default:
+                fixture.Unsign("scanner");
+                break;
+        }
+        var host = fixture.Host(Enabled);
+
+        var ex = await Assert.ThrowsAsync<PluginContractException>(async () =>
+            await host.InvokeAsync("scanner", RuntimeFixture.HookMessage(), CancellationToken.None)
+        );
+
+        Assert.Equal(PluginRuntimeCodes.Unapproved, ex.Code);
+        Assert.Contains("dg plugin verify scanner --approve", ex.Message);
+        Assert.Equal(0, server.Accepted);
+    }
+
     [Fact]
     public async Task InvokeAsync_NotInstalled_Throws()
     {

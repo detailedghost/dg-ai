@@ -1,0 +1,71 @@
+{
+	"key": "00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f",
+	"credential": "dg/plugin-approval-key",
+	"tree": {
+		"plugin.toml": "name = \"demo\"\nversion = \"1.0.0\"\nkind = \"skill\"\n",
+		"SKILL.md": "---\nname: demo\n---\nDemo.\n",
+		"refs/a.md": "reference a\n"
+	},
+	"expectedMac": "e09cb104d00538a88429d46608b8b49b5dc96c8002341f2dbb228152db3ec86f",
+	"records": {
+		"signed": {
+			"name": "demo",
+			"kind": "skill",
+			"source": "https://example.org/demo.git",
+			"pin": {
+				"kind": "commit",
+				"value": "0123456789abcdef0123456789abcdef01234567"
+			},
+			"treeSha256": "758d4cce0f3307bcfa09da9736218afed1980fd49d7ce3e90ff36e52fc923ccb",
+			"approvedSha256": "758d4cce0f3307bcfa09da9736218afed1980fd49d7ce3e90ff36e52fc923ccb",
+			"mac": "e09cb104d00538a88429d46608b8b49b5dc96c8002341f2dbb228152db3ec86f"
+		},
+		"badMac": {
+			"name": "demo",
+			"kind": "skill",
+			"source": "https://example.org/demo.git",
+			"pin": {
+				"kind": "commit",
+				"value": "0123456789abcdef0123456789abcdef01234567"
+			},
+			"treeSha256": "758d4cce0f3307bcfa09da9736218afed1980fd49d7ce3e90ff36e52fc923ccb",
+			"approvedSha256": "758d4cce0f3307bcfa09da9736218afed1980fd49d7ce3e90ff36e52fc923ccb",
+			"mac": "e09cb104d00538a88429d46608b8b49b5dc96c8002341f2dbb228152db3ec860"
+		},
+		"unsigned": {
+			"name": "demo",
+			"kind": "skill",
+			"source": "https://example.org/demo.git",
+			"pin": {
+				"kind": "commit",
+				"value": "0123456789abcdef0123456789abcdef01234567"
+			},
+			"treeSha256": "758d4cce0f3307bcfa09da9736218afed1980fd49d7ce3e90ff36e52fc923ccb",
+			"approvedSha256": "758d4cce0f3307bcfa09da9736218afed1980fd49d7ce3e90ff36e52fc923ccb"
+		},
+		"unsignedNull": {
+			"name": "demo",
+			"kind": "skill",
+			"source": "https://example.org/demo.git",
+			"pin": {
+				"kind": "commit",
+				"value": "0123456789abcdef0123456789abcdef01234567"
+			},
+			"treeSha256": "758d4cce0f3307bcfa09da9736218afed1980fd49d7ce3e90ff36e52fc923ccb",
+			"approvedSha256": "758d4cce0f3307bcfa09da9736218afed1980fd49d7ce3e90ff36e52fc923ccb",
+			"mac": null
+		},
+		"unapproved": {
+			"name": "demo",
+			"kind": "skill",
+			"source": "https://example.org/demo.git",
+			"pin": {
+				"kind": "commit",
+				"value": "0123456789abcdef0123456789abcdef01234567"
+			},
+			"treeSha256": "758d4cce0f3307bcfa09da9736218afed1980fd49d7ce3e90ff36e52fc923ccb",
+			"approvedSha256": null,
+			"mac": null
+		}
+	}
+}

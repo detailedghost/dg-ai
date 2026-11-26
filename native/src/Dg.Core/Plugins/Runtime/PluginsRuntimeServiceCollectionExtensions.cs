@@ -32,11 +32,16 @@ public static class PluginsRuntimeServiceCollectionExtensions
             PluginTransportKeys.Http,
             static (sp, _) => new HttpTransportProvider(sp.GetRequiredService<IHttpTransportFactory>())
         );
+        services.AddSingleton(static sp => new PluginApprovalVerifier(
+            sp.GetRequiredService<ICredentialStore>(),
+            sp.GetService<TimeProvider>()
+        ));
         services.AddSingleton<IPluginHost>(static sp => new PluginHost(
             sp.GetRequiredService<DgToml>(),
             sp.GetRequiredService<PluginManifestStore>(),
             sp.GetServices<IBuiltinPlugin>(),
             sp,
+            sp.GetRequiredService<PluginApprovalVerifier>(),
             sp.GetService<IPluginLatencyObserver>()
         ));
         return services;
