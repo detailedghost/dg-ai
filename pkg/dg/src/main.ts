@@ -1,6 +1,6 @@
 import type { CompletionNode, CompletionShell } from "@dg/common/completion";
 import type { ProgramName } from "@dg/common/node/program";
-import type { FlatRoute } from "./flat";
+import type { FlatRoute } from "./fixed-routes";
 
 export type MountName = Exclude<ProgramName, "dg">;
 
@@ -54,6 +54,9 @@ async function unknown(word: string): Promise<number> {
 
 async function route(word: string | undefined): Promise<FlatRoute | undefined> {
 	if (word === undefined) return undefined;
+	const { fixedRoute } = await import("./fixed-routes");
+	const fixed = fixedRoute(word);
+	if (fixed) return fixed;
 	const { resolveRoute } = await import("./flat");
 	return resolveRoute(word);
 }
