@@ -169,6 +169,7 @@ export type RunDeps = PhoneDeps & {
 	pid: number;
 	schedule: Parameters<typeof runListener>[0]["schedule"];
 	onSignal: Parameters<typeof runListener>[0]["onSignal"];
+	onStartupSignal?: Parameters<typeof runListener>[0]["onSignal"];
 };
 
 export type OpenCloseDeps = PhoneDeps &
@@ -1460,7 +1461,7 @@ export const defaultPhoneApi: PhoneApi = {
 };
 
 function runDepsFor(deps: PhoneDeps): RunDeps {
-	const run = { pid: process.pid, schedule: defaultSchedule, onSignal: defaultOnSignal };
+	const run = { pid: process.pid, schedule: defaultSchedule, onSignal: defaultOnSignal, onStartupSignal: defaultOnSignal };
 	return Object.defineProperties(run, Object.getOwnPropertyDescriptors(deps)) as RunDeps;
 }
 

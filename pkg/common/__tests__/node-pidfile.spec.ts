@@ -6,6 +6,7 @@ import { CHAT_PROTOCOL_VERSION, type DaemonHandle } from "../src/chat-format";
 import { resolveDgPaths } from "../src/node/dg-paths";
 import {
 	readPidFile,
+	removePidFileOwnedBy,
 	resolveLiveDaemon,
 	writePidFileAtomic,
 } from "../src/node/pidfile";
@@ -93,5 +94,29 @@ describe("resolveLiveDaemon", () => {
 			restore();
 			server.stop(true);
 		}
+	});
+});
+
+describe("removePidFileOwnedBy", () => {
+	it("removes the file of the owner", () => {
+		const { paths, restore } = setup();
+		writePidFileAtomic(paths, handleFor(1, 11, "mine"));
+		removePidFileOwnedBy(paths, { pid: 11, instanceId: "mine" });
+		expect(existsSync(paths.pidPath)).toBe(false);
+		restore();
+	});
+
+	it("keeps a file that another daemon wrote", () => {
+		const { paths, restore } = setup();
+		writePidFileAtomic(paths, handleFor(1, 22, "other"));
+		removePidFileOwnedBy(paths, { pid: 11, instanceId: "mine" });
+		expect(readPidFile(paths)?.pid).toBe(22);
+		restore();
+	});
+
+	it("does nothing when no file exists", () => {
+		const { paths, restore } = setup();
+		expect(() => removePidFileOwnedBy(paths, { pid: 11, instanceId: "mine" })).not.toThrow();
+		restore();
 	});
 });

@@ -31,6 +31,15 @@ export function removePidFile(paths: DgPaths): void {
 	rmSync(paths.pidPath, { force: true });
 }
 
+export function removePidFileOwnedBy(
+	paths: Pick<DgPaths, "pidPath">,
+	owner: { pid: number; instanceId: string },
+): void {
+	const current = readPidFile(paths);
+	if (current?.pid !== owner.pid || current.instanceId !== owner.instanceId) return;
+	rmSync(paths.pidPath, { force: true });
+}
+
 /** Refuses to talk to a daemon of another protocol, naming the remedy the caller knows. */
 export function requireMatchingProtocol(
 	handle: DaemonHandle,

@@ -92,6 +92,7 @@ export type ListenerDeps = KeyDeps & {
 	hook?: CommandPushTarget;
 	schedule: Schedule;
 	onSignal: (signal: "SIGTERM" | "SIGINT", handler: () => void) => void;
+	onStartupSignal?: (signal: "SIGTERM" | "SIGINT", handler: () => void) => void;
 	/** Overrides the jittered probe. Tests pass a short confirm and wait so the check stays fast. */
 	liveness?: LivenessConfig;
 	/** Overrides the jittered presence beat gap. */
@@ -927,6 +928,12 @@ function listenerPidRecord(deps: ListenerDeps, relays: string[], keys: { id: str
 }
 
 async function runClaimedListener(deps: ListenerDeps): Promise<void> {
+	let stopRequested = false;
+	const requestStop = () => {
+		stopRequested = true;
+	};
+	deps.onStartupSignal?.("SIGTERM", requestStop);
+	deps.onStartupSignal?.("SIGINT", requestStop);
 	await ensureNumberKey(deps);
 	const initialKeys = await loadAllKeys(deps);
 	let keys = initialKeys.keys;
@@ -947,6 +954,11 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		random: Math.random,
 	};
 
+	if (stopRequested) {
+		pool.close(relays);
+		releaseListenerClaim(deps.paths, deps.pid);
+		return;
+	}
 	writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
 
 	const vault: VaultSink = { keys: createVaultKeyCache(deps, deps.now), root: deps.paths.phoneRoot };
@@ -1210,5 +1222,6 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		};
 		deps.onSignal("SIGTERM", shutdown);
 		deps.onSignal("SIGINT", shutdown);
+		if (stopRequested) shutdown();
 	});
 }

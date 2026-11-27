@@ -17,7 +17,7 @@ import {
 	isDaemonLive,
 	loopbackHostHeader,
 	readPidFile,
-	removePidFile,
+	removePidFileOwnedBy,
 	resolveDgPaths,
 	resolveLiveDaemon,
 	withInstallLockSync,
@@ -418,23 +418,8 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		noteActivity();
 	});
 
-	writePidFileAtomic(paths, {
-		pid: process.pid,
-		port: boundPortNumber,
-		instanceId,
-		versions: {
-			package: DG_DAEMON_PACKAGE_VERSION,
-			protocol: CHAT_PROTOCOL_VERSION,
-		},
-	});
-	await claimSingleInstance(paths, {
-		pid: process.pid,
-		port: boundPortNumber,
-		instanceId,
-		version: DG_DAEMON_PACKAGE_VERSION,
-	});
-
 	let shuttingDown = false;
+	let claiming: Promise<void> = Promise.resolve();
 	async function shutdown(reason: "daemon-shutdown"): Promise<void> {
 		if (shuttingDown) return;
 		shuttingDown = true;
@@ -445,7 +430,8 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		clearInterval(reapTimer);
 		registry.closeAll(reason);
 		await Promise.all(pendingCloseSends);
-		removePidFile(paths);
+		await claiming.catch(() => undefined);
+		removePidFileOwnedBy(paths, { pid: process.pid, instanceId });
 		removeActiveDaemon({ pid: process.pid, instanceId });
 		boundServer.stop(true);
 		store.close();
@@ -455,6 +441,24 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 	}
 	process.on("SIGTERM", () => void shutdown("daemon-shutdown"));
 	process.on("SIGINT", () => void shutdown("daemon-shutdown"));
+
+	writePidFileAtomic(paths, {
+		pid: process.pid,
+		port: boundPortNumber,
+		instanceId,
+		versions: {
+			package: DG_DAEMON_PACKAGE_VERSION,
+			protocol: CHAT_PROTOCOL_VERSION,
+		},
+	});
+	claiming = claimSingleInstance(paths, {
+		pid: process.pid,
+		port: boundPortNumber,
+		instanceId,
+		version: DG_DAEMON_PACKAGE_VERSION,
+	});
+	await claiming;
+	if (shuttingDown) return "serving";
 
 	logger.info(
 		`dg daemon listening on 127.0.0.1:${boundPortNumber} (instance ${instanceId})`,

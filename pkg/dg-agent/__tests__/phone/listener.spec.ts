@@ -166,6 +166,42 @@ afterEach(() => {
 	rmSync(scratch, { recursive: true, force: true });
 });
 
+describe("runListener signal during startup", () => {
+	it("tears down the pid file and the claim when SIGTERM lands during the first catch-up", async () => {
+		setUpNumber("ab".repeat(32));
+		let held = false;
+		let release: () => void = () => {};
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const handlers: (() => void)[] = [];
+		const run = runListener(
+			deps({
+				onStartupSignal: (signal, handler) => {
+					if (signal === "SIGTERM") handlers.push(handler);
+				},
+				createPool: () => ({
+					...pool,
+					querySync: async (...args: Parameters<FakePool["querySync"]>) => {
+						held = true;
+						await gate;
+						return pool.querySync(...args);
+					},
+					close: () => {},
+				}),
+			}),
+		);
+		await waitUntil(() => held);
+		expect(existsSync(listenerPidPath(paths))).toBe(true);
+		expect(handlers).toHaveLength(1);
+		handlers[0]!();
+		release();
+		await run;
+		expect(existsSync(listenerPidPath(paths))).toBe(false);
+		expect(existsSync(listenerClaimPath(paths))).toBe(false);
+	});
+});
+
 describe("runListener", () => {
 	it("inbox shows an incoming row the listener stored, read or unread, under the sender npub", async () => {
 		const secret = "ab".repeat(32);
