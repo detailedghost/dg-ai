@@ -148,3 +148,12 @@ paths = [
   '''(?:^|/)native/tests/Dg\.Core\.Tests/Plugins/Runtime/ApprovalFixture\.cs$''',
 ]
 regexes = ['''^00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f$''']
+
+[[allowlists]]
+description = "Made-up sequential HMAC key in the plugin approval test daemon"
+condition = "AND"
+regexTarget = "secret"
+paths = [
+  '''(?:^|/)pkg/skills-cli/__tests__/support/approval-daemon\.ts$''',
+]
+regexes = ['''^00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f$''']

@@ -1,20 +1,11 @@
-import boardHtml from "../../../pages/dist/board.html" with { type: "text" };
-import boardJs from "../../../pages/dist/board.js" with { type: "text" };
-import chatHtml from "../../../pages/dist/chat.html" with { type: "text" };
-import chatJs from "../../../pages/dist/chat.js" with { type: "text" };
-import secretHtml from "../../../pages/dist/secret.html" with { type: "text" };
-import secretJs from "../../../pages/dist/secret.js" with { type: "text" };
-
-const SCRIPTS: Record<string, string> = {
-	"/chat.js": chatJs,
-	"/board.js": boardJs,
-	"/secret.js": secretJs,
-};
-
-const HTML: Record<string, string> = {
-	"/chat": chatHtml,
-	"/board": boardHtml,
-	"/secret": secretHtml,
+/** The kind of each local page path; the page text loads on the first request for one. */
+const PAGE_KINDS: Readonly<Record<string, "html" | "script">> = {
+	"/chat": "html",
+	"/board": "html",
+	"/secret": "html",
+	"/chat.js": "script",
+	"/board.js": "script",
+	"/secret.js": "script",
 };
 
 const PAGE_HEADERS = {
@@ -36,23 +27,25 @@ function contentSecurityPolicy(port: number): string {
 export function localPageResponse(
 	pathname: string,
 	port: number,
-): Response | undefined {
-	const html = HTML[pathname];
-	if (html !== undefined) {
-		return new Response(html, {
+): Promise<Response> | undefined {
+	const kind = Object.hasOwn(PAGE_KINDS, pathname) ? PAGE_KINDS[pathname] : undefined;
+	if (kind === undefined) return undefined;
+	return import("./page-assets").then(({ PAGE_ASSETS }) => {
+		const body = PAGE_ASSETS[pathname];
+		if (kind === "html") {
+			return new Response(body, {
+				headers: {
+					...PAGE_HEADERS,
+					"Content-Type": "text/html; charset=utf-8",
+					"Content-Security-Policy": contentSecurityPolicy(port),
+				},
+			});
+		}
+		return new Response(body, {
 			headers: {
 				...PAGE_HEADERS,
-				"Content-Type": "text/html; charset=utf-8",
-				"Content-Security-Policy": contentSecurityPolicy(port),
+				"Content-Type": "text/javascript; charset=utf-8",
 			},
 		});
-	}
-	const script = SCRIPTS[pathname];
-	if (script === undefined) return undefined;
-	return new Response(script, {
-		headers: {
-			...PAGE_HEADERS,
-			"Content-Type": "text/javascript; charset=utf-8",
-		},
 	});
 }

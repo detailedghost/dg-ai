@@ -28,7 +28,7 @@ beforeAll(async () => {
 		"../../dg-daemon/src/server/pages"
 	);
 	servedCsp =
-		localPageResponse("/chat", PORT)?.headers.get("Content-Security-Policy") ??
+		(await localPageResponse("/chat", PORT))?.headers.get("Content-Security-Policy") ??
 		"";
 });
 
