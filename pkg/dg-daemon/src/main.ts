@@ -18,7 +18,10 @@ export function hooksFor(commandName: string, seams: HookSeams = {}): LayoutHook
 }
 
 async function afterLayout(action: Command): Promise<void> {
-	if (action.name() !== "serve") return;
+	if (action.name() === "serve") await afterServeLayout();
+}
+
+async function afterServeLayout(): Promise<void> {
 	const [{ daemonLayoutHooks }, { resolveDgPaths }, { assertNotBlocked }] = await Promise.all([
 		import("./layout-hooks"),
 		import("@dg/common/node/dg-paths"),
@@ -29,11 +32,37 @@ async function afterLayout(action: Command): Promise<void> {
 	await daemonLayoutHooks().keychainMove(paths);
 }
 
+async function runServe(): Promise<void> {
+	const [{ cmdServe }, { forever }] = await Promise.all([import("./server/bootstrap"), import("@dg/common/async")]);
+	if ((await cmdServe()) === "serving") await forever();
+}
+
+/** Runs `dg daemon serve` without commander, the other commands or the completion code. */
+async function serveWithoutProgram(): Promise<void> {
+	const [{ ensureLayout }, { resolveDgPaths }] = await Promise.all([import("@dg/common/node/layout"), import("@dg/common/node/dg-paths")]);
+	await ensureLayout(resolveDgPaths(), hooksFor("serve"));
+	await afterServeLayout();
+	await runServe();
+}
+
+async function failure(err: unknown): Promise<number> {
+	const [{ DgCliError, describeError, EXIT_GENERAL_FAILURE }, { emitRedacted }] = await Promise.all([
+		import("@dg/common/errors"),
+		import("@dg/common/redact"),
+	]);
+	emitRedacted(
+		(line) => console.error(line),
+		`dg daemon: ${describeError(err)}`,
+	);
+	return err instanceof DgCliError ? err.exitCode : EXIT_GENERAL_FAILURE;
+}
+
+const exitCode = (): number => (typeof process.exitCode === "number" ? process.exitCode : 0);
+
 /** The dg daemon program with every command registered and nothing parsed. */
 export async function buildProgram(): Promise<Command> {
 	const [
 		{ Command },
-		{ forever },
 		{ registerJobCommands },
 		{ registerOriginCommands },
 		{ registerSessionCommands },
@@ -41,7 +70,6 @@ export async function buildProgram(): Promise<Command> {
 		{ registerCompletionCommand },
 	] = await Promise.all([
 		import("commander"),
-		import("@dg/common/async"),
 		import("./commands/jobs"),
 		import("./commands/origin"),
 		import("./commands/sessions"),
@@ -60,10 +88,7 @@ export async function buildProgram(): Promise<Command> {
 	program
 		.command("serve")
 		.description("Run the daemon in the foreground; dg starts this for you")
-		.action(async () => {
-			const { cmdServe } = await import("./server/bootstrap");
-			if ((await cmdServe()) === "serving") await forever();
-		});
+		.action(runServe);
 
 	program
 		.command("status")
@@ -147,17 +172,21 @@ export async function main(argv: readonly string[]): Promise<number> {
 		]);
 		return printCompletions(tree as CompletionNode, argv.slice(1));
 	}
+	if (argv.length === 1 && argv[0] === "serve") {
+		try {
+			await serveWithoutProgram();
+			return exitCode();
+		} catch (err) {
+			return failure(err);
+		}
+	}
 	const [
 		{ CommanderError },
-		{ DgCliError, describeError, EXIT_GENERAL_FAILURE },
-		{ emitRedacted },
 		{ ensureLayout },
 		{ installLayoutPreAction },
 		program,
 	] = await Promise.all([
 		import("commander"),
-		import("@dg/common/errors"),
-		import("@dg/common/redact"),
 		import("@dg/common/node/layout"),
 		import("@dg/common/node/layout-preaction"),
 		buildProgram(),
@@ -172,13 +201,9 @@ export async function main(argv: readonly string[]): Promise<number> {
 
 	try {
 		await program.parseAsync([...argv], { from: "user" });
-		return typeof process.exitCode === "number" ? process.exitCode : 0;
+		return exitCode();
 	} catch (err) {
 		if (err instanceof CommanderError) return err.exitCode;
-		emitRedacted(
-			(line) => console.error(line),
-			`dg daemon: ${describeError(err)}`,
-		);
-		return err instanceof DgCliError ? err.exitCode : EXIT_GENERAL_FAILURE;
+		return failure(err);
 	}
 }

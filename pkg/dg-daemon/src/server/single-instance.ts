@@ -13,7 +13,6 @@ import {
 	withInstallLock,
 	writeFileAtomic,
 } from "@dg/common/node";
-import { stopDaemon } from "../commands/stop";
 
 type Env = Record<string, string | undefined>;
 
@@ -163,7 +162,7 @@ export async function stopOtherDaemon(paths: DgPaths, seams: SingleInstanceSeams
 	}
 	let failure = "";
 	try {
-		await (seams.stop ?? ((target: DgPaths) => stopDaemon(target, {}, {})))(other);
+		await (seams.stop ?? (async (target: DgPaths) => (await import("../commands/stop")).stopDaemon(target, {}, {})))(other);
 	} catch (err) {
 		failure = `: ${err instanceof Error ? err.message : String(err)}`;
 	}
