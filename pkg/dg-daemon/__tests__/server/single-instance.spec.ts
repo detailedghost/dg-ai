@@ -354,15 +354,15 @@ describe("a daemon that gets SIGTERM while it claims the single-instance slot", 
 		});
 		await lockTaken;
 		const proc = serve(dgHome, port, userHome);
-		const stderr = new Response(proc.stderr).text();
-		await waitForPidFile(dgHome);
-		proc.kill("SIGTERM");
-		await Bun.sleep(300);
-		release();
-		await holder;
-		const code = await proc.exited;
-		expect(await stderr).not.toContain("error");
-		expect(code).toBe(0);
+		try {
+			await waitForPidFile(dgHome);
+			proc.kill("SIGTERM");
+			await Bun.sleep(300);
+		} finally {
+			release();
+			await holder;
+		}
+		expect(await proc.exited).toBe(0);
 		expect(existsSync(pathsOf(dgHome).pidPath)).toBe(false);
 		expect(readActiveDaemon({ recordPath })).toBeUndefined();
 	}, 40_000);

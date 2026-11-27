@@ -457,7 +457,11 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		instanceId,
 		version: DG_DAEMON_PACKAGE_VERSION,
 	});
-	await claiming;
+	try {
+		await claiming;
+	} catch (err) {
+		if (!shuttingDown) throw err;
+	}
 	if (shuttingDown) return "serving";
 
 	logger.info(

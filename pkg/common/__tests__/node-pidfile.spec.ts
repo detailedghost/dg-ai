@@ -114,6 +114,14 @@ describe("removePidFileOwnedBy", () => {
 		restore();
 	});
 
+	it("keeps a file with the same pid and another instance id", () => {
+		const { paths, restore } = setup();
+		writePidFileAtomic(paths, handleFor(1, 11, "other"));
+		removePidFileOwnedBy(paths, { pid: 11, instanceId: "mine" });
+		expect(readPidFile(paths)?.instanceId).toBe("other");
+		restore();
+	});
+
 	it("does nothing when no file exists", () => {
 		const { paths, restore } = setup();
 		expect(() => removePidFileOwnedBy(paths, { pid: 11, instanceId: "mine" })).not.toThrow();

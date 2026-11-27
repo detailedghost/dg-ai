@@ -1461,7 +1461,12 @@ export const defaultPhoneApi: PhoneApi = {
 };
 
 function runDepsFor(deps: PhoneDeps): RunDeps {
-	const run = { pid: process.pid, schedule: defaultSchedule, onSignal: defaultOnSignal, onStartupSignal: defaultOnSignal };
+	const run = {
+		pid: process.pid,
+		schedule: defaultSchedule,
+		onSignal: defaultOnSignal,
+		onStartupSignal: defaultOnSignal,
+	};
 	return Object.defineProperties(run, Object.getOwnPropertyDescriptors(deps)) as RunDeps;
 }
 

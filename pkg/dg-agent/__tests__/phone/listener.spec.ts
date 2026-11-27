@@ -178,7 +178,7 @@ describe("runListener signal during startup", () => {
 		const run = runListener(
 			deps({
 				onStartupSignal: (signal, handler) => {
-					if (signal === "SIGTERM") handlers.push(handler);
+					handlers.push(handler);
 				},
 				createPool: () => ({
 					...pool,
@@ -193,7 +193,7 @@ describe("runListener signal during startup", () => {
 		);
 		await waitUntil(() => held);
 		expect(existsSync(listenerPidPath(paths))).toBe(true);
-		expect(handlers).toHaveLength(1);
+		expect(handlers).toHaveLength(2);
 		handlers[0]!();
 		release();
 		await run;
