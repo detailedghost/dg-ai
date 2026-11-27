@@ -23,7 +23,7 @@
 		"@dg/inbox": "workspace:*",
 		"@dg/ssms": "workspace:*",
 		"commander": "^15.1.0",
-		"marked": "^18.2.1",
+		"marked": "^18.3.0",
 		"pg": "^8.23.1",
 		"playwright-core": "1.65.1",
 		"snowflake-sdk": "^3.4.1",
@@ -33,7 +33,7 @@
 	"devDependencies": {
 		"@dg/dg-daemon": "workspace:*",
 		"@types/pg": "^8.23.1",
-		"bun-types": "^1.4.4",
+		"bun-types": "^1.4.5",
 		"happy-dom": "^21.0.4",
 		"mermaid": "^12.3.0",
 		"typescript": "^7.0.2"
