@@ -1,5 +1,11 @@
 # Changelog
 
+## v8.0.1 (2026-11-27)
+
+### Fixes
+
+- fix(daemon): load less at daemon start to cut idle RSS ([#261](https://github.com/detailedghost/dg-ai/pull/261))
+
 ## v8.0.0 (2026-11-26)
 
 ### Breaking
