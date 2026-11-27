@@ -90,11 +90,11 @@
 			"peakMB": 50
 		},
 		"daemon idle": {
-			"peakMB": 40.4,
+			"peakMB": 38.5,
 			"growthMB": 4.31
 		},
 		"daemon with 15 jobs": {
-			"peakMB": 42,
+			"peakMB": 40.7,
 			"growthMB": 1
 		},
 		"prototype serve": {
