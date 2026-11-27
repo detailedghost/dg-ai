@@ -2,13 +2,15 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 /** Writes each module the process loads to DG_LOAD_LOG, one path per line. */
 const out = process.env.DG_LOAD_LOG;
+const FLUSH_INTERVAL_MS = 100;
 if (out) {
 	const seen = new Set<string>();
 	const flush = () => {
 		for (const path of Object.keys(require.cache)) seen.add(path);
 		writeFileSync(out, `${[...seen].join("\n")}\n`);
 	};
-	setInterval(flush, 100).unref();
+	setInterval(flush, FLUSH_INTERVAL_MS).unref();
+	process.on("exit", flush);
 	Bun.plugin({
 		name: "load-log",
 		setup(build) {

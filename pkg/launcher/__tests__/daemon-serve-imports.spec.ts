@@ -9,6 +9,7 @@ setDefaultTimeout(60_000);
 const ENTRY = join(import.meta.dir, "..", "src", "dg.ts");
 const PRELOAD = join(import.meta.dir, "load-log-preload.ts");
 const READY_TIMEOUT_MS = 20_000;
+const LOG_SETTLE_MS = 300;
 
 function freePort(): Promise<number> {
 	return new Promise((done) => {
@@ -21,7 +22,11 @@ function freePort(): Promise<number> {
 
 async function healthy(port: number): Promise<boolean> {
 	try {
-		return (await fetch(`http://127.0.0.1:${port}/healthz`, { headers: { Host: `127.0.0.1:${port}` } })).ok;
+		const response = await fetch(`http://127.0.0.1:${port}/healthz`, {
+			headers: { Host: `127.0.0.1:${port}` },
+			signal: AbortSignal.timeout(1_000),
+		});
+		return response.ok;
 	} catch {
 		return false;
 	}
@@ -49,14 +54,24 @@ beforeAll(async () => {
 		DG_JIT: "1",
 		DG_LOAD_LOG: log,
 	};
-	const child = Bun.spawn([process.execPath, "--preload", PRELOAD, ENTRY, "daemon", "serve"], { env, stdout: "ignore", stderr: "pipe" });
+	const child = Bun.spawn([process.execPath, "--preload", PRELOAD, ENTRY, "daemon", "serve"], {
+		env,
+		stdout: "ignore",
+		stderr: "pipe",
+	});
+	const stderr = new Response(child.stderr).text();
 	try {
 		const deadline = Date.now() + READY_TIMEOUT_MS;
 		while (!(await healthy(port))) {
-			if (child.exitCode !== null) throw new Error(`dg daemon serve exited ${child.exitCode}: ${await new Response(child.stderr).text()}`);
-			if (Date.now() > deadline) throw new Error(`dg daemon serve was not healthy within ${READY_TIMEOUT_MS} ms`);
+			if (child.exitCode !== null) {
+				throw new Error(`dg daemon serve exited ${child.exitCode}: ${await stderr}`);
+			}
+			if (Date.now() > deadline) {
+				throw new Error(`dg daemon serve was not healthy within ${READY_TIMEOUT_MS} ms`);
+			}
 			await Bun.sleep(100);
 		}
+		await Bun.sleep(LOG_SETTLE_MS);
 	} finally {
 		child.kill();
 		await child.exited;

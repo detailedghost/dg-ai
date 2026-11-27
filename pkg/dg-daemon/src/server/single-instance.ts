@@ -16,6 +16,11 @@ import {
 
 type Env = Record<string, string | undefined>;
 
+async function stopOther(target: DgPaths): Promise<void> {
+	const { stopDaemon } = await import("../commands/stop");
+	await stopDaemon(target, {}, {});
+}
+
 export type ActiveDaemon = {
 	pid: number;
 	port: number;
@@ -162,7 +167,7 @@ export async function stopOtherDaemon(paths: DgPaths, seams: SingleInstanceSeams
 	}
 	let failure = "";
 	try {
-		await (seams.stop ?? (async (target: DgPaths) => (await import("../commands/stop")).stopDaemon(target, {}, {})))(other);
+		await (seams.stop ?? stopOther)(other);
 	} catch (err) {
 		failure = `: ${err instanceof Error ? err.message : String(err)}`;
 	}

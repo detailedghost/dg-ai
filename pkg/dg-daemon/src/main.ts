@@ -33,13 +33,19 @@ async function afterServeLayout(): Promise<void> {
 }
 
 async function runServe(): Promise<void> {
-	const [{ cmdServe }, { forever }] = await Promise.all([import("./server/bootstrap"), import("@dg/common/async")]);
+	const [{ cmdServe }, { forever }] = await Promise.all([
+		import("./server/bootstrap"),
+		import("@dg/common/async"),
+	]);
 	if ((await cmdServe()) === "serving") await forever();
 }
 
 /** Runs `dg daemon serve` without commander, the other commands or the completion code. */
 async function serveWithoutProgram(): Promise<void> {
-	const [{ ensureLayout }, { resolveDgPaths }] = await Promise.all([import("@dg/common/node/layout"), import("@dg/common/node/dg-paths")]);
+	const [{ ensureLayout }, { resolveDgPaths }] = await Promise.all([
+		import("@dg/common/node/layout"),
+		import("@dg/common/node/dg-paths"),
+	]);
 	await ensureLayout(resolveDgPaths(), hooksFor("serve"));
 	await afterServeLayout();
 	await runServe();
