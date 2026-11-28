@@ -111,6 +111,7 @@ function listen(deps: PhoneDeps, pid: number): { run: Promise<void>; ready: Prom
 		now: () => clock,
 		pid,
 		schedule: (() => () => {}) as Schedule,
+		onStartupSignal: () => {},
 		onSignal: harness.onSignal,
 	};
 	return { run: runListener(listener), ready: harness.ready, stop: harness.stop };

@@ -40,6 +40,7 @@ async function listenOnce(phone: PhoneDeps, pool: FakePool): Promise<void> {
 		now: () => Math.floor(Date.now() / 1000),
 		pid: 4242,
 		schedule: () => () => {},
+		onStartupSignal: () => {},
 		onSignal: (signal, handler) => {
 			if (signal === "SIGTERM") {
 				stop = handler;

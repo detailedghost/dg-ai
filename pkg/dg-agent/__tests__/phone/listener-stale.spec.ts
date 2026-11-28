@@ -374,6 +374,7 @@ describe("a listener that will not stop", () => {
 					createPool: () => ({ ...pool, close: () => {} }),
 					pid: process.pid,
 					schedule: () => () => {},
+					onStartupSignal: () => {},
 					onSignal: (signal, handler) => {
 						if (signal === "SIGTERM") {
 							stopHandler = handler;

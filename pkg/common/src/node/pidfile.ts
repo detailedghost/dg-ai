@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, linkSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import {
 	CHAT_HEALTH_PATH,
@@ -29,6 +30,33 @@ export function writePidFileAtomic(paths: DgPaths, handle: DaemonHandle): void {
 
 export function removePidFile(paths: DgPaths): void {
 	rmSync(paths.pidPath, { force: true });
+}
+
+export function removePidFileOwnedBy(
+	paths: Pick<DgPaths, "pidPath">,
+	owner: { pid: number; instanceId: string },
+	seams: { afterRename?: () => void } = {},
+): void {
+	const owns = (handle: DaemonHandle | undefined) =>
+		handle?.pid === owner.pid && handle.instanceId === owner.instanceId;
+	if (!owns(readPidFile(paths))) return;
+	const claimed = `${paths.pidPath}.${process.pid}.${randomUUID()}.reap`;
+	try {
+		renameSync(paths.pidPath, claimed);
+	} catch {
+		return;
+	}
+	try {
+		seams.afterRename?.();
+		if (owns(readPidFile({ pidPath: claimed }))) return;
+		try {
+			linkSync(claimed, paths.pidPath);
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== "EEXIST") renameSync(claimed, paths.pidPath);
+		}
+	} finally {
+		rmSync(claimed, { force: true });
+	}
 }
 
 /** Refuses to talk to a daemon of another protocol, naming the remedy the caller knows. */

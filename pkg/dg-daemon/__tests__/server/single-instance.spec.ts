@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { type AutostartDeps, type DgPaths, resolveDgPaths } from "@dg/common/node";
+import { type AutostartDeps, type DgPaths, resolveDgPaths, withInstallLock } from "@dg/common/node";
 import {
 	type ActiveDaemon,
 	activeDaemonPath,
@@ -331,5 +331,53 @@ describe("two real daemons of different homes", () => {
 		expect(readActiveDaemon(userSeams)).toBeUndefined();
 		expect(await stderr).toContain(`dg daemon: stopped the daemon of ${homeA} (pid ${handleA.pid}, port ${portA}) so only one runs`);
 		expect(existsSync(pathsOf(homeA).pidPath)).toBe(false);
+	}, 40_000);
+});
+
+describe("a daemon that gets SIGTERM while it claims the single-instance slot", () => {
+	it("exits 0 with no pid file and no active record", async () => {
+		const userHome = home();
+		const dgHome = home();
+		const port = allocatePort();
+		const recordPath = activeDaemonPath({}, process.platform, userHome);
+		let release: () => void = () => {};
+		const held = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let locked: () => void = () => {};
+		const lockTaken = new Promise<void>((resolve) => {
+			locked = resolve;
+		});
+		const holder = withInstallLock(dirname(recordPath), async () => {
+			locked();
+			await held;
+		});
+		await lockTaken;
+		const proc = serve(dgHome, port, userHome);
+		try {
+			await waitForPidFile(dgHome);
+			proc.kill("SIGTERM");
+			await Bun.sleep(300);
+		} finally {
+			release();
+			await holder;
+		}
+		expect(await proc.exited).toBe(0);
+		expect(existsSync(pathsOf(dgHome).pidPath)).toBe(false);
+		expect(readActiveDaemon({ recordPath })).toBeUndefined();
+	}, 40_000);
+});
+
+describe("a daemon whose single-instance claim fails", () => {
+	it("exits nonzero and leaves no pid file", async () => {
+		const userHome = home();
+		const dgHome = home();
+		const port = allocatePort();
+		const recordPath = activeDaemonPath({}, process.platform, userHome);
+		mkdirSync(join(recordPath, "blocker"), { recursive: true });
+		const proc = serve(dgHome, port, userHome);
+		const code = await proc.exited;
+		expect(code).toBe(1);
+		expect(existsSync(pathsOf(dgHome).pidPath)).toBe(false);
 	}, 40_000);
 });

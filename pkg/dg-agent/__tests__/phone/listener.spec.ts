@@ -96,6 +96,7 @@ function deps(overrides: Partial<ListenerDeps> = {}): ListenerDeps {
 		now: () => NOW,
 		pid: 4242,
 		schedule: noopSchedule(),
+		onStartupSignal: () => {},
 		onSignal: () => {},
 		...overrides,
 	};
@@ -164,6 +165,72 @@ afterEach(() => {
 	db.close();
 	rmSync(home, { recursive: true, force: true });
 	rmSync(scratch, { recursive: true, force: true });
+});
+
+describe("runListener signal during startup", () => {
+	it("exits at once and removes the pid file and claim when SIGTERM lands during the first catch-up", async () => {
+		setUpNumber("ab".repeat(32));
+		let held = false;
+		let closed = 0;
+		const handlers: (() => void)[] = [];
+		const run = runListener(
+			deps({
+				onStartupSignal: (_signal, handler) => {
+					handlers.push(handler);
+				},
+				createPool: () => ({
+					...pool,
+					querySync: async () => {
+						held = true;
+						return new Promise(() => {});
+					},
+					close: () => {
+						closed += 1;
+					},
+				}),
+			}),
+		);
+		await waitUntil(() => held);
+		expect(existsSync(listenerPidPath(paths))).toBe(true);
+		expect(handlers).toHaveLength(2);
+		handlers[0]!();
+		await run;
+		expect(existsSync(listenerPidPath(paths))).toBe(false);
+		expect(existsSync(listenerClaimPath(paths))).toBe(false);
+		expect(closed).toBeGreaterThan(0);
+	});
+
+	it("exits without a pid file when SIGTERM lands before the keys load", async () => {
+		setUpNumber("ab".repeat(32));
+		const run = runListener(
+			deps({
+				onStartupSignal: (_signal, handler) => {
+					handler();
+				},
+			}),
+		);
+		await run;
+		expect(existsSync(listenerPidPath(paths))).toBe(false);
+		expect(existsSync(listenerClaimPath(paths))).toBe(false);
+	});
+
+	it("shuts down at once when SIGTERM lands between the first catch-up and the live handlers", async () => {
+		setUpNumber("ab".repeat(32));
+		const startup: (() => void)[] = [];
+		const run = runListener(
+			deps({
+				onStartupSignal: (_signal, handler) => {
+					startup.push(handler);
+				},
+				onSignal: () => {
+					for (const handler of startup) handler();
+				},
+			}),
+		);
+		await run;
+		expect(existsSync(listenerPidPath(paths))).toBe(false);
+		expect(existsSync(listenerClaimPath(paths))).toBe(false);
+	});
 });
 
 describe("runListener", () => {

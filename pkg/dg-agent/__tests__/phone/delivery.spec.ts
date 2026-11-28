@@ -1440,6 +1440,7 @@ async function runCatchUp(seed: (db: PhoneDb, sk: Uint8Array) => NostrEvent[]): 
 		now: () => NOW,
 		pid: 5151,
 		schedule: () => () => {},
+		onStartupSignal: () => {},
 		onSignal: (signal, handler) => {
 			if (signal === "SIGTERM") {
 				stopHandler = handler;
@@ -1627,6 +1628,7 @@ function startListener(opts: {
 		now: () => clock.current,
 		pid: 4242,
 		schedule,
+		onStartupSignal: () => {},
 		onSignal: (signal, handler) => {
 			if (signal === "SIGTERM") {
 				stopHandler = handler;

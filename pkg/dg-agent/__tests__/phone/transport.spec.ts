@@ -476,6 +476,7 @@ describe("listener file requests", () => {
 			now: () => NOW,
 			pid: 4343,
 			schedule: noopSchedule(),
+			onStartupSignal: () => {},
 			onSignal,
 			wormhole: fake.deps,
 		};
