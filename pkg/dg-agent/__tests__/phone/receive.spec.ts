@@ -107,6 +107,7 @@ function listen(
 		now: () => clock,
 		pid: 7000 + Math.floor(Math.random() * 1000),
 		schedule: opts.schedule ?? ((() => () => {}) as Schedule),
+		onStartupSignal: () => {},
 		onSignal: (signal, handler) => {
 			if (signal !== "SIGTERM") return;
 			stop = handler;

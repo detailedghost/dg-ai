@@ -96,6 +96,7 @@ function deps(overrides: Partial<ListenerDeps> = {}): ListenerDeps {
 		now: () => NOW,
 		pid: 4242,
 		schedule: noopSchedule(),
+		onStartupSignal: () => {},
 		onSignal: () => {},
 		...overrides,
 	};
@@ -167,27 +168,25 @@ afterEach(() => {
 });
 
 describe("runListener signal during startup", () => {
-	it("tears down the pid file and the claim when SIGTERM lands during the first catch-up", async () => {
+	it("exits at once and removes the pid file and claim when SIGTERM lands during the first catch-up", async () => {
 		setUpNumber("ab".repeat(32));
 		let held = false;
-		let release: () => void = () => {};
-		const gate = new Promise<void>((resolve) => {
-			release = resolve;
-		});
+		let closed = 0;
 		const handlers: (() => void)[] = [];
 		const run = runListener(
 			deps({
-				onStartupSignal: (signal, handler) => {
+				onStartupSignal: (_signal, handler) => {
 					handlers.push(handler);
 				},
 				createPool: () => ({
 					...pool,
-					querySync: async (...args: Parameters<FakePool["querySync"]>) => {
+					querySync: async () => {
 						held = true;
-						await gate;
-						return pool.querySync(...args);
+						return new Promise(() => {});
 					},
-					close: () => {},
+					close: () => {
+						closed += 1;
+					},
 				}),
 			}),
 		);
@@ -195,7 +194,25 @@ describe("runListener signal during startup", () => {
 		expect(existsSync(listenerPidPath(paths))).toBe(true);
 		expect(handlers).toHaveLength(2);
 		handlers[0]!();
-		release();
+		await run;
+		expect(existsSync(listenerPidPath(paths))).toBe(false);
+		expect(existsSync(listenerClaimPath(paths))).toBe(false);
+		expect(closed).toBeGreaterThan(0);
+	});
+
+	it("shuts down at once when SIGTERM lands between the first catch-up and the live handlers", async () => {
+		setUpNumber("ab".repeat(32));
+		const startup: (() => void)[] = [];
+		const run = runListener(
+			deps({
+				onStartupSignal: (_signal, handler) => {
+					startup.push(handler);
+				},
+				onSignal: () => {
+					for (const handler of startup) handler();
+				},
+			}),
+		);
 		await run;
 		expect(existsSync(listenerPidPath(paths))).toBe(false);
 		expect(existsSync(listenerClaimPath(paths))).toBe(false);

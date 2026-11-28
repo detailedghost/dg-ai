@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, linkSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import {
 	CHAT_HEALTH_PATH,
@@ -34,10 +35,24 @@ export function removePidFile(paths: DgPaths): void {
 export function removePidFileOwnedBy(
 	paths: Pick<DgPaths, "pidPath">,
 	owner: { pid: number; instanceId: string },
+	seams: { afterRename?: () => void } = {},
 ): void {
-	const current = readPidFile(paths);
-	if (current?.pid !== owner.pid || current.instanceId !== owner.instanceId) return;
-	rmSync(paths.pidPath, { force: true });
+	const claimed = `${paths.pidPath}.${process.pid}.${randomUUID()}.reap`;
+	try {
+		renameSync(paths.pidPath, claimed);
+	} catch {
+		return;
+	}
+	try {
+		seams.afterRename?.();
+		const current = readPidFile({ pidPath: claimed });
+		if (current?.pid === owner.pid && current.instanceId === owner.instanceId) return;
+		try {
+			linkSync(claimed, paths.pidPath);
+		} catch {}
+	} finally {
+		rmSync(claimed, { force: true });
+	}
 }
 
 /** Refuses to talk to a daemon of another protocol, naming the remedy the caller knows. */

@@ -460,7 +460,10 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 	try {
 		await claiming;
 	} catch (err) {
-		if (!shuttingDown) throw err;
+		if (!shuttingDown) {
+			removePidFileOwnedBy(paths, { pid: process.pid, instanceId });
+			throw err;
+		}
 	}
 	if (shuttingDown) return "serving";
 

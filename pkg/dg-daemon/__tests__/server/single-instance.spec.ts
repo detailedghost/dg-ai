@@ -367,3 +367,17 @@ describe("a daemon that gets SIGTERM while it claims the single-instance slot", 
 		expect(readActiveDaemon({ recordPath })).toBeUndefined();
 	}, 40_000);
 });
+
+describe("a daemon whose single-instance claim fails", () => {
+	it("exits nonzero and leaves no pid file", async () => {
+		const userHome = home();
+		const dgHome = home();
+		const port = allocatePort();
+		const recordPath = activeDaemonPath({}, process.platform, userHome);
+		mkdirSync(join(recordPath, "blocker"), { recursive: true });
+		const proc = serve(dgHome, port, userHome);
+		const code = await proc.exited;
+		expect(code).not.toBe(0);
+		expect(existsSync(pathsOf(dgHome).pidPath)).toBe(false);
+	}, 40_000);
+});

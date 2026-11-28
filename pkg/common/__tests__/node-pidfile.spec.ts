@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { CHAT_PROTOCOL_VERSION, type DaemonHandle } from "../src/chat-format";
 import { resolveDgPaths } from "../src/node/dg-paths";
 import {
@@ -119,6 +119,41 @@ describe("removePidFileOwnedBy", () => {
 		writePidFileAtomic(paths, handleFor(1, 11, "other"));
 		removePidFileOwnedBy(paths, { pid: 11, instanceId: "mine" });
 		expect(readPidFile(paths)?.instanceId).toBe("other");
+		restore();
+	});
+
+	it("keeps a file a new daemon writes while the owner file is removed", () => {
+		const { paths, restore } = setup();
+		writePidFileAtomic(paths, handleFor(1, 11, "mine"));
+		removePidFileOwnedBy(
+			paths,
+			{ pid: 11, instanceId: "mine" },
+			{ afterRename: () => writePidFileAtomic(paths, handleFor(2, 33, "newer")) },
+		);
+		expect(readPidFile(paths)?.instanceId).toBe("newer");
+		expect(readdirSync(dirname(paths.pidPath))).toEqual(["daemon.pid"]);
+		restore();
+	});
+
+	it("keeps the newer file when a foreign file is put back while a new daemon wrote one", () => {
+		const { paths, restore } = setup();
+		writePidFileAtomic(paths, handleFor(1, 22, "other"));
+		removePidFileOwnedBy(
+			paths,
+			{ pid: 11, instanceId: "mine" },
+			{ afterRename: () => writePidFileAtomic(paths, handleFor(2, 33, "newer")) },
+		);
+		expect(readPidFile(paths)?.instanceId).toBe("newer");
+		expect(readdirSync(dirname(paths.pidPath))).toEqual(["daemon.pid"]);
+		restore();
+	});
+
+	it("restores a foreign file and leaves no temp file behind", () => {
+		const { paths, restore } = setup();
+		writePidFileAtomic(paths, handleFor(1, 22, "other"));
+		removePidFileOwnedBy(paths, { pid: 11, instanceId: "mine" });
+		expect(readPidFile(paths)?.instanceId).toBe("other");
+		expect(readdirSync(dirname(paths.pidPath))).toEqual(["daemon.pid"]);
 		restore();
 	});
 

@@ -169,7 +169,7 @@ export type RunDeps = PhoneDeps & {
 	pid: number;
 	schedule: Parameters<typeof runListener>[0]["schedule"];
 	onSignal: Parameters<typeof runListener>[0]["onSignal"];
-	onStartupSignal?: Parameters<typeof runListener>[0]["onSignal"];
+	onStartupSignal: Parameters<typeof runListener>[0]["onSignal"];
 };
 
 export type OpenCloseDeps = PhoneDeps &

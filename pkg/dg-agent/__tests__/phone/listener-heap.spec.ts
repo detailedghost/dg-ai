@@ -78,6 +78,7 @@ describe("phone listener heap stays flat across reconnects", () => {
 			pid: 4244,
 			schedule,
 			liveness: { minMs: 1, maxMs: 2, confirmMs: 1, waitMs: 1, random: () => 0 },
+			onStartupSignal: () => {},
 			onSignal: (signal, handler) => {
 				if (signal !== "SIGTERM") return;
 				stop = handler;

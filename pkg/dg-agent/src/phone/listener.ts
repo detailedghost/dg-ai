@@ -92,7 +92,7 @@ export type ListenerDeps = KeyDeps & {
 	hook?: CommandPushTarget;
 	schedule: Schedule;
 	onSignal: (signal: "SIGTERM" | "SIGINT", handler: () => void) => void;
-	onStartupSignal?: (signal: "SIGTERM" | "SIGINT", handler: () => void) => void;
+	onStartupSignal: (signal: "SIGTERM" | "SIGINT", handler: () => void) => void;
 	/** Overrides the jittered probe. Tests pass a short confirm and wait so the check stays fast. */
 	liveness?: LivenessConfig;
 	/** Overrides the jittered presence beat gap. */
@@ -929,11 +929,16 @@ function listenerPidRecord(deps: ListenerDeps, relays: string[], keys: { id: str
 
 async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	let stopRequested = false;
+	let wake: (value: "stopped") => void = () => {};
+	const stopWoken = new Promise<"stopped">((resolve) => {
+		wake = resolve;
+	});
 	const requestStop = () => {
 		stopRequested = true;
+		wake("stopped");
 	};
-	deps.onStartupSignal?.("SIGTERM", requestStop);
-	deps.onStartupSignal?.("SIGINT", requestStop);
+	deps.onStartupSignal("SIGTERM", requestStop);
+	deps.onStartupSignal("SIGINT", requestStop);
 	await ensureNumberKey(deps);
 	const initialKeys = await loadAllKeys(deps);
 	let keys = initialKeys.keys;
@@ -1033,13 +1038,36 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		return caught.seen;
 	};
 
+	const abortStartup = () => {
+		pool.close(relays);
+		presence.stop();
+		hookRunner.stop();
+		fileRequests.stop();
+		images.stop();
+		removeListenerPid(deps.paths);
+		releaseListenerClaim(deps.paths, deps.pid);
+	};
 	const startingSeen: Seen = { cursor: readCursor(deps.db), ids: [] };
-	let seen = applyCaught(await fetchNew(pool, relays, keys, gateCache, startingSeen, deps.now, logDrop));
+	const firstCatchUp = fetchNew(pool, relays, keys, gateCache, startingSeen, deps.now, logDrop);
+	firstCatchUp.catch(() => undefined);
+	const first = await Promise.race([firstCatchUp, stopWoken]);
+	if (first === "stopped") {
+		abortStartup();
+		return;
+	}
+	let seen = applyCaught(first);
 	rememberAdmission();
 	writeCursor(deps.db, seen.cursor);
 
-	await hookRunner.notify();
-	await hookRunner.retryStuck();
+	const startupHooks = (async () => {
+		await hookRunner.notify();
+		await hookRunner.retryStuck();
+	})();
+	startupHooks.catch(() => undefined);
+	if ((await Promise.race([startupHooks.then(() => "done" as const), stopWoken])) === "stopped") {
+		abortStartup();
+		return;
+	}
 	const cancelStuckRetry = repeat(deps.schedule, STUCK_RETRY_INTERVAL_MS, () => {
 		deps.db.pruneMessages();
 		void vault.keys.refresh();
