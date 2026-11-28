@@ -1,5 +1,11 @@
 # Changelog
 
+## v8.0.2 (2026-11-28)
+
+### Fixes
+
+- fix(daemon): install signal handlers before writing the pid file ([#262](https://github.com/detailedghost/dg-ai/pull/262))
+
 ## v8.0.1 (2026-11-27)
 
 ### Fixes
