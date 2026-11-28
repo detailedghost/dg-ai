@@ -135,16 +135,13 @@ describe("removePidFileOwnedBy", () => {
 		restore();
 	});
 
-	it("keeps the newer file when a foreign file is put back while a new daemon wrote one", () => {
+	it("never moves a foreign file", () => {
 		const { paths, restore } = setup();
 		writePidFileAtomic(paths, handleFor(1, 22, "other"));
-		removePidFileOwnedBy(
-			paths,
-			{ pid: 11, instanceId: "mine" },
-			{ afterRename: () => writePidFileAtomic(paths, handleFor(2, 33, "newer")) },
-		);
-		expect(readPidFile(paths)?.instanceId).toBe("newer");
-		expect(readdirSync(dirname(paths.pidPath))).toEqual(["daemon.pid"]);
+		let renamed = false;
+		removePidFileOwnedBy(paths, { pid: 11, instanceId: "mine" }, { afterRename: () => (renamed = true) });
+		expect(renamed).toBe(false);
+		expect(readPidFile(paths)?.instanceId).toBe("other");
 		restore();
 	});
 

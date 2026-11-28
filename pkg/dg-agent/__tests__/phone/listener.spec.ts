@@ -200,6 +200,20 @@ describe("runListener signal during startup", () => {
 		expect(closed).toBeGreaterThan(0);
 	});
 
+	it("exits without a pid file when SIGTERM lands before the keys load", async () => {
+		setUpNumber("ab".repeat(32));
+		const run = runListener(
+			deps({
+				onStartupSignal: (_signal, handler) => {
+					handler();
+				},
+			}),
+		);
+		await run;
+		expect(existsSync(listenerPidPath(paths))).toBe(false);
+		expect(existsSync(listenerClaimPath(paths))).toBe(false);
+	});
+
 	it("shuts down at once when SIGTERM lands between the first catch-up and the live handlers", async () => {
 		setUpNumber("ab".repeat(32));
 		const startup: (() => void)[] = [];

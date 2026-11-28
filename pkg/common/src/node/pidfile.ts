@@ -37,6 +37,9 @@ export function removePidFileOwnedBy(
 	owner: { pid: number; instanceId: string },
 	seams: { afterRename?: () => void } = {},
 ): void {
+	const owns = (handle: DaemonHandle | undefined) =>
+		handle?.pid === owner.pid && handle.instanceId === owner.instanceId;
+	if (!owns(readPidFile(paths))) return;
 	const claimed = `${paths.pidPath}.${process.pid}.${randomUUID()}.reap`;
 	try {
 		renameSync(paths.pidPath, claimed);
@@ -45,11 +48,12 @@ export function removePidFileOwnedBy(
 	}
 	try {
 		seams.afterRename?.();
-		const current = readPidFile({ pidPath: claimed });
-		if (current?.pid === owner.pid && current.instanceId === owner.instanceId) return;
+		if (owns(readPidFile({ pidPath: claimed }))) return;
 		try {
 			linkSync(claimed, paths.pidPath);
-		} catch {}
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== "EEXIST") renameSync(claimed, paths.pidPath);
+		}
 	} finally {
 		rmSync(claimed, { force: true });
 	}

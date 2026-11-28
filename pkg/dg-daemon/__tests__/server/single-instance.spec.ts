@@ -377,7 +377,7 @@ describe("a daemon whose single-instance claim fails", () => {
 		mkdirSync(join(recordPath, "blocker"), { recursive: true });
 		const proc = serve(dgHome, port, userHome);
 		const code = await proc.exited;
-		expect(code).not.toBe(0);
+		expect(code).toBe(1);
 		expect(existsSync(pathsOf(dgHome).pidPath)).toBe(false);
 	}, 40_000);
 });

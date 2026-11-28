@@ -939,8 +939,16 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	};
 	deps.onStartupSignal("SIGTERM", requestStop);
 	deps.onStartupSignal("SIGINT", requestStop);
-	await ensureNumberKey(deps);
-	const initialKeys = await loadAllKeys(deps);
+	const loadingKeys = (async () => {
+		await ensureNumberKey(deps);
+		return loadAllKeys(deps);
+	})();
+	loadingKeys.catch(() => undefined);
+	const initialKeys = await Promise.race([loadingKeys, stopWoken]);
+	if (initialKeys === "stopped") {
+		releaseListenerClaim(deps.paths, deps.pid);
+		return;
+	}
 	let keys = initialKeys.keys;
 	let unreadBefore = new Set(initialKeys.unreadable);
 	let relays = subscriptionRelays(deps.db);

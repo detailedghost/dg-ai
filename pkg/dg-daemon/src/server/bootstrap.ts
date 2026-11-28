@@ -464,6 +464,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 			removePidFileOwnedBy(paths, { pid: process.pid, instanceId });
 			throw err;
 		}
+		logger.warn(`${describeError(err)}; the claim failed while the daemon was stopping`);
 	}
 	if (shuttingDown) return "serving";
 
