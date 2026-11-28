@@ -18,7 +18,7 @@
       "devDependencies": {
         "@hughescr/stryker-bun-runner": "^1.6.0",
         "@stryker-mutator/core": "^10.1.1",
-        "bun-types": "^1.4.4",
+        "bun-types": "^1.4.5",
         "typescript": "^7.0.2",
       },
     },
@@ -26,13 +26,13 @@
       "name": "@dg/common",
       "version": "1.0.0",
       "dependencies": {
-        "@azure/msal-node": "^7.2.2",
+        "@azure/msal-node": "^7.2.3",
         "smol-toml": "1.9.1",
         "unique-names-generator": "^4.7.1",
         "zod": "^4.6.7",
       },
       "devDependencies": {
-        "bun-types": "^1.4.4",
+        "bun-types": "^1.4.5",
         "typescript": "^7.0.2",
       },
     },
@@ -46,7 +46,7 @@
         "@dg/skills-cli": "workspace:*",
       },
       "devDependencies": {
-        "bun-types": "^1.4.4",
+        "bun-types": "^1.4.5",
         "typescript": "^7.0.2",
       },
     },
@@ -61,7 +61,7 @@
       },
       "devDependencies": {
         "@dg/dg-daemon": "workspace:*",
-        "bun-types": "^1.4.4",
+        "bun-types": "^1.4.5",
         "typescript": "^7.0.2",
       },
     },
@@ -74,7 +74,7 @@
         "croner": "^11",
       },
       "devDependencies": {
-        "bun-types": "^1.4.4",
+        "bun-types": "^1.4.5",
         "typescript": "^7.0.2",
       },
     },
@@ -87,13 +87,13 @@
         "@dg/tour-ui": "workspace:*",
         "kokoro-js": "^1.2.1",
         "qrcode": "1.5.4",
-        "tldts": "7.5.4",
+        "tldts": "7.5.5",
       },
       "devDependencies": {
         "@tailwindcss/vite": "^4.3.5",
         "@types/chrome": "^0.3.7",
         "@types/qrcode": "^1.5.6",
-        "bun-types": "^1.4.4",
+        "bun-types": "^1.4.5",
         "fake-indexeddb": "^6.2.8",
         "happy-dom": "^21.0.3",
         "tailwindcss": "^4.3.3",
@@ -113,10 +113,10 @@
         "zod": "4.6.7",
       },
       "devDependencies": {
-        "@azure/msal-node": "^7.2.2",
+        "@azure/msal-node": "^7.2.3",
         "@faker-js/faker": "^10.2.0",
         "@types/lodash-es": "4.17.12",
-        "bun-types": "1.4.4",
+        "bun-types": "1.4.5",
         "typescript": "^7.0.2",
       },
     },
@@ -129,7 +129,7 @@
         "@dg/dg-agent": "workspace:*",
         "@dg/dg-daemon": "workspace:*",
         "@dg/skills-cli": "workspace:*",
-        "bun-types": "^1.4.4",
+        "bun-types": "^1.4.5",
         "typescript": "^7.0.2",
       },
     },
@@ -140,7 +140,7 @@
         "@dg/common": "workspace:*",
       },
       "devDependencies": {
-        "bun-types": "^1.4.4",
+        "bun-types": "^1.4.5",
         "happy-dom": "^21.0.3",
         "tailwindcss": "^4.3.3",
         "typescript": "^7.0.2",
@@ -156,7 +156,7 @@
         "@dg/inbox": "workspace:*",
         "@dg/ssms": "workspace:*",
         "commander": "^15.1.0",
-        "marked": "^18.2.1",
+        "marked": "^18.3.0",
         "pg": "^8.23.1",
         "playwright-core": "1.65.1",
         "snowflake-sdk": "^3.4.1",
@@ -166,7 +166,7 @@
       "devDependencies": {
         "@dg/dg-daemon": "workspace:*",
         "@types/pg": "^8.23.1",
-        "bun-types": "^1.4.4",
+        "bun-types": "^1.4.5",
         "happy-dom": "^21.0.4",
         "mermaid": "^12.3.0",
         "typescript": "^7.0.2",
@@ -179,7 +179,7 @@
         "@dg/skills-cli": "workspace:*",
       },
       "devDependencies": {
-        "bun-types": "^1.4.4",
+        "bun-types": "^1.4.5",
         "typescript": "^7.0.2",
       },
     },
@@ -193,7 +193,7 @@
       },
       "devDependencies": {
         "@types/qrcode": "^1.5.6",
-        "bun-types": "1.4.4",
+        "bun-types": "1.4.5",
         "typescript": "^7.0.2",
       },
     },
@@ -204,7 +204,7 @@
         "@dg/common": "workspace:*",
       },
       "devDependencies": {
-        "bun-types": "^1.4.4",
+        "bun-types": "^1.4.5",
         "happy-dom": "^21.0.3",
         "typescript": "^7.0.2",
       },
@@ -294,9 +294,9 @@
 
     "@azure/msal-browser": ["@azure/msal-browser@5.26.0", "", { "dependencies": { "@azure/msal-common": "16.14.3" } }, "sha512-GYKRquzDZmZggCdStWy2bNJKnPui1upssSuznJgP+/h6Mb0ldkUkaGvaY6uSGGmZOm0CGiBQ3b5BiGy43BpXSg=="],
 
-    "@azure/msal-common": ["@azure/msal-common@16.16.2", "", {}, "sha512-IVoPgAup0hnpzwC8esxPxrrnDDVe0n3mmK+UU3JRmKWySKxBQrl+a30tTP3okmJ9Wc7dh+IgoNaUXkCxb2DBSg=="],
+    "@azure/msal-common": ["@azure/msal-common@16.17.0", "", {}, "sha512-rNvtEm7Axzj18neIk0C8kjr1ZXbJsHkWDqGedCfOiLVBjSCxWBcbJ26/I7g9owoeGKUoyrOgs73cIk7WxLd9qA=="],
 
-    "@azure/msal-node": ["@azure/msal-node@7.2.2", "", { "dependencies": { "@azure/msal-common": "16.16.2", "jsonwebtoken": "^9.0.0" } }, "sha512-MjsAHC+KUSXYYC8P57lVXy5IgSeO+PraXzLLHZI6hcX7nx/hCokY6gTPm2JcKLI3W88mu7ozjObBVGKExZUhww=="],
+    "@azure/msal-node": ["@azure/msal-node@7.2.3", "", { "dependencies": { "@azure/msal-common": "16.17.0", "jsonwebtoken": "^9.0.0" } }, "sha512-eRIo5XuQAJrubo4514gEnmREKI35045LItjucOEK/YNQYj3LhEpYEbBdqjlu/wmd9Rcqp2c3GJ4ynFoEqby3sg=="],
 
     "@azure/storage-blob": ["@azure/storage-blob@12.26.0", "", { "dependencies": { "@azure/abort-controller": "^2.1.2", "@azure/core-auth": "^1.4.0", "@azure/core-client": "^1.6.2", "@azure/core-http-compat": "^2.0.0", "@azure/core-lro": "^2.2.0", "@azure/core-paging": "^1.1.1", "@azure/core-rest-pipeline": "^1.10.1", "@azure/core-tracing": "^1.1.2", "@azure/core-util": "^1.6.1", "@azure/core-xml": "^1.4.3", "@azure/logger": "^1.0.0", "events": "^3.0.0", "tslib": "^2.2.0" } }, "sha512-SriLPKezypIsiZ+TtlFfE46uuBIap2HeaQVS78e1P7rz5OSbq0rsd52WE1mC5f7vAeLiXqv7I7oRhL3WFZEw3Q=="],
 
@@ -882,7 +882,7 @@
 
     "buffer-image-size": ["buffer-image-size@0.6.4", "", { "dependencies": { "@types/node": "*" } }, "sha512-nEh+kZOPY1w+gcCMobZ6ETUp9WfibndnosbpwB1iJk/8Gt5ZF2bhS6+B6bPYz424KtwsR6Rflc3tCz1/ghX2dQ=="],
 
-    "bun-types": ["bun-types@1.4.4", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-yjrJh5oGX7mMPKGd19YXyIjmEuj4G4zNC30bs7PM9Az7NQ3ndF3j6hbeRdvJTRQEhJ/FYQwW0a2moweEi2hMxQ=="],
+    "bun-types": ["bun-types@1.4.5", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-ECHn+9dhL3wv0G6u0+7dQvrnaimXiRDxxerYBmhTaLyJEEuvTPWk2Fye3XIf5Y++JIIiHKfQw4Z7V5D8KuiXbg=="],
 
     "bundle-name": ["bundle-name@4.1.1", "", { "dependencies": { "run-applescript": "^7.0.0" } }, "sha512-DdH81/zPLVS11EUgWq3tEu/xn+EzljlMYooDNdzWEnFha3R3NBMpMV1UqYIpjYHV/SgpFKMIX1Oh7o06SjM/oA=="],
 
@@ -1390,7 +1390,7 @@
 
     "many-keys-map": ["many-keys-map@3.0.3", "", {}, "sha512-1DiZmDHPXMBgMRjeUtHy1q1VYmeJscHxhIAexX9z/zjRMP80+0ETuPfssi8z+kMY4DwUgsKuHqpjxgmeA9gBNA=="],
 
-    "marked": ["marked@18.2.1", "", { "bin": { "marked": "bin/marked.js" } }, "sha512-ii4bxCTCqqwpT86XZWgJNs+ZnAIZksmLGYMViWA7PDIXYIeNo1x6cDdX3JOip9NM/cI6p8z57FxliACboTruMA=="],
+    "marked": ["marked@18.3.0", "", { "bin": { "marked": "bin/marked.js" } }, "sha512-ed8zmPXlBb3UfGXN5iHMQyMhFpdqLgoV5umUXx/Q1R+FW3q8VpqpyoKUwlENL9appo2UMvNLURDVaT3AMOryGA=="],
 
     "matcher": ["matcher@3.0.0", "", { "dependencies": { "escape-string-regexp": "^4.0.0" } }, "sha512-OkeDaAZ/bQCxeFAozM55PKcKU0yJMPGifLwV4Qgjitu+5MoAfSQN4lsLJeXZ1b8w0x+/Emda6MZgXS1jvsapng=="],
 
@@ -1692,7 +1692,7 @@
 
     "tinyglobby": ["tinyglobby@0.2.17", "", { "dependencies": { "fdir": "^6.5.0", "picomatch": "^4.0.4" } }, "sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g=="],
 
-    "tldts": ["tldts@7.5.4", "", { "dependencies": { "tldts-core": "^7.5.4" }, "bin": { "tldts": "bin/cli.js" } }, "sha512-Rn2ABgjHZrA+jzqom5zhxA0hLohzYrIgfCPyhpTUxqsUrcsBYuab49LseR9waB9Jr8/MxdodvMHA91oRiGLO3Q=="],
+    "tldts": ["tldts@7.5.5", "", { "dependencies": { "tldts-core": "^7.5.5" }, "bin": { "tldts": "bin/cli.js" } }, "sha512-Hy6IImaWALzJOgCIss4gIFi4G0M9lqk95pFKCUVxQPZw+biZ1Pv6f28JpYgahpJB+BufA0HYsIU/aP/WIx3KRg=="],
 
     "tldts-core": ["tldts-core@7.4.19", "", {}, "sha512-goNXV6Ho9TIOfpJZanTd6CKG5DyYgYAL+k+22T0SLh8l6+KHIfBUPFuePuSZv05UttIaaLmI9tb7TmGIdK5AkQ=="],
 
